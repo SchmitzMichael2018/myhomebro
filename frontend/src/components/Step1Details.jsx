@@ -670,6 +670,10 @@ export default function Step1Details({
   }, [projectSubtypeOptions, dLocal?.project_subtype]);
   const [clarificationAnswers, setClarificationAnswers] = useState({});
   const [clarificationsSkipped, setClarificationsSkipped] = useState(false);
+  const [step1JobDescriptionPrompt, setStep1JobDescriptionPrompt] = useState(() =>
+    safeTrim(dLocal?.description) || ""
+  );
+  const [step1ManualBrowseSignal, setStep1ManualBrowseSignal] = useState(0);
   const augmentedProjectTypeOptions = useMemo(() => {
     const current = safeTrim(dLocal?.project_type);
     if (!current || (projectTypeOptions || []).some((opt) => safeTrim(opt?.value) === current)) {
@@ -1261,17 +1265,17 @@ export default function Step1Details({
     () => [
       {
         key: "ai",
-        title: "Use AI",
-        description: "Describe the job and let the wizard help prefill setup details.",
+        title: "Describe the job",
+        description: "AI will suggest the best starting point and help prefill setup details.",
       },
       {
         key: "template",
-        title: "Use Template",
-        description: "Start from a saved agreement pattern and adjust it for this project.",
+        title: "Recommended starting point",
+        description: "Use a matching starting point and adjust the agreement for this project.",
       },
       {
         key: "manual",
-        title: "Start from scratch",
+        title: "Build without template",
         description: "Build the agreement manually with full control over the setup fields.",
       },
     ],
@@ -2063,6 +2067,7 @@ export default function Step1Details({
     });
     setDismissedAiTemplateRecommendation(false);
     syncLocalFromAgreementPayload(nextAgreement);
+    toast.success("Template applied. Review the agreement details below.");
 
     if (typeof onTemplateApplied === "function") {
       try {
@@ -2470,13 +2475,13 @@ export default function Step1Details({
         }
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else {
-        setAiSetupResult({
-          kind: "description_only",
-          refinedDescription,
-          message:
-            "No matching template found. We added the refined description and you can continue.",
-          setupFieldKeys,
-        });
+      setAiSetupResult({
+        kind: "description_only",
+        refinedDescription,
+        message:
+          "Agreement draft created. Review the highlighted sections below.",
+        setupFieldKeys,
+      });
         setSelectedTemplateId(null);
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       }
@@ -2496,7 +2501,7 @@ export default function Step1Details({
       kind: "description_only",
       refinedDescription: aiSetupResult.refinedDescription,
       message:
-        "No matching template found. We added the refined description and you can continue.",
+        "Agreement draft created. Review the highlighted sections below.",
       setupFieldKeys: Array.isArray(aiSetupResult?.setupFieldKeys)
         ? aiSetupResult.setupFieldKeys
         : [],
@@ -2747,16 +2752,16 @@ export default function Step1Details({
 
   const activeStartModeLabel =
     startMode === "ai"
-      ? "AI-assisted"
+      ? "AI-assisted start"
       : startMode === "template"
-      ? "Template-based"
-      : "Start from scratch";
+      ? "Recommended starting point"
+      : "Build without template";
   const activeStartModeSummary =
     startMode === "ai"
-      ? "Describe the job in the AI panel first, then review the setup details it prepares below."
+      ? "Describe the job first, then review the agreement details AI prepares below."
       : startMode === "template"
-      ? "Use a template as the starting point, then review and edit the agreement details below."
-      : "Fill in the setup details directly, with AI and templates still available if you want help later.";
+      ? "Use a matching starting point, then review and edit the agreement details below."
+      : "Build the agreement directly, with AI still available if you want help later.";
   const canResetStep1 =
     Boolean(agreementId) &&
     !locked &&
@@ -2778,9 +2783,9 @@ export default function Step1Details({
     : "";
   const projectDetailsDescription =
     startMode === "ai"
-      ? "Describe the job with AI first, then review and edit the project details here."
+      ? "Describe the job first, then review and edit the agreement details here."
       : startMode === "template"
-      ? "Confirm the template-driven details here so the agreement matches this specific project."
+      ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Define the project type, title, scope, and agreement behavior for this job.";
 
   return (
@@ -2972,15 +2977,12 @@ export default function Step1Details({
               </div>
             </div>
           ) : (
-            <div data-testid="step1-start-mode-chooser">
+            <div data-testid="step1-start-mode-chooser" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h3 className="text-base font-semibold text-slate-900">
-                    How do you want to start this agreement?
-                  </h3>
+                  <h3 className="text-base font-semibold text-slate-900">Describe the job</h3>
                   <p className="mt-1 text-sm text-slate-600">
-                    Choose the fastest starting path for this job. You can still switch approaches as
-                    you work.
+                    AI will recommend a matching template or help build the agreement.
                   </p>
                 </div>
                 <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -2988,32 +2990,54 @@ export default function Step1Details({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {startModeCards.map((option) => {
-                  const active = startMode === option.key;
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => activateStartMode(option.key)}
-                      className={`rounded-2xl border px-4 py-4 text-left transition ${
-                        active
-                          ? "border-indigo-300 bg-indigo-50 shadow-sm"
-                          : "border-slate-200 bg-slate-50/70 hover:border-slate-300 hover:bg-white"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-semibold text-slate-900">{option.title}</div>
-                        {active ? (
-                          <span className="rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
-                            Selected
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="mt-2 text-sm text-slate-600">{option.description}</div>
-                    </button>
-                  );
-                })}
+              <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-900">
+                    Job description
+                  </label>
+                  <input
+                    value={step1JobDescriptionPrompt}
+                    onChange={(e) => setStep1JobDescriptionPrompt(e.target.value)}
+                    placeholder="Example: Replace exterior siding on a single-story home..."
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    data-testid="step1-job-description-input"
+                    disabled={locked}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prompt = safeTrim(step1JobDescriptionPrompt);
+                    if (!prompt) return;
+                    activateStartMode("template", { committed: true, source: "assistant" });
+                    onStep1AiSetupRequest?.({ prompt, nonce: Date.now() });
+                  }}
+                  disabled={locked || !safeTrim(step1JobDescriptionPrompt)}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                  data-testid="step1-find-best-starting-point-button"
+                >
+                  Find Best Starting Point
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep1ManualBrowseSignal((prev) => prev + 1);
+                    activateStartMode("template", { committed: true, source: "user" });
+                  }}
+                  className="text-xs font-semibold text-slate-700 hover:underline"
+                >
+                  Browse templates manually
+                </button>
+                <button
+                  type="button"
+                  onClick={() => activateStartMode("manual", { committed: true, source: "user" })}
+                  className="text-xs font-semibold text-slate-700 hover:underline"
+                >
+                  Build without template
+                </button>
               </div>
             </div>
           )}
@@ -3239,6 +3263,7 @@ export default function Step1Details({
                 applyAiMilestonesFromScope={applyAiMilestonesFromScope}
                 startMode={startMode}
                 onStartModeChange={activateStartMode}
+                manualBrowseOpenSignal={step1ManualBrowseSignal}
                 onGenerateAiDraft={(prompt) => {
                   if (typeof onStep1AiSetupRequest === "function") {
                     onStep1AiSetupRequest({ prompt, nonce: Date.now() });

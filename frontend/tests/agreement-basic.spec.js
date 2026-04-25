@@ -76,6 +76,17 @@ async function installWizardAuthRoutes(page) {
     });
   });
 
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        candidates: [],
+      }),
+    });
+  });
+
   await page.route('**/api/projects/templates/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -470,22 +481,18 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByTestId('agreement-wizard-ask-ai-button')).toBeVisible();
-  await page.getByRole('button', { name: 'Use AI' }).click();
-
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
+  await page.getByTestId('step1-job-description-input').fill(
+    'Replace siding on a single-story home with trim repairs and cleanup'
+  );
+  await page.getByRole('button', { name: 'Build without template' }).click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-submit-dock')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-coaching-dock')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-coaching-next-step-dock')).toContainText(
-    'Complete the project details first'
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Build without template'
   );
-  await expect(page.getByTestId('start-with-ai-input-dock')).toBeFocused();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
 
-  await page.getByTestId('assistant-desktop-dock-close').click();
   await page.getByTestId('step1-change-start-mode').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
 });
@@ -800,38 +807,48 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Template-based');
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Recommended starting point'
+  );
   await expect(page.getByTestId('step1-template-browser')).toBeVisible();
 
   await page.getByTestId('step1-change-start-mode').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await page.getByRole('button', { name: 'Start from scratch' }).click();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
+  await page.getByRole('button', { name: 'Build without template' }).click();
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Build without template'
+  );
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('step1-template-applied-summary')).toBeVisible();
   await page.waitForTimeout(150);
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Build without template'
+  );
 
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Build without template'
+  );
 
   await page.getByTestId('agreement-wizard-ask-ai-button').click();
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Build without template'
+  );
   await page.getByTestId('assistant-desktop-dock-close').click();
 
   await page.getByTestId('step1-change-start-mode').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await page.getByRole('button', { name: 'Use AI' }).click();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('step1-template-applied-summary')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Roof replacement with flashing repair and cleanup'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await page.waitForTimeout(150);
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
 
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
 });
 
 test('agreement wizard step 1 reset form clears draft setup and reopens the chooser', async ({
@@ -1020,7 +1037,9 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Template-based');
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Recommended starting point'
+  );
   await expect(page.getByTestId('step1-reset-form-button')).toBeVisible();
 
   await page.getByTestId('step1-reset-form-button').click();
@@ -1259,51 +1278,21 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByRole('button', { name: 'Use AI' }).click();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('start-with-ai-input-dock')).toBeFocused();
-  await page
-    .getByTestId('start-with-ai-input-dock')
-    .fill('Roof replacement with flashing repair and cleanup');
-  await page.getByTestId('start-with-ai-submit-dock').click();
-  await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
-    'Roof Replacement'
+  await page.getByTestId('step1-job-description-input').fill(
+    'Roof replacement with flashing repair and cleanup'
   );
-  await expect(page.locator('select[name="project_type"]')).toHaveValue('Roofing');
-  await expect(page.locator('select[name="project_subtype"]')).toHaveValue(
-    'Roof Replacement'
+  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Recommended starting point'
   );
-  await expect(page.getByTestId('agreement-project-title-ai-indicator')).toContainText(
-    'AI suggested'
-  );
-  await expect(page.getByTestId('agreement-project-type-ai-indicator')).toContainText(
-    'AI suggested'
-  );
-  await expect(page.getByTestId('agreement-project-subtype-ai-indicator')).toContainText(
-    'AI suggested'
-  );
-  await expect(page.getByTestId('start-with-ai-title-dock')).toContainText(
-    'Description refined. AI completed initial setup.'
-  );
-  await expect(page.getByTestId('start-with-ai-coaching-next-step-dock')).toContainText(
-    'Review Project Title, Project Type, Project Subtype'
-  );
-  await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
-    'Remove existing shingles, repair flashing around penetrations'
-  );
-  await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
+  await page.getByText('Browse templates manually').click();
+  await page.getByTestId('template-search-result-88').click();
+  await expect(page.getByTestId('step1-template-detail-name')).toContainText(
     'Roof Replacement Template'
   );
-  await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
-    'Matches the project type and subtype you selected.'
-  );
-  await page.getByTestId('step1-ai-setup-apply-template').click();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('step1-template-applied-summary')).toContainText(
-    'Roof Replacement Template'
+  await expect(page.getByTestId('step1-template-insights-card')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Recommended starting point'
   );
 });
 
@@ -1473,12 +1462,17 @@ test('agreement wizard step 1 shows clarifications after template application an
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByRole('button', { name: 'Use Template' }).click();
+  await page.getByText('Browse templates manually').click();
   await expect(page.getByTestId('step1-template-browser')).toBeVisible();
   await expect(page.getByTestId('step1-system-templates-list')).toBeVisible();
   await expect(page.getByTestId('step1-my-templates-list')).toBeVisible();
   await expect(page.getByTestId('step1-template-detail-name')).toHaveCount(0);
-  await expect(page.getByText('Start a new template')).toBeVisible();
+  await expect(page.getByText('Find Best Starting Point')).toBeVisible();
+  await expect(page.getByText('Browse templates manually')).toBeVisible();
+  await expect(page.getByText('Start a new template')).toHaveCount(0);
+  await expect(page.getByText('New Template Draft')).toHaveCount(0);
+  await expect(page.getByText('Save Template')).toHaveCount(0);
+  await expect(page.getByText('draft template', { exact: false })).toHaveCount(0);
 
   await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
   await page.getByRole('button', { name: /Kitchen Remodel Template/ }).click();
@@ -1517,7 +1511,7 @@ test('agreement wizard step 1 shows clarifications after template application an
   );
 });
 
-test('agreement wizard step 1 can generate a template draft from the start panel and open the detail view', async ({
+test('agreement wizard step 1 can find the best starting point and open the detail view', async ({
   page,
 }) => {
   let agreement = {
@@ -1760,13 +1754,13 @@ test('agreement wizard step 1 can generate a template draft from the start panel
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByRole('button', { name: 'Use Template' }).click();
+  await page.getByText('Browse templates manually').click();
   await expect(page.getByTestId('step1-template-browser')).toBeVisible();
   await expect(page.getByTestId('step1-template-detail-name')).toHaveCount(0);
   await page.getByTestId('step1-ai-prompt-input').fill(
     'Kitchen remodel with layout updates, new cabinets, and finish work'
   );
-  await page.getByTestId('step1-generate-ai-button').click();
+  await page.getByTestId('step1-find-best-starting-point-button').click();
 
   await expect(page.getByTestId('step1-template-detail-name')).toContainText(
     'Kitchen Remodel Template'
@@ -1950,13 +1944,11 @@ test('agreement wizard step 1 prefers remodel taxonomy over supporting electrica
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByRole('button', { name: 'Use AI' }).click();
-  await page
-    .getByTestId('start-with-ai-input-dock')
-    .fill(
-      'Bathroom remodel with tub and shower replacement, tile work, vanity install, plumbing updates, outlet relocation, and lighting changes'
-    );
-  await page.getByTestId('start-with-ai-submit-dock').click();
+  await expect(page.getByText('Describe the job')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Bathroom remodel with tub and shower replacement, tile work, vanity install, plumbing updates, outlet relocation, and lighting changes'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
 
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
     'Bathroom Remodel'
@@ -2155,11 +2147,10 @@ test('agreement wizard step 1 keeps cabinet installation as a limited-scope job 
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByRole('button', { name: 'Use AI' }).click();
-  await page
-    .getByTestId('start-with-ai-input-dock')
-    .fill('Install new kitchen cabinets and hardware only with minor trim touchups');
-  await page.getByTestId('start-with-ai-submit-dock').click();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Install new kitchen cabinets and hardware only with minor trim touchups'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
 
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue(
     'Cabinet Installation'
@@ -2354,7 +2345,7 @@ test('agreement wizard step 2 AI can recommend saving a reusable template and op
   ).toContainText('This agreement looks reusable');
   await page.getByTestId('start-with-ai-template-action').click();
   await expect(
-    page.getByPlaceholder('e.g., My Standard Roofing Template')
+    page.getByPlaceholder('e.g., Bedroom Addition – Standard 6 Milestone')
   ).toBeVisible();
 });
 

@@ -782,7 +782,7 @@ export default function useStep1Templates({
         await refreshAgreement();
       }
 
-      toast.success(`Template applied: ${template.name}`);
+      toast.success("Template applied. Review the agreement details below.");
       return data;
     } catch (e) {
       toast.error(
@@ -913,6 +913,7 @@ export default function useStep1Templates({
     applyingTemplateId,
 
     recommendedTemplateId,
+    recommendedCandidates,
     templateRecommendationReason,
     templateRecommendationScore,
     recommendationLoading,

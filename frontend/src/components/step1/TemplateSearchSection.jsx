@@ -16,7 +16,7 @@ import {
 } from "../../lib/templateInsights.js";
 
 function OptionBadge({ ownerType }) {
-  const text = ownerType === "system" ? "Built-in" : "Custom";
+  const text = ownerType === "system" ? "System Template" : "My Template";
 
   return (
     <span
@@ -99,6 +99,16 @@ function getMilestoneCount(template) {
 function getSafeEstimatedDays(template) {
   const raw = Number(template?.estimated_days || 0);
   return raw > 0 ? raw : 1;
+}
+
+function getRecommendationInsightLines(template) {
+  const estimatedDays = getSafeEstimatedDays(template);
+  const insights = deriveTemplateInsights({
+    ...template,
+    milestones: Array.isArray(template?.milestones) ? template.milestones : [],
+    estimated_days: estimatedDays,
+  });
+  return buildTemplateInsightLines(insights, { context: "template" }).slice(0, 3);
 }
 
 function buildSuggestedDayLabel(index, totalCount, estimatedDays) {
@@ -222,6 +232,7 @@ export default function TemplateSearchSection({
   showProjectFields = true,
   projectTypeOptions,
   projectSubtypeOptions,
+  manualBrowseOpenSignal = 0,
 
   templatesLoading,
   templatesErr,
@@ -230,6 +241,7 @@ export default function TemplateSearchSection({
   setTemplateSearch,
   selectedTemplateId,
   recommendedTemplateId,
+  recommendedCandidates = [],
   recommendationConfidence,
   recommendationLoading,
   templateRecommendationReason,
@@ -294,6 +306,7 @@ export default function TemplateSearchSection({
   const [estimatedDaysInput, setEstimatedDaysInput] = useState("");
   const [savingTemplateDays, setSavingTemplateDays] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
+  const [manualBrowseOpen, setManualBrowseOpen] = useState(false);
 
   const typeOptions = useMemo(
     () => (Array.isArray(projectTypeOptions) ? projectTypeOptions : []),
@@ -315,6 +328,10 @@ export default function TemplateSearchSection({
   const hasTemplateSearch = !!safeTrim(templateSearch);
   const hasTemplateMatches =
     Array.isArray(filteredTemplates) && filteredTemplates.length > 0;
+  const topRecommendedTemplates = useMemo(
+    () => (Array.isArray(recommendedCandidates) ? recommendedCandidates.slice(0, 3) : []),
+    [recommendedCandidates]
+  );
   const [manualDetailsExpanded, setManualDetailsExpanded] = useState(
     () => !isAiMode || hasTitle || hasDescription || hasAiPreview
   );
@@ -353,6 +370,12 @@ export default function TemplateSearchSection({
       setManualDetailsExpanded(true);
     }
   }, [hasAiPreview, hasDescription, hasTitle, manualDetailsExpanded]);
+
+  useEffect(() => {
+    if (manualBrowseOpenSignal) {
+      setManualBrowseOpen(true);
+    }
+  }, [manualBrowseOpenSignal]);
 
   useEffect(() => {
     function handleOutsideClick(e) {
@@ -526,20 +549,21 @@ export default function TemplateSearchSection({
     }
   }
 
-  async function onApplySelectedTemplate() {
-    if (!selectedTemplate || !handleApplyTemplate) return;
+  async function onApplySelectedTemplate(templateOverride = null) {
+    const templateToApply = templateOverride || selectedTemplate;
+    if (!templateToApply || !handleApplyTemplate) return;
 
     const parsedDays = Number(estimatedDaysInput || 0);
     const safeEstimatedDays = parsedDays > 0 ? parsedDays : previewEstimatedDays;
 
-    const payload = await handleApplyTemplate(selectedTemplate, {
+    const payload = await handleApplyTemplate(templateToApply, {
       estimated_days: safeEstimatedDays,
       auto_schedule: !!autoSchedule,
       spread_enabled: !!spreadEnabled,
       spread_total: spreadTotal,
     });
 
-    setSelectedTemplateId?.(selectedTemplate.id);
+    setSelectedTemplateId?.(templateToApply.id);
 
     const returnedAgreement =
       payload?.agreement ||
@@ -567,6 +591,22 @@ export default function TemplateSearchSection({
     onContinueToStep2?.();
   }
 
+  async function handleUseThisTemplate(template) {
+    if (!template?.id || locked) return;
+    handleTemplateResultPick(template);
+    const applied = await onApplySelectedTemplate(template);
+    if (!applied) return;
+    onStartModeChange?.("template");
+  }
+
+  function handleBuildWithoutTemplate() {
+    if (locked) return;
+    setSelectedTemplateId?.(null);
+    setTemplateDropdownOpen(false);
+    onStartModeChange?.("manual");
+    onContinueToStep2?.();
+  }
+
   function handleTemplateResultPick(picked) {
     handleTemplatePick?.(picked);
     setTemplateDropdownOpen(false);
@@ -574,21 +614,19 @@ export default function TemplateSearchSection({
 
   function clearStartState() {
     setSelectedTemplateId?.(null);
-    setTemplateSearch("");
     setAiPreview("");
     setAiMilestonePreview(null);
-    setAiPrompt("");
     setTemplateDropdownOpen(false);
     setSelectedPreviewOpen(true);
   }
 
   function handleStartFromScratch() {
     clearStartState();
-    onStartModeChange?.("template");
+    onStartModeChange?.("manual");
     onStartFromScratch?.();
   }
 
-  function handleGenerateWithAi() {
+  function handleFindBestStartingPoint() {
     const prompt = safeTrim(aiPrompt) || safeTrim(templateSearch);
     clearStartState();
     onStartModeChange?.("template");
@@ -604,165 +642,151 @@ export default function TemplateSearchSection({
   }
 
   const selectionHeaderTitle = isTemplateApplied
-    ? "Template in use"
-    : "Selected Template";
+    ? "Starting point in use"
+    : "Selected starting point";
   const selectionHeaderText = isTemplateApplied
-    ? "This template shaped the current draft. Review it below, or use Reset form if you want to start over."
+    ? "This starting point shaped the current agreement draft. Review it below, or use Reset form if you want to start over."
     : "Search for a matching template first. If a good match exists, use it as the fastest path into milestones, clarifications, and pricing.";
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-4">
-        <div className="text-base font-semibold text-gray-900">Templates</div>
+        <div className="text-base font-semibold text-gray-900">Starting points</div>
         <div className="mt-1 text-sm text-gray-600">
-          Start with a template if one already exists for this kind of job.
+          Choose the best agreement starting point for this job.
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <div className="text-sm font-semibold text-slate-900">Start a template</div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-900">Describe the job</div>
             <div className="mt-1 text-xs text-slate-600">
-              Start blank or describe the job and let AI create a draft.
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleStartFromScratch}
-                disabled={locked}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                data-testid="step1-start-blank-button"
-              >
-                Start from Scratch
-              </button>
-
-              <button
-                type="button"
-                onClick={handleGenerateWithAi}
-                disabled={locked || (!canUseGeneratedPrompt && !hasSomeContext)}
-                className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-                data-testid="step1-generate-ai-button"
-              >
-                Generate with AI
-              </button>
+              AI will recommend a matching template or help build the agreement.
             </div>
 
             <input
               className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="Describe the job..."
+              placeholder="Example: Replace exterior siding on a single-story home..."
               disabled={locked}
               data-testid="step1-ai-prompt-input"
             />
 
+            <button
+              type="button"
+              onClick={handleFindBestStartingPoint}
+              disabled={locked || (!canUseGeneratedPrompt && !hasSomeContext)}
+              className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              data-testid="step1-find-best-starting-point-button"
+            >
+              Find Best Starting Point
+            </button>
+
             <div className="mt-2 text-[11px] text-slate-500">
-              AI will open a draft template for you to review and edit.
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-3">
-              <label className="mb-1 block text-sm font-medium">Template Search</label>
-              <input
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                value={templateSearch}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setTemplateSearch(v);
-                  if (!v.trim() && !isTemplateApplied) {
-                    setSelectedTemplateId(null);
-                  }
-                }}
-                placeholder='Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...'
-                disabled={locked}
-              />
-              <div className="mt-1 text-[11px] text-gray-500">
-                Search system templates or your saved templates.
-              </div>
+              Use your description to guide AI and manual browsing.
             </div>
 
-            <div className="space-y-3">
-              <div data-testid="step1-system-templates-list" className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  System Templates
-                </div>
-                <div className="mt-2 space-y-2">
-                  {templateSections.system.length ? (
-                    templateSections.system.map((tpl) => {
-                      const isRecommended =
-                        String(recommendedTemplateId || "") === String(tpl.id);
-                      const isPossible =
-                        !isRecommended &&
-                        (tpl?._matchLevel === "medium" || recommendationConfidence === "medium");
-                      const isApplied =
-                        String(effectiveAppliedTemplateId || "") === String(tpl.id || "");
+            <details
+              className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3"
+              open={manualBrowseOpen}
+              onToggle={(event) => setManualBrowseOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Browse templates manually
+              </summary>
 
-                      return (
-                        <TemplateSearchResult
-                          key={tpl.id}
-                          template={tpl}
-                          selected={String(selectedTemplateId || "") === String(tpl.id)}
-                          applied={isApplied}
-                          recommended={isRecommended && recommendationConfidence !== "medium"}
-                          possible={isPossible}
-                          onPick={(picked) => {
-                            handleTemplateResultPick(picked);
-                            onStartModeChange?.("template");
-                          }}
-                          locked={locked}
-                        />
-                      );
-                    })
-                  ) : (
-                    <div className="rounded border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
-                      No system templates match your search yet.
-                    </div>
-                  )}
+              <div className="mt-3 space-y-3">
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <label className="mb-1 block text-sm font-medium">Search templates</label>
+                  <input
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    value={templateSearch}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setTemplateSearch(v);
+                      if (!v.trim() && !isTemplateApplied) {
+                        setSelectedTemplateId(null);
+                      }
+                    }}
+                    placeholder='Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...'
+                    disabled={locked}
+                  />
+                  <div className="mt-1 text-[11px] text-gray-500">
+                    Search system templates or your saved templates.
+                  </div>
+                </div>
+
+                <div data-testid="step1-system-templates-list" className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    System Templates
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {templateSections.system.length ? (
+                      templateSections.system.map((tpl) => {
+                        const isApplied =
+                          String(effectiveAppliedTemplateId || "") === String(tpl.id || "");
+
+                        return (
+                          <TemplateSearchResult
+                            key={tpl.id}
+                            template={tpl}
+                            selected={String(selectedTemplateId || "") === String(tpl.id)}
+                            applied={isApplied}
+                            recommended={String(recommendedTemplateId || "") === String(tpl.id)}
+                            possible={recommendationConfidence === "medium"}
+                            onPick={(picked) => {
+                              handleTemplateResultPick(picked);
+                              onStartModeChange?.("template");
+                            }}
+                            locked={locked}
+                          />
+                        );
+                      })
+                    ) : (
+                      <div className="rounded border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                        No system templates match your search yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div data-testid="step1-my-templates-list" className="rounded-lg border border-slate-100 bg-white p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    My Templates
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {templateSections.mine.length ? (
+                      templateSections.mine.map((tpl) => {
+                        const isApplied =
+                          String(effectiveAppliedTemplateId || "") === String(tpl.id || "");
+
+                        return (
+                          <TemplateSearchResult
+                            key={tpl.id}
+                            template={tpl}
+                            selected={String(selectedTemplateId || "") === String(tpl.id)}
+                            applied={isApplied}
+                            recommended={String(recommendedTemplateId || "") === String(tpl.id)}
+                            possible={recommendationConfidence === "medium"}
+                            onPick={(picked) => {
+                              handleTemplateResultPick(picked);
+                              onStartModeChange?.("template");
+                            }}
+                            locked={locked}
+                          />
+                        );
+                      })
+                    ) : (
+                      <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                        Your saved templates will appear here after you create or save one.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-
-              <div data-testid="step1-my-templates-list" className="rounded-lg border border-slate-100 bg-white p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  My Templates
-                </div>
-                <div className="mt-2 space-y-2">
-                  {templateSections.mine.length ? (
-                    templateSections.mine.map((tpl) => {
-                      const isRecommended =
-                        String(recommendedTemplateId || "") === String(tpl.id);
-                      const isPossible =
-                        !isRecommended &&
-                        (tpl?._matchLevel === "medium" || recommendationConfidence === "medium");
-                      const isApplied =
-                        String(effectiveAppliedTemplateId || "") === String(tpl.id || "");
-
-                      return (
-                        <TemplateSearchResult
-                          key={tpl.id}
-                          template={tpl}
-                          selected={String(selectedTemplateId || "") === String(tpl.id)}
-                          applied={isApplied}
-                          recommended={isRecommended && recommendationConfidence !== "medium"}
-                          possible={isPossible}
-                          onPick={(picked) => {
-                            handleTemplateResultPick(picked);
-                            onStartModeChange?.("template");
-                          }}
-                          locked={locked}
-                        />
-                      );
-                    })
-                  ) : (
-                    <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
-                      Your saved templates will appear here after you create or save one.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            </details>
           </div>
         </aside>
 
@@ -772,31 +796,152 @@ export default function TemplateSearchSection({
             className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
           >
             {!detailTemplate ? (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                <div className="text-base font-semibold text-slate-900">
-                  Start a new template
+              <div className="space-y-4">
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                  <div className="text-base font-semibold text-slate-900">
+                    Describe the job
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    AI will recommend a matching template or help build the agreement.
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    Example: Replace exterior siding on a single-story home.
+                  </div>
                 </div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Start blank or describe the job and let AI create a draft.
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleStartFromScratch}
-                    disabled={locked}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                  >
-                    New Template Draft
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleGenerateWithAi}
-                    disabled={locked || (!canUseGeneratedPrompt && !hasSomeContext)}
-                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-                  >
-                    Generate with AI
-                  </button>
-                </div>
+
+                {topRecommendedTemplates.length ? (
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold text-slate-900">
+                      Recommended starting point
+                    </div>
+                    {topRecommendedTemplates.map((template) => {
+                      const insightLines = getRecommendationInsightLines(template);
+                      const reasons = Array.from(
+                        new Set(
+                          [
+                            safeTrim(template?._matchReason),
+                            ...insightLines,
+                          ].filter(Boolean)
+                        )
+                      ).slice(0, 3);
+
+                      return (
+                        <div
+                          key={template.id}
+                          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                          data-testid={`step1-recommendation-card-${template.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-base font-semibold text-slate-900">
+                                  {template.name}
+                                </div>
+                                <OptionBadge
+                                  ownerType={
+                                    template?.owner_type ||
+                                    (template?.is_system_template || template?.is_system
+                                      ? "system"
+                                      : "contractor")
+                                  }
+                                />
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
+                                <span className="rounded bg-slate-100 px-2 py-1">
+                                  {getMilestoneCount(template)} milestone
+                                  {getMilestoneCount(template) === 1 ? "" : "s"}
+                                </span>
+                                <span className="rounded bg-slate-100 px-2 py-1">
+                                  {getSafeEstimatedDays(template)} day
+                                  {getSafeEstimatedDays(template) === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-[11px] font-semibold text-slate-500">
+                              Recommended
+                            </div>
+                          </div>
+
+                          {reasons.length ? (
+                            <div className="mt-3">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Why it fits
+                              </div>
+                              <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                                {reasons.map((reason, idx) => (
+                                  <li key={`${template.id}-reason-${idx}`} className="flex gap-2">
+                                    <span
+                                      className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400"
+                                      aria-hidden="true"
+                                    />
+                                    <span>{reason}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+
+                          <PreviewSection
+                            title="Starting point insights"
+                            testId={`step1-recommendation-insights-${template.id}`}
+                          >
+                            <ul className="space-y-1 text-xs text-slate-700">
+                              {insightLines.map((line, idx) => (
+                                <li key={`${template.id}-${line}-${idx}`} className="flex gap-2">
+                                  <span
+                                    className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400"
+                                    aria-hidden="true"
+                                  />
+                                  <span>{line}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </PreviewSection>
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleUseThisTemplate(template)}
+                              disabled={locked}
+                              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                            >
+                              Use This Template
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleBuildWithoutTemplate}
+                              disabled={locked}
+                              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              Build Without Template
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                {!topRecommendedTemplates.length && noTemplateMatch ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-900">
+                    <div className="text-base font-semibold text-amber-950">
+                      No strong template match found.
+                    </div>
+                    <div className="mt-1 text-sm text-amber-900/90">
+                      AI can still help build this agreement from your description.
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleBuildWithoutTemplate}
+                        disabled={locked}
+                        className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                      >
+                        Build Agreement with AI
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
@@ -804,7 +949,7 @@ export default function TemplateSearchSection({
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Template Details
+                        Selected starting point
                       </span>
                       <OptionBadge
                         ownerType={
@@ -873,7 +1018,7 @@ export default function TemplateSearchSection({
                   </div>
                 ) : null}
 
-                <PreviewSection title="Template Insights" testId="step1-template-insights-card">
+                <PreviewSection title="Starting point insights" testId="step1-template-insights-card">
                   <ul className="space-y-1 text-xs text-slate-700">
                     {templateInsightLines.map((line, idx) => (
                       <li key={`${line}-${idx}`} className="flex gap-2">
@@ -935,7 +1080,7 @@ export default function TemplateSearchSection({
 
                   <div className="space-y-3">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-sm font-semibold text-slate-900">Smart Actions</div>
+                      <div className="text-sm font-semibold text-slate-900">Smart actions</div>
                       <div className="mt-1 text-xs text-slate-600">
                         Keep these optional. You can ignore suggestions and continue manually.
                       </div>
