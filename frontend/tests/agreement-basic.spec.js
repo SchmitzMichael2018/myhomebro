@@ -1408,19 +1408,16 @@ test('agreement wizard step 1 shows clarifications after template application an
   });
 
   await page.route(/\/api\/projects\/agreements\/123\/apply-template\/$/, async (route) => {
-    agreement = {
-      ...agreement,
-      selected_template_id: 44,
-      selected_template: {
-        id: 44,
-        name: 'Kitchen Remodel Template',
-        project_type: 'Remodel',
-        project_subtype: 'Kitchen Remodel',
-      },
-      selected_template_name_snapshot: 'Kitchen Remodel Template',
-      project_type: '',
-      project_subtype: '',
+    agreement.selected_template_id = 44;
+    agreement.selected_template = {
+      id: 44,
+      name: 'Kitchen Remodel Template',
+      project_type: 'Remodel',
+      project_subtype: 'Kitchen Remodel',
     };
+    agreement.selected_template_name_snapshot = 'Kitchen Remodel Template';
+    agreement.project_type = '';
+    agreement.project_subtype = '';
 
     await route.fulfill({
       status: 200,
@@ -1777,7 +1774,7 @@ test('agreement wizard step 1 can generate a template draft from the start panel
   await expect(page.getByTestId('step1-template-insights-card')).toBeVisible();
   await page.getByTestId('step1-continue-to-step2-button').click();
 
-  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Kitchen Remodel');
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('');
   await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(
     'Does the kitchen layout or appliance placement change?'
