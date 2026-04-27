@@ -538,10 +538,14 @@ function StepSection({
   highlightLabel = "AI updated",
   emphasis = false,
   sectionRef = null,
+  testId = "",
 }) {
   return (
     <section
       ref={sectionRef}
+      data-testid={testId || undefined}
+      data-highlighted={highlighted ? "true" : "false"}
+      data-emphasis={emphasis ? "true" : "false"}
       className={`rounded-2xl border bg-white p-5 shadow-sm transition-all duration-500 ${
         emphasis ? "border-sky-300 bg-sky-50/70 ring-2 ring-sky-100" : ""
       } ${
@@ -833,6 +837,13 @@ export default function Step1Details({
   );
   const projectDetailsSectionRef = useRef(null);
   const projectDetailsPulseTimerRef = useRef(null);
+  const projectDetailsScrollFrameRef = useRef(null);
+  const projectDetailsFocusFrameRef = useRef(null);
+  const projectTypeFieldRef = useRef(null);
+  const projectTitleFieldRef = useRef(null);
+  const projectScopeFieldRef = useRef(null);
+  const projectDetailsRevealMountedRef = useRef(false);
+  const projectDetailsRevealSeenRef = useRef(false);
 
   const [addrSearch, setAddrSearch] = useState("");
   const patchTimerRef = useRef(null);
@@ -1336,6 +1347,12 @@ export default function Step1Details({
       if (projectDetailsPulseTimerRef.current) {
         clearTimeout(projectDetailsPulseTimerRef.current);
       }
+      if (projectDetailsScrollFrameRef.current && typeof window !== "undefined") {
+        window.cancelAnimationFrame(projectDetailsScrollFrameRef.current);
+      }
+      if (projectDetailsFocusFrameRef.current && typeof window !== "undefined") {
+        window.cancelAnimationFrame(projectDetailsFocusFrameRef.current);
+      }
     };
   }, []);
 
@@ -1357,13 +1374,7 @@ export default function Step1Details({
 
   useEffect(() => {
     if (!pendingProjectDetailsReview?.nonce) return;
-
-    const hasReviewFields =
-      Boolean(safeTrim(dLocal?.project_title)) ||
-      Boolean(safeTrim(dLocal?.project_type)) ||
-      Boolean(safeTrim(dLocal?.project_subtype));
-
-    if (!hasReviewFields || typeof window === "undefined") {
+    if (typeof window === "undefined") {
       setPendingProjectDetailsReview(null);
       return;
     }
@@ -1373,28 +1384,53 @@ export default function Step1Details({
       changedKeys: pendingProjectDetailsReview.changedKeys,
     });
 
-    if (
-      Math.abs(window.scrollY - Number(pendingProjectDetailsReview.baselineScrollY || 0)) > 180
-    ) {
-      setPendingProjectDetailsReview(null);
-      return;
-    }
-
     const target = projectDetailsSectionRef.current;
     if (!target) {
       setPendingProjectDetailsReview(null);
       return;
     }
 
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
-    setProjectDetailsReviewPulse(true);
-    if (projectDetailsPulseTimerRef.current) {
-      clearTimeout(projectDetailsPulseTimerRef.current);
+    if (projectDetailsScrollFrameRef.current) {
+      window.cancelAnimationFrame(projectDetailsScrollFrameRef.current);
     }
-    projectDetailsPulseTimerRef.current = setTimeout(() => {
-      setProjectDetailsReviewPulse(false);
-    }, 2200);
-    setPendingProjectDetailsReview(null);
+    if (projectDetailsFocusFrameRef.current) {
+      window.cancelAnimationFrame(projectDetailsFocusFrameRef.current);
+    }
+
+    const focusProjectDetailsField = () => {
+      const focusTarget =
+        !safeTrim(dLocal?.project_type)
+          ? projectTypeFieldRef.current
+          : !safeTrim(dLocal?.project_title)
+          ? projectTitleFieldRef.current
+          : projectScopeFieldRef.current;
+
+      if (!focusTarget || typeof focusTarget.focus !== "function") return;
+
+      try {
+        focusTarget.focus({ preventScroll: true });
+      } catch {
+        focusTarget.focus();
+      }
+    };
+
+    projectDetailsScrollFrameRef.current = window.requestAnimationFrame(() => {
+      projectDetailsScrollFrameRef.current = null;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      setProjectDetailsReviewPulse(true);
+      if (projectDetailsPulseTimerRef.current) {
+        clearTimeout(projectDetailsPulseTimerRef.current);
+      }
+      projectDetailsPulseTimerRef.current = window.setTimeout(() => {
+        setProjectDetailsReviewPulse(false);
+      }, 2200);
+
+      projectDetailsFocusFrameRef.current = window.requestAnimationFrame(() => {
+        projectDetailsFocusFrameRef.current = null;
+        focusProjectDetailsField();
+        setPendingProjectDetailsReview(null);
+      });
+    });
   }, [
     dLocal?.project_subtype,
     dLocal?.project_title,
@@ -2816,6 +2852,24 @@ export default function Step1Details({
       Boolean(selectedTemplateId) ||
       Boolean(aiSetupResult));
 
+  useEffect(() => {
+    if (!projectDetailsRevealMountedRef.current) {
+      projectDetailsRevealMountedRef.current = true;
+      projectDetailsRevealSeenRef.current = shouldShowProjectDetails;
+      return;
+    }
+
+    if (shouldShowProjectDetails) {
+      if (!projectDetailsRevealSeenRef.current) {
+        projectDetailsRevealSeenRef.current = true;
+        queueProjectDetailsReview(["project_title", "project_type", "project_subtype", "description"]);
+      }
+      return;
+    }
+
+    projectDetailsRevealSeenRef.current = false;
+  }, [shouldShowProjectDetails, selectedTemplateId, appliedTemplateId, aiSetupResult?.kind]);
+
   return (
     <>
       <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -3470,6 +3524,7 @@ export default function Step1Details({
             title="Project Details"
             description={projectDetailsDescription}
             sectionRef={projectDetailsSectionRef}
+            testId="step1-project-details-card"
             highlighted={hasAiSectionHighlight(
               "project_title",
               "project_type",
@@ -3720,6 +3775,7 @@ export default function Step1Details({
                   </div>
                     <select
                       data-testid="agreement-project-type-select"
+                      ref={projectTypeFieldRef}
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                       name="project_type"
                       value={dLocal.project_type || ""}
@@ -3918,12 +3974,13 @@ export default function Step1Details({
                     </span>
                   ) : null}
                 </div>
-                <input
-                  data-testid="agreement-project-title-input"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  name="project_title"
-                  value={dLocal.project_title}
-                  onChange={locked ? undefined : handleStep1LocalChange}
+                  <input
+                    data-testid="agreement-project-title-input"
+                    ref={projectTitleFieldRef}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                    name="project_title"
+                    value={dLocal.project_title}
+                    onChange={locked ? undefined : handleStep1LocalChange}
                   placeholder="e.g., Master Bedroom Addition"
                   disabled={locked}
                 />
@@ -3940,6 +3997,7 @@ export default function Step1Details({
 
                 <textarea
                   data-testid="proposal-draft-textarea"
+                  ref={projectScopeFieldRef}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   rows={8}
                   name="description"

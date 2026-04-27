@@ -381,12 +381,25 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   );
   await page.getByTestId('step1-find-best-starting-point-button').click();
   await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+  await expect(page.getByTestId('step1-project-details-card')).toHaveCount(0);
   await page.getByTestId('step1-build-agreement-ai-button').click();
 
+  const projectDetailsCard = page.getByTestId('step1-project-details-card');
+  await expect(projectDetailsCard).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(projectDetailsCard).toHaveAttribute('data-emphasis', 'true');
+  await expect.poll(async () => {
+    const box = await projectDetailsCard.boundingBox();
+    return box?.y ?? 9999;
+  }).toBeLessThan(120);
+  await expect.poll(async () =>
+    page.evaluate(() => document.activeElement?.getAttribute('data-testid') || '')
+  ).toMatch(/^(agreement-project-type-select|agreement-project-title-input|proposal-draft-textarea)$/);
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
+  await page.waitForTimeout(2300);
+  await expect(projectDetailsCard).toHaveAttribute('data-emphasis', 'false');
 
   await page.getByTestId('agreement-project-title-input').fill(
     'Playwright Agreement Smoke'
