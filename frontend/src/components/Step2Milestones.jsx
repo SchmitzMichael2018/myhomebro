@@ -1,4 +1,4 @@
-// frontend/src/components/Step2Milestones.jsx
+﻿// frontend/src/components/Step2Milestones.jsx
 // v2026-03-18-step2-template-aware-full
 // Changes:
 // - preserves existing Step 2 milestone workflow, AI suggestions, clarifications, save-as-template, edit modal
@@ -594,7 +594,7 @@ function getEstimateAssistMeta(m) {
           materialsHigh !== null &&
           materialsHigh !== undefined &&
           materialsHigh !== ""
-        ? `Materials: ${formatCurrency(materialsLow)} – ${formatCurrency(materialsHigh)}`
+        ? `Materials: ${formatCurrency(materialsLow)} â€“ ${formatCurrency(materialsHigh)}`
         : "",
     confidenceLabel: formatEstimateConfidence(confidence),
     pricingSources: derivePricingSources(pricingReason),
@@ -628,7 +628,7 @@ function toCompactLine(value, maxLen = 140) {
   const text = safeStr(value).replace(/\s+/g, " ");
   if (!text) return "";
   if (text.length <= maxLen) return text;
-  return `${text.slice(0, maxLen - 1).trim()}…`;
+  return `${text.slice(0, maxLen - 1).trim()}â€¦`;
 }
 
 function projectContextQuantitySignals(answers = {}, measurementNotes = "") {
@@ -720,6 +720,23 @@ function buildMilestonePricingSignature(rows = []) {
   );
 }
 
+function normalizeCardRows(rows = []) {
+  return [...(Array.isArray(rows) ? rows : [])]
+    .map((row, idx) => ({
+      ...row,
+      order: row?.order != null && row.order !== "" ? Number(row.order) : idx + 1,
+    }))
+    .sort((a, b) => {
+      const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+      const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+
+      const idA = Number.isFinite(Number(a?.id)) ? Number(a.id) : Number.MAX_SAFE_INTEGER;
+      const idB = Number.isFinite(Number(b?.id)) ? Number(b.id) : Number.MAX_SAFE_INTEGER;
+      return idA - idB;
+    });
+}
+
 
 export default function Step2Milestones({
   agreementId,
@@ -772,6 +789,10 @@ export default function Step2Milestones({
 
   const [editOpen, setEditOpen] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
+  const [newMilestoneOpen, setNewMilestoneOpen] = useState(false);
+  const [expandedMilestoneId, setExpandedMilestoneId] = useState(null);
+  const newMilestoneTitleRef = useRef(null);
+  const dragSourceIndexRef = useRef(null);
   const [editForm, setEditForm] = useState({
     id: null,
     order: null,
@@ -797,6 +818,14 @@ export default function Step2Milestones({
   const [editAiBusy, setEditAiBusy] = useState(false);
   const [editAiErr, setEditAiErr] = useState("");
   const [editAiPreview, setEditAiPreview] = useState("");
+
+  useEffect(() => {
+    if (!newMilestoneOpen) return;
+    const timer = window.requestAnimationFrame(() => {
+      newMilestoneTitleRef.current?.focus?.();
+    });
+    return () => window.cancelAnimationFrame(timer);
+  }, [newMilestoneOpen]);
 
   const [agreementMeta, setAgreementMeta] = useState(null);
 
@@ -1097,6 +1126,46 @@ export default function Step2Milestones({
     });
   }
 
+  function updateCardMilestoneField(milestoneId, field, value) {
+    setFallbackMilestones((prev) => {
+      const base = Array.isArray(prev) ? prev : Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
+      const nextRows = base.map((row) => {
+        if (row?.id !== milestoneId) return row;
+        const next = { ...row, [field]: value };
+        if (field === "order") {
+          next.order = Number(value) || row.order;
+        }
+        return next;
+      });
+      return normalizeCardRows(nextRows);
+    });
+    markMilestonesUserModified();
+  }
+
+  function toggleCardExpanded(milestoneId) {
+    setExpandedMilestoneId((current) => (current === milestoneId ? null : milestoneId));
+  }
+
+  function moveCardMilestone(fromIndex, toIndex) {
+    if (fromIndex === toIndex) return;
+    setFallbackMilestones((prev) => {
+      const base = Array.isArray(prev) ? [...prev] : Array.isArray(effectiveMilestones) ? [...effectiveMilestones] : [];
+      if (!base.length) return base;
+      if (fromIndex < 0 || fromIndex >= base.length) return base;
+      if (toIndex < 0 || toIndex >= base.length) return base;
+      const next = [...base];
+      const [item] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, item);
+      return normalizeCardRows(
+        next.map((row, idx) => ({
+          ...row,
+          order: idx + 1,
+        }))
+      );
+    });
+    markMilestonesUserModified();
+  }
+
   function markMilestonesUserModified() {
     milestoneUserModifiedRef.current = true;
     try {
@@ -1124,7 +1193,7 @@ export default function Step2Milestones({
   function lockToast() {
     toast.error(
       milestonesLockReason
-        ? `Milestones are locked — ${milestonesLockReason}`
+        ? `Milestones are locked â€” ${milestonesLockReason}`
         : "Milestones are locked for this agreement."
     );
   }
@@ -1652,7 +1721,7 @@ export default function Step2Milestones({
         pricing:
           estimatePreview?.suggested_price_low && estimatePreview?.suggested_price_high
             ? {
-                total_range: `${formatCurrency(estimatePreview.suggested_price_low)}–${formatCurrency(
+                total_range: `${formatCurrency(estimatePreview.suggested_price_low)}â€“${formatCurrency(
                   estimatePreview.suggested_price_high
                 )}`,
               }
@@ -1855,7 +1924,7 @@ export default function Step2Milestones({
     }
     if (templateApplied) {
       toast("A template is already applied. Use the template-driven milestone structure instead of regenerating milestones with AI here.", {
-        icon: "🧩",
+        icon: "ðŸ§©",
       });
       return;
     }
@@ -1884,7 +1953,44 @@ export default function Step2Milestones({
       notes: `${mLocal.description || ""}\n\n${extraNotes.filter(Boolean).join("\n")}`.trim(),
     });
     if (preview) {
-      setAiPreview(shapeAiMilestonePreview(preview));
+      const shaped = shapeAiMilestonePreview(preview);
+      setAiPreview(shaped);
+      const suggestedRows = normalizeCardRows(
+        (Array.isArray(shaped?.milestones) ? shaped.milestones : []).map((row, idx) =>
+          normalizeMilestoneForLocalFallback(
+            {
+              ...row,
+              id: row?.milestone_id ?? row?.id ?? `ai-${idx + 1}`,
+            },
+            idx + 1
+          )
+        )
+      ).filter(Boolean);
+      if (suggestedRows.length) {
+        if (effectiveMilestones.length) {
+          const replaceExisting = window.confirm(
+            "Replace the current milestones with AI suggestions? Press Cancel to append them instead."
+          );
+          setFallbackMilestones(
+            normalizeCardRows(
+              replaceExisting
+                ? suggestedRows
+                : [...effectiveMilestones, ...suggestedRows]
+            )
+          );
+        } else {
+          setFallbackMilestones(suggestedRows);
+        }
+        setExpandedMilestoneId(suggestedRows[0]?.id || null);
+        setNewMilestoneOpen(false);
+        setAiSuggestedMilestoneIds(suggestedRows.map((row) => row.id).filter(Boolean));
+        const feedback = "AI drafted milestone cards â€” review and adjust as needed.";
+        setAiChangeSummary(feedback);
+        onAiUpdateFeedback(feedback);
+        toast.success(
+          `Generated ${suggestedRows.length} suggested milestone${suggestedRows.length === 1 ? "" : "s"}.`
+        );
+      }
     }
   }
 
@@ -1898,7 +2004,7 @@ export default function Step2Milestones({
     }
     if (templateApplied) {
       toast("This agreement is template-driven. AI bulk milestone replacement/appending is disabled here to avoid overwriting the template structure.", {
-        icon: "🧩",
+        icon: "ðŸ§©",
       });
       return;
     }
@@ -1956,6 +2062,11 @@ export default function Step2Milestones({
       toast("No milestone amount suggestions are available yet.");
       return;
     }
+
+    const shouldApply = window.confirm(
+      "Apply pricing guidance to the current milestones? Existing amounts will be updated for review."
+    );
+    if (!shouldApply) return;
 
     const suggestionById = new Map(
       suggestions.filter((row) => row?.milestone_id != null).map((row) => [row.milestone_id, row])
@@ -2141,12 +2252,15 @@ export default function Step2Milestones({
       const base = baseById.get(row.id);
       if (!base) return false;
       return (
+        safeStr(base?.title) !== safeStr(row?.title) ||
+        safeStr(base?.description) !== safeStr(row?.description) ||
         amountsDifferMeaningfully(base?.amount, parseAmountStrict(row?.amount)) ||
         timelineDiffers(
           base,
           row?.start_date || row?.start,
           row?.completion_date || row?.end_date || row?.end
         )
+        || Number(base?.order || 0) !== Number(row?.order || 0)
       );
     });
 
@@ -2155,6 +2269,7 @@ export default function Step2Milestones({
     for (const row of stagedRows) {
       await updateMilestone({
         id: row.id,
+        order: Number(row.order || 0) || null,
         title: safeStr(row.title),
         description: safeStr(row.description),
         start_date: row.start_date || null,
@@ -2196,6 +2311,12 @@ export default function Step2Milestones({
       if (result?.refreshed === false) {
         applyLocalMilestoneFallback("create", result?.milestone);
       }
+      setNewMilestoneOpen(false);
+      onMLocalChange("title", "");
+      onMLocalChange("start", "");
+      onMLocalChange("end", "");
+      onMLocalChange("amount", "");
+      onMLocalChange("description", "");
     } catch (e) {
       if (isOverlapError(e)) {
         setOverlapConfirm({ mode: "create", data: mLocal });
@@ -2544,10 +2665,10 @@ export default function Step2Milestones({
 
       if (hasRecommendedClarifications) {
         toast(`Quick review: ${recommendedClarificationCount} recommended clarification${recommendedClarificationCount === 1 ? "" : "s"}.`, {
-          icon: "📝",
+          icon: "ðŸ“",
         });
       } else {
-        toast("Quick review: clarifications available before continuing.", { icon: "📝" });
+        toast("Quick review: clarifications available before continuing.", { icon: "ðŸ“" });
       }
       return;
     }
@@ -2616,7 +2737,7 @@ export default function Step2Milestones({
           setAiSuggestedMilestoneIds(createdIds);
           markAiUpdated(createdIds.map((id) => `milestone:${id}`));
         }
-        const feedback = "AI drafted your milestones — review and adjust as needed.";
+        const feedback = "AI drafted your milestones â€” review and adjust as needed.";
         setAutoDraftBanner(feedback);
         setAiChangeSummary(feedback);
         onAiUpdateFeedback(feedback);
@@ -2819,7 +2940,7 @@ export default function Step2Milestones({
                 {step2ModeMeta.timelineLabel}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">
-                {minStart && maxEnd ? `${friendly(minStart)} → ${friendly(maxEnd)}` : "Add dates to map timing"}
+                {minStart && maxEnd ? `${friendly(minStart)} â†’ ${friendly(maxEnd)}` : "Add dates to map timing"}
               </div>
               <div className="mt-1 text-xs text-slate-600">
                 {effectiveMilestones.length} milestone{effectiveMilestones.length === 1 ? "" : "s"} planned
@@ -2863,7 +2984,49 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {projectContextSummary.hasAny ? (
+      <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="step2-work-plan-summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-semibold text-slate-950">Review the work plan</div>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                  Path: {projectClassLabel(projectClass)}
+                </span>
+              </div>
+            <div className="mt-1 text-sm text-slate-600">
+              Review and adjust the milestone cards below. Keep the plan simple enough to scan at a glance.
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-700">
+              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                {effectiveMilestones.length} milestone{effectiveMilestones.length === 1 ? "" : "s"}
+              </span>
+              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                Total: {formatCurrency(total)}
+              </span>
+              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                Duration: {estimateSummaryMeta?.variabilityMessage ? estimatePreview?.suggested_duration_days ? `${estimatePreview.suggested_duration_days} days` : "Edit below" : "Edit below"}
+              </span>
+              <span className="rounded-full bg-sky-50 px-2 py-1 font-medium text-sky-700">
+                {projectContextSummary.projectFamilyLabel || projectContextSummary.projectType || "Project path"}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {effectiveMilestones.length ? (
+              <button
+                type="button"
+                onClick={handleOpenSaveTemplate}
+                disabled={milestonesLocked}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Save as Template
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      {false && projectContextSummary.hasAny ? (
         <details className="mb-3 rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
           <summary className="cursor-pointer list-none px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2930,7 +3093,7 @@ export default function Step2Milestones({
         </details>
       ) : null}
 
-      {recurringSummary ? (
+      {false && recurringSummary ? (
         <div
           data-testid="step2-recurring-summary"
           className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3"
@@ -2946,7 +3109,7 @@ export default function Step2Milestones({
           <div className="mt-1 text-xs text-emerald-900/90">
             Status: {recurringSummary.status}
             {recurringSummary.nextOccurrence
-              ? ` • Next occurrence: ${recurringSummary.nextOccurrence}`
+              ? ` â€¢ Next occurrence: ${recurringSummary.nextOccurrence}`
               : ""}
           </div>
           {recurringSummary.previewOccurrences.length ? (
@@ -2957,11 +3120,11 @@ export default function Step2Milestones({
                   className="rounded border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-700"
                 >
                   <div className="font-semibold text-slate-900">
-                    {row.title} • Visit {row.sequence_number}
+                    {row.title} â€¢ Visit {row.sequence_number}
                   </div>
                   <div className="mt-1">
                     Service date: {row.scheduled_service_date || "Pending"}
-                    {row.amount ? ` • ${formatCurrency(row.amount)}` : ""}
+                    {row.amount ? ` â€¢ ${formatCurrency(row.amount)}` : ""}
                   </div>
                 </div>
               ))}
@@ -2970,7 +3133,8 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <StartWithAIEntry
+      {false && (
+        <StartWithAIEntry
         className=""
         testId="milestones-ai-entry"
         title={step2ModeMeta.aiEntryTitle}
@@ -2978,6 +3142,7 @@ export default function Step2Milestones({
         context={assistantContext}
         onAction={handleAssistantAction}
       />
+      )}
 
       {aiChangeSummary ? (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -2996,7 +3161,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {hasPlanningDetails ? (
+      {false && hasPlanningDetails ? (
         <details className="mb-3 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <summary className="cursor-pointer list-none px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -3059,7 +3224,7 @@ export default function Step2Milestones({
         </details>
       ) : null}
 
-      {showAssistantMilestoneSuggestions ? (
+      {false && showAssistantMilestoneSuggestions ? (
         <div
           data-testid="assistant-suggested-milestones"
           className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4"
@@ -3080,7 +3245,7 @@ export default function Step2Milestones({
                 disabled={assistantApplyingMilestones || milestonesLocked}
                 className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
               >
-                {assistantApplyingMilestones ? "Adding…" : "Add Suggested Milestones"}
+                {assistantApplyingMilestones ? "Addingâ€¦" : "Add Suggested Milestones"}
               </button>
               <button
                 type="button"
@@ -3127,7 +3292,7 @@ export default function Step2Milestones({
           {step2ModeMeta.timelineLabel}:{" "}
           {minStart && maxEnd ? (
             <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-              {friendly(minStart)} → {friendly(maxEnd)} (est.)
+              {friendly(minStart)} â†’ {friendly(maxEnd)} (est.)
             </span>
           ) : (
             <span className="text-gray-400">add dates to see range</span>
@@ -3180,7 +3345,7 @@ export default function Step2Milestones({
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
                 title="Refresh estimate-assist guidance from current clarification answers without changing milestone amounts."
               >
-                {pricingRefreshing ? "Refreshing Pricing…" : "Refresh Pricing Estimate"}
+                {pricingRefreshing ? "Refreshing Pricingâ€¦" : "Refresh Pricing Estimate"}
               </button>
             ) : null}
 
@@ -3195,30 +3360,26 @@ export default function Step2Milestones({
             {!clarReviewed ? (
               <span className="text-xs text-gray-500">
                 {hasRecommendedClarifications
-                  ? "You’ll review recommended clarifications before continuing."
-                  : "You’ll review clarifications before continuing."}
+                  ? "Youâ€™ll review recommended clarifications before continuing."
+                  : "Youâ€™ll review clarifications before continuing."}
               </span>
             ) : null}
 
             {aiError ? <span className="text-sm text-red-600">{aiError}</span> : null}
           </div>
 
-          <details className="relative">
-            <summary className="cursor-pointer list-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              More
-            </summary>
-            <div className="absolute right-0 z-10 mt-2 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-              <button
-                type="button"
-                onClick={handleOpenSaveTemplate}
-                disabled={milestonesLocked}
-                className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                title={milestonesLocked ? "Locked" : "Save current agreement milestones as a reusable template"}
-              >
-                Save as Template
-              </button>
-            </div>
-          </details>
+          {effectiveMilestones.length ? (
+            <button
+              type="button"
+              onClick={handleOpenSaveTemplate}
+              disabled={milestonesLocked}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              title={milestonesLocked ? "Locked" : "Save current agreement milestones as a reusable template"}
+              data-testid="step2-save-as-template-top"
+            >
+              Save as Template
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -3231,7 +3392,7 @@ export default function Step2Milestones({
                 {pricingReviewState.count} milestone{pricingReviewState.count === 1 ? "" : "s"} have new suggested amount{pricingReviewState.count === 1 ? "" : "s"}.
                 {pricingReviewState.count > 0 ? (
                   <>
-                    {" "}Current {formatCurrency(pricingReviewState.currentTotal)} → Suggested {formatCurrency(pricingReviewState.suggestedTotal)}
+                    {" "}Current {formatCurrency(pricingReviewState.currentTotal)} â†’ Suggested {formatCurrency(pricingReviewState.suggestedTotal)}
                   </>
                 ) : null}
               </div>
@@ -3279,7 +3440,7 @@ export default function Step2Milestones({
                 </span>
               </div>
               <div className="mt-1 text-sm text-slate-700">
-                Keep these suggestions in view while you edit milestones. They’re advisory and easy to ignore.
+                Keep these suggestions in view while you edit milestones. Theyâ€™re advisory and easy to ignore.
               </div>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
                 <li>{step2InsightCards.milestones.body}</li>
@@ -3335,7 +3496,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
-                  {formatCurrency(estimatePreview.suggested_price_low)} â€“ {formatCurrency(estimatePreview.suggested_price_high)}
+                  {formatCurrency(estimatePreview.suggested_price_low)} Ã¢â‚¬â€œ {formatCurrency(estimatePreview.suggested_price_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Centered around {formatCurrency(estimatePreview.suggested_total_price)}
@@ -3344,7 +3505,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Duration range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
-                  {formatDurationDays(estimatePreview.suggested_duration_low)} â€“ {formatDurationDays(estimatePreview.suggested_duration_high)}
+                  {formatDurationDays(estimatePreview.suggested_duration_low)} Ã¢â‚¬â€œ {formatDurationDays(estimatePreview.suggested_duration_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Typical pace: {formatDurationDays(estimatePreview.suggested_duration_days)}
@@ -3399,7 +3560,7 @@ export default function Step2Milestones({
                 className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 data-testid="step2-refresh-estimate"
               >
-                {estimateRefreshing ? "Refreshing Estimate…" : "Refresh Estimate"}
+                {estimateRefreshing ? "Refreshing Estimateâ€¦" : "Refresh Estimate"}
               </button>
               <button
                 type="button"
@@ -3471,7 +3632,7 @@ export default function Step2Milestones({
                   <div className="rounded-xl border border-emerald-200 bg-white px-3 py-3">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Suggested budget</div>
                     <div className="mt-1 text-base font-semibold text-slate-900" data-testid="step2-suggested-plan-budget">
-                      {formatCurrency(suggestedPlan?.suggested_budget_low)} – {formatCurrency(suggestedPlan?.suggested_budget_high)}
+                      {formatCurrency(suggestedPlan?.suggested_budget_low)} â€“ {formatCurrency(suggestedPlan?.suggested_budget_high)}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
                       Centered around {formatCurrency(suggestedPlan?.suggested_budget_center || estimatePreview?.suggested_total_price)}
@@ -3480,7 +3641,7 @@ export default function Step2Milestones({
                   <div className="rounded-xl border border-emerald-200 bg-white px-3 py-3">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Suggested duration</div>
                     <div className="mt-1 text-base font-semibold text-slate-900" data-testid="step2-suggested-plan-duration">
-                      {formatDurationDays(suggestedPlan?.suggested_duration_low_days)} – {formatDurationDays(suggestedPlan?.suggested_duration_high_days)}
+                      {formatDurationDays(suggestedPlan?.suggested_duration_low_days)} â€“ {formatDurationDays(suggestedPlan?.suggested_duration_high_days)}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
                       {suggestedPlan?.suggested_duration_days
@@ -3731,7 +3892,7 @@ export default function Step2Milestones({
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   data-testid="step2-refresh-estimate"
                 >
-                  {estimateRefreshing ? "Refreshing Estimate…" : "Refresh Estimate"}
+                  {estimateRefreshing ? "Refreshing Estimateâ€¦" : "Refresh Estimate"}
                 </button>
                 <button
                   type="button"
@@ -3784,7 +3945,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
-                  {formatCurrency(estimatePreview.suggested_price_low)} – {formatCurrency(estimatePreview.suggested_price_high)}
+                  {formatCurrency(estimatePreview.suggested_price_low)} â€“ {formatCurrency(estimatePreview.suggested_price_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Centered around {formatCurrency(estimatePreview.suggested_total_price)}
@@ -3793,7 +3954,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Duration range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
-                  {formatDurationDays(estimatePreview.suggested_duration_low)} – {formatDurationDays(estimatePreview.suggested_duration_high)}
+                  {formatDurationDays(estimatePreview.suggested_duration_low)} â€“ {formatDurationDays(estimatePreview.suggested_duration_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Typical pace: {formatDurationDays(estimatePreview.suggested_duration_days)}
@@ -4043,7 +4204,7 @@ export default function Step2Milestones({
           <ul className="mb-4 list-disc pl-5 text-sm">
             {aiPreview.milestones.map((m, i) => (
               <li key={i}>
-                <strong>{m.title}</strong> — ${Number(m.amount || 0).toFixed(2)}
+                <strong>{m.title}</strong> â€” ${Number(m.amount || 0).toFixed(2)}
               </li>
             ))}
           </ul>
@@ -4095,7 +4256,7 @@ export default function Step2Milestones({
               disabled={aiApplying || milestonesLocked || templateApplied}
               className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
             >
-              {aiApplying ? "Applying…" : "Replace Milestones (Bulk)"}
+              {aiApplying ? "Applyingâ€¦" : "Replace Milestones (Bulk)"}
             </button>
             <button
               type="button"
@@ -4103,7 +4264,7 @@ export default function Step2Milestones({
               disabled={aiApplying || milestonesLocked || templateApplied}
               className="rounded border px-3 py-2 text-sm disabled:opacity-60"
             >
-              {aiApplying ? "Applying…" : "Append Milestones (Bulk)"}
+              {aiApplying ? "Applyingâ€¦" : "Append Milestones (Bulk)"}
             </button>
             <button
               type="button"
@@ -4127,7 +4288,382 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100">
+      <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100" data-testid="step2-milestone-card-list">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h4 className="text-base font-semibold text-slate-950">
+              {isCommercialProject ? "Review the schedule of values" : "Review the work plan"}
+            </h4>
+            <p className="mt-1 text-sm text-slate-600">
+              {isCommercialProject
+                ? "Expand a card to edit it inline. Drag cards to reorder the schedule."
+                : "Expand a card to edit it inline. Drag cards to reorder the plan."}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setNewMilestoneOpen((open) => !open)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              disabled={milestonesLocked}
+              data-testid="step2-add-milestone"
+            >
+              {newMilestoneOpen ? "Hide Add Milestone" : "+ Add Milestone"}
+            </button>
+            <button
+              type="button"
+              onClick={handleRunAiSuggest}
+              disabled={milestonesLocked || templateApplied}
+              className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+              data-testid="step2-improve-with-ai"
+            >
+              Improve with AI
+            </button>
+          </div>
+        </div>
+
+        {newMilestoneOpen ? (
+          <div
+            className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm"
+            data-testid="step2-new-milestone-card"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-950">
+                  {isCommercialProject ? "New schedule item" : "New milestone"}
+                </div>
+                <div className="mt-1 text-xs text-slate-600">Add one card at a time so the plan stays easy to scan.</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <input
+                ref={newMilestoneTitleRef}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-4"
+                placeholder="Title"
+                name="title"
+                value={mLocal.title}
+                onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+                disabled={milestonesLocked}
+                data-testid="step2-new-milestone-title"
+              />
+              <input
+                type="date"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
+                name="start"
+                value={mLocal.start || ""}
+                onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+                disabled={milestonesLocked}
+                data-testid="step2-new-milestone-start"
+              />
+              <input
+                type="date"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
+                name="end"
+                value={mLocal.end || ""}
+                onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+                disabled={milestonesLocked}
+                data-testid="step2-new-milestone-due"
+              />
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                placeholder={step2ModeMeta.amountLabel}
+                name="amount"
+                value={mLocal.amount}
+                onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+                disabled={milestonesLocked}
+                data-testid="step2-new-milestone-amount"
+              />
+              <div className="md:col-span-12">
+                <textarea
+                  className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  rows={3}
+                  placeholder="Description (details, materials, notes)â€¦"
+                  name="description"
+                  value={mLocal.description}
+                  onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+                  disabled={milestonesLocked}
+                  data-testid="step2-new-milestone-description"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  handleManualSave().catch((e) =>
+                    toast.error(e?.response?.data?.detail || e?.message || "Save failed.")
+                  )
+                }
+                className="rounded-xl bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
+                disabled={milestonesLocked}
+                data-testid="step2-save-new-milestone"
+              >
+                {isCommercialProject ? "Add Schedule Item" : "Add Milestone"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewMilestoneOpen(false)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {isProgressPayments || isCommercialProject ? (
+          <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm text-indigo-900">
+            <div className="font-semibold">
+              {isProgressPayments ? step2ModeMeta.progressPanelTitle : step2ModeMeta.simplePanelTitle}
+            </div>
+            <div className="mt-1">
+              {isProgressPayments ? step2ModeMeta.progressPanelBody : step2ModeMeta.simplePanelBody}
+            </div>
+          </div>
+        ) : null}
+
+        {effectiveMilestones.length ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                {effectiveMilestones.length} milestone{effectiveMilestones.length === 1 ? "" : "s"}
+              </span>
+              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                Total: {formatCurrency(total)}
+              </span>
+              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                Path: {projectContextSummary.projectFamilyLabel || projectContextSummary.projectType || projectClassLabel(projectClass)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {normalizeCardRows(effectiveMilestones).map((m, idx) => {
+                const estimate = getEstimateAssistMeta(m);
+                const projectEstimateGuidance =
+                  estimateGuidanceByMilestone.get(m?.id ?? `row-${idx + 1}`) || null;
+                const aiHighlight = m?.id != null ? aiHighlights[`milestone:${m.id}`] : null;
+                const isAiSuggested = m?.id != null && aiSuggestedMilestoneIds.includes(m.id);
+                const isExpanded = expandedMilestoneId === m.id;
+                const summaryStart = friendly(toDateOnly(m.start_date || m.start));
+                const summaryDue = friendly(toDateOnly(m.completion_date || m.end_date || m.end));
+                return (
+                  <article
+                    key={m.id || `${m.title}-${idx}`}
+                    className={`rounded-2xl border bg-white p-4 shadow-sm transition-shadow ${
+                      aiHighlight ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-200"
+                    } ${isExpanded ? "shadow-md" : ""}`}
+                    data-testid={`step2-milestone-card-${m.id || idx + 1}`}
+                    draggable={!milestonesLocked}
+                    onDragStart={() => {
+                      dragSourceIndexRef.current = idx;
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      const from = dragSourceIndexRef.current;
+                      if (from == null || from === idx) return;
+                      moveCardMilestone(from, idx);
+                      dragSourceIndexRef.current = null;
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        className="mt-1 cursor-grab rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-500"
+                        aria-label="Drag milestone"
+                        data-testid={`step2-milestone-drag-handle-${m.id || idx + 1}`}
+                        onMouseDown={() => {
+                          dragSourceIndexRef.current = idx;
+                        }}
+                      >
+                        ::
+                      </button>
+                      <button
+                        type="button"
+                        className="flex-1 text-left"
+                        onClick={() => toggleCardExpanded(m.id)}
+                        data-testid={`step2-milestone-summary-${m.id || idx + 1}`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-base font-semibold text-slate-950">
+                            {m.title || "Untitled milestone"}
+                          </div>
+                          {isAiSuggested ? (
+                            <span
+                              data-testid={`step2-milestone-ai-indicator-${m.id || idx + 1}`}
+                              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                            >
+                              AI suggested
+                            </span>
+                          ) : null}
+                          {estimate.type ? (
+                            <span
+                              className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700"
+                              data-testid={`step2-milestone-type-badge-${m.id || idx + 1}`}
+                            >
+                              {estimate.typeLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900">
+                          {Number(m.amount || 0).toLocaleString(undefined, { style: "currency", currency: "USD" })}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          {summaryStart || "Start"} â€” {summaryDue || "Due"}
+                        </div>
+                      </button>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs font-medium disabled:opacity-60"
+                          onClick={() => toggleCardExpanded(m.id)}
+                          disabled={milestonesLocked}
+                        >
+                          {isExpanded ? "Collapse" : "Edit"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs font-medium disabled:opacity-60"
+                          onClick={() => handleDelete(m.id)}
+                          disabled={milestonesLocked}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded ? (
+                      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12" data-testid={`step2-milestone-editor-${m.id || idx + 1}`}>
+                        <input
+                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-4"
+                          placeholder="Title"
+                          value={m.title || ""}
+                          onChange={(e) => updateCardMilestoneField(m.id, "title", e.target.value)}
+                          disabled={milestonesLocked}
+                          data-testid={`step2-milestone-title-${m.id || idx + 1}`}
+                        />
+                        <input
+                          type="date"
+                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
+                          value={toDateOnly(m.start_date || m.start)}
+                          onChange={(e) => updateCardMilestoneField(m.id, "start_date", e.target.value)}
+                          disabled={milestonesLocked}
+                          data-testid={`step2-milestone-start-${m.id || idx + 1}`}
+                        />
+                        <input
+                          type="date"
+                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
+                          value={toDateOnly(m.completion_date || m.end_date || m.end)}
+                          onChange={(e) => updateCardMilestoneField(m.id, "completion_date", e.target.value)}
+                          disabled={milestonesLocked}
+                          data-testid={`step2-milestone-due-${m.id || idx + 1}`}
+                        />
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                          value={m.amount ?? ""}
+                          onChange={(e) => updateCardMilestoneField(m.id, "amount", e.target.value)}
+                          disabled={milestonesLocked}
+                          data-testid={`step2-milestone-amount-${m.id || idx + 1}`}
+                        />
+                        <div className="md:col-span-12">
+                          <textarea
+                            className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                            rows={3}
+                            value={m.description || ""}
+                            onChange={(e) => updateCardMilestoneField(m.id, "description", e.target.value)}
+                            disabled={milestonesLocked}
+                            data-testid={`step2-milestone-description-${m.id || idx + 1}`}
+                          />
+                        </div>
+                        <div className="md:col-span-12">
+                          <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                            {estimate.hasAnything ? (
+                              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                                {estimate.pricingModeLabel || "Advisory pricing"}
+                              </span>
+                            ) : null}
+                            {estimate.hasPrimaryRange ? (
+                              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                                {estimate.primaryLabel}: {formatCurrency(estimate.primaryLow)} â€“ {formatCurrency(estimate.primaryHigh)}
+                              </span>
+                            ) : null}
+                            {estimate.durationLabel ? (
+                              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                                {estimate.durationLabel}
+                              </span>
+                            ) : null}
+                            {projectEstimateGuidance?.share ? (
+                              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                                {projectClass === "commercial" ? "Schedule share" : "Suggested share"}: {formatPercent(projectEstimateGuidance.share)}
+                              </span>
+                            ) : null}
+                            {estimate.materials ? (
+                              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                                Materials: {estimate.materials}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div
+            className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-6 text-center"
+            data-testid="step2-milestone-empty-state"
+          >
+            <div className="text-base font-semibold text-slate-950">Start your work plan</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Add a milestone card or let AI draft one to get moving quickly.
+            </div>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleRunAiSuggest}
+                disabled={milestonesLocked || templateApplied}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                data-testid="step2-empty-generate-milestones"
+              >
+                Generate Suggested Milestones
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewMilestoneOpen(true)}
+                disabled={milestonesLocked}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Add Milestone
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleOpenSaveTemplate}
+            disabled={milestonesLocked || !effectiveMilestones.length}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            data-testid="step2-save-as-template"
+          >
+            Save as Template
+          </button>
+        </div>
+      </section>
+
+      {false && (
+        <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100">
       <div className="mb-4">
         <h4 className="text-base font-semibold text-slate-950">
           {isCommercialProject ? "Add or edit schedule items" : "Add or edit milestones"}
@@ -4179,7 +4715,7 @@ export default function Step2Milestones({
           <textarea
             className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
             rows={3}
-            placeholder="Description (details, materials, notes)…"
+            placeholder="Description (details, materials, notes)â€¦"
             name="description"
             value={mLocal.description}
             onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -4262,7 +4798,7 @@ export default function Step2Milestones({
                   <td className="px-3 py-2">{m?.order ?? idx + 1}</td>
 
                   <td className="px-3 py-2">
-                    <div>{m.title || "—"}</div>
+                    <div>{m.title || "â€”"}</div>
                     {isAiSuggested ? (
                       <div className="mt-1">
                         <span
@@ -4285,7 +4821,7 @@ export default function Step2Milestones({
                     ) : null}
                   </td>
 
-                  <td className="whitespace-pre-wrap px-3 py-2">{m.description || "—"}</td>
+                  <td className="whitespace-pre-wrap px-3 py-2">{m.description || "â€”"}</td>
 
                   <td className="px-3 py-2" data-testid={`step2-milestone-start-${m.id || idx + 1}`}>
                     {friendly(toDateOnly(m.start_date || m.start))}
@@ -4305,7 +4841,7 @@ export default function Step2Milestones({
                         {pricingEstimateStale ? (
                           <div>
                             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              Stale — refresh pricing
+                              Stale - refresh pricing
                             </span>
                           </div>
                         ) : null}
@@ -4322,7 +4858,7 @@ export default function Step2Milestones({
                           <div className="text-gray-700">
                             {estimate.primaryLabel}:{" "}
                             <span className="font-medium">
-                              {formatCurrency(estimate.primaryLow)} – {formatCurrency(estimate.primaryHigh)}
+                              {formatCurrency(estimate.primaryLow)} - {formatCurrency(estimate.primaryHigh)}
                             </span>
                           </div>
                         ) : null}
@@ -4413,7 +4949,7 @@ export default function Step2Milestones({
                         ) : null}
                       </div>
                     ) : (
-                      <span className="text-xs text-gray-400">—</span>
+                      <span className="text-xs text-gray-400">â€”</span>
                     )}
                   </td>
 
@@ -4464,6 +5000,347 @@ export default function Step2Milestones({
         </table>
       </div>
       </section>
+      )}
+
+      {false && (
+      <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100">
+      <div className="mb-4">
+        <h4 className="text-base font-semibold text-slate-950">
+          {isCommercialProject ? "Add or edit schedule items" : "Add or edit milestones"}
+        </h4>
+        <p className="mt-1 text-sm text-slate-600">
+          {isCommercialProject
+            ? "Keep the schedule of values and sequencing accurate here. Save staged changes only after you review pricing and dates."
+            : "Keep milestone editing as the primary task here. Save staged changes only after you review pricing and dates."}
+        </p>
+      </div>
+
+      <div className="mb-2 grid grid-cols-1 gap-3 md:grid-cols-12">
+        <input
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-4"
+          placeholder="Title"
+          name="title"
+          value={mLocal.title}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+          disabled={milestonesLocked}
+        />
+        <input
+          type="date"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
+          name="start"
+          value={mLocal.start || ""}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+          disabled={milestonesLocked}
+        />
+        <input
+          type="date"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
+          name="end"
+          value={mLocal.end || ""}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+          disabled={milestonesLocked}
+        />
+        <input
+          type="number"
+          min="0.01"
+          step="0.01"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+          placeholder={step2ModeMeta.amountLabel}
+          name="amount"
+          value={mLocal.amount}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+          disabled={milestonesLocked}
+        />
+        <div className="md:col-span-12">
+          <textarea
+            className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            rows={3}
+            placeholder="Description (details, materials, notes)â€¦"
+            name="description"
+            value={mLocal.description}
+            onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
+            disabled={milestonesLocked}
+          />
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <button
+          type="button"
+          onClick={handleRunAiSuggest}
+          disabled={milestonesLocked || templateApplied}
+          className="mr-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+          data-testid="step2-improve-with-ai"
+        >
+          Improve with AI
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            handleManualSave().catch((e) =>
+              toast.error(e?.response?.data?.detail || e?.message || "Save failed.")
+            )
+          }
+          className="rounded-xl bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
+          disabled={milestonesLocked}
+        >
+          {isCommercialProject ? "+ Add Schedule Item" : "+ Add Milestone"}
+        </button>
+      </div>
+
+      {isProgressPayments || isCommercialProject ? (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm text-indigo-900">
+          <div className="font-semibold">
+            {isProgressPayments ? step2ModeMeta.progressPanelTitle : step2ModeMeta.simplePanelTitle}
+          </div>
+          <div className="mt-1">
+            {isProgressPayments ? step2ModeMeta.progressPanelBody : step2ModeMeta.simplePanelBody}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr className="text-left [&>*]:px-3 [&>*]:py-2">
+              <th>#</th>
+              <th>Title</th>
+              <th>Description</th>
+              <th>Start</th>
+              <th>Due</th>
+              <th>{step2ModeMeta.amountLabel}</th>
+              <th>
+                <div className="flex items-center gap-2">
+                  <span>{step2ModeMeta.pricingColumnLabel}</span>
+                  {pricingEstimateStale ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                      Stale
+                    </span>
+                  ) : null}
+                </div>
+              </th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {effectiveMilestones.map((m, idx) => {
+              const estimate = getEstimateAssistMeta(m);
+              const projectEstimateGuidance =
+                estimateGuidanceByMilestone.get(m?.id ?? `row-${idx + 1}`) || null;
+              const aiHighlight = m?.id != null ? aiHighlights[`milestone:${m.id}`] : null;
+              const isAiSuggested = m?.id != null && aiSuggestedMilestoneIds.includes(m.id);
+              return (
+                <tr
+                  key={m.id || `${m.title}-${idx}`}
+                  className={`border-t align-top transition-colors ${aiHighlight ? "bg-amber-50/60" : ""}`}
+                  data-testid={`step2-milestone-row-${m.id || idx + 1}`}
+                >
+                  <td className="px-3 py-2">{m?.order ?? idx + 1}</td>
+
+                  <td className="px-3 py-2">
+                    <div>{m.title || "â€”"}</div>
+                    {isAiSuggested ? (
+                      <div className="mt-1">
+                        <span
+                          data-testid={`step2-milestone-ai-indicator-${m.id || idx + 1}`}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                        >
+                          AI suggested
+                        </span>
+                      </div>
+                    ) : null}
+                    {estimate.type ? (
+                      <div className="mt-1">
+                        <span
+                          className="rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700"
+                          data-testid={`step2-milestone-type-badge-${m.id || idx + 1}`}
+                        >
+                          {estimate.typeLabel}
+                        </span>
+                      </div>
+                    ) : null}
+                  </td>
+
+                  <td className="whitespace-pre-wrap px-3 py-2">{m.description || "â€”"}</td>
+
+                  <td className="px-3 py-2" data-testid={`step2-milestone-start-${m.id || idx + 1}`}>
+                    {friendly(toDateOnly(m.start_date || m.start))}
+                  </td>
+
+                  <td className="px-3 py-2" data-testid={`step2-milestone-due-${m.id || idx + 1}`}>
+                    {friendly(toDateOnly(m.completion_date || m.end_date || m.end))}
+                  </td>
+
+                  <td className="px-3 py-2" data-testid={`step2-milestone-amount-${m.id || idx + 1}`}>
+                    {Number(m.amount || 0).toLocaleString(undefined, { style: "currency", currency: "USD" })}
+                  </td>
+
+                  <td className="px-3 py-2">
+                    {estimate.hasAnything ? (
+                      <div className="space-y-1 text-xs">
+                        {pricingEstimateStale ? (
+                          <div>
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              Stale â€” refresh pricing
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.pricingModeLabel ? (
+                          <div>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                              {estimate.pricingModeLabel}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.hasPrimaryRange ? (
+                          <div className="text-gray-700">
+                            {estimate.primaryLabel}:{" "}
+                            <span className="font-medium">
+                              {formatCurrency(estimate.primaryLow)} â€“ {formatCurrency(estimate.primaryHigh)}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.materialsLine ? (
+                          <div className="text-gray-500">{estimate.materialsLine}</div>
+                        ) : null}
+
+                        {estimate.pricingReason ? (
+                          <div className="text-gray-500">{estimate.pricingReason}</div>
+                        ) : null}
+
+                        {estimate.pricingSources?.length ? (
+                          <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Pricing Source
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {estimate.pricingSources.map((source) => (
+                                <span
+                                  key={`${m.id || "milestone"}-${source}`}
+                                  className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700"
+                                >
+                                  {source}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {estimate.confidenceLabel ? (
+                          <div>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                estimate.confidence.toLowerCase() === "high"
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : estimate.confidence.toLowerCase() === "medium"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}
+                            >
+                              {estimate.confidenceLabel}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.durationLabel ? (
+                          <div className="text-gray-600">
+                            {isCommercialProject ? "Planned duration" : "Est. duration"}: {estimate.durationLabel}
+                          </div>
+                        ) : null}
+
+                        {projectEstimateGuidance?.share ? (
+                          <div className="text-gray-600">
+                            {isCommercialProject ? "Schedule share" : "Suggested share"}:{" "}
+                            <span className="font-medium text-gray-800">
+                              {formatPercent(projectEstimateGuidance.share)}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimateBudgetValue && Number.isFinite(projectEstimateGuidance?.budgetSuggestion) ? (
+                          <div className="text-gray-600">
+                            {isCommercialProject ? "At contract value" : "At entered budget"}:{" "}
+                            <span className="font-medium text-gray-800">
+                              {formatCurrency(projectEstimateGuidance.budgetSuggestion)}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.materials ? (
+                          <div className="text-gray-600">
+                            <span className="font-medium text-gray-700">Materials:</span> {estimate.materials}
+                          </div>
+                        ) : null}
+
+                        {Number.isFinite(estimate.suggestedAmount) && estimate.suggestedAmount > 0 ? (
+                          <div>
+                            <button
+                              type="button"
+                              className="rounded border px-2 py-1 text-[11px] font-medium hover:bg-gray-50 disabled:opacity-60"
+                              onClick={() => handleEditClick(m, idx, { useSuggestedPrice: true })}
+                              disabled={milestonesLocked}
+                            >
+                              Use Suggested Price
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">â€”</span>
+                    )}
+                  </td>
+
+                  <td className="px-3 py-2 text-right">
+                    <div className="inline-flex gap-2">
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-1 disabled:opacity-60"
+                        onClick={() => handleEditClick(m, idx)}
+                        disabled={milestonesLocked}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-1 disabled:opacity-60"
+                        onClick={() => handleDelete(m.id)}
+                        disabled={milestonesLocked}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {!effectiveMilestones.length ? (
+              <tr>
+                <td colSpan={8} className="py-6 text-center text-gray-400">
+                  No milestones yet.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-50 font-semibold">
+              <td className="px-3 py-2" colSpan={5}>
+                Total
+              </td>
+              <td className="px-3 py-2">
+                {total.toLocaleString(undefined, { style: "currency", currency: "USD" })}
+              </td>
+              <td className="px-3 py-2" />
+              <td className="px-3 py-2" />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      </section>
+      )}
 
       <div className="mt-4 flex items-center justify-between">
         <button type="button" onClick={handleBackClick} className="rounded border px-3 py-2 text-sm">
@@ -4475,7 +5352,7 @@ export default function Step2Milestones({
           className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
           disabled={savingAiScope}
         >
-          {savingAiScope ? "Saving…" : "Save & Next"}
+          {savingAiScope ? "Savingâ€¦" : "Save & Next"}
         </button>
       </div>
 
@@ -4507,7 +5384,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-lg font-semibold text-gray-900">Save as Template</div>
                 <div className="text-xs text-gray-500">
-                  Save this agreement’s current milestone structure as a reusable template.
+                  Save this agreementâ€™s current milestone structure as a reusable template.
                 </div>
               </div>
               <button
@@ -4518,7 +5395,7 @@ export default function Step2Milestones({
                 }}
                 className="rounded border px-2 py-1 text-sm"
               >
-                ✕
+                âœ•
               </button>
             </div>
 
@@ -4541,7 +5418,7 @@ export default function Step2Milestones({
                   rows={4}
                   value={saveTemplateDescription}
                   onChange={(e) => setSaveTemplateDescription(e.target.value)}
-                  placeholder="Optional notes about this reusable template…"
+                  placeholder="Optional notes about this reusable templateâ€¦"
                   disabled={saveTemplateBusy}
                 />
               </div>
@@ -4569,7 +5446,7 @@ export default function Step2Milestones({
                 className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
                 disabled={saveTemplateBusy}
               >
-                {saveTemplateBusy ? "Saving…" : "Save Template"}
+                {saveTemplateBusy ? "Savingâ€¦" : "Save Template"}
               </button>
             </div>
           </div>
@@ -4583,7 +5460,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-lg font-semibold text-gray-900">Edit Milestone</div>
                 <div className="text-xs text-gray-500">
-                  Milestone #{editForm.order != null ? editForm.order : "—"}
+                  Milestone #{editForm.order != null ? editForm.order : "â€”"}
                 </div>
               </div>
               <button
@@ -4596,7 +5473,7 @@ export default function Step2Milestones({
                 }}
                 className="rounded border px-2 py-1 text-sm"
               >
-                ✕
+                âœ•
               </button>
             </div>
 
@@ -4621,7 +5498,7 @@ export default function Step2Milestones({
                     className="rounded border px-2 py-1 text-[11px] hover:bg-gray-50 disabled:opacity-60"
                     title="Uses the agreement AI bundle (no extra charge after first use on this agreement)."
                   >
-                    {editAiBusy ? "Working…" : "✨ Improve Description"}
+                    {editAiBusy ? "Workingâ€¦" : "âœ¨ Improve Description"}
                   </button>
                 </div>
                 <textarea
@@ -4720,8 +5597,8 @@ export default function Step2Milestones({
                         <span className="text-slate-700">
                           {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
                           safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
-                            ? `${formatCurrency(editForm.labor_estimate_low)} – ${formatCurrency(editForm.labor_estimate_high)}`
-                            : `${formatCurrency(editForm.suggested_amount_low)} – ${formatCurrency(editForm.suggested_amount_high)}`}
+                            ? `${formatCurrency(editForm.labor_estimate_low)} â€“ ${formatCurrency(editForm.labor_estimate_high)}`
+                            : `${formatCurrency(editForm.suggested_amount_low)} â€“ ${formatCurrency(editForm.suggested_amount_high)}`}
                         </span>
                       </div>
                     ) : null}
@@ -4738,7 +5615,7 @@ export default function Step2Milestones({
                       <div>
                         <span className="font-medium text-slate-800">Materials:</span>{" "}
                         <span className="text-slate-700">
-                          {formatCurrency(editForm.materials_estimate_low)} – {formatCurrency(editForm.materials_estimate_high)}
+                          {formatCurrency(editForm.materials_estimate_low)} â€“ {formatCurrency(editForm.materials_estimate_high)}
                         </span>
                       </div>
                     ) : null}
@@ -4835,19 +5712,18 @@ export default function Step2Milestones({
                 className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
                 disabled={editBusy || editAiBusy}
               >
-                {editBusy ? "Saving…" : "Save Changes"}
+                {editBusy ? "Savingâ€¦" : "Save Changes"}
               </button>
             </div>
           </div>
         </div>
       ) : null}
-
       {overlapConfirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">Overlapping Schedule</h3>
             <p className="mt-2 text-sm text-gray-700">
-              This milestone overlaps an existing milestone’s schedule. Do you want to continue anyway?
+              This milestone overlaps an existing milestoneâ€™s schedule. Do you want to continue anyway?
             </p>
 
             <div className="mt-5 flex justify-end gap-2">

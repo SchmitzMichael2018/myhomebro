@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+﻿import { expect, test } from '@playwright/test';
 
 const AGREEMENT_ID = 123;
 
@@ -2721,22 +2721,12 @@ test('agreement wizard step 2 AI can recommend saving a reusable template and op
     waitUntil: 'domcontentloaded',
   });
 
+  await expect(page.getByTestId('step2-work-plan-summary')).toBeVisible();
   await expect(page.getByText('Deposit and materials')).toBeVisible();
-  await page.getByTestId('milestones-ai-entry-toggle').click();
-  await expect(page.getByTestId('start-with-ai-coaching')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-coaching-message')).toContainText(
-    'milestone'
-  );
-  await expect(page.getByTestId('start-with-ai-coaching-next-step')).toContainText(
-    'save'
-  );
-  await expect(
-    page.getByTestId('start-with-ai-template-recommendation')
-  ).toContainText('This agreement looks reusable');
-  await page.getByTestId('start-with-ai-template-action').click();
-  await expect(
-    page.getByPlaceholder('e.g., Bedroom Addition – Standard 6 Milestone')
-  ).toBeVisible();
+  await page.getByTestId('step2-save-as-template-top').click();
+  await expect(page.getByText('Save Agreement as Template')).toBeVisible();
+  await expect(page.getByTestId('save-template-name-input')).toBeVisible();
+  await expect(page.getByPlaceholder('e.g., Bedroom Addition – Standard 6 Milestone')).toBeVisible();
 });
 
 test('agreement wizard step 2 auto-drafts default subtype milestones when clarifications are skipped', async ({
@@ -2856,6 +2846,7 @@ test('agreement wizard step 2 uses clarification answers to shape kitchen milest
   await expect(page.getByText('Layout review & utility changes')).toBeVisible();
   await expect(page.getByText('Selective demolition & rough-in')).toBeVisible();
   await expect(page.getByText('Countertops, surfaces & finishes')).toBeVisible();
+  await page.getByText('Fixtures & appliances').click();
   await expect(page.getByText('Included finish scope: backsplash, pendant lighting, and quartz countertops.')).toBeVisible();
   await expect(page.getByText('Cabinets & surfaces')).toHaveCount(0);
   await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(6);
@@ -2911,9 +2902,11 @@ test('agreement wizard step 2 auto-drafts focused install milestones for cabinet
 
   await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
   await expect(page.getByText('Measurements & prep')).toBeVisible();
-  await expect(page.locator('tbody').getByText('Cabinet installation', { exact: true })).toBeVisible();
+  await expect(page.getByText('Cabinet installation', { exact: true })).toBeVisible();
   await expect(page.getByText('Hardware & adjustments')).toBeVisible();
   await expect(page.getByText('Final walkthrough')).toBeVisible();
+  await page.getByText('Cabinet installation', { exact: true }).click();
+  await expect(page.getByText('Install and secure new cabinets in the planned configuration.')).toBeVisible();
   await expect(page.getByText('Demolition & rough-in')).toHaveCount(0);
   await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(4);
   await expect.poll(() => milestoneState.createCount).toBe(4);
@@ -2977,6 +2970,7 @@ test('agreement wizard step 2 adds optional cabinet milestones when clarified sc
   await expect(page.getByText('Demo & site prep')).toBeVisible();
   await expect(page.getByText('Hardware, fillers & trim')).toBeVisible();
   await expect(page.getByText('Alignment & final adjustments')).toBeVisible();
+  await page.getByText('Cabinet installation', { exact: true }).click();
   await expect(page.getByText('Layout details: full-height pantry wall and island base cabinets.')).toBeVisible();
   await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(6);
   await expect.poll(() => milestoneState.createCount).toBe(6);
@@ -3035,6 +3029,7 @@ test('agreement wizard step 2 removes optional bathroom tile milestone rows when
   });
 
   await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
+  await page.getByText('Vanity, fixtures & trim').click();
   await expect(page.getByText('Include wall touch-up and non-tile surface prep needed before the fixture phase.')).toBeVisible();
   await expect(page.getByText('Tile & waterproofing finish')).toHaveCount(0);
   await expect(page.getByText('Walls, waterproofing & tile')).toHaveCount(0);
@@ -3092,11 +3087,11 @@ test('agreement wizard step 2 does not overwrite milestones after the user edits
   await expect(page.getByText('Planning & protection')).toBeVisible();
   await expect.poll(() => milestoneState.createCount).toBe(5);
 
-  await page.getByRole('button', { name: 'Edit' }).first().click();
-  const editModal = page.locator('div.fixed.inset-0').last();
-  await expect(editModal.getByText('Edit Milestone')).toBeVisible();
-  await editModal.locator('input').first().fill('Custom planning milestone');
-  await editModal.getByRole('button', { name: 'Save Changes' }).click();
+  await page.getByText('Planning & protection').click();
+  const titleInput = page.locator('[data-testid^="step2-milestone-title-"]').first();
+  await expect(titleInput).toBeVisible();
+  await titleInput.fill('Custom planning milestone');
+  await page.getByRole('button', { name: 'Save & Next' }).click();
 
   await expect(page.getByText('Custom planning milestone')).toBeVisible();
 
@@ -3341,3 +3336,4 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
 
   await expect(page).toHaveURL(/step=2/);
 });
+
