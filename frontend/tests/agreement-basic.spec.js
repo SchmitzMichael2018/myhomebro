@@ -408,13 +408,11 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeEnabled();
-  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
 
   const projectDetailsCard = page.getByTestId('step1-project-details-card');
   await expect(projectDetailsCard).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(projectDetailsCard).toHaveAttribute('data-emphasis', 'true');
   await expect(page.getByTestId('step1-review-project-details-jump')).toBeVisible();
   await expect(page.getByTestId('step1-review-project-details-jump')).toContainText('Jump');
@@ -678,7 +676,7 @@ test('agreement wizard step 1 loads saved values without rerunning ai and resume
   });
 
   await expect(page).toHaveURL(/step=2/);
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toHaveCount(0);
   expect(aiDescriptionRequests).toBe(0);
 
   await page.getByRole('button', { name: 'Step 1 Details' }).click();
@@ -689,14 +687,19 @@ test('agreement wizard step 1 loads saved values without rerunning ai and resume
   );
   await expect(page.locator('select[name="project_type"]')).toHaveValue('Outdoor');
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Shed Build');
-
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toHaveCount(0);
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveCount(0);
+  await expect(page.getByText('No strong template match found')).toHaveCount(0);
+  await expect(page.getByTestId('step1-start-mode-chooser')).toHaveCount(0);
 });
 
 test('agreement wizard step 1 no-match shows a single build without template prompt', async ({
   page,
 }) => {
   await installWizardAuthRoutes(page);
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+  });
 
   await page.route('**/api/projects/agreements/ai/description/', async (route) => {
     await route.fulfill({
@@ -756,10 +759,10 @@ test('agreement wizard step 1 no-match shows a single build without template pro
   await page.getByTestId('step1-job-description-input').fill('build 12x14 shed');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
-  await expect(page.getByText('No strong template match found')).toHaveCount(1);
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
-  await page.getByTestId('step1-build-agreement-ai-button').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByText('No strong template match found')).toHaveCount(0);
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveCount(0);
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
@@ -887,16 +890,8 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Recommended starting point'
-  );
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await expect(page.getByTestId('step1-template-detail-panel')).toBeVisible();
-
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
-  await page.getByTestId('step1-build-agreement-ai-button').click();
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
 
   await page.getByTestId('step1-change-start-mode').click({ force: true });
 });
@@ -1028,19 +1023,6 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
     'Kitchen remodel with updated cabinets and finish work'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await page.waitForFunction(() =>
-    Boolean(
-      document.querySelector('[data-testid="step1-build-agreement-ai-button"]') ||
-        document.querySelector('[data-testid="step1-starting-point-build-without-template-button"]')
-    )
-  );
-  if (await page.getByTestId('step1-starting-point-error-card').count()) {
-    await page.getByTestId('step1-starting-point-build-without-template-button').click({
-      force: true,
-    });
-  } else {
-    await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
-  }
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(

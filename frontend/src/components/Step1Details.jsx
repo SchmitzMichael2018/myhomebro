@@ -1340,14 +1340,22 @@ export default function Step1Details({
     assistantTemplateRecommendations,
     assistantTopTemplatePreview,
   });
+  const hasSavedProjectDetails =
+    Boolean(safeTrim(dLocal?.project_title || agreement?.project_title || agreement?.title)) &&
+    Boolean(safeTrim(dLocal?.project_type || agreement?.project_type)) &&
+    Boolean(safeTrim(dLocal?.project_subtype || agreement?.project_subtype)) &&
+    Boolean(
+      safeTrim(
+        dLocal?.description ||
+          dLocal?.scope_of_work ||
+          agreement?.description ||
+          agreement?.scope_of_work
+      )
+    );
   useEffect(() => {
     if (startModeSource === "derived" && startMode !== derivedStartMode) {
       setStartMode(derivedStartMode);
     }
-    const hasPersistedStep1Details =
-      Boolean(safeTrim(agreement?.project_title || agreement?.title)) &&
-      Boolean(safeTrim(agreement?.project_type)) &&
-      Boolean(safeTrim(agreement?.description || agreement?.scope_of_work));
     if (
       ((derivedStartMode === "template" ||
         (derivedStartMode === "ai" &&
@@ -1355,7 +1363,7 @@ export default function Step1Details({
             assistantTopTemplatePreview?.id ||
             assistantTopTemplatePreview?.milestone_count ||
             assistantTemplateRecommendations.length))) ||
-        hasPersistedStep1Details) &&
+        hasSavedProjectDetails) &&
       !startModeCommitted
     ) {
       setStartModeCommitted(true);
@@ -1369,9 +1377,44 @@ export default function Step1Details({
     agreement?.project_type,
     agreement?.scope_of_work,
     derivedStartMode,
+    hasSavedProjectDetails,
     startMode,
     startModeCommitted,
     startModeSource,
+  ]);
+
+  useEffect(() => {
+    if (!hasSavedProjectDetails) return;
+    const hasAppliedTemplateReference = Boolean(
+      agreement?.selected_template?.id ||
+        agreement?.selected_template_id ||
+        agreement?.project_template_id ||
+        agreement?.template_id ||
+        dLocal?.selected_template?.id ||
+        dLocal?.selected_template_id ||
+        dLocal?.project_template_id ||
+        dLocal?.template_id
+    );
+    if (hasAppliedTemplateReference || aiSetupResult) return;
+    if (startMode !== "manual") {
+      setStartMode("manual");
+    }
+    if (!startModeCommitted) {
+      setStartModeCommitted(true);
+    }
+  }, [
+    aiSetupResult,
+    agreement?.project_template_id,
+    agreement?.selected_template?.id,
+    agreement?.selected_template_id,
+    agreement?.template_id,
+    hasSavedProjectDetails,
+    dLocal?.project_template_id,
+    dLocal?.selected_template?.id,
+    dLocal?.selected_template_id,
+    dLocal?.template_id,
+    startMode,
+    startModeCommitted,
   ]);
 
   useEffect(() => {
@@ -2992,12 +3035,13 @@ export default function Step1Details({
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Review the agreement details below and keep editing.";
   const shouldShowProjectDetails =
-    startModeCommitted &&
-    (startMode === "manual" ||
-      startMode === "ai" ||
-      Boolean(appliedTemplateId) ||
-      Boolean(selectedTemplateId) ||
-      Boolean(aiSetupResult));
+    hasSavedProjectDetails ||
+    (startModeCommitted &&
+      (startMode === "manual" ||
+        startMode === "ai" ||
+        Boolean(appliedTemplateId) ||
+        Boolean(selectedTemplateId) ||
+        Boolean(aiSetupResult)));
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -3551,6 +3595,7 @@ export default function Step1Details({
                 templateDetail={templateDetail}
                 templateDetailLoading={templateDetailLoading}
                 templateDetailErr={templateDetailErr}
+                suppressNoMatchPanel={hasSavedProjectDetails}
                 aiCredits={aiCredits}
                 aiBusy={aiBusy}
                 aiErr={aiErr}

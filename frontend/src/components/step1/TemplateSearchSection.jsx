@@ -259,6 +259,7 @@ export default function TemplateSearchSection({
   templateDetail,
   templateDetailLoading,
   templateDetailErr,
+  suppressNoMatchPanel = false,
 
   aiCredits,
   aiBusy,
@@ -526,7 +527,7 @@ export default function TemplateSearchSection({
     }
   }, [effectiveAppliedTemplateId]);
 
-  const showNoStrongMatchPanel = !!noTemplateMatch;
+  const showNoStrongMatchPanel = !!noTemplateMatch && !suppressNoMatchPanel;
   const showRelatedContext = showNoStrongMatchPanel && hasTemplateMatches;
   const canGenerateFromScope = hasType || hasSubtype || hasTitle || hasDescription;
   const canUseGeneratedPrompt = !!safeTrim(aiPrompt);
