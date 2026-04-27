@@ -1027,6 +1027,7 @@ export default function Step1Details({
   const [aiSetupBusy, setAiSetupBusy] = useState(false);
   const [aiSetupError, setAiSetupError] = useState("");
   const [aiSetupResult, setAiSetupResult] = useState(null);
+  const [lastAiSetupPrompt, setLastAiSetupPrompt] = useState("");
   const [aiSuggestedFieldMeta, setAiSuggestedFieldMeta] = useState({});
   const [projectDetailsReviewPulse, setProjectDetailsReviewPulse] = useState(false);
   const [pendingProjectDetailsReview, setPendingProjectDetailsReview] = useState(null);
@@ -2155,6 +2156,9 @@ export default function Step1Details({
   }
 
   function handleBuildAgreementWithoutTemplate() {
+    setAiSetupBusy(false);
+    setAiSetupError("");
+    setAiSetupResult(null);
     setSelectedTemplateId(null);
     setTemplateSearch("");
     setAiPreview("");
@@ -2167,6 +2171,21 @@ export default function Step1Details({
   async function handleTemplateApplyWithOptions(template, options = {}) {
     if (typeof handleApplyTemplate !== "function") return null;
     return handleApplyTemplate(template, options);
+  }
+
+  function requestStep1AiSetup(prompt) {
+    const roughDescription = safeTrim(prompt);
+    if (!roughDescription) return;
+
+    setLastAiSetupPrompt(roughDescription);
+    setAiSetupBusy(true);
+    setAiSetupError("");
+    setAiSetupResult(null);
+    setDismissedAiTemplateRecommendation(false);
+
+    if (typeof onStep1AiSetupRequest === "function") {
+      onStep1AiSetupRequest({ prompt: roughDescription, nonce: Date.now() });
+    }
   }
 
   const appliedTemplateId = useMemo(() => {
@@ -2882,6 +2901,23 @@ export default function Step1Details({
       Boolean(appliedTemplateId) ||
       Boolean(selectedTemplateId) ||
       Boolean(aiSetupResult));
+  const isStartingPointLoading = Boolean(aiSetupBusy);
+  const isStartingPointError = Boolean(aiSetupError);
+  const startingPointStatusTitle =
+    startMode === "ai"
+      ? "Building agreement draft..."
+      : startMode === "template"
+      ? "Finding best starting point..."
+      : "Preparing agreement draft...";
+  const startingPointStatusMessage =
+    startMode === "ai"
+      ? "AI is reviewing the job description and preparing project details."
+      : "AI is checking templates and preparing the next steps for this job.";
+  const startingPointChecklist = [
+    "Understanding the job",
+    "Checking matching templates",
+    "Preparing project details",
+  ];
 
   useEffect(() => {
     if (!projectDetailsRevealMountedRef.current) {
@@ -3057,37 +3093,98 @@ export default function Step1Details({
                   : "border-slate-200 bg-slate-50"
               }`}
             >
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Mode
+              {isStartingPointLoading ? (
+                <div
+                  data-testid="step1-starting-point-loading-card"
+                  aria-live="polite"
+                  className="rounded-2xl border border-indigo-200 bg-white px-4 py-4 shadow-sm"
+                >
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+                    Just a moment...
                   </div>
-                  <div className="mt-1 text-base font-semibold text-slate-900">
-                    {activeStartModeLabel}
+                  <div className="mt-2 text-base font-semibold text-slate-900">
+                    {startingPointStatusTitle}
                   </div>
-                  <div className="mt-1 text-sm text-slate-600">{activeStartModeSummary}</div>
+                  <div className="mt-1 text-sm text-slate-600">{startingPointStatusMessage}</div>
+                  <ul className="mt-3 space-y-1 text-sm text-slate-700">
+                    {startingPointChecklist.map((item) => (
+                      <li key={item} className="flex items-start gap-2">
+                        <span className="mt-1 inline-block h-2 w-2 rounded-full bg-indigo-400" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {canResetStep1 && hasResettableStep1State ? (
+              ) : isStartingPointError ? (
+                <div
+                  data-testid="step1-starting-point-error-card"
+                  aria-live="polite"
+                  className="rounded-2xl border border-rose-200 bg-white px-4 py-4 shadow-sm"
+                >
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
+                    Couldn’t finish this step
+                  </div>
+                  <div className="mt-2 text-base font-semibold text-slate-900">
+                    AI couldn’t finish this step. Your description is still saved.
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    You can try again or continue manually without losing the work you already
+                    entered.
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      data-testid="step1-reset-form-button"
-                      onClick={() => setShowResetStep1Confirm(true)}
+                      data-testid="step1-starting-point-retry-button"
+                      onClick={() => requestStep1AiSetup(lastAiSetupPrompt || step1JobDescriptionPrompt)}
+                      disabled={locked || !safeTrim(lastAiSetupPrompt || step1JobDescriptionPrompt)}
+                      className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      Try Again
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="step1-starting-point-build-without-template-button"
+                      onClick={handleBuildAgreementWithoutTemplate}
+                      disabled={locked}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Build Without Template
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Mode
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-slate-900">
+                      {activeStartModeLabel}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">{activeStartModeSummary}</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canResetStep1 && hasResettableStep1State ? (
+                      <button
+                        type="button"
+                        data-testid="step1-reset-form-button"
+                        onClick={() => setShowResetStep1Confirm(true)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Reset form
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      data-testid="step1-change-start-mode"
+                      onClick={reopenStartModeChooser}
                       className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                     >
-                      Reset form
+                      Change start mode
                     </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    data-testid="step1-change-start-mode"
-                    onClick={reopenStartModeChooser}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Change start mode
-                  </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <div data-testid="step1-start-mode-chooser" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -3123,13 +3220,15 @@ export default function Step1Details({
                     const prompt = safeTrim(step1JobDescriptionPrompt);
                     if (!prompt) return;
                     activateStartMode("template", { committed: true, source: "assistant" });
-                    onStep1AiSetupRequest?.({ prompt, nonce: Date.now() });
+                    requestStep1AiSetup(prompt);
                   }}
-                  disabled={locked || !safeTrim(step1JobDescriptionPrompt)}
+                  disabled={locked || aiSetupBusy || !safeTrim(step1JobDescriptionPrompt)}
                   className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                   data-testid="step1-find-best-starting-point-button"
                 >
-                  Find Best Starting Point
+                  {aiSetupBusy && startMode === "template"
+                    ? "Finding best starting point..."
+                    : "Find Best Starting Point"}
                 </button>
               </div>
 
@@ -3176,24 +3275,6 @@ export default function Step1Details({
                 Cancel
               </button>
             </div>
-          </div>
-        ) : null}
-
-        {startMode === "ai" && aiSetupBusy ? (
-          <div
-            data-testid="step1-ai-setup-status"
-            className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4 text-sm text-indigo-900"
-          >
-            <div className="font-semibold">Refining the description and checking for a template match…</div>
-          </div>
-        ) : null}
-
-        {startMode === "ai" && aiSetupError ? (
-          <div
-            data-testid="step1-ai-setup-error"
-            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900"
-          >
-            {aiSetupError}
           </div>
         ) : null}
 
@@ -3371,12 +3452,9 @@ export default function Step1Details({
                 onStartModeChange={activateStartMode}
                 manualBrowseOpenSignal={step1ManualBrowseSignal}
                 jobPrompt={step1JobDescriptionPrompt}
+                startingPointBusy={aiSetupBusy}
                 onStartFromScratch={handleBuildAgreementWithoutTemplate}
-                onGenerateAiDraft={(prompt) => {
-                  if (typeof onStep1AiSetupRequest === "function") {
-                    onStep1AiSetupRequest({ prompt, nonce: Date.now() });
-                  }
-                }}
+                onGenerateAiDraft={requestStep1AiSetup}
                 onContinueToStep2={onStep1Continue}
                 spreadEnabled={spreadEnabled}
                 setSpreadEnabled={setSpreadEnabled}

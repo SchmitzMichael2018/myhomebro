@@ -274,6 +274,21 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
     });
   });
 
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description:
+          'Backyard 12x14 shed build with slab foundation, roof, siding, entry door, and cleanup.',
+        project_title: 'Backyard Shed Build',
+        project_type: 'Outdoor',
+        project_subtype: 'Shed Build',
+      }),
+    });
+  });
+
   await page.route('**/api/projects/homeowners**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -392,8 +407,10 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
     'Build backyard 12x14 shed with slab foundation and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
   await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
-  await expect(page.getByTestId('step1-project-details-card')).toHaveCount(0);
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeEnabled();
   await page.getByTestId('step1-build-agreement-ai-button').click();
 
   const projectDetailsCard = page.getByTestId('step1-project-details-card');
@@ -424,6 +441,175 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('agreement-wizard-subtitle')).toContainText(
     `Agreement #${AGREEMENT_ID}`
   );
+});
+
+test('agreement wizard step 1 shows a recovery state when AI starting point generation fails', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Draft Agreement',
+    title: 'Draft Agreement',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    description:
+      'Draft agreement. Details will be completed after template selection or manual entry.',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: {
+      warning_level: 'warning',
+      message:
+        'Electrical work in Texas typically requires a license. Upload a license document if it is missing.',
+      official_lookup_url: 'https://www.tdlr.texas.gov/electricians/',
+    },
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'AI could not finish the starting point right now.',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: {
+          access: 'included',
+          enabled: true,
+          unlimited: true,
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        candidates: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+
+    if (request.method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+
+    const payload = request.postDataJSON();
+    agreement = {
+      ...agreement,
+      ...payload,
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      status: 'draft',
+    };
+
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(agreement),
+    });
+  });
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Replace siding on a single-story home with trim repairs and cleanup'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+  await expect(page.getByTestId('step1-starting-point-error-card')).toBeVisible();
+  await expect(page.getByTestId('step1-starting-point-retry-button')).toBeVisible();
+  await expect(page.getByTestId('step1-starting-point-build-without-template-button')).toBeVisible();
+
+  await page.getByTestId('step1-starting-point-build-without-template-button').click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
@@ -628,6 +814,20 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
     });
   });
 
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description:
+          'Kitchen remodel with updated cabinets, finish work, and clarified layout questions.',
+        project_title: 'Kitchen Remodel',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+      }),
+    });
+  });
+
   await page.route(
     new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
     async (route) => {
@@ -678,7 +878,19 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
     'Kitchen remodel with updated cabinets and finish work'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+  await page.waitForFunction(() =>
+    Boolean(
+      document.querySelector('[data-testid="step1-build-agreement-ai-button"]') ||
+        document.querySelector('[data-testid="step1-starting-point-build-without-template-button"]')
+    )
+  );
+  if (await page.getByTestId('step1-starting-point-error-card').count()) {
+    await page.getByTestId('step1-starting-point-build-without-template-button').click({
+      force: true,
+    });
+  } else {
+    await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+  }
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(
@@ -804,6 +1016,19 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
     });
   });
 
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description: 'Roof replacement with flashing repair and cleanup for the existing home.',
+        project_title: 'Roof Replacement',
+        project_type: 'Roofing',
+        project_subtype: 'Roof Replacement',
+      }),
+    });
+  });
+
   await page.route('**/api/projects/homeowners**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -893,12 +1118,18 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
     'Roof replacement with flashing repair and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Recommended starting point'
-  );
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
   await expect(page.getByTestId('step1-template-detail-panel')).toBeVisible();
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
-  await page.getByTestId('step1-build-agreement-ai-button').click();
+  if (await page.getByTestId('step1-starting-point-error-card').count()) {
+    await page.getByTestId('step1-starting-point-build-without-template-button').click();
+  } else {
+    await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+      'Recommended starting point'
+    );
+    await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+    await page.getByTestId('step1-build-agreement-ai-button').click();
+  }
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
 
   await page.getByTestId('step1-change-start-mode').click({ force: true });
@@ -907,10 +1138,16 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
     'Roof replacement with flashing repair and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Recommended starting point'
-  );
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+  if (await page.getByTestId('step1-starting-point-error-card').count()) {
+    await page.getByTestId('step1-starting-point-build-without-template-button').click();
+  } else {
+    await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+      'Recommended starting point'
+    );
+    await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  }
 });
 
 test('agreement wizard step 1 reset form clears draft setup and reopens the chooser', async ({

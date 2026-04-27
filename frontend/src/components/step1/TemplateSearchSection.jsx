@@ -283,6 +283,7 @@ export default function TemplateSearchSection({
   runAiMilestonesFromScope,
   applyAiMilestonesFromScope,
   startMode = "manual",
+  startingPointBusy = false,
   onStartModeChange = null,
   onGenerateAiDraft = null,
   onContinueToStep2 = null,
@@ -601,7 +602,7 @@ export default function TemplateSearchSection({
   }
 
   function handleBuildWithoutTemplate() {
-    if (locked) return;
+    if (locked || startingPointBusy) return;
     setSelectedTemplateId?.(null);
     setTemplateDropdownOpen(false);
     const prompt =
@@ -634,12 +635,14 @@ export default function TemplateSearchSection({
   }
 
   function handleStartFromScratch() {
+    if (locked || startingPointBusy) return;
     clearStartState();
     onStartModeChange?.("manual");
     onStartFromScratch?.();
   }
 
   function handleFindBestStartingPoint() {
+    if (locked || startingPointBusy) return;
     const prompt = safeTrim(jobPrompt) || safeTrim(aiPrompt) || safeTrim(templateSearch);
     clearStartState();
     onStartModeChange?.("template");
@@ -795,11 +798,15 @@ export default function TemplateSearchSection({
                     <button
                       type="button"
                       onClick={handleBuildWithoutTemplate}
-                      disabled={locked}
+                      disabled={locked || startingPointBusy}
                       data-testid="step1-build-agreement-ai-button"
                       className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                     >
-                      Build Agreement with AI
+                      {startingPointBusy && startMode === "ai"
+                        ? "Building agreement draft..."
+                        : startMode === "template" && startingPointBusy
+                        ? "Building agreement draft..."
+                        : "Build Agreement with AI"}
                     </button>
                   </div>
                 </div>
@@ -894,26 +901,28 @@ export default function TemplateSearchSection({
                           </PreviewSection>
 
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleUseThisTemplate(template)}
-                              disabled={locked}
-                              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-                            >
-                              Use This Template
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleBuildWithoutTemplate}
-                              disabled={locked}
-                              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                            >
-                              Build Agreement with AI
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUseThisTemplate(template)}
+                                disabled={locked || startingPointBusy}
+                                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                              >
+                                Use This Template
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleBuildWithoutTemplate}
+                                disabled={locked || startingPointBusy}
+                                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                              >
+                              {startingPointBusy && startMode === "ai"
+                                ? "Building agreement draft..."
+                                : "Build Agreement with AI"}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                   </div>
                 ) : null}
 
@@ -927,12 +936,14 @@ export default function TemplateSearchSection({
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
-                        type="button"
-                        onClick={handleBuildWithoutTemplate}
-                        disabled={locked}
-                        className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
-                      >
-                        Build Agreement with AI
+                      type="button"
+                      onClick={handleBuildWithoutTemplate}
+                      disabled={locked || startingPointBusy}
+                      className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                    >
+                        {startingPointBusy && startMode === "ai"
+                          ? "Building agreement draft..."
+                          : "Build Agreement with AI"}
                       </button>
                     </div>
                   </div>
