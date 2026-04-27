@@ -316,6 +316,9 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
     }
 
     const payload = request.postDataJSON();
+    expect(payload.recurrence_pattern).toBe('');
+    expect(payload.service_window_notes).toBe('');
+    expect(payload.recurring_summary_label).toBe('');
     agreement = {
       ...agreement,
       ...payload,
@@ -369,6 +372,18 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('agreement-wizard-hint')).toContainText(
     'Confirm the customer, address, and project details'
   );
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+
+  await page.getByTestId('step1-job-description-input').fill(
+    'Replace a roof with matching underlayment and cleanup'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
@@ -484,12 +499,15 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   await page.getByTestId('step1-job-description-input').fill(
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
-  await page.getByRole('button', { name: 'Build without template' }).click();
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await page.getByTestId('step1-find-best-starting-point-button').click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Build without template'
+    'Recommended starting point'
   );
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+  await expect(page.getByTestId('step1-template-detail-panel')).toBeVisible();
+
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+  await page.getByTestId('step1-build-agreement-ai-button').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
 
@@ -604,6 +622,14 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
     waitUntil: 'domcontentloaded',
   });
 
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Kitchen remodel with updated cabinets and finish work'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(
     'Does the kitchen layout or appliance placement change?'
@@ -810,31 +836,6 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
     'Recommended starting point'
   );
-  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
-
-  await page.getByTestId('step1-change-start-mode').click();
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await page.getByRole('button', { name: 'Build without template' }).click();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Build without template'
-  );
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await page.waitForTimeout(150);
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Build without template'
-  );
-
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Build without template'
-  );
-
-  await page.getByTestId('agreement-wizard-ask-ai-button').click();
-  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Build without template'
-  );
-  await page.getByTestId('assistant-desktop-dock-close').click();
 
   await page.getByTestId('step1-change-start-mode').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
@@ -842,13 +843,24 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
     'Roof replacement with flashing repair and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click();
-  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Recommended starting point'
+  );
+  await expect(page.getByTestId('step1-template-detail-panel')).toBeVisible();
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+  await page.getByTestId('step1-build-agreement-ai-button').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await page.waitForTimeout(150);
-  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
 
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
+  await page.getByTestId('step1-change-start-mode').click();
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Roof replacement with flashing repair and cleanup'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
+    'Recommended starting point'
+  );
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
 });
 
 test('agreement wizard step 1 reset form clears draft setup and reopens the chooser', async ({
@@ -1047,11 +1059,11 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
   await page.getByTestId('step1-reset-form-confirm-button').click();
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
 });
 
 test('agreement wizard step 1 refines a rough description and recommends a template without leaving ai mode', async ({
@@ -1278,14 +1290,9 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByTestId('step1-job-description-input').fill(
-    'Roof replacement with flashing repair and cleanup'
-  );
-  await page.getByTestId('step1-find-best-starting-point-button').click();
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Recommended starting point'
-  );
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await page.getByText('Browse templates manually').click();
+  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
   await page.getByTestId('template-search-result-88').click();
   await expect(page.getByTestId('step1-template-detail-name')).toContainText(
     'Roof Replacement Template'
@@ -1467,11 +1474,13 @@ test('agreement wizard step 1 shows clarifications after template application an
   await expect(page.getByTestId('step1-system-templates-list')).toBeVisible();
   await expect(page.getByTestId('step1-my-templates-list')).toBeVisible();
   await expect(page.getByTestId('step1-template-detail-name')).toHaveCount(0);
-  await expect(page.getByText('Find Best Starting Point')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toHaveCount(0);
+  await expect(page.getByTestId('step1-ai-prompt-input')).toHaveCount(0);
   await expect(page.getByText('Browse templates manually')).toBeVisible();
   await expect(page.getByText('Start a new template')).toHaveCount(0);
   await expect(page.getByText('New Template Draft')).toHaveCount(0);
   await expect(page.getByText('Save Template')).toHaveCount(0);
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
   await expect(page.getByText('draft template', { exact: false })).toHaveCount(0);
 
   await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
@@ -1757,10 +1766,9 @@ test('agreement wizard step 1 can find the best starting point and open the deta
   await page.getByText('Browse templates manually').click();
   await expect(page.getByTestId('step1-template-browser')).toBeVisible();
   await expect(page.getByTestId('step1-template-detail-name')).toHaveCount(0);
-  await page.getByTestId('step1-ai-prompt-input').fill(
-    'Kitchen remodel with layout updates, new cabinets, and finish work'
-  );
-  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await expect(page.getByTestId('step1-job-description-input')).toHaveCount(0);
+  await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
+  await page.getByRole('button', { name: /Kitchen Remodel Template/ }).click();
 
   await expect(page.getByTestId('step1-template-detail-name')).toContainText(
     'Kitchen Remodel Template'
@@ -2763,6 +2771,7 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
       message: '',
     },
   };
+  const patchPayloads = [];
 
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
@@ -2885,6 +2894,7 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
 
       if (request.method() === 'PATCH') {
         const payload = request.postDataJSON();
+        patchPayloads.push(payload);
         agreement = {
           ...agreement,
           ...payload,
@@ -2916,6 +2926,13 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
     waitUntil: 'domcontentloaded',
   });
 
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Quarterly HVAC maintenance agreement'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('maintenance-settings-card')).toBeVisible();
   await page.getByText('Maintenance / Recurring Service').click();
   await page.getByTestId('maintenance-frequency-select').selectOption('quarterly');
@@ -2924,6 +2941,16 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
   await expect(page.getByTestId('maintenance-summary')).toContainText(
     'Quarterly HVAC Maintenance'
   );
+
+  await page.getByTestId('agreement-save-draft-button').click();
+  await expect.poll(() =>
+    patchPayloads.some(
+      (payload) =>
+        payload.recurrence_pattern === 'quarterly' &&
+        payload.service_window_notes === 'Second Wednesday mornings.' &&
+        payload.recurring_summary_label === 'Quarterly HVAC Maintenance'
+    )
+  ).toBeTruthy();
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
     waitUntil: 'domcontentloaded',

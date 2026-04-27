@@ -54,6 +54,10 @@ function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function safeRecurringText(v) {
+  return v == null ? "" : String(v).trim();
+}
+
 function money(v) {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return 0;
@@ -987,9 +991,9 @@ export default function AgreementWizard() {
       auto_generate_next_occurrence:
         dLocal.agreement_mode === "maintenance" ? dLocal.auto_generate_next_occurrence !== false : false,
       service_window_notes:
-        dLocal.agreement_mode === "maintenance" ? dLocal.service_window_notes || "" : "",
+        dLocal.agreement_mode === "maintenance" ? safeRecurringText(dLocal.service_window_notes) : "",
       recurring_summary_label:
-        dLocal.agreement_mode === "maintenance" ? dLocal.recurring_summary_label || "" : "",
+        dLocal.agreement_mode === "maintenance" ? safeRecurringText(dLocal.recurring_summary_label) : "",
       payment_mode: dLocal.payment_mode || "escrow",
       payment_structure: dLocal.payment_structure || "simple",
       retainage_percent:

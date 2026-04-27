@@ -544,6 +544,9 @@ class AgreementSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     project_subtype = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    recurrence_pattern = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    service_window_notes = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    recurring_summary_label = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
 
     project_address_line1 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     project_address_line2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -1319,6 +1322,12 @@ class AgreementSerializer(serializers.ModelSerializer):
         if recurrence_interval < 1:
             raise serializers.ValidationError({"recurrence_interval": "Recurrence interval must be at least 1."})
         attrs["recurrence_interval"] = recurrence_interval
+        attrs["service_window_notes"] = str(
+            attrs.get("service_window_notes", getattr(self.instance, "service_window_notes", "")) or ""
+        )
+        attrs["recurring_summary_label"] = str(
+            attrs.get("recurring_summary_label", getattr(self.instance, "recurring_summary_label", "")) or ""
+        )
 
         if agreement_mode == "maintenance" or recurring_enabled:
             attrs["agreement_mode"] = "maintenance"
@@ -1353,6 +1362,8 @@ class AgreementSerializer(serializers.ModelSerializer):
             attrs["next_occurrence_date"] = None
             attrs["auto_generate_next_occurrence"] = False
             attrs["maintenance_status"] = "active"
+            attrs["service_window_notes"] = ""
+            attrs["recurring_summary_label"] = ""
 
         if maintenance_status in {"paused", "cancelled", "completed"} and not (
             agreement_mode == "maintenance" or recurring_enabled

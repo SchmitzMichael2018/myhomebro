@@ -603,8 +603,7 @@ export default function TemplateSearchSection({
     if (locked) return;
     setSelectedTemplateId?.(null);
     setTemplateDropdownOpen(false);
-    onStartModeChange?.("manual");
-    onContinueToStep2?.();
+    onStartFromScratch?.();
   }
 
   function handleTemplateResultPick(picked) {
@@ -660,34 +659,6 @@ export default function TemplateSearchSection({
       <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="text-sm font-semibold text-slate-900">Describe the job</div>
-            <div className="mt-1 text-xs text-slate-600">
-              AI will recommend a matching template or help build the agreement.
-            </div>
-
-            <input
-              className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              placeholder="Example: Replace exterior siding on a single-story home..."
-              disabled={locked}
-              data-testid="step1-ai-prompt-input"
-            />
-
-            <button
-              type="button"
-              onClick={handleFindBestStartingPoint}
-              disabled={locked || (!canUseGeneratedPrompt && !hasSomeContext)}
-              className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-              data-testid="step1-find-best-starting-point-button"
-            >
-              Find Best Starting Point
-            </button>
-
-            <div className="mt-2 text-[11px] text-slate-500">
-              Use your description to guide AI and manual browsing.
-            </div>
-
             <details
               className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3"
               open={manualBrowseOpen}
@@ -799,13 +770,21 @@ export default function TemplateSearchSection({
               <div className="space-y-4">
                 <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
                   <div className="text-base font-semibold text-slate-900">
-                    Describe the job
+                    Recommended starting point
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    AI will recommend a matching template or help build the agreement.
+                    Select a template to preview it, or build the agreement directly from your description.
                   </div>
-                  <div className="mt-2 text-xs text-slate-500">
-                    Example: Replace exterior siding on a single-story home.
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={handleBuildWithoutTemplate}
+                      disabled={locked}
+                      data-testid="step1-build-agreement-ai-button"
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Build Agreement with AI
+                    </button>
                   </div>
                 </div>
 
@@ -913,7 +892,7 @@ export default function TemplateSearchSection({
                               disabled={locked}
                               className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                             >
-                              Build Without Template
+                              Build Agreement with AI
                             </button>
                           </div>
                         </div>

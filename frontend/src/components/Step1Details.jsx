@@ -852,6 +852,10 @@ export default function Step1Details({
     return fallback;
   }
 
+  function normalizeRecurringText(value) {
+    return value == null ? "" : String(value).trim();
+  }
+
   async function patchAgreement(fields, { silent = true } = {}) {
     if (locked) return;
 
@@ -859,12 +863,19 @@ export default function Step1Details({
     if (!id) return;
     if (!fields || Object.keys(fields).length === 0) return;
 
-    const key = JSON.stringify(fields);
+    const outgoingFields = { ...fields };
+    for (const key of ["recurrence_pattern", "service_window_notes", "recurring_summary_label"]) {
+      if (Object.prototype.hasOwnProperty.call(outgoingFields, key)) {
+        outgoingFields[key] = normalizeRecurringText(outgoingFields[key]);
+      }
+    }
+
+    const key = JSON.stringify(outgoingFields);
     if (lastPatchedRef.current[key]) return;
     lastPatchedRef.current[key] = true;
 
     try {
-      await api.patch(`/projects/agreements/${id}/`, fields);
+      await api.patch(`/projects/agreements/${id}/`, outgoingFields);
       if (!silent) toast.success("Saved");
     } catch (e) {
       const msg = formatApiError(e, "Could not save changes.");
@@ -1275,8 +1286,8 @@ export default function Step1Details({
       },
       {
         key: "manual",
-        title: "Build without template",
-        description: "Build the agreement manually with full control over the setup fields.",
+        title: "Build agreement directly",
+        description: "Start from the project details and keep the agreement fully editable.",
       },
     ],
     []
@@ -1721,8 +1732,8 @@ export default function Step1Details({
             recurrence_end_date: recurrenceEndDate || "",
             maintenance_status: maintenanceStatus || "active",
             auto_generate_next_occurrence: autoGenerateNextOccurrence,
-            service_window_notes: dLocal?.service_window_notes || "",
-            recurring_summary_label: dLocal?.recurring_summary_label || "",
+            service_window_notes: normalizeRecurringText(dLocal?.service_window_notes),
+            recurring_summary_label: normalizeRecurringText(dLocal?.recurring_summary_label),
           }
         : {
             agreement_mode: "standard",
@@ -2067,6 +2078,7 @@ export default function Step1Details({
     });
     setDismissedAiTemplateRecommendation(false);
     syncLocalFromAgreementPayload(nextAgreement);
+    queueProjectDetailsReview(["project_title", "project_type", "project_subtype", "description"]);
     toast.success("Template applied. Review the agreement details below.");
 
     if (typeof onTemplateApplied === "function") {
@@ -2080,6 +2092,16 @@ export default function Step1Details({
     if (typeof refreshAgreement === "function") {
       await refreshAgreement();
     }
+  }
+
+  function handleBuildAgreementWithoutTemplate() {
+    setSelectedTemplateId(null);
+    setTemplateSearch("");
+    setAiPreview("");
+    setAiMilestonePreview(null);
+    setAiErr("");
+    activateStartMode("manual", { committed: true, source: "user" });
+    queueProjectDetailsReview(["project_title", "project_type", "project_subtype", "description"]);
   }
 
   async function handleTemplateApplyWithOptions(template, options = {}) {
@@ -2755,13 +2777,13 @@ export default function Step1Details({
       ? "AI-assisted start"
       : startMode === "template"
       ? "Recommended starting point"
-      : "Build without template";
+      : "Agreement draft in progress";
   const activeStartModeSummary =
     startMode === "ai"
       ? "Describe the job first, then review the agreement details AI prepares below."
       : startMode === "template"
       ? "Use a matching starting point, then review and edit the agreement details below."
-      : "Build the agreement directly, with AI still available if you want help later.";
+      : "Review the agreement details below and keep editing.";
   const canResetStep1 =
     Boolean(agreementId) &&
     !locked &&
@@ -2786,7 +2808,13 @@ export default function Step1Details({
       ? "Describe the job first, then review and edit the agreement details here."
       : startMode === "template"
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
-      : "Define the project type, title, scope, and agreement behavior for this job.";
+      : "Review the agreement details below and keep editing.";
+  const shouldShowProjectDetails =
+    startModeCommitted &&
+    (startMode === "manual" ||
+      Boolean(appliedTemplateId) ||
+      Boolean(selectedTemplateId) ||
+      Boolean(aiSetupResult));
 
   return (
     <>
@@ -3031,13 +3059,6 @@ export default function Step1Details({
                 >
                   Browse templates manually
                 </button>
-                <button
-                  type="button"
-                  onClick={() => activateStartMode("manual", { committed: true, source: "user" })}
-                  className="text-xs font-semibold text-slate-700 hover:underline"
-                >
-                  Build without template
-                </button>
               </div>
             </div>
           )}
@@ -3264,6 +3285,7 @@ export default function Step1Details({
                 startMode={startMode}
                 onStartModeChange={activateStartMode}
                 manualBrowseOpenSignal={step1ManualBrowseSignal}
+                onStartFromScratch={handleBuildAgreementWithoutTemplate}
                 onGenerateAiDraft={(prompt) => {
                   if (typeof onStep1AiSetupRequest === "function") {
                     onStep1AiSetupRequest({ prompt, nonce: Date.now() });
@@ -3442,6 +3464,7 @@ export default function Step1Details({
           </section>
         ) : null}
 
+        {shouldShowProjectDetails ? (
         <div className="space-y-6">
           <StepSection
             title="Project Details"
@@ -3884,113 +3907,6 @@ export default function Step1Details({
               ) : null}
 
               <div>
-                <div
-                  data-testid="proposal-draft-section"
-                  className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div
-                      data-testid="proposal-draft-title"
-                      className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500"
-                    >
-                      {hasLeadProposalContext ? "Proposal Draft" : "Scope of Work / Description"}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      {hasLeadProposalContext
-                        ? "Start with a draft based on the structured project summary, then edit anything you want."
-                        : "Start with a simple draft now, then refine it as details become available."}
-                    </div>
-                  </div>
-                    <button
-                      type="button"
-                      onClick={handleGenerateLeadProposalDraft}
-                      disabled={locked}
-                      data-testid="generate-draft-button"
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                    >
-                      Generate Draft
-                    </button>
-                  </div>
-                  {proposalLearningNote ? (
-                    <div className="mt-3 space-y-2">
-                      <div
-                        data-testid="proposal-learning-note"
-                        className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800"
-                      >
-                        {proposalLearningNote}
-                      </div>
-                      <div data-testid="proposal-learning-context" className="rounded-xl border border-emerald-100 bg-white px-4 py-3">
-                        <button
-                          type="button"
-                          data-testid="proposal-learning-context-toggle"
-                          aria-expanded={proposalLearningContextOpen}
-                          onClick={() => setProposalLearningContextOpen((open) => !open)}
-                          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-900"
-                        >
-                          <span>What this means</span>
-                          <span aria-hidden="true">{proposalLearningContextOpen ? "-" : "+"}</span>
-                        </button>
-                        {proposalLearningContextOpen ? (
-                          <div className="mt-2 text-sm leading-6 text-slate-600">
-                            This draft includes patterns that have worked well in similar completed projects. You can edit anything before sending.
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {proposalBrandNote ? (
-                    <div
-                      data-testid="proposal-brand-note"
-                      className="mt-3 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800"
-                    >
-                      {proposalBrandNote}
-                    </div>
-                  ) : null}
-                  {leadProposalDraft?.summary?.projectFamilyLabel ? (
-                    <div
-                      data-testid="proposal-project-family-cue"
-                      className="mt-3 inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800"
-                    >
-                      {leadProposalDraft.summary.projectFamilyLabel}
-                    </div>
-                  ) : null}
-                  {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (
-                    <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                      Loading project details from the lead review...
-                    </div>
-                  ) : null}
-
-                  <div
-                    data-testid="lead-context-summary"
-                    className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-                  >
-                    <LeadContextField
-                      label="Project"
-                      value={leadProposalDraft?.summary?.projectTitle || dLocal.project_title || "-"}
-                    />
-                    <LeadContextField
-                      label="Project Type"
-                      value={leadProposalDraft?.summary?.projectType || dLocal.project_type || "-"}
-                    />
-                    <LeadContextField
-                      label="Area"
-                      value={leadProposalDraft?.summary?.projectSubtype || dLocal.project_subtype || "-"}
-                    />
-                    <LeadContextField
-                      label="Scope Summary"
-                      value={leadProposalDraft?.summary?.projectScopeSummary || leadProposalDraft?.summary?.refinedDescription || dLocal.description || "-"}
-                    />
-                    <LeadContextField label="Location" value={leadProposalDraft?.summary?.location || "-"} />
-                    <LeadContextField label="Timing" value={leadProposalDraft?.summary?.timeline || "-"} />
-                    <LeadContextField label="Budget" value={leadProposalDraft?.summary?.budget || "-"} />
-                  </div>
-
-                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                    This draft is a starting point. Review and edit it before sending.
-                  </div>
-                </div>
-
                 <div className="mb-1 flex items-center gap-2">
                   <label className="block text-sm font-medium text-slate-900">Project Title</label>
                   {getAiSuggestedIndicator("project_title") ? (
@@ -4017,13 +3933,9 @@ export default function Step1Details({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-900">
-                  {hasLeadProposalContext ? "Proposal Draft" : "Scope of Work / Description"}
-                </label>
+                <label className="mb-1 block text-sm font-medium text-slate-900">Scope of Work</label>
                 <div className="mb-2 text-xs leading-5 text-slate-600">
-                  {hasLeadProposalContext
-                    ? "Use this as the first version of your bid response. Edit anything you want before continuing."
-                    : "Describe what is included so the customer understands the job clearly and milestone planning stays accurate."}
+                  Describe what is included so the customer understands the job clearly and milestone planning stays accurate.
                 </div>
 
                 <textarea
@@ -4033,19 +3945,13 @@ export default function Step1Details({
                   name="description"
                   value={dLocal.description || ""}
                   onChange={locked ? undefined : handleStep1LocalChange}
-                  placeholder={
-                    hasLeadProposalContext
-                      ? "Start with a lead-based draft, then refine the scope before moving on."
-                      : "Example: Remove existing materials, prepare surfaces, install new materials, complete finish work, and clean the job site..."
-                  }
+                  placeholder="Example: Remove existing materials, prepare surfaces, install new materials, complete finish work, and clean the job site..."
                   disabled={locked}
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-600">
-                    {hasLeadProposalContext
-                      ? "Based on the structured project summary from the lead review."
-                      : startMode === "ai"
+                    {startMode === "ai"
                       ? "Use AI to draft the first version, then refine the scope here."
                       : "AI can turn a rough idea into a clearer, stronger scope when you want help."}
                   </div>
@@ -4072,12 +3978,6 @@ export default function Step1Details({
                     </button>
                   </div>
                 </div>
-
-                {hasLeadProposalContext ? (
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    The draft references the project title, scope, clarifications, photos, timing, and budget signals that are already available.
-                  </div>
-                ) : null}
 
                 <div className="mt-3 flex w-full flex-wrap gap-2">
                   <button
@@ -4378,6 +4278,7 @@ export default function Step1Details({
               </div>
             </StepSection>
           </div>
+        ) : null}
 
 
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-5">

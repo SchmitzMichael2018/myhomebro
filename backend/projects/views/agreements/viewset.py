@@ -252,6 +252,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         if not self._safe_str(data.get("payment_mode")):
             data["payment_mode"] = "escrow"
 
+        for field in ("recurrence_pattern", "service_window_notes", "recurring_summary_label"):
+            if data.get(field) is None:
+                data[field] = ""
+
         return data
 
     def _extract_milestones_payload(self, payload: dict):

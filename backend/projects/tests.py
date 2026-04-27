@@ -13639,6 +13639,81 @@ class RecurringMaintenanceTests(TestCase):
         self.assertGreaterEqual(len(preview["preview_occurrences"]), 1)
 
 
+class AgreementStep1RecurringFieldSaveTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            email="step1-save@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Step 1 Save Contractor",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Step 1 Save Homeowner",
+            email="step1-save-homeowner@example.com",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_standard_step1_draft_normalizes_recurring_fields_to_empty_strings(self):
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "is_draft": True,
+                "wizard_step": 1,
+                "homeowner": self.homeowner.id,
+                "project_title": "Standard Step 1 Draft",
+                "title": "Standard Step 1 Draft",
+                "description": "Standard agreement draft.",
+                "agreement_mode": AgreementMode.STANDARD,
+                "recurring_service_enabled": False,
+                "recurrence_pattern": None,
+                "service_window_notes": None,
+                "recurring_summary_label": None,
+                "payment_mode": "escrow",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        agreement = Agreement.objects.get(pk=response.json()["id"])
+        self.assertEqual(agreement.agreement_mode, AgreementMode.STANDARD)
+        self.assertEqual(agreement.recurrence_pattern, "")
+        self.assertEqual(agreement.service_window_notes, "")
+        self.assertEqual(agreement.recurring_summary_label, "")
+
+    def test_maintenance_step1_draft_preserves_recurrence_fields_without_nulls(self):
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "is_draft": True,
+                "wizard_step": 1,
+                "homeowner": self.homeowner.id,
+                "project_title": "Recurring Step 1 Draft",
+                "title": "Recurring Step 1 Draft",
+                "description": "Recurring service draft.",
+                "agreement_mode": AgreementMode.MAINTENANCE,
+                "recurring_service_enabled": True,
+                "recurrence_pattern": RecurrencePattern.MONTHLY,
+                "recurrence_interval": 1,
+                "recurrence_start_date": str(timezone.localdate()),
+                "service_window_notes": None,
+                "recurring_summary_label": None,
+                "payment_mode": "escrow",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        agreement = Agreement.objects.get(pk=response.json()["id"])
+        self.assertEqual(agreement.agreement_mode, AgreementMode.MAINTENANCE)
+        self.assertEqual(agreement.recurrence_pattern, RecurrencePattern.MONTHLY)
+        self.assertEqual(agreement.service_window_notes, "")
+        self.assertEqual(agreement.recurring_summary_label, "")
+
+
 class CustomerPortalAccessTests(TestCase):
     def setUp(self):
         cache.clear()
