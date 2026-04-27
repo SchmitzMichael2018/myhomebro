@@ -3265,7 +3265,166 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {suggestedPlan ? (
+      <section
+        className="mb-4 rounded-2xl border border-sky-200 bg-sky-50/70 shadow-sm"
+        data-testid="step2-plan-guidance-card"
+      >
+        <div className="px-4 py-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-semibold text-slate-950">Plan Guidance</div>
+                <span className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+                  Advisory only
+                </span>
+              </div>
+              <div className="mt-1 text-sm text-slate-700">
+                Keep these suggestions in view while you edit milestones. They’re advisory and easy to ignore.
+              </div>
+              <ul className="mt-3 space-y-1 text-sm text-slate-700">
+                <li>{step2InsightCards.milestones.body}</li>
+                <li>{step2InsightCards.timeline.body}</li>
+                <li>{step2InsightCards.pricing.body}</li>
+                <li>
+                  {step2TemplateInsights.completeness.has_materials
+                    ? "Materials guidance is included."
+                    : "Materials guidance could benefit from more detail."}
+                </li>
+                <li>
+                  {step2TemplateInsights.completeness.has_clarifications
+                    ? "Clarification guidance is included."
+                    : "Clarification guidance could benefit from more detail."}
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleRunAiSuggest}
+                disabled={milestonesLocked}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                data-testid="step2-generate-suggested-milestones"
+              >
+                Generate Suggested Milestones
+              </button>
+              <button
+                type="button"
+                onClick={applyEstimateSuggestedAmounts}
+                disabled={milestonesLocked}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                data-testid="step2-apply-pricing-guidance"
+              >
+                Apply Pricing Guidance
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {estimatePreview ? (
+        <details
+          className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm"
+          data-testid="step2-estimate-guidance-details"
+        >
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-900">
+            View estimate guidance
+          </summary>
+          <div className="border-t border-slate-200 px-4 py-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost range</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
+                  {formatCurrency(estimatePreview.suggested_price_low)} â€“ {formatCurrency(estimatePreview.suggested_price_high)}
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  Centered around {formatCurrency(estimatePreview.suggested_total_price)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Duration range</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
+                  {formatDurationDays(estimatePreview.suggested_duration_low)} â€“ {formatDurationDays(estimatePreview.suggested_duration_high)}
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  Typical pace: {formatDurationDays(estimatePreview.suggested_duration_days)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confidence</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-confidence">
+                  {formatEstimateConfidence(estimatePreview.confidence_level) || "Estimate available"}
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  {estimateSummaryMeta?.lowConfidence ? "Limited data available." : estimatePreview.confidence_reasoning}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Optional Project Budget</div>
+              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div className="text-sm text-slate-700">
+                  {step2ModeMeta.budgetDescription}
+                </div>
+                <div className="w-full max-w-xs">
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Planning budget
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={projectBudgetInput}
+                    onChange={(e) => setProjectBudgetInput(e.target.value)}
+                    placeholder={safeStr(estimatePreview?.suggested_total_price) || "Enter budget"}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    data-testid="step2-project-budget-input"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  handleRefreshProjectEstimate({
+                    successMessage: "Estimate refreshed from current project details.",
+                  }).catch((err) =>
+                    toast.error(err?.response?.data?.detail || err?.message || "Estimate refresh failed.")
+                  );
+                }}
+                disabled={estimateRefreshing}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                data-testid="step2-refresh-estimate"
+              >
+                {estimateRefreshing ? "Refreshing Estimate…" : "Refresh Estimate"}
+              </button>
+              <button
+                type="button"
+                onClick={applyEstimateSuggestedAmounts}
+                disabled={milestonesLocked}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                data-testid="step2-apply-estimate-amounts"
+              >
+                Apply Suggested Amounts
+              </button>
+              <button
+                type="button"
+                onClick={applyEstimateSuggestedTimeline}
+                disabled={milestonesLocked}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                data-testid="step2-apply-estimate-timeline"
+              >
+                Apply Suggested Timeline
+              </button>
+            </div>
+          </div>
+        </details>
+      ) : null}
+
+      {false && suggestedPlan ? (
         <section
           className="rounded-2xl border border-emerald-200 bg-emerald-50/60 shadow-sm"
           data-testid="step2-suggested-plan-card"
@@ -3518,7 +3677,7 @@ export default function Step2Milestones({
         </section>
       ) : null}
 
-      {estimatePreview ? (
+      {false && estimatePreview ? (
         <section
           className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 shadow-sm"
           data-testid="step2-estimate-panel"
@@ -3829,7 +3988,7 @@ export default function Step2Milestones({
         }}
       />
 
-      {aiPreview ? (
+      {false && aiPreview ? (
         <div className="mb-6 rounded-lg border bg-indigo-50 p-4">
           <h4 className="mb-2 font-semibold">AI Suggested Scope</h4>
           <p className="mb-3 whitespace-pre-wrap text-sm">{aiPreview.scope_text}</p>
@@ -4030,6 +4189,15 @@ export default function Step2Milestones({
       </div>
 
       <div className="mb-6">
+        <button
+          type="button"
+          onClick={handleRunAiSuggest}
+          disabled={milestonesLocked || templateApplied}
+          className="mr-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+          data-testid="step2-improve-with-ai"
+        >
+          Improve with AI
+        </button>
         <button
           type="button"
           onClick={() =>
