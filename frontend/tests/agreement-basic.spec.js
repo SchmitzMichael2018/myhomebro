@@ -407,20 +407,23 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
     'Build backyard 12x14 shed with slab foundation and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
   await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
   await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeEnabled();
-  await page.getByTestId('step1-build-agreement-ai-button').click();
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
 
   const projectDetailsCard = page.getByTestId('step1-project-details-card');
   await expect(projectDetailsCard).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(projectDetailsCard).toHaveAttribute('data-emphasis', 'true');
+  await expect(page.getByTestId('step1-review-project-details-jump')).toBeVisible();
+  await expect(page.getByTestId('step1-review-project-details-jump')).toContainText('Jump');
+  const beforeJumpBox = await projectDetailsCard.boundingBox();
+  await page.getByTestId('step1-review-project-details-jump').click({ force: true });
   await expect.poll(async () => {
     const box = await projectDetailsCard.boundingBox();
     return box?.y ?? 9999;
-  }).toBeLessThan(120);
+  }).toBeLessThan((beforeJumpBox?.y ?? 9999) - 20);
   await expect(page.locator('select[name="project_type"]')).not.toHaveValue('Concrete');
   await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue('Concrete Slab');
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();

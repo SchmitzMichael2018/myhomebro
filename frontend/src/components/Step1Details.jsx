@@ -863,6 +863,9 @@ export default function Step1Details({
   const projectDetailsPulseTimerRef = useRef(null);
   const projectDetailsScrollFrameRef = useRef(null);
   const projectDetailsFocusFrameRef = useRef(null);
+  const projectDetailsAutoScrolledRef = useRef(false);
+  const projectDetailsUserScrolledRef = useRef(false);
+  const projectDetailsProgrammaticScrollRef = useRef(false);
   const projectTypeFieldRef = useRef(null);
   const projectTitleFieldRef = useRef(null);
   const projectScopeFieldRef = useRef(null);
@@ -1381,12 +1384,89 @@ export default function Step1Details({
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleWindowScroll = () => {
+      if (projectDetailsProgrammaticScrollRef.current) return;
+      projectDetailsUserScrolledRef.current = true;
+    };
+
+    window.addEventListener("scroll", handleWindowScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleWindowScroll);
+    };
+  }, []);
+
   function queueProjectDetailsReview(changedKeys = []) {
     if (typeof window === "undefined") return;
     setPendingProjectDetailsReview({
       nonce: Date.now(),
-      baselineScrollY: window.scrollY,
       changedKeys: Array.isArray(changedKeys) ? changedKeys.filter(Boolean) : [],
+    });
+  }
+
+  function focusProjectDetailsField() {
+    const focusTarget =
+      !safeTrim(dLocal?.project_type)
+        ? projectTypeFieldRef.current
+        : !safeTrim(dLocal?.project_title)
+        ? projectTitleFieldRef.current
+        : projectScopeFieldRef.current;
+
+    if (!focusTarget || typeof focusTarget.focus !== "function") return;
+
+    try {
+      focusTarget.focus({ preventScroll: true });
+    } catch {
+      focusTarget.focus();
+    }
+  }
+
+  function pulseProjectDetails() {
+    setProjectDetailsReviewPulse(true);
+    if (projectDetailsPulseTimerRef.current) {
+      clearTimeout(projectDetailsPulseTimerRef.current);
+    }
+    projectDetailsPulseTimerRef.current = window.setTimeout(() => {
+      setProjectDetailsReviewPulse(false);
+    }, 2000);
+  }
+
+  function scrollToProjectDetails({ allowAutoScroll = false } = {}) {
+    if (typeof window === "undefined") return;
+    const target = projectDetailsSectionRef.current;
+    if (!target) return;
+
+    if (projectDetailsScrollFrameRef.current) {
+      window.cancelAnimationFrame(projectDetailsScrollFrameRef.current);
+    }
+    if (projectDetailsFocusFrameRef.current) {
+      window.cancelAnimationFrame(projectDetailsFocusFrameRef.current);
+    }
+
+    if (allowAutoScroll) {
+      if (projectDetailsAutoScrolledRef.current || projectDetailsUserScrolledRef.current) {
+        return;
+      }
+      projectDetailsAutoScrolledRef.current = true;
+    } else {
+      projectDetailsUserScrolledRef.current = true;
+    }
+
+    pulseProjectDetails();
+    projectDetailsProgrammaticScrollRef.current = true;
+    projectDetailsScrollFrameRef.current = window.requestAnimationFrame(() => {
+      projectDetailsScrollFrameRef.current = null;
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => {
+        projectDetailsProgrammaticScrollRef.current = false;
+      }, 800);
+    });
+
+    projectDetailsFocusFrameRef.current = window.requestAnimationFrame(() => {
+      projectDetailsFocusFrameRef.current = null;
+      focusProjectDetailsField();
     });
   }
 
@@ -1415,51 +1495,9 @@ export default function Step1Details({
       return;
     }
 
-    if (projectDetailsScrollFrameRef.current) {
-      window.cancelAnimationFrame(projectDetailsScrollFrameRef.current);
-    }
-    if (projectDetailsFocusFrameRef.current) {
-      window.cancelAnimationFrame(projectDetailsFocusFrameRef.current);
-    }
-
-    const focusProjectDetailsField = () => {
-      const focusTarget =
-        !safeTrim(dLocal?.project_type)
-          ? projectTypeFieldRef.current
-          : !safeTrim(dLocal?.project_title)
-          ? projectTitleFieldRef.current
-          : projectScopeFieldRef.current;
-
-      if (!focusTarget || typeof focusTarget.focus !== "function") return;
-
-      try {
-        focusTarget.focus({ preventScroll: true });
-      } catch {
-        focusTarget.focus();
-      }
-    };
-
-    projectDetailsScrollFrameRef.current = window.requestAnimationFrame(() => {
-      projectDetailsScrollFrameRef.current = null;
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      setProjectDetailsReviewPulse(true);
-      if (projectDetailsPulseTimerRef.current) {
-        clearTimeout(projectDetailsPulseTimerRef.current);
-      }
-      projectDetailsPulseTimerRef.current = window.setTimeout(() => {
-        setProjectDetailsReviewPulse(false);
-      }, 2200);
-
-      projectDetailsFocusFrameRef.current = window.requestAnimationFrame(() => {
-        projectDetailsFocusFrameRef.current = null;
-        focusProjectDetailsField();
-        setPendingProjectDetailsReview(null);
-      });
-    });
+    pulseProjectDetails();
+    setPendingProjectDetailsReview(null);
   }, [
-    dLocal?.project_subtype,
-    dLocal?.project_title,
-    dLocal?.project_type,
     onAiSetupReviewReady,
     pendingProjectDetailsReview,
   ]);
@@ -2901,6 +2939,11 @@ export default function Step1Details({
       Boolean(appliedTemplateId) ||
       Boolean(selectedTemplateId) ||
       Boolean(aiSetupResult));
+  useEffect(() => {
+    if (shouldShowProjectDetails) return;
+    projectDetailsAutoScrolledRef.current = false;
+    projectDetailsUserScrolledRef.current = false;
+  }, [shouldShowProjectDetails]);
   const isStartingPointLoading = Boolean(aiSetupBusy);
   const isStartingPointError = Boolean(aiSetupError);
   const startingPointStatusTitle =
@@ -3162,6 +3205,25 @@ export default function Step1Details({
                       {activeStartModeLabel}
                     </div>
                     <div className="mt-1 text-sm text-slate-600">{activeStartModeSummary}</div>
+                    {shouldShowProjectDetails ? (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                        <div className="text-sm font-semibold text-slate-900">
+                          Review Project Details
+                        </div>
+                        <div className="mt-1 text-sm text-slate-600">
+                          We’ve created a starting point. Jump to the editable details when you’re
+                          ready.
+                        </div>
+                        <button
+                          type="button"
+                          data-testid="step1-review-project-details-jump"
+                          onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
+                          className="mt-3 inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          Jump ↓
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {canResetStep1 && hasResettableStep1State ? (
