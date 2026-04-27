@@ -620,6 +620,14 @@ def score_template(
         total_score -= 18
         reasons.append(f"generic template mismatch for {request_family} project")
 
+    if request_family == "outdoor":
+        if template_family == "concrete":
+            total_score -= 70
+            reasons.append("shed/outdoor project should not fall back to concrete slab template")
+        elif template_family == "roofing":
+            total_score -= 70
+            reasons.append("shed/outdoor project should not fall back to roofing template")
+
     # Small boost to built-in subtype starters only when match is already reasonably aligned
     if (
         _norm(project_subtype)

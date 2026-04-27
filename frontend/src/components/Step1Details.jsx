@@ -1363,8 +1363,8 @@ export default function Step1Details({
   ]);
 
   useEffect(() => {
-    onAiModeActiveChange?.(startModeCommitted && startMode === "ai");
-  }, [onAiModeActiveChange, startMode, startModeCommitted]);
+    onAiModeActiveChange?.(false);
+  }, [onAiModeActiveChange, startMode, startModeCommitted, aiSetupResult?.kind]);
 
   useEffect(() => {
     return () => {
@@ -2878,6 +2878,7 @@ export default function Step1Details({
   const shouldShowProjectDetails =
     startModeCommitted &&
     (startMode === "manual" ||
+      startMode === "ai" ||
       Boolean(appliedTemplateId) ||
       Boolean(selectedTemplateId) ||
       Boolean(aiSetupResult));
@@ -3369,6 +3370,7 @@ export default function Step1Details({
                 startMode={startMode}
                 onStartModeChange={activateStartMode}
                 manualBrowseOpenSignal={step1ManualBrowseSignal}
+                jobPrompt={step1JobDescriptionPrompt}
                 onStartFromScratch={handleBuildAgreementWithoutTemplate}
                 onGenerateAiDraft={(prompt) => {
                   if (typeof onStep1AiSetupRequest === "function") {

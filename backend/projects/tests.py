@@ -12417,11 +12417,39 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(recommendation["suggested_template_label"], "Shed Build Template")
         self.assertFalse(recommendation["strong_template_match"])
 
+    def test_project_setup_recommendation_keeps_shed_on_concrete_slab_as_outdoor(self):
+        recommendation = build_project_setup_recommendation(
+            project_title="Build backyard 12x14 shed",
+            project_type="",
+            project_subtype="",
+            description="Build backyard 12x14 shed on a concrete slab with single entry door and cleanup.",
+        )
+
+        self.assertEqual(recommendation["project_family_key"], "outdoor")
+        self.assertEqual(recommendation["recommended_project_type"], "Outdoor")
+        self.assertEqual(recommendation["recommended_project_subtype"], "Shed Build")
+        self.assertEqual(recommendation["suggested_template_label"], "Shed Build Template")
+        self.assertFalse(recommendation["strong_template_match"])
+
+    def test_project_setup_recommendation_maps_slab_only_request_to_concrete(self):
+        recommendation = build_project_setup_recommendation(
+            project_title="Pour concrete slab for shed",
+            project_type="",
+            project_subtype="",
+            description="Pour concrete slab only for the shed foundation.",
+        )
+
+        self.assertEqual(recommendation["project_family_key"], "concrete")
+        self.assertEqual(recommendation["recommended_project_type"], "Concrete")
+        self.assertEqual(recommendation["recommended_project_subtype"], "Concrete Slab")
+        self.assertEqual(recommendation["suggested_template_label"], "Concrete Slab Template")
+        self.assertFalse(recommendation["strong_template_match"])
+
     def test_recommend_endpoint_does_not_fallback_to_roof_for_shed_scope(self):
         response = self.client.post(
             "/api/projects/templates/recommend/",
             {
-                "description": "Build backyard 12x14 shed with slab foundation, single entry door, and shingle roof.",
+                "description": "Build backyard 12x14 shed on a concrete slab with single entry door and cleanup.",
             },
             format="json",
         )
@@ -12434,6 +12462,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         candidate_names = {row["name"] for row in body["candidates"]}
         self.assertNotIn("Roof Replacement", candidate_names)
         self.assertNotIn("Roof Repair", candidate_names)
+        self.assertNotIn("Concrete Slab Installation", candidate_names)
 
     def test_recommend_endpoint_returns_optional_match_for_medium_confidence(self):
         response = self.client.post(
@@ -12464,7 +12493,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         response = self.client.post(
             "/api/projects/templates/recommend/",
             {
-                "description": "Pour a new concrete slab for a backyard patio and small equipment pad.",
+                "description": "Pour concrete slab for shed foundation and small equipment pad.",
             },
             format="json",
         )

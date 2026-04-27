@@ -92,6 +92,35 @@ const PROJECT_TYPE_FAMILIES = [
       "Outdoor projects benefit from confirming the footprint, foundation or slab, access, and any utility or permit needs before final pricing.",
   },
   {
+    key: "concrete",
+    label: "Concrete",
+    cueLabel: "Concrete-focused review",
+    keywords: [
+      "concrete",
+      "slab",
+      "slab pour",
+      "pour slab",
+      "cement",
+      "foundation pour",
+      "driveway",
+      "sidewalk",
+      "pad",
+      "patio slab",
+    ],
+    prepItems: [
+      "Confirm the slab size, thickness, and placement.",
+      "Review reinforcement, base prep, and curing needs.",
+      "Clarify finish, access, and any saw-cut or control joint needs.",
+      "Note drainage, grading, and permit requirements if relevant.",
+    ],
+    responseStarter:
+      "I reviewed the concrete details and can confirm the slab size, base prep, and next steps before pricing.",
+    createBidContext:
+      "Concrete work is clearer when the slab dimensions, base prep, reinforcement, and finish expectations are confirmed.",
+    draftFocusLine:
+      "Concrete projects benefit from confirming the slab size, base prep, reinforcement, and finish expectations before final pricing.",
+  },
+  {
     key: "roofing",
     label: "Roofing",
     cueLabel: "Roofing-focused review",
@@ -404,6 +433,33 @@ export function inferProjectIntelligence({
   let best = preferredFamily || GENERIC_PROJECT_INTELLIGENCE;
   let bestScore = preferredFamily ? 4 : 0;
   const familyLabelText = normalize(projectFamilyLabel);
+  const hasShedIntent = containsAny(text, [
+    "shed",
+    "outbuilding",
+    "storage shed",
+    "tool shed",
+    "garden shed",
+    "backyard shed",
+  ]);
+  const hasConcretePrimaryIntent = containsAny(text, [
+    "pour concrete slab",
+    "pour slab",
+    "slab only",
+    "concrete slab only",
+    "install concrete slab",
+    "new slab",
+    "slab pour",
+    "foundation pour",
+    "pour cement",
+    "concrete driveway",
+  ]);
+
+  if (hasShedIntent && !hasConcretePrimaryIntent) {
+    return { ...getFamilyMatchProfile("outdoor"), isGeneric: false };
+  }
+  if (hasConcretePrimaryIntent && !hasShedIntent) {
+    return { ...getFamilyMatchProfile("concrete"), isGeneric: false };
+  }
 
   for (const family of PROJECT_TYPE_FAMILIES) {
     let score = 0;
@@ -590,6 +646,13 @@ export function buildProjectSetupRecommendation({
       recommendationNote =
         "Outdoor structure projects are clearer when the footprint, foundation or slab, and material choices are confirmed.";
     }
+  } else if (family.key === "concrete") {
+    recommendedProjectType = "Concrete";
+    recommendedProjectSubtype = "Concrete Slab";
+    suggestedWorkflow = "Slab workflow";
+    suggestedTemplateLabel = "Concrete Slab Template";
+    recommendationNote =
+      "Concrete work is clearer when the slab size, base prep, reinforcement, and finish expectations are confirmed.";
   } else if (family.key === "bathroom_remodel") {
     if (scopeMode === "repair") {
       recommendedProjectType = "Bathroom Repair";

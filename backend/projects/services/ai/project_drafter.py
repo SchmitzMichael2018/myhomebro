@@ -35,6 +35,10 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
         "retaining wall", "outdoor", "fire pit", "shed", "outbuilding",
         "garage", "carport", "storage shed", "tool shed", "garden shed", "backyard shed",
     ],
+    "Concrete": [
+        "concrete", "slab", "slab pour", "pour slab", "cement",
+        "driveway", "sidewalk", "pad", "foundation pour",
+    ],
     "Inspection": [
         "inspect", "inspection", "estimate visit", "site visit", "assessment",
     ],
@@ -82,6 +86,14 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Patio": ["patio", "paver", "concrete"],
         "Landscaping": ["landscape", "mulch", "rock", "plant", "drainage", "sod"],
         "Pergola": ["pergola", "gazebo", "shade structure"],
+    },
+    "Concrete": {
+        "Concrete Slab": [
+            "concrete slab", "slab", "slab pour", "pour slab", "foundation", "pad", "driveway", "sidewalk",
+        ],
+        "Foundation": ["foundation", "footing", "stem wall"],
+        "Driveway": ["driveway", "approach"],
+        "Patio": ["patio", "paver", "concrete patio"],
     },
     "Inspection": {
         "Estimate Visit": ["estimate", "inspection", "site visit", "assessment"],
@@ -404,6 +416,24 @@ def _canonicalize_clarifications(items: list[Any], source: str = "unknown") -> l
 
 def _roofing_force_override(project_title: str, description: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
     hay = _norm_text(f"{project_title}\n{description}")
+    shed_signals = [
+        "shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed",
+    ]
+    concrete_primary_signals = [
+        "pour concrete slab",
+        "slab only",
+        "pour slab",
+        "slab pour",
+        "foundation pour",
+    ]
+    if any(sig in hay for sig in shed_signals) and not any(sig in hay for sig in concrete_primary_signals):
+        return None, None, None
+    if any(sig in hay for sig in concrete_primary_signals) and not any(sig in hay for sig in shed_signals):
+        subtype = "Concrete Slab"
+        if any(sig in hay for sig in ["driveway", "sidewalk"]):
+            subtype = "Concrete Slab"
+        reason = f"Detected concrete-specific scope. Using type 'Concrete' and subtype '{subtype}'."
+        return "Concrete", subtype, reason
     roof_signals = [
         "roof", "roofing", "roof leak", "roof repair", "roof replacement",
         "new roof", "reroof", "re-roof", "shingle", "shingles", "flashing",
@@ -433,9 +463,34 @@ def classify_type_subtype(
     requested_subtype: str = "",
 ) -> tuple[str, str, str]:
     if not _safe_str(requested_type):
-        roof_type, roof_subtype, roof_reason = _roofing_force_override(project_title, description)
-        if roof_type:
-            return roof_type, roof_subtype or "", roof_reason or "Roofing detected."
+        hay = _norm_text(f"{project_title}\n{description}")
+        shed_signals = [
+            "shed",
+            "outbuilding",
+            "storage shed",
+            "tool shed",
+            "garden shed",
+            "backyard shed",
+        ]
+        concrete_primary_signals = [
+            "pour concrete slab",
+            "slab only",
+            "pour slab",
+            "slab pour",
+            "foundation pour",
+            "driveway",
+            "sidewalk",
+        ]
+        if any(sig in hay for sig in shed_signals) and not any(sig in hay for sig in concrete_primary_signals):
+            return "Outdoor", "Shed Build", "Detected shed/outbuilding scope. Using type 'Outdoor' and subtype 'Shed Build'."
+        if any(sig in hay for sig in concrete_primary_signals) and not any(sig in hay for sig in shed_signals):
+            return "Concrete", "Concrete Slab", "Detected concrete-specific scope. Using type 'Concrete' and subtype 'Concrete Slab'."
+
+        concrete_type, concrete_subtype, concrete_reason = _roofing_force_override(
+            project_title, description
+        )
+        if concrete_type:
+            return concrete_type, concrete_subtype or "", concrete_reason or "Concrete detected."
 
     if _safe_str(requested_type):
         project_type = _safe_str(requested_type)

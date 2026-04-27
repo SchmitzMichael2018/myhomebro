@@ -287,6 +287,7 @@ export default function TemplateSearchSection({
   onGenerateAiDraft = null,
   onContinueToStep2 = null,
   onStartFromScratch = null,
+  jobPrompt = "",
   spreadEnabled,
   setSpreadEnabled,
   spreadTotal,
@@ -603,6 +604,19 @@ export default function TemplateSearchSection({
     if (locked) return;
     setSelectedTemplateId?.(null);
     setTemplateDropdownOpen(false);
+    const prompt =
+      safeTrim(jobPrompt) ||
+      safeTrim(aiPrompt) ||
+      safeTrim(templateSearch) ||
+      safeTrim(dLocal?.project_title) ||
+      safeTrim(dLocal?.description);
+
+    if (prompt && onGenerateAiDraft) {
+      onStartModeChange?.("ai");
+      onGenerateAiDraft(prompt);
+      return;
+    }
+
     onStartFromScratch?.();
   }
 
@@ -626,7 +640,7 @@ export default function TemplateSearchSection({
   }
 
   function handleFindBestStartingPoint() {
-    const prompt = safeTrim(aiPrompt) || safeTrim(templateSearch);
+    const prompt = safeTrim(jobPrompt) || safeTrim(aiPrompt) || safeTrim(templateSearch);
     clearStartState();
     onStartModeChange?.("template");
     onGenerateAiDraft?.(prompt);

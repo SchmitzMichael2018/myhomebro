@@ -83,6 +83,32 @@ PROJECT_TYPE_FAMILIES: list[dict[str, Any]] = [
         "draft_focus_line": "Outdoor projects benefit from confirming the footprint, foundation or slab, access, and any utility or permit needs before final pricing.",
     },
     {
+        "key": "concrete",
+        "label": "Concrete",
+        "cue_label": "Concrete-focused review",
+        "keywords": [
+            "concrete",
+            "slab",
+            "slab pour",
+            "pour slab",
+            "cement",
+            "foundation pour",
+            "driveway",
+            "sidewalk",
+            "pad",
+            "patio slab",
+        ],
+        "prep_items": [
+            "Confirm the slab size, thickness, and placement.",
+            "Review reinforcement, base prep, and curing needs.",
+            "Clarify finish, access, and any saw-cut or control joint needs.",
+            "Note drainage, grading, and permit requirements if relevant.",
+        ],
+        "response_starter": "I reviewed the concrete details and can confirm the slab size, base prep, and next steps before pricing.",
+        "create_bid_context": "Concrete work is clearer when the slab dimensions, base prep, reinforcement, and finish expectations are confirmed.",
+        "draft_focus_line": "Concrete projects benefit from confirming the slab size, base prep, reinforcement, and finish expectations before final pricing.",
+    },
+    {
         "key": "bathroom_remodel",
         "label": "Bathroom Remodel",
         "cue_label": "Bathroom remodel-focused review",
@@ -445,6 +471,12 @@ def build_project_setup_recommendation(
             suggested_workflow = "Outdoor structure workflow"
             suggested_template_label = "Outdoor Structure Template"
             recommendation_note = "Outdoor structure projects are clearer when the footprint, foundation or slab, and material choices are confirmed."
+    elif family_key == "concrete":
+        recommended_project_type = "Concrete"
+        recommended_project_subtype = "Concrete Slab"
+        suggested_workflow = "Slab workflow"
+        suggested_template_label = "Concrete Slab Template"
+        recommendation_note = "Concrete work is clearer when the slab size, base prep, reinforcement, and finish expectations are confirmed."
     elif family_key == "bathroom_remodel":
         if scope_mode == "repair":
             recommended_project_type = "Bathroom Repair"
@@ -570,6 +602,31 @@ def build_project_setup_recommendation(
 
 def infer_project_intelligence(*, project_title: str = "", project_type: str = "", project_subtype: str = "", description: str = "") -> dict[str, Any]:
     text = _normalize(" ".join([project_title, project_type, project_subtype, description]))
+
+    has_shed_intent = _contains_any(
+        text,
+        ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"],
+    )
+    has_concrete_primary_intent = _contains_any(
+        text,
+        [
+            "pour concrete slab",
+            "pour slab",
+            "slab only",
+            "concrete slab only",
+            "install concrete slab",
+            "new slab",
+            "slab pour",
+            "foundation pour",
+            "pour cement",
+            "concrete driveway",
+        ],
+    )
+    if has_shed_intent and not has_concrete_primary_intent:
+        return {**next(f for f in PROJECT_TYPE_FAMILIES if f["key"] == "outdoor"), "is_generic": False}
+    if has_concrete_primary_intent and not has_shed_intent:
+        return {**next(f for f in PROJECT_TYPE_FAMILIES if f["key"] == "concrete"), "is_generic": False}
+
     best = GENERIC_PROJECT_INTELLIGENCE
     best_score = 0
 
@@ -585,10 +642,10 @@ def infer_project_intelligence(*, project_title: str = "", project_type: str = "
         if family["key"] in normalized_type or family["key"] in normalized_subtype:
             score += 3
 
-        if family["key"] == "outdoor" and _contains_any(
-            text,
-            ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed", "garage", "carport"],
-        ):
+        if family["key"] == "outdoor" and has_shed_intent:
+            score += 4
+
+        if family["key"] == "concrete" and has_concrete_primary_intent:
             score += 4
 
         if score > best_score:
