@@ -50,6 +50,33 @@ function clampStep(v) {
   return Math.min(STEP_MAX, Math.max(STEP_MIN, Math.floor(n)));
 }
 
+function deriveWizardStepFromAgreement(agreement) {
+  const rawStepStatus = safeStr(agreement?.step_status);
+  const parsedStep = Number(rawStepStatus);
+  if (Number.isFinite(parsedStep) && parsedStep >= STEP_MIN && parsedStep <= STEP_MAX) {
+    return clampStep(parsedStep);
+  }
+
+  const projectTitle = safeStr(agreement?.project_title || agreement?.title);
+  const projectType = safeStr(agreement?.project_type);
+  const projectScope = safeStr(agreement?.scope_of_work || agreement?.description);
+  const projectSubtype = safeStr(agreement?.project_subtype);
+  const milestoneCount = Number(agreement?.milestone_count || 0);
+  const hasCoreProjectDetails = Boolean(projectTitle && projectType && projectScope);
+  const hasMilestones = milestoneCount > 0;
+  const hasFinalReviewFields = Boolean(
+    agreement?.is_fully_signed ||
+      (agreement?.contractor_ack_reviewed &&
+        agreement?.contractor_ack_tos &&
+        agreement?.contractor_ack_esign)
+  );
+
+  if (!hasCoreProjectDetails) return 1;
+  if (!hasMilestones) return 2;
+  if (hasFinalReviewFields) return 4;
+  return 3;
+}
+
 function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
@@ -222,6 +249,7 @@ function buildEmptyDLocal(projectFamilyContext = {}) {
     service_window_notes: "",
     recurring_summary_label: "",
     next_occurrence_date: "",
+    step_status: "step1",
     payment_mode: "escrow",
     payment_structure: "simple",
     retainage_percent: "0.00",
@@ -324,6 +352,7 @@ export default function AgreementWizard() {
 
   const [agreement, setAgreementState] = useState(null);
   const [loadingAgreement, setLoadingAgreement] = useState(false);
+  const didResumeStepRef = useRef(false);
 
   const [dLocal, setDLocal] = useState(() => buildEmptyDLocal(resolvedProjectFamily));
 
@@ -435,6 +464,7 @@ export default function AgreementWizard() {
   const resetWizardForNewAgreement = useCallback(() => {
     setAgreementState(null);
     setLoadingAgreement(false);
+    didResumeStepRef.current = false;
 
     setDLocal(buildEmptyDLocal(resolvedProjectFamily));
     setMilestones([]);
@@ -491,13 +521,13 @@ export default function AgreementWizard() {
     });
   }, [resolvedProjectFamily.project_family_key, resolvedProjectFamily.project_family_label]);
 
-  const goStep = (n) => {
+  const goStep = (n, { replace = false } = {}) => {
     const next = clampStep(n);
     setSearchParams((prev) => {
       const p = new URLSearchParams(prev);
       p.set("step", String(next));
       return p;
-    });
+    }, { replace });
   };
 
   const stepTabs = useMemo(
@@ -631,6 +661,7 @@ export default function AgreementWizard() {
           recurring_summary_label:
             data?.recurring_summary_label ?? prev.recurring_summary_label ?? "",
           next_occurrence_date: data?.next_occurrence_date || prev.next_occurrence_date || "",
+          step_status: data?.step_status || prev.step_status || "",
           payment_mode: data?.payment_mode || prev.payment_mode,
           payment_structure: data?.payment_structure || prev.payment_structure || "simple",
           retainage_percent:
@@ -714,6 +745,17 @@ export default function AgreementWizard() {
     lastStepFetchRef.current = { step, at: now };
     fetchAgreement(agreementId);
   }, [step, agreementId, fetchAgreement]);
+
+  useEffect(() => {
+    if (!agreementId || !agreement) return;
+    if (didResumeStepRef.current) return;
+    didResumeStepRef.current = true;
+
+    const resumeStep = deriveWizardStepFromAgreement(agreement);
+    if (resumeStep !== step) {
+      goStep(resumeStep, { replace: true });
+    }
+  }, [agreement, agreementId, goStep, step]);
 
   const refreshAgreement = useCallback(async () => {
     if (!agreementId) return;
@@ -969,9 +1011,11 @@ export default function AgreementWizard() {
       project_class: normalizeProjectClass(dLocal.project_class),
       project_type: dLocal.project_type || "",
       project_subtype: dLocal.project_subtype || "",
+      scope_of_work: rawDescription,
       project_type_ref: selectedType?.id || null,
       project_subtype_ref: selectedSubtype?.id || null,
       agreement_mode: dLocal.agreement_mode || "standard",
+      step_status: dLocal.step_status || "step1",
       recurring_service_enabled:
         dLocal.agreement_mode === "maintenance"
           ? true
@@ -1023,6 +1067,7 @@ export default function AgreementWizard() {
       const payload = buildStep1Payload({ forDraftCreate: true });
       payload.is_draft = true;
       payload.wizard_step = 1;
+      payload.step_status = "step1";
 
       const { data } = await api.post(`/projects/agreements/`, payload);
       setAgreement(data);
@@ -1051,6 +1096,7 @@ export default function AgreementWizard() {
 
     try {
       const payload = buildStep1Payload({ forDraftCreate: false });
+      payload.step_status = goNext ? "step2" : "step1";
       const { data } = await api.patch(`/projects/agreements/${id}/`, payload);
       setAgreement(data);
       toast.success("Step 1 saved.");

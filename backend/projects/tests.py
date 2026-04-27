@@ -13785,6 +13785,64 @@ class AgreementStep1RecurringFieldSaveTests(TestCase):
         self.assertEqual(agreement.service_window_notes, "")
         self.assertEqual(agreement.recurring_summary_label, "")
 
+    def test_standard_step1_create_persists_scope_of_work_and_step_status(self):
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "is_draft": True,
+                "wizard_step": 1,
+                "homeowner": self.homeowner.id,
+                "project_title": "Siding Replacement",
+                "title": "Siding Replacement",
+                "scope_of_work": "Replace exterior siding and trim.",
+                "agreement_mode": AgreementMode.STANDARD,
+                "recurring_service_enabled": False,
+                "step_status": "step1",
+                "payment_mode": "escrow",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        agreement = Agreement.objects.get(pk=response.json()["id"])
+        self.assertEqual(agreement.description, "Replace exterior siding and trim.")
+        self.assertEqual(agreement.step_status, "step1")
+
+    def test_standard_step1_patch_persists_scope_of_work_and_step_status(self):
+        created = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "is_draft": True,
+                "wizard_step": 1,
+                "homeowner": self.homeowner.id,
+                "project_title": "Initial Draft",
+                "title": "Initial Draft",
+                "description": "Initial scope.",
+                "agreement_mode": AgreementMode.STANDARD,
+                "recurring_service_enabled": False,
+                "step_status": "step1",
+                "payment_mode": "escrow",
+            },
+            format="json",
+        )
+
+        self.assertEqual(created.status_code, 201)
+        agreement_id = created.json()["id"]
+
+        patched = self.client.patch(
+            f"/api/projects/agreements/{agreement_id}/",
+            {
+                "scope_of_work": "Updated scope of work.",
+                "step_status": "step2",
+            },
+            format="json",
+        )
+
+        self.assertEqual(patched.status_code, 200)
+        agreement = Agreement.objects.get(pk=agreement_id)
+        self.assertEqual(agreement.description, "Updated scope of work.")
+        self.assertEqual(agreement.step_status, "step2")
+
     def test_maintenance_step1_draft_preserves_recurrence_fields_without_nulls(self):
         response = self.client.post(
             "/api/projects/agreements/",

@@ -926,28 +926,6 @@ export default function TemplateSearchSection({
                   </div>
                 ) : null}
 
-                {!topRecommendedTemplates.length && noTemplateMatch ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-900">
-                    <div className="text-base font-semibold text-amber-950">
-                      No strong template match found.
-                    </div>
-                    <div className="mt-1 text-sm text-amber-900/90">
-                      AI can still help build this agreement from your description.
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                      type="button"
-                      onClick={handleBuildWithoutTemplate}
-                      disabled={locked || startingPointBusy}
-                      className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
-                    >
-                        {startingPointBusy && startMode === "ai"
-                          ? "Building agreement draft..."
-                          : "Build Agreement with AI"}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
               </div>
             ) : (
               <>

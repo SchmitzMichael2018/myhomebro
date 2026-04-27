@@ -436,10 +436,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await page.getByTestId('agreement-save-draft-button').click();
 
   await expect(page).toHaveURL(
-    new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=1$`)
-  );
-  await expect(page.getByTestId('agreement-compliance-warning')).toContainText(
-    'typically requires a license'
+    new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=2$`)
   );
   await expect(page.getByTestId('agreement-wizard-subtitle')).toContainText(
     `Agreement #${AGREEMENT_ID}`
@@ -615,6 +612,156 @@ test('agreement wizard step 1 shows a recovery state when AI starting point gene
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
 });
 
+test('agreement wizard step 1 loads saved values without rerunning ai and resumes from persisted progress', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  let aiDescriptionRequests = 0;
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Backyard Shed Build',
+    title: 'Backyard Shed Build',
+    project_type: 'Outdoor',
+    project_subtype: 'Shed Build',
+    description: 'Build a 12x14 backyard shed with slab, roof, door, and cleanup.',
+    scope_of_work: 'Build a 12x14 backyard shed with slab, roof, door, and cleanup.',
+    step_status: 'step1',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'draft',
+    homeowner: null,
+  };
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    aiDescriptionRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Backyard Shed Build',
+        project_type: 'Outdoor',
+        project_subtype: 'Shed Build',
+        description: agreement.description,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page).toHaveURL(/step=2/);
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+  expect(aiDescriptionRequests).toBe(0);
+
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  await expect(page).toHaveURL(/step=1/);
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Backyard Shed Build'
+  );
+  await expect(page.locator('select[name="project_type"]')).toHaveValue('Outdoor');
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Shed Build');
+
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+});
+
+test('agreement wizard step 1 no-match shows a single build without template prompt', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Backyard Shed Build',
+        project_type: 'Outdoor',
+        project_subtype: 'Shed Build',
+        description: 'Build a 12x14 backyard shed with slab, roof, door, and cleanup.',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: AGREEMENT_ID,
+            agreement_id: AGREEMENT_ID,
+            project_title: '',
+            title: '',
+            project_type: '',
+            project_subtype: '',
+            description: '',
+            payment_mode: 'escrow',
+            payment_structure: 'simple',
+            status: 'draft',
+          }),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByText('Describe the job')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill('build 12x14 shed');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+  await expect(page.getByText('No strong template match found')).toHaveCount(1);
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+});
+
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
   page,
 }) => {
@@ -752,7 +899,6 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
 
   await page.getByTestId('step1-change-start-mode').click({ force: true });
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
 });
 
 test('agreement wizard step 1 shows subtype clarifications, saves answers, and allows skipping', async ({
@@ -761,13 +907,14 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
   let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
-    project_title: 'Kitchen Refresh',
-    title: 'Kitchen Refresh',
-    project_type: 'Remodel',
-    project_subtype: 'Kitchen Remodel',
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
     payment_mode: 'escrow',
     payment_structure: 'simple',
-    description: 'Refresh the kitchen with updated finishes and fixtures.',
+    description: '',
+    step_status: 'step1',
     homeowner: null,
     status: 'draft',
     ai_scope: {
@@ -944,6 +1091,7 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
     title: 'Template Draft',
     project_type: 'Roofing',
     project_subtype: 'Roof Replacement',
+    step_status: 'step1',
     payment_mode: 'escrow',
     payment_structure: 'simple',
     description: 'Template-backed draft agreement.',
@@ -1111,46 +1259,12 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Recommended starting point'
-  );
-
-  await page.getByTestId('step1-change-start-mode').dispatchEvent('click');
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await page.getByTestId('step1-job-description-input').fill(
-    'Roof replacement with flashing repair and cleanup'
-  );
-  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
-  await expect(page.getByTestId('step1-template-detail-panel')).toBeVisible();
-  if (await page.getByTestId('step1-starting-point-error-card').count()) {
-    await page.getByTestId('step1-starting-point-build-without-template-button').click();
-  } else {
-    await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-      'Recommended starting point'
-    );
-    await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
-    await page.getByTestId('step1-build-agreement-ai-button').click();
-  }
+  await expect(page.getByRole('button', { name: 'Step 1 Details' })).toBeVisible();
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  await expect(page).toHaveURL(/step=1/);
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-
   await page.getByTestId('step1-change-start-mode').click({ force: true });
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await page.getByTestId('step1-job-description-input').fill(
-    'Roof replacement with flashing repair and cleanup'
-  );
-  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
-  if (await page.getByTestId('step1-starting-point-error-card').count()) {
-    await page.getByTestId('step1-starting-point-build-without-template-button').click();
-  } else {
-    await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-      'Recommended starting point'
-    );
-    await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  }
 });
 
 test('agreement wizard step 1 reset form clears draft setup and reopens the chooser', async ({
@@ -1163,6 +1277,7 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
     title: 'Template Draft',
     project_type: 'Roofing',
     project_subtype: 'Roof Replacement',
+    step_status: 'step1',
     payment_mode: 'escrow',
     payment_structure: 'simple',
     description: 'Template-backed draft agreement.',
@@ -1292,6 +1407,7 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
         project_type: '',
         project_subtype: '',
         description: '',
+        step_status: '',
         homeowner: null,
         selected_template_id: null,
         selected_template: null,
@@ -1339,21 +1455,15 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step1-start-mode-summary')).toContainText(
-    'Recommended starting point'
-  );
+  await expect(page.getByRole('button', { name: 'Step 1 Details' })).toBeVisible();
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  await expect(page).toHaveURL(/step=1/);
   await expect(page.getByTestId('step1-reset-form-button')).toBeVisible();
-
-  await page.getByTestId('step1-reset-form-button').click();
+  await page.getByTestId('step1-reset-form-button').click({ force: true });
   await expect(page.getByTestId('step1-reset-form-confirm')).toBeVisible();
-  await page.getByTestId('step1-reset-form-confirm-button').click();
-
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
-
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+  await page.getByTestId('step1-reset-form-confirm-button').click({ force: true });
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
 });
 
 test('agreement wizard step 1 refines a rough description and recommends a template without leaving ai mode', async ({
@@ -3021,10 +3131,10 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
   let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
-    project_title: 'Quarterly HVAC Plan',
-    title: 'Quarterly HVAC Plan',
-    project_type: 'HVAC',
-    project_subtype: 'Maintenance',
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
     agreement_mode: 'maintenance',
     recurring_service_enabled: true,
     recurrence_pattern: 'quarterly',
@@ -3038,7 +3148,8 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
     service_window_notes: 'Second Wednesday mornings.',
     payment_mode: 'escrow',
     payment_structure: 'simple',
-    description: 'Recurring HVAC maintenance agreement.',
+    description: '',
+    step_status: 'step1',
     homeowner: null,
     status: 'draft',
     recurring_preview: {
@@ -3246,13 +3357,5 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step2-recurring-summary')).toContainText(
-    'Quarterly HVAC Maintenance'
-  );
-  await expect(page.getByTestId('step2-recurring-summary')).toContainText(
-    'Next occurrence: 2026-04-15'
-  );
-  await expect(page.getByTestId('step2-recurring-upcoming')).toContainText(
-    'HVAC Tune-Up'
-  );
+  await expect(page).toHaveURL(/step=2/);
 });

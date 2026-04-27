@@ -141,6 +141,11 @@ def prepare_payload(request) -> Dict[str, Any]:
     data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
     data.pop("status", None)
 
+    scope_of_work = data.get("scope_of_work")
+    if "description" not in data or data.get("description") in ("", None):
+        if scope_of_work not in ("", None):
+            data["description"] = scope_of_work
+
     for k in ("description", "terms_text", "privacy_text", "project_subtype", "standardized_category"):
         if k in data and data[k] == "":
             data[k] = None

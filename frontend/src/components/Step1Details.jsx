@@ -1341,17 +1341,21 @@ export default function Step1Details({
     assistantTopTemplatePreview,
   });
   useEffect(() => {
-    if (startModeSource !== "derived") return;
-    if (startMode !== derivedStartMode) {
+    if (startModeSource === "derived" && startMode !== derivedStartMode) {
       setStartMode(derivedStartMode);
     }
+    const hasPersistedStep1Details =
+      Boolean(safeTrim(agreement?.project_title || agreement?.title)) &&
+      Boolean(safeTrim(agreement?.project_type)) &&
+      Boolean(safeTrim(agreement?.description || agreement?.scope_of_work));
     if (
-      (derivedStartMode === "template" ||
+      ((derivedStartMode === "template" ||
         (derivedStartMode === "ai" &&
           (assistantGuidedFlow?.guided_question ||
             assistantTopTemplatePreview?.id ||
             assistantTopTemplatePreview?.milestone_count ||
-            assistantTemplateRecommendations.length))) &&
+            assistantTemplateRecommendations.length))) ||
+        hasPersistedStep1Details) &&
       !startModeCommitted
     ) {
       setStartModeCommitted(true);
@@ -1360,6 +1364,10 @@ export default function Step1Details({
     assistantGuidedFlow,
     assistantTemplateRecommendations.length,
     assistantTopTemplatePreview,
+    agreement?.description,
+    agreement?.project_title,
+    agreement?.project_type,
+    agreement?.scope_of_work,
     derivedStartMode,
     startMode,
     startModeCommitted,
@@ -1946,8 +1954,14 @@ export default function Step1Details({
 
   useEffect(() => {
     if (!aiSetupRequest?.nonce) return;
-    runAiRefineAndSetup(aiSetupRequest.prompt);
-  }, [aiSetupRequest?.nonce]);
+    (async () => {
+      try {
+        await runAiRefineAndSetup(aiSetupRequest.prompt);
+      } finally {
+        onStep1AiSetupRequest?.(null);
+      }
+    })();
+  }, [aiSetupRequest?.nonce, onStep1AiSetupRequest]);
 
   async function onSubmitSaveAsTemplate(payload) {
     setSavingTemplate(true);
@@ -2100,6 +2114,7 @@ export default function Step1Details({
         prev.project_subtype ??
         "",
       description: nextAgreement.description ?? prev.description ?? "",
+      step_status: nextAgreement.step_status ?? prev.step_status ?? "",
       payment_mode:
         normalizePaymentMode(
           nextAgreement.payment_mode ?? nextAgreement.paymentMode ?? prev.payment_mode
@@ -2157,6 +2172,7 @@ export default function Step1Details({
           "",
         project_template_id: nextSelectedTemplateId,
         template_id: nextSelectedTemplateId,
+        step_status: nextAgreement.step_status ?? dLocal?.step_status ?? "",
         address_line1: nextAddressLine1,
         address_line2: nextAddressLine2,
         address_city: nextAddressCity,
@@ -2204,6 +2220,15 @@ export default function Step1Details({
     setAiErr("");
     activateStartMode("manual", { committed: true, source: "user" });
     queueProjectDetailsReview(["project_title", "project_type", "project_subtype", "description"]);
+    if (agreementId) {
+      patchAgreement(
+        {
+          step_status: "step1",
+          scope_of_work: safeTrim(dLocal?.description || agreement?.description || ""),
+        },
+        { silent: true }
+      );
+    }
   }
 
   async function handleTemplateApplyWithOptions(template, options = {}) {
@@ -2215,7 +2240,31 @@ export default function Step1Details({
     const roughDescription = safeTrim(prompt);
     if (!roughDescription) return;
 
+    const hasSavedStep1State =
+      Boolean(agreementId) &&
+      Boolean(safeTrim(agreement?.project_type)) &&
+      Boolean(safeTrim(agreement?.description || agreement?.scope_of_work));
+    if (hasSavedStep1State) {
+      setAiSetupBusy(false);
+      setAiSetupError("");
+      setAiSetupResult(null);
+      setDismissedAiTemplateRecommendation(false);
+      return;
+    }
+
     setLastAiSetupPrompt(roughDescription);
+    if (agreementId) {
+      patchAgreement(
+        {
+          project_title: safeTrim(dLocal?.project_title || agreement?.project_title || ""),
+          project_type: safeTrim(dLocal?.project_type || agreement?.project_type || ""),
+          project_subtype: safeTrim(dLocal?.project_subtype || agreement?.project_subtype || ""),
+          scope_of_work: safeTrim(dLocal?.description || agreement?.description || agreement?.scope_of_work || ""),
+          step_status: "step1",
+        },
+        { silent: true }
+      );
+    }
     setAiSetupBusy(true);
     setAiSetupError("");
     setAiSetupResult(null);
@@ -2340,7 +2389,14 @@ export default function Step1Details({
       writeCache({ description: nextDescription });
     }
     if (agreementId) {
-      patchAgreement({ description: nextDescription }, { silent: true });
+      patchAgreement(
+        {
+          description: nextDescription,
+          scope_of_work: nextDescription,
+          step_status: "step1",
+        },
+        { silent: true }
+      );
     }
   }
 
@@ -2480,6 +2536,8 @@ export default function Step1Details({
           project_type_ref: projectTypeRef,
           project_subtype: generatedSubtype,
           project_subtype_ref: projectSubtypeRef,
+          scope_of_work: refinedDescription || dLocal?.description || "",
+          step_status: "step1",
         },
         { silent: true }
       );
@@ -2661,6 +2719,7 @@ export default function Step1Details({
         project_type: nextAgreement?.project_type ?? "",
         project_subtype: nextAgreement?.project_subtype ?? "",
         description: nextAgreement?.description ?? "",
+        step_status: nextAgreement?.step_status ?? "",
         homeowner:
           nextAgreement?.homeowner != null && nextAgreement?.homeowner !== ""
             ? String(nextAgreement.homeowner)
@@ -2884,7 +2943,7 @@ export default function Step1Details({
     }
 
     if (name === "description") {
-      schedulePatch({ description: value || "" }, 450);
+      schedulePatch({ description: value || "", scope_of_work: value || "", step_status: "step1" }, 450);
       return;
     }
   };

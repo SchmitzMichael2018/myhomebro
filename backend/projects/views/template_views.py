@@ -281,6 +281,8 @@ class ResetAgreementStep1View(APIView):
             agreement.payment_structure = "simple"
             agreement.retainage_percent = Decimal("0.00")
             agreement.agreement_mode = "standard"
+            if hasattr(agreement, "step_status"):
+                agreement.step_status = ""
             agreement.recurring_service_enabled = False
             agreement.recurrence_pattern = ""
             agreement.recurrence_interval = 1
@@ -313,6 +315,7 @@ class ResetAgreementStep1View(APIView):
                     "payment_structure",
                     "retainage_percent",
                     "agreement_mode",
+                    "step_status",
                     "recurring_service_enabled",
                     "recurrence_pattern",
                     "recurrence_interval",

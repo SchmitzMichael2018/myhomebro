@@ -901,6 +901,13 @@ class Agreement(models.Model):
         db_index=True,
         help_text="Standard keeps one-time project behavior. Maintenance enables recurring-service support.",
     )
+    step_status = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Lightweight wizard progress marker for resuming the agreement flow.",
+    )
     recurring_service_enabled = models.BooleanField(
         default=False,
         help_text="Whether this agreement should generate recurring maintenance milestone occurrences.",

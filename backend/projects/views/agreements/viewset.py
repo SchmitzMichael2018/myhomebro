@@ -230,7 +230,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         data["wizard_step"] = 1
 
         title = self._safe_str(data.get("title") or data.get("project_title"))
-        description = self._safe_str(data.get("description"))
+        description = self._safe_str(data.get("description") or data.get("scope_of_work"))
 
         if not title:
             data["title"] = "Draft Agreement"

@@ -65,6 +65,8 @@ def ensure_project_for_agreement_payload(
     """
     data = payload.copy()
 
+    if data.get("description") is None and data.get("scope_of_work") not in ("", None):
+        data["description"] = data.get("scope_of_work")
     if data.get("description") is None:
         data["description"] = ""
     if data.get("description", "") is None:
@@ -84,7 +86,7 @@ def ensure_project_for_agreement_payload(
     homeowner = get_object_or_404(Homeowner, pk=homeowner_id)
 
     project_title = data.get("project_title") or data.get("title") or "Untitled Project"
-    project_description = data.get("description") or ""
+    project_description = data.get("description") or data.get("scope_of_work") or ""
 
     project = Project.objects.create(
         title=project_title,

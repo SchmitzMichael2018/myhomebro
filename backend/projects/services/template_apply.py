@@ -407,6 +407,11 @@ def _hydrate_agreement_core_fields(
         agreement.description = template_description
         agreement_update_fields.append("description")
 
+    if hasattr(agreement, "step_status"):
+        if getattr(agreement, "step_status", "") != "step1":
+            agreement.step_status = "step1"
+            agreement_update_fields.append("step_status")
+
     if can_apply_template_payment_settings and getattr(agreement, "payment_structure", None) != template_payment_structure:
         agreement.payment_structure = template_payment_structure
         agreement_update_fields.append("payment_structure")

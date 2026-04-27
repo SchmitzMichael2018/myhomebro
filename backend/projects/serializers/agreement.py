@@ -544,9 +544,11 @@ class AgreementSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     project_subtype = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    scope_of_work = serializers.CharField(required=False, allow_blank=True, allow_null=True, source="description")
     recurrence_pattern = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     service_window_notes = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     recurring_summary_label = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    step_status = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
 
     project_address_line1 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     project_address_line2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -1193,6 +1195,10 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         if attrs.get("description", None) is None:
             attrs["description"] = ""
+        if attrs.get("scope_of_work", None) is None and "scope_of_work" in attrs:
+            attrs["scope_of_work"] = ""
+        if "scope_of_work" in attrs and attrs.get("scope_of_work") is not None:
+            attrs["description"] = str(attrs.get("scope_of_work") or "")
 
         payment_structure = str(
             attrs.get("payment_structure", getattr(self.instance, "payment_structure", "simple")) or "simple"
@@ -1297,6 +1303,8 @@ class AgreementSerializer(serializers.ModelSerializer):
         if payment_structure != "progress":
             attrs["retainage_percent"] = Decimal("0.00")
 
+        attrs["step_status"] = str(attrs.get("step_status", getattr(self.instance, "step_status", "")) or "").strip()
+
         agreement_mode = str(
             attrs.get("agreement_mode", getattr(self.instance, "agreement_mode", "standard")) or "standard"
         ).strip().lower()
@@ -1364,6 +1372,8 @@ class AgreementSerializer(serializers.ModelSerializer):
             attrs["maintenance_status"] = "active"
             attrs["service_window_notes"] = ""
             attrs["recurring_summary_label"] = ""
+            if not attrs.get("step_status"):
+                attrs["step_status"] = str(getattr(self.instance, "step_status", "") or "").strip()
 
         if maintenance_status in {"paused", "cancelled", "completed"} and not (
             agreement_mode == "maintenance" or recurring_enabled
