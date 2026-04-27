@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from projects.models_templates import ProjectTemplate
+from projects.services.project_intelligence import infer_project_intelligence
 
 
 @dataclass
@@ -134,6 +135,26 @@ def _project_signals(text: str) -> dict[str, bool]:
                 "build-out",
                 "new bedroom",
                 "new room",
+            ],
+        ),
+        "outdoor": _contains_phrase(
+            t,
+            [
+                "shed",
+                "outbuilding",
+                "storage shed",
+                "tool shed",
+                "garden shed",
+                "backyard shed",
+                "garage",
+                "carport",
+                "outdoor",
+                "patio",
+                "pergola",
+                "gazebo",
+                "fence",
+                "yard",
+                "backyard",
             ],
         ),
         "remodel": remodel_signal,
@@ -302,6 +323,31 @@ def _template_signals(template: ProjectTemplate) -> dict[str, bool]:
     return _project_signals(signature)
 
 
+def _family_key_for_request(
+    project_title: str,
+    project_type: str,
+    project_subtype: str,
+    description: str,
+) -> str:
+    family = infer_project_intelligence(
+        project_title=project_title,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=description,
+    )
+    return _norm(family.get("key", "general"))
+
+
+def _family_key_for_template(template: ProjectTemplate) -> str:
+    family = infer_project_intelligence(
+        project_title=template.name or "",
+        project_type=template.project_type or "",
+        project_subtype=template.project_subtype or "",
+        description=template.description or "",
+    )
+    return _norm(family.get("key", "general"))
+
+
 def _type_bonus(template: ProjectTemplate, project_type: str, project_subtype: str) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
@@ -379,6 +425,7 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
     # Strong positive matches
     for key, pts, label in [
         ("addition", 36, "addition context"),
+        ("outdoor", 16, "outdoor structure context"),
         ("structural", 18, "structural context"),
         ("bathroom", 12, "bathroom context"),
         ("kitchen", 12, "kitchen context"),
@@ -498,6 +545,14 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
         score -= 18
         penalties.append("penalized roofing mismatch for deck project")
 
+    if project_sig["outdoor"] and template_sig["roofing"]:
+        score -= 34
+        penalties.append("penalized roofing mismatch for outdoor structure project")
+
+    if project_sig["outdoor"] and template_sig["deck"] and not project_sig["deck"]:
+        score -= 18
+        penalties.append("penalized deck mismatch for outdoor structure project")
+
     if project_sig["appliance"] and template_sig["countertop"]:
         score -= 16
         penalties.append("penalized countertop mismatch for appliance project")
@@ -550,6 +605,20 @@ def score_template(
     s3, r3 = _signal_bonus(template, project_title, project_type, project_subtype, description)
     total_score += s3
     reasons.extend(r3)
+
+    request_family = _family_key_for_request(project_title, project_type, project_subtype, description)
+    template_family = _family_key_for_template(template)
+
+    if request_family != "general" and template_family != "general":
+        if request_family == template_family:
+            total_score += 22
+            reasons.append(f"{request_family} family match")
+        else:
+            total_score -= 45
+            reasons.append(f"family mismatch: {template_family} vs {request_family}")
+    elif request_family != "general" and template_family == "general":
+        total_score -= 18
+        reasons.append(f"generic template mismatch for {request_family} project")
 
     # Small boost to built-in subtype starters only when match is already reasonably aligned
     if (

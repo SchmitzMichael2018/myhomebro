@@ -49,6 +49,40 @@ PROJECT_TYPE_FAMILIES: list[dict[str, Any]] = [
         "draft_focus_line": "Roofing projects are clearer when the leak location, roof condition, and weather exposure are confirmed before final pricing.",
     },
     {
+        "key": "outdoor",
+        "label": "Outdoor",
+        "cue_label": "Outdoor structure-focused review",
+        "keywords": [
+            "shed",
+            "sheds",
+            "shed build",
+            "outbuilding",
+            "outbuildings",
+            "storage shed",
+            "tool shed",
+            "garden shed",
+            "backyard shed",
+            "garage",
+            "carport",
+            "outdoor",
+            "backyard",
+            "yard",
+            "patio",
+            "pergola",
+            "gazebo",
+            "fence",
+        ],
+        "prep_items": [
+            "Confirm the size, placement, and access for the structure.",
+            "Review slab, foundation, or anchoring needs.",
+            "Clarify door, roof, and material selections.",
+            "Note any utility or permit requirements.",
+        ],
+        "response_starter": "I reviewed the outdoor structure details and can confirm the placement, materials, and next steps before pricing.",
+        "create_bid_context": "Outdoor structure work is clearer when the size, foundation, access, and material choices are confirmed.",
+        "draft_focus_line": "Outdoor projects benefit from confirming the footprint, foundation or slab, access, and any utility or permit needs before final pricing.",
+    },
+    {
         "key": "bathroom_remodel",
         "label": "Bathroom Remodel",
         "cue_label": "Bathroom remodel-focused review",
@@ -298,6 +332,15 @@ def _infer_scope_mode(text: str, family_key: str) -> str:
             return "replacement"
         return "repair"
 
+    if family_key == "outdoor":
+        if _contains_any(normalized, ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"]):
+            return "shed"
+        if _contains_any(normalized, ["garage", "carport"]):
+            return "garage"
+        if _contains_any(normalized, ["deck", "patio", "pergola", "gazebo", "fence"]):
+            return "outdoor_structure"
+        return "general"
+
     if family_key == "bathroom_remodel":
         if _contains_any(normalized, ["repair", "update", "refresh", "fix", "small"]):
             return "repair"
@@ -383,6 +426,25 @@ def build_project_setup_recommendation(
             suggested_workflow = "Repair + inspection"
             suggested_template_label = "Roof Repair Template"
             recommendation_note = "Roof repairs are clearer when the leak location, affected areas, and inspection needs are confirmed."
+    elif family_key == "outdoor":
+        if scope_mode == "shed" or _contains_any(scope_text, ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"]):
+            recommended_project_type = "Outdoor"
+            recommended_project_subtype = "Shed Build"
+            suggested_workflow = "Outdoor structure workflow"
+            suggested_template_label = "Shed Build Template"
+            recommendation_note = "Shed builds are clearer when the footprint, slab or foundation, door, roofing, and material choices are confirmed."
+        elif scope_mode == "garage":
+            recommended_project_type = "Outdoor"
+            recommended_project_subtype = "Garage Build"
+            suggested_workflow = "Outdoor structure workflow"
+            suggested_template_label = "Garage Build Template"
+            recommendation_note = "Garage builds are clearer when the footprint, slab or foundation, access, and storage requirements are confirmed."
+        else:
+            recommended_project_type = "Outdoor"
+            recommended_project_subtype = "Outdoor Structure"
+            suggested_workflow = "Outdoor structure workflow"
+            suggested_template_label = "Outdoor Structure Template"
+            recommendation_note = "Outdoor structure projects are clearer when the footprint, foundation or slab, and material choices are confirmed."
     elif family_key == "bathroom_remodel":
         if scope_mode == "repair":
             recommended_project_type = "Bathroom Repair"
@@ -522,6 +584,12 @@ def infer_project_intelligence(*, project_title: str = "", project_type: str = "
         normalized_subtype = _normalize(project_subtype)
         if family["key"] in normalized_type or family["key"] in normalized_subtype:
             score += 3
+
+        if family["key"] == "outdoor" and _contains_any(
+            text,
+            ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed", "garage", "carport"],
+        ):
+            score += 4
 
         if score > best_score:
             best = family

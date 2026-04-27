@@ -10646,6 +10646,21 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(recommendation["suggested_template_label"], "Kitchen Cabinet Install Template")
         self.assertFalse(recommendation["strong_template_match"])
 
+    def test_project_setup_recommendation_maps_shed_scope_to_outdoor(self):
+        recommendation = build_project_setup_recommendation(
+            project_title="Build backyard 12x14 shed",
+            project_type="",
+            project_subtype="",
+            description="Build backyard 12x14 shed with slab foundation, single entry door, and shingle roof.",
+        )
+
+        self.assertEqual(recommendation["project_family_key"], "outdoor")
+        self.assertEqual(recommendation["recommended_project_type"], "Outdoor")
+        self.assertEqual(recommendation["recommended_project_subtype"], "Shed Build")
+        self.assertEqual(recommendation["suggested_workflow"], "Outdoor structure workflow")
+        self.assertEqual(recommendation["suggested_template_label"], "Shed Build Template")
+        self.assertFalse(recommendation["strong_template_match"])
+
     def test_project_plan_recommendation_builds_kitchen_install_plan(self):
         plan = build_project_plan_suggestion(
             project_title="Need kitchen cabinets installed",
@@ -12387,6 +12402,39 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(body["confidence_level"], "high")
         self.assertEqual(body["recommended_template"]["name"], "Roof Replacement")
 
+    def test_project_setup_recommendation_maps_shed_scope_to_outdoor(self):
+        recommendation = build_project_setup_recommendation(
+            project_title="Build backyard 12x14 shed",
+            project_type="",
+            project_subtype="",
+            description="Build backyard 12x14 shed with slab foundation, single entry door, and shingle roof.",
+        )
+
+        self.assertEqual(recommendation["project_family_key"], "outdoor")
+        self.assertEqual(recommendation["recommended_project_type"], "Outdoor")
+        self.assertEqual(recommendation["recommended_project_subtype"], "Shed Build")
+        self.assertEqual(recommendation["suggested_workflow"], "Outdoor structure workflow")
+        self.assertEqual(recommendation["suggested_template_label"], "Shed Build Template")
+        self.assertFalse(recommendation["strong_template_match"])
+
+    def test_recommend_endpoint_does_not_fallback_to_roof_for_shed_scope(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Build backyard 12x14 shed with slab foundation, single entry door, and shingle roof.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "none")
+        self.assertEqual(body["confidence_level"], "low")
+        self.assertIsNone(body["recommended_template"])
+        self.assertIsNone(body["possible_match"])
+        candidate_names = {row["name"] for row in body["candidates"]}
+        self.assertNotIn("Roof Replacement", candidate_names)
+        self.assertNotIn("Roof Repair", candidate_names)
+
     def test_recommend_endpoint_returns_optional_match_for_medium_confidence(self):
         response = self.client.post(
             "/api/projects/templates/recommend/",
@@ -12401,6 +12449,30 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(body["confidence_level"], "medium")
         self.assertIsNone(body["recommended_template"])
         self.assertEqual(body["possible_match"]["name"], "Roof Replacement")
+
+    def test_recommend_endpoint_can_recommend_concrete_template_when_available(self):
+        concrete_template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Concrete Patio Slab",
+            project_type="Concrete",
+            project_subtype="Concrete Slab",
+            description="Pour and finish a concrete slab for a backyard patio and small equipment pad.",
+            visibility=ProjectTemplate.Visibility.PRIVATE,
+            allow_discovery=False,
+        )
+
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Pour a new concrete slab for a backyard patio and small equipment pad.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        matched = body["recommended_template"] or body["possible_match"]
+        self.assertIsNotNone(matched)
+        self.assertEqual(matched["name"], concrete_template.name)
 
     def test_recommend_endpoint_stays_silent_for_low_confidence(self):
         response = self.client.post(

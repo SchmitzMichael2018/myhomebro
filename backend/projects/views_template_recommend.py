@@ -10,8 +10,8 @@ from projects.serializers_template import ProjectTemplateListSerializer
 from projects.services.template_apply import get_request_contractor
 from projects.services.template_recommend import recommend_template
 
-HIGH_CONFIDENCE_SCORE = 70
-MEDIUM_CONFIDENCE_SCORE = 50
+HIGH_CONFIDENCE_SCORE = 75
+MEDIUM_CONFIDENCE_SCORE = 60
 
 
 class TemplateRecommendInputSerializer(serializers.Serializer):

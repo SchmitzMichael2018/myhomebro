@@ -55,6 +55,43 @@ export function getProjectFamilyProfile(key = "") {
 
 const PROJECT_TYPE_FAMILIES = [
   {
+    key: "outdoor",
+    label: "Outdoor",
+    cueLabel: "Outdoor structure-focused review",
+    keywords: [
+      "shed",
+      "sheds",
+      "shed build",
+      "outbuilding",
+      "outbuildings",
+      "storage shed",
+      "tool shed",
+      "garden shed",
+      "backyard shed",
+      "garage",
+      "carport",
+      "outdoor",
+      "backyard",
+      "yard",
+      "patio",
+      "pergola",
+      "gazebo",
+      "fence",
+    ],
+    prepItems: [
+      "Confirm the size, placement, and access for the structure.",
+      "Review slab, foundation, or anchoring needs.",
+      "Clarify door, roof, and material selections.",
+      "Note any utility or permit requirements.",
+    ],
+    responseStarter:
+      "I reviewed the outdoor structure details and can confirm the placement, materials, and next steps before pricing.",
+    createBidContext:
+      "Outdoor structure work is clearer when the size, foundation, access, and material choices are confirmed.",
+    draftFocusLine:
+      "Outdoor projects benefit from confirming the footprint, foundation or slab, access, and any utility or permit needs before final pricing.",
+  },
+  {
     key: "roofing",
     label: "Roofing",
     cueLabel: "Roofing-focused review",
@@ -433,6 +470,19 @@ function inferScopeMode(text, familyKey) {
     return "repair";
   }
 
+  if (familyKey === "outdoor") {
+    if (containsAny(normalized, ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"])) {
+      return "shed";
+    }
+    if (containsAny(normalized, ["garage", "carport"])) {
+      return "garage";
+    }
+    if (containsAny(normalized, ["deck", "patio", "pergola", "gazebo", "fence"])) {
+      return "outdoor_structure";
+    }
+    return "general";
+  }
+
   if (familyKey === "bathroom_remodel") {
     if (containsAny(normalized, ["repair", "update", "refresh", "fix", "small"])) {
       return "repair";
@@ -516,6 +566,29 @@ export function buildProjectSetupRecommendation({
       suggestedTemplateLabel = "Roof Repair Template";
       recommendationNote =
         "Roof repairs are clearer when the leak location, affected areas, and inspection needs are confirmed.";
+    }
+  } else if (family.key === "outdoor") {
+    if (scopeMode === "shed" || containsAny(scopeText, ["shed", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"])) {
+      recommendedProjectType = "Outdoor";
+      recommendedProjectSubtype = "Shed Build";
+      suggestedWorkflow = "Outdoor structure workflow";
+      suggestedTemplateLabel = "Shed Build Template";
+      recommendationNote =
+        "Shed builds are clearer when the footprint, slab or foundation, door, roofing, and material choices are confirmed.";
+    } else if (scopeMode === "garage") {
+      recommendedProjectType = "Outdoor";
+      recommendedProjectSubtype = "Garage Build";
+      suggestedWorkflow = "Outdoor structure workflow";
+      suggestedTemplateLabel = "Garage Build Template";
+      recommendationNote =
+        "Garage builds are clearer when the footprint, slab or foundation, access, and storage requirements are confirmed.";
+    } else {
+      recommendedProjectType = "Outdoor";
+      recommendedProjectSubtype = "Outdoor Structure";
+      suggestedWorkflow = "Outdoor structure workflow";
+      suggestedTemplateLabel = "Outdoor Structure Template";
+      recommendationNote =
+        "Outdoor structure projects are clearer when the footprint, foundation or slab, and material choices are confirmed.";
     }
   } else if (family.key === "bathroom_remodel") {
     if (scopeMode === "repair") {

@@ -333,6 +333,19 @@ function resolveBestSubtypeOption({
 
 const PRIMARY_CATEGORY_RULES = [
   {
+    category: "Outdoor",
+    subtype: "Shed Build",
+    reasons: ["shed build intent"],
+    patterns: [
+      /\bshed\b/i,
+      /\boutbuilding\b/i,
+      /\bstorage shed\b/i,
+      /\btool shed\b/i,
+      /\bgarden shed\b/i,
+      /\bbackyard shed\b/i,
+    ],
+  },
+  {
     category: "Remodel",
     subtype: "Bathroom Remodel",
     reasons: ["bathroom remodel intent"],
@@ -384,6 +397,17 @@ const PRIMARY_CATEGORY_RULES = [
 ];
 
 const LIMITED_SCOPE_SUBTYPE_RULES = [
+  {
+    subtype: "Shed Build",
+    patterns: [
+      /\bshed\b/i,
+      /\boutbuilding\b/i,
+      /\bstorage shed\b/i,
+      /\btool shed\b/i,
+      /\bgarden shed\b/i,
+      /\bbackyard shed\b/i,
+    ],
+  },
   {
     subtype: "Cabinet Installation",
     patterns: [
@@ -2809,13 +2833,17 @@ export default function Step1Details({
   };
 
   const activeStartModeLabel =
-    startMode === "ai"
+    startMode === "ai" && aiSetupResult?.kind === "description_only"
+      ? "AI-built starting point"
+      : startMode === "ai"
       ? "AI-assisted start"
       : startMode === "template"
       ? "Recommended starting point"
       : "Agreement draft in progress";
   const activeStartModeSummary =
-    startMode === "ai"
+    startMode === "ai" && aiSetupResult?.kind === "description_only"
+      ? "AI built a starting point from your description. Review the agreement details below."
+      : startMode === "ai"
       ? "Describe the job first, then review the agreement details AI prepares below."
       : startMode === "template"
       ? "Use a matching starting point, then review and edit the agreement details below."
@@ -2840,7 +2868,9 @@ export default function Step1Details({
     ? "border-slate-200 bg-slate-50/40 shadow-none"
     : "";
   const projectDetailsDescription =
-    startMode === "ai"
+    startMode === "ai" && aiSetupResult?.kind === "description_only"
+      ? "AI built a starting point from your description. Review and edit the agreement details here."
+      : startMode === "ai"
       ? "Describe the job first, then review and edit the agreement details here."
       : startMode === "template"
       ? "Confirm the recommended starting point here so the agreement matches this specific project."

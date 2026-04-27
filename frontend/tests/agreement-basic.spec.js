@@ -377,7 +377,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
 
   await page.getByTestId('step1-job-description-input').fill(
-    'Replace a roof with matching underlayment and cleanup'
+    'Build backyard 12x14 shed with slab foundation and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click();
   await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();

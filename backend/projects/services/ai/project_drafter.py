@@ -32,7 +32,8 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     ],
     "Outdoor": [
         "deck", "fence", "patio", "pergola", "gazebo", "landscape", "yard",
-        "retaining wall", "outdoor", "fire pit",
+        "retaining wall", "outdoor", "fire pit", "shed", "outbuilding",
+        "garage", "carport", "storage shed", "tool shed", "garden shed", "backyard shed",
     ],
     "Inspection": [
         "inspect", "inspection", "estimate visit", "site visit", "assessment",
@@ -75,6 +76,7 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Cabinets": ["cabinet", "cabinetry"],
     },
     "Outdoor": {
+        "Shed Build": ["shed", "shed build", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"],
         "Fence": ["fence", "gate"],
         "Deck": ["deck", "railing", "stairs"],
         "Patio": ["patio", "paver", "concrete"],

@@ -770,10 +770,12 @@ export default function TemplateSearchSection({
               <div className="space-y-4">
                 <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
                   <div className="text-base font-semibold text-slate-900">
-                    Recommended starting point
+                    {noTemplateMatch ? "No strong template match found" : "Recommended starting point"}
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Select a template to preview it, or build the agreement directly from your description.
+                    {noTemplateMatch
+                      ? "AI can still help build this agreement from your description."
+                      : "Select a template to preview it, or build the agreement directly from your description."}
                   </div>
                   <div className="mt-3">
                     <button
