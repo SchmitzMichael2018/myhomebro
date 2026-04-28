@@ -1,4 +1,4 @@
-﻿// frontend/src/components/Step2Milestones.jsx
+// frontend/src/components/Step2Milestones.jsx
 // v2026-03-18-step2-template-aware-full
 // Changes:
 // - preserves existing Step 2 milestone workflow, AI suggestions, clarifications, save-as-template, edit modal
@@ -594,7 +594,7 @@ function getEstimateAssistMeta(m) {
           materialsHigh !== null &&
           materialsHigh !== undefined &&
           materialsHigh !== ""
-        ? `Materials: ${formatCurrency(materialsLow)} â€“ ${formatCurrency(materialsHigh)}`
+        ? `Materials: ${formatCurrency(materialsLow)}  ${formatCurrency(materialsHigh)}`
         : "",
     confidenceLabel: formatEstimateConfidence(confidence),
     pricingSources: derivePricingSources(pricingReason),
@@ -628,7 +628,7 @@ function toCompactLine(value, maxLen = 140) {
   const text = safeStr(value).replace(/\s+/g, " ");
   if (!text) return "";
   if (text.length <= maxLen) return text;
-  return `${text.slice(0, maxLen - 1).trim()}â€¦`;
+  return `${text.slice(0, maxLen - 1).trim()}`;
 }
 
 function projectContextQuantitySignals(answers = {}, measurementNotes = "") {
@@ -1024,7 +1024,7 @@ export default function Step2Milestones({
     hasStagedSuggestedTimelineChanges ||
     isCreateDraftDirty ||
     isEditDraftDirty;
-  const step2UnsavedMessage = "You have unsaved pricing or milestone changes. Leave without saving?";
+  const step2UnsavedMessage = "You have unsaved pricing or milestone changes. Leave without saving'";
 
   useEffect(() => {
     setFallbackMilestones(null);
@@ -1193,7 +1193,7 @@ export default function Step2Milestones({
   function lockToast() {
     toast.error(
       milestonesLockReason
-        ? `Milestones are locked â€” ${milestonesLockReason}`
+        ? `Milestones are locked  ${milestonesLockReason}`
         : "Milestones are locked for this agreement."
     );
   }
@@ -1721,7 +1721,7 @@ export default function Step2Milestones({
         pricing:
           estimatePreview?.suggested_price_low && estimatePreview?.suggested_price_high
             ? {
-                total_range: `${formatCurrency(estimatePreview.suggested_price_low)}â€“${formatCurrency(
+                total_range: `${formatCurrency(estimatePreview.suggested_price_low)}${formatCurrency(
                   estimatePreview.suggested_price_high
                 )}`,
               }
@@ -1924,7 +1924,7 @@ export default function Step2Milestones({
     }
     if (templateApplied) {
       toast("A template is already applied. Use the template-driven milestone structure instead of regenerating milestones with AI here.", {
-        icon: "ðŸ§©",
+        icon: "",
       });
       return;
     }
@@ -1969,7 +1969,7 @@ export default function Step2Milestones({
       if (suggestedRows.length) {
         if (effectiveMilestones.length) {
           const replaceExisting = window.confirm(
-            "Replace the current milestones with AI suggestions? Press Cancel to append them instead."
+            "Replace the current milestones with AI suggestions' Press Cancel to append them instead."
           );
           setFallbackMilestones(
             normalizeCardRows(
@@ -1984,7 +1984,7 @@ export default function Step2Milestones({
         setExpandedMilestoneId(suggestedRows[0]?.id || null);
         setNewMilestoneOpen(false);
         setAiSuggestedMilestoneIds(suggestedRows.map((row) => row.id).filter(Boolean));
-        const feedback = "AI drafted milestone cards â€” review and adjust as needed.";
+        const feedback = "AI drafted milestone cards  review and adjust as needed.";
         setAiChangeSummary(feedback);
         onAiUpdateFeedback(feedback);
         toast.success(
@@ -2004,7 +2004,7 @@ export default function Step2Milestones({
     }
     if (templateApplied) {
       toast("This agreement is template-driven. AI bulk milestone replacement/appending is disabled here to avoid overwriting the template structure.", {
-        icon: "ðŸ§©",
+        icon: "",
       });
       return;
     }
@@ -2064,7 +2064,7 @@ export default function Step2Milestones({
     }
 
     const shouldApply = window.confirm(
-      "Apply pricing guidance to the current milestones? Existing amounts will be updated for review."
+      "Apply pricing guidance to the current milestones' Existing amounts will be updated for review."
     );
     if (!shouldApply) return;
 
@@ -2665,10 +2665,10 @@ export default function Step2Milestones({
 
       if (hasRecommendedClarifications) {
         toast(`Quick review: ${recommendedClarificationCount} recommended clarification${recommendedClarificationCount === 1 ? "" : "s"}.`, {
-          icon: "ðŸ“",
+          icon: "",
         });
       } else {
-        toast("Quick review: clarifications available before continuing.", { icon: "ðŸ“" });
+        toast("Quick review: clarifications available before continuing.", { icon: "" });
       }
       return;
     }
@@ -2737,7 +2737,7 @@ export default function Step2Milestones({
           setAiSuggestedMilestoneIds(createdIds);
           markAiUpdated(createdIds.map((id) => `milestone:${id}`));
         }
-        const feedback = "AI drafted your milestones â€” review and adjust as needed.";
+        const feedback = "AI drafted your milestones  review and adjust as needed.";
         setAutoDraftBanner(feedback);
         setAiChangeSummary(feedback);
         onAiUpdateFeedback(feedback);
@@ -2940,7 +2940,7 @@ export default function Step2Milestones({
                 {step2ModeMeta.timelineLabel}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">
-                {minStart && maxEnd ? `${friendly(minStart)} â†’ ${friendly(maxEnd)}` : "Add dates to map timing"}
+                {minStart && maxEnd ? `${friendly(minStart)}  ${friendly(maxEnd)}` : "Add dates to map timing"}
               </div>
               <div className="mt-1 text-xs text-slate-600">
                 {effectiveMilestones.length} milestone{effectiveMilestones.length === 1 ? "" : "s"} planned
@@ -3011,87 +3011,8 @@ export default function Step2Milestones({
               </span>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {effectiveMilestones.length ? (
-              <button
-                type="button"
-                onClick={handleOpenSaveTemplate}
-                disabled={milestonesLocked}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                Save as Template
-              </button>
-            ) : null}
-          </div>
         </div>
       </section>
-
-      {false && projectContextSummary.hasAny ? (
-        <details className="mb-3 rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
-          <summary className="cursor-pointer list-none px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Project context</div>
-                  <div className="mt-1 text-xs text-slate-600">
-                  {step2ModeMeta.contextDescription}
-                  </div>
-                </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {isAiPlanningMode ? (
-                  <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-                    AI-guided
-                  </span>
-                ) : null}
-                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  View details
-                </span>
-              </div>
-            </div>
-          </summary>
-          <div className="border-t border-slate-200 px-4 py-4 text-sm text-slate-800">
-            <div className="flex flex-wrap gap-2 text-xs">
-              {projectContextSummary.projectType ? (
-                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
-                  Type: {projectContextSummary.projectType}
-                </span>
-              ) : null}
-              {projectContextSummary.projectSubtype ? (
-                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
-                  Subtype: {projectContextSummary.projectSubtype}
-                </span>
-              ) : null}
-              {projectContextSummary.projectFamilyLabel ? (
-                <span className="rounded-full bg-sky-50 px-2 py-1 font-medium text-sky-700">
-                  Family: {projectContextSummary.projectFamilyLabel}
-                </span>
-              ) : null}
-              {projectContextSummary.templateName ? (
-                <span className="rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-700">
-                  Using {projectContextSummary.templateName}
-                </span>
-              ) : null}
-              {projectContextSummary.materialsResponsibility ? (
-                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
-                  Materials: {projectContextSummary.materialsResponsibility}
-                </span>
-              ) : null}
-              {projectContextSummary.quantitySignals.map((signal) => (
-                <span
-                  key={`${signal.label}:${signal.value}`}
-                  className="rounded-full bg-white px-2 py-1 font-medium text-slate-700"
-                >
-                  {signal.label}: {signal.value}
-                </span>
-              ))}
-            </div>
-            {projectContextSummary.scopeSummary ? (
-              <div className="mt-2 text-xs text-slate-600">
-                Scope: {projectContextSummary.scopeSummary}
-              </div>
-            ) : null}
-          </div>
-        </details>
-      ) : null}
 
       {false && recurringSummary ? (
         <div
@@ -3109,7 +3030,7 @@ export default function Step2Milestones({
           <div className="mt-1 text-xs text-emerald-900/90">
             Status: {recurringSummary.status}
             {recurringSummary.nextOccurrence
-              ? ` â€¢ Next occurrence: ${recurringSummary.nextOccurrence}`
+              ? `  Next occurrence: ${recurringSummary.nextOccurrence}`
               : ""}
           </div>
           {recurringSummary.previewOccurrences.length ? (
@@ -3120,11 +3041,11 @@ export default function Step2Milestones({
                   className="rounded border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-700"
                 >
                   <div className="font-semibold text-slate-900">
-                    {row.title} â€¢ Visit {row.sequence_number}
+                    {row.title}  Visit {row.sequence_number}
                   </div>
                   <div className="mt-1">
                     Service date: {row.scheduled_service_date || "Pending"}
-                    {row.amount ? ` â€¢ ${formatCurrency(row.amount)}` : ""}
+                    {row.amount ? `  ${formatCurrency(row.amount)}` : ""}
                   </div>
                 </div>
               ))}
@@ -3245,7 +3166,7 @@ export default function Step2Milestones({
                 disabled={assistantApplyingMilestones || milestonesLocked}
                 className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
               >
-                {assistantApplyingMilestones ? "Addingâ€¦" : "Add Suggested Milestones"}
+                {assistantApplyingMilestones ? "Adding" : "Add Suggested Milestones"}
               </button>
               <button
                 type="button"
@@ -3292,96 +3213,13 @@ export default function Step2Milestones({
           {step2ModeMeta.timelineLabel}:{" "}
           {minStart && maxEnd ? (
             <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-              {friendly(minStart)} â†’ {friendly(maxEnd)} (est.)
+              {friendly(minStart)} - {friendly(maxEnd)} (est.)
             </span>
           ) : (
             <span className="text-gray-400">add dates to see range</span>
           )}
         </div>
       </div>
-
-      <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
-        <div className="mb-3">
-          <h4 className="text-sm font-semibold text-slate-900">Planning controls</h4>
-          <p className="mt-1 text-[12px] text-slate-600">
-            {step2ModeMeta.controlsDescription}
-          </p>
-        </div>
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setClarOpen(true)}
-              disabled={milestonesLocked}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-              title={clarButtonTitle}
-            >
-              Clarifications
-              {clarButtonBadgeText ? (
-                <span
-                  className={`ml-2 rounded-full px-2 py-[2px] text-[10px] ${
-                    hasRecommendedClarifications
-                      ? "bg-blue-50 text-blue-700"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
-                >
-                  {clarButtonBadgeText}
-                </span>
-              ) : null}
-              {hasRecommendedClarifications ? (
-                <span className="ml-1 text-xs text-gray-500">({recommendedClarificationCount})</span>
-              ) : null}
-            </button>
-
-            {effectiveMilestones.length && pricingEstimateStale ? (
-              <button
-                type="button"
-                onClick={() =>
-                  handleRefreshPricingEstimate().catch((e) =>
-                    toast.error(e?.response?.data?.detail || e?.message || "Pricing refresh failed.")
-                  )
-                }
-                disabled={pricingRefreshing}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
-                title="Refresh estimate-assist guidance from current clarification answers without changing milestone amounts."
-              >
-                {pricingRefreshing ? "Refreshing Pricingâ€¦" : "Refresh Pricing Estimate"}
-              </button>
-            ) : null}
-
-            {pricingEstimateStale ? (
-              <span className="text-xs text-amber-700">
-                {isCommercialProject
-                  ? "Pricing inputs changed. Refresh guidance before you lock in the schedule of values."
-                  : "Pricing inputs changed. Refresh pricing guidance before you lock in milestone amounts."}
-              </span>
-            ) : null}
-
-            {!clarReviewed ? (
-              <span className="text-xs text-gray-500">
-                {hasRecommendedClarifications
-                  ? "Youâ€™ll review recommended clarifications before continuing."
-                  : "Youâ€™ll review clarifications before continuing."}
-              </span>
-            ) : null}
-
-            {aiError ? <span className="text-sm text-red-600">{aiError}</span> : null}
-          </div>
-
-          {effectiveMilestones.length ? (
-            <button
-              type="button"
-              onClick={handleOpenSaveTemplate}
-              disabled={milestonesLocked}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              title={milestonesLocked ? "Locked" : "Save current agreement milestones as a reusable template"}
-              data-testid="step2-save-as-template-top"
-            >
-              Save as Template
-            </button>
-          ) : null}
-        </div>
-      </section>
 
       {showPricingReviewPrompt ? (
         <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/85 px-4 py-3 shadow-sm">
@@ -3392,7 +3230,7 @@ export default function Step2Milestones({
                 {pricingReviewState.count} milestone{pricingReviewState.count === 1 ? "" : "s"} have new suggested amount{pricingReviewState.count === 1 ? "" : "s"}.
                 {pricingReviewState.count > 0 ? (
                   <>
-                    {" "}Current {formatCurrency(pricingReviewState.currentTotal)} â†’ Suggested {formatCurrency(pricingReviewState.suggestedTotal)}
+                    {" "}Current {formatCurrency(pricingReviewState.currentTotal)} - Suggested {formatCurrency(pricingReviewState.suggestedTotal)}
                   </>
                 ) : null}
               </div>
@@ -3440,7 +3278,7 @@ export default function Step2Milestones({
                 </span>
               </div>
               <div className="mt-1 text-sm text-slate-700">
-                Keep these suggestions in view while you edit milestones. Theyâ€™re advisory and easy to ignore.
+                Keep these suggestions in view while you edit milestones. They're advisory and easy to ignore.
               </div>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
                 <li>{step2InsightCards.milestones.body}</li>
@@ -3457,27 +3295,7 @@ export default function Step2Milestones({
                     : "Clarification guidance could benefit from more detail."}
                 </li>
               </ul>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleRunAiSuggest}
-                disabled={milestonesLocked}
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-                data-testid="step2-generate-suggested-milestones"
-              >
-                Generate Suggested Milestones
-              </button>
-              <button
-                type="button"
-                onClick={applyEstimateSuggestedAmounts}
-                disabled={milestonesLocked}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                data-testid="step2-apply-pricing-guidance"
-              >
-                Apply Pricing Guidance
-              </button>
+              <p className="mt-3 text-xs text-slate-500">AI milestone generation coming next.</p>
             </div>
           </div>
         </div>
@@ -3496,7 +3314,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
-                  {formatCurrency(estimatePreview.suggested_price_low)} Ã¢â‚¬â€œ {formatCurrency(estimatePreview.suggested_price_high)}
+                  {formatCurrency(estimatePreview.suggested_price_low)} - {formatCurrency(estimatePreview.suggested_price_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Centered around {formatCurrency(estimatePreview.suggested_total_price)}
@@ -3505,7 +3323,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Duration range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
-                  {formatDurationDays(estimatePreview.suggested_duration_low)} Ã¢â‚¬â€œ {formatDurationDays(estimatePreview.suggested_duration_high)}
+                  {formatDurationDays(estimatePreview.suggested_duration_low)} - {formatDurationDays(estimatePreview.suggested_duration_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Typical pace: {formatDurationDays(estimatePreview.suggested_duration_days)}
@@ -3560,7 +3378,7 @@ export default function Step2Milestones({
                 className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 data-testid="step2-refresh-estimate"
               >
-                {estimateRefreshing ? "Refreshing Estimateâ€¦" : "Refresh Estimate"}
+                {estimateRefreshing ? "Refreshing Estimate" : "Refresh Estimate"}
               </button>
               <button
                 type="button"
@@ -3632,7 +3450,7 @@ export default function Step2Milestones({
                   <div className="rounded-xl border border-emerald-200 bg-white px-3 py-3">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Suggested budget</div>
                     <div className="mt-1 text-base font-semibold text-slate-900" data-testid="step2-suggested-plan-budget">
-                      {formatCurrency(suggestedPlan?.suggested_budget_low)} â€“ {formatCurrency(suggestedPlan?.suggested_budget_high)}
+                      {formatCurrency(suggestedPlan?.suggested_budget_low)} - {formatCurrency(suggestedPlan?.suggested_budget_high)}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
                       Centered around {formatCurrency(suggestedPlan?.suggested_budget_center || estimatePreview?.suggested_total_price)}
@@ -3641,7 +3459,7 @@ export default function Step2Milestones({
                   <div className="rounded-xl border border-emerald-200 bg-white px-3 py-3">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Suggested duration</div>
                     <div className="mt-1 text-base font-semibold text-slate-900" data-testid="step2-suggested-plan-duration">
-                      {formatDurationDays(suggestedPlan?.suggested_duration_low_days)} â€“ {formatDurationDays(suggestedPlan?.suggested_duration_high_days)}
+                      {formatDurationDays(suggestedPlan?.suggested_duration_low_days)} - {formatDurationDays(suggestedPlan?.suggested_duration_high_days)}
                     </div>
                     <div className="mt-1 text-xs text-slate-600">
                       {suggestedPlan?.suggested_duration_days
@@ -3892,7 +3710,7 @@ export default function Step2Milestones({
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   data-testid="step2-refresh-estimate"
                 >
-                  {estimateRefreshing ? "Refreshing Estimateâ€¦" : "Refresh Estimate"}
+                  {estimateRefreshing ? "Refreshing Estimate" : "Refresh Estimate"}
                 </button>
                 <button
                   type="button"
@@ -3945,7 +3763,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
-                  {formatCurrency(estimatePreview.suggested_price_low)} â€“ {formatCurrency(estimatePreview.suggested_price_high)}
+                  {formatCurrency(estimatePreview.suggested_price_low)} - {formatCurrency(estimatePreview.suggested_price_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Centered around {formatCurrency(estimatePreview.suggested_total_price)}
@@ -3954,7 +3772,7 @@ export default function Step2Milestones({
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Duration range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
-                  {formatDurationDays(estimatePreview.suggested_duration_low)} â€“ {formatDurationDays(estimatePreview.suggested_duration_high)}
+                  {formatDurationDays(estimatePreview.suggested_duration_low)} - {formatDurationDays(estimatePreview.suggested_duration_high)}
                 </div>
                 <div className="mt-1 text-xs text-slate-600">
                   Typical pace: {formatDurationDays(estimatePreview.suggested_duration_days)}
@@ -4204,7 +4022,7 @@ export default function Step2Milestones({
           <ul className="mb-4 list-disc pl-5 text-sm">
             {aiPreview.milestones.map((m, i) => (
               <li key={i}>
-                <strong>{m.title}</strong> â€” ${Number(m.amount || 0).toFixed(2)}
+                <strong>{m.title}</strong>  ${Number(m.amount || 0).toFixed(2)}
               </li>
             ))}
           </ul>
@@ -4256,7 +4074,7 @@ export default function Step2Milestones({
               disabled={aiApplying || milestonesLocked || templateApplied}
               className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
             >
-              {aiApplying ? "Applyingâ€¦" : "Replace Milestones (Bulk)"}
+              {aiApplying ? "Applying" : "Replace Milestones (Bulk)"}
             </button>
             <button
               type="button"
@@ -4264,7 +4082,7 @@ export default function Step2Milestones({
               disabled={aiApplying || milestonesLocked || templateApplied}
               className="rounded border px-3 py-2 text-sm disabled:opacity-60"
             >
-              {aiApplying ? "Applyingâ€¦" : "Append Milestones (Bulk)"}
+              {aiApplying ? "Applying" : "Append Milestones (Bulk)"}
             </button>
             <button
               type="button"
@@ -4310,16 +4128,11 @@ export default function Step2Milestones({
             >
               {newMilestoneOpen ? "Hide Add Milestone" : "+ Add Milestone"}
             </button>
-            <button
-              type="button"
-              onClick={handleRunAiSuggest}
-              disabled={milestonesLocked || templateApplied}
-              className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
-              data-testid="step2-improve-with-ai"
-            >
-              Improve with AI
-            </button>
           </div>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600">
+          AI milestone generation coming next.
         </div>
 
         {newMilestoneOpen ? (
@@ -4381,7 +4194,7 @@ export default function Step2Milestones({
                 <textarea
                   className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
                   rows={3}
-                  placeholder="Description (details, materials, notes)â€¦"
+                  placeholder="Description (details, materials, notes)"
                   name="description"
                   value={mLocal.description}
                   onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -4513,7 +4326,7 @@ export default function Step2Milestones({
                           {Number(m.amount || 0).toLocaleString(undefined, { style: "currency", currency: "USD" })}
                         </div>
                         <div className="mt-1 text-xs text-slate-600">
-                          {summaryStart || "Start"} â€” {summaryDue || "Due"}
+                          {summaryStart || "Start"} - {summaryDue || "Due"}
                         </div>
                       </button>
                       <div className="flex shrink-0 gap-2">
@@ -4591,7 +4404,7 @@ export default function Step2Milestones({
                             ) : null}
                             {estimate.hasPrimaryRange ? (
                               <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
-                                {estimate.primaryLabel}: {formatCurrency(estimate.primaryLow)} â€“ {formatCurrency(estimate.primaryHigh)}
+                                {estimate.primaryLabel}: {formatCurrency(estimate.primaryLow)} - {formatCurrency(estimate.primaryHigh)}
                               </span>
                             ) : null}
                             {estimate.durationLabel ? (
@@ -4624,29 +4437,21 @@ export default function Step2Milestones({
             data-testid="step2-milestone-empty-state"
           >
             <div className="text-base font-semibold text-slate-950">Start your work plan</div>
-            <div className="mt-1 text-sm text-slate-600">
-              Add a milestone card or let AI draft one to get moving quickly.
-            </div>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              <button
-                type="button"
-                onClick={handleRunAiSuggest}
-                disabled={milestonesLocked || templateApplied}
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-                data-testid="step2-empty-generate-milestones"
-              >
-                Generate Suggested Milestones
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewMilestoneOpen(true)}
-                disabled={milestonesLocked}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                Add Milestone
-              </button>
-            </div>
-          </div>
+        <div className="mt-1 text-sm text-slate-600">
+          Add a milestone card or let AI draft one to get moving quickly.
+        </div>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => setNewMilestoneOpen(true)}
+            disabled={milestonesLocked}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            Add Milestone
+          </button>
+        </div>
+        <div className="mt-3 text-xs text-slate-500">AI milestone generation coming next.</div>
+      </div>
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -4715,7 +4520,7 @@ export default function Step2Milestones({
           <textarea
             className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
             rows={3}
-            placeholder="Description (details, materials, notes)â€¦"
+            placeholder="Description (details, materials, notes)"
             name="description"
             value={mLocal.description}
             onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -4798,7 +4603,7 @@ export default function Step2Milestones({
                   <td className="px-3 py-2">{m?.order ?? idx + 1}</td>
 
                   <td className="px-3 py-2">
-                    <div>{m.title || "â€”"}</div>
+                    <div>{m.title || ""}</div>
                     {isAiSuggested ? (
                       <div className="mt-1">
                         <span
@@ -4821,7 +4626,7 @@ export default function Step2Milestones({
                     ) : null}
                   </td>
 
-                  <td className="whitespace-pre-wrap px-3 py-2">{m.description || "â€”"}</td>
+                  <td className="whitespace-pre-wrap px-3 py-2">{m.description || ""}</td>
 
                   <td className="px-3 py-2" data-testid={`step2-milestone-start-${m.id || idx + 1}`}>
                     {friendly(toDateOnly(m.start_date || m.start))}
@@ -4949,7 +4754,7 @@ export default function Step2Milestones({
                         ) : null}
                       </div>
                     ) : (
-                      <span className="text-xs text-gray-400">â€”</span>
+                      <span className="text-xs text-gray-400"></span>
                     )}
                   </td>
 
@@ -5055,7 +4860,7 @@ export default function Step2Milestones({
           <textarea
             className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
             rows={3}
-            placeholder="Description (details, materials, notes)â€¦"
+            placeholder="Description (details, materials, notes)"
             name="description"
             value={mLocal.description}
             onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -5138,7 +4943,7 @@ export default function Step2Milestones({
                   <td className="px-3 py-2">{m?.order ?? idx + 1}</td>
 
                   <td className="px-3 py-2">
-                    <div>{m.title || "â€”"}</div>
+                    <div>{m.title || ""}</div>
                     {isAiSuggested ? (
                       <div className="mt-1">
                         <span
@@ -5161,7 +4966,7 @@ export default function Step2Milestones({
                     ) : null}
                   </td>
 
-                  <td className="whitespace-pre-wrap px-3 py-2">{m.description || "â€”"}</td>
+                  <td className="whitespace-pre-wrap px-3 py-2">{m.description || ""}</td>
 
                   <td className="px-3 py-2" data-testid={`step2-milestone-start-${m.id || idx + 1}`}>
                     {friendly(toDateOnly(m.start_date || m.start))}
@@ -5181,7 +4986,7 @@ export default function Step2Milestones({
                         {pricingEstimateStale ? (
                           <div>
                             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              Stale â€” refresh pricing
+                              Stale  refresh pricing
                             </span>
                           </div>
                         ) : null}
@@ -5198,7 +5003,7 @@ export default function Step2Milestones({
                           <div className="text-gray-700">
                             {estimate.primaryLabel}:{" "}
                             <span className="font-medium">
-                              {formatCurrency(estimate.primaryLow)} â€“ {formatCurrency(estimate.primaryHigh)}
+                              {formatCurrency(estimate.primaryLow)} - {formatCurrency(estimate.primaryHigh)}
                             </span>
                           </div>
                         ) : null}
@@ -5289,7 +5094,7 @@ export default function Step2Milestones({
                         ) : null}
                       </div>
                     ) : (
-                      <span className="text-xs text-gray-400">â€”</span>
+                      <span className="text-xs text-gray-400"></span>
                     )}
                   </td>
 
@@ -5352,7 +5157,7 @@ export default function Step2Milestones({
           className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
           disabled={savingAiScope}
         >
-          {savingAiScope ? "Savingâ€¦" : "Save & Next"}
+          {savingAiScope ? "Saving" : "Save & Next"}
         </button>
       </div>
 
@@ -5384,7 +5189,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-lg font-semibold text-gray-900">Save as Template</div>
                 <div className="text-xs text-gray-500">
-                  Save this agreementâ€™s current milestone structure as a reusable template.
+                  Save this agreement's current milestone structure as a reusable template.
                 </div>
               </div>
               <button
@@ -5395,7 +5200,7 @@ export default function Step2Milestones({
                 }}
                 className="rounded border px-2 py-1 text-sm"
               >
-                âœ•
+                
               </button>
             </div>
 
@@ -5418,7 +5223,7 @@ export default function Step2Milestones({
                   rows={4}
                   value={saveTemplateDescription}
                   onChange={(e) => setSaveTemplateDescription(e.target.value)}
-                  placeholder="Optional notes about this reusable templateâ€¦"
+                  placeholder="Optional notes about this reusable template"
                   disabled={saveTemplateBusy}
                 />
               </div>
@@ -5446,7 +5251,7 @@ export default function Step2Milestones({
                 className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
                 disabled={saveTemplateBusy}
               >
-                {saveTemplateBusy ? "Savingâ€¦" : "Save Template"}
+                {saveTemplateBusy ? "Saving" : "Save Template"}
               </button>
             </div>
           </div>
@@ -5460,7 +5265,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-lg font-semibold text-gray-900">Edit Milestone</div>
                 <div className="text-xs text-gray-500">
-                  Milestone #{editForm.order != null ? editForm.order : "â€”"}
+                  Milestone #{editForm.order != null ? editForm.order : ""}
                 </div>
               </div>
               <button
@@ -5473,7 +5278,7 @@ export default function Step2Milestones({
                 }}
                 className="rounded border px-2 py-1 text-sm"
               >
-                âœ•
+                
               </button>
             </div>
 
@@ -5498,7 +5303,7 @@ export default function Step2Milestones({
                     className="rounded border px-2 py-1 text-[11px] hover:bg-gray-50 disabled:opacity-60"
                     title="Uses the agreement AI bundle (no extra charge after first use on this agreement)."
                   >
-                    {editAiBusy ? "Workingâ€¦" : "âœ¨ Improve Description"}
+                    {editAiBusy ? "Working" : " Improve Description"}
                   </button>
                 </div>
                 <textarea
@@ -5597,8 +5402,8 @@ export default function Step2Milestones({
                         <span className="text-slate-700">
                           {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
                           safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
-                            ? `${formatCurrency(editForm.labor_estimate_low)} â€“ ${formatCurrency(editForm.labor_estimate_high)}`
-                            : `${formatCurrency(editForm.suggested_amount_low)} â€“ ${formatCurrency(editForm.suggested_amount_high)}`}
+                            ? `${formatCurrency(editForm.labor_estimate_low)}  ${formatCurrency(editForm.labor_estimate_high)}`
+                            : `${formatCurrency(editForm.suggested_amount_low)}  ${formatCurrency(editForm.suggested_amount_high)}`}
                         </span>
                       </div>
                     ) : null}
@@ -5615,7 +5420,7 @@ export default function Step2Milestones({
                       <div>
                         <span className="font-medium text-slate-800">Materials:</span>{" "}
                         <span className="text-slate-700">
-                          {formatCurrency(editForm.materials_estimate_low)} â€“ {formatCurrency(editForm.materials_estimate_high)}
+                          {formatCurrency(editForm.materials_estimate_low)} - {formatCurrency(editForm.materials_estimate_high)}
                         </span>
                       </div>
                     ) : null}
@@ -5712,7 +5517,7 @@ export default function Step2Milestones({
                 className="rounded bg-indigo-600 px-4 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
                 disabled={editBusy || editAiBusy}
               >
-                {editBusy ? "Savingâ€¦" : "Save Changes"}
+                {editBusy ? "Saving" : "Save Changes"}
               </button>
             </div>
           </div>
@@ -5723,7 +5528,7 @@ export default function Step2Milestones({
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">Overlapping Schedule</h3>
             <p className="mt-2 text-sm text-gray-700">
-              This milestone overlaps an existing milestoneâ€™s schedule. Do you want to continue anyway?
+              This milestone overlaps an existing milestones schedule. Do you want to continue anyway'
             </p>
 
             <div className="mt-5 flex justify-end gap-2">

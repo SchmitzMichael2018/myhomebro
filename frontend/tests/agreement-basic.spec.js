@@ -2723,10 +2723,10 @@ test('agreement wizard step 2 AI can recommend saving a reusable template and op
 
   await expect(page.getByTestId('step2-work-plan-summary')).toBeVisible();
   await expect(page.getByText('Deposit and materials')).toBeVisible();
-  await page.getByTestId('step2-save-as-template-top').click();
+  await page.getByTestId('step2-save-as-template').click();
   await expect(page.getByText('Save Agreement as Template')).toBeVisible();
   await expect(page.getByTestId('save-template-name-input')).toBeVisible();
-  await expect(page.getByPlaceholder('e.g., Bedroom Addition – Standard 6 Milestone')).toBeVisible();
+  await expect(page.getByPlaceholder('e.g., Bedroom Addition - Standard 6 Milestone')).toBeVisible();
 });
 
 test('agreement wizard step 2 auto-drafts default subtype milestones when clarifications are skipped', async ({

@@ -388,16 +388,14 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Most contractors use');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Typical duration:');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Typical total range:');
-  await expect(page.getByTestId('step2-generate-suggested-milestones')).toBeVisible();
-  await expect(page.getByTestId('step2-apply-pricing-guidance')).toBeVisible();
-  await expect(page.getByTestId('step2-improve-with-ai')).toBeVisible();
+  await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('AI milestone generation coming next.');
+  await expect(page.getByTestId('step2-generate-suggested-milestones')).toHaveCount(0);
+  await expect(page.getByTestId('step2-apply-pricing-guidance')).toHaveCount(0);
+  await expect(page.getByTestId('step2-improve-with-ai')).toHaveCount(0);
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-card-801')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-card-802')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-row-801')).toHaveCount(0);
-
-  await page.getByTestId('step2-generate-suggested-milestones').click();
-  await page.getByTestId('step2-apply-pricing-guidance').click();
   await expect(page.getByTestId('step2-estimate-guidance-details')).toBeVisible();
   const estimateDetails = page.getByTestId('step2-estimate-guidance-details');
   await estimateDetails.locator('summary').click();
@@ -428,7 +426,7 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await page.getByTestId('step2-project-budget-input').fill('30000');
   await expect(page.getByTestId('step2-project-budget-input')).toHaveValue('30000');
 
-  await expect(page.getByTestId('step2-save-as-template-top')).toBeVisible();
+  await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
   await estimateDetails.locator('summary').click();
   await expect(estimateDetails).not.toHaveAttribute('open', /open/);
 });

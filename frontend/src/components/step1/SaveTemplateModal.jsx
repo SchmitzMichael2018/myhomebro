@@ -135,7 +135,7 @@ export default function SaveTemplateModal({
               className="w-full rounded border px-3 py-2 text-sm"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Bedroom Addition – Standard 6 Milestone"
+              placeholder="e.g., Bedroom Addition - Standard 6 Milestone"
             />
             <div className="mt-1 text-[11px] text-gray-500">
               Use a reusable name contractors can recognize quickly later.
@@ -196,7 +196,7 @@ export default function SaveTemplateModal({
             data-testid="save-template-confirm-button"
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {busy ? "Saving…" : "Save Template"}
+            {busy ? "Saving..." : "Save Template"}
           </button>
         </div>
       </div>
