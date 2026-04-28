@@ -101,6 +101,12 @@ function normalizeAiMilestones(list) {
       start_date,
       completion_date,
       amount,
+      suggested_amount: m?.suggested_amount ?? "",
+      suggested_amount_low: m?.suggested_amount_low ?? "",
+      suggested_amount_high: m?.suggested_amount_high ?? "",
+      allocation_percent: m?.allocation_percent ?? "",
+      recommended_duration_days: m?.recommended_duration_days ?? "",
+      note: safeStr(m?.note),
     };
   });
 }
@@ -707,7 +713,7 @@ export default function useAgreementMilestoneAI({
         setAiError(msg);
         const guidance = actionGuidanceForAiApplyError(e);
         if (guidance) {
-          toast(guidance, { icon: "ℹ️" });
+          toast(guidance, { icon: "i" });
         }
         throw e;
       } finally {

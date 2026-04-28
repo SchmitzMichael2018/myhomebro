@@ -179,6 +179,124 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
   });
 }
 
+async function installStep2AutoDraftRoutes(
+  page,
+  { agreement, projectTypes, projectSubtypes, milestoneState, estimateResponse }
+) {
+  await installBaseAuthMocks(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: projectTypes }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: projectSubtypes }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+
+    if (request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: milestoneState.items }),
+      });
+      return;
+    }
+
+    if (request.method() === 'POST') {
+      const payload = request.postDataJSON();
+      milestoneState.createCount += 1;
+      const created = {
+        id: milestoneState.nextId++,
+        agreement: agreement.id,
+        order: milestoneState.items.length + 1,
+        title: payload.title,
+        description: payload.description || '',
+        amount: payload.amount,
+        start_date: payload.start_date || null,
+        completion_date: payload.completion_date || null,
+      };
+      milestoneState.items = [...milestoneState.items, created];
+
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.route(/\/api\/projects\/milestones\/\d+\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    const match = request.url().match(/\/api\/projects\/milestones\/(\d+)\/?(\?.*)?$/);
+    const milestoneId = Number(match?.[1]);
+    const index = milestoneState.items.findIndex((item) => item.id === milestoneId);
+
+    if (request.method() === 'PATCH' && index >= 0) {
+      const payload = request.postDataJSON();
+      milestoneState.items[index] = {
+        ...milestoneState.items[index],
+        ...payload,
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(milestoneState.items[index]),
+      });
+      return;
+    }
+
+    if (request.method() === 'DELETE') {
+      milestoneState.items = milestoneState.items.filter((item) => item.id !== milestoneId);
+      await route.fulfill({
+        status: 204,
+        body: '',
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.route(/\/api\/projects\/agreements\/321\/estimate-preview\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(estimateResponse),
+    });
+  });
+}
+
 test('step 2 estimate summary, details, budget guidance, and milestone advisory UI render without overwriting milestone amounts', async ({
   page,
 }) => {
@@ -388,8 +506,8 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Most contractors use');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Typical duration:');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Typical total range:');
-  await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('AI milestone generation coming next.');
-  await expect(page.getByTestId('step2-generate-suggested-milestones')).toHaveCount(0);
+  await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Generate Suggested Milestones');
+  await expect(page.getByTestId('step2-generate-suggested-milestones')).toBeVisible();
   await expect(page.getByTestId('step2-apply-pricing-guidance')).toHaveCount(0);
   await expect(page.getByTestId('step2-improve-with-ai')).toHaveCount(0);
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
@@ -429,6 +547,176 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
   await estimateDetails.locator('summary').click();
   await expect(estimateDetails).not.toHaveAttribute('open', /open/);
+});
+
+test('step 2 generates shed-specific milestone previews and applies or cancels safely', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Backyard Shed Build',
+    title: 'Backyard Shed Build',
+    project_type: 'Outdoor',
+    project_subtype: 'Shed Build',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Build a 12x14 backyard shed with slab foundation, roof, siding, entry door, windows, and cleanup.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {},
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [
+      {
+        id: 801,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Existing Prep',
+        description: 'Existing prep milestone.',
+        amount: '1000.00',
+        start_date: '2026-04-01',
+        completion_date: '2026-04-02',
+        normalized_milestone_type: 'prep',
+      },
+      {
+        id: 802,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Existing Finish',
+        description: 'Existing finish milestone.',
+        amount: '2000.00',
+        start_date: '2026-04-03',
+        completion_date: '2026-04-04',
+        normalized_milestone_type: 'finish',
+      },
+    ],
+    nextId: 900,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 11, value: 'Outdoor', label: 'Outdoor', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 111,
+        value: 'Shed Build',
+        label: 'Shed Build',
+        owner_type: 'system',
+        project_type: 'Outdoor',
+      },
+    ],
+    milestoneState,
+    estimateResponse: {
+      suggested_total_price: '14500.00',
+      suggested_price_low: '13000.00',
+      suggested_price_high: '16000.00',
+      suggested_duration_days: 9,
+      suggested_duration_low: 8,
+      suggested_duration_high: 10,
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'shed_build',
+        project_family_label: 'Shed Build',
+      },
+      price_adjustments: [],
+      timeline_adjustments: [],
+      explanation_lines: [],
+      benchmark_source: 'seeded_only',
+      learned_benchmark_used: false,
+      seeded_benchmark_used: true,
+      confidence_level: 'medium',
+      confidence_reasoning: 'Advisory shed build estimate.',
+      source_metadata: {},
+    },
+  });
+
+  await page.route(/\/api\/projects\/agreements\/321\/ai\/suggest-milestones\/?(\?.*)?$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'OK',
+        clarification_shaped: true,
+        scope_text: 'Build a 12x14 backyard shed with slab foundation, roof, siding, doors, and cleanup.',
+        milestones: [
+          {
+            title: 'Site Prep and Foundation',
+            description: 'Prepare the site and pour or set the foundation.',
+            suggested_amount: '2500.00',
+            recommended_duration_days: 2,
+          },
+          {
+            title: 'Floor and Framing',
+            description: 'Frame the floor, walls, and primary structure.',
+            suggested_amount: '3500.00',
+            recommended_duration_days: 2,
+          },
+          {
+            title: 'Roof, Siding, and Weatherproofing',
+            description: 'Install roof, siding, and exterior weatherproofing.',
+            suggested_amount: '4000.00',
+            recommended_duration_days: 3,
+          },
+          {
+            title: 'Doors, Windows, and Finish Details',
+            description: 'Install doors, windows, trim, and finish details.',
+            suggested_amount: '2000.00',
+            recommended_duration_days: 1,
+          },
+          {
+            title: 'Final Inspection and Cleanup',
+            description: 'Complete inspection, punch list, and cleanup.',
+            suggested_amount: '1500.00',
+            recommended_duration_days: 1,
+          },
+        ],
+        questions: [],
+      }),
+    });
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const generateButton = page.getByTestId('step2-generate-suggested-milestones');
+  await expect(generateButton).toBeVisible({ timeout: 15000 });
+  await generateButton.click();
+  await expect(generateButton).toBeDisabled();
+  await expect(page.getByTestId('step2-ai-generation-progress-card')).toBeVisible();
+  await expect(generateButton).toContainText('Generating milestones...');
+
+  const previewCard = page.getByTestId('step2-ai-milestone-preview-card');
+  await expect(previewCard).toBeVisible({ timeout: 15000 });
+  await expect(previewCard).toContainText('Suggested milestones');
+  await expect(previewCard).toContainText('This will replace your current milestone plan.');
+  await expect(previewCard).toContainText('Site Prep and Foundation');
+  await expect(previewCard).toContainText('Floor and Framing');
+
+  await previewCard.getByRole('button', { name: 'Cancel' }).click();
+  await expect(previewCard).toHaveCount(0);
+  await expect(page.getByText('Existing Prep')).toBeVisible();
+  await expect(page.getByText('Existing Finish')).toBeVisible();
+
+  await generateButton.click();
+  await expect(previewCard).toBeVisible({ timeout: 15000 });
+  await previewCard.getByRole('button', { name: 'Replace Existing Milestones' }).click();
+
+  await expect(page.getByText('Site Prep and Foundation')).toBeVisible();
+  await expect(page.getByText('Floor and Framing')).toBeVisible();
+  await expect(page.getByText('Existing Prep')).toHaveCount(0);
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).toHaveCount(0);
 });
 
 test('step 2 estimate fallback messaging renders for template-only low-confidence estimates', async ({

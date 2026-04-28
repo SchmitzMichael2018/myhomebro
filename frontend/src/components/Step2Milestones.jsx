@@ -26,7 +26,6 @@ import {
 } from "../lib/templateInsights.js";
 import {
   buildClarificationAwareMilestoneDraft,
-  buildClarificationAwareMilestoneNotes,
 } from "../lib/milestoneDraftShaping.js";
 import {
   normalizeAssistantMilestoneSuggestion,
@@ -870,6 +869,9 @@ export default function Step2Milestones({
   );
   const [autoDraftBanner, setAutoDraftBanner] = useState("");
   const [aiSuggestedMilestoneIds, setAiSuggestedMilestoneIds] = useState([]);
+  const [aiMilestonePreviewMode, setAiMilestonePreviewMode] = useState("");
+  const [aiMilestoneGenerationBusy, setAiMilestoneGenerationBusy] = useState(false);
+  const [aiMilestoneGenerationError, setAiMilestoneGenerationError] = useState("");
   const { highlights: aiHighlights, markUpdated: markAiUpdated } = useAiFieldHighlights({
     durationMs: 5000,
   });
@@ -1640,7 +1642,6 @@ export default function Step2Milestones({
     aiError,
     aiPreview,
     setAiPreview,
-    runAiSuggest,
     applyAiMilestones,
     refreshPricingEstimate,
     estimateProject,
@@ -1652,6 +1653,15 @@ export default function Step2Milestones({
     onMilestonesReplaced: null,
     projectFamilyContext: resolvedProjectFamily,
   });
+  const aiMilestonePreview = useMemo(
+    () => (Array.isArray(aiPreview?.milestones) ? aiPreview.milestones : []),
+    [aiPreview]
+  );
+  const hasAiMilestonePreview = aiMilestonePreview.length > 0;
+  const aiMilestonePreviewQuestions = useMemo(
+    () => (Array.isArray(aiPreview?.questions) ? aiPreview.questions : []),
+    [aiPreview]
+  );
   const combinedClarificationQuestions = useMemo(
     () =>
       mergeQuestionsByCanonicalKey(
@@ -1893,9 +1903,226 @@ export default function Step2Milestones({
           safeStr(agreementMeta?.description || agreementMeta?.project_description || preview.scope_text),
         clarificationAnswers: agreementMeta?.ai_scope?.answers || {},
         amountMode: "preserve_base",
-        baseMilestones: preview.milestones,
+      baseMilestones: preview.milestones,
       }),
     };
+  }
+
+  function buildLocalMilestoneSuggestions() {
+    const projectType = safeStr(agreementMeta?.project_type);
+    const projectSubtype = safeStr(agreementMeta?.project_subtype);
+    const projectTitle = safeStr(agreementMeta?.project_title || agreementMeta?.title);
+    const projectScope = safeStr(
+      agreementMeta?.scope_of_work || agreementMeta?.description || agreementMeta?.project_description
+    );
+    const familyText = [
+      projectType,
+      projectSubtype,
+      projectTitle,
+      projectScope,
+      safeStr(projectContextSummary?.projectFamilyLabel),
+      safeStr(projectContextSummary?.projectType),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    if (/(shed|storage shed|backyard shed|outbuilding)/.test(familyText)) {
+      return [
+        {
+          title: "Site Prep and Foundation",
+          description: "Prepare the site and pour or set the foundation.",
+          recommended_duration_days: 2,
+        },
+        {
+          title: "Floor and Framing",
+          description: "Frame the floor, walls, and primary structure.",
+          recommended_duration_days: 2,
+        },
+        {
+          title: "Roof, Siding, and Weatherproofing",
+          description: "Install roof, siding, and exterior weatherproofing.",
+          recommended_duration_days: 3,
+        },
+        {
+          title: "Doors, Windows, and Finish Details",
+          description: "Install doors, windows, trim, and finish details.",
+          recommended_duration_days: 1,
+        },
+        {
+          title: "Final Inspection and Cleanup",
+          description: "Complete inspection, punch list, and cleanup.",
+          recommended_duration_days: 1,
+        },
+      ];
+    }
+
+    if (/(roof|roofing)/.test(familyText)) {
+      return [
+        {
+          title: "Site Setup and Protection",
+          description: "Protect the home, staging area, and landscaping before roof work begins.",
+          recommended_duration_days: 1,
+        },
+        {
+          title: "Tear-Off and Deck Prep",
+          description: "Remove existing roofing and prepare the deck for repair or replacement.",
+          recommended_duration_days: 1,
+        },
+        {
+          title: "Roof Installation",
+          description: "Install underlayment, flashing, and new roofing materials.",
+          recommended_duration_days: 2,
+        },
+        {
+          title: "Cleanup and Final Inspection",
+          description: "Complete cleanup, magnet sweep, and final walkthrough.",
+          recommended_duration_days: 1,
+        },
+      ];
+    }
+
+    if (/(concrete|slab|foundation|grading)/.test(familyText)) {
+      return [
+        {
+          title: "Site Layout and Excavation",
+          description: "Lay out the work area and complete excavation or grading.",
+          recommended_duration_days: 1,
+        },
+        {
+          title: "Forming and Reinforcement",
+          description: "Set forms, reinforcement, and base preparation.",
+          recommended_duration_days: 1,
+        },
+        {
+          title: "Pour and Finish",
+          description: "Place, finish, and cure the slab or foundation.",
+          recommended_duration_days: 1,
+        },
+        {
+          title: "Cleanup and Closeout",
+          description: "Remove forms, clean the area, and complete closeout.",
+          recommended_duration_days: 1,
+        },
+      ];
+    }
+
+    const fallbackRows = buildClarificationAwareMilestoneDraft({
+      projectType,
+      projectSubtype,
+      projectFamilyKey: resolvedProjectFamily.project_family_key,
+      projectFamilyLabel: resolvedProjectFamily.project_family_label,
+      description: projectScope || projectTitle || projectType || "",
+      clarificationAnswers: agreementMeta?.ai_scope?.answers || {},
+      amountMode: "preserve_base",
+      baseMilestones: [],
+    });
+
+    if (Array.isArray(fallbackRows) && fallbackRows.length) {
+      return fallbackRows;
+    }
+
+    return [
+      {
+        title: "Project Setup",
+        description: "Review scope, materials, and site setup.",
+        recommended_duration_days: 1,
+      },
+      {
+        title: "Work in Progress",
+        description: "Complete the core build or installation work.",
+        recommended_duration_days: 2,
+      },
+      {
+        title: "Final Review",
+        description: "Complete walkthrough, punch list, and cleanup.",
+        recommended_duration_days: 1,
+      },
+    ];
+  }
+
+  function clearAiMilestonePreview({ clearSuggestedIds = true } = {}) {
+    setAiPreview(null);
+    setAiMilestonePreviewMode("");
+    setAiMilestoneGenerationError("");
+    if (clearSuggestedIds) {
+      setAiSuggestedMilestoneIds([]);
+    }
+  }
+
+  function materializeAiSuggestedMilestones(mode = "replace") {
+    const source = Array.isArray(aiMilestonePreview) ? aiMilestonePreview : [];
+    if (!source.length) return [];
+
+    const previewRows = normalizeCardRows(
+      source.map((row, idx) =>
+        normalizeMilestoneForLocalFallback(
+          {
+            ...row,
+            id: row?.milestone_id ?? row?.id ?? `ai-${Date.now()}-${idx + 1}`,
+            order: row?.order ?? idx + 1,
+          },
+          idx + 1
+        )
+      )
+    ).filter(Boolean);
+
+    if (mode === "append") {
+      return sortFallbackMilestones([
+        ...effectiveMilestones,
+        ...previewRows.map((row, idx) => ({
+          ...row,
+          order: effectiveMilestones.length + idx + 1,
+        })),
+      ]);
+    }
+
+    return sortFallbackMilestones(
+      previewRows.map((row, idx) => ({
+        ...row,
+        order: idx + 1,
+      }))
+    );
+  }
+
+  function applyAiSuggestedMilestones(mode = "replace") {
+    if (!hasAiMilestonePreview) {
+      toast("No AI milestone preview is available yet.");
+      return;
+    }
+
+    if (milestonesLocked) {
+      lockToast();
+      return;
+    }
+    if (templateApplied) {
+      toast(
+        "This agreement is template-driven. Use the template structure instead of applying AI milestone suggestions here.",
+        {
+          icon: "",
+        }
+      );
+      return;
+    }
+
+    const nextRows = materializeAiSuggestedMilestones(mode);
+    if (!nextRows.length) {
+      toast("No milestone suggestions are available to apply.");
+      return;
+    }
+
+    const nextIds = nextRows.map((row) => row?.id).filter(Boolean);
+    setFallbackMilestones(nextRows);
+    setExpandedMilestoneId(nextRows[0]?.id || null);
+    setNewMilestoneOpen(false);
+    setAiChangeSummary("AI suggested milestones are ready for review.");
+    onAiUpdateFeedback("AI suggested milestones are ready for review.");
+    clearAiMilestonePreview({ clearSuggestedIds: false });
+    setAiSuggestedMilestoneIds(nextIds);
+    toast.success(
+      mode === "append"
+        ? `Appended ${nextRows.length} suggested milestone${nextRows.length === 1 ? "" : "s"} for review.`
+        : `Applied ${nextRows.length} suggested milestone${nextRows.length === 1 ? "" : "s"} for review.`
+    );
   }
 
   function validateExistingMilestonesAmounts() {
@@ -1916,8 +2143,9 @@ export default function Step2Milestones({
     return "";
   }
 
-  async function handleRunAiSuggest() {
+  function handleRunAiSuggest() {
     if (!agreementId) return;
+    setAiMilestoneGenerationError("");
     if (milestonesLocked) {
       lockToast();
       return;
@@ -1929,74 +2157,65 @@ export default function Step2Milestones({
       return;
     }
 
-    const clarificationNotes = buildClarificationAwareMilestoneNotes(
-      agreementMeta?.ai_scope?.answers || {}
-    );
-    const extraNotes = [
-      safeStr(resolvedProjectFamily.project_family_label)
-        ? `Project family: ${safeStr(resolvedProjectFamily.project_family_label)}`
-        : "",
-      `Materials purchasing responsibility: ${materialsWho}.`,
-      needsMeasurements
-        ? `Measurements needed: YES. Notes: ${measurementNotes || "(none provided)"}.`
-        : "Measurements needed: NO.",
-      allowanceNotes ? `Allowances / selections: ${allowanceNotes}` : "",
-      permitNotes ? `Permits / inspections: ${permitNotes}` : "",
-      clarificationNotes.length
-        ? `Saved scope clarifications:\n- ${clarificationNotes.join("\n- ")}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    const preview = await runAiSuggest({
-      notes: `${mLocal.description || ""}\n\n${extraNotes.filter(Boolean).join("\n")}`.trim(),
-    });
-    if (preview) {
-      const shaped = shapeAiMilestonePreview(preview);
-      setAiPreview(shaped);
-      const suggestedRows = normalizeCardRows(
-        (Array.isArray(shaped?.milestones) ? shaped.milestones : []).map((row, idx) =>
-          normalizeMilestoneForLocalFallback(
-            {
-              ...row,
-              id: row?.milestone_id ?? row?.id ?? `ai-${idx + 1}`,
-            },
-            idx + 1
-          )
-        )
-      ).filter(Boolean);
-      if (suggestedRows.length) {
-        if (effectiveMilestones.length) {
-          const replaceExisting = window.confirm(
-            "Replace the current milestones with AI suggestions' Press Cancel to append them instead."
-          );
-          setFallbackMilestones(
-            normalizeCardRows(
-              replaceExisting
-                ? suggestedRows
-                : [...effectiveMilestones, ...suggestedRows]
+    setAiMilestoneGenerationBusy(true);
+    setTimeout(() => {
+      try {
+        const previewRows = normalizeCardRows(
+          buildLocalMilestoneSuggestions().map((row, idx) =>
+            normalizeMilestoneForLocalFallback(
+              {
+                ...row,
+                id: `ai-${idx + 1}`,
+                order: idx + 1,
+              },
+              idx + 1
             )
-          );
-        } else {
-          setFallbackMilestones(suggestedRows);
-        }
-        setExpandedMilestoneId(suggestedRows[0]?.id || null);
+          )
+        ).filter(Boolean);
+
+        const preview = {
+          scope_text:
+            safeStr(
+              agreementMeta?.scope_of_work ||
+                agreementMeta?.description ||
+                agreementMeta?.project_description
+            ) ||
+            safeStr(agreementMeta?.project_title || agreementMeta?.title) ||
+            safeStr(projectContextSummary?.projectFamilyLabel),
+          milestones: previewRows,
+          questions: aiMilestonePreviewQuestions.length
+            ? aiMilestonePreviewQuestions
+            : mergedClarificationQuestions,
+          raw: { clarification_shaped: true },
+        };
+
+        setAiPreview(preview);
+        setAiMilestonePreviewMode(effectiveMilestones.length ? "replace" : "apply");
+        setAiSuggestedMilestoneIds([]);
+        setAiChangeSummary("AI suggested milestones are ready for review.");
+        onAiUpdateFeedback("AI suggested milestones are ready for review.");
         setNewMilestoneOpen(false);
-        setAiSuggestedMilestoneIds(suggestedRows.map((row) => row.id).filter(Boolean));
-        const feedback = "AI drafted milestone cards  review and adjust as needed.";
-        setAiChangeSummary(feedback);
-        onAiUpdateFeedback(feedback);
         toast.success(
-          `Generated ${suggestedRows.length} suggested milestone${suggestedRows.length === 1 ? "" : "s"}.`
+          `Generated ${previewRows.length} suggested milestone${previewRows.length === 1 ? "" : "s"}.`
         );
+      } catch (err) {
+        console.error("Step2 suggested milestone generation failed:", err);
+        setAiPreview(null);
+        setAiMilestoneGenerationError(
+          safeStr(err?.response?.data?.detail) ||
+            safeStr(err?.message) ||
+            "Couldn't generate milestones. You can add milestones manually or try again."
+        );
+        toast.error("Couldn't generate milestones. You can add milestones manually or try again.");
+      } finally {
+        setAiMilestoneGenerationBusy(false);
       }
-    }
+    }, 450);
   }
 
   async function handleApplyAiMilestonesBulk(mode) {
     if (!agreementId) return;
-    if (!aiPreview?.milestones?.length) return;
+    if (!hasAiMilestonePreview) return;
 
     if (milestonesLocked) {
       lockToast();
@@ -2743,7 +2962,14 @@ export default function Step2Milestones({
         onAiUpdateFeedback(feedback);
         await refreshMilestonesSafe();
       } catch (err) {
-        console.warn("Step2 auto milestone draft failed:", err);
+        console.error("Step2 suggested milestone generation failed:", err);
+        setAiPreview(null);
+        setAiMilestoneGenerationError(
+          safeStr(err?.response?.data?.detail) ||
+            safeStr(err?.message) ||
+            "Couldn't generate milestones. You can add milestones manually or try again."
+        );
+        toast.error("Couldn't generate milestones. You can add milestones manually or try again.");
       } finally {
         setAutoDraftBusy(false);
       }
@@ -3295,11 +3521,188 @@ export default function Step2Milestones({
                     : "Clarification guidance could benefit from more detail."}
                 </li>
               </ul>
-              <p className="mt-3 text-xs text-slate-500">AI milestone generation coming next.</p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleRunAiSuggest}
+                  disabled={aiLoading || aiMilestoneGenerationBusy || milestonesLocked || templateApplied}
+                  className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-50 disabled:opacity-60"
+                  data-testid="step2-generate-suggested-milestones"
+                >
+                  {aiLoading || aiMilestoneGenerationBusy
+                    ? "Generating milestones..."
+                    : "Generate Suggested Milestones"}
+                </button>
+              </div>
+              {aiLoading || aiMilestoneGenerationBusy ? (
+                <div
+                  className="mt-3 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs text-slate-600"
+                  data-testid="step2-ai-generation-progress-card"
+                  aria-live="polite"
+                >
+                  AI is turning the project scope into work phases.
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
       </section>
+
+      {((aiError || aiMilestoneGenerationError) && !hasAiMilestonePreview) ? (
+        <section
+          className="mb-4 rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-4 shadow-sm"
+          data-testid="step2-ai-generation-error-card"
+          aria-live="polite"
+        >
+          <div className="text-sm font-semibold text-rose-900">Couldn&apos;t generate milestones</div>
+          <div className="mt-1 text-sm text-rose-800">
+            {aiMilestoneGenerationError || aiError || "You can add milestones manually or try again."}
+          </div>
+          <div className="mt-1 text-sm text-rose-800">
+            You can add milestones manually or try again.
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleRunAiSuggest}
+              disabled={aiLoading || aiMilestoneGenerationBusy || milestonesLocked || templateApplied}
+              className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-50 disabled:opacity-60"
+            >
+              Try Again
+            </button>
+            <button
+              type="button"
+              onClick={() => setNewMilestoneOpen(true)}
+              className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-50"
+            >
+              Add Milestone
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {hasAiMilestonePreview ? (
+        <section
+          className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 shadow-sm"
+          data-testid="step2-ai-milestone-preview-card"
+          aria-live="polite"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold text-amber-950">Suggested milestones</div>
+            {effectiveMilestones.length ? (
+              <span className="rounded-full border border-amber-200 bg-white px-2 py-1 text-[11px] font-semibold text-amber-700">
+                This will replace your current milestone plan.
+              </span>
+            ) : (
+              <span className="rounded-full border border-amber-200 bg-white px-2 py-1 text-[11px] font-semibold text-amber-700">
+                Review before applying
+              </span>
+            )}
+          </div>
+          <div className="mt-1 text-sm text-amber-950/80">
+            AI is turning the project scope into work phases. Review the draft before applying it.
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {aiMilestonePreview.map((row, idx) => {
+              const previewAmount = Number(row?.amount || row?.suggested_amount || 0);
+              const previewStart = friendly(toDateOnly(row?.start_date || row?.start));
+              const previewDue = friendly(toDateOnly(row?.completion_date || row?.end_date || row?.end));
+              const previewDuration = row?.recommended_duration_days
+                ? formatDurationDays(row.recommended_duration_days)
+                : "";
+              return (
+                <div
+                  key={`${row?.id || row?.milestone_id || row?.title || "ai"}-${idx}`}
+                  className="rounded-xl border border-amber-200 bg-white px-3 py-3 shadow-sm"
+                >
+                  <div className="text-sm font-semibold text-slate-950">{row?.title || `Milestone ${idx + 1}`}</div>
+                  {safeStr(row?.description) ? (
+                    <div className="mt-1 text-xs text-slate-600">{row.description}</div>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
+                    {previewDuration ? (
+                      <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">{previewDuration}</span>
+                    ) : null}
+                    {Number.isFinite(previewAmount) && previewAmount > 0 ? (
+                      <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                        {formatCurrency(previewAmount)}
+                      </span>
+                    ) : null}
+                    {previewStart || previewDue ? (
+                      <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                        {previewStart || "Start"} - {previewDue || "Due"}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {aiMilestonePreviewQuestions.length ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-white px-3 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                Related clarifications
+              </div>
+              <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                {aiMilestonePreviewQuestions.slice(0, 3).map((q, idx) => (
+                  <li key={`${q?.key || "q"}-${idx}`}>- {safeStr(q?.label) || safeStr(q?.question)}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="mt-4 flex flex-wrap gap-2">
+            {effectiveMilestones.length ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyAiSuggestedMilestones("replace")}
+                  disabled={aiLoading || milestonesLocked || templateApplied}
+                  className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                  data-testid="step2-apply-suggested-milestones"
+                >
+                  Replace Existing Milestones
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyAiSuggestedMilestones("append")}
+                  disabled={aiLoading || milestonesLocked || templateApplied}
+                  className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                >
+                  Append to Existing Milestones
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAiMilestonePreview}
+                  disabled={aiLoading}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyAiSuggestedMilestones("replace")}
+                  disabled={aiLoading || milestonesLocked || templateApplied}
+                  className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+                  data-testid="step2-apply-suggested-milestones"
+                >
+                  Apply Suggested Milestones
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAiMilestonePreview}
+                  disabled={aiLoading}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       {estimatePreview ? (
         <details
