@@ -497,10 +497,10 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
     await dialog.accept();
   });
 
-  await expect(page.getByTestId('step2-work-plan-summary')).toBeVisible({ timeout: 15000 });
-  await expect(page.getByTestId('step2-work-plan-summary')).not.toContainText('Review the work plan');
-  await expect(page.getByTestId('step2-work-plan-summary')).toContainText('milestone');
-  await expect(page.getByTestId('step2-work-plan-summary')).toContainText('Path:');
+  await expect(page.getByTestId('step2-work-plan-summary')).toHaveCount(0);
+  const workflowPanel = page.getByTestId('step2-workflow-panel');
+  await expect(workflowPanel).toBeVisible({ timeout: 15000 });
+  await expect(workflowPanel.getByRole('heading', { name: 'Residential Milestone Planner' })).toHaveCount(1);
   await expect(page.getByTestId('step2-plan-guidance-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Plan Guidance');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Most contractors use');
@@ -516,10 +516,12 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   );
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Generate Suggested Milestones');
   await expect(page.getByTestId('step2-generate-suggested-milestones')).toBeVisible();
+  await expect(page.getByTestId('step2-suggest-milestone-pricing')).toBeVisible();
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Pricing is based on similar projects and milestone structure.');
   await expect(page.getByTestId('step2-rebalance-milestones')).toBeVisible();
   await expect(page.getByTestId('step2-apply-suggested-timeline')).toBeVisible();
-  await expect(page.getByTestId('step2-apply-pricing-guidance')).toHaveCount(0);
+  await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Create initial pricing for each phase');
+  await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Redistribute your current total across milestones');
   await expect(page.getByTestId('step2-improve-with-ai')).toHaveCount(0);
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-card-801')).toBeVisible();
@@ -610,11 +612,11 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-milestone-amount-801')).toHaveValue('7777');
 
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
-  await expect(page.getByTestId('step2-apply-pricing-guidance')).toHaveCount(0);
-  await expect(page.getByTestId('step2-refresh-estimate')).toHaveCount(0);
-  await expect(page.getByTestId('step2-apply-estimate-amounts')).toHaveCount(0);
-  await expect(page.getByTestId('step2-apply-estimate-timeline')).toHaveCount(0);
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toHaveCount(0);
+  await expect(page.getByTestId('step2-suggest-milestone-pricing')).toBeVisible();
+  await expect(page.getByTestId('step2-refresh-estimate')).toBeHidden();
+  await expect(page.getByTestId('step2-apply-estimate-amounts')).toBeHidden();
+  await expect(page.getByTestId('step2-apply-estimate-timeline')).toBeHidden();
+  await expect(page.getByTestId('step2-estimate-guidance-details')).toBeHidden();
 });
 
 test('step 2 generates shed-specific milestone previews and applies or cancels safely', async ({
@@ -932,7 +934,9 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
     await dialog.accept();
   });
 
-  await expect(page.getByTestId('step2-work-plan-summary')).toBeVisible({ timeout: 15000 });
+  const workflowPanel = page.getByTestId('step2-workflow-panel');
+  await expect(workflowPanel).toBeVisible({ timeout: 15000 });
+  await expect(workflowPanel.getByRole('heading', { name: 'Residential Milestone Planner' })).toHaveCount(1);
   await expect(page.getByTestId('step2-plan-guidance-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Plan Guidance');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Most contractors use');

@@ -2731,7 +2731,9 @@ test('agreement wizard step 2 AI can recommend saving a reusable template and op
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step2-work-plan-summary')).toBeVisible();
+  const workflowPanel = page.getByTestId('step2-workflow-panel');
+  await expect(workflowPanel).toBeVisible();
+  await expect(workflowPanel.getByRole('heading', { name: 'Residential Milestone Planner' })).toHaveCount(1);
   await expect(page.getByText('Deposit and materials')).toBeVisible();
   await page.getByTestId('step2-save-as-template').click();
   await expect(page.getByText('Save Agreement as Template')).toBeVisible();
