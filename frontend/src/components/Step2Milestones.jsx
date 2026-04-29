@@ -772,10 +772,49 @@ function getMilestonePricingWeight(row, idx, totalRows) {
   return 18;
 }
 
-function buildWeightedPricingPlan(rows = [], totalAmount = 0, previewRows = []) {
+function getMilestonePricingWeightLabel(row) {
+  const text = [
+    safeStr(row?.title),
+    safeStr(row?.description),
+    safeStr(row?.normalized_milestone_type),
+    safeStr(row?.pricing_source_note),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (/foundation|site prep|site preparation|prep|layout|excavation|permit|mobilization/.test(text)) {
+    return "Weighted for prep";
+  }
+  if (/framing|floor|structure|rough/.test(text)) {
+    return "Weighted for framing";
+  }
+  if (/roof|siding|weatherproof|shell/.test(text)) {
+    return "Weighted for shell work";
+  }
+  if (/door|window|trim|finish|fixture|hardware/.test(text)) {
+    return "Weighted for finish work";
+  }
+  if (/final|cleanup|inspection|punch|closeout/.test(text)) {
+    return "Weighted for closeout";
+  }
+  if (/demo|demolition/.test(text)) {
+    return "Weighted for demolition";
+  }
+  if (/electrical|plumbing|hvac|mechanical/.test(text)) {
+    return "Weighted for trades";
+  }
+  return "Weighted by milestone phase";
+}
+
+function buildWeightedPricingPlan(rows = [], totalAmount = 0, previewRows = [], options = {}) {
   const milestoneRows = normalizeCardRows(rows).filter(Boolean);
   const total = Number(totalAmount);
   if (!milestoneRows.length || !Number.isFinite(total) || total <= 0) return [];
+
+  const lockAmountsById =
+    options?.lockAmountsById instanceof Map
+      ? options.lockAmountsById
+      : new Map(Array.isArray(options?.lockAmountsById) ? options.lockAmountsById : []);
 
   const suggestionById = new Map(
     (Array.isArray(previewRows) ? previewRows : [])
@@ -784,6 +823,9 @@ function buildWeightedPricingPlan(rows = [], totalAmount = 0, previewRows = []) 
   );
 
   const enriched = milestoneRows.map((row, idx) => {
+    const lockAmount = parseAmountStrict(
+      lockAmountsById.get(row?.id) ?? lockAmountsById.get(String(row?.id)) ?? lockAmountsById.get(Number(row?.id))
+    );
     const suggestion =
       suggestionById.get(row?.id) ||
       (Array.isArray(previewRows)
@@ -793,8 +835,11 @@ function buildWeightedPricingPlan(rows = [], totalAmount = 0, previewRows = []) 
     const baseWeight = getMilestonePricingWeight(row, idx, milestoneRows.length);
     const allocationPercent = Number(suggestion?.allocation_percent);
     const suggestedAmount = parseAmountStrict(suggestion?.suggested_amount);
+    const isLocked = Number.isFinite(lockAmount) && lockAmount > 0;
     const weight =
-      Number.isFinite(allocationPercent) && allocationPercent > 0
+      isLocked
+        ? 0
+        : Number.isFinite(allocationPercent) && allocationPercent > 0
         ? baseWeight * (0.75 + Math.min(1.2, allocationPercent))
         : baseWeight;
 
@@ -804,18 +849,41 @@ function buildWeightedPricingPlan(rows = [], totalAmount = 0, previewRows = []) 
       suggestion,
       weight: Number.isFinite(weight) && weight > 0 ? weight : baseWeight || 1,
       suggestedAmount: Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null,
+      lockedAmount: isLocked ? lockAmount : null,
+      isLocked,
     };
   });
 
-  const totalWeight = enriched.reduce((sum, item) => sum + Number(item.weight || 0), 0) || enriched.length || 1;
-  const roundedTotal = roundSuggestedAmount(total) ?? total;
-  let runningTotal = 0;
+  const lockedTotal = enriched.reduce((sum, item) => sum + Number(item.lockedAmount || 0), 0);
+  const remainingTotal = Math.max(0, total - lockedTotal);
+  const flexibleItems = enriched.filter((item) => !item.isLocked);
+  const totalWeight =
+    flexibleItems.reduce((sum, item) => sum + Number(item.weight || 0), 0) || flexibleItems.length || 1;
+  let runningFlexible = 0;
+  let flexibleIndex = 0;
 
-  return enriched.map((item, idx) => {
+  return enriched.map((item) => {
+    if (item.isLocked) {
+      const amount = Number(item.lockedAmount || 0);
+      const share = total > 0 ? amount / total : 0;
+      return {
+        ...item.row,
+        amount: amount,
+        suggested_amount: Number.isFinite(item.suggestedAmount) ? item.suggestedAmount : amount,
+        allocation_percent: share,
+        suggested_share: share,
+        pricing_manual_override: true,
+        pricing_source_note: item.row?.pricing_source_note || "Manual amount",
+      };
+    }
+
     const share = Number(item.weight || 0) / totalWeight;
-    const rawAmount = idx === enriched.length - 1 ? roundedTotal - runningTotal : roundedTotal * share;
-    const amount = idx === enriched.length - 1 ? Math.max(5, roundedTotal - runningTotal) : roundSuggestedAmount(rawAmount) ?? rawAmount;
-    runningTotal += Number.isFinite(amount) ? Number(amount) : 0;
+    const isLastFlexible = flexibleIndex === flexibleItems.length - 1;
+    const rawAmount = isLastFlexible ? remainingTotal - runningFlexible : remainingTotal * share;
+    const amount =
+      isLastFlexible ? Math.max(0, remainingTotal - runningFlexible) : roundSuggestedAmount(rawAmount) ?? rawAmount;
+    runningFlexible += Number.isFinite(amount) ? Number(amount) : 0;
+    flexibleIndex += 1;
 
     return {
       ...item.row,
@@ -823,6 +891,8 @@ function buildWeightedPricingPlan(rows = [], totalAmount = 0, previewRows = []) 
       suggested_amount: Number.isFinite(item.suggestedAmount) ? item.suggestedAmount : amount,
       allocation_percent: share,
       suggested_share: share,
+      pricing_manual_override: false,
+      pricing_source_note: item.row?.pricing_source_note || getMilestonePricingWeightLabel(item.row),
     };
   });
 }
@@ -968,6 +1038,11 @@ export default function Step2Milestones({
   const [estimatePreview, setEstimatePreview] = useState(null);
   const [estimateBanner, setEstimateBanner] = useState("");
   const [projectBudgetInput, setProjectBudgetInput] = useState("");
+  const targetProjectTotalTouchedRef = useRef(false);
+  const [rebalancePrompt, setRebalancePrompt] = useState(null);
+  const [manualAmountMilestoneIds, setManualAmountMilestoneIds] = useState([]);
+  const [pricingHighlightMilestoneIds, setPricingHighlightMilestoneIds] = useState([]);
+  const pricingHighlightTimerRef = useRef(null);
   const [assistantApplyingMilestones, setAssistantApplyingMilestones] = useState(false);
   const [aiChangeSummary, setAiChangeSummary] = useState("");
   const [autoDraftBusy, setAutoDraftBusy] = useState(false);
@@ -1249,6 +1324,9 @@ export default function Step2Milestones({
       });
       return normalizeCardRows(nextRows);
     });
+    if (field === "amount") {
+      setManualAmountMilestoneIds((prev) => [...new Set([...(Array.isArray(prev) ? prev : []), String(milestoneId)])]);
+    }
     markMilestonesUserModified();
   }
 
@@ -1283,6 +1361,20 @@ export default function Step2Milestones({
     } catch {
       // ignore
     }
+  }
+
+  function flashPricingHighlights(milestoneIds = []) {
+    const ids = (Array.isArray(milestoneIds) ? milestoneIds : [])
+      .map((id) => (id == null ? "" : String(id)))
+      .filter(Boolean);
+    if (!ids.length) return;
+    setPricingHighlightMilestoneIds(ids);
+    if (pricingHighlightTimerRef.current) {
+      window.clearTimeout(pricingHighlightTimerRef.current);
+    }
+    pricingHighlightTimerRef.current = window.setTimeout(() => {
+      setPricingHighlightMilestoneIds([]);
+    }, 2000);
   }
 
   const refreshAgreementMeta = useCallback(async () => {
@@ -1780,6 +1872,19 @@ export default function Step2Milestones({
   );
 
   const total = effectiveMilestones.reduce((s, m) => s + money(m.amount), 0);
+  const manualAmountMilestoneIdSet = useMemo(
+    () => new Set((Array.isArray(manualAmountMilestoneIds) ? manualAmountMilestoneIds : []).map((id) => String(id))),
+    [manualAmountMilestoneIds]
+  );
+  const pricingSummaryRangeLow = parseAmountStrict(estimatePreview?.suggested_price_low);
+  const pricingSummaryRangeHigh = parseAmountStrict(estimatePreview?.suggested_price_high);
+  const pricingSummaryStatus = useMemo(() => {
+    if (!Number.isFinite(pricingSummaryRangeLow) || !Number.isFinite(pricingSummaryRangeHigh)) return "";
+    if (total < pricingSummaryRangeLow) return "Below range";
+    if (total > pricingSummaryRangeHigh) return "Above range";
+    return "Within range";
+  }, [pricingSummaryRangeHigh, pricingSummaryRangeLow, total]);
+  const pricingSummarySource = "Based on similar projects and milestone structure.";
   const isAiPlanningMode =
     Boolean(aiChangeSummary) ||
     Boolean(assistantGuidedFlow?.guided_question) ||
@@ -1804,6 +1909,19 @@ export default function Step2Milestones({
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [projectBudgetInput]);
   const pricingBaselineTotal = useMemo(() => getPricingBaselineTotal(estimatePreview), [estimatePreview]);
+  useEffect(() => {
+    if (targetProjectTotalTouchedRef.current) return;
+    if (!pricingBaselineTotal || projectBudgetInput) return;
+    setProjectBudgetInput(formatSuggestedAmountInput(pricingBaselineTotal));
+  }, [pricingBaselineTotal, projectBudgetInput]);
+  useEffect(
+    () => () => {
+      if (pricingHighlightTimerRef.current) {
+        window.clearTimeout(pricingHighlightTimerRef.current);
+      }
+    },
+    []
+  );
   const estimateSummaryMeta = useMemo(() => {
     if (!estimatePreview) return null;
     const explanation = explainBenchmarkSource(estimatePreview);
@@ -1904,6 +2022,7 @@ export default function Step2Milestones({
         suggestedAmount: item.suggestedAmount,
         budgetSuggestion,
         durationDays: Number(item.suggestion?.suggested_duration_days || 0) || null,
+        weightLabel: getMilestonePricingWeightLabel(item.row),
       });
     });
     return map;
@@ -2367,6 +2486,35 @@ export default function Step2Milestones({
     return result;
   }
 
+  function commitPricingUpdate({
+    nextRows = [],
+    message = "",
+    changedIds = [],
+    clearManualIds = [],
+  } = {}) {
+    const normalizedRows = sortFallbackMilestones(normalizeCardRows(nextRows).filter(Boolean));
+    setFallbackMilestones(normalizedRows);
+    if (Array.isArray(clearManualIds) && clearManualIds.length) {
+      const clearSet = new Set(clearManualIds.map((id) => String(id)));
+      setManualAmountMilestoneIds((prev) =>
+        (Array.isArray(prev) ? prev : []).filter((id) => !clearSet.has(String(id)))
+      );
+    }
+    if (Array.isArray(changedIds) && changedIds.length) {
+      setStagedSuggestedMilestoneIds((prev) => [...new Set([...(prev || []), ...changedIds.filter(Boolean)])]);
+    }
+    if (message) {
+      setEstimateBanner(message);
+      setAiChangeSummary(message);
+      onAiUpdateFeedback(message);
+    }
+    const highlightIds = (Array.isArray(changedIds) && changedIds.length
+      ? changedIds
+      : normalizedRows.map((row) => row?.id).filter(Boolean)
+    ).filter(Boolean);
+    flashPricingHighlights(highlightIds);
+  }
+
   function applyEstimateSuggestedAmounts() {
     const suggestions = Array.isArray(estimatePreview?.milestone_suggestions)
       ? estimatePreview.milestone_suggestions
@@ -2390,6 +2538,7 @@ export default function Step2Milestones({
 
     const stagedIds = [];
     let appliedCount = 0;
+    const changedIds = [];
     const nextById = new Map(nextRows.map((row) => [row?.id, row]));
     const updatedRows = effectiveMilestones.map((row) => {
       const nextRow = nextById.get(row?.id);
@@ -2399,6 +2548,7 @@ export default function Step2Milestones({
         appliedCount += 1;
         if (estimateAmountDiffers(row?.amount, nextAmount)) {
           stagedIds.push(row?.id);
+          changedIds.push(row?.id);
         }
         return {
           ...row,
@@ -2414,18 +2564,108 @@ export default function Step2Milestones({
       return;
     }
 
-    setFallbackMilestones(sortFallbackMilestones(updatedRows));
-    setStagedSuggestedMilestoneIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
-    setEstimateBanner("Pricing guidance is staged locally. Review and save when ready.");
-    markAiUpdated(stagedIds.filter(Boolean).map((id) => `milestone:${id}`));
-    {
-      const feedback = "Updated milestone pricing using weighted project guidance.";
-      setAiChangeSummary(feedback);
-      onAiUpdateFeedback(feedback);
-    }
+    commitPricingUpdate({
+      nextRows: updatedRows,
+      message: "Pricing guidance is staged locally. Review and save when ready.",
+      changedIds: changedIds.filter(Boolean),
+      clearManualIds: effectiveMilestones.map((row) => row?.id).filter(Boolean),
+    });
     toast.success(
       `Applied weighted pricing guidance to ${appliedCount} milestone${appliedCount === 1 ? "" : "s"} for review.`
     );
+  }
+
+  function buildRebalancedMilestoneRows(targetTotal, keepManualAmounts) {
+    const total = parseAmountStrict(targetTotal);
+    if (!Number.isFinite(total) || total <= 0) return [];
+
+    const manualIds = keepManualAmounts
+      ? new Set(
+          effectiveMilestones
+            .filter((row) => manualAmountMilestoneIdSet.has(String(row?.id)))
+            .map((row) => row?.id)
+            .filter(Boolean)
+        )
+      : new Set();
+    const lockMap = new Map();
+    if (keepManualAmounts) {
+      effectiveMilestones.forEach((row) => {
+        if (manualIds.has(row?.id)) {
+          const currentAmount = parseAmountStrict(row?.amount);
+          if (Number.isFinite(currentAmount) && currentAmount > 0) {
+            lockMap.set(row.id, currentAmount);
+          }
+        }
+      });
+    }
+    const lockedTotal = Array.from(lockMap.values()).reduce((sum, value) => sum + Number(value || 0), 0);
+    if (keepManualAmounts && lockedTotal > total) {
+      toast.error("Target total is lower than the amounts you have manually edited.");
+      return null;
+    }
+    return buildWeightedPricingPlan(effectiveMilestones, total, estimateSuggestions, {
+      lockAmountsById: lockMap,
+    });
+  }
+
+  function previewRebalanceMilestones() {
+    if (!effectiveMilestones.length) {
+      toast("Add at least one milestone before rebalancing pricing.");
+      return;
+    }
+    const targetTotal = parseAmountStrict(projectBudgetInput);
+    if (!Number.isFinite(targetTotal) || targetTotal <= 0) {
+      toast("Enter a target project total before rebalancing milestones.");
+      return;
+    }
+    const manualIds = effectiveMilestones
+      .filter((row) => manualAmountMilestoneIdSet.has(String(row?.id)))
+      .map((row) => row?.id)
+      .filter(Boolean);
+    const hasExistingAmounts = effectiveMilestones.some((row) => amountIsValidPositive(row?.amount));
+    if (!hasExistingAmounts) {
+      const nextRows = buildRebalancedMilestoneRows(targetTotal, false);
+      if (!nextRows?.length) {
+        toast("No milestones are available to rebalance.");
+        return;
+      }
+      commitPricingUpdate({
+        nextRows,
+        message: "Milestone pricing updated.",
+        changedIds: nextRows.map((row) => row?.id).filter(Boolean),
+      });
+      toast.success("Milestone pricing updated.");
+      return;
+    }
+
+    setRebalancePrompt({
+      targetTotal,
+      manualIds,
+    });
+  }
+
+  function applyRebalancedMilestones({ keepManualAmounts = false } = {}) {
+    const targetTotal = rebalancePrompt?.targetTotal ?? parseAmountStrict(projectBudgetInput);
+    const nextRows = buildRebalancedMilestoneRows(targetTotal, keepManualAmounts);
+    if (!nextRows?.length) {
+      setRebalancePrompt(null);
+      return;
+    }
+    const changedIds = nextRows
+      .filter((row) => {
+        const currentRow = effectiveMilestones.find((item) => item?.id === row?.id);
+        return currentRow ? estimateAmountDiffers(currentRow.amount, row.amount) : true;
+      })
+      .map((row) => row?.id)
+      .filter(Boolean);
+    commitPricingUpdate({
+      nextRows,
+      message: "Milestone pricing updated.",
+      changedIds,
+      clearManualIds: keepManualAmounts ? [] : effectiveMilestones.map((row) => row?.id).filter(Boolean),
+    });
+    toast.success("Milestone pricing updated.");
+    setRebalancePrompt(null);
   }
 
   function applyEstimateSuggestedTimeline() {
@@ -3390,7 +3630,10 @@ export default function Step2Milestones({
       )}
 
       {aiChangeSummary ? (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div
+          className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          data-testid="step2-pricing-feedback-banner"
+        >
           <div className="font-semibold">AI updated milestone work</div>
           <div className="mt-1 text-xs text-amber-800">{aiChangeSummary}</div>
         </div>
@@ -3619,6 +3862,55 @@ export default function Step2Milestones({
                     : "Clarification guidance could benefit from more detail."}
                 </li>
               </ul>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-xl border border-sky-200 bg-white px-3 py-3" data-testid="step2-pricing-summary-card">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">Pricing summary</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                    <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                      Suggested range:{" "}
+                      {Number.isFinite(pricingSummaryRangeLow) && Number.isFinite(pricingSummaryRangeHigh)
+                        ? `${formatCurrency(pricingSummaryRangeLow)} - ${formatCurrency(pricingSummaryRangeHigh)}`
+                        : "Not available"}
+                    </span>
+                    <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                      Current total: {formatCurrency(total)}
+                    </span>
+                    <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                      {pricingSummaryStatus || "Review pricing"}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-xs text-slate-600">{pricingSummarySource}</div>
+                </div>
+
+                <div className="rounded-xl border border-sky-200 bg-white px-3 py-3">
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-sky-700" htmlFor="step2-target-project-total">
+                    Target Project Total
+                  </label>
+                  <input
+                    id="step2-target-project-total"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={projectBudgetInput}
+                    onChange={(e) => {
+                      targetProjectTotalTouchedRef.current = true;
+                      setProjectBudgetInput(e.target.value);
+                    }}
+                    placeholder={safeStr(estimatePreview?.suggested_total_price) || "Enter target total"}
+                    className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-400 focus:outline-none"
+                    data-testid="step2-target-project-total"
+                  />
+                  <div className="mt-2 text-xs text-slate-600">
+                    Change the target, then rebalance the milestone plan when you are ready.
+                  </div>
+                </div>
+              </div>
+              <details className="mt-4 rounded-xl border border-sky-200 bg-white px-3 py-3" data-testid="step2-pricing-explanation-details">
+                <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">Why these amounts?</summary>
+                <div className="mt-2 text-sm text-slate-700">
+                  Pricing uses the project estimate, milestone phase, and similar project guidance. You can override any amount.
+                </div>
+              </details>
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -3640,6 +3932,15 @@ export default function Step2Milestones({
                 >
                   Apply Pricing Guidance
                 </button>
+                <button
+                  type="button"
+                  onClick={previewRebalanceMilestones}
+                  disabled={milestonesLocked || aiLoading || aiMilestoneGenerationBusy || !estimateBudgetValue}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  data-testid="step2-rebalance-milestones"
+                >
+                  Rebalance Milestones
+                </button>
               </div>
               {aiLoading || aiMilestoneGenerationBusy ? (
                 <div
@@ -3654,6 +3955,62 @@ export default function Step2Milestones({
           </div>
         </div>
       </section>
+
+      {rebalancePrompt ? (
+        <section
+          className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 shadow-sm"
+          data-testid="step2-pricing-rebalance-confirmation"
+          aria-live="polite"
+        >
+          <div className="text-sm font-semibold text-amber-950">
+            This will overwrite your current milestone plan.
+          </div>
+          <div className="mt-1 text-sm text-amber-900">
+            {rebalancePrompt.manualIds.length
+              ? "Keep manually edited amounts?"
+              : "Rebalance milestone amounts to the new target total?"}
+          </div>
+          <div className="mt-2 text-xs text-amber-900/80">
+            Target total: {formatCurrency(rebalancePrompt.targetTotal)}
+            {rebalancePrompt.manualIds.length ? ` • ${rebalancePrompt.manualIds.length} manual milestone${rebalancePrompt.manualIds.length === 1 ? "" : "s"} detected` : ""}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {rebalancePrompt.manualIds.length ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => applyRebalancedMilestones({ keepManualAmounts: true })}
+                  className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                >
+                  Keep manual amounts and rebalance the rest
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyRebalancedMilestones({ keepManualAmounts: false })}
+                  className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
+                >
+                  Rebalance all
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => applyRebalancedMilestones({ keepManualAmounts: false })}
+                className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+              >
+                Rebalance Milestones
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setRebalancePrompt(null)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {((aiError || aiMilestoneGenerationError) && !hasAiMilestonePreview) ? (
         <section
@@ -3851,27 +4208,13 @@ export default function Step2Milestones({
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Optional Project Budget</div>
-              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div className="text-sm text-slate-700">
-                  {step2ModeMeta.budgetDescription}
-                </div>
-                <div className="w-full max-w-xs">
-                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Planning budget
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={projectBudgetInput}
-                    onChange={(e) => setProjectBudgetInput(e.target.value)}
-                    placeholder={safeStr(estimatePreview?.suggested_total_price) || "Enter budget"}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                    data-testid="step2-project-budget-input"
-                  />
-                </div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Target project total</div>
+              <div className="mt-2 text-sm text-slate-700">
+                {projectBudgetInput
+                  ? `Rebalance will use ${formatCurrency(projectBudgetInput)} as the target total.`
+                  : "Set a target total above to rebalance milestone pricing."}
               </div>
+              <div className="mt-1 text-xs text-slate-600">{step2ModeMeta.budgetDescription}</div>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
@@ -4307,29 +4650,13 @@ export default function Step2Milestones({
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Optional Project Budget</div>
-                  <div className="mt-1 text-xs text-slate-600">
-                    {step2ModeMeta.budgetDescription}
-                  </div>
-                </div>
-                <div className="w-full max-w-xs">
-                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Planning budget
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={projectBudgetInput}
-                    onChange={(e) => setProjectBudgetInput(e.target.value)}
-                    placeholder={safeStr(estimatePreview?.suggested_total_price) || "Enter budget"}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-                    data-testid="step2-project-budget-input"
-                  />
-                </div>
+              <div className="text-sm font-semibold text-slate-900">Target project total</div>
+              <div className="mt-1 text-xs text-slate-600">
+                {projectBudgetInput
+                  ? `Current target: ${formatCurrency(projectBudgetInput)}`
+                  : "Set the target total above to rebalance milestone pricing."}
               </div>
+              <div className="mt-1 text-xs text-slate-600">{step2ModeMeta.budgetDescription}</div>
             </div>
 
             <details className="mt-4 rounded-xl border border-slate-200 bg-white">
@@ -4770,15 +5097,22 @@ export default function Step2Milestones({
                 const projectEstimateGuidance =
                   estimateGuidanceByMilestone.get(m?.id ?? `row-${idx + 1}`) || null;
                 const aiHighlight = m?.id != null ? aiHighlights[`milestone:${m.id}`] : null;
+                const pricingHighlight =
+                  m?.id != null && pricingHighlightMilestoneIds.includes(String(m.id));
                 const isAiSuggested = m?.id != null && aiSuggestedMilestoneIds.includes(m.id);
+                const isManualAmount = m?.id != null && manualAmountMilestoneIdSet.has(String(m.id));
                 const isExpanded = expandedMilestoneId === m.id;
                 const summaryStart = friendly(toDateOnly(m.start_date || m.start));
                 const summaryDue = friendly(toDateOnly(m.completion_date || m.end_date || m.end));
+                const pricingShareLabel = projectEstimateGuidance?.share
+                  ? `${formatPercent(projectEstimateGuidance.share)} of total`
+                  : projectEstimateGuidance?.weightLabel || getMilestonePricingWeightLabel(m);
+                const milestoneShareTestId = `step2-milestone-share-${m.id || idx + 1}`;
                 return (
                   <article
                     key={m.id || `${m.title}-${idx}`}
                     className={`rounded-2xl border bg-white p-4 shadow-sm transition-shadow ${
-                      aiHighlight ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-200"
+                      aiHighlight || pricingHighlight ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-200"
                     } ${isExpanded ? "shadow-md" : ""}`}
                     data-testid={`step2-milestone-card-${m.id || idx + 1}`}
                     draggable={!milestonesLocked}
@@ -4832,9 +5166,24 @@ export default function Step2Milestones({
                             </span>
                           ) : null}
                         </div>
-                        <div className="mt-1 text-sm font-semibold text-slate-900">
+                        <div className={`mt-1 text-sm font-semibold ${pricingHighlight ? "text-amber-800" : "text-slate-900"}`}>
                           {Number(m.amount || 0).toLocaleString(undefined, { style: "currency", currency: "USD" })}
                         </div>
+                        {m.amount != null && String(m.amount).trim() !== "" ? (
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                            <span data-testid={milestoneShareTestId} className="rounded-full bg-slate-50 px-2 py-1 font-medium">
+                              {pricingShareLabel}
+                            </span>
+                            {isManualAmount ? (
+                              <span
+                                data-testid={`step2-milestone-manual-indicator-${m.id || idx + 1}`}
+                                className="rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-800"
+                              >
+                                Manual
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <div className="mt-1 text-xs text-slate-600">
                           {summaryStart || "Start"} - {summaryDue || "Due"}
                         </div>
