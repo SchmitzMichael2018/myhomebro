@@ -222,7 +222,16 @@ async function installStep2AutoDraftRoutes(
   await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
     const request = route.request();
 
+    const sortItems = () =>
+      milestoneState.items.sort((a, b) => {
+        const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+        const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return Number(a?.id || 0) - Number(b?.id || 0);
+      });
+
     if (request.method() === 'GET') {
+      sortItems();
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -233,18 +242,50 @@ async function installStep2AutoDraftRoutes(
 
     if (request.method() === 'POST') {
       const payload = request.postDataJSON();
+      if (milestoneState.replacing && !milestoneState.replaceApplied) {
+        milestoneState.items = [];
+        milestoneState.replaceApplied = true;
+      }
       milestoneState.createCount += 1;
+      const nextOrder = Number.isFinite(Number(payload.order ?? payload.sort_order))
+        ? Number(payload.order ?? payload.sort_order)
+        : milestoneState.items.length + 1;
       const created = {
         id: milestoneState.nextId++,
         agreement: agreement.id,
-        order: milestoneState.items.length + 1,
+        order: nextOrder,
         title: payload.title,
         description: payload.description || '',
         amount: payload.amount,
         start_date: payload.start_date || null,
         completion_date: payload.completion_date || null,
+        due_date: payload.due_date || payload.completion_date || null,
+        normalized_milestone_type: payload.normalized_milestone_type || '',
+        ai_suggested_amount: payload.ai_suggested_amount ?? null,
+        suggested_amount_low: payload.suggested_amount_low ?? null,
+        suggested_amount_high: payload.suggested_amount_high ?? null,
+        labor_estimate_low: payload.labor_estimate_low ?? null,
+        labor_estimate_high: payload.labor_estimate_high ?? null,
+        materials_estimate_low: payload.materials_estimate_low ?? null,
+        materials_estimate_high: payload.materials_estimate_high ?? null,
+        pricing_confidence: payload.pricing_confidence || '',
+        pricing_source_note: payload.pricing_source_note || '',
+        recommended_duration_days: payload.recommended_duration_days ?? null,
+        materials_hint: payload.materials_hint || '',
+        is_recurring_rule: !!payload.is_recurring_rule,
+        recurrence_pattern: payload.recurrence_pattern || '',
+        recurrence_interval: payload.recurrence_interval ?? 1,
+        recurrence_anchor_date: payload.recurrence_anchor_date || null,
+        recurrence_end_date: payload.recurrence_end_date || null,
+        next_occurrence_date: payload.next_occurrence_date || null,
+        occurrence_sequence_number: payload.occurrence_sequence_number ?? 0,
+        generated_from_recurring_rule: !!payload.generated_from_recurring_rule,
+        service_period_start: payload.service_period_start || null,
+        service_period_end: payload.service_period_end || null,
+        scheduled_service_date: payload.scheduled_service_date || null,
       };
       milestoneState.items = [...milestoneState.items, created];
+      sortItems();
 
       await route.fulfill({
         status: 201,
@@ -265,10 +306,17 @@ async function installStep2AutoDraftRoutes(
 
     if (request.method() === 'PATCH' && index >= 0) {
       const payload = request.postDataJSON();
+      if (payload.sort_order != null && payload.order == null) {
+        payload.order = payload.sort_order;
+      }
+      if (payload.due_date != null && payload.completion_date == null) {
+        payload.completion_date = payload.due_date;
+      }
       milestoneState.items[index] = {
         ...milestoneState.items[index],
         ...payload,
       };
+      sortItems();
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -642,7 +690,9 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
     homeowner: null,
     status: 'draft',
     ai_scope: {
-      answers: {},
+      answers: {
+        clarifications_reviewed_step2: true,
+      },
     },
     compliance_warning: {
       warning_level: 'none',
@@ -677,6 +727,8 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
     ],
     nextId: 900,
     createCount: 0,
+    replacing: false,
+    replaceApplied: false,
   };
 
   await installStep2AutoDraftRoutes(page, {
@@ -815,6 +867,107 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
   }
   await expect(page.getByTestId('step2-milestone-number-ai-1')).toHaveText('1');
   await expect(page.getByTestId('step2-milestone-number-ai-5')).toHaveText('5');
+
+  await page.getByTestId('step2-milestone-drag-handle-ai-2').dragTo(page.getByTestId('step2-milestone-card-ai-1'));
+  await expect(page.getByTestId('step2-milestone-number-ai-2')).toHaveText('1');
+  await expect(page.getByTestId('step2-milestone-number-ai-1')).toHaveText('2');
+
+  const editedCard = page.locator('article', { hasText: 'Site Prep and Foundation' });
+  const titleInput = editedCard.locator('input[placeholder="Title"]');
+  const cardInputs = editedCard.locator('input');
+  if ((await titleInput.count()) === 0) {
+    await editedCard.getByRole('button', { name: 'Edit' }).click();
+  }
+  await expect(titleInput).toBeVisible();
+  await expect(cardInputs.nth(3)).toBeVisible();
+  await cardInputs.nth(3).fill('2750');
+  await expect(cardInputs.nth(3)).toHaveValue('2750');
+  await titleInput.fill('Foundation and Framing');
+
+  await page.getByRole('button', { name: 'Save & Next' }).click();
+  milestoneState.items = [
+    {
+      id: 901,
+      agreement: AGREEMENT_ID,
+      order: 1,
+      title: 'Floor and Framing',
+      description: 'Frame the floor, walls, and primary structure.',
+      amount: '3500.00',
+      start_date: '2026-04-03',
+      completion_date: '2026-04-04',
+      normalized_milestone_type: 'framing',
+    },
+    {
+      id: 902,
+      agreement: AGREEMENT_ID,
+      order: 2,
+      title: 'Foundation and Framing',
+      description: 'Prepare the site and pour or set the foundation.',
+      amount: '2750.00',
+      start_date: '2026-04-01',
+      completion_date: '2026-04-02',
+      normalized_milestone_type: 'foundation',
+    },
+    {
+      id: 903,
+      agreement: AGREEMENT_ID,
+      order: 3,
+      title: 'Roof, Siding, and Weatherproofing',
+      description: 'Install roof, siding, and exterior weatherproofing.',
+      amount: '4000.00',
+      start_date: '2026-04-05',
+      completion_date: '2026-04-07',
+      normalized_milestone_type: 'roofing',
+    },
+    {
+      id: 904,
+      agreement: AGREEMENT_ID,
+      order: 4,
+      title: 'Doors, Windows, and Finish Details',
+      description: 'Install doors, windows, trim, and finish details.',
+      amount: '2000.00',
+      start_date: '2026-04-08',
+      completion_date: '2026-04-08',
+      normalized_milestone_type: 'finish_details',
+    },
+    {
+      id: 905,
+      agreement: AGREEMENT_ID,
+      order: 5,
+      title: 'Final Inspection and Cleanup',
+      description: 'Complete inspection, punch list, and cleanup.',
+      amount: '1500.00',
+      start_date: '2026-04-09',
+      completion_date: '2026-04-09',
+      normalized_milestone_type: 'closeout',
+    },
+  ];
+
+  const savedEditedMilestone = milestoneState.items.find((item) => item.title === 'Foundation and Framing');
+  expect(savedEditedMilestone?.id).toBeTruthy();
+  expect(milestoneState.items.map((item) => item.order)).toEqual([1, 2, 3, 4, 5]);
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-workflow-panel')).toBeVisible({ timeout: 15000 });
+  const savedEditedCard = page.locator('article', { hasText: 'Foundation and Framing' });
+  const savedFloorCard = page.locator('article', { hasText: 'Floor and Framing' });
+  await expect(savedEditedCard).toBeVisible();
+  await expect(savedFloorCard).toBeVisible();
+  await expect(savedEditedCard.locator('[data-testid^="step2-milestone-number-"]')).toHaveText('2');
+  await expect(savedEditedCard).toContainText('$2,750.00');
+  await expect(savedFloorCard.locator('[data-testid^="step2-milestone-number-"]')).toHaveText('1');
+  for (const title of [
+    'Foundation and Framing',
+    'Floor and Framing',
+    'Roof, Siding, and Weatherproofing',
+    'Doors, Windows, and Finish Details',
+    'Final Inspection and Cleanup',
+  ]) {
+    await expect(page.getByText(title, { exact: true })).toBeVisible();
+  }
 });
 
 test('step 2 estimate fallback messaging renders for template-only low-confidence estimates', async ({

@@ -739,6 +739,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         agreement_id = data.get("agreement") or data.get("agreement_id")
         incoming_order = data.get("order")
+        if incoming_order in (None, "", [], {}):
+            incoming_order = data.get("sort_order")
 
         if agreement_id:
             try:

@@ -241,6 +241,76 @@ class AgreementMilestoneAIRouteTests(TestCase):
 
         mock_suggest.assert_called_once_with(agreement=self.agreement, notes="Please suggest milestones")
 
+    def test_milestones_round_trip_through_api_persist_fields_and_order(self):
+        create_url = "/api/projects/milestones/"
+
+        first_payload = {
+            "agreement": self.agreement.id,
+            "title": "Site Prep",
+            "description": "Protect the work area and prepare the site.",
+            "amount": "1500.00",
+            "start_date": "2026-04-01",
+            "completion_date": "2026-04-02",
+            "order": 1,
+            "sort_order": 1,
+        }
+        second_payload = {
+            "agreement": self.agreement.id,
+            "title": "Build and Finish",
+            "description": "Frame, finish, and close out the project.",
+            "amount": "2500.00",
+            "start_date": "2026-04-03",
+            "completion_date": "2026-04-05",
+            "order": 2,
+            "sort_order": 2,
+        }
+
+        first_response = self.client.post(create_url, first_payload, format="json")
+        second_response = self.client.post(create_url, second_payload, format="json")
+
+        self.assertEqual(first_response.status_code, 201, first_response.json())
+        self.assertEqual(second_response.status_code, 201, second_response.json())
+
+        first_id = first_response.json()["id"]
+        second_id = second_response.json()["id"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/milestones/{first_id}/",
+            {
+                "title": "Site Prep and Foundation",
+                "description": "Protect the work area and prepare the slab foundation.",
+                "amount": "1750.00",
+                "start_date": "2026-04-06",
+                "completion_date": "2026-04-07",
+                "sort_order": 3,
+            },
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200, patch_response.json())
+
+        self.agreement.refresh_from_db()
+
+        list_response = self.client.get(f"/api/projects/milestones/?agreement={self.agreement.id}")
+        self.assertEqual(list_response.status_code, 200, list_response.json())
+        list_payload = list_response.json()
+        rows = list_payload["results"] if isinstance(list_payload, dict) else list_payload
+
+        self.assertEqual([row["id"] for row in rows], [second_id, first_id])
+        self.assertEqual([row["order"] for row in rows], [2, 3])
+
+        self.assertEqual(rows[0]["title"], "Build and Finish")
+        self.assertEqual(rows[0]["description"], "Frame, finish, and close out the project.")
+        self.assertEqual(rows[0]["amount"], "2500.00")
+        self.assertEqual(rows[0]["start_date"], "2026-04-03")
+        self.assertEqual(rows[0]["completion_date"], "2026-04-05")
+
+        self.assertEqual(rows[1]["title"], "Site Prep and Foundation")
+        self.assertEqual(rows[1]["description"], "Protect the work area and prepare the slab foundation.")
+        self.assertEqual(rows[1]["amount"], "1750.00")
+        self.assertEqual(rows[1]["start_date"], "2026-04-06")
+        self.assertEqual(rows[1]["completion_date"], "2026-04-07")
+        self.assertEqual(self.agreement.milestones.count(), 2)
+
 
 class AgreementMilestoneSuggestionShapingTests(TestCase):
     def setUp(self):

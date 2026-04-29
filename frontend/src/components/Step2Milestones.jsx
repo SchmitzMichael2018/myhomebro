@@ -1363,6 +1363,117 @@ export default function Step2Milestones({
     }
   }
 
+  function isPersistedMilestoneId(id) {
+    const n = Number(id);
+    return Number.isFinite(n) && n > 0;
+  }
+
+  function milestonesDifferForPersistence(base, next) {
+    if (!base || !next) return false;
+
+    const comparableBase = normalizeMilestoneForLocalFallback(base);
+    const comparableNext = normalizeMilestoneForLocalFallback(next);
+
+    return (
+      safeStr(comparableBase.title) !== safeStr(comparableNext.title) ||
+      safeStr(comparableBase.description) !== safeStr(comparableNext.description) ||
+      amountsDifferMeaningfully(comparableBase.amount, parseAmountStrict(comparableNext.amount)) ||
+      toDateOnly(comparableBase.start_date) !== toDateOnly(comparableNext.start_date) ||
+      toDateOnly(comparableBase.completion_date) !== toDateOnly(comparableNext.completion_date) ||
+      Number(comparableBase.order || 0) !== Number(comparableNext.order || 0) ||
+      safeStr(comparableBase.normalized_milestone_type) !== safeStr(comparableNext.normalized_milestone_type) ||
+      safeStr(comparableBase.pricing_confidence) !== safeStr(comparableNext.pricing_confidence) ||
+      safeStr(comparableBase.pricing_source_note) !== safeStr(comparableNext.pricing_source_note) ||
+      safeStr(comparableBase.materials_hint) !== safeStr(comparableNext.materials_hint) ||
+      Number(comparableBase.recommended_duration_days || 0) !==
+        Number(comparableNext.recommended_duration_days || 0) ||
+      Number(comparableBase.ai_suggested_amount || 0) !== Number(comparableNext.ai_suggested_amount || 0) ||
+      safeStr(comparableBase.recurrence_pattern) !== safeStr(comparableNext.recurrence_pattern) ||
+      Number(comparableBase.recurrence_interval || 0) !== Number(comparableNext.recurrence_interval || 0) ||
+      toDateOnly(comparableBase.recurrence_anchor_date) !== toDateOnly(comparableNext.recurrence_anchor_date) ||
+      toDateOnly(comparableBase.recurrence_end_date) !== toDateOnly(comparableNext.recurrence_end_date) ||
+      toDateOnly(comparableBase.next_occurrence_date) !== toDateOnly(comparableNext.next_occurrence_date) ||
+      toDateOnly(comparableBase.service_period_start) !== toDateOnly(comparableNext.service_period_start) ||
+      toDateOnly(comparableBase.service_period_end) !== toDateOnly(comparableNext.service_period_end) ||
+      toDateOnly(comparableBase.scheduled_service_date) !== toDateOnly(comparableNext.scheduled_service_date)
+    );
+  }
+
+  function buildStep2MilestoneWritePayload(row, orderOverride = null) {
+    const resolvedOrder = orderOverride != null ? orderOverride : row?.order;
+    const orderValue = Number.isFinite(Number(resolvedOrder)) ? Number(resolvedOrder) : null;
+    const completionDate = toDateOnly(row?.completion_date || row?.end_date || row?.end || row?.due_date || "");
+
+    const payload = {
+      agreement: agreementId,
+      title: safeStr(row?.title),
+      description: safeStr(row?.description),
+      amount: Number(row?.amount || 0),
+      start_date: toDateOnly(row?.start_date || row?.start || "") || null,
+      completion_date: completionDate || null,
+      due_date: completionDate || null,
+      normalized_milestone_type: safeStr(row?.normalized_milestone_type),
+      ai_suggested_amount:
+        row?.ai_suggested_amount != null && row?.ai_suggested_amount !== ""
+          ? Number(row.ai_suggested_amount)
+          : null,
+      suggested_amount_low:
+        row?.suggested_amount_low != null && row?.suggested_amount_low !== ""
+          ? Number(row.suggested_amount_low)
+          : null,
+      suggested_amount_high:
+        row?.suggested_amount_high != null && row?.suggested_amount_high !== ""
+          ? Number(row.suggested_amount_high)
+          : null,
+      labor_estimate_low:
+        row?.labor_estimate_low != null && row?.labor_estimate_low !== ""
+          ? Number(row.labor_estimate_low)
+          : null,
+      labor_estimate_high:
+        row?.labor_estimate_high != null && row?.labor_estimate_high !== ""
+          ? Number(row.labor_estimate_high)
+          : null,
+      materials_estimate_low:
+        row?.materials_estimate_low != null && row?.materials_estimate_low !== ""
+          ? Number(row.materials_estimate_low)
+          : null,
+      materials_estimate_high:
+        row?.materials_estimate_high != null && row?.materials_estimate_high !== ""
+          ? Number(row.materials_estimate_high)
+          : null,
+      pricing_confidence: safeStr(row?.pricing_confidence),
+      pricing_source_note: safeStr(row?.pricing_source_note),
+      recommended_duration_days:
+        row?.recommended_duration_days !== "" && row?.recommended_duration_days != null
+          ? Number(row.recommended_duration_days)
+          : null,
+      materials_hint: safeStr(row?.materials_hint),
+      is_recurring_rule: !!row?.is_recurring_rule,
+      recurrence_pattern: safeStr(row?.recurrence_pattern),
+      recurrence_interval:
+        row?.recurrence_interval !== "" && row?.recurrence_interval != null
+          ? Number(row.recurrence_interval)
+          : 1,
+      recurrence_anchor_date: toDateOnly(row?.recurrence_anchor_date || "") || null,
+      recurrence_end_date: toDateOnly(row?.recurrence_end_date || "") || null,
+      next_occurrence_date: toDateOnly(row?.next_occurrence_date || "") || null,
+      occurrence_sequence_number:
+        row?.occurrence_sequence_number != null ? Number(row.occurrence_sequence_number) : 0,
+      generated_from_recurring_rule: !!row?.generated_from_recurring_rule,
+      service_period_start: toDateOnly(row?.service_period_start || "") || null,
+      service_period_end: toDateOnly(row?.service_period_end || "") || null,
+      scheduled_service_date: toDateOnly(row?.scheduled_service_date || "") || null,
+      allow_overlap: true,
+    };
+
+    if (orderValue != null) {
+      payload.order = orderValue;
+      payload.sort_order = orderValue;
+    }
+
+    return payload;
+  }
+
   function flashPricingHighlights(milestoneIds = []) {
     const ids = (Array.isArray(milestoneIds) ? milestoneIds : [])
       .map((id) => (id == null ? "" : String(id)))
@@ -2798,51 +2909,55 @@ export default function Step2Milestones({
   async function persistStagedMilestoneChanges() {
     if (!Array.isArray(fallbackMilestones) || !fallbackMilestones.length) return 0;
 
+    const baseRows = normalizeCardRows(Array.isArray(milestones) ? milestones : []);
+    const stagedRows = normalizeCardRows(fallbackMilestones).filter(Boolean);
+
     const baseById = new Map(
-      (Array.isArray(milestones) ? milestones : [])
-        .filter((row) => row?.id != null)
-        .map((row) => [row.id, row])
+      baseRows.filter((row) => isPersistedMilestoneId(row?.id)).map((row) => [Number(row.id), row])
+    );
+    const stagedById = new Map(
+      stagedRows.filter((row) => isPersistedMilestoneId(row?.id)).map((row) => [Number(row.id), row])
     );
 
-    const stagedRows = fallbackMilestones.filter((row) => {
-      if (!row?.id) return false;
-      const base = baseById.get(row.id);
-      if (!base) return false;
-      return (
-        safeStr(base?.title) !== safeStr(row?.title) ||
-        safeStr(base?.description) !== safeStr(row?.description) ||
-        amountsDifferMeaningfully(base?.amount, parseAmountStrict(row?.amount)) ||
-        timelineDiffers(
-          base,
-          row?.start_date || row?.start,
-          row?.completion_date || row?.end_date || row?.end
-        )
-        || Number(base?.order || 0) !== Number(row?.order || 0)
-      );
+    const rowsToDelete = baseRows.filter((row) => isPersistedMilestoneId(row?.id) && !stagedById.has(Number(row.id)));
+    const rowsToCreate = stagedRows.filter((row) => !isPersistedMilestoneId(row?.id) || !baseById.has(Number(row.id)));
+    const rowsToUpdate = stagedRows.filter((row) => {
+      if (!isPersistedMilestoneId(row?.id)) return false;
+      const base = baseById.get(Number(row.id));
+      return base ? milestonesDifferForPersistence(base, row) : false;
+    });
+    const rowsRequiringTempOrder = rowsToUpdate.filter((row) => {
+      const base = baseById.get(Number(row.id));
+      return base ? Number(base.order || 0) !== Number(row.order || 0) : false;
     });
 
-    if (!stagedRows.length) return 0;
-
-    for (const row of stagedRows) {
-      await updateMilestone({
-        id: row.id,
-        order: Number(row.order || 0) || null,
-        title: safeStr(row.title),
-        description: safeStr(row.description),
-        start_date: row.start_date || null,
-        completion_date: row.completion_date || null,
-        amount: Number(row.amount),
-      });
-    }
-
     try {
-      await refreshMilestonesSafe();
-    } catch (err) {
-      console.warn("persistStagedMilestoneAmounts refresh failed:", err);
-      toast("Milestone amounts were saved, but the latest agreement data could not be fully reloaded.");
-    }
+      for (const row of rowsToDelete) {
+        await api.delete(`/projects/milestones/${row.id}/`);
+      }
 
-    return stagedRows.length;
+      const tempOrderStart = baseRows.length + rowsToCreate.length + 1000;
+      for (const [index, row] of rowsRequiringTempOrder.entries()) {
+        const tempPayload = buildStep2MilestoneWritePayload(row, tempOrderStart + index);
+        await api.patch(`/projects/milestones/${row.id}/`, tempPayload);
+      }
+
+      for (const [index, row] of rowsToCreate.entries()) {
+        const payload = buildStep2MilestoneWritePayload(row, row.order || index + 1);
+        await api.post(`/projects/milestones/`, payload);
+      }
+
+      for (const row of rowsToUpdate) {
+        const payload = buildStep2MilestoneWritePayload(row, row.order);
+        await api.patch(`/projects/milestones/${row.id}/`, payload);
+      }
+
+      await refreshMilestonesSafe();
+      return rowsToDelete.length + rowsToCreate.length + rowsToUpdate.length;
+    } catch (err) {
+      console.warn("persistStagedMilestoneChanges failed:", err);
+      throw err;
+    }
   }
 
   function isOverlapError(err) {
@@ -3207,7 +3322,13 @@ export default function Step2Milestones({
       return;
     }
 
-    const persistedCount = await persistStagedMilestoneChanges();
+    let persistedCount = 0;
+    try {
+      persistedCount = await persistStagedMilestoneChanges();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || err?.message || "Unable to save milestone changes.");
+      return;
+    }
     if (persistedCount > 0) {
       toast.success(
         `Saved staged estimate changes for ${persistedCount} milestone${persistedCount === 1 ? "" : "s"}.`

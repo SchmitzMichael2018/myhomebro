@@ -109,6 +109,121 @@ function toDateOnly(v) {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+function normalizeMilestoneRecord(m) {
+  if (!m || typeof m !== "object") return null;
+
+  return {
+    ...m,
+    id: m.id,
+    order: m.order != null && m.order !== "" ? Number(m.order) : null,
+    title: m.title || "",
+    description: m.description || "",
+    amount: m.amount != null ? Number(m.amount) : 0,
+    start_date: toDateOnly(m.start_date || m.start || ""),
+    completion_date: toDateOnly(m.completion_date || m.end_date || m.end || m.due_date || ""),
+    due_date: toDateOnly(m.due_date || m.completion_date || m.end_date || m.end || ""),
+    normalized_milestone_type: safeStr(m.normalized_milestone_type),
+    pricing_confidence: safeStr(m.pricing_confidence),
+    pricing_source_note: safeStr(m.pricing_source_note),
+    materials_hint: safeStr(m.materials_hint),
+    recommended_duration_days: m.recommended_duration_days ?? "",
+    ai_suggested_amount: m.ai_suggested_amount != null ? Number(m.ai_suggested_amount) : null,
+    suggested_amount_low: m.suggested_amount_low != null ? Number(m.suggested_amount_low) : null,
+    suggested_amount_high: m.suggested_amount_high != null ? Number(m.suggested_amount_high) : null,
+    labor_estimate_low: m.labor_estimate_low != null ? Number(m.labor_estimate_low) : null,
+    labor_estimate_high: m.labor_estimate_high != null ? Number(m.labor_estimate_high) : null,
+    materials_estimate_low: m.materials_estimate_low != null ? Number(m.materials_estimate_low) : null,
+    materials_estimate_high: m.materials_estimate_high != null ? Number(m.materials_estimate_high) : null,
+    is_recurring_rule: !!m.is_recurring_rule,
+    recurrence_pattern: safeStr(m.recurrence_pattern),
+    recurrence_interval: m.recurrence_interval != null ? Number(m.recurrence_interval) : 1,
+    recurrence_anchor_date: toDateOnly(m.recurrence_anchor_date || ""),
+    recurrence_end_date: toDateOnly(m.recurrence_end_date || ""),
+    next_occurrence_date: toDateOnly(m.next_occurrence_date || ""),
+    generated_from_recurring_rule: !!m.generated_from_recurring_rule,
+    occurrence_sequence_number: m.occurrence_sequence_number != null ? Number(m.occurrence_sequence_number) : 0,
+    service_period_start: toDateOnly(m.service_period_start || ""),
+    service_period_end: toDateOnly(m.service_period_end || ""),
+    scheduled_service_date: toDateOnly(m.scheduled_service_date || ""),
+    pricing_manual_override: !!m.pricing_manual_override,
+  };
+}
+
+function buildMilestoneWritePayload(m, agreementId, orderOverride = null) {
+  const resolvedOrder = orderOverride != null ? orderOverride : m?.order;
+  const orderValue = Number.isFinite(Number(resolvedOrder)) ? Number(resolvedOrder) : null;
+  const completionDate = toDateOnly(m?.completion_date || m?.end_date || m?.end || m?.due_date || "");
+
+  const payload = {
+    agreement: agreementId,
+    title: safeStr(m?.title),
+    description: safeStr(m?.description),
+    amount: Number(m?.amount || 0),
+    start_date: toDateOnly(m?.start_date || m?.start || "") || null,
+    completion_date: completionDate || null,
+    due_date: completionDate || null,
+    normalized_milestone_type: safeStr(m?.normalized_milestone_type),
+    ai_suggested_amount:
+      m?.ai_suggested_amount != null && m?.ai_suggested_amount !== ""
+        ? Number(m.ai_suggested_amount)
+        : null,
+    suggested_amount_low:
+      m?.suggested_amount_low != null && m?.suggested_amount_low !== ""
+        ? Number(m.suggested_amount_low)
+        : null,
+    suggested_amount_high:
+      m?.suggested_amount_high != null && m?.suggested_amount_high !== ""
+        ? Number(m.suggested_amount_high)
+        : null,
+    labor_estimate_low:
+      m?.labor_estimate_low != null && m?.labor_estimate_low !== ""
+        ? Number(m.labor_estimate_low)
+        : null,
+    labor_estimate_high:
+      m?.labor_estimate_high != null && m?.labor_estimate_high !== ""
+        ? Number(m.labor_estimate_high)
+        : null,
+    materials_estimate_low:
+      m?.materials_estimate_low != null && m?.materials_estimate_low !== ""
+        ? Number(m.materials_estimate_low)
+        : null,
+    materials_estimate_high:
+      m?.materials_estimate_high != null && m?.materials_estimate_high !== ""
+        ? Number(m.materials_estimate_high)
+        : null,
+    pricing_confidence: safeStr(m?.pricing_confidence),
+    pricing_source_note: safeStr(m?.pricing_source_note),
+    recommended_duration_days:
+      m?.recommended_duration_days !== "" && m?.recommended_duration_days != null
+        ? Number(m.recommended_duration_days)
+        : null,
+    materials_hint: safeStr(m?.materials_hint),
+    is_recurring_rule: !!m?.is_recurring_rule,
+    recurrence_pattern: safeStr(m?.recurrence_pattern),
+    recurrence_interval:
+      m?.recurrence_interval !== "" && m?.recurrence_interval != null
+        ? Number(m.recurrence_interval)
+        : 1,
+    recurrence_anchor_date: toDateOnly(m?.recurrence_anchor_date || "") || null,
+    recurrence_end_date: toDateOnly(m?.recurrence_end_date || "") || null,
+    next_occurrence_date: toDateOnly(m?.next_occurrence_date || "") || null,
+    occurrence_sequence_number:
+      m?.occurrence_sequence_number != null ? Number(m.occurrence_sequence_number) : 0,
+    generated_from_recurring_rule: !!m?.generated_from_recurring_rule,
+    service_period_start: toDateOnly(m?.service_period_start || "") || null,
+    service_period_end: toDateOnly(m?.service_period_end || "") || null,
+    scheduled_service_date: toDateOnly(m?.scheduled_service_date || "") || null,
+    allow_overlap: true,
+  };
+
+  if (orderValue != null) {
+    payload.order = orderValue;
+    payload.sort_order = orderValue;
+  }
+
+  return payload;
+}
+
 function normalizeOptionRows(data) {
   const rows = Array.isArray(data)
     ? data
@@ -1140,22 +1255,13 @@ export default function AgreementWizard() {
         (m) => String(m?.agreement || m?.agreement_id || "") === String(agreementId)
       );
 
-      const mapped = filtered.map((m) => ({
-        ...m,
-        id: m.id,
-        title: m.title || "",
-        description: m.description || "",
-        amount: m.amount != null ? Number(m.amount) : 0,
-        start_date: toDateOnly(m.start_date || m.start || ""),
-        completion_date: toDateOnly(m.completion_date || m.end_date || m.end || ""),
-        due_date: toDateOnly(m.due_date || ""),
-        status: m.status,
-        status_display: m.status_display,
-      }));
+      const mapped = filtered.map((m) => normalizeMilestoneRecord(m)).filter(Boolean);
 
       setMilestones(mapped);
+      return mapped;
     } catch (err) {
       console.warn("loadMilestones failed:", err);
+      return [];
     }
   }, [agreementId]);
 
@@ -1189,15 +1295,14 @@ export default function AgreementWizard() {
   const saveMilestone = async (data) => {
     if (!agreementId) throw new Error("Agreement not created yet.");
 
-    const payload = {
-      agreement: agreementId,
-      title: safeStr(data.title),
-      description: safeStr(data.description),
-      start_date: data.start ? data.start : null,
-      completion_date: data.end ? data.end : null,
-      amount: Number(data.amount || 0),
-      ...(data.allow_overlap ? { allow_overlap: true } : {}),
-    };
+    const payload = buildMilestoneWritePayload(data, agreementId);
+    if (!payload.order || Number.isNaN(Number(payload.order))) {
+      delete payload.order;
+      delete payload.sort_order;
+    }
+    if (data?.allow_overlap) {
+      payload.allow_overlap = true;
+    }
 
     const { data: created } = await api.post(`/projects/milestones/`, payload);
     setMLocal({ ...EMPTY_MLOCAL });
@@ -1224,20 +1329,10 @@ export default function AgreementWizard() {
     const mid = patchData?.id;
     if (!mid) throw new Error("Missing milestone id.");
 
-    const payload = {
-      title: patchData.title,
-      description: patchData.description,
-      start_date: patchData.start_date || patchData.start || null,
-      completion_date: patchData.completion_date || patchData.end || null,
-      amount: patchData.amount != null ? Number(patchData.amount) : null,
-    };
-
+    const payload = buildMilestoneWritePayload(patchData, agreementId);
+    delete payload.agreement;
     if (patchData?.allow_overlap === true) {
       payload.allow_overlap = true;
-    }
-
-    if (!payload.completion_date && patchData?.end_date) {
-      payload.completion_date = patchData.end_date;
     }
 
     const { data: updated } = await api.patch(`/projects/milestones/${mid}/`, payload);

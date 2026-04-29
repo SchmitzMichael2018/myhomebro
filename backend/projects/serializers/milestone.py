@@ -726,6 +726,19 @@ class MilestoneSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    def to_internal_value(self, data):
+        if hasattr(data, "copy"):
+            data = data.copy()
+        else:
+            data = dict(data)
+
+        if "due_date" in data and "completion_date" not in data:
+            data["completion_date"] = data.get("due_date")
+        if "sort_order" in data and "order" not in data:
+            data["order"] = data.get("sort_order")
+
+        return super().to_internal_value(data)
+
     def validate(self, attrs):
         request = self.context.get("request")
         allow_overlap = attrs.get("allow_overlap", False)
