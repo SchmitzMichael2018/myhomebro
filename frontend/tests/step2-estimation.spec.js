@@ -101,6 +101,7 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
       answers: {
         finish_level: 'premium',
         demolition_required: 'yes',
+        clarifications_reviewed_step2: true,
       },
       questions: [],
     },
@@ -498,9 +499,12 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   });
 
   await expect(page.getByTestId('step2-work-plan-summary')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Residential Milestone Planner' })).toHaveCount(1);
+  await expect(page.getByText('Project window', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Project window:', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Keep the plan easy to review with homeowner-friendly milestones, pricing, and timing.')).toHaveCount(0);
   const workflowPanel = page.getByTestId('step2-workflow-panel');
   await expect(workflowPanel).toBeVisible({ timeout: 15000 });
-  await expect(workflowPanel.getByRole('heading', { name: 'Residential Milestone Planner' })).toHaveCount(1);
   await expect(page.getByTestId('step2-plan-guidance-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Plan Guidance');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Most contractors use');
@@ -617,6 +621,8 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-apply-estimate-amounts')).toBeHidden();
   await expect(page.getByTestId('step2-apply-estimate-timeline')).toBeHidden();
   await expect(page.getByTestId('step2-estimate-guidance-details')).toBeHidden();
+  await page.getByRole('button', { name: 'Save & Next' }).click();
+  await expect(page.getByTestId('step2-workflow-panel')).toBeVisible();
 });
 
 test('step 2 generates shed-specific milestone previews and applies or cancels safely', async ({
@@ -936,7 +942,10 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
 
   const workflowPanel = page.getByTestId('step2-workflow-panel');
   await expect(workflowPanel).toBeVisible({ timeout: 15000 });
-  await expect(workflowPanel.getByRole('heading', { name: 'Residential Milestone Planner' })).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: 'Residential Milestone Planner' })).toHaveCount(1);
+  await expect(page.getByText('Project window', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Project window:', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Keep the plan easy to review with homeowner-friendly milestones, pricing, and timing.')).toHaveCount(0);
   await expect(page.getByTestId('step2-plan-guidance-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Plan Guidance');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Most contractors use');

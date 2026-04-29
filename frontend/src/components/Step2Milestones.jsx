@@ -3735,28 +3735,6 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <div className="mt-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
-            {step2ModeMeta.workspaceEyebrow}
-          </div>
-          <h3 className="mt-1 text-xl font-semibold text-slate-950">{step2ModeMeta.workspaceTitle}</h3>
-          <div className="mt-1 text-sm text-slate-600">
-            {step2ModeMeta.workspaceDescription}
-          </div>
-        </div>
-        <div className="text-sm text-gray-600">
-          {step2ModeMeta.timelineLabel}:{" "}
-          {minStart && maxEnd ? (
-            <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-              {friendly(minStart)} - {friendly(maxEnd)} (est.)
-            </span>
-          ) : (
-            <span className="text-gray-400">add dates to see range</span>
-          )}
-        </div>
-      </div>
-
       {showPricingReviewPrompt ? (
         <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/85 px-4 py-3 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
