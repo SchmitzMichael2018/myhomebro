@@ -3487,7 +3487,6 @@ export default function Step2Milestones({
               {step2ModeMeta.workspaceEyebrow}
             </div>
             <h3 className="mt-1 text-xl font-semibold text-slate-950">{step2ModeMeta.workspaceTitle}</h3>
-            <p className="mt-2 text-sm text-slate-600">{step2ModeMeta.workspaceDescription}</p>
           </div>
           <div className="grid min-w-[280px] grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
@@ -3551,14 +3550,10 @@ export default function Step2Milestones({
       <section className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="step2-work-plan-summary">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-sm font-semibold text-slate-950">Review the work plan</div>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                  Path: {projectClassLabel(projectClass)}
-                </span>
-              </div>
-            <div className="mt-1 text-sm text-slate-600">
-              Review and adjust the milestone cards below. Keep the plan simple enough to scan at a glance.
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+                Path: {projectClassLabel(projectClass)}
+              </span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-700">
               <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
@@ -3925,21 +3920,21 @@ export default function Step2Milestones({
                 </button>
                 <button
                   type="button"
-                  onClick={applyEstimateSuggestedAmounts}
-                  disabled={milestonesLocked || aiLoading || !pricingBaselineTotal}
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
-                  data-testid="step2-apply-pricing-guidance"
-                >
-                  Apply Pricing Guidance
-                </button>
-                <button
-                  type="button"
                   onClick={previewRebalanceMilestones}
                   disabled={milestonesLocked || aiLoading || aiMilestoneGenerationBusy || !estimateBudgetValue}
                   className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   data-testid="step2-rebalance-milestones"
                 >
                   Rebalance Milestones
+                </button>
+                <button
+                  type="button"
+                  onClick={applyEstimateSuggestedTimeline}
+                  disabled={milestonesLocked || aiLoading || aiMilestoneGenerationBusy}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  data-testid="step2-apply-suggested-timeline"
+                >
+                  Apply Suggested Timeline
                 </button>
               </div>
               {aiLoading || aiMilestoneGenerationBusy ? (
@@ -4168,7 +4163,7 @@ export default function Step2Milestones({
         </section>
       ) : null}
 
-      {estimatePreview ? (
+      {false && estimatePreview ? (
         <details
           className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm"
           data-testid="step2-estimate-guidance-details"
@@ -4599,11 +4594,7 @@ export default function Step2Milestones({
               <InsightCard
                 title={step2InsightCards.pricing.title}
                 body={step2InsightCards.pricing.body}
-                actionLabel={step2InsightCards.pricing.actionLabel}
-                onAction={applyEstimateSuggestedAmounts}
-                actionTestId="step2-apply-pricing-guidance"
                 dataTestId={step2InsightCards.pricing.testId}
-                disabled={milestonesLocked}
               />
               <InsightCard
                 title={step2InsightCards.timeline.title}
@@ -5146,6 +5137,12 @@ export default function Step2Milestones({
                         data-testid={`step2-milestone-summary-${m.id || idx + 1}`}
                       >
                         <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            data-testid={`step2-milestone-number-${m.id || idx + 1}`}
+                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                          >
+                            {idx + 1}
+                          </span>
                           <div className="text-base font-semibold text-slate-950">
                             {m.title || "Untitled milestone"}
                           </div>

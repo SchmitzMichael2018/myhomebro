@@ -498,7 +498,7 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   });
 
   await expect(page.getByTestId('step2-work-plan-summary')).toBeVisible({ timeout: 15000 });
-  await expect(page.getByTestId('step2-work-plan-summary')).toContainText('Review the work plan');
+  await expect(page.getByTestId('step2-work-plan-summary')).not.toContainText('Review the work plan');
   await expect(page.getByTestId('step2-work-plan-summary')).toContainText('milestone');
   await expect(page.getByTestId('step2-work-plan-summary')).toContainText('Path:');
   await expect(page.getByTestId('step2-plan-guidance-card')).toBeVisible({ timeout: 15000 });
@@ -517,27 +517,18 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Generate Suggested Milestones');
   await expect(page.getByTestId('step2-generate-suggested-milestones')).toBeVisible();
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Pricing is based on similar projects and milestone structure.');
-  await expect(page.getByTestId('step2-apply-pricing-guidance')).toBeVisible();
   await expect(page.getByTestId('step2-rebalance-milestones')).toBeVisible();
+  await expect(page.getByTestId('step2-apply-suggested-timeline')).toBeVisible();
+  await expect(page.getByTestId('step2-apply-pricing-guidance')).toHaveCount(0);
   await expect(page.getByTestId('step2-improve-with-ai')).toHaveCount(0);
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-card-801')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-card-802')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-number-801')).toHaveText('1');
+  await expect(page.getByTestId('step2-milestone-number-802')).toHaveText('2');
   await expect(page.getByTestId('step2-milestone-row-801')).toHaveCount(0);
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toBeVisible();
-  const estimateDetails = page.getByTestId('step2-estimate-guidance-details');
-  await estimateDetails.locator('summary').click();
-  await expect(estimateDetails).toHaveAttribute('open', '');
-  await expect(page.getByTestId('step2-estimate-total')).toContainText('$22,770.00');
-  await expect(page.getByTestId('step2-estimate-total')).toContainText('$27,830.00');
-  await expect(page.getByTestId('step2-estimate-duration')).toContainText('10 days');
-  await expect(page.getByTestId('step2-estimate-duration')).toContainText('13 days');
-  await expect(page.getByTestId('step2-estimate-confidence')).toContainText('Moderate');
   await expect(page.getByTestId('step2-target-project-total')).toBeVisible();
   await expect(page.getByTestId('step2-target-project-total')).toHaveValue('25300');
-  await expect(page.getByTestId('step2-refresh-estimate')).toBeVisible();
-  await expect(page.getByTestId('step2-apply-estimate-amounts')).toBeVisible();
-  await expect(page.getByTestId('step2-apply-estimate-timeline')).toBeVisible();
   await expect(page.getByTestId('step2-pricing-explanation-details')).toBeVisible();
   const pricingExplanation = page.getByTestId('step2-pricing-explanation-details');
   await pricingExplanation.locator('summary').click();
@@ -546,9 +537,6 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(pricingExplanation).toContainText(
     'Pricing uses the project estimate, milestone phase, and similar project guidance.'
   );
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toContainText('Cost range');
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toContainText('Duration range');
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toContainText('Confidence');
   await page.getByTestId('step2-milestone-summary-801').click();
   await expect(page.getByTestId('step2-milestone-editor-801')).toBeVisible();
   const milestone801CardBefore = page.getByTestId('step2-milestone-card-801');
@@ -564,16 +552,14 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   expect(milestone801Before).toBeGreaterThan(0);
   expect(milestone802Before).toBeGreaterThan(0);
 
-  await page.getByTestId('step2-apply-pricing-guidance').click();
-  await expect(page.getByTestId('step2-pricing-feedback-banner')).toContainText(
-    'Pricing guidance is staged locally'
-  );
+  await page.getByTestId('step2-apply-suggested-timeline').click();
+  await expect(page.getByTestId('step2-pricing-feedback-banner')).toBeVisible();
   const milestone801Card = page.getByTestId('step2-milestone-card-801');
   const milestone802Card = page.getByTestId('step2-milestone-card-802');
   await expect(milestone801Card).toBeVisible();
   await expect(milestone802Card).toBeVisible();
-  await expect(milestone801Card).not.toContainText('$4,000.00');
-  await expect(milestone802Card).not.toContainText('$12,000.00');
+  await expect(milestone801Card).toContainText('$4,000.00');
+  await expect(milestone802Card).toContainText('$12,000.00');
   const milestoneAmountsAfter = await Promise.all([milestone801Card, milestone802Card].map(async (card) => {
     const text = (await card.textContent()) || '';
     const match = text.match(/\$([0-9,]+(?:\.\d{2})?)/);
@@ -582,11 +568,8 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   const [milestone801After, milestone802After] = milestoneAmountsAfter;
   expect(milestone801After).toBeGreaterThan(0);
   expect(milestone802After).toBeGreaterThan(0);
-  expect(milestone801After).not.toBe(milestone801Before);
-  expect(milestone802After).not.toBe(milestone802Before);
-  expect(milestone801After).not.toBe(milestone802After);
-  expect(milestone801After + milestone802After).toBeGreaterThan(25200);
-  expect(milestone801After + milestone802After).toBeLessThan(25400);
+  expect(milestone801After).toBe(milestone801Before);
+  expect(milestone802After).toBe(milestone802Before);
 
   await expect(page.getByTestId('step2-milestone-share-801')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-share-802')).toBeVisible();
@@ -605,6 +588,14 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-milestone-share-802')).toContainText(/% of total|Weighted/);
   await expect(page.getByTestId('step2-milestone-share-801')).not.toContainText('Manual');
 
+  const num801BeforeDrag = await page.getByTestId('step2-milestone-number-801').textContent();
+  const num802BeforeDrag = await page.getByTestId('step2-milestone-number-802').textContent();
+  await page.getByTestId('step2-milestone-drag-handle-802').dragTo(page.getByTestId('step2-milestone-card-801'));
+  await expect(page.getByTestId('step2-milestone-number-802')).toHaveText('1');
+  await expect(page.getByTestId('step2-milestone-number-801')).toHaveText('2');
+  expect(num801BeforeDrag).not.toBe(await page.getByTestId('step2-milestone-number-801').textContent());
+  expect(num802BeforeDrag).not.toBe(await page.getByTestId('step2-milestone-number-802').textContent());
+
   await page.getByTestId('step2-milestone-summary-801').click();
   await page.getByTestId('step2-milestone-amount-801').fill('7777');
   await expect(page.getByTestId('step2-milestone-manual-indicator-801')).toBeVisible();
@@ -619,8 +610,11 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-milestone-amount-801')).toHaveValue('7777');
 
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
-  await estimateDetails.locator('summary').click();
-  await expect(estimateDetails).not.toHaveAttribute('open', /open/);
+  await expect(page.getByTestId('step2-apply-pricing-guidance')).toHaveCount(0);
+  await expect(page.getByTestId('step2-refresh-estimate')).toHaveCount(0);
+  await expect(page.getByTestId('step2-apply-estimate-amounts')).toHaveCount(0);
+  await expect(page.getByTestId('step2-apply-estimate-timeline')).toHaveCount(0);
+  await expect(page.getByTestId('step2-estimate-guidance-details')).toHaveCount(0);
 });
 
 test('step 2 generates shed-specific milestone previews and applies or cancels safely', async ({
@@ -796,12 +790,10 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
   await expect(page.getByText('Existing Prep')).toHaveCount(0);
   await expect(page.getByTestId('step2-ai-milestone-preview-card')).toHaveCount(0);
 
-  const pricingGuidanceButton = page.getByTestId('step2-apply-pricing-guidance');
-  await expect(pricingGuidanceButton).toBeVisible();
-  await pricingGuidanceButton.click();
-  await expect(page.getByTestId('step2-milestone-card-list').getByText('Total: $14,500.00')).toBeVisible({
-    timeout: 15000,
-  });
+  const timelineGuidanceButton = page.getByTestId('step2-apply-suggested-timeline');
+  await expect(timelineGuidanceButton).toBeVisible();
+  await timelineGuidanceButton.click();
+  await expect(page.getByTestId('step2-pricing-feedback-banner')).toBeVisible();
 
   const shedCards = [
     page.getByTestId('step2-milestone-card-ai-1'),
@@ -812,21 +804,9 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
   ];
   for (const card of shedCards) {
     await expect(card).toBeVisible();
-    await expect(card).not.toContainText('$0.00');
   }
-  const shedAmounts = await Promise.all(
-    shedCards.map(async (card) => {
-      const text = (await card.textContent()) || '';
-      const match = text.match(/\$([0-9,]+(?:\.\d{2})?)/);
-      return match ? Number(match[1].replace(/,/g, '')) : 0;
-    })
-  );
-  expect(shedAmounts.every((value) => value > 0)).toBeTruthy();
-  expect(shedAmounts[1]).toBeGreaterThan(shedAmounts[0]);
-  expect(shedAmounts[2]).toBeGreaterThan(shedAmounts[4]);
-  const shedTotal = shedAmounts.reduce((sum, value) => sum + value, 0);
-  expect(shedTotal).toBeGreaterThan(14400);
-  expect(shedTotal).toBeLessThan(14600);
+  await expect(page.getByTestId('step2-milestone-number-ai-1')).toHaveText('1');
+  await expect(page.getByTestId('step2-milestone-number-ai-5')).toHaveText('5');
 });
 
 test('step 2 estimate fallback messaging renders for template-only low-confidence estimates', async ({
@@ -956,8 +936,6 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
   await expect(page.getByTestId('step2-plan-guidance-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Plan Guidance');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Most contractors use');
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toBeVisible();
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toContainText('View estimate guidance');
-  await expect(page.getByTestId('step2-estimate-confidence')).toContainText('Preliminary estimate');
-  await expect(page.getByTestId('step2-estimate-guidance-details')).toContainText('Limited data available.');
+  await expect(page.getByTestId('step2-estimate-guidance-details')).toHaveCount(0);
+  await expect(page.getByTestId('step2-estimate-confidence')).toHaveCount(0);
 });
