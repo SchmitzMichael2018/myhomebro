@@ -719,6 +719,114 @@ function buildMilestonePricingSignature(rows = []) {
   );
 }
 
+function getPricingBaselineTotal(preview = null) {
+  const directTotal = parseAmountStrict(preview?.suggested_total_price);
+  if (Number.isFinite(directTotal) && directTotal > 0) {
+    return roundSuggestedAmount(directTotal) ?? directTotal;
+  }
+
+  const midpoint = midpointIfValid(preview?.suggested_price_low, preview?.suggested_price_high);
+  if (Number.isFinite(midpoint) && midpoint > 0) {
+    return roundSuggestedAmount(midpoint) ?? midpoint;
+  }
+
+  return null;
+}
+
+function getMilestonePricingWeight(row, idx, totalRows) {
+  const text = [
+    safeStr(row?.title),
+    safeStr(row?.description),
+    safeStr(row?.normalized_milestone_type),
+    safeStr(row?.pricing_source_note),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (/foundation|site prep|site preparation|prep|layout|excavation|permit|mobilization/.test(text)) {
+    return 15;
+  }
+  if (/framing|floor|structure|rough/.test(text)) {
+    return 30;
+  }
+  if (/roof|siding|weatherproof|shell/.test(text)) {
+    return 25;
+  }
+  if (/door|window|trim|finish|fixture|hardware/.test(text)) {
+    return 20;
+  }
+  if (/final|cleanup|inspection|punch|closeout/.test(text)) {
+    return 10;
+  }
+  if (/demo|demolition/.test(text)) {
+    return 18;
+  }
+  if (/electrical|plumbing|hvac|mechanical/.test(text)) {
+    return 18;
+  }
+
+  const fallbackWeights = [18, 24, 28, 22, 14];
+  if (Number.isFinite(totalRows) && totalRows > 0) {
+    return fallbackWeights[Math.min(idx, fallbackWeights.length - 1)] || Math.max(8, 18 - idx * 2);
+  }
+  return 18;
+}
+
+function buildWeightedPricingPlan(rows = [], totalAmount = 0, previewRows = []) {
+  const milestoneRows = normalizeCardRows(rows).filter(Boolean);
+  const total = Number(totalAmount);
+  if (!milestoneRows.length || !Number.isFinite(total) || total <= 0) return [];
+
+  const suggestionById = new Map(
+    (Array.isArray(previewRows) ? previewRows : [])
+      .filter((row) => row?.milestone_id != null)
+      .map((row) => [row.milestone_id, row])
+  );
+
+  const enriched = milestoneRows.map((row, idx) => {
+    const suggestion =
+      suggestionById.get(row?.id) ||
+      (Array.isArray(previewRows)
+        ? previewRows.find((item) => Number(item?.suggested_order || 0) === idx + 1)
+        : null) ||
+      null;
+    const baseWeight = getMilestonePricingWeight(row, idx, milestoneRows.length);
+    const allocationPercent = Number(suggestion?.allocation_percent);
+    const suggestedAmount = parseAmountStrict(suggestion?.suggested_amount);
+    const weight =
+      Number.isFinite(allocationPercent) && allocationPercent > 0
+        ? baseWeight * (0.75 + Math.min(1.2, allocationPercent))
+        : baseWeight;
+
+    return {
+      row,
+      idx,
+      suggestion,
+      weight: Number.isFinite(weight) && weight > 0 ? weight : baseWeight || 1,
+      suggestedAmount: Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null,
+    };
+  });
+
+  const totalWeight = enriched.reduce((sum, item) => sum + Number(item.weight || 0), 0) || enriched.length || 1;
+  const roundedTotal = roundSuggestedAmount(total) ?? total;
+  let runningTotal = 0;
+
+  return enriched.map((item, idx) => {
+    const share = Number(item.weight || 0) / totalWeight;
+    const rawAmount = idx === enriched.length - 1 ? roundedTotal - runningTotal : roundedTotal * share;
+    const amount = idx === enriched.length - 1 ? Math.max(5, roundedTotal - runningTotal) : roundSuggestedAmount(rawAmount) ?? rawAmount;
+    runningTotal += Number.isFinite(amount) ? Number(amount) : 0;
+
+    return {
+      ...item.row,
+      amount: amount,
+      suggested_amount: Number.isFinite(item.suggestedAmount) ? item.suggestedAmount : amount,
+      allocation_percent: share,
+      suggested_share: share,
+    };
+  });
+}
+
 function normalizeCardRows(rows = []) {
   return [...(Array.isArray(rows) ? rows : [])]
     .map((row, idx) => ({
@@ -1695,6 +1803,7 @@ export default function Step2Milestones({
     const parsed = parseAmountStrict(projectBudgetInput);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
   }, [projectBudgetInput]);
+  const pricingBaselineTotal = useMemo(() => getPricingBaselineTotal(estimatePreview), [estimatePreview]);
   const estimateSummaryMeta = useMemo(() => {
     if (!estimatePreview) return null;
     const explanation = explainBenchmarkSource(estimatePreview);
@@ -1777,34 +1886,19 @@ export default function Step2Milestones({
     const rows = Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
     if (!rows.length) return new Map();
 
-    const suggestionById = new Map(
-      estimateSuggestions.filter((row) => row?.milestone_id != null).map((row) => [row.milestone_id, row])
+    const weightedRows = buildWeightedPricingPlan(
+      rows,
+      pricingBaselineTotal || estimateBudgetValue || 0,
+      estimateSuggestions
     );
-    const enriched = rows.map((row, idx) => {
-      const suggestion =
-        suggestionById.get(row?.id) ||
-        estimateSuggestions.find((item) => Number(item?.suggested_order || 0) === idx + 1) ||
-        null;
-      const suggestedAmount = parseAmountStrict(suggestion?.suggested_amount);
-      const fallbackWeight = parseAmountStrict(row?.amount);
-      return {
-        row,
-        idx,
-        suggestion,
-        weight:
-          (isCommercialProject && Number.isFinite(fallbackWeight) && fallbackWeight > 0
-            ? fallbackWeight
-            : null) ??
-          (Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null) ??
-          (Number.isFinite(fallbackWeight) && fallbackWeight > 0 ? fallbackWeight : 1),
-        suggestedAmount: Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null,
-      };
-    });
-    const totalWeight = enriched.reduce((sum, item) => sum + Number(item.weight || 0), 0) || enriched.length || 1;
+    const totalWeight =
+      weightedRows.reduce((sum, item) => sum + Number(item?.allocation_percent || item?.weight || 0), 0) ||
+      weightedRows.length ||
+      1;
     const map = new Map();
-    enriched.forEach((item) => {
-      const share = Number(item.weight || 0) / totalWeight;
-      const budgetSuggestion = estimateBudgetValue ? roundSuggestedAmount(estimateBudgetValue * share) : null;
+    weightedRows.forEach((item) => {
+      const share = Number(item?.allocation_percent || item?.weight || 0) / totalWeight;
+      const budgetSuggestion = pricingBaselineTotal ? roundSuggestedAmount(pricingBaselineTotal * share) : null;
       map.set(item.row?.id ?? `row-${item.idx + 1}`, {
         share,
         suggestedAmount: item.suggestedAmount,
@@ -1813,7 +1907,7 @@ export default function Step2Milestones({
       });
     });
     return map;
-  }, [effectiveMilestones, estimateBudgetValue, estimateSuggestions, isCommercialProject]);
+  }, [effectiveMilestones, estimateBudgetValue, estimateSuggestions, pricingBaselineTotal]);
   const hasPlanningDetails =
     Boolean(assistantGuidedFlow?.guided_question) ||
     assistantProactiveRecommendations.length > 0 ||
@@ -2277,56 +2371,60 @@ export default function Step2Milestones({
     const suggestions = Array.isArray(estimatePreview?.milestone_suggestions)
       ? estimatePreview.milestone_suggestions
       : [];
-    if (!suggestions.length) {
-      toast("No milestone amount suggestions are available yet.");
+    const baselineTotal = pricingBaselineTotal;
+    if (!baselineTotal || baselineTotal <= 0) {
+      toast("No pricing baseline is available yet.");
       return;
     }
 
     const shouldApply = window.confirm(
-      "Apply pricing guidance to the current milestones' Existing amounts will be updated for review."
+      "Apply pricing guidance to the current milestones? Existing amounts will be updated for review."
     );
     if (!shouldApply) return;
 
-    const suggestionById = new Map(
-      suggestions.filter((row) => row?.milestone_id != null).map((row) => [row.milestone_id, row])
-    );
-    let appliedCount = 0;
-    const stagedIds = [];
-    const nextRows = effectiveMilestones.map((row, idx) => {
-      const match =
-        suggestionById.get(row?.id) ||
-        suggestions.find((item) => Number(item?.suggested_order || 0) === idx + 1);
-      const suggestedAmount = parseAmountStrict(match?.suggested_amount);
-      if (!Number.isFinite(suggestedAmount) || suggestedAmount <= 0) {
-        return { ...row };
-      }
-      appliedCount += 1;
-      if (estimateAmountDiffers(row?.amount, suggestedAmount)) {
-        stagedIds.push(row?.id);
-      }
-      return {
-        ...row,
-        order: row?.order != null ? row.order : idx + 1,
-        amount: roundSuggestedAmount(suggestedAmount) ?? suggestedAmount,
-      };
-    });
-
-    if (!appliedCount) {
-      toast("No milestone amount suggestions were available to apply.");
+    const nextRows = buildWeightedPricingPlan(effectiveMilestones, baselineTotal, suggestions);
+    if (!nextRows.length) {
+      toast("No milestones are available to update.");
       return;
     }
 
-    setFallbackMilestones(sortFallbackMilestones(nextRows));
+    const stagedIds = [];
+    let appliedCount = 0;
+    const nextById = new Map(nextRows.map((row) => [row?.id, row]));
+    const updatedRows = effectiveMilestones.map((row) => {
+      const nextRow = nextById.get(row?.id);
+      if (!nextRow) return { ...row };
+      const nextAmount = parseAmountStrict(nextRow?.amount);
+      if (Number.isFinite(nextAmount) && nextAmount > 0) {
+        appliedCount += 1;
+        if (estimateAmountDiffers(row?.amount, nextAmount)) {
+          stagedIds.push(row?.id);
+        }
+        return {
+          ...row,
+          order: row?.order != null ? row.order : nextRow?.order,
+          amount: nextAmount,
+        };
+      }
+      return { ...row };
+    });
+
+    if (!appliedCount) {
+      toast("No milestone pricing guidance was available to apply.");
+      return;
+    }
+
+    setFallbackMilestones(sortFallbackMilestones(updatedRows));
     setStagedSuggestedMilestoneIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
-    setEstimateBanner("Estimate suggestions are staged locally. Review and save when ready.");
+    setEstimateBanner("Pricing guidance is staged locally. Review and save when ready.");
     markAiUpdated(stagedIds.filter(Boolean).map((id) => `milestone:${id}`));
     {
-      const feedback = "Updated milestone pricing based on project context.";
+      const feedback = "Updated milestone pricing using weighted project guidance.";
       setAiChangeSummary(feedback);
       onAiUpdateFeedback(feedback);
     }
     toast.success(
-      `Applied estimate amounts to ${appliedCount} milestone${appliedCount === 1 ? "" : "s"} for review.`
+      `Applied weighted pricing guidance to ${appliedCount} milestone${appliedCount === 1 ? "" : "s"} for review.`
     );
   }
 
@@ -3532,6 +3630,15 @@ export default function Step2Milestones({
                   {aiLoading || aiMilestoneGenerationBusy
                     ? "Generating milestones..."
                     : "Generate Suggested Milestones"}
+                </button>
+                <button
+                  type="button"
+                  onClick={applyEstimateSuggestedAmounts}
+                  disabled={milestonesLocked || aiLoading || !pricingBaselineTotal}
+                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                  data-testid="step2-apply-pricing-guidance"
+                >
+                  Apply Pricing Guidance
                 </button>
               </div>
               {aiLoading || aiMilestoneGenerationBusy ? (

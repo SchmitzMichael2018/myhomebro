@@ -508,7 +508,8 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Typical total range:');
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Generate Suggested Milestones');
   await expect(page.getByTestId('step2-generate-suggested-milestones')).toBeVisible();
-  await expect(page.getByTestId('step2-apply-pricing-guidance')).toHaveCount(0);
+  await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Pricing is based on similar projects and milestone structure.');
+  await expect(page.getByTestId('step2-apply-pricing-guidance')).toBeVisible();
   await expect(page.getByTestId('step2-improve-with-ai')).toHaveCount(0);
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-card-801')).toBeVisible();
@@ -532,14 +533,39 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-estimate-guidance-details')).toContainText('Confidence');
   await page.getByTestId('step2-milestone-summary-801').click();
   await expect(page.getByTestId('step2-milestone-editor-801')).toBeVisible();
-  const milestone801Before = (await page.getByTestId('step2-milestone-amount-801').inputValue())?.trim() || "";
+  const milestone801CardBefore = page.getByTestId('step2-milestone-card-801');
   await page.getByTestId('step2-milestone-summary-802').click();
   await expect(page.getByTestId('step2-milestone-editor-802')).toBeVisible();
-  const milestone802Before = (await page.getByTestId('step2-milestone-amount-802').inputValue())?.trim() || "";
-  expect(Number(milestone801Before)).toBeGreaterThan(0);
-  expect(Number(milestone802Before)).toBeGreaterThan(0);
+  const milestone802CardBefore = page.getByTestId('step2-milestone-card-802');
+  const milestone801Before = Number(
+    ((await milestone801CardBefore.textContent()) || "").match(/\$([0-9,]+(?:\.\d{2})?)/)?.[1].replace(/,/g, "") || 0
+  );
+  const milestone802Before = Number(
+    ((await milestone802CardBefore.textContent()) || "").match(/\$([0-9,]+(?:\.\d{2})?)/)?.[1].replace(/,/g, "") || 0
+  );
+  expect(milestone801Before).toBeGreaterThan(0);
+  expect(milestone802Before).toBeGreaterThan(0);
 
-  await expect(page.getByText(/Suggested share:/).first()).toBeVisible();
+  await page.getByTestId('step2-apply-pricing-guidance').click();
+  const milestone801Card = page.getByTestId('step2-milestone-card-801');
+  const milestone802Card = page.getByTestId('step2-milestone-card-802');
+  await expect(milestone801Card).toBeVisible();
+  await expect(milestone802Card).toBeVisible();
+  await expect(milestone801Card).not.toContainText('$4,000.00');
+  await expect(milestone802Card).not.toContainText('$12,000.00');
+  const milestoneAmountsAfter = await Promise.all([milestone801Card, milestone802Card].map(async (card) => {
+    const text = (await card.textContent()) || '';
+    const match = text.match(/\$([0-9,]+(?:\.\d{2})?)/);
+    return match ? Number(match[1].replace(/,/g, '')) : 0;
+  }));
+  const [milestone801After, milestone802After] = milestoneAmountsAfter;
+  expect(milestone801After).toBeGreaterThan(0);
+  expect(milestone802After).toBeGreaterThan(0);
+  expect(milestone801After).not.toBe(milestone801Before);
+  expect(milestone802After).not.toBe(milestone802Before);
+  expect(milestone801After).not.toBe(milestone802After);
+  expect(milestone801After + milestone802After).toBeGreaterThan(25200);
+  expect(milestone801After + milestone802After).toBeLessThan(25400);
 
   await page.getByTestId('step2-project-budget-input').fill('30000');
   await expect(page.getByTestId('step2-project-budget-input')).toHaveValue('30000');
@@ -690,6 +716,10 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
     waitUntil: 'domcontentloaded',
   });
 
+  page.on('dialog', async (dialog) => {
+    await dialog.accept();
+  });
+
   const generateButton = page.getByTestId('step2-generate-suggested-milestones');
   await expect(generateButton).toBeVisible({ timeout: 15000 });
   await generateButton.click();
@@ -717,6 +747,38 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
   await expect(page.getByText('Floor and Framing')).toBeVisible();
   await expect(page.getByText('Existing Prep')).toHaveCount(0);
   await expect(page.getByTestId('step2-ai-milestone-preview-card')).toHaveCount(0);
+
+  const pricingGuidanceButton = page.getByTestId('step2-apply-pricing-guidance');
+  await expect(pricingGuidanceButton).toBeVisible();
+  await pricingGuidanceButton.click();
+  await expect(page.getByTestId('step2-milestone-card-list').getByText('Total: $14,500.00')).toBeVisible({
+    timeout: 15000,
+  });
+
+  const shedCards = [
+    page.getByTestId('step2-milestone-card-ai-1'),
+    page.getByTestId('step2-milestone-card-ai-2'),
+    page.getByTestId('step2-milestone-card-ai-3'),
+    page.getByTestId('step2-milestone-card-ai-4'),
+    page.getByTestId('step2-milestone-card-ai-5'),
+  ];
+  for (const card of shedCards) {
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText('$0.00');
+  }
+  const shedAmounts = await Promise.all(
+    shedCards.map(async (card) => {
+      const text = (await card.textContent()) || '';
+      const match = text.match(/\$([0-9,]+(?:\.\d{2})?)/);
+      return match ? Number(match[1].replace(/,/g, '')) : 0;
+    })
+  );
+  expect(shedAmounts.every((value) => value > 0)).toBeTruthy();
+  expect(shedAmounts[1]).toBeGreaterThan(shedAmounts[0]);
+  expect(shedAmounts[2]).toBeGreaterThan(shedAmounts[4]);
+  const shedTotal = shedAmounts.reduce((sum, value) => sum + value, 0);
+  expect(shedTotal).toBeGreaterThan(14400);
+  expect(shedTotal).toBeLessThan(14600);
 });
 
 test('step 2 estimate fallback messaging renders for template-only low-confidence estimates', async ({

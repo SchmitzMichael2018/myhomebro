@@ -263,7 +263,9 @@ export function buildActionableTemplateInsightCards({
     },
     pricing: {
       title: "💡 Insight",
-      body: pricingRange ? `Typical total range: ${pricingRange}.` : "Pricing guidance is ready to review.",
+      body: pricingRange
+        ? `Pricing is based on similar projects and milestone structure. Typical total range: ${pricingRange}.`
+        : "Pricing guidance is ready to review.",
       actionLabel: "Apply Pricing Guidance",
       testId: "step2-template-insight-pricing",
     },
