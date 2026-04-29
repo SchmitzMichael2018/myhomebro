@@ -58,57 +58,143 @@ function toDateOnly(v) {
   return `${y}-${mm}-${dd}`;
 }
 
+function addDays(dateValue, offsetDays) {
+  const iso = toDateOnly(dateValue);
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  const next = new Date(y, (m || 1) - 1, d || 1);
+  if (Number.isNaN(next.getTime())) return "";
+  next.setDate(next.getDate() + Number(offsetDays || 0));
+  const yy = next.getFullYear();
+  const mm = String(next.getMonth() + 1).padStart(2, "0");
+  const dd = String(next.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function diffDays(startValue, endValue) {
+  const start = toDateOnly(startValue);
+  const end = toDateOnly(endValue);
+  if (!start || !end) return 0;
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const startDate = new Date(sy, sm - 1, sd);
+  const endDate = new Date(ey, em - 1, ed);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
+  return Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
+}
+
+function getTodayIsoDate() {
+  const now = new Date();
+  if (Number.isNaN(now.getTime())) return "";
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function shiftMilestoneDatesToToday(list) {
+  const rows = Array.isArray(list) ? list : [];
+  if (!rows.length) return [];
+
+  const normalized = [...rows].sort((a, b) => {
+    const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+    const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+    return 0;
+  });
+  const today = getTodayIsoDate();
+  const firstExistingStart = normalized.map((row) => toDateOnly(row?.start_date || row?.start)).find(Boolean) || "";
+  const baseStart =
+    firstExistingStart && today && firstExistingStart > today ? firstExistingStart : today || firstExistingStart;
+  const shiftDays = firstExistingStart && baseStart ? diffDays(firstExistingStart, baseStart) : 0;
+
+  if (!baseStart) return normalized;
+
+  let cursor = baseStart;
+  return normalized.map((row) => {
+    const existingStart = toDateOnly(row?.start_date || row?.start);
+    const existingCompletion = toDateOnly(row?.completion_date || row?.end_date || row?.end);
+    if (existingStart || existingCompletion) {
+      const shiftedStart = existingStart ? addDays(existingStart, shiftDays) : cursor;
+      const shiftedCompletion = existingCompletion ? addDays(existingCompletion, shiftDays) : shiftedStart;
+      cursor = addDays(shiftedCompletion, 1);
+      return {
+        ...row,
+        start_date: shiftedStart,
+        completion_date: shiftedCompletion,
+        due_date: shiftedCompletion,
+      };
+    }
+
+    const durationDays = Math.max(Number(row?.recommended_duration_days || 1), 1);
+    const startDate = cursor;
+    const completionDate = addDays(startDate, durationDays - 1);
+    cursor = addDays(completionDate, 1);
+    return {
+      ...row,
+      start_date: startDate,
+      completion_date: completionDate,
+      due_date: completionDate,
+    };
+  });
+}
+
 function normalizeCreatedMilestones(list) {
   if (!Array.isArray(list)) return [];
-  return list.map((m, idx) => ({
-    id: m?.id ?? null,
-    order: m?.order ?? idx + 1,
-    title: safeStr(m?.title),
-    description: safeStr(m?.description),
-    amount: m?.amount != null ? Number(m.amount) : 0,
-    start_date: toDateOnly(m?.start_date || m?.start || ""),
-    completion_date: toDateOnly(m?.completion_date || m?.end_date || m?.end || ""),
-    due_date: toDateOnly(m?.due_date || ""),
-    status: m?.status,
-    status_display: m?.status_display,
-    normalized_milestone_type: safeStr(m?.normalized_milestone_type),
-    suggested_amount_low: m?.suggested_amount_low ?? "",
-    suggested_amount_high: m?.suggested_amount_high ?? "",
-    labor_estimate_low: m?.labor_estimate_low ?? "",
-    labor_estimate_high: m?.labor_estimate_high ?? "",
-    materials_estimate_low: m?.materials_estimate_low ?? "",
-    materials_estimate_high: m?.materials_estimate_high ?? "",
-    pricing_confidence: safeStr(m?.pricing_confidence),
-    pricing_mode: normalizePricingMode(m?.pricing_mode),
-    pricing_source_note: safeStr(m?.pricing_source_note),
-    recommended_duration_days: m?.recommended_duration_days ?? "",
-    materials_hint: safeStr(m?.materials_hint),
-  }));
+  return shiftMilestoneDatesToToday(
+    list.map((m, idx) => ({
+      id: m?.id ?? null,
+      order: m?.order ?? m?.sort_order ?? idx + 1,
+      title: safeStr(m?.title),
+      description: safeStr(m?.description),
+      amount: m?.amount != null ? Number(m.amount) : 0,
+      start_date: toDateOnly(m?.start_date || m?.start || ""),
+      completion_date: toDateOnly(m?.completion_date || m?.end_date || m?.end || ""),
+      due_date: toDateOnly(m?.due_date || ""),
+      status: m?.status,
+      status_display: m?.status_display,
+      normalized_milestone_type: safeStr(m?.normalized_milestone_type),
+      suggested_amount_low: m?.suggested_amount_low ?? "",
+      suggested_amount_high: m?.suggested_amount_high ?? "",
+      labor_estimate_low: m?.labor_estimate_low ?? "",
+      labor_estimate_high: m?.labor_estimate_high ?? "",
+      materials_estimate_low: m?.materials_estimate_low ?? "",
+      materials_estimate_high: m?.materials_estimate_high ?? "",
+      pricing_confidence: safeStr(m?.pricing_confidence),
+      pricing_mode: normalizePricingMode(m?.pricing_mode),
+      pricing_source_note: safeStr(m?.pricing_source_note),
+      recommended_duration_days: m?.recommended_duration_days ?? "",
+      materials_hint: safeStr(m?.materials_hint),
+    }))
+  );
 }
 
 function normalizeAiMilestones(list) {
   if (!Array.isArray(list)) return [];
-  return list.map((m, idx) => {
-    const title = safeStr(m?.title) || `Milestone ${idx + 1}`;
-    const description = safeStr(m?.description);
-    const start_date = m?.start_date ?? null;
-    const completion_date = m?.completion_date ?? m?.end_date ?? null;
-    const amount = m?.amount ?? 0;
+  return shiftMilestoneDatesToToday(
+    list.map((m, idx) => {
+      const title = safeStr(m?.title) || `Milestone ${idx + 1}`;
+      const description = safeStr(m?.description);
+      const start_date = toDateOnly(m?.start_date ?? null);
+      const completion_date = toDateOnly(m?.completion_date ?? m?.end_date ?? null);
+      const amount = m?.amount ?? 0;
 
-    return {
-      title,
-      description,
-      start_date,
-      completion_date,
-      amount,
-      suggested_amount: m?.suggested_amount ?? "",
-      suggested_amount_low: m?.suggested_amount_low ?? "",
-      suggested_amount_high: m?.suggested_amount_high ?? "",
-      allocation_percent: m?.allocation_percent ?? "",
-      recommended_duration_days: m?.recommended_duration_days ?? "",
-      note: safeStr(m?.note),
-    };
-  });
+      return {
+        order: m?.order ?? idx + 1,
+        title,
+        description,
+        start_date,
+        completion_date,
+        amount,
+        suggested_amount: m?.suggested_amount ?? "",
+        suggested_amount_low: m?.suggested_amount_low ?? "",
+        suggested_amount_high: m?.suggested_amount_high ?? "",
+        allocation_percent: m?.allocation_percent ?? "",
+        recommended_duration_days: m?.recommended_duration_days ?? "",
+        note: safeStr(m?.note),
+      };
+    })
+  );
 }
 
 function normalizeKeyish(v) {

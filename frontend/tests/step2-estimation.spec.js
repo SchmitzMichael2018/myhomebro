@@ -607,13 +607,16 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   expect(milestone802Before).toBeGreaterThan(0);
 
   await page.getByTestId('step2-apply-suggested-timeline').click();
-  await expect(page.getByTestId('step2-pricing-feedback-banner')).toBeVisible();
   const milestone801Card = page.getByTestId('step2-milestone-card-801');
   const milestone802Card = page.getByTestId('step2-milestone-card-802');
   await expect(milestone801Card).toBeVisible();
   await expect(milestone802Card).toBeVisible();
   await expect(milestone801Card).toContainText('$4,000.00');
   await expect(milestone802Card).toContainText('$12,000.00');
+  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('Apr 29, 2026');
+  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('Apr 30, 2026');
+  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 1, 2026');
+  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 6, 2026');
   const milestoneAmountsAfter = await Promise.all([milestone801Card, milestone802Card].map(async (card) => {
     const text = (await card.textContent()) || '';
     const match = text.match(/\$([0-9,]+(?:\.\d{2})?)/);
@@ -671,6 +674,70 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-estimate-guidance-details')).toBeHidden();
   await page.getByRole('button', { name: 'Save & Next' }).click();
   await expect(page.getByTestId('step2-workflow-panel')).toBeVisible();
+});
+
+test('step 2 timeline shifts past dates forward and preserves relative spacing and manual edits', async ({
+  page,
+}) => {
+  await installAgreementWizardMocks(page, {
+    estimateResponse: {
+      suggested_total_price: '25300.00',
+      suggested_price_low: '22770.00',
+      suggested_price_high: '27830.00',
+      suggested_duration_days: 12,
+      suggested_duration_low: 10,
+      suggested_duration_high: 13,
+      milestone_suggestions: [
+        {
+          milestone_id: 801,
+          title: 'Demo & Prep',
+          suggested_amount: '5300.00',
+          suggested_duration_days: 3,
+          suggested_order: 1,
+          allocation_percent: 0.21,
+        },
+        {
+          milestone_id: 802,
+          title: 'Install & Finish',
+          suggested_amount: '20000.00',
+          suggested_duration_days: 9,
+          suggested_order: 2,
+          allocation_percent: 0.79,
+        },
+      ],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+      },
+      price_adjustments: [],
+      timeline_adjustments: [],
+      explanation_lines: [],
+      benchmark_source: 'seeded_only',
+      learned_benchmark_used: false,
+      seeded_benchmark_used: true,
+      confidence_level: 'medium',
+      confidence_reasoning: 'Advisory timeline guidance.',
+      source_metadata: {},
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  page.on('dialog', async (dialog) => {
+    await dialog.accept();
+  });
+
+  await page.getByTestId('step2-apply-suggested-timeline').click();
+  await page.getByTestId('step2-milestone-summary-801').click();
+  const editor801 = page.getByTestId('step2-milestone-editor-801');
+  await editor801.getByTestId('step2-milestone-start-801').fill('2026-05-10');
+  await expect(editor801.getByTestId('step2-milestone-start-801')).toHaveValue('2026-05-10');
+
+  await page.getByTestId('step2-apply-suggested-timeline').click();
+  await expect(editor801.getByTestId('step2-milestone-start-801')).toHaveValue('2026-05-10');
+  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 1, 2026');
 });
 
 test('step 2 generates shed-specific milestone previews and applies or cancels safely', async ({

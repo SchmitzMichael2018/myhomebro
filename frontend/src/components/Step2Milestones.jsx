@@ -353,6 +353,97 @@ function addDays(dateValue, offsetDays) {
   return `${yy}-${mm}-${dd}`;
 }
 
+function getTodayIsoDate() {
+  const now = new Date();
+  if (Number.isNaN(now.getTime())) return "";
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function diffDays(startValue, endValue) {
+  const start = toDateOnly(startValue);
+  const end = toDateOnly(endValue);
+  if (!start || !end) return 0;
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const startDate = new Date(sy, sm - 1, sd);
+  const endDate = new Date(ey, em - 1, ed);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
+  return Math.round((endDate.getTime() - startDate.getTime()) / 86400000);
+}
+
+function getDurationDaysForRow(row) {
+  const recommended = Number(row?.recommended_duration_days);
+  if (Number.isFinite(recommended) && recommended > 0) return Math.max(1, Math.round(recommended));
+
+  const start = toDateOnly(row?.start_date || row?.start);
+  const completion = toDateOnly(row?.completion_date || row?.end_date || row?.end);
+  if (start && completion) {
+    return Math.max(diffDays(start, completion) + 1, 1);
+  }
+
+  return 1;
+}
+
+function shiftTimelineRowsToToday(rows, { manualDateIds = [] } = {}) {
+  const normalizedRows = sortFallbackMilestones(normalizeCardRows(rows).filter(Boolean));
+  if (!normalizedRows.length) return [];
+
+  const manualSet = new Set((Array.isArray(manualDateIds) ? manualDateIds : []).map((id) => String(id)));
+  const today = getTodayIsoDate();
+  const firstExistingStart =
+    normalizedRows.map((row) => toDateOnly(row?.start_date || row?.start)).find(Boolean) || "";
+  const baseStart =
+    firstExistingStart && today && firstExistingStart > today ? firstExistingStart : today || firstExistingStart;
+  const shiftDays = firstExistingStart && baseStart ? diffDays(firstExistingStart, baseStart) : 0;
+
+  if (!baseStart) return normalizedRows;
+
+  let cursor = baseStart;
+  return normalizedRows.map((row) => {
+    const rowId = row?.id != null ? String(row.id) : "";
+    const manualDates = manualSet.has(rowId);
+    const existingStart = toDateOnly(row?.start_date || row?.start);
+    const existingCompletion = toDateOnly(row?.completion_date || row?.end_date || row?.end);
+    const durationDays = getDurationDaysForRow(row);
+
+    if (manualDates && (existingStart || existingCompletion)) {
+      const preservedStart = existingStart || cursor;
+      const preservedCompletion = existingCompletion || addDays(preservedStart, durationDays - 1);
+      cursor = addDays(preservedCompletion, 1);
+      return {
+        ...row,
+        start_date: preservedStart,
+        completion_date: preservedCompletion,
+      };
+    }
+
+    if (existingStart || existingCompletion) {
+      const shiftedStart = existingStart ? addDays(existingStart, shiftDays) : cursor;
+      const shiftedCompletion = existingCompletion
+        ? addDays(existingCompletion, shiftDays)
+        : addDays(shiftedStart, durationDays - 1);
+      cursor = addDays(shiftedCompletion, 1);
+      return {
+        ...row,
+        start_date: shiftedStart,
+        completion_date: shiftedCompletion,
+      };
+    }
+
+    const startDate = cursor;
+    const completionDate = addDays(startDate, durationDays - 1);
+    cursor = addDays(completionDate, 1);
+    return {
+      ...row,
+      start_date: startDate,
+      completion_date: completionDate,
+    };
+  });
+}
+
 function estimateAmountDiffers(currentAmount, suggestedAmount) {
   const current = parseAmountStrict(currentAmount);
   const next = parseAmountStrict(suggestedAmount);
@@ -1041,6 +1132,7 @@ export default function Step2Milestones({
   const targetProjectTotalTouchedRef = useRef(false);
   const [rebalancePrompt, setRebalancePrompt] = useState(null);
   const [manualAmountMilestoneIds, setManualAmountMilestoneIds] = useState([]);
+  const [manualDateMilestoneIds, setManualDateMilestoneIds] = useState([]);
   const [pricingHighlightMilestoneIds, setPricingHighlightMilestoneIds] = useState([]);
   const pricingHighlightTimerRef = useRef(null);
   const [assistantApplyingMilestones, setAssistantApplyingMilestones] = useState(false);
@@ -1327,6 +1419,9 @@ export default function Step2Milestones({
     if (field === "amount") {
       setManualAmountMilestoneIds((prev) => [...new Set([...(Array.isArray(prev) ? prev : []), String(milestoneId)])]);
     }
+    if (field === "start_date" || field === "completion_date") {
+      markMilestoneDatesManual(milestoneId);
+    }
     markMilestonesUserModified();
   }
 
@@ -1361,6 +1456,11 @@ export default function Step2Milestones({
     } catch {
       // ignore
     }
+  }
+
+  function markMilestoneDatesManual(milestoneId) {
+    if (milestoneId == null) return;
+    setManualDateMilestoneIds((prev) => [...new Set([...(Array.isArray(prev) ? prev : []), String(milestoneId)])]);
   }
 
   function isPersistedMilestoneId(id) {
@@ -1986,6 +2086,10 @@ export default function Step2Milestones({
   const manualAmountMilestoneIdSet = useMemo(
     () => new Set((Array.isArray(manualAmountMilestoneIds) ? manualAmountMilestoneIds : []).map((id) => String(id))),
     [manualAmountMilestoneIds]
+  );
+  const manualDateMilestoneIdSet = useMemo(
+    () => new Set((Array.isArray(manualDateMilestoneIds) ? manualDateMilestoneIds : []).map((id) => String(id))),
+    [manualDateMilestoneIds]
   );
   const pricingSummaryRangeLow = parseAmountStrict(estimatePreview?.suggested_price_low);
   const pricingSummaryRangeHigh = parseAmountStrict(estimatePreview?.suggested_price_high);
@@ -2788,30 +2892,69 @@ export default function Step2Milestones({
       return;
     }
 
-    const baseStart =
-      toDateOnly(agreementMeta?.start) ||
-      toDateOnly(effectiveMilestones[0]?.start_date || effectiveMilestones[0]?.start);
-    if (!baseStart) {
-      toast("Add an agreement start date or a milestone start date before applying timeline suggestions.");
-      return;
-    }
-
     const suggestionById = new Map(
       suggestions.filter((row) => row?.milestone_id != null).map((row) => [row.milestone_id, row])
     );
     const stagedIds = [];
-    let cursor = baseStart;
-    const nextRows = effectiveMilestones.map((row, idx) => {
+    const dateEditedIds = manualDateMilestoneIdSet;
+    const today = getTodayIsoDate();
+    const currentRows = normalizeCardRows(effectiveMilestones);
+    const currentStarts = currentRows.map((row) => toDateOnly(row?.start_date || row?.start)).filter(Boolean).sort();
+    const firstExistingStart = currentStarts[0] || "";
+    const shiftDays = firstExistingStart && today && firstExistingStart < today ? diffDays(firstExistingStart, today) : 0;
+    const hasExistingTimeline = !!firstExistingStart;
+
+    let cursor = hasExistingTimeline ? firstExistingStart : today || "";
+    const nextRows = currentRows.map((row, idx) => {
       const match =
         suggestionById.get(row?.id) ||
         suggestions.find((item) => Number(item?.suggested_order || 0) === idx + 1);
-      const durationDays = Math.max(Number(match?.suggested_duration_days || row?.recommended_duration_days || 0), 1);
-      const startDate = cursor;
+      const durationDays = Math.max(
+        Number(match?.suggested_duration_days || row?.recommended_duration_days || getDurationDaysForRow(row) || 0),
+        1
+      );
+      const rowId = row?.id != null ? String(row.id) : "";
+      const existingStart = toDateOnly(row?.start_date || row?.start);
+      const existingCompletion = toDateOnly(row?.completion_date || row?.end_date || row?.end);
+      const isManualDate = dateEditedIds.has(rowId);
+
+      if (isManualDate && (existingStart || existingCompletion)) {
+        const preservedStart = existingStart || cursor || today || "";
+        const preservedCompletion = existingCompletion || addDays(preservedStart, durationDays - 1);
+        cursor = addDays(preservedCompletion, 1);
+        return {
+          ...row,
+          order: row?.order != null ? row.order : idx + 1,
+          recommended_duration_days: durationDays,
+          start_date: preservedStart,
+          completion_date: preservedCompletion,
+        };
+      }
+
+      if (existingStart || existingCompletion) {
+        const shiftedStart = existingStart
+          ? shiftDays > 0
+            ? addDays(existingStart, shiftDays)
+            : existingStart
+          : cursor || today || "";
+        const shiftedCompletion = existingCompletion
+          ? shiftDays > 0
+            ? addDays(existingCompletion, shiftDays)
+            : existingCompletion
+          : addDays(shiftedStart, durationDays - 1);
+        cursor = addDays(shiftedCompletion, 1);
+        return {
+          ...row,
+          order: row?.order != null ? row.order : idx + 1,
+          recommended_duration_days: durationDays,
+          start_date: shiftedStart,
+          completion_date: shiftedCompletion,
+        };
+      }
+
+      const startDate = cursor || today || "";
       const completionDate = addDays(startDate, durationDays - 1);
       cursor = addDays(completionDate, 1);
-      if (timelineDiffers(row, startDate, completionDate)) {
-        stagedIds.push(row?.id);
-      }
       return {
         ...row,
         order: row?.order != null ? row.order : idx + 1,
@@ -2821,19 +2964,37 @@ export default function Step2Milestones({
       };
     });
 
+    if (!nextRows.length) {
+      toast("Unable to stage timeline suggestions.");
+      return;
+    }
+
+    nextRows.forEach((row, idx) => {
+      if (timelineDiffers(effectiveMilestones[idx], row?.start_date || row?.start, row?.completion_date || row?.end_date || row?.end)) {
+        stagedIds.push(row?.id);
+      }
+    });
+
     setFallbackMilestones(sortFallbackMilestones(nextRows));
     setStagedSuggestedTimelineIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
-    setEstimateBanner("Estimate timeline suggestions are staged locally. Review and save when ready.");
+    const timelineAdjusted = hasExistingTimeline && currentStarts[0] < today;
+    setEstimateBanner(
+      timelineAdjusted
+        ? "Timeline adjusted to start from today."
+        : "Estimate timeline suggestions are staged locally. Review and save when ready."
+    );
     markAiUpdated(stagedIds.filter(Boolean).map((id) => `milestone:${id}`));
     {
       const changedCount = stagedIds.filter(Boolean).length || nextRows.length;
-      const feedback = `Adjusted timeline suggestions for ${changedCount} milestone${
-        changedCount === 1 ? "" : "s"
-      }.`;
+      const feedback = timelineAdjusted
+        ? "Timeline adjusted to start from today."
+        : `Adjusted timeline suggestions for ${changedCount} milestone${
+            changedCount === 1 ? "" : "s"
+          }.`;
       setAiChangeSummary(feedback);
       onAiUpdateFeedback(feedback);
     }
-    toast.success("Applied suggested milestone timeline for review.");
+    toast.success(timelineAdjusted ? "Timeline adjusted to start from today." : "Applied suggested milestone timeline for review.");
   }
 
   function applySuggestedPricesToAll() {
@@ -2980,6 +3141,9 @@ export default function Step2Milestones({
     try {
       const result = await saveMilestone(mLocal);
       markMilestonesUserModified();
+      if (toDateOnly(mLocal.start || mLocal.start_date) || toDateOnly(mLocal.end || mLocal.completion_date)) {
+        markMilestoneDatesManual(result?.milestone?.id);
+      }
       if (result?.refreshed === false) {
         applyLocalMilestoneFallback("create", result?.milestone);
       }
@@ -3020,6 +3184,9 @@ export default function Step2Milestones({
       try {
         const result = await saveMilestone({ ...overlapConfirm.data, allow_overlap: true });
         markMilestonesUserModified();
+        if (toDateOnly(overlapConfirm.data?.start_date) || toDateOnly(overlapConfirm.data?.completion_date)) {
+          markMilestoneDatesManual(result?.milestone?.id);
+        }
         if (result?.refreshed === false) {
           applyLocalMilestoneFallback("create", result?.milestone);
         }
@@ -3055,6 +3222,9 @@ export default function Step2Milestones({
           allow_overlap: true,
         });
         markMilestonesUserModified();
+        if (toDateOnly(d.start_date) || toDateOnly(d.completion_date)) {
+          markMilestoneDatesManual(d.id);
+        }
         if (result?.refreshed === false) {
           applyLocalMilestoneFallback("update", result?.milestone);
         }
@@ -3178,6 +3348,9 @@ export default function Step2Milestones({
         amount: Number(editForm.amount),
       });
       markMilestonesUserModified();
+      if (toDateOnly(editForm.start_date) || toDateOnly(editForm.completion_date)) {
+        markMilestoneDatesManual(editForm.id);
+      }
       if (result?.refreshed === false) {
         applyLocalMilestoneFallback("update", result?.milestone);
       }

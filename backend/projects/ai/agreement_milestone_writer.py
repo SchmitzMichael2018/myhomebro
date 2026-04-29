@@ -16,12 +16,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Any, List
 
 from django.conf import settings
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -596,6 +598,64 @@ def _normalize_milestones(raw: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _parse_iso_date(value: Any) -> date | None:
+    raw = _safe_str(value)
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw[:10])
+    except Exception:
+        return None
+
+
+def _shift_milestones_to_today(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not isinstance(rows, list) or not rows:
+        return rows if isinstance(rows, list) else []
+
+    today = timezone.localdate()
+    first_start = None
+    for row in rows:
+        start = _parse_iso_date((row or {}).get("start_date") or (row or {}).get("start"))
+        if start and (first_start is None or start < first_start):
+            first_start = start
+
+    if first_start is None:
+        return rows
+
+    base_start = first_start if first_start >= today else today
+    shift_days = (base_start - first_start).days
+    if shift_days <= 0:
+        return rows
+
+    shifted_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        next_row = dict(row)
+        start = _parse_iso_date(row.get("start_date") or row.get("start"))
+        end = _parse_iso_date(row.get("completion_date") or row.get("end"))
+
+        if start is not None:
+            shifted_start = start + timedelta(days=shift_days)
+            shifted_start_iso = shifted_start.isoformat()
+            next_row["start_date"] = shifted_start_iso
+            next_row["start"] = shifted_start_iso
+        else:
+            shifted_start = None
+
+        if end is not None:
+            shifted_end = end + timedelta(days=shift_days)
+            shifted_end_iso = shifted_end.isoformat()
+            next_row["completion_date"] = shifted_end_iso
+            next_row["end"] = shifted_end_iso
+        elif shifted_start is not None:
+            shifted_start_iso = shifted_start.isoformat()
+            next_row["completion_date"] = shifted_start_iso
+            next_row["end"] = shifted_start_iso
+
+        shifted_rows.append(next_row)
+
+    return shifted_rows
+
+
 def _agreement_answers_snapshot(agreement: Any) -> Dict[str, Any]:
     try:
         scope_obj = getattr(agreement, "ai_scope", None)
@@ -824,9 +884,14 @@ def _shape_milestone_rows_for_clarifications(
     default_amounts = _default_milestone_amounts(len(rows), total_budget)
     shaped: List[Dict[str, Any]] = []
     for idx, row in enumerate(rows):
+        base_row = (
+            base_milestones[idx]
+            if isinstance(base_milestones, list) and idx < len(base_milestones) and isinstance(base_milestones[idx], dict)
+            else {}
+        )
         base_amount = 0.0
-        if isinstance(base_milestones, list) and idx < len(base_milestones) and isinstance(base_milestones[idx], dict):
-            base_amount = _safe_float(base_milestones[idx].get("amount"), 0.0)
+        if base_row:
+            base_amount = _safe_float(base_row.get("amount"), 0.0)
         amount = base_amount if amount_mode == "preserve_base" else default_amounts[idx]
         shaped.append(
             {
@@ -834,10 +899,10 @@ def _shape_milestone_rows_for_clarifications(
                 "title": row["title"],
                 "description": row["description"],
                 "amount": amount,
-                "start_date": "",
-                "completion_date": "",
-                "start": "",
-                "end": "",
+                "start_date": _safe_str(base_row.get("start_date")),
+                "completion_date": _safe_str(base_row.get("completion_date")),
+                "start": _safe_str(base_row.get("start_date") or base_row.get("start")),
+                "end": _safe_str(base_row.get("completion_date") or base_row.get("end")),
             }
         )
     return shaped
@@ -1332,6 +1397,7 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         amount_mode="preserve_base",
         base_milestones=milestones,
     )
+    milestones = _shift_milestones_to_today(milestones)
 
     questions = _canonicalize_questions(questions_raw)
 

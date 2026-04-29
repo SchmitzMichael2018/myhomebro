@@ -453,6 +453,52 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
             result["milestones"][4]["description"],
         )
 
+    def test_service_shifts_past_ai_milestone_dates_forward_to_today(self):
+        agreement = self._agreement()
+        base_milestones = [
+            {
+                "order": 1,
+                "title": "Planning",
+                "description": "Base planning milestone",
+                "amount": 1000,
+                "start_date": "2026-04-01",
+                "completion_date": "2026-04-02",
+            },
+            {
+                "order": 2,
+                "title": "Build",
+                "description": "Base build milestone",
+                "amount": 2000,
+                "start_date": "2026-04-04",
+                "completion_date": "2026-04-06",
+            },
+        ]
+
+        with patch(
+            "projects.ai.agreement_milestone_writer._require_openai_client",
+            return_value=self._mock_openai_response(base_milestones),
+        ), patch(
+            "projects.ai.agreement_milestone_writer._model_name",
+            return_value="test-model",
+        ), patch(
+            "projects.ai.agreement_milestone_writer.timezone.localdate",
+            return_value=datetime(2026, 4, 29).date(),
+        ):
+            result = suggest_scope_and_milestones(agreement=agreement, notes="")
+
+        shifted = result["milestones"]
+        self.assertEqual(shifted[0]["start_date"], "2026-04-29")
+        self.assertEqual(shifted[0]["completion_date"], "2026-04-30")
+        self.assertEqual(shifted[1]["start_date"], "2026-05-02")
+        self.assertEqual(shifted[1]["completion_date"], "2026-05-04")
+        self.assertEqual(
+            (
+                datetime.strptime(shifted[1]["start_date"], "%Y-%m-%d")
+                - datetime.strptime(shifted[0]["start_date"], "%Y-%m-%d")
+            ).days,
+            3,
+        )
+
     def test_service_removes_bathroom_tile_phase_when_scope_is_excluded(self):
         agreement = self._agreement(
             project_subtype="Bathroom Remodel",

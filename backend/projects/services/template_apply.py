@@ -98,13 +98,16 @@ def _resolve_date_range(
 ) -> DateRange:
     today = timezone.localdate()
 
-    start_date = agreement.start or today
+    original_start = agreement.start or today
+    start_date = original_start if original_start >= today else today
     end_date = agreement.end
 
     if end_date is None:
         effective_estimated_days = estimated_days_override or int(template.estimated_days or 1)
         effective_estimated_days = max(int(effective_estimated_days), 1)
         end_date = start_date + timedelta(days=max(effective_estimated_days - 1, 0))
+    elif start_date != original_start:
+        end_date = agreement.end + (start_date - original_start)
 
     if end_date < start_date:
         end_date = start_date
