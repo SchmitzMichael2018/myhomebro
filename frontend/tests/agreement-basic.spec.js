@@ -439,6 +439,16 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('agreement-wizard-subtitle')).toContainText(
     `Agreement #${AGREEMENT_ID}`
   );
+
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  await expect(page).toHaveURL(
+    new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=1$`)
+  );
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Playwright Agreement Smoke'
+  );
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toHaveCount(0);
+  await expect(page.getByText('No strong template match found')).toHaveCount(0);
 });
 
 test('agreement wizard step 1 shows a recovery state when AI starting point generation fails', async ({

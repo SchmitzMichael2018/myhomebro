@@ -1067,6 +1067,42 @@ class AgreementSerializer(serializers.ModelSerializer):
             data.pop(key, None)
         return data
 
+    def _sync_project_title_from_input(self, instance: Agreement) -> None:
+        """
+        Keep the related Project title in sync with Step 1 saves.
+
+        Agreement serializes the user-facing project title from Project.title, so
+        updates must persist the latest non-empty title there as well.
+        """
+        try:
+            raw_input = getattr(self, "initial_data", None) or {}
+            requested_title = (
+                raw_input.get("project_title")
+                if hasattr(raw_input, "get")
+                else None
+            ) or (
+                raw_input.get("title")
+                if hasattr(raw_input, "get")
+                else None
+            )
+            requested_title = str(requested_title or "").strip()
+            if not requested_title:
+                return
+
+            project = getattr(instance, "project", None)
+            if not project:
+                return
+
+            current_title = str(getattr(project, "title", "") or "").strip()
+            if current_title == requested_title:
+                return
+
+            project.title = requested_title
+            project.save(update_fields=["title"])
+        except Exception:
+            # Title syncing should never block an agreement save.
+            return
+
     def _sync_taxonomy_snapshot_fields(self, validated_data: dict) -> dict:
         validated_data = dict(validated_data)
 
@@ -1416,6 +1452,7 @@ class AgreementSerializer(serializers.ModelSerializer):
             validated_data["description"] = ""
 
         instance = super().update(instance, validated_data)
+        self._sync_project_title_from_input(instance)
         try:
             ensure_recurring_milestones(instance, horizon=1)
         except Exception:
