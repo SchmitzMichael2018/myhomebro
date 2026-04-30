@@ -580,6 +580,10 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-milestone-card-802')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-number-801')).toHaveText('1');
   await expect(page.getByTestId('step2-milestone-number-802')).toHaveText('2');
+  await expect(page.getByTestId('step2-milestone-number-801')).toHaveCSS('width', '32px');
+  await expect(page.getByTestId('step2-milestone-number-801')).toHaveCSS('height', '32px');
+  await expect(page.getByTestId('step2-milestone-number-801')).toHaveCSS('font-weight', '700');
+  await expect(page.getByTestId('step2-milestone-number-801')).toHaveCSS('background-color', 'rgb(15, 23, 42)');
   await expect(page.getByTestId('step2-milestone-row-801')).toHaveCount(0);
   await expect(page.getByTestId('step2-target-project-total')).toBeVisible();
   await expect(page.getByTestId('step2-target-project-total')).toHaveValue('25300');
@@ -613,10 +617,10 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(milestone802Card).toBeVisible();
   await expect(milestone801Card).toContainText('$4,000.00');
   await expect(milestone802Card).toContainText('$12,000.00');
-  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('Apr 29, 2026');
   await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('Apr 30, 2026');
-  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 1, 2026');
-  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 6, 2026');
+  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('May 1, 2026');
+  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 2, 2026');
+  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 7, 2026');
   const milestoneAmountsAfter = await Promise.all([milestone801Card, milestone802Card].map(async (card) => {
     const text = (await card.textContent()) || '';
     const match = text.match(/\$([0-9,]+(?:\.\d{2})?)/);
@@ -737,7 +741,7 @@ test('step 2 timeline shifts past dates forward and preserves relative spacing a
 
   await page.getByTestId('step2-apply-suggested-timeline').click();
   await expect(editor801.getByTestId('step2-milestone-start-801')).toHaveValue('2026-05-10');
-  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 1, 2026');
+  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 2, 2026');
 });
 
 test('step 2 generates shed-specific milestone previews and applies or cancels safely', async ({

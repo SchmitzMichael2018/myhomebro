@@ -744,6 +744,27 @@ export default function Sidebar({ variant = "desktop" }) {
         <div className="mt-2 text-center text-[11px] text-slate-600">
           © {new Date().getFullYear()} MyHomeBro
         </div>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+          <a
+            href="/legal/terms-of-service/"
+            target="_blank"
+            rel="noreferrer"
+            className="transition hover:text-slate-700 hover:underline"
+          >
+            Terms of Service
+          </a>
+          <span aria-hidden="true" className="text-slate-300">
+            •
+          </span>
+          <a
+            href="/legal/privacy-policy/"
+            target="_blank"
+            rel="noreferrer"
+            className="transition hover:text-slate-700 hover:underline"
+          >
+            Privacy Policy
+          </a>
+        </div>
       </div>
       </>
     </SidebarNavCtx.Provider>

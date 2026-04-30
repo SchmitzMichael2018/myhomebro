@@ -3650,6 +3650,16 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByRole('heading', { name: 'Project Context' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'View Agreement PDF' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Review Scope Clarifications' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute(
+    'href',
+    '/legal/terms-of-service/'
+  );
+  await expect(page.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute(
+    'href',
+    '/legal/privacy-policy/'
+  );
   await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
   await expect(page.getByTestId('step4-summary-agreement')).toContainText('Agreement Version');
   await expect(page.getByTestId('step4-summary-agreement')).toContainText('PDF Version');

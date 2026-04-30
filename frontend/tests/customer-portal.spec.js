@@ -258,6 +258,20 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("landing-customer-portal-button")).toHaveText("View Your Project");
   await expect(page.getByRole("button", { name: "Join MyHomeBro" })).toBeVisible();
   await expect(page.getByText("For Contractors")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Terms of Service" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
+    "href",
+    "/legal/terms-of-service/"
+  );
+  await expect(page.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute(
+    "href",
+    "/legal/privacy-policy/"
+  );
+
+  await page.goto("/legal/terms-of-service/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Terms of Service")).toBeVisible();
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await page.getByTestId("landing-customer-portal-button").click();
   await expect(page).toHaveURL(/\/portal$/);

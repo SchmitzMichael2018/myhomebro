@@ -5398,7 +5398,7 @@ export default function Step2Milestones({
                         <div className="flex flex-wrap items-center gap-2">
                           <span
                             data-testid={`step2-milestone-number-${m.id || idx + 1}`}
-                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-900 bg-slate-900 text-sm font-bold leading-none text-white shadow-sm"
                           >
                             {idx + 1}
                           </span>
