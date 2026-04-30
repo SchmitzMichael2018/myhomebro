@@ -42,6 +42,46 @@ function SummaryCard({ label, value, className = "" }) {
   );
 }
 
+function SummaryBadge({ children, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 border-slate-200",
+    blue: "bg-blue-50 text-blue-700 border-blue-200",
+    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    amber: "bg-amber-50 text-amber-800 border-amber-200",
+    indigo: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  };
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tones[tone] || tones.slate}`}>
+      {children}
+    </span>
+  );
+}
+
+function SummaryRow({ label, value, badge = null, valueClassName = "" }) {
+  return (
+    <div className="flex flex-col gap-1 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 sm:text-right ${valueClassName}`}>
+        <span className="whitespace-pre-wrap break-words">{value}</span>
+        {badge}
+      </div>
+    </div>
+  );
+}
+
+function SummaryGroup({ title, children, className = "", ...props }) {
+  return (
+    <section
+      {...props}
+      className={`rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 ${className}`}
+    >
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{title}</div>
+      <div className="mt-2 divide-y divide-slate-200">{children}</div>
+    </section>
+  );
+}
+
 function buildCityStateZip(city, state, postal) {
   const cityClean = (city || "").trim();
   const stateClean = (state || "").trim();
@@ -1623,34 +1663,64 @@ export default function Step4Finalize({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <SummaryCard label="Project Title" value={agreement?.project_title || agreement?.title || "Untitled Project"} />
-          <SummaryCard label="Agreement ID" value={agreementId ? `#${agreementId}` : "New"} />
-          <SummaryCard label="Project Path" value={projectClassLabel(projectClass)} />
-          <SummaryCard label="Project Type" value={agreement?.project_type || agreement?.project?.project_type || "—"} />
-          <SummaryCard label="Status" value={status} />
-        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <SummaryGroup title="Agreement" data-testid="step4-summary-agreement">
+            <SummaryRow
+              label="Project Title"
+              value={agreement?.project_title || agreement?.title || "Untitled Project"}
+            />
+            <SummaryRow label="Agreement ID" value={agreementId ? `#${agreementId}` : "New"} />
+            <SummaryRow
+              label="Status"
+              value={status}
+              badge={<SummaryBadge tone={status.toLowerCase().includes("signed") ? "emerald" : "amber"}>{status}</SummaryBadge>}
+            />
+            <SummaryRow
+              label="Agreement Version"
+              value={amendmentNumber > 0 ? `Amendment ${amendmentNumber}` : "Original Agreement"}
+            />
+            <SummaryRow label="PDF Version" value={pdfVersion != null ? `v${pdfVersion}` : "—"} />
+          </SummaryGroup>
 
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-5 gap-4">
-          <SummaryCard label="Agreement Version" value={amendmentNumber > 0 ? `Amendment ${amendmentNumber}` : "Original Agreement"} />
-          <SummaryCard label="PDF Version" value={pdfVersion != null ? `v${pdfVersion}` : "—"} />
-          <SummaryCard label="Payment Mode" value={isDirectPay ? "Direct Pay" : "Escrow (Protected)"} />
-          <SummaryCard
-            label="Payment Structure"
-            value={isProgressPayments ? "Progress Payments" : "Simple Payments"}
-          />
-          <SummaryCard
-            label={isProgressPayments ? "Retainage %" : "Escrow Funded?"}
-            value={isProgressPayments ? `${retainagePercent.toFixed(2)}%` : isDirectPay ? "N/A" : escrowFunded ? "Yes" : "No"}
-          />
-          <SummaryCard label="Fully Signed?" value={isFullySigned ? "Yes" : "No"} />
-        </div>
+          <SummaryGroup title="Customer" data-testid="step4-summary-customer">
+            <SummaryRow label="Customer Name" value={customerNameDisplay} />
+            <SummaryRow label="Customer Email" value={homeownerEmail} />
+            <SummaryRow label="Customer Phone" value={formatPhone(homeownerPhone)} />
+          </SummaryGroup>
 
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <SummaryCard label="Customer Name" value={customerNameDisplay} />
-          <SummaryCard label="Customer Email" value={homeownerEmail} />
-          <SummaryCard label="Customer Phone" value={formatPhone(homeownerPhone)} />
-          <SummaryCard label="Dispute Status" value={formatDisputeSummary(agreement, displayMilestones)} />
+          <SummaryGroup title="Payment" data-testid="step4-summary-payment">
+            <SummaryRow
+              label="Project Path"
+              value={projectClassLabel(projectClass)}
+              badge={<SummaryBadge tone="indigo">{projectClassLabel(projectClass)}</SummaryBadge>}
+            />
+            <SummaryRow
+              label="Payment Mode"
+              value={isDirectPay ? "Direct Pay" : "Escrow"}
+              badge={<SummaryBadge tone={isDirectPay ? "blue" : "emerald"}>{isDirectPay ? "Direct Pay" : "Escrow"}</SummaryBadge>}
+            />
+            <SummaryRow
+              label="Payment Structure"
+              value={isProgressPayments ? "Progress Payments" : "Simple Payments"}
+            />
+            <SummaryRow
+              label="Escrow Funded"
+              value={isDirectPay ? "N/A" : escrowFunded ? "Yes" : "No"}
+              badge={
+                <SummaryBadge tone={isDirectPay ? "slate" : escrowFunded ? "emerald" : "amber"}>
+                  {isDirectPay ? "N/A" : escrowFunded ? "Yes" : "No"}
+                </SummaryBadge>
+              }
+            />
+            <SummaryRow
+              label="Fully Signed"
+              value={isFullySigned ? "Yes" : "No"}
+              badge={
+                <SummaryBadge tone={isFullySigned ? "emerald" : "amber"}>{isFullySigned ? "Yes" : "No"}</SummaryBadge>
+              }
+            />
+            <SummaryRow label="Dispute Status" value={formatDisputeSummary(agreement, displayMilestones)} />
+          </SummaryGroup>
         </div>
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1756,61 +1826,6 @@ export default function Step4Finalize({
           </div>
         ) : null}
       </section>
-
-      {projectContextSummary.hasAny ? (
-        <details className="rounded-2xl border border-slate-200 bg-white shadow-sm" open={false}>
-          <summary className="cursor-pointer list-none px-5 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-gray-900">Project Context</h3>
-                <div className="mt-1 text-sm text-slate-600">
-                  Reference details used to shape pricing, milestones, and template guidance.
-                </div>
-              </div>
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Expand
-              </span>
-            </div>
-          </summary>
-          <div className="border-t border-slate-200 px-5 py-4">
-          <div className="flex flex-wrap gap-2 text-xs">
-            {projectContextSummary.projectType ? (
-              <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
-                Type: {projectContextSummary.projectType}
-              </span>
-            ) : null}
-            {projectContextSummary.projectSubtype ? (
-              <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
-                Subtype: {projectContextSummary.projectSubtype}
-              </span>
-            ) : null}
-            {projectContextSummary.templateName ? (
-              <span className="rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-700">
-                Template: {projectContextSummary.templateName}
-              </span>
-            ) : null}
-            {projectContextSummary.materialsResponsibility ? (
-              <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
-                Materials: {projectContextSummary.materialsResponsibility}
-              </span>
-            ) : null}
-            {projectContextSummary.quantitySignals.map((signal) => (
-              <span
-                key={`${signal.label}:${signal.value}`}
-                className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700"
-              >
-                {signal.label}: {signal.value}
-              </span>
-            ))}
-          </div>
-          {projectContextSummary.scopeSummary ? (
-            <div className="mt-2 text-xs text-slate-600">
-              Scope: {projectContextSummary.scopeSummary}
-            </div>
-          ) : null}
-          </div>
-        </details>
-      ) : null}
 
       <details className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <summary className="cursor-pointer list-none px-5 py-4">

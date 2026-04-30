@@ -206,6 +206,215 @@ async function installStep2AutoDraftRoutes(
   });
 }
 
+async function installStep4FinalizeRoutes(
+  page,
+  { agreement, milestones = [], fundingPreview = null, events = {} }
+) {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners/1/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 1,
+        full_name: 'Jordan Demo',
+        company_name: 'Demo Customer',
+        email: 'jordan@example.com',
+        phone_number: '555-555-5555',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      if (request.method() === 'PATCH') {
+        const payload = request.postDataJSON();
+        if (Array.isArray(events.patchPayloads)) events.patchPayloads.push(payload);
+        agreement = {
+          ...agreement,
+          ...payload,
+        };
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/funding_preview/?(\\?.*)?$`),
+    async (route) => {
+      if (fundingPreview) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(fundingPreview),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'No funding preview available' }),
+      });
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/preview_pdf/?(\\?.*)?$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/pdf',
+        body: '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF',
+      });
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/mark_previewed/?(\\?.*)?$`),
+    async (route) => {
+      if (route.request().method() === 'POST') {
+        if (Array.isArray(events.markPreviewedCalls)) events.markPreviewedCalls.push(route.request().url());
+        agreement = {
+          ...agreement,
+          has_previewed: true,
+          previewed: true,
+          pdf_previewed: true,
+          contractor_previewed: true,
+        };
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, agreement }),
+      });
+    }
+  );
+
+  await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: milestones }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/contractor_sign/?(\\?.*)?$`),
+    async (route) => {
+      if (route.request().method() === 'POST') {
+        if (Array.isArray(events.signCalls)) events.signCalls.push(route.request().url());
+        agreement = {
+          ...agreement,
+          signed_by_contractor: true,
+          contractor_signed: true,
+          contractor_signature_name: 'Jordan Builder',
+          contractor_signed_at: '2026-04-29T15:00:00Z',
+          status: agreement.signed_by_homeowner ? 'signed' : agreement.status,
+        };
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, agreement }),
+      });
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/send_signature_request/?(\\?.*)?$`),
+    async (route) => {
+      if (route.request().method() === 'POST') {
+        if (Array.isArray(events.sendCalls)) events.sendCalls.push(route.request().url());
+        agreement = {
+          ...agreement,
+          signature_request_sent: true,
+          signature_request_sent_at: '2026-04-29T15:05:00Z',
+        };
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, agreement }),
+      });
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/send_final_agreement_link/?(\\?.*)?$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, agreement }),
+      });
+    }
+  );
+}
+
 test('agreement wizard step 1 renders and draft creation route is reachable', async ({
   page,
 }) => {
@@ -3350,5 +3559,126 @@ test('maintenance agreement fields render in step 1 and recurring summary appear
   });
 
   await expect(page).toHaveURL(/step=2/);
+});
+
+test('agreement wizard step 4 renders grouped summary and preserves send/sign flows', async ({
+  page,
+}) => {
+  const patchPayloads = [];
+  const signCalls = [];
+  const sendCalls = [];
+  const events = { patchPayloads, signCalls, sendCalls };
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Backyard Shed Build',
+    title: 'Backyard Shed Build',
+    description: 'Build a backyard shed with slab, framing, and cleanup.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Shed Build',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'draft',
+    pdf_version: 2,
+    has_previewed: true,
+    previewed: true,
+    pdf_previewed: true,
+    contractor_previewed: true,
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 1,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Foundation',
+        description: 'Set slab and base.',
+        amount: '1200.00',
+        start_date: '2026-04-29',
+        due_date: '2026-04-30',
+      },
+      {
+        id: 2,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Framing',
+        description: 'Build the shed frame.',
+        amount: '2400.00',
+        start_date: '2026-05-01',
+        due_date: '2026-05-02',
+      },
+    ],
+    fundingPreview: {
+      project_amount: 3600,
+      homeowner_escrow: 3600,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+    events,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=4`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step4-summary-agreement')).toBeVisible();
+  await expect(page.getByTestId('step4-summary-customer')).toBeVisible();
+  await expect(page.getByTestId('step4-summary-payment')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Context' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'View Agreement PDF' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Review Scope Clarifications' })).toBeVisible();
+  await expect(page.getByTestId('step4-summary-agreement')).toContainText('Agreement Version');
+  await expect(page.getByTestId('step4-summary-agreement')).toContainText('PDF Version');
+  await expect(page.getByTestId('step4-summary-customer')).toContainText('Customer Email');
+  await expect(page.getByTestId('step4-summary-payment')).toContainText('Payment Mode');
+  await expect(page.getByTestId('step4-summary-payment')).toContainText('Escrow');
+
+  await page.getByRole('button', { name: 'Direct Pay' }).click();
+  await expect.poll(() => patchPayloads.some((payload) => payload.payment_mode === 'direct')).toBeTruthy();
+  agreement = { ...agreement, payment_mode: 'direct' };
+  await expect(page.getByTestId('step4-summary-payment')).toContainText('Direct Pay');
+
+  await page.getByRole('button', { name: 'Escrow (Protected)' }).click();
+  await expect.poll(() => patchPayloads.some((payload) => payload.payment_mode === 'escrow')).toBeTruthy();
+  agreement = { ...agreement, payment_mode: 'escrow' };
+  await expect(page.getByTestId('step4-summary-payment')).toContainText('Escrow');
+
+  await page.locator('input[placeholder="e.g. Jane Contractor"]').first().fill('Jordan Builder');
+  await page.getByRole('button', { name: 'Sign & Continue' }).click();
+  const signerForm = page.locator('form').filter({ hasText: 'Draw Signature' });
+  await expect(signerForm.locator('input[type="text"]')).toHaveValue('Jordan Builder');
+  const signerCheckboxes = signerForm.locator('input[type="checkbox"]');
+  await signerCheckboxes.nth(0).check();
+  await signerCheckboxes.nth(1).check();
+  await signerCheckboxes.nth(2).check();
+
+  const pad = signerForm.locator('canvas').first();
+  const box = await pad.boundingBox();
+  if (box) {
+    await page.mouse.move(box.x + 20, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2, { steps: 10 });
+    await page.mouse.up();
+  }
+
+  await page.getByRole('button', { name: 'Sign as Contractor' }).click();
+  await expect.poll(() => signCalls.length).toBe(1);
+  await expect(page.getByRole('button', { name: 'Sign & Continue' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Send to Customer' }).click();
+  await expect.poll(() => sendCalls.length).toBe(1);
 });
 
