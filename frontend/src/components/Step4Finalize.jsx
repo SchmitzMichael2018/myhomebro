@@ -829,6 +829,8 @@ export default function Step4Finalize({
   const [pdfBlobUrl, setPdfBlobUrl] = useState("");
   const [pdfFilename, setPdfFilename] = useState("");
   const [localPdfViewed, setLocalPdfViewed] = useState(!!agreement?.pdf_viewed);
+  const [previewOpened, setPreviewOpened] = useState(false);
+  const pdfViewedMarkRef = useRef(false);
 
   useEffect(() => {
     setLocalPdfViewed(!!agreement?.pdf_viewed);
@@ -846,11 +848,26 @@ export default function Step4Finalize({
     setPreviewOpen(false);
     setPreviewErr("");
     setPreviewLoading(false);
+    setPreviewOpened(false);
     cleanupBlob();
     setPdfBlobUrl("");
   };
 
-  const downloadPreview = () => {
+  const markPdfViewed = async () => {
+    if (!agreementId || pdfViewedMarkRef.current || localPdfViewed) return;
+    pdfViewedMarkRef.current = true;
+    try {
+      await api.post(`/projects/agreements/${agreementId}/mark_previewed/`);
+    } catch {
+      try {
+        await api.post(`/projects/agreements/${agreementId}/mark_previewed`);
+      } catch {}
+    }
+    setLocalPdfViewed(true);
+    onPreviewViewed();
+  };
+
+  const downloadPreview = async () => {
     if (!pdfBlobUrl) return;
     const a = document.createElement("a");
     a.href = pdfBlobUrl;
@@ -858,6 +875,7 @@ export default function Step4Finalize({
     document.body.appendChild(a);
     a.click();
     a.remove();
+    await markPdfViewed();
   };
 
   const [homeownerObj, setHomeownerObj] = useState(null);
@@ -1055,6 +1073,8 @@ export default function Step4Finalize({
     setPreviewOpen(true);
     setPreviewLoading(true);
     setPreviewErr("");
+    setPreviewOpened(false);
+    pdfViewedMarkRef.current = false;
 
     cleanupBlob();
     setPdfBlobUrl("");
@@ -1108,16 +1128,8 @@ export default function Step4Finalize({
       setPdfFilename(titleHint);
       setPdfBlobUrl(blobUrl);
       setPreviewLoading(false);
-
-      try {
-        await api.post(`/projects/agreements/${agreementId}/mark_previewed/`);
-      } catch {
-        try {
-          await api.post(`/projects/agreements/${agreementId}/mark_previewed`);
-        } catch {}
-      }
-      setLocalPdfViewed(true);
-      onPreviewViewed();
+      setPreviewOpened(true);
+      await markPdfViewed();
     } catch (err) {
       const statusCode = err?.response?.status;
       const detail = err?.response?.data?.detail || err?.response?.data?.error;
@@ -1281,7 +1293,7 @@ export default function Step4Finalize({
   const canUnsignContractor = signedByContractor && !signedByHomeowner;
 
   const pdfVersion = agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
-  const previewButtonLabel = "View Agreement PDF";
+  const reviewPdfButtonLabel = localPdfViewed ? "✓ Agreement PDF reviewed" : "Review Agreement PDF";
 
   const escrowRate = fundingPreview?.rate != null ? Number(fundingPreview.rate) : 0.05;
   const escrowFlat = fundingPreview?.flat_fee != null ? Number(fundingPreview.flat_fee) : 1;
@@ -1627,7 +1639,16 @@ export default function Step4Finalize({
               </div>
             </div>
           ) : pdfBlobUrl ? (
-            <iframe title="Agreement PDF" src={pdfBlobUrl} className="w-full h-full" />
+            <iframe
+              title="Agreement PDF"
+              src={pdfBlobUrl}
+              className="w-full h-full"
+              onLoad={() => {
+                if (previewOpened) {
+                  markPdfViewed();
+                }
+              }}
+            />
           ) : (
             <div className="h-full w-full flex items-center justify-center text-sm text-slate-600">
               No preview loaded.
@@ -1656,16 +1677,7 @@ export default function Step4Finalize({
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={openPreviewModal}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-              disabled={hasInvalidMilestoneAmounts}
-            >
-              {previewButtonLabel}
-            </button>
-
+          <div className="flex flex-wrap gap-2" data-testid="step4-header-actions">
             <button
               type="button"
               onClick={() => setShowClarificationsModal(true)}
@@ -2308,6 +2320,29 @@ export default function Step4Finalize({
               </div>
             ) : reqContr ? (
               <>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">Agreement PDF</div>
+                      <div className="text-[11px] text-slate-600">
+                        Review the PDF before signing. If preview is blocked, download it to review.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openPreviewModal}
+                      disabled={hasInvalidMilestoneAmounts}
+                      data-testid="step4-review-pdf-button"
+                      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                        localPdfViewed
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          : "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                      } disabled:opacity-60`}
+                    >
+                      {reviewPdfButtonLabel}
+                    </button>
+                  </div>
+                </div>
                 <div className="space-y-2 mt-2">
                   <label className="block text-xs font-semibold text-gray-700">Type Your Full Legal Name</label>
                   <input

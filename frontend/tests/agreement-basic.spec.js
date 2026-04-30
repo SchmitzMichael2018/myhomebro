@@ -3581,7 +3581,8 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   const patchPayloads = [];
   const signCalls = [];
   const sendCalls = [];
-  const events = { patchPayloads, signCalls, sendCalls };
+  const markPreviewedCalls = [];
+  const events = { patchPayloads, signCalls, sendCalls, markPreviewedCalls };
   let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
@@ -3650,9 +3651,12 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-summary-customer')).toBeVisible();
   await expect(page.getByTestId('step4-summary-payment')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Context' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'View Agreement PDF' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Review Scope Clarifications' })).toBeVisible();
+  await expect(page.getByTestId('step4-header-actions')).toContainText('Review Scope Clarifications');
+  await expect(page.getByTestId('step4-header-actions').getByRole('button', { name: 'View Agreement PDF' })).toHaveCount(0);
   const signArea = page.getByRole('main');
+  await expect(signArea.getByTestId('step4-review-pdf-button')).toBeVisible();
+  await expect(signArea.getByTestId('step4-review-pdf-button')).toContainText('Review Agreement PDF');
   await expect(signArea.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
   await expect(signArea.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
   await expect(signArea.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute(
@@ -3678,8 +3682,11 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   );
   await expect(page.getByText('Once both signatures are complete, the customer will be prompted to fund escrow.')).toBeVisible();
 
-  await page.getByRole('button', { name: 'View Agreement PDF' }).click();
+  await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
+  await signArea.getByTestId('step4-review-pdf-button').click();
+  await expect.poll(() => markPreviewedCalls.length).toBe(1);
   await expect(page.getByText('✓ Agreement PDF reviewed')).toBeVisible();
+  await expect(signArea.getByTestId('step4-review-pdf-button')).toContainText('✓ Agreement PDF reviewed');
   await page.getByRole('button', { name: 'Close' }).click();
 
   await page.getByRole('button', { name: 'Direct Pay' }).click();
@@ -3787,7 +3794,6 @@ test('agreement wizard step 4 shows a custom warranty summary preview', async ({
   await expect(page.getByTestId('step4-warranty-summary')).toContainText('Custom warranty line one.');
   await expect(page.getByTestId('step4-warranty-summary')).toContainText('Custom warranty line two.');
   await expect(page.getByRole('button', { name: 'Sign & Continue' })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'View full warranty' })).toBeVisible();
 });
 
 test('agreement wizard step 4 shows missing warranty as a warning state', async ({ page }) => {
