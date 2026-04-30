@@ -3721,12 +3721,13 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(signerForm.getByText('Agreement Preview')).toHaveCount(0);
   await expect(signerForm.getByRole('button', { name: 'Open PDF' })).toBeVisible();
   await expect(signerForm.getByRole('button', { name: 'Download PDF' })).toBeVisible();
+  await expect(signerForm.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
+  await expect(signerForm.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
+  await expect(signerForm.locator('input[type="checkbox"]')).toHaveCount(1);
   await expect(signerForm.locator('input[type="text"]')).toHaveValue('Jordan Builder');
   await expect(signerForm.getByRole('button', { name: 'Sign as Contractor' })).toBeDisabled();
   const signerCheckboxes = signerForm.locator('input[type="checkbox"]');
-  await signerCheckboxes.nth(0).check();
-  await signerCheckboxes.nth(1).check();
-  await signerCheckboxes.nth(2).check();
+  await signerCheckboxes.check();
 
   const pad = signerForm.locator('canvas').first();
   const box = await pad.boundingBox();

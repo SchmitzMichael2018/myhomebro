@@ -73,9 +73,7 @@ export default function SignatureModal({
   onSigned,
 }) {
   const [typedName, setTypedName] = useState(defaultName || "");
-  const [consentEsign, setConsentEsign] = useState(false);
-  const [acceptTos, setAcceptTos] = useState(false);
-  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
+  const [legalAcknowledged, setLegalAcknowledged] = useState(false);
   const [sigFile, setSigFile] = useState(null);
   const [sigPreview, setSigPreview] = useState(null);
   const [hasDrawn, setHasDrawn] = useState(false);
@@ -196,9 +194,7 @@ export default function SignatureModal({
     }
 
     setTypedName(defaultName || "");
-    setConsentEsign(false);
-    setAcceptTos(false);
-    setAcceptPrivacy(false);
+    setLegalAcknowledged(false);
     setSigFile(null);
     if (sigPreview) {
       try {
@@ -292,9 +288,7 @@ export default function SignatureModal({
   const canSubmit =
     !!agreementReviewed &&
     typedName.trim().length > 1 &&
-    consentEsign &&
-    acceptTos &&
-    acceptPrivacy &&
+    legalAcknowledged &&
     !submitting;
 
   const handleSubmit = async (e) => {
@@ -318,9 +312,9 @@ export default function SignatureModal({
         fd.append("signature", sigFile);
       }
       fd.append("typed_name", typedName.trim());
-      fd.append("consent_esign", consentEsign ? "true" : "false");
-      fd.append("consent_tos", acceptTos ? "true" : "false");
-      fd.append("consent_privacy", acceptPrivacy ? "true" : "false");
+      fd.append("consent_esign", legalAcknowledged ? "true" : "false");
+      fd.append("consent_tos", legalAcknowledged ? "true" : "false");
+      fd.append("consent_privacy", legalAcknowledged ? "true" : "false");
 
       let url;
       if (signingRole === "contractor") {
@@ -531,51 +525,27 @@ export default function SignatureModal({
                 )}
               </div>
 
-              <div className="space-y-1.5 text-[11px] text-slate-200">
-                <label className="inline-flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={consentEsign}
-                    onChange={(e) => setConsentEsign(e.target.checked)}
-                    className="mt-[2px]"
-                  />
-                  <span>
-                    I consent to sign this Agreement electronically and understand that my electronic signature is legally binding.
-                  </span>
-                </label>
-
-                <label className="inline-flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={acceptTos}
-                    onChange={(e) => setAcceptTos(e.target.checked)}
-                    className="mt-[2px]"
-                  />
-                  <span>
-                    I have read and agree to the MyHomeBro{" "}
-                    <a href={TOS_URL} target="_blank" rel="noreferrer" className="text-sky-300 underline">
-                      Terms of Service
-                    </a>
-                    .
-                  </span>
-                </label>
-
-                <label className="inline-flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    checked={acceptPrivacy}
-                    onChange={(e) => setAcceptPrivacy(e.target.checked)}
-                    className="mt-[2px]"
-                  />
-                  <span>
-                    I have read and agree to the MyHomeBro{" "}
-                    <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className="text-sky-300 underline">
-                      Privacy Policy
-                    </a>
-                    .
-                  </span>
-                </label>
-              </div>
+              <label className="flex items-start gap-2 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-200">
+                <input
+                  data-testid="signature-modal-legal-ack-checkbox"
+                  type="checkbox"
+                  checked={legalAcknowledged}
+                  onChange={(e) => setLegalAcknowledged(e.target.checked)}
+                  className="mt-[2px]"
+                />
+                <span>
+                  I consent to sign this Agreement electronically and confirm I have reviewed and agree to the{" "}
+                  <a href={TOS_URL} target="_blank" rel="noreferrer" className="text-sky-300 underline">
+                    Terms of Service
+                  </a>
+                  {" "}
+                  and{" "}
+                  <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className="text-sky-300 underline">
+                    Privacy Policy
+                  </a>
+                  .
+                </span>
+              </label>
 
               <div className="mt-auto flex items-center justify-between gap-3 border-t border-white/10 pt-2">
                 <button
