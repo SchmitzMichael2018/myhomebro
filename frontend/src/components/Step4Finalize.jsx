@@ -861,6 +861,7 @@ export default function Step4Finalize({
   const [fundingError, setFundingError] = useState("");
   const [unsigning, setUnsigning] = useState(false);
   const [paymentModeSaving, setPaymentModeSaving] = useState(false);
+  const [legalAcknowledged, setLegalAcknowledged] = useState(false);
   const { ready: authReady, isAuthed } = useAuth();
   const navigate = useNavigate();
 
@@ -2220,15 +2221,48 @@ export default function Step4Finalize({
                     onChange={(e) => setTypedName(e.target.value)}
                     placeholder="e.g. Jane Contractor"
                   />
-                  <div className="text-[11px] text-gray-500">
-                    Legal acknowledgements (reviewed, Terms, Privacy, e-sign consent) are confirmed in the signing modal.
-                  </div>
+                  <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={legalAcknowledged}
+                      onChange={(e) => setLegalAcknowledged(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                      data-testid="step4-legal-ack-checkbox"
+                    />
+                    <span>
+                      <span className="block">
+                        I confirm I have reviewed and agree to the Terms of Service and Privacy Policy
+                      </span>
+                      <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-600">
+                        <a
+                          href="/legal/terms-of-service/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-slate-900 hover:underline"
+                        >
+                          Terms of Service
+                        </a>
+                        <span aria-hidden="true" className="text-slate-300">
+                          |
+                        </span>
+                        <a
+                          href="/legal/privacy-policy/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-slate-900 hover:underline"
+                        >
+                          Privacy Policy
+                        </a>
+                      </span>
+                    </span>
+                  </label>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleOpenContractorModal}
-                  disabled={signing || hasInvalidMilestoneAmounts}
+                  disabled={signing || hasInvalidMilestoneAmounts || !legalAcknowledged}
+                  data-testid="step4-sign-continue-button"
                   className="mt-3 rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
                 >
                   {signing ? "Signing…" : "Sign & Continue"}
@@ -2317,7 +2351,7 @@ export default function Step4Finalize({
                   </div>
                 ) : (
                   <div className="text-[11px] text-gray-500">
-                    Escrow funding becomes available once required signatures are satisfied.
+                    Once both signatures are complete, the customer will be prompted to fund escrow.
                   </div>
                 )}
               </div>
