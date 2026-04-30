@@ -82,6 +82,17 @@ function SummaryGroup({ title, children, className = "", ...props }) {
   );
 }
 
+function formatWarrantyPreview(text) {
+  const raw = (text || "").toString().trim();
+  if (!raw) return "";
+  const lines = raw
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const preview = lines.slice(0, 3).join(" ");
+  return preview.length > 220 ? `${preview.slice(0, 217).trimEnd()}...` : preview;
+}
+
 function buildCityStateZip(city, state, postal) {
   const cityClean = (city || "").trim();
   const stateClean = (state || "").trim();
@@ -1182,6 +1193,23 @@ export default function Step4Finalize({
     agreement?.homeowner?.phone ||
     "—";
 
+  const warrantyType = String(agreement?.warranty_type || "").trim().toLowerCase();
+  const warrantyText = (
+    customWarranty ||
+    agreement?.warranty_text_snapshot ||
+    agreement?.warranty_text ||
+    agreement?.custom_warranty_text ||
+    ""
+  )
+    .toString()
+    .trim();
+  const warrantyIsDefault = useDefaultWarranty || warrantyType === "default";
+  const warrantyIsCustom = !warrantyIsDefault && !!warrantyText;
+  const warrantyIsMissing = !warrantyIsDefault && !warrantyIsCustom;
+  const warrantyPreviewText = warrantyIsDefault
+    ? formatWarrantyPreview(defaultWarrantyText)
+    : formatWarrantyPreview(warrantyText);
+
   const status = agreement?.status || "draft";
 
   const signedByContractor =
@@ -1707,6 +1735,74 @@ export default function Step4Finalize({
             <SummaryRow label="Dispute Status" value={formatDisputeSummary(agreement, displayMilestones)} />
           </SummaryGroup>
         </div>
+
+        <section
+          data-testid="step4-warranty-summary"
+          className={`mt-4 rounded-2xl border px-4 py-4 shadow-sm ${
+            warrantyIsMissing ? "border-amber-200 bg-amber-50/70" : "border-slate-200 bg-slate-50/80"
+          }`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Warranty</div>
+            <span
+              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                warrantyIsMissing
+                  ? "border-amber-200 bg-amber-100 text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-800"
+              }`}
+            >
+              {warrantyIsMissing ? "No warranty" : "Warranty included"}
+            </span>
+          </div>
+
+          <div className="mt-3 flex items-start gap-3">
+            <div
+              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
+                warrantyIsMissing
+                  ? "border-amber-300 bg-amber-100 text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              }`}
+              aria-hidden="true"
+            >
+              {warrantyIsMissing ? "!" : "✓"}
+            </div>
+            <div className="min-w-0 flex-1">
+              {warrantyIsDefault ? (
+                <>
+                  <div className="text-sm font-semibold text-slate-900">12-Month Workmanship Warranty (Standard)</div>
+                  <div className="mt-1 text-sm text-slate-700">
+                    {warrantyPreviewText ||
+                      "Standard workmanship coverage for contractor labor during the year after completion."}
+                  </div>
+                </>
+              ) : warrantyIsCustom ? (
+                <>
+                  <div className="text-sm font-semibold text-slate-900">Custom Warranty</div>
+                  <div className="mt-1 text-sm text-slate-700">
+                    {warrantyPreviewText || "Custom warranty terms are included with this agreement."}
+                  </div>
+                  {warrantyText ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-semibold text-indigo-700 hover:text-indigo-800 hover:underline">
+                        View full warranty
+                      </summary>
+                      <div className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs whitespace-pre-wrap text-slate-700">
+                        {warrantyText}
+                      </div>
+                    </details>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="text-sm font-semibold text-slate-900">No warranty provided</div>
+                  <div className="mt-1 text-sm text-slate-700">
+                    This agreement does not include a warranty summary.
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

@@ -3600,6 +3600,8 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
     status: 'draft',
     pdf_version: 2,
     pdf_viewed: false,
+    warranty_type: 'default',
+    warranty_text_snapshot: '',
     require_contractor_signature: true,
     require_customer_signature: true,
     step_status: '4',
@@ -3669,6 +3671,11 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-summary-customer')).toContainText('Customer Email');
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Payment Mode');
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Escrow');
+  await expect(page.getByTestId('step4-warranty-summary')).toBeVisible();
+  await expect(page.getByTestId('step4-warranty-summary')).toContainText('Warranty');
+  await expect(page.getByTestId('step4-warranty-summary')).toContainText(
+    '12-Month Workmanship Warranty (Standard)'
+  );
   await expect(page.getByText('Once both signatures are complete, the customer will be prompted to fund escrow.')).toBeVisible();
 
   await page.getByRole('button', { name: 'View Agreement PDF' }).click();
@@ -3720,3 +3727,123 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByText('✓ Agreement PDF reviewed')).toBeVisible();
 });
 
+test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {
+  let agreement = {
+    id: AGREEMENT_ID + 1,
+    agreement_id: AGREEMENT_ID + 1,
+    project_title: 'Backyard Shed Build',
+    title: 'Backyard Shed Build',
+    description: 'Build a backyard shed with slab, framing, and cleanup.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Shed Build',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'draft',
+    pdf_version: 2,
+    pdf_viewed: false,
+    warranty_type: 'custom',
+    warranty_text_snapshot:
+      'Custom warranty line one.\nCustom warranty line two.\nCustom warranty line three.\nCustom warranty line four.',
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 1,
+        agreement: AGREEMENT_ID + 1,
+        order: 1,
+        title: 'Foundation',
+        description: 'Set slab and base.',
+        amount: '1200.00',
+        start_date: '2026-04-29',
+        due_date: '2026-04-30',
+      },
+    ],
+    fundingPreview: {
+      project_amount: 1200,
+      homeowner_escrow: 1200,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID + 1}/wizard?step=4`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step4-warranty-summary')).toBeVisible();
+  await expect(page.getByTestId('step4-warranty-summary')).toContainText('Custom Warranty');
+  await expect(page.getByTestId('step4-warranty-summary')).toContainText('Custom warranty line one.');
+  await expect(page.getByTestId('step4-warranty-summary')).toContainText('Custom warranty line two.');
+  await expect(page.getByRole('button', { name: 'Sign & Continue' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'View full warranty' })).toBeVisible();
+});
+
+test('agreement wizard step 4 shows missing warranty as a warning state', async ({ page }) => {
+  let agreement = {
+    id: AGREEMENT_ID + 2,
+    agreement_id: AGREEMENT_ID + 2,
+    project_title: 'Backyard Shed Build',
+    title: 'Backyard Shed Build',
+    description: 'Build a backyard shed with slab, framing, and cleanup.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Shed Build',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'draft',
+    pdf_version: 2,
+    pdf_viewed: false,
+    warranty_type: 'none',
+    warranty_text_snapshot: '',
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 1,
+        agreement: AGREEMENT_ID + 2,
+        order: 1,
+        title: 'Foundation',
+        description: 'Set slab and base.',
+        amount: '1200.00',
+        start_date: '2026-04-29',
+        due_date: '2026-04-30',
+      },
+    ],
+    fundingPreview: {
+      project_amount: 1200,
+      homeowner_escrow: 1200,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID + 2}/wizard?step=4`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step4-warranty-summary')).toBeVisible();
+  await expect(page.getByTestId('step4-warranty-summary')).toContainText('No warranty provided');
+});

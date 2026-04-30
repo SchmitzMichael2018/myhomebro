@@ -823,6 +823,9 @@ export default function AgreementWizard() {
         if (warrantyType === "custom") {
           setUseDefaultWarranty(false);
           setCustomWarranty(typeof snap === "string" ? snap : "");
+        } else if (warrantyType === "none" || warrantyType === "disabled" || warrantyType === "off") {
+          setUseDefaultWarranty(false);
+          setCustomWarranty("");
         } else {
           setUseDefaultWarranty(true);
           setCustomWarranty(typeof snap === "string" && snap.trim() ? snap : "");
