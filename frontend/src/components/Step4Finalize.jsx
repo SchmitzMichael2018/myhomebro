@@ -830,7 +830,6 @@ export default function Step4Finalize({
   const [pdfBlobUrl, setPdfBlobUrl] = useState("");
   const [pdfFilename, setPdfFilename] = useState("");
   const [localPdfViewed, setLocalPdfViewed] = useState(!!agreement?.pdf_viewed);
-  const [previewOpened, setPreviewOpened] = useState(false);
   const [previewFrameReady, setPreviewFrameReady] = useState(false);
   const pdfViewedMarkRef = useRef(false);
   const previewTimeoutRef = useRef(null);
@@ -860,7 +859,6 @@ export default function Step4Finalize({
     setPreviewOpen(false);
     setPreviewErr("");
     setPreviewLoading(false);
-    setPreviewOpened(false);
     setPreviewFrameReady(false);
     if (previewTimeoutRef.current) {
       window.clearTimeout(previewTimeoutRef.current);
@@ -1090,7 +1088,6 @@ export default function Step4Finalize({
     setPreviewOpen(true);
     setPreviewLoading(true);
     setPreviewErr("");
-    setPreviewOpened(false);
     setPreviewFrameReady(false);
     pdfViewedMarkRef.current = false;
 
@@ -1149,12 +1146,13 @@ export default function Step4Finalize({
 
       setPdfFilename(titleHint);
       setPdfBlobUrl(blobUrl);
-      setPreviewOpened(true);
       await markPdfViewed();
       previewTimeoutRef.current = window.setTimeout(() => {
         setPreviewLoading(false);
-        setPreviewErr("Preview could not load in this browser. Download the PDF to review it.");
-      }, 5000);
+        if (!previewFrameReady) {
+          setPreviewErr("Preview may not be supported in this browser. You can download the PDF to review it.");
+        }
+      }, 2500);
     } catch (err) {
       const statusCode = err?.response?.status;
       const detail = err?.response?.data?.detail || err?.response?.data?.error;
@@ -1179,10 +1177,7 @@ export default function Step4Finalize({
       previewTimeoutRef.current = null;
     }
     setPreviewLoading(false);
-    if (previewOpened) {
-      markPdfViewed();
-    }
-  }, [previewFrameReady, previewOpened]);
+  }, [previewFrameReady]);
 
   useEffect(() => {
     const fetchFundingPreview = async () => {
@@ -1653,54 +1648,49 @@ export default function Step4Finalize({
         </div>
 
         <div className="flex-1 bg-slate-100">
-          {previewLoading ? (
-            <div className="h-full w-full flex items-center justify-center text-sm text-slate-700">
-              Generating preview…
-            </div>
-          ) : previewErr ? (
-            <div className="h-full w-full flex items-center justify-center p-6">
-              <div className="max-w-xl w-full bg-white border border-rose-200 rounded-lg p-4">
-                <div className="text-sm font-semibold text-rose-700">Preview failed</div>
-                <div className="text-sm text-slate-700 mt-2">{previewErr}</div>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={openPreview}
-                    className="px-3 py-2 rounded-md bg-indigo-600 text-white text-sm hover:bg-indigo-700"
-                  >
-                    Retry
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closePreview}
-                    className="px-3 py-2 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : pdfBlobUrl ? (
+          {pdfBlobUrl ? (
             <div className="relative h-full w-full">
-              {!previewFrameReady ? (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-700">
+              <iframe
+                title="Agreement PDF"
+                data-testid="step4-pdf-preview-frame"
+                src={pdfBlobUrl}
+                className={`h-full w-full border-0 ${previewFrameReady ? "opacity-100" : "opacity-0"}`}
+                onLoad={() => {
+                  setPreviewFrameReady(true);
+                  markPdfViewed();
+                }}
+              />
+              {previewLoading && !previewFrameReady ? (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-700 bg-slate-100/60">
                   Rendering preview…
                 </div>
               ) : null}
-              <object
-                title="Agreement PDF"
-                data-testid="step4-pdf-preview-frame"
-                data={pdfBlobUrl}
-                type="application/pdf"
-                className={`h-full w-full ${previewFrameReady ? "opacity-100" : "opacity-0"}`}
-                onLoad={() => {
-                  setPreviewFrameReady(true);
-                }}
-              >
-                <div className="flex h-full w-full items-center justify-center text-sm text-slate-700">
-                  Preview could not load in this browser. Download the PDF to review it.
+              {previewErr && !previewFrameReady ? (
+                <div className="absolute inset-0 flex items-center justify-center p-6">
+                  <div className="max-w-xl w-full bg-white border border-rose-200 rounded-lg p-4 shadow-lg">
+                    <div className="text-sm font-semibold text-rose-700">Preview unavailable</div>
+                    <div className="text-sm text-slate-700 mt-2">
+                      Preview may not be supported in this browser. You can download the PDF to review it.
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={openPreview}
+                        className="px-3 py-2 rounded-md bg-indigo-600 text-white text-sm hover:bg-indigo-700"
+                      >
+                        Retry
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closePreview}
+                        className="px-3 py-2 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </object>
+              ) : null}
             </div>
           ) : (
             <div className="h-full w-full flex items-center justify-center text-sm text-slate-600">

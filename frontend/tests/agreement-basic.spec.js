@@ -3692,6 +3692,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByRole('button', { name: 'Download PDF' }).first()).toBeVisible();
   await expect(page.getByText('Preview could not load in this browser. Download the PDF to review it.')).toHaveCount(0);
   await expect.poll(() => markPreviewedCalls.length).toBe(1);
+  await expect(page.getByTestId('step4-pdf-preview-frame')).toHaveAttribute('src', /blob:/);
   await page.getByRole('button', { name: 'Close' }).click();
 
   await page.getByRole('button', { name: 'Direct Pay' }).click();
