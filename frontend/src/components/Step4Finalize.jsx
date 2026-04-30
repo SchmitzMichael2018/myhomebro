@@ -769,6 +769,7 @@ export default function Step4Finalize({
   onAgreementUpdated,
   refreshAgreement: refreshAgreementProp,
   onPreviewViewed = () => {},
+  reviewSignRequestId = 0,
   postSendGuidance = "",
 }) {
   const [agreement, setAgreement] = useState(agreementProp || null);
@@ -895,13 +896,16 @@ export default function Step4Finalize({
 
   const openPdfInNewTab = async () => {
     const { blobUrl } = await fetchAgreementPdfBlob();
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.target = "_blank";
-    a.rel = "noreferrer noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    const win = window.open(blobUrl, "_blank", "noopener,noreferrer");
+    if (!win) {
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.target = "_blank";
+      a.rel = "noreferrer noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
     await markPdfViewed();
     window.setTimeout(() => {
       try {
@@ -933,6 +937,8 @@ export default function Step4Finalize({
   const [resendFinalError, setResendFinalError] = useState(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showClarificationsModal, setShowClarificationsModal] = useState(false);
+  const signaturesEscrowRef = useRef(null);
+  const [signaturesFlash, setSignaturesFlash] = useState(false);
   const [fundingPreview, setFundingPreview] = useState(null);
   const [fundingLoading, setFundingLoading] = useState(false);
   const [fundingError, setFundingError] = useState("");
@@ -994,6 +1000,19 @@ export default function Step4Finalize({
     };
     fetchHomeowner();
   }, [agreement]);
+
+  useEffect(() => {
+    if (!reviewSignRequestId) return;
+    const el = signaturesEscrowRef.current;
+    if (el) {
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch {}
+    }
+    setSignaturesFlash(true);
+    const timer = window.setTimeout(() => setSignaturesFlash(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, [reviewSignRequestId]);
 
   const amendmentNumber =
     agreement?.amendment_number != null
@@ -2121,7 +2140,13 @@ export default function Step4Finalize({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section
+        ref={signaturesEscrowRef}
+        data-testid="step4-signatures-escrow"
+        className={`rounded-2xl border bg-white p-5 shadow-sm transition ${
+          signaturesFlash ? "border-indigo-300 ring-2 ring-indigo-100" : "border-slate-200"
+        }`}
+      >
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
           {isProgressPayments ? "Signatures & Progress Payments" : isDirectPay ? "Signatures & Payment" : "Signatures & Escrow"}
         </h3>
@@ -2209,7 +2234,7 @@ export default function Step4Finalize({
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
                   <div className="text-sm font-semibold text-slate-900">Review Agreement (Required)</div>
                   <div className="mt-1 text-[11px] text-slate-600">
-                    You must review the agreement before signing.
+                    Open or download the agreement to review it before signing.
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
@@ -2442,6 +2467,10 @@ export default function Step4Finalize({
           onClose={() => setShowSignatureModal(false)}
           agreement={agreement}
           signingRole="contractor"
+          token={agreement?.signing_token || null}
+          agreementReviewed={localPdfViewed}
+          onOpenAgreementPdf={openPdfInNewTab}
+          onDownloadAgreementPdf={downloadAgreementPdf}
           defaultName={typedName}
           compact={true}
           onSigned={(data) => handleContractorSigned(data)}

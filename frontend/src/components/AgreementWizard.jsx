@@ -503,6 +503,7 @@ export default function AgreementWizard() {
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
   });
+  const [reviewSignRequestId, setReviewSignRequestId] = useState(0);
   const [aiFeedbackByStep, setAiFeedbackByStep] = useState({});
   const { highlights: step1AiHighlights, markUpdated: markStep1AiUpdated } = useAiFieldHighlights({
     durationMs: 5000,
@@ -658,6 +659,7 @@ export default function AgreementWizard() {
 
   const handlePreviewAgreement = useCallback(() => {
     goStep(4);
+    setReviewSignRequestId((prev) => prev + 1);
   }, [goStep]);
 
   const stepTabs = useMemo(
@@ -1734,12 +1736,12 @@ export default function AgreementWizard() {
           {agreementId ? (
             <div className="flex items-center gap-2">
               <button
-                type="button"
-                data-testid="agreement-wizard-preview-button"
-                onClick={handlePreviewAgreement}
-                className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100"
-              >
-                Preview Agreement
+                  type="button"
+                  data-testid="agreement-wizard-review-sign-button"
+                  onClick={handlePreviewAgreement}
+                  className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100"
+                >
+                Review & Sign
               </button>
               {canOpenContractWorkspace ? (
                 <button
@@ -2018,10 +2020,7 @@ export default function AgreementWizard() {
             unsignContractor={unsignContractor}
             onAgreementUpdated={(updated) => setAgreement(updated)}
             refreshAgreement={refreshAgreement}
-            onPreviewViewed={() => {
-              setWizardSessionState((prev) => ({ ...prev, hasPreviewedPdf: true }));
-              setAgreement((prev) => (prev ? { ...prev, pdf_viewed: true } : prev));
-            }}
+            reviewSignRequestId={reviewSignRequestId}
             postSendGuidance={aiPanelConfig.nextGuidance}
           />
         </div>
