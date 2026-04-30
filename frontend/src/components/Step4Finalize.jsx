@@ -11,15 +11,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
-import Modal from "react-modal";
 import SignatureModal from "./SignatureModal";
 import SendFundingLinkButton from "./SendFundingLinkButton";
 import ClarificationsModal from "./ClarificationsModal";
 import { useAuth } from "../context/AuthContext";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { buildStripeOnboardingGuidance } from "../lib/stripeOnboardingStatus.js";
-
-Modal.setAppElement("#root");
 
 /* ---------- helpers ---------- */
 
@@ -772,7 +769,6 @@ export default function Step4Finalize({
   onAgreementUpdated,
   refreshAgreement: refreshAgreementProp,
   onPreviewViewed = () => {},
-  previewRequestId = 0,
   postSendGuidance = "",
 }) {
   const [agreement, setAgreement] = useState(agreementProp || null);
@@ -824,49 +820,12 @@ export default function Step4Finalize({
     }
   };
 
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewErr, setPreviewErr] = useState("");
-  const [pdfBlobUrl, setPdfBlobUrl] = useState("");
-  const [pdfFilename, setPdfFilename] = useState("");
   const [localPdfViewed, setLocalPdfViewed] = useState(!!agreement?.pdf_viewed);
-  const [previewFrameReady, setPreviewFrameReady] = useState(false);
   const pdfViewedMarkRef = useRef(false);
-  const previewTimeoutRef = useRef(null);
 
   useEffect(() => {
     setLocalPdfViewed(!!agreement?.pdf_viewed);
   }, [agreement?.pdf_viewed]);
-
-  const cleanupBlob = () => {
-    try {
-      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
-    } catch {}
-  };
-
-  useEffect(() => () => cleanupBlob(), []); // eslint-disable-line
-
-  useEffect(() => {
-    return () => {
-      if (previewTimeoutRef.current) {
-        window.clearTimeout(previewTimeoutRef.current);
-        previewTimeoutRef.current = null;
-      }
-    };
-  }, []);
-
-  const closePreview = () => {
-    setPreviewOpen(false);
-    setPreviewErr("");
-    setPreviewLoading(false);
-    setPreviewFrameReady(false);
-    if (previewTimeoutRef.current) {
-      window.clearTimeout(previewTimeoutRef.current);
-      previewTimeoutRef.current = null;
-    }
-    cleanupBlob();
-    setPdfBlobUrl("");
-  };
 
   const markPdfViewed = async () => {
     if (!agreementId || pdfViewedMarkRef.current || localPdfViewed) return;
@@ -882,15 +841,89 @@ export default function Step4Finalize({
     onPreviewViewed();
   };
 
-  const downloadPreview = async () => {
-    if (!pdfBlobUrl) return;
+  const fetchAgreementPdfBlob = async () => {
+    if (!agreementId) {
+      throw new Error("Missing agreement ID.");
+    }
+
+    const base = `/projects/agreements/${agreementId}`;
+    const candidates = [
+      `${base}/preview_link/`,
+      `${base}/preview_link`,
+      `${base}/preview_pdf/`,
+      `${base}/preview_pdf`,
+    ];
+
+    let streamUrl = null;
+
+    for (const url of candidates) {
+      try {
+        const { data } = await api.get(url, {
+          timeout: 30000,
+          params: { _ts: Date.now() },
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        });
+        const outUrl = data?.url || data?.preview_url || data?.link;
+        if (outUrl) {
+          streamUrl = outUrl;
+          break;
+        }
+      } catch (err) {
+        if (err?.response?.status === 404) continue;
+        throw err;
+      }
+    }
+
+    if (!streamUrl) throw new Error("Preview endpoint not found on server.");
+
+    const res = await api.get(streamUrl, {
+      responseType: "blob",
+      timeout: 120000,
+      params: { _ts: Date.now() },
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    });
+
+    const blob = new Blob([res.data], { type: "application/pdf" });
+    const blobUrl = URL.createObjectURL(blob);
+    const titleHint =
+      amendmentNumber > 0
+        ? `agreement-${agreementId}-amendment-${amendmentNumber}.pdf`
+        : `agreement-${agreementId}.pdf`;
+
+    return { blobUrl, titleHint };
+  };
+
+  const openPdfInNewTab = async () => {
+    const { blobUrl } = await fetchAgreementPdfBlob();
     const a = document.createElement("a");
-    a.href = pdfBlobUrl;
-    a.download = pdfFilename || "agreement.pdf";
+    a.href = blobUrl;
+    a.target = "_blank";
+    a.rel = "noreferrer noopener";
     document.body.appendChild(a);
     a.click();
     a.remove();
     await markPdfViewed();
+    window.setTimeout(() => {
+      try {
+        URL.revokeObjectURL(blobUrl);
+      } catch {}
+    }, 60000);
+  };
+
+  const downloadAgreementPdf = async () => {
+    const { blobUrl, titleHint } = await fetchAgreementPdfBlob();
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = titleHint || "agreement.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    await markPdfViewed();
+    window.setTimeout(() => {
+      try {
+        URL.revokeObjectURL(blobUrl);
+      } catch {}
+    }, 60000);
   };
 
   const [homeownerObj, setHomeownerObj] = useState(null);
@@ -1078,107 +1111,6 @@ export default function Step4Finalize({
     }
   };
 
-  const openPreviewModal = async () => {
-    if (!agreementId) {
-      toast.error("Missing agreement ID.");
-      return;
-    }
-    if (handleGateToast("preview")) return;
-
-    setPreviewOpen(true);
-    setPreviewLoading(true);
-    setPreviewErr("");
-    setPreviewFrameReady(false);
-    pdfViewedMarkRef.current = false;
-
-    cleanupBlob();
-    setPdfBlobUrl("");
-    if (previewTimeoutRef.current) {
-      window.clearTimeout(previewTimeoutRef.current);
-      previewTimeoutRef.current = null;
-    }
-
-    const base = `/projects/agreements/${agreementId}`;
-    const candidates = [
-      `${base}/preview_link/`,
-      `${base}/preview_link`,
-      `${base}/preview_pdf/`,
-      `${base}/preview_pdf`,
-    ];
-
-    try {
-      let streamUrl = null;
-
-      for (const url of candidates) {
-        try {
-          const { data } = await api.get(url, {
-            timeout: 30000,
-            params: { _ts: Date.now() },
-            headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-          });
-          const outUrl = data?.url || data?.preview_url || data?.link;
-          if (outUrl) {
-            streamUrl = outUrl;
-            break;
-          }
-        } catch (err) {
-          if (err?.response?.status === 404) continue;
-          throw err;
-        }
-      }
-
-      if (!streamUrl) throw new Error("Preview endpoint not found on server.");
-
-      const res = await api.get(streamUrl, {
-        responseType: "blob",
-        timeout: 120000,
-        params: { _ts: Date.now() },
-        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-      });
-
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const blobUrl = URL.createObjectURL(blob);
-
-      const titleHint =
-        amendmentNumber > 0
-          ? `agreement-${agreementId}-amendment-${amendmentNumber}.pdf`
-          : `agreement-${agreementId}.pdf`;
-
-      setPdfFilename(titleHint);
-      setPdfBlobUrl(blobUrl);
-      await markPdfViewed();
-      previewTimeoutRef.current = window.setTimeout(() => {
-        setPreviewLoading(false);
-        if (!previewFrameReady) {
-          setPreviewErr("Preview may not be supported in this browser. You can download the PDF to review it.");
-        }
-      }, 2500);
-    } catch (err) {
-      const statusCode = err?.response?.status;
-      const detail = err?.response?.data?.detail || err?.response?.data?.error;
-      const msg =
-        statusCode === 401
-          ? "You are not authenticated. Please log in again."
-          : detail || err?.message || "Preview failed. Check backend logs.";
-      setPreviewErr(msg);
-      setPreviewLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!previewRequestId) return;
-    openPreviewModal();
-  }, [previewRequestId]);
-
-  useEffect(() => {
-    if (!previewFrameReady) return;
-    if (previewTimeoutRef.current) {
-      window.clearTimeout(previewTimeoutRef.current);
-      previewTimeoutRef.current = null;
-    }
-    setPreviewLoading(false);
-  }, [previewFrameReady]);
-
   useEffect(() => {
     const fetchFundingPreview = async () => {
       if (!agreementId) {
@@ -1330,7 +1262,6 @@ export default function Step4Finalize({
   const canUnsignContractor = signedByContractor && !signedByHomeowner;
 
   const pdfVersion = agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
-  const reviewPdfButtonLabel = localPdfViewed ? "✓ Agreement PDF reviewed" : "Review Agreement PDF";
 
   const escrowRate = fundingPreview?.rate != null ? Number(fundingPreview.rate) : 0.05;
   const escrowFlat = fundingPreview?.flat_fee != null ? Number(fundingPreview.flat_fee) : 1;
@@ -1492,7 +1423,7 @@ export default function Step4Finalize({
       return;
     }
     if (!localPdfViewed) {
-      toast.error("You must preview the PDF before signing.");
+      toast.error("You must review the agreement before signing.");
       return;
     }
 
@@ -1610,96 +1541,8 @@ export default function Step4Finalize({
     }
   };
 
-  const openPreview = openPreviewModal;
-
   return (
     <div className="mt-4 space-y-6">
-      <Modal
-        isOpen={previewOpen}
-        onRequestClose={closePreview}
-        contentLabel="Agreement PDF Preview"
-        overlayClassName="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
-        className="bg-white rounded-xl shadow-xl w-full max-w-6xl h-[88vh] outline-none flex flex-col"
-      >
-        <div className="flex items-center justify-between gap-3 p-3 border-b border-slate-200">
-          <div className="text-sm font-semibold text-slate-900">
-            Agreement PDF Preview
-            {pdfFilename ? (
-              <span className="ml-2 text-xs font-normal text-slate-500">{pdfFilename}</span>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={downloadPreview}
-              disabled={!pdfBlobUrl}
-              className="px-3 py-1.5 rounded-md bg-slate-900 text-white text-sm hover:bg-slate-800 disabled:opacity-60"
-            >
-              Download PDF
-            </button>
-            <button
-              type="button"
-              onClick={closePreview}
-              className="px-3 py-1.5 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 bg-slate-100">
-          {pdfBlobUrl ? (
-            <div className="relative h-full w-full">
-              <iframe
-                title="Agreement PDF"
-                data-testid="step4-pdf-preview-frame"
-                src={pdfBlobUrl}
-                className={`h-full w-full border-0 ${previewFrameReady ? "opacity-100" : "opacity-0"}`}
-                onLoad={() => {
-                  setPreviewFrameReady(true);
-                  markPdfViewed();
-                }}
-              />
-              {previewLoading && !previewFrameReady ? (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-700 bg-slate-100/60">
-                  Rendering preview…
-                </div>
-              ) : null}
-              {previewErr && !previewFrameReady ? (
-                <div className="absolute inset-0 flex items-center justify-center p-6">
-                  <div className="max-w-xl w-full bg-white border border-rose-200 rounded-lg p-4 shadow-lg">
-                    <div className="text-sm font-semibold text-rose-700">Preview unavailable</div>
-                    <div className="text-sm text-slate-700 mt-2">
-                      Preview may not be supported in this browser. You can download the PDF to review it.
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={openPreview}
-                        className="px-3 py-2 rounded-md bg-indigo-600 text-white text-sm hover:bg-indigo-700"
-                      >
-                        Retry
-                      </button>
-                      <button
-                        type="button"
-                        onClick={closePreview}
-                        className="px-3 py-2 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="h-full w-full flex items-center justify-center text-sm text-slate-600">
-              No preview loaded.
-            </div>
-          )}
-        </div>
-      </Modal>
-
       {hasInvalidMilestoneAmounts ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-semibold">Pricing required</div>
@@ -2364,25 +2207,28 @@ export default function Step4Finalize({
             ) : reqContr ? (
               <>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">Agreement PDF</div>
-                      <div className="text-[11px] text-slate-600">
-                        Review the PDF before signing. If preview is blocked, download it to review.
-                      </div>
-                    </div>
+                  <div className="text-sm font-semibold text-slate-900">Review Agreement (Required)</div>
+                  <div className="mt-1 text-[11px] text-slate-600">
+                    You must review the agreement before signing.
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={openPreviewModal}
+                      onClick={openPdfInNewTab}
                       disabled={hasInvalidMilestoneAmounts}
-                      data-testid="step4-review-pdf-button"
-                      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                        localPdfViewed
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                          : "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                      } disabled:opacity-60`}
+                      data-testid="step4-open-pdf-button"
+                      className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-60"
                     >
-                      {reviewPdfButtonLabel}
+                      Open PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={downloadAgreementPdf}
+                      disabled={hasInvalidMilestoneAmounts}
+                      data-testid="step4-download-pdf-button"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Download PDF
                     </button>
                   </div>
                 </div>
@@ -2435,7 +2281,7 @@ export default function Step4Finalize({
                 <button
                   type="button"
                   onClick={handleOpenContractorModal}
-                  disabled={signing || hasInvalidMilestoneAmounts || !legalAcknowledged}
+                  disabled={signing || hasInvalidMilestoneAmounts || !legalAcknowledged || !localPdfViewed}
                   data-testid="step4-sign-continue-button"
                   className="mt-3 rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
                 >

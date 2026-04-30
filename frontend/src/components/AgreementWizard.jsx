@@ -503,7 +503,6 @@ export default function AgreementWizard() {
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
   });
-  const [previewRequestId, setPreviewRequestId] = useState(0);
   const [aiFeedbackByStep, setAiFeedbackByStep] = useState({});
   const { highlights: step1AiHighlights, markUpdated: markStep1AiUpdated } = useAiFieldHighlights({
     durationMs: 5000,
@@ -659,7 +658,6 @@ export default function AgreementWizard() {
 
   const handlePreviewAgreement = useCallback(() => {
     goStep(4);
-    setPreviewRequestId((prev) => prev + 1);
   }, [goStep]);
 
   const stepTabs = useMemo(
@@ -2024,7 +2022,6 @@ export default function AgreementWizard() {
               setWizardSessionState((prev) => ({ ...prev, hasPreviewedPdf: true }));
               setAgreement((prev) => (prev ? { ...prev, pdf_viewed: true } : prev));
             }}
-            previewRequestId={previewRequestId}
             postSendGuidance={aiPanelConfig.nextGuidance}
           />
         </div>

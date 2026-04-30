@@ -3657,8 +3657,8 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('agreement-wizard-preview-button')).toContainText('Preview Agreement');
   await expect(page.getByTestId('agreement-wizard-open-workspace-button')).toHaveCount(0);
   const signArea = page.getByRole('main');
-  await expect(signArea.getByTestId('step4-review-pdf-button')).toBeVisible();
-  await expect(signArea.getByTestId('step4-review-pdf-button')).toContainText('Review Agreement PDF');
+  await expect(signArea.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible();
+  await expect(signArea.getByRole('button', { name: 'Download PDF' }).first()).toBeVisible();
   await expect(signArea.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
   await expect(signArea.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
   await expect(signArea.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute(
@@ -3685,15 +3685,18 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByText('Once both signatures are complete, the customer will be prompted to fund escrow.')).toBeVisible();
 
   await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
+  await expect(signArea.locator('iframe, object')).toHaveCount(0);
   await expect(page).toHaveURL(/step=4/);
-  await page.getByTestId('agreement-wizard-preview-button').click();
-  await expect(page.getByRole('dialog', { name: 'Agreement PDF Preview' })).toBeVisible();
-  await expect(page).toHaveURL(/step=4/);
+  await expect(page.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download PDF' }).first()).toBeVisible();
-  await expect(page.getByText('Preview could not load in this browser. Download the PDF to review it.')).toHaveCount(0);
+  await expect(page.getByTestId('step4-sign-continue-button')).toBeDisabled();
+  await page.locator('input[placeholder="e.g. Jane Contractor"]').first().fill('Jordan Builder');
+  await page.getByTestId('step4-legal-ack-checkbox').check();
+  await expect(page.getByTestId('step4-sign-continue-button')).toBeDisabled();
+  await page.getByRole('button', { name: 'Download PDF' }).first().click();
   await expect.poll(() => markPreviewedCalls.length).toBe(1);
-  await expect(page.getByTestId('step4-pdf-preview-frame')).toHaveAttribute('src', /blob:/);
-  await page.getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByText('✓ Agreement PDF reviewed').first()).toBeVisible();
+  await expect(page.getByTestId('step4-sign-continue-button')).toBeEnabled();
 
   await page.getByRole('button', { name: 'Direct Pay' }).click();
   await expect.poll(() => patchPayloads.some((payload) => payload.payment_mode === 'direct')).toBeTruthy();
@@ -3705,8 +3708,6 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   agreement = { ...agreement, payment_mode: 'escrow' };
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Escrow');
 
-  await page.locator('input[placeholder="e.g. Jane Contractor"]').first().fill('Jordan Builder');
-  await page.getByTestId('step4-legal-ack-checkbox').check();
   await expect(page.getByTestId('step4-sign-continue-button')).toBeEnabled();
   await page.getByRole('button', { name: 'Sign & Continue' }).click();
   const signerForm = page.locator('form').filter({ hasText: 'Draw Signature' });
