@@ -3653,7 +3653,9 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByRole('heading', { name: 'Project Context' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Review Scope Clarifications' })).toBeVisible();
   await expect(page.getByTestId('step4-header-actions')).toContainText('Review Scope Clarifications');
-  await expect(page.getByTestId('step4-header-actions').getByRole('button', { name: 'View Agreement PDF' })).toHaveCount(0);
+  await expect(page.getByTestId('agreement-wizard-preview-button')).toBeVisible();
+  await expect(page.getByTestId('agreement-wizard-preview-button')).toContainText('Preview Agreement');
+  await expect(page.getByTestId('agreement-wizard-open-workspace-button')).toHaveCount(0);
   const signArea = page.getByRole('main');
   await expect(signArea.getByTestId('step4-review-pdf-button')).toBeVisible();
   await expect(signArea.getByTestId('step4-review-pdf-button')).toContainText('Review Agreement PDF');
@@ -3683,10 +3685,11 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByText('Once both signatures are complete, the customer will be prompted to fund escrow.')).toBeVisible();
 
   await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
-  await signArea.getByTestId('step4-review-pdf-button').click();
+  await expect(page).toHaveURL(/step=4/);
+  await page.getByTestId('agreement-wizard-preview-button').click();
+  await expect(page.getByRole('dialog', { name: 'Agreement PDF Preview' })).toBeVisible();
+  await expect(page).toHaveURL(/step=4/);
   await expect.poll(() => markPreviewedCalls.length).toBe(1);
-  await expect(page.getByText('✓ Agreement PDF reviewed')).toBeVisible();
-  await expect(signArea.getByTestId('step4-review-pdf-button')).toContainText('✓ Agreement PDF reviewed');
   await page.getByRole('button', { name: 'Close' }).click();
 
   await page.getByRole('button', { name: 'Direct Pay' }).click();
@@ -3731,7 +3734,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page).toHaveURL(/step=3/);
   await page.getByRole('button', { name: 'Step 4 Finalize' }).click();
   await expect(page).toHaveURL(/step=4/);
-  await expect(page.getByText('✓ Agreement PDF reviewed')).toBeVisible();
+  await expect(page.getByText('✓ Agreement PDF reviewed').first()).toBeVisible();
 });
 
 test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {
@@ -3852,4 +3855,100 @@ test('agreement wizard step 4 shows missing warranty as a warning state', async 
 
   await expect(page.getByTestId('step4-warranty-summary')).toBeVisible();
   await expect(page.getByTestId('step4-warranty-summary')).toContainText('No warranty provided');
+});
+
+test('agreement detail shows a draft notice and can return to the wizard', async ({ page }) => {
+  const agreement = {
+    id: AGREEMENT_ID + 3,
+    agreement_id: AGREEMENT_ID + 3,
+    project_title: 'Backyard Shed Build',
+    title: 'Backyard Shed Build',
+    description: 'Build a backyard shed with slab, framing, and cleanup.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Shed Build',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'draft',
+    pdf_version: 2,
+    pdf_viewed: false,
+    warranty_type: 'default',
+    warranty_text_snapshot: '',
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [],
+    fundingPreview: {
+      project_amount: 0,
+      homeowner_escrow: 0,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/attachments/?(\\?.*)?$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/subcontractor-invitations/?(\\?.*)?$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          pending_invitations: [],
+          accepted_subcontractors: [],
+        }),
+      });
+    }
+  );
+
+  await page.route('**/api/projects/subaccounts/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/warranties/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    });
+  });
+
+  await page.goto(`/app/agreements/${agreement.id}`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByRole('heading', { name: 'Contract Workspace' })).toBeVisible();
+  await expect(page.getByTestId('agreement-detail-draft-notice')).toBeVisible();
+  await expect(page.getByTestId('agreement-detail-back-to-wizard-button')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Assignment / Team' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Milestones' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Secondary Details' })).toBeVisible();
+
+  await page.getByTestId('agreement-detail-back-to-wizard-button').click();
+  await expect(page).toHaveURL(/\/wizard\?step=\d+/);
 });

@@ -503,6 +503,7 @@ export default function AgreementWizard() {
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
   });
+  const [previewRequestId, setPreviewRequestId] = useState(0);
   const [aiFeedbackByStep, setAiFeedbackByStep] = useState({});
   const { highlights: step1AiHighlights, markUpdated: markStep1AiUpdated } = useAiFieldHighlights({
     durationMs: 5000,
@@ -644,6 +645,22 @@ export default function AgreementWizard() {
       return p;
     }, { replace });
   };
+
+  const agreementStatus = String(agreement?.status || agreement?.workflow_status || "")
+    .trim()
+    .toLowerCase();
+  const canOpenContractWorkspace = [
+    "sent",
+    "signed",
+    "active",
+    "funded",
+    "in_progress",
+  ].includes(agreementStatus);
+
+  const handlePreviewAgreement = useCallback(() => {
+    goStep(4);
+    setPreviewRequestId((prev) => prev + 1);
+  }, [goStep]);
 
   const stepTabs = useMemo(
     () => [
@@ -1717,13 +1734,26 @@ export default function AgreementWizard() {
             Ask AI
           </button>
           {agreementId ? (
-            <button
-              type="button"
-              onClick={() => navigate(`/app/agreements/${agreementId}`)}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-            >
-              View Agreement
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="agreement-wizard-preview-button"
+                onClick={handlePreviewAgreement}
+                className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100"
+              >
+                Preview Agreement
+              </button>
+              {canOpenContractWorkspace ? (
+                <button
+                  type="button"
+                  data-testid="agreement-wizard-open-workspace-button"
+                  onClick={() => navigate(`/app/agreements/${agreementId}`)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
+                >
+                  Open Contract Workspace
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       }
@@ -1994,6 +2024,7 @@ export default function AgreementWizard() {
               setWizardSessionState((prev) => ({ ...prev, hasPreviewedPdf: true }));
               setAgreement((prev) => (prev ? { ...prev, pdf_viewed: true } : prev));
             }}
+            previewRequestId={previewRequestId}
             postSendGuidance={aiPanelConfig.nextGuidance}
           />
         </div>

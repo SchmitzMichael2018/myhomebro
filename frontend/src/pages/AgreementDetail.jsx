@@ -211,6 +211,7 @@ function normalizeAgreement(raw) {
     homeownerName: raw.homeowner_name || raw.homeowner?.full_name || "—",
     homeownerEmail: raw.homeowner_email || raw.homeowner?.email || "—",
     totalCost: toMoney(raw.total_cost ?? raw.project?.total_cost ?? 0),
+    status: raw.status || raw.workflow_status || raw.state || "draft",
     isSigned:
       !!raw.is_fully_signed ||
       (!!raw.signed_by_contractor && !!raw.signed_by_homeowner),
@@ -1174,6 +1175,12 @@ export default function AgreementDetail() {
     : norm.isSigned
     ? "❌ Awaiting Funding"
     : "❌ Not Signed";
+  const workspaceStatus = String(
+    agreement?.status || agreement?.workflow_status || agreement?.state || ""
+  )
+    .trim()
+    .toLowerCase();
+  const isDraftWorkspace = workspaceStatus === "draft" || !workspaceStatus;
   const milestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
   const agreementHint = getAgreementDetailHint({
     agreement,
@@ -1184,8 +1191,8 @@ export default function AgreementDetail() {
   return (
     <ContractorPageSurface
       eyebrow="Core"
-      title="Agreement Detail"
-      subtitle="Review signatures, funding, milestones, and project actions from one consistent agreement workspace."
+      title="Contract Workspace"
+      subtitle="Manage signatures, funding, assignments, documents, milestones, and invoices after the agreement is sent."
       actions={
         <button
           onClick={() => navigate("/agreements")}
@@ -1249,6 +1256,26 @@ export default function AgreementDetail() {
           </div>
         </div>
       </section>
+
+      {isDraftWorkspace ? (
+        <div
+          data-testid="agreement-detail-draft-notice"
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm"
+        >
+          <div className="font-semibold">This agreement is still being drafted.</div>
+          <div className="mt-1">
+            Use the wizard to finish setup before managing contract activity.
+          </div>
+          <button
+            type="button"
+            data-testid="agreement-detail-back-to-wizard-button"
+            onClick={() => navigate(`/app/agreements/${id}/wizard?step=1`)}
+            className="mt-3 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+          >
+            Back to Wizard
+          </button>
+        </div>
+      ) : null}
 
 
       {false ? (

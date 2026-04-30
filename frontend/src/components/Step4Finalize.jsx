@@ -772,6 +772,7 @@ export default function Step4Finalize({
   onAgreementUpdated,
   refreshAgreement: refreshAgreementProp,
   onPreviewViewed = () => {},
+  previewRequestId = 0,
   postSendGuidance = "",
 }) {
   const [agreement, setAgreement] = useState(agreementProp || null);
@@ -1141,6 +1142,11 @@ export default function Step4Finalize({
       setPreviewLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!previewRequestId) return;
+    openPreviewModal();
+  }, [previewRequestId]);
 
   useEffect(() => {
     const fetchFundingPreview = async () => {
@@ -1639,7 +1645,7 @@ export default function Step4Finalize({
               </div>
             </div>
           ) : pdfBlobUrl ? (
-            <iframe
+          <iframe
               title="Agreement PDF"
               src={pdfBlobUrl}
               className="w-full h-full"
