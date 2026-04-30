@@ -320,6 +320,19 @@ async function installStep4FinalizeRoutes(
   );
 
   await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/preview_link/?(\\?.*)?$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          url: `/api/projects/agreements/${agreement.id}/preview_pdf/?stream=1`,
+        }),
+      });
+    }
+  );
+
+  await page.route(
     new RegExp(`/api/projects/agreements/${agreement.id}/preview_pdf/?(\\?.*)?$`),
     async (route) => {
       await route.fulfill({
@@ -337,6 +350,7 @@ async function installStep4FinalizeRoutes(
         if (Array.isArray(events.markPreviewedCalls)) events.markPreviewedCalls.push(route.request().url());
         agreement = {
           ...agreement,
+          pdf_viewed: true,
           has_previewed: true,
           previewed: true,
           pdf_previewed: true,
@@ -3585,10 +3599,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
     payment_structure: 'simple',
     status: 'draft',
     pdf_version: 2,
-    has_previewed: true,
-    previewed: true,
-    pdf_previewed: true,
-    contractor_previewed: true,
+    pdf_viewed: false,
     require_contractor_signature: true,
     require_customer_signature: true,
     step_status: '4',
@@ -3639,11 +3650,16 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByRole('heading', { name: 'Project Context' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'View Agreement PDF' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Review Scope Clarifications' })).toBeVisible();
+  await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
   await expect(page.getByTestId('step4-summary-agreement')).toContainText('Agreement Version');
   await expect(page.getByTestId('step4-summary-agreement')).toContainText('PDF Version');
   await expect(page.getByTestId('step4-summary-customer')).toContainText('Customer Email');
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Payment Mode');
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Escrow');
+
+  await page.getByRole('button', { name: 'View Agreement PDF' }).click();
+  await expect(page.getByText('✓ Agreement PDF reviewed')).toBeVisible();
+  await page.getByRole('button', { name: 'Close' }).click();
 
   await page.getByRole('button', { name: 'Direct Pay' }).click();
   await expect.poll(() => patchPayloads.some((payload) => payload.payment_mode === 'direct')).toBeTruthy();
@@ -3680,5 +3696,11 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
 
   await page.getByRole('button', { name: 'Send to Customer' }).click();
   await expect.poll(() => sendCalls.length).toBe(1);
+
+  await page.getByRole('button', { name: 'Step 3 Warranty' }).click();
+  await expect(page).toHaveURL(/step=3/);
+  await page.getByRole('button', { name: 'Step 4 Finalize' }).click();
+  await expect(page).toHaveURL(/step=4/);
+  await expect(page.getByText('✓ Agreement PDF reviewed')).toBeVisible();
 });
 

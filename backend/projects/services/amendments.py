@@ -132,7 +132,7 @@ def mark_agreement_amended(agreement, *, actor=None, reason: str = "manual-amend
         # ─────────────────────────
         # 8) Reset preview flags (so a new preview is required)
         # ─────────────────────────
-        for f in ("reviewed", "has_previewed"):
+        for f in ("pdf_viewed", "reviewed", "has_previewed"):
             if hasattr(agreement, f):
                 try:
                     setattr(agreement, f, False)

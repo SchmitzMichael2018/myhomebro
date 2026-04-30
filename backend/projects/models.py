@@ -1122,6 +1122,7 @@ class Agreement(models.Model):
     escrow_payment_intent_id = models.CharField(max_length=255, blank=True)
     escrow_funded = models.BooleanField(default=False)
 
+    pdf_viewed = models.BooleanField(default=False)
     reviewed = models.BooleanField(default=False)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.CharField(max_length=32, null=True, blank=True)

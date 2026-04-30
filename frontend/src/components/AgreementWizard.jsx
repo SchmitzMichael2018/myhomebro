@@ -1965,7 +1965,7 @@ export default function AgreementWizard() {
             milestones={milestones}
             totals={totals}
             stripeOnboardingState={stripeStatusState}
-            hasPreviewed={true}
+            hasPreviewed={!!agreement?.pdf_viewed}
             ackReviewed={ackReviewed}
             setAckReviewed={setAckReviewed}
             ackTos={ackTos}
@@ -1987,9 +1987,10 @@ export default function AgreementWizard() {
             unsignContractor={unsignContractor}
             onAgreementUpdated={(updated) => setAgreement(updated)}
             refreshAgreement={refreshAgreement}
-            onPreviewViewed={() =>
-              setWizardSessionState((prev) => ({ ...prev, hasPreviewedPdf: true }))
-            }
+            onPreviewViewed={() => {
+              setWizardSessionState((prev) => ({ ...prev, hasPreviewedPdf: true }));
+              setAgreement((prev) => (prev ? { ...prev, pdf_viewed: true } : prev));
+            }}
             postSendGuidance={aiPanelConfig.nextGuidance}
           />
         </div>

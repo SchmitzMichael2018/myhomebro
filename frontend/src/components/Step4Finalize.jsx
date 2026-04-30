@@ -817,27 +817,11 @@ export default function Step4Finalize({
   const [previewErr, setPreviewErr] = useState("");
   const [pdfBlobUrl, setPdfBlobUrl] = useState("");
   const [pdfFilename, setPdfFilename] = useState("");
-  const [localHasPreviewed, setLocalHasPreviewed] = useState(!!hasPreviewed);
+  const [localPdfViewed, setLocalPdfViewed] = useState(!!agreement?.pdf_viewed);
 
   useEffect(() => {
-    setLocalHasPreviewed(!!hasPreviewed);
-  }, [hasPreviewed]);
-
-  useEffect(() => {
-    const maybe =
-      agreement?.has_previewed ??
-      agreement?.previewed ??
-      agreement?.pdf_previewed ??
-      agreement?.contractor_previewed ??
-      null;
-    if (maybe === true) setLocalHasPreviewed(true);
-  }, [
-    agreementId,
-    agreement?.has_previewed,
-    agreement?.previewed,
-    agreement?.pdf_previewed,
-    agreement?.contractor_previewed,
-  ]);
+    setLocalPdfViewed(!!agreement?.pdf_viewed);
+  }, [agreement?.pdf_viewed]);
 
   const cleanupBlob = () => {
     try {
@@ -1120,7 +1104,7 @@ export default function Step4Finalize({
           await api.post(`/projects/agreements/${agreementId}/mark_previewed`);
         } catch {}
       }
-      setLocalHasPreviewed(true);
+      setLocalPdfViewed(true);
       onPreviewViewed();
     } catch (err) {
       const statusCode = err?.response?.status;
@@ -1268,7 +1252,7 @@ export default function Step4Finalize({
   const canUnsignContractor = signedByContractor && !signedByHomeowner;
 
   const pdfVersion = agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
-  const previewButtonLabel = localHasPreviewed ? "View Agreement PDF" : "Preview PDF (Required)";
+  const previewButtonLabel = "View Agreement PDF";
 
   const escrowRate = fundingPreview?.rate != null ? Number(fundingPreview.rate) : 0.05;
   const escrowFlat = fundingPreview?.flat_fee != null ? Number(fundingPreview.flat_fee) : 1;
@@ -1370,9 +1354,9 @@ export default function Step4Finalize({
     },
     {
       key: "preview",
-      ok: Boolean(localHasPreviewed),
+      ok: Boolean(localPdfViewed),
       goodLabel: "Agreement PDF reviewed",
-      warnLabel: "Preview the agreement PDF before sending",
+      warnLabel: "Review Agreement PDF",
     },
   ];
   const readinessWarningCount = readinessItems.filter((item) => !item.ok).length;
@@ -1429,7 +1413,7 @@ export default function Step4Finalize({
       toast.success("Contractor signature is waived for this agreement.");
       return;
     }
-    if (!localHasPreviewed) {
+    if (!localPdfViewed) {
       toast.error("You must preview the PDF before signing.");
       return;
     }
@@ -1814,7 +1798,13 @@ export default function Step4Finalize({
                   : "border-amber-200 bg-white text-amber-900"
               }`}
             >
-              <div className="font-medium">{item.ok ? "✓" : "⚠"} {item.ok ? item.goodLabel : item.warnLabel}</div>
+              <div className="font-medium">
+                {item.key === "preview"
+                  ? item.ok
+                    ? "\u2713 Agreement PDF reviewed"
+                    : "\u2610 Review Agreement PDF"
+                  : `${item.ok ? "\u2713" : "\u26A0"} ${item.ok ? item.goodLabel : item.warnLabel}`}
+              </div>
             </div>
           ))}
         </div>

@@ -9,10 +9,15 @@ from projects.models import Agreement
 
 
 def mark_agreement_previewed(ag: Agreement, *, reviewed_by: str = "contractor") -> None:
+    if hasattr(ag, "pdf_viewed"):
+        ag.pdf_viewed = True
     ag.reviewed = True
     ag.reviewed_at = now()
     ag.reviewed_by = reviewed_by
-    ag.save(update_fields=["reviewed", "reviewed_at", "reviewed_by", "updated_at"])
+    update_fields = ["reviewed", "reviewed_at", "reviewed_by", "updated_at"]
+    if hasattr(ag, "pdf_viewed"):
+        update_fields.insert(0, "pdf_viewed")
+    ag.save(update_fields=update_fields)
 
 
 def finalize_agreement_pdf(
