@@ -20,7 +20,8 @@
       img-src 'self' data: https://maps.googleapis.com https://maps.gstatic.com;
       connect-src 'self' ws: wss: https://api.stripe.com https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com;
       frame-src 'self' blob: https://js.stripe.com https://hooks.stripe.com;
-      object-src 'none';
+      child-src 'self' blob:;
+      object-src 'self' blob:;
       base-uri 'self';
       form-action 'self';
     " />

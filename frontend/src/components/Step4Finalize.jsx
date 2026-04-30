@@ -831,7 +831,9 @@ export default function Step4Finalize({
   const [pdfFilename, setPdfFilename] = useState("");
   const [localPdfViewed, setLocalPdfViewed] = useState(!!agreement?.pdf_viewed);
   const [previewOpened, setPreviewOpened] = useState(false);
+  const [previewFrameReady, setPreviewFrameReady] = useState(false);
   const pdfViewedMarkRef = useRef(false);
+  const previewTimeoutRef = useRef(null);
 
   useEffect(() => {
     setLocalPdfViewed(!!agreement?.pdf_viewed);
@@ -845,11 +847,25 @@ export default function Step4Finalize({
 
   useEffect(() => () => cleanupBlob(), []); // eslint-disable-line
 
+  useEffect(() => {
+    return () => {
+      if (previewTimeoutRef.current) {
+        window.clearTimeout(previewTimeoutRef.current);
+        previewTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   const closePreview = () => {
     setPreviewOpen(false);
     setPreviewErr("");
     setPreviewLoading(false);
     setPreviewOpened(false);
+    setPreviewFrameReady(false);
+    if (previewTimeoutRef.current) {
+      window.clearTimeout(previewTimeoutRef.current);
+      previewTimeoutRef.current = null;
+    }
     cleanupBlob();
     setPdfBlobUrl("");
   };
@@ -1075,10 +1091,15 @@ export default function Step4Finalize({
     setPreviewLoading(true);
     setPreviewErr("");
     setPreviewOpened(false);
+    setPreviewFrameReady(false);
     pdfViewedMarkRef.current = false;
 
     cleanupBlob();
     setPdfBlobUrl("");
+    if (previewTimeoutRef.current) {
+      window.clearTimeout(previewTimeoutRef.current);
+      previewTimeoutRef.current = null;
+    }
 
     const base = `/projects/agreements/${agreementId}`;
     const candidates = [
@@ -1128,9 +1149,12 @@ export default function Step4Finalize({
 
       setPdfFilename(titleHint);
       setPdfBlobUrl(blobUrl);
-      setPreviewLoading(false);
       setPreviewOpened(true);
       await markPdfViewed();
+      previewTimeoutRef.current = window.setTimeout(() => {
+        setPreviewLoading(false);
+        setPreviewErr("Preview could not load in this browser. Download the PDF to review it.");
+      }, 5000);
     } catch (err) {
       const statusCode = err?.response?.status;
       const detail = err?.response?.data?.detail || err?.response?.data?.error;
@@ -1147,6 +1171,18 @@ export default function Step4Finalize({
     if (!previewRequestId) return;
     openPreviewModal();
   }, [previewRequestId]);
+
+  useEffect(() => {
+    if (!previewFrameReady) return;
+    if (previewTimeoutRef.current) {
+      window.clearTimeout(previewTimeoutRef.current);
+      previewTimeoutRef.current = null;
+    }
+    setPreviewLoading(false);
+    if (previewOpened) {
+      markPdfViewed();
+    }
+  }, [previewFrameReady, previewOpened]);
 
   useEffect(() => {
     const fetchFundingPreview = async () => {
@@ -1645,16 +1681,27 @@ export default function Step4Finalize({
               </div>
             </div>
           ) : pdfBlobUrl ? (
-          <iframe
-              title="Agreement PDF"
-              src={pdfBlobUrl}
-              className="w-full h-full"
-              onLoad={() => {
-                if (previewOpened) {
-                  markPdfViewed();
-                }
-              }}
-            />
+            <div className="relative h-full w-full">
+              {!previewFrameReady ? (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-700">
+                  Rendering preview…
+                </div>
+              ) : null}
+              <object
+                title="Agreement PDF"
+                data-testid="step4-pdf-preview-frame"
+                data={pdfBlobUrl}
+                type="application/pdf"
+                className={`h-full w-full ${previewFrameReady ? "opacity-100" : "opacity-0"}`}
+                onLoad={() => {
+                  setPreviewFrameReady(true);
+                }}
+              >
+                <div className="flex h-full w-full items-center justify-center text-sm text-slate-700">
+                  Preview could not load in this browser. Download the PDF to review it.
+                </div>
+              </object>
+            </div>
           ) : (
             <div className="h-full w-full flex items-center justify-center text-sm text-slate-600">
               No preview loaded.
