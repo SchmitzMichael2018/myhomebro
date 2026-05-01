@@ -3336,7 +3336,6 @@ export default function Step1Details({
                       {activeStartModeLabel}
                     </div>
                     <div className="mt-1 text-sm text-slate-600">{activeStartModeSummary}</div>
-                    {shouldShowProjectDetails ? (
                       <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
                         <div className="text-sm font-semibold text-slate-900">
                           Review Project Details
@@ -3354,7 +3353,6 @@ export default function Step1Details({
                           Jump ↓
                         </button>
                       </div>
-                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {canResetStep1 && hasResettableStep1State ? (
@@ -3822,7 +3820,6 @@ export default function Step1Details({
           </section>
         ) : null}
 
-        {shouldShowProjectDetails ? (
         <div className="space-y-6">
           <StepSection
             title="Project Details"
@@ -4158,117 +4155,6 @@ export default function Step1Details({
                 </div>
               </div>
 
-              {clarificationQuestions.length ? (
-                <div
-                  data-testid="agreement-clarification-section"
-                  className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        Clarify project details
-                      </div>
-                      <div className="mt-1 text-sm text-slate-600">
-                        Answer a few quick questions so the scope and milestone plan fit this{" "}
-                        {effectiveClarificationSubtype || "project"} more closely.
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={clarificationsSkipped ? () => setClarificationsSkipped(false) : handleSkipClarifications}
-                        disabled={locked}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                        data-testid="agreement-clarification-skip"
-                      >
-                        {clarificationsSkipped ? "Show questions" : "Skip for now"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {clarificationsSkipped ? (
-                    <div
-                      data-testid="agreement-clarification-skipped"
-                      className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600"
-                    >
-                      You can skip these for now and still keep moving. Come back anytime before generating milestones.
-                    </div>
-                  ) : (
-                    <div className="mt-4 space-y-3">
-                      {clarificationQuestions.map((question) => {
-                        const currentValue = safeTrim(clarificationAnswers?.[question.key]);
-                        return (
-                          <div
-                            key={question.key}
-                            className="rounded-xl border border-slate-200 bg-white p-3"
-                            data-testid={`agreement-clarification-question-${question.key}`}
-                          >
-                            <div className="text-sm font-medium text-slate-900">{question.label}</div>
-                            {question.help ? (
-                              <div className="mt-1 text-xs leading-5 text-slate-500">{question.help}</div>
-                            ) : null}
-                            {question.kind === "yes_no" ? (
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {["yes", "no"].map((option) => {
-                                  const active = currentValue === option;
-                                  return (
-                                    <button
-                                      key={option}
-                                      type="button"
-                                      onClick={() => handleClarificationAnswerChange(question.key, option)}
-                                      disabled={locked}
-                                      className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${
-                                        active
-                                          ? "border-indigo-600 bg-indigo-600 text-white"
-                                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                                      }`}
-                                      data-testid={`agreement-clarification-${question.key}-${option}`}
-                                    >
-                                      {option === "yes" ? "Yes" : "No"}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <input
-                                type="text"
-                                value={currentValue}
-                                onChange={(e) =>
-                                  handleClarificationAnswerChange(question.key, e.target.value)
-                                }
-                                placeholder={question.placeholder || "Add a quick note"}
-                                disabled={locked}
-                                className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                                data-testid={`agreement-clarification-input-${question.key}`}
-                              />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {clarificationSummaryLines.length ? (
-                    <div
-                      data-testid="agreement-clarification-summary"
-                      className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3"
-                    >
-                      <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                        Saved to project context
-                      </div>
-                      <div className="mt-1 text-sm text-emerald-900">
-                        These details will help refine the scope and milestone suggestions.
-                      </div>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-900">
-                        {clarificationSummaryLines.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
               <div>
                 <div className="mb-1 flex items-center gap-2">
                   <label className="block text-sm font-medium text-slate-900">Project Title</label>
@@ -4304,6 +4190,7 @@ export default function Step1Details({
 
                 <textarea
                   data-testid="proposal-draft-textarea"
+                  data-field="scope-of-work"
                   ref={projectScopeFieldRef}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   rows={8}
@@ -4691,8 +4578,118 @@ export default function Step1Details({
                 </div>
               </div>
             </StepSection>
+
+            {clarificationQuestions.length ? (
+              <div
+                data-testid="agreement-clarification-section"
+                className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      Clarify project details
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      Answer a few quick questions so the scope and milestone plan fit this{" "}
+                      {effectiveClarificationSubtype || "project"} more closely.
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={clarificationsSkipped ? () => setClarificationsSkipped(false) : handleSkipClarifications}
+                      disabled={locked}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                      data-testid="agreement-clarification-skip"
+                    >
+                      {clarificationsSkipped ? "Show questions" : "Skip for now"}
+                    </button>
+                  </div>
+                </div>
+
+                {clarificationsSkipped ? (
+                  <div
+                    data-testid="agreement-clarification-skipped"
+                    className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600"
+                  >
+                    You can skip these for now and still keep moving. Come back anytime before generating milestones.
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {clarificationQuestions.map((question) => {
+                      const currentValue = safeTrim(clarificationAnswers?.[question.key]);
+                      return (
+                        <div
+                          key={question.key}
+                          className="rounded-xl border border-slate-200 bg-white p-3"
+                          data-testid={`agreement-clarification-question-${question.key}`}
+                        >
+                          <div className="text-sm font-medium text-slate-900">{question.label}</div>
+                          {question.help ? (
+                            <div className="mt-1 text-xs leading-5 text-slate-500">{question.help}</div>
+                          ) : null}
+                          {question.kind === "yes_no" ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {["yes", "no"].map((option) => {
+                                const active = currentValue === option;
+                                return (
+                                  <button
+                                    key={option}
+                                    type="button"
+                                    onClick={() => handleClarificationAnswerChange(question.key, option)}
+                                    disabled={locked}
+                                    className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${
+                                      active
+                                        ? "border-indigo-600 bg-indigo-600 text-white"
+                                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                                    }`}
+                                    data-testid={`agreement-clarification-${question.key}-${option}`}
+                                  >
+                                    {option === "yes" ? "Yes" : "No"}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              value={currentValue}
+                              onChange={(e) =>
+                                handleClarificationAnswerChange(question.key, e.target.value)
+                              }
+                              placeholder={question.placeholder || "Add a quick note"}
+                              disabled={locked}
+                              className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                              data-testid={`agreement-clarification-input-${question.key}`}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {clarificationSummaryLines.length ? (
+                  <div
+                    data-testid="agreement-clarification-summary"
+                    className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3"
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                      Saved to project context
+                    </div>
+                    <div className="mt-1 text-sm text-emerald-900">
+                      These details will help refine the scope and milestone suggestions.
+                    </div>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-900">
+                      {clarificationSummaryLines.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-        ) : null}
 
 
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-5">

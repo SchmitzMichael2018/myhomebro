@@ -629,10 +629,15 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
     'Confirm the customer, address, and project details'
   );
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Describe the job' })).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.locator('input[name="address_line1"]')).toBeVisible();
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-class-residential')).toBeVisible();
+  await expect(page.getByTestId('agreement-payment-structure-simple')).toBeVisible();
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
 
   await page.getByTestId('step1-job-description-input').fill(
@@ -1420,8 +1425,10 @@ test('agreement wizard step 1 asks for measurements on area-based jobs and accep
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
   await page.getByTestId('step1-job-description-input').fill(
     'Replace flooring in the main living areas and hallway'
   );
@@ -1429,6 +1436,7 @@ test('agreement wizard step 1 asks for measurements on area-based jobs and accep
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
 
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-question-measurements')).toContainText(
     'Do you know the approximate square footage or dimensions of the work area?'
