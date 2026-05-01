@@ -503,7 +503,6 @@ export default function AgreementWizard() {
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
   });
-  const [reviewSignRequestId, setReviewSignRequestId] = useState(0);
   const [aiFeedbackByStep, setAiFeedbackByStep] = useState({});
   const { highlights: step1AiHighlights, markUpdated: markStep1AiUpdated } = useAiFieldHighlights({
     durationMs: 5000,
@@ -657,10 +656,98 @@ export default function AgreementWizard() {
     "in_progress",
   ].includes(agreementStatus);
 
-  const handlePreviewAgreement = useCallback(() => {
-    goStep(4);
-    setReviewSignRequestId((prev) => prev + 1);
-  }, [goStep]);
+  const agreementPdfNumber =
+    agreement?.amendment_number != null
+      ? Number(agreement.amendment_number)
+      : agreement?.amendment != null
+      ? Number(agreement.amendment)
+      : 0;
+
+  const markAgreementPdfViewed = useCallback(async () => {
+    if (!agreementId) return;
+    try {
+      await api.post(`/projects/agreements/${agreementId}/mark_previewed/`);
+    } catch {
+      try {
+        await api.post(`/projects/agreements/${agreementId}/mark_previewed`);
+      } catch {}
+    }
+    setAgreement((prev) => (prev ? { ...prev, pdf_viewed: true } : prev));
+  }, [agreementId, setAgreement]);
+
+  const fetchAgreementPdfBlob = useCallback(async () => {
+    if (!agreementId) throw new Error("Missing agreement ID.");
+
+    const base = `/projects/agreements/${agreementId}`;
+    const candidates = [
+      `${base}/preview_link/`,
+      `${base}/preview_link`,
+      `${base}/preview_pdf/`,
+      `${base}/preview_pdf`,
+    ];
+
+    let streamUrl = null;
+    for (const url of candidates) {
+      try {
+        const { data } = await api.get(url, {
+          timeout: 30000,
+          params: { _ts: Date.now() },
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        });
+        const outUrl = data?.url || data?.preview_url || data?.link;
+        if (outUrl) {
+          streamUrl = outUrl;
+          break;
+        }
+      } catch (err) {
+        if (err?.response?.status === 404) continue;
+        throw err;
+      }
+    }
+
+    if (!streamUrl) throw new Error("Preview endpoint not found on server.");
+
+    const res = await api.get(streamUrl, {
+      responseType: "blob",
+      timeout: 120000,
+      params: { _ts: Date.now() },
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    });
+
+    const blob = new Blob([res.data], { type: "application/pdf" });
+    const blobUrl = URL.createObjectURL(blob);
+    const titleHint =
+      agreementPdfNumber > 0
+        ? `agreement-${agreementId}-amendment-${agreementPdfNumber}.pdf`
+        : `agreement-${agreementId}.pdf`;
+
+    return { blobUrl, titleHint };
+  }, [agreementId, agreementPdfNumber]);
+
+  const handleViewAgreementPdf = useCallback(async () => {
+    try {
+      const { blobUrl, titleHint } = await fetchAgreementPdfBlob();
+      const win = window.open(blobUrl, "_blank", "noopener,noreferrer");
+      if (!win) {
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.target = "_blank";
+        a.rel = "noreferrer noopener";
+        a.download = titleHint || "agreement.pdf";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      await markAgreementPdfViewed();
+      window.setTimeout(() => {
+        try {
+          URL.revokeObjectURL(blobUrl);
+        } catch {}
+      }, 60000);
+    } catch (err) {
+      toast.error(err?.message || "Unable to open the agreement PDF.");
+    }
+  }, [fetchAgreementPdfBlob, markAgreementPdfViewed]);
 
   const stepTabs = useMemo(
     () => [
@@ -1736,12 +1823,12 @@ export default function AgreementWizard() {
           {agreementId ? (
             <div className="flex items-center gap-2">
               <button
-                  type="button"
-                  data-testid="agreement-wizard-review-sign-button"
-                  onClick={handlePreviewAgreement}
-                  className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100"
-                >
-                Review & Sign
+                type="button"
+                data-testid="agreement-wizard-view-pdf-button"
+                onClick={handleViewAgreementPdf}
+                className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100"
+              >
+                View Agreement PDF
               </button>
               {canOpenContractWorkspace ? (
                 <button
@@ -2020,7 +2107,6 @@ export default function AgreementWizard() {
             unsignContractor={unsignContractor}
             onAgreementUpdated={(updated) => setAgreement(updated)}
             refreshAgreement={refreshAgreement}
-            reviewSignRequestId={reviewSignRequestId}
             postSendGuidance={aiPanelConfig.nextGuidance}
           />
         </div>

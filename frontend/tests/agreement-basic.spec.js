@@ -3653,8 +3653,8 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByRole('heading', { name: 'Project Context' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Review Scope Clarifications' })).toBeVisible();
   await expect(page.getByTestId('step4-header-actions')).toContainText('Review Scope Clarifications');
-  await expect(page.getByTestId('agreement-wizard-review-sign-button')).toBeVisible();
-  await expect(page.getByTestId('agreement-wizard-review-sign-button')).toContainText('Review & Sign');
+  await expect(page.getByTestId('agreement-wizard-view-pdf-button')).toBeVisible();
+  await expect(page.getByTestId('agreement-wizard-view-pdf-button')).toContainText('View Agreement PDF');
   await expect(page.getByTestId('agreement-wizard-open-workspace-button')).toHaveCount(0);
   const signArea = page.getByRole('main');
   await expect(signArea.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible();
@@ -3684,15 +3684,12 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   );
   await expect(page.getByText('Once both signatures are complete, the customer will be prompted to fund escrow.')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Step 3 Warranty' }).click();
-  await expect(page).toHaveURL(/step=3/);
-  await page.getByTestId('agreement-wizard-review-sign-button').click();
+  await page.getByTestId('agreement-wizard-view-pdf-button').click();
   await expect(page).toHaveURL(/step=4/);
-  await expect(page.getByTestId('step4-signatures-escrow')).toBeVisible();
+  await expect.poll(() => markPreviewedCalls.length).toBe(1);
 
   await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
   await expect(signArea.locator('iframe, object')).toHaveCount(0);
-  await expect(page).toHaveURL(/step=4/);
   await expect(page.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download PDF' }).first()).toBeVisible();
   await expect(page.getByTestId('step4-sign-continue-button')).toBeDisabled();
