@@ -73,6 +73,7 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
       654: [],
     },
   };
+  let lastAssignmentPayload = null;
 
   function rebuildDirectory() {
     state.directory = [
@@ -244,6 +245,7 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
 
   await page.route("**/api/projects/agreements/321/subcontractor-assignments/", async (route) => {
     const body = route.request().postDataJSON();
+    lastAssignmentPayload = body;
     state.assignments = [
       {
         id: Number(body.invitation_id),
@@ -257,6 +259,8 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
         submitted_for_review_count: 1,
         total_assigned_amount: "1200.00",
         earliest_due_date: "2026-03-27",
+        subcontractor_agreed_pay: body.agreed_pay || "1200.00",
+        payment_release_mode: body.payment_release_mode || "manual_release",
       },
     ];
     state.milestonesByAgreement["321"] = state.milestonesByAgreement["321"].map((milestone) =>
@@ -300,8 +304,12 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
   const selects = page.locator("select");
   await selects.nth(0).selectOption("321");
   await selects.nth(1).selectOption("77");
+  await page.getByTestId("subcontractor-assignment-agreed-pay").fill("1200.00");
+  await page.getByTestId("subcontractor-assignment-payment-release-mode").selectOption("auto_after_customer_approval");
   await page.getByText("Cabinet Install").click();
   await page.getByTestId("subcontractors-assignment-submit").click();
+  expect(lastAssignmentPayload.agreed_pay).toBe("1200.00");
+  expect(lastAssignmentPayload.payment_release_mode).toBe("auto_after_customer_approval");
 
   await page.getByRole("button", { name: "Assignments" }).click();
   await expect(page.getByTestId("subcontractors-assignments")).toContainText("Accepted Sub");

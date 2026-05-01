@@ -937,6 +937,15 @@ export default function AgreementDetail() {
     if (options.overrideReason) {
       payload.override_reason = options.overrideReason;
     }
+    if (options.agreedPay !== undefined && options.agreedPay !== "") {
+      payload.agreed_pay = options.agreedPay;
+    }
+    if (options.paymentReleaseMode) {
+      payload.payment_release_mode = options.paymentReleaseMode;
+    }
+    if (options.sendAgreement !== undefined) {
+      payload.send_agreement = options.sendAgreement;
+    }
     const { data } = await api.post(
       `/projects/milestones/${milestoneId}/assign-subcontractor/`,
       payload
@@ -2212,6 +2221,7 @@ export default function AgreementDetail() {
                         acceptedSubcontractors={acceptedSubcontractors}
                         currentAssignment={m.assigned_subcontractor}
                         currentCompliance={m.subcontractor_assignment_compliance}
+                        currentAgreement={m.subcontractor_milestone_agreement}
                         onAssign={(invitationId, options) =>
                           assignMilestoneSubcontractor(m.id, invitationId, options)
                         }

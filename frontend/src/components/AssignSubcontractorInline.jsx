@@ -30,11 +30,14 @@ export default function AssignSubcontractorInline({
   acceptedSubcontractors = [],
   currentAssignment = null,
   currentCompliance = null,
+  currentAgreement = null,
   onAssign,
   onUnassign,
   disabled = false,
 }) {
   const [selected, setSelected] = useState("");
+  const [agreedPay, setAgreedPay] = useState("");
+  const [paymentReleaseMode, setPaymentReleaseMode] = useState("manual_release");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [decision, setDecision] = useState(null);
@@ -67,8 +70,13 @@ export default function AssignSubcontractorInline({
       await onAssign(Number(selected), {
         complianceAction,
         overrideReason,
+        agreedPay,
+        paymentReleaseMode,
+        sendAgreement: true,
       });
       setSelected("");
+      setAgreedPay("");
+      setPaymentReleaseMode("manual_release");
       setDecision(null);
       setOverrideReason("");
     } catch (e) {
@@ -152,6 +160,24 @@ export default function AssignSubcontractorInline({
         </div>
       ) : null}
 
+      {currentAgreement ? (
+        <div
+          data-testid="subcontractor-assignment-current-agreement"
+          className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700"
+        >
+          <div className="font-semibold text-slate-900">Current milestone agreement</div>
+          <div className="mt-1">
+            Pay {currentAgreement.agreed_pay ? `$${Number(currentAgreement.agreed_pay).toFixed(2)}` : "—"}
+          </div>
+          <div className="mt-1">
+            Release: {currentAgreement.payment_release_mode_label || currentAgreement.payment_release_mode || "Manual Release"}
+          </div>
+          <div className="mt-1">
+            Status: {currentAgreement.agreement_acceptance_status_label || currentAgreement.agreement_acceptance_status || "not_sent"}
+          </div>
+        </div>
+      ) : null}
+
       {err ? (
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {err}
@@ -174,6 +200,29 @@ export default function AssignSubcontractorInline({
               {option.label} {option.email ? `- ${option.email}` : ""}
             </option>
           ))}
+        </select>
+
+        <input
+          data-testid="subcontractor-agreed-pay-input"
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={agreedPay}
+          onChange={(e) => setAgreedPay(e.target.value)}
+          disabled={disabled || busy}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm md:w-40"
+          placeholder="Agreed pay"
+        />
+
+        <select
+          data-testid="subcontractor-payment-release-mode-select"
+          value={paymentReleaseMode}
+          onChange={(e) => setPaymentReleaseMode(e.target.value)}
+          disabled={disabled || busy}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm md:w-56"
+        >
+          <option value="manual_release">Manual Release</option>
+          <option value="auto_after_customer_approval">Auto-Release After Customer Approval</option>
         </select>
 
         <button
@@ -224,6 +273,9 @@ export default function AssignSubcontractorInline({
             className="mt-3 w-full rounded-lg border border-amber-300 px-3 py-2 text-sm"
             placeholder="Optional note for assigning anyway"
           />
+          <div className="mt-2 text-xs text-slate-600">
+            Payment terms apply to the selected milestone assignment and are stored separately from the customer agreement amount.
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"

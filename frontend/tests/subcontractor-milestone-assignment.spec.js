@@ -28,6 +28,7 @@ test('agreement detail renders subcontractor assignment state and lets contracto
     },
     payout_amount: null,
     payout_status: null,
+    subcontractor_milestone_agreement: null,
     subcontractor_assignment_compliance: {
       status: '',
       warning_snapshot: {},
@@ -166,6 +167,29 @@ test('agreement detail renders subcontractor assignment state and lets contracto
     };
     milestoneState.payout_amount = '2500.00';
     milestoneState.payout_status = 'not_eligible';
+    milestoneState.subcontractor_milestone_agreement = {
+      id: 55,
+      milestone_id: MILESTONE_ID,
+      agreement_id: AGREEMENT_ID,
+      contractor_id: 7,
+      subcontractor_invitation_id: 77,
+      subcontractor_user_id: 88,
+      subcontractor_display_name: 'Accepted Sub',
+      subcontractor_email: 'accepted-sub@example.com',
+      agreement_title: 'Kitchen Remodel Agreement',
+      milestone_title: 'Cabinet Install',
+      milestone_description: 'Install all cabinets',
+      agreed_pay: body.agreed_pay || '1750.00',
+      payment_release_mode: body.payment_release_mode || 'manual_release',
+      payment_release_mode_label:
+        body.payment_release_mode === 'auto_after_customer_approval'
+          ? 'Auto-Release After Customer Approval'
+          : 'Manual Release',
+      agreement_acceptance_status: 'pending',
+      agreement_acceptance_status_label: 'Pending',
+      agreement_version: 1,
+      terms_snapshot: {},
+    };
     milestoneState.subcontractor_assignment_compliance = {
       status:
         body.compliance_action === 'request_license'
@@ -204,6 +228,7 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       milestoneState.assigned_worker = null;
       milestoneState.payout_amount = null;
       milestoneState.payout_status = null;
+      milestoneState.subcontractor_milestone_agreement = null;
       milestoneState.subcontractor_assignment_compliance = {
         status: '',
         warning_snapshot: {},
@@ -242,9 +267,13 @@ test('agreement detail renders subcontractor assignment state and lets contracto
   await expect(milestoneCard).toContainText('Reviewer: Contractor Owner');
 
   await milestoneCard.getByTestId('subcontractor-assignment-select').selectOption('77');
+  await milestoneCard.getByTestId('subcontractor-agreed-pay-input').fill('1750.00');
+  await milestoneCard.getByTestId('subcontractor-payment-release-mode-select').selectOption('auto_after_customer_approval');
   await milestoneCard.getByTestId('subcontractor-assign-button').click();
   await expect(milestoneCard).toContainText('Assigned Worker: Accepted Sub');
   await expect(milestoneCard).toContainText('Payout: $2,500.00 (Not eligible)');
+  await expect(milestoneCard.getByTestId('subcontractor-assignment-current-agreement')).toContainText('Pay $1750.00');
+  await expect(milestoneCard.getByTestId('subcontractor-assignment-current-agreement')).toContainText('Auto-Release After Customer Approval');
 
   await milestoneCard.getByTestId('delegated-reviewer-select').selectOption('55');
   await milestoneCard.getByTestId('delegated-reviewer-assign-button').click();

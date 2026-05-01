@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import secrets
 from datetime import timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.core.validators import MinValueValidator
 from django.utils import timezone
 
 
@@ -107,3 +109,151 @@ class SubcontractorInvitation(models.Model):
         self.refresh_expired_status()
         self.status = SubcontractorInvitationStatus.REVOKED
         self.save(update_fields=["status"])
+
+
+class SubcontractorMilestoneAgreementStatus(models.TextChoices):
+    NOT_SENT = "not_sent", "Not Sent"
+    PENDING = "pending", "Pending"
+    ACCEPTED = "accepted", "Accepted"
+    DECLINED = "declined", "Declined"
+
+
+class SubcontractorPaymentReleaseMode(models.TextChoices):
+    MANUAL_RELEASE = "manual_release", "Manual Release"
+    AUTO_AFTER_CUSTOMER_APPROVAL = "auto_after_customer_approval", "Auto-Release After Customer Approval"
+
+
+class SubcontractorMilestoneAgreement(models.Model):
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="subcontractor_milestone_agreements",
+    )
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="subcontractor_milestone_agreements",
+    )
+    milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.CASCADE,
+        related_name="subcontractor_milestone_agreements",
+    )
+    subcontractor_invitation = models.ForeignKey(
+        "projects.SubcontractorInvitation",
+        on_delete=models.CASCADE,
+        related_name="milestone_agreements",
+    )
+    agreed_pay = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        help_text="Contractor/subcontractor-facing pay for this milestone.",
+    )
+    payment_release_mode = models.CharField(
+        max_length=40,
+        choices=SubcontractorPaymentReleaseMode.choices,
+        default=SubcontractorPaymentReleaseMode.MANUAL_RELEASE,
+        db_index=True,
+    )
+    agreement_acceptance_status = models.CharField(
+        max_length=20,
+        choices=SubcontractorMilestoneAgreementStatus.choices,
+        default=SubcontractorMilestoneAgreementStatus.NOT_SENT,
+        db_index=True,
+    )
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    accepted_by_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="accepted_subcontractor_milestone_agreements",
+    )
+    agreement_version = models.PositiveIntegerField(default=1, db_index=True)
+    terms_snapshot = models.JSONField(default=dict, blank=True)
+    override_reason = models.TextField(blank=True, default="")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    declined_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-agreement_version", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["milestone", "subcontractor_invitation", "agreement_version"],
+                name="unique_subcontractor_milestone_agreement_version",
+            ),
+            models.CheckConstraint(
+                name="subcontractor_milestone_agreement_pay_positive",
+                check=models.Q(agreed_pay__gt=0),
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["milestone", "agreement_acceptance_status"]),
+            models.Index(fields=["agreement", "agreement_acceptance_status"]),
+            models.Index(fields=["subcontractor_invitation", "agreement_version"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            "SubcontractorMilestoneAgreement("
+            f"milestone={self.milestone_id}, invitation={self.subcontractor_invitation_id}, "
+            f"version={self.agreement_version}, status={self.agreement_acceptance_status})"
+        )
+
+    @property
+    def is_pending(self) -> bool:
+        return self.agreement_acceptance_status == SubcontractorMilestoneAgreementStatus.PENDING
+
+    @property
+    def is_accepted(self) -> bool:
+        return self.agreement_acceptance_status == SubcontractorMilestoneAgreementStatus.ACCEPTED
+
+    @property
+    def is_declined(self) -> bool:
+        return self.agreement_acceptance_status == SubcontractorMilestoneAgreementStatus.DECLINED
+
+    def mark_pending(self, *, save: bool = True) -> None:
+        self.agreement_acceptance_status = SubcontractorMilestoneAgreementStatus.PENDING
+        self.sent_at = self.sent_at or timezone.now()
+        if save:
+            self.save(
+                update_fields=[
+                    "agreement_acceptance_status",
+                    "sent_at",
+                    "updated_at",
+                ]
+            )
+
+    def mark_accepted(self, *, user, save: bool = True) -> None:
+        self.agreement_acceptance_status = SubcontractorMilestoneAgreementStatus.ACCEPTED
+        self.accepted_at = timezone.now()
+        self.accepted_by_user = user
+        self.declined_at = None
+        if save:
+            self.save(
+                update_fields=[
+                    "agreement_acceptance_status",
+                    "accepted_at",
+                    "accepted_by_user",
+                    "declined_at",
+                    "updated_at",
+                ]
+            )
+
+    def mark_declined(self, *, user=None, save: bool = True) -> None:
+        self.agreement_acceptance_status = SubcontractorMilestoneAgreementStatus.DECLINED
+        self.declined_at = timezone.now()
+        if user is not None:
+            self.accepted_by_user = user
+        if save:
+            update_fields = [
+                "agreement_acceptance_status",
+                "declined_at",
+                "updated_at",
+            ]
+            if user is not None:
+                update_fields.append("accepted_by_user")
+            self.save(update_fields=update_fields)

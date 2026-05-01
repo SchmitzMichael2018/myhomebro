@@ -69,6 +69,23 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
                       completion_date: '2026-03-28',
                       assigned_worker_display: 'Taylor Sub',
                       reviewer_display: 'Contractor Owner',
+                      can_current_user_submit_work: true,
+                      subcontractor_agreement: {
+                        id: 44,
+                        milestone_id: 901,
+                        agreement_id: 321,
+                        contractor_business_name: 'Kitchen Remodel Agreement',
+                        contractor_name: 'Kitchen Remodel Agreement',
+                        subcontractor_display_name: 'Taylor Sub',
+                        subcontractor_email: 'subcontractor@example.com',
+                        milestone_title: 'Cabinet Install',
+                        milestone_description: 'Install all upper and lower cabinets.',
+                        agreed_pay: '1750.00',
+                        payment_release_mode: 'manual_release',
+                        payment_release_mode_label: 'Manual Release',
+                        agreement_acceptance_status: 'accepted',
+                        agreement_acceptance_status_label: 'Accepted',
+                      },
                       assigned_subcontractor: {
                         invitation_id: 77,
                         display_name: 'Taylor Sub',
@@ -85,6 +102,68 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
     });
   });
 
+  await page.route('**/api/projects/subcontractor/milestones/901/agreement/accept/**', async (route) => {
+    const acceptedAgreement = {
+      id: 44,
+      milestone_id: 901,
+      agreement_id: 321,
+      contractor_business_name: 'Kitchen Remodel Agreement',
+      contractor_name: 'Kitchen Remodel Agreement',
+      subcontractor_display_name: 'Taylor Sub',
+      subcontractor_email: 'subcontractor@example.com',
+      milestone_title: 'Cabinet Install',
+      milestone_description: 'Install all upper and lower cabinets.',
+      agreed_pay: '1750.00',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      agreement_acceptance_status: 'accepted',
+      agreement_acceptance_status_label: 'Accepted',
+    };
+    emptyMode = false;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        milestone_id: 901,
+        agreement: acceptedAgreement,
+        can_current_user_submit_work: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/milestones/901/submit-work/**', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 901,
+        title: 'Cabinet Install',
+        work_submission_status: 'submitted_for_review',
+        can_current_user_submit_work: false,
+        subcontractor_agreement: {
+          id: 44,
+          milestone_id: 901,
+          agreement_id: 321,
+          contractor_business_name: 'Kitchen Remodel Agreement',
+          contractor_name: 'Kitchen Remodel Agreement',
+          subcontractor_display_name: 'Taylor Sub',
+          subcontractor_email: 'subcontractor@example.com',
+          milestone_title: 'Cabinet Install',
+          milestone_description: 'Install all upper and lower cabinets.',
+          agreed_pay: '1750.00',
+          payment_release_mode: 'manual_release',
+          payment_release_mode_label: 'Manual Release',
+          agreement_acceptance_status: 'accepted',
+          agreement_acceptance_status_label: 'Accepted',
+        },
+      }),
+    });
+  });
+
   await page.goto('/app/subcontractor/assigned-work', {
     waitUntil: 'domcontentloaded',
   });
@@ -97,8 +176,15 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
     'Cabinet Install'
   );
   await expect(page.getByTestId('assigned-milestone-901')).toContainText('Taylor Sub');
-  await expect(page.getByTestId('assigned-milestone-submit-complete-901')).toContainText(
-    'Submit Work for Review'
+  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText('$1,750.00');
+  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
+    'Agreement accepted'
+  );
+  await expect(page.getByTestId('assigned-milestone-submit-complete-901')).toBeEnabled();
+  await expect(page.getByTestId('assigned-milestone-accept-agreement-901')).toHaveCount(0);
+  await page.getByTestId('assigned-milestone-submit-complete-901').click();
+  await expect(page.getByTestId('assigned-milestone-completion-state-901')).toContainText(
+    'Submitted for review'
   );
   await expect(page.getByTestId('assigned-milestone-payout-state-901')).toHaveCount(0);
   await expect(page.getByTestId('subcontractor-payout-account-status')).toHaveCount(0);
@@ -294,6 +380,7 @@ test('subcontractor assigned work can request contractor review for an assigned 
     },
     assigned_worker_display: 'Taylor Sub',
     reviewer_display: 'Contractor Owner',
+    can_current_user_submit_work: true,
     subcontractor_review_requested: false,
     subcontractor_review_requested_at: null,
     subcontractor_review_note: '',
@@ -414,6 +501,22 @@ test('subcontractor assigned work can submit completion for review and shows sen
     subcontractor_marked_complete_at: '2026-03-24T09:00:00Z',
     subcontractor_completion_note: 'Initial completion pass is done.',
     subcontractor_review_response_note: 'Please adjust the pantry trim before resubmitting.',
+    subcontractor_agreement: {
+      id: 44,
+      milestone_id: 901,
+      agreement_id: 321,
+      contractor_business_name: 'Kitchen Remodel Agreement',
+      contractor_name: 'Kitchen Remodel Agreement',
+      subcontractor_display_name: 'Taylor Sub',
+      subcontractor_email: 'subcontractor@example.com',
+      milestone_title: 'Cabinet Install',
+      milestone_description: 'Install all upper and lower cabinets.',
+      agreed_pay: '1750.00',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      agreement_acceptance_status: 'pending',
+      agreement_acceptance_status_label: 'Pending',
+    },
   };
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -456,6 +559,20 @@ test('subcontractor assigned work can submit completion for review and shows sen
     });
   });
 
+  await page.route('**/api/projects/subcontractor/milestones/901/agreement/accept/**', async (route) => {
+    milestoneState.subcontractor_agreement.agreement_acceptance_status = 'accepted';
+    milestoneState.subcontractor_agreement.agreement_acceptance_status_label = 'Accepted';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        milestone_id: 901,
+        agreement: milestoneState.subcontractor_agreement,
+        can_current_user_submit_work: true,
+      }),
+    });
+  });
+
   await page.route('**/api/projects/milestones/901/submit-work/', async (route) => {
     milestoneState.work_submission_status = 'submitted_for_review';
     milestoneState.work_submitted_at = '2026-03-24T10:20:00Z';
@@ -483,6 +600,9 @@ test('subcontractor assigned work can submit completion for review and shows sen
   await expect(page.getByTestId('assigned-milestone-completion-state-901')).toContainText(
     'Please adjust the pantry trim before resubmitting.'
   );
+  await expect(page.getByTestId('assigned-milestone-accept-agreement-901')).toBeVisible();
+  await page.getByTestId('assigned-milestone-accept-agreement-901').click();
+  await expect(page.getByTestId('assigned-milestone-submit-complete-901')).toBeEnabled();
 
   await page
     .getByTestId('assigned-milestone-completion-note-901')

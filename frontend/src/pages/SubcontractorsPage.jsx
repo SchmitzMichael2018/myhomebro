@@ -133,6 +133,8 @@ export default function SubcontractorsPage() {
     agreement_id: "",
     invitation_id: "",
     milestone_ids: [],
+    agreed_pay: "",
+    payment_release_mode: "manual_release",
   });
 
   async function loadHubData() {
@@ -306,12 +308,16 @@ export default function SubcontractorsPage() {
     try {
       setAssignBusy(true);
       const payload = { ...assignForm };
+      if (payload.agreed_pay === "") {
+        delete payload.agreed_pay;
+      }
       if (complianceAction) {
         payload.compliance_action = complianceAction;
       }
       if (assignOverrideReason) {
         payload.override_reason = assignOverrideReason;
       }
+      payload.send_agreement = true;
       await api.post(
         `/projects/agreements/${assignForm.agreement_id}/subcontractor-assignments/`,
         payload
@@ -330,6 +336,8 @@ export default function SubcontractorsPage() {
         agreement_id: "",
         invitation_id: "",
         milestone_ids: [],
+        agreed_pay: "",
+        payment_release_mode: "manual_release",
       });
       setAssignMilestones([]);
       await loadHubData();
@@ -871,6 +879,8 @@ export default function SubcontractorsPage() {
                   agreement_id: e.target.value,
                   invitation_id: "",
                   milestone_ids: [],
+                  agreed_pay: "",
+                  payment_release_mode: "manual_release",
                 })
               }
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -906,6 +916,53 @@ export default function SubcontractorsPage() {
                 </option>
               ))}
             </select>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-sm font-semibold text-slate-900">Milestone Agreement Terms</div>
+              <div className="mt-1 text-xs text-slate-500">
+                Applies to each selected milestone. Use a different assignment if you need different pay terms.
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Agreed Pay
+                  </label>
+                  <input
+                    data-testid="subcontractor-assignment-agreed-pay"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={assignForm.agreed_pay}
+                    onChange={(e) =>
+                      setAssignForm((prev) => ({ ...prev, agreed_pay: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Per selected milestone"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Payment Release Mode
+                  </label>
+                  <select
+                    data-testid="subcontractor-assignment-payment-release-mode"
+                    value={assignForm.payment_release_mode}
+                    onChange={(e) =>
+                      setAssignForm((prev) => ({
+                        ...prev,
+                        payment_release_mode: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="manual_release">Manual Release</option>
+                    <option value="auto_after_customer_approval">
+                      Auto-Release After Customer Approval
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="text-sm font-semibold text-slate-900">Milestones</div>

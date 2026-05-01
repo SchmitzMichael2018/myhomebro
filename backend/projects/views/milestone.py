@@ -60,6 +60,9 @@ from projects.services.milestone_workflow import can_user_review_submitted_work
 from projects.services.milestone_payouts import sync_milestone_payout
 from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
+from projects.services.subcontractor_milestone_agreements import (
+    upsert_subcontractor_milestone_agreement,
+)
 from projects.services.subcontractor_compliance import (
     apply_assignment_compliance_decision,
     evaluate_subcontractor_assignment_compliance,
@@ -1246,6 +1249,10 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         )
         compliance_action = str(request.data.get("compliance_action") or "").strip().lower()
         override_reason = str(request.data.get("override_reason") or "").strip()
+        agreed_pay = request.data.get("agreed_pay", getattr(milestone, "amount", 0))
+        payment_release_mode = request.data.get("payment_release_mode", "manual_release")
+        send_agreement = request.data.get("send_agreement", True)
+        mark_pending = request.data.get("mark_pending", False)
 
         evaluation = evaluate_subcontractor_assignment_compliance(
             contractor=contractor,
@@ -1292,6 +1299,20 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
             milestone = serializer.save()
+            try:
+                upsert_subcontractor_milestone_agreement(
+                    contractor=contractor,
+                    agreement=agreement,
+                    milestone=milestone,
+                    invitation=invitation,
+                    agreed_pay=agreed_pay,
+                    payment_release_mode=payment_release_mode,
+                    override_reason=override_reason,
+                    send_agreement=bool(send_agreement),
+                    mark_pending=bool(mark_pending),
+                )
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
             apply_assignment_compliance_decision(
                 milestone=milestone,
                 evaluation=evaluation,

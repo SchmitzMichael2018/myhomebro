@@ -169,6 +169,12 @@ from .views.subcontractor_work import (
     subcontractor_submit_completion,
     subcontractor_request_review,
 )
+from .views.subcontractor_milestone_agreements import (
+    MilestoneSubcontractorAgreementView,
+    SubcontractorMilestoneAgreementAcceptView,
+    SubcontractorMilestoneAgreementDeclineView,
+    SubcontractorMilestoneAgreementView,
+)
 from .views.subcontractor_hub import (
     AgreementSubcontractorAssignmentsView,
     ContractorSubcontractorAssignmentsView,
@@ -592,6 +598,26 @@ urlpatterns = [
     path(
         "subcontractor/milestones/<int:milestone_id>/submit-completion/",
         subcontractor_submit_completion,
+    ),
+    path(
+        "milestones/<int:milestone_id>/subcontractor-agreement/",
+        MilestoneSubcontractorAgreementView.as_view(),
+        name="milestone-subcontractor-agreement",
+    ),
+    path(
+        "subcontractor/milestones/<int:milestone_id>/agreement/",
+        SubcontractorMilestoneAgreementView.as_view(),
+        name="subcontractor-milestone-agreement",
+    ),
+    path(
+        "subcontractor/milestones/<int:milestone_id>/agreement/accept/",
+        SubcontractorMilestoneAgreementAcceptView.as_view(),
+        name="subcontractor-milestone-agreement-accept",
+    ),
+    path(
+        "subcontractor/milestones/<int:milestone_id>/agreement/decline/",
+        SubcontractorMilestoneAgreementDeclineView.as_view(),
+        name="subcontractor-milestone-agreement-decline",
     ),
     path("milestones/reviewer-queue/", reviewer_queue),
     path("milestones/<int:milestone_id>/submit-work/", submit_work_for_review),

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from projects.models import ContractorSubAccount, Milestone
+from projects.models_subcontractor import SubcontractorMilestoneAgreementStatus
+from projects.services.subcontractor_milestone_agreements import get_latest_subcontractor_milestone_agreement
 
 
 ROLE_INTERNAL_TEAM_MEMBER = "internal_team_member"
@@ -159,7 +161,15 @@ def can_user_submit_work(milestone: Milestone, user) -> bool:
     worker = get_assigned_worker(milestone)
     if worker is None or worker.user is None or user is None:
         return False
-    return getattr(worker.user, "id", None) == getattr(user, "id", None)
+    if getattr(worker.user, "id", None) != getattr(user, "id", None):
+        return False
+    invitation = getattr(milestone, "assigned_subcontractor_invitation", None)
+    if invitation is None:
+        return False
+    latest = get_latest_subcontractor_milestone_agreement(milestone, invitation)
+    if latest is None:
+        return False
+    return latest.agreement_acceptance_status == SubcontractorMilestoneAgreementStatus.ACCEPTED
 
 
 def can_user_review_submitted_work(milestone: Milestone, user) -> bool:

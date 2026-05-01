@@ -18,6 +18,10 @@ from django.utils import timezone
 from projects.services.subcontractor_notifications import (
     create_subcontractor_activity_notification,
 )
+from projects.services.subcontractor_milestone_agreements import (
+    get_latest_subcontractor_milestone_agreement,
+    serialize_subcontractor_milestone_agreement,
+)
 from projects.services.milestone_workflow import (
     can_user_review_submitted_work,
     can_user_submit_work,
@@ -48,6 +52,13 @@ def _milestone_payload(milestone: Milestone) -> dict:
     display_name = display_name or getattr(assigned, "invite_name", "") or getattr(assigned, "invite_email", "") or ""
     assigned_worker = get_assigned_worker(milestone)
     reviewer = get_effective_reviewer(milestone)
+    subcontractor_agreement = None
+    if assigned is not None:
+        latest_agreement = get_latest_subcontractor_milestone_agreement(milestone, assigned)
+        subcontractor_agreement = serialize_subcontractor_milestone_agreement(
+            latest_agreement,
+            subcontractor_view=True,
+        )
 
     return {
         "id": milestone.id,
@@ -75,6 +86,7 @@ def _milestone_payload(milestone: Milestone) -> dict:
         if assigned_worker is not None
         else None,
         "assigned_worker_display": getattr(assigned_worker, "display_name", "") or getattr(assigned_worker, "email", "") or "",
+        "subcontractor_agreement": subcontractor_agreement,
         "reviewer": {
             "kind": getattr(reviewer, "kind", ""),
             "user_id": getattr(getattr(reviewer, "user", None), "id", None),

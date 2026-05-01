@@ -83,6 +83,9 @@ from projects.models_project_intake import ProjectIntake, ProjectIntakeClarifica
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
+    SubcontractorMilestoneAgreement,
+    SubcontractorMilestoneAgreementStatus,
+    SubcontractorPaymentReleaseMode,
 )
 from projects.models_dispute import Dispute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
@@ -4839,6 +4842,222 @@ class SubcontractorMilestoneAssignmentTests(TestCase):
             payload["assigned_subcontractor_display"],
             "Accepted Sub",
         )
+
+    def test_contractor_can_create_milestone_agreement_terms_with_manual_release_default(self):
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "1750.00",
+                "payment_release_mode": "manual_release",
+                "send_agreement": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(self.milestone.subcontractor_payout_amount_cents, 175000)
+        agreement = SubcontractorMilestoneAgreement.objects.get(
+            milestone=self.milestone,
+            subcontractor_invitation=self.accepted_invitation,
+        )
+        self.assertEqual(agreement.agreed_pay, Decimal("1750.00"))
+        self.assertEqual(agreement.payment_release_mode, SubcontractorPaymentReleaseMode.MANUAL_RELEASE)
+        self.assertEqual(agreement.agreement_acceptance_status, SubcontractorMilestoneAgreementStatus.PENDING)
+        payload = response.json()["milestone"]
+        self.assertEqual(payload["subcontractor_milestone_agreement"]["agreed_pay"], "1750.00")
+        self.assertEqual(
+            payload["subcontractor_milestone_agreement"]["payment_release_mode"],
+            "manual_release",
+        )
+
+    def test_over_allocation_requires_override_reason(self):
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "2750.00",
+                "payment_release_mode": "manual_release",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("override", str(response.json()).lower())
+
+        allowed = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "2750.00",
+                "payment_release_mode": "auto_after_customer_approval",
+                "override_reason": "Customer approved an expanded scope after the bid was accepted.",
+                "send_agreement": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(allowed.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(self.milestone.subcontractor_payout_amount_cents, 275000)
+
+    def test_subcontractor_must_accept_before_work_submission(self):
+        self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "1400.00",
+                "payment_release_mode": "manual_release",
+                "send_agreement": True,
+            },
+            format="json",
+        )
+
+        self.client.force_authenticate(user=self.accepted_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/submit-work/",
+            {"note": "Ready for review"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("not found", str(response.json()).lower())
+
+        accept_response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/agreement/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 200)
+
+        submit_response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/submit-work/",
+            {"note": "Ready for review"},
+            format="json",
+        )
+        self.assertEqual(submit_response.status_code, 200)
+
+    def test_changing_pay_after_acceptance_creates_new_version(self):
+        self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "1500.00",
+                "payment_release_mode": "manual_release",
+                "send_agreement": True,
+            },
+            format="json",
+        )
+        self.client.force_authenticate(user=self.accepted_user)
+        self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/agreement/accept/",
+            {},
+            format="json",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/subcontractor-agreement/",
+            {
+                "agreed_pay": "1600.00",
+                "payment_release_mode": "auto_after_customer_approval",
+                "send_agreement": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            SubcontractorMilestoneAgreement.objects.filter(
+                milestone=self.milestone,
+                subcontractor_invitation=self.accepted_invitation,
+            ).count(),
+            2,
+        )
+        latest = SubcontractorMilestoneAgreement.objects.filter(
+            milestone=self.milestone,
+            subcontractor_invitation=self.accepted_invitation,
+        ).order_by("-agreement_version", "-id").first()
+        self.assertEqual(latest.agreement_acceptance_status, SubcontractorMilestoneAgreementStatus.PENDING)
+        self.assertEqual(latest.agreement_version, 2)
+
+    def test_subcontractor_safe_view_hides_customer_total(self):
+        self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "1450.00",
+                "payment_release_mode": "manual_release",
+                "send_agreement": True,
+            },
+            format="json",
+        )
+
+        self.client.force_authenticate(user=self.accepted_user)
+        response = self.client.get(f"/api/projects/subcontractor/milestones/{self.milestone.id}/agreement/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["agreement"]
+        self.assertEqual(payload["agreed_pay"], "1450.00")
+        self.assertEqual(payload["payment_release_mode"], "manual_release")
+        self.assertNotIn("customer_agreement_total", payload)
+        self.assertNotIn("customer_milestone_amount", payload)
+
+    def test_auto_release_mode_still_waits_for_customer_approval(self):
+        self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "1450.00",
+                "payment_release_mode": "auto_after_customer_approval",
+                "send_agreement": True,
+            },
+            format="json",
+        )
+        self.client.force_authenticate(user=self.accepted_user)
+        self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/agreement/accept/",
+            {},
+            format="json",
+        )
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.APPROVED
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.accepted_user
+        self.milestone.subcontractor_reviewed_at = timezone.now()
+        self.milestone.subcontractor_reviewed_by = self.contractor_user
+        self.milestone.completed = True
+        self.milestone.completed_at = timezone.now()
+        self.milestone.is_invoiced = True
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+                "subcontractor_reviewed_at",
+                "subcontractor_reviewed_by",
+                "completed",
+                "completed_at",
+                "is_invoiced",
+            ]
+        )
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=self.milestone.amount,
+            status=InvoiceStatus.PENDING,
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.milestone.invoice = invoice
+        self.milestone.save(update_fields=["invoice"])
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.NOT_ELIGIBLE)
+        invoice.status = InvoiceStatus.APPROVED
+        invoice.approved_at = timezone.now()
+        invoice.save(update_fields=["status", "approved_at"])
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertIn(payout.status, {MilestonePayoutStatus.ELIGIBLE, MilestonePayoutStatus.READY_FOR_PAYOUT})
 
     def test_delegated_reviewer_assignment_accepts_internal_team_member(self):
         user_model = get_user_model()

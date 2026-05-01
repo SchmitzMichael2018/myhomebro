@@ -18,7 +18,10 @@ from .models_invite import ContractorInvite  # noqa: F401
 from .models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from .models_project_taxonomy import ProjectType, ProjectSubtype  # noqa: E402,F401
 from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus  # noqa: E402,F401
-from .models_subcontractor import SubcontractorInvitation  # noqa: E402,F401
+from .models_subcontractor import (  # noqa: E402,F401
+    SubcontractorInvitation,
+    SubcontractorMilestoneAgreement,
+)
 
 
 # --- Safe default for warranty snapshot (used if blank/None) ---

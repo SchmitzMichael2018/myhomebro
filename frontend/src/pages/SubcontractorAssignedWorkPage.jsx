@@ -39,6 +39,7 @@ export default function SubcontractorAssignedWorkPage() {
   const [groups, setGroups] = useState([]);
   const [expanded, setExpanded] = useState({});
   const [detailsLoading, setDetailsLoading] = useState({});
+  const [agreementBusy, setAgreementBusy] = useState({});
   const [commentsByMilestone, setCommentsByMilestone] = useState({});
   const [filesByMilestone, setFilesByMilestone] = useState({});
   const [commentDrafts, setCommentDrafts] = useState({});
@@ -55,6 +56,32 @@ export default function SubcontractorAssignedWorkPage() {
     if (normalized === "approved") return "Reviewed";
     if (normalized === "needs_changes") return "Needs changes";
     return "Not submitted";
+  }
+
+  function releaseModeLabel(mode) {
+    const normalized = String(mode || "").toLowerCase();
+    if (normalized === "auto_after_customer_approval") {
+      return "Auto-release after customer approval";
+    }
+    return "Manual release";
+  }
+
+  function formatMoney(value) {
+    const amount = Number.parseFloat(String(value ?? "0"));
+    return Number.isFinite(amount)
+      ? `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "$0.00";
+  }
+
+  function updateMilestoneInGroups(milestoneId, patch) {
+    setGroups((prev) =>
+      prev.map((group) => ({
+        ...group,
+        milestones: (group.milestones || []).map((milestone) =>
+          milestone.id === milestoneId ? { ...milestone, ...patch } : milestone
+        ),
+      }))
+    );
   }
 
   useEffect(() => {
@@ -182,6 +209,46 @@ export default function SubcontractorAssignedWorkPage() {
       toast.error(err?.response?.data?.detail || "Failed to request review.");
     } finally {
       setReviewBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  }
+
+  async function acceptAgreement(milestoneId) {
+    try {
+      setAgreementBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const { data } = await api.post(
+        `/projects/subcontractor/milestones/${milestoneId}/agreement/accept/`,
+        {}
+      );
+      updateMilestoneInGroups(milestoneId, {
+        ...(data?.agreement ? { subcontractor_agreement: data.agreement } : {}),
+        can_current_user_submit_work: true,
+      });
+      toast.success("Milestone agreement accepted.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to accept the agreement.");
+    } finally {
+      setAgreementBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  }
+
+  async function declineAgreement(milestoneId) {
+    try {
+      setAgreementBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const { data } = await api.post(
+        `/projects/subcontractor/milestones/${milestoneId}/agreement/decline/`,
+        {}
+      );
+      updateMilestoneInGroups(milestoneId, {
+        ...(data?.agreement ? { subcontractor_agreement: data.agreement } : {}),
+        can_current_user_submit_work: false,
+      });
+      toast.success("Milestone agreement declined.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to decline the agreement.");
+    } finally {
+      setAgreementBusy((prev) => ({ ...prev, [milestoneId]: false }));
     }
   }
 
@@ -315,6 +382,109 @@ export default function SubcontractorAssignedWorkPage() {
                     ) : null}
 
                     <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">
+                            Review Agreement (Required)
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            Open the terms below, then accept before submitting work.
+                          </div>
+                        </div>
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                            String(milestone.subcontractor_agreement?.agreement_acceptance_status || "").toLowerCase() === "accepted"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : String(milestone.subcontractor_agreement?.agreement_acceptance_status || "").toLowerCase() === "declined"
+                                ? "border-rose-200 bg-rose-50 text-rose-800"
+                                : "border-amber-200 bg-amber-50 text-amber-800"
+                          }`}
+                        >
+                          {String(
+                            milestone.subcontractor_agreement?.agreement_acceptance_status || "not_sent"
+                          ).replaceAll("_", " ")}
+                        </span>
+                      </div>
+
+                      {milestone.subcontractor_agreement ? (
+                        <div
+                          data-testid={`assigned-milestone-agreement-summary-${milestone.id}`}
+                          className="mt-3 space-y-2 text-sm text-slate-700"
+                        >
+                          <div className="font-semibold text-slate-900">
+                            {milestone.subcontractor_agreement.contractor_business_name ||
+                              milestone.subcontractor_agreement.contractor_name ||
+                              "Contractor"}
+                          </div>
+                          <div className="text-slate-600">
+                            {milestone.subcontractor_agreement.milestone_title}
+                          </div>
+                          <div className="text-slate-600 whitespace-pre-wrap">
+                            {milestone.subcontractor_agreement.milestone_description ||
+                              "No scope notes provided."}
+                          </div>
+                          <div className="grid gap-2 rounded-lg bg-slate-50 p-3 text-sm md:grid-cols-2">
+                            <div>
+                              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Agreed Pay
+                              </div>
+                              <div className="font-semibold text-slate-900">
+                                {formatMoney(milestone.subcontractor_agreement.agreed_pay)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Payment Release
+                              </div>
+                              <div className="font-semibold text-slate-900">
+                                {releaseModeLabel(
+                                  milestone.subcontractor_agreement.payment_release_mode
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {String(milestone.subcontractor_agreement.agreement_acceptance_status || "").toLowerCase() !==
+                          "accepted" ? (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                              <div className="text-sm font-semibold text-slate-900">
+                                You must review the agreement before signing.
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  data-testid={`assigned-milestone-accept-agreement-${milestone.id}`}
+                                  onClick={() => acceptAgreement(milestone.id)}
+                                  disabled={agreementBusy[milestone.id]}
+                                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                                >
+                                  {agreementBusy[milestone.id] ? "Working..." : "Accept Agreement"}
+                                </button>
+                                <button
+                                  type="button"
+                                  data-testid={`assigned-milestone-decline-agreement-${milestone.id}`}
+                                  onClick={() => declineAgreement(milestone.id)}
+                                  disabled={agreementBusy[milestone.id]}
+                                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                >
+                                  Decline
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                              Agreement accepted. You can submit work for review.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-sm text-slate-500">
+                          No milestone agreement terms have been prepared yet.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                       <div className="text-sm font-semibold text-slate-900">
                         Work Submission
                       </div>
@@ -363,6 +533,7 @@ export default function SubcontractorAssignedWorkPage() {
                           onClick={() => submitCompletion(milestone.id)}
                           disabled={
                             completionBusy[milestone.id] ||
+                            !milestone.can_current_user_submit_work ||
                             (milestone.work_submission_status || milestone.subcontractor_completion_status) === "approved"
                           }
                           className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
