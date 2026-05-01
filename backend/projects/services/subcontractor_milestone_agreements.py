@@ -189,6 +189,17 @@ def serialize_subcontractor_milestone_agreement(
         payload.pop("customer_milestone_amount", None)
         payload.pop("customer_agreement_total", None)
 
+    try:
+        from projects.services.subcontractor_payout_orchestration import serialize_subcontractor_payout_orchestration
+
+        payload["payout_orchestration"] = serialize_subcontractor_payout_orchestration(
+            obj,
+            contractor_view=contractor_view,
+            subcontractor_view=subcontractor_view,
+        )
+    except Exception:
+        payload["payout_orchestration"] = None
+
     return payload
 
 

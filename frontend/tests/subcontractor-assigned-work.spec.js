@@ -80,11 +80,30 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
                         subcontractor_email: 'subcontractor@example.com',
                         milestone_title: 'Cabinet Install',
                         milestone_description: 'Install all upper and lower cabinets.',
-                        agreed_pay: '1750.00',
+                      agreed_pay: '1750.00',
+                      payment_release_mode: 'manual_release',
+                      payment_release_mode_label: 'Manual Release',
+                      agreement_acceptance_status: 'accepted',
+                      agreement_acceptance_status_label: 'Accepted',
+                      subcontractor_payout_orchestration: {
+                        payout_state: 'not_due',
+                        next_status: 'not_due',
+                        safe_summary: 'Waiting for customer approval.',
                         payment_release_mode: 'manual_release',
                         payment_release_mode_label: 'Manual Release',
-                        agreement_acceptance_status: 'accepted',
-                        agreement_acceptance_status_label: 'Accepted',
+                        can_manual_release: false,
+                        can_auto_release: false,
+                        blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+                      },
+                      payout_orchestration: {
+                        payout_state: 'not_due',
+                        safe_summary: 'Waiting for customer approval.',
+                        payment_release_mode: 'manual_release',
+                        payment_release_mode_label: 'Manual Release',
+                          can_manual_release: false,
+                          can_auto_release: false,
+                          blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+                        },
                       },
                       assigned_subcontractor: {
                         invitation_id: 77,
@@ -118,6 +137,25 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
       payment_release_mode_label: 'Manual Release',
       agreement_acceptance_status: 'accepted',
       agreement_acceptance_status_label: 'Accepted',
+      subcontractor_payout_orchestration: {
+        payout_state: 'not_due',
+        next_status: 'not_due',
+        safe_summary: 'Waiting for customer approval.',
+        payment_release_mode: 'manual_release',
+        payment_release_mode_label: 'Manual Release',
+        can_manual_release: false,
+        can_auto_release: false,
+        blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+      },
+      payout_orchestration: {
+        payout_state: 'not_due',
+        safe_summary: 'Waiting for customer approval.',
+        payment_release_mode: 'manual_release',
+        payment_release_mode_label: 'Manual Release',
+        can_manual_release: false,
+        can_auto_release: false,
+        blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+      },
     };
     emptyMode = false;
     await route.fulfill({
@@ -159,6 +197,25 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
           payment_release_mode_label: 'Manual Release',
           agreement_acceptance_status: 'accepted',
           agreement_acceptance_status_label: 'Accepted',
+          subcontractor_payout_orchestration: {
+            payout_state: 'not_due',
+            next_status: 'not_due',
+            safe_summary: 'Waiting for customer approval.',
+            payment_release_mode: 'manual_release',
+            payment_release_mode_label: 'Manual Release',
+            can_manual_release: false,
+            can_auto_release: false,
+            blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+          },
+          payout_orchestration: {
+            payout_state: 'not_due',
+            safe_summary: 'Waiting for customer approval.',
+            payment_release_mode: 'manual_release',
+            payment_release_mode_label: 'Manual Release',
+            can_manual_release: false,
+            can_auto_release: false,
+            blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+          },
         },
       }),
     });
@@ -179,6 +236,12 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
   await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText('$1,750.00');
   await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
     'Agreement accepted'
+  );
+  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
+    'Payment Status'
+  );
+  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
+    'Not yet due'
   );
   await expect(page.getByTestId('assigned-milestone-submit-complete-901')).toBeEnabled();
   await expect(page.getByTestId('assigned-milestone-accept-agreement-901')).toHaveCount(0);

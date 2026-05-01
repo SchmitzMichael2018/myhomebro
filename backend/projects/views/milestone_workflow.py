@@ -253,7 +253,18 @@ def approve_work_submission(request, milestone_id: int):
             "subcontractor_review_response_note",
         ]
     )
-    sync_milestone_payout(milestone.id)
+    payout = sync_milestone_payout(milestone.id)
+    if payout is not None and getattr(payout, "status", "") in {"ready_for_payout", "paid", "failed"}:
+        try:
+            from projects.services.subcontractor_payout_orchestration import orchestrate_subcontractor_payout_for_milestone
+
+            orchestrate_subcontractor_payout_for_milestone(
+                milestone.id,
+                trigger="contractor_review_approved",
+                actor_user=request.user,
+            )
+        except Exception:
+            pass
     milestone.refresh_from_db()
     return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=200)
 

@@ -5,7 +5,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import Milestone, MilestonePayoutExecutionMode
+from projects.models_subcontractor import SubcontractorMilestoneAgreement
 from projects.serializers.milestone import MilestoneSerializer
+from projects.services.subcontractor_payout_orchestration import (
+    release_subcontractor_payment,
+    serialize_subcontractor_payout_orchestration,
+)
 from projects.services.milestone_payout_execution import (
     execute_milestone_payout,
     reset_failed_milestone_payout,
@@ -175,3 +180,61 @@ class ResetMilestonePayoutView(APIView):
 
         milestone.refresh_from_db()
         return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+
+
+class ReleaseSubcontractorPaymentView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, agreement_id: int):
+        contractor = get_contractor_for_user(request.user)
+        agreement = None
+
+        try:
+            agreement = (
+                SubcontractorMilestoneAgreement.objects.select_related(
+                    "contractor",
+                    "agreement",
+                    "agreement__project",
+                    "milestone",
+                    "milestone__agreement",
+                    "milestone__agreement__project",
+                    "subcontractor_invitation",
+                    "subcontractor_invitation__accepted_by_user",
+                    "milestone__payout_record",
+                )
+                .get(pk=agreement_id)
+            )
+        except SubcontractorMilestoneAgreement.DoesNotExist:
+            return Response({"detail": "Subcontractor agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if contractor is None and not request.user.is_staff:
+            return Response({"detail": "Only contractors can release subcontractor payments."}, status=status.HTTP_403_FORBIDDEN)
+
+        owner = getattr(agreement, "contractor", None)
+        if contractor is not None and owner is not None and contractor.id != owner.id and not request.user.is_staff:
+            return Response({"detail": "Only the owning contractor can release this subcontractor payment."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            payload = release_subcontractor_payment(
+                agreement,
+                actor_user=request.user,
+                allow_staff_override=bool(request.user.is_staff),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        milestone = getattr(agreement, "milestone", None)
+        if milestone is not None:
+            milestone.refresh_from_db()
+        return Response(
+            {
+                "agreement": serialize_subcontractor_payout_orchestration(
+                    agreement,
+                    contractor_view=True,
+                ),
+                "milestone": MilestoneSerializer(milestone, context={"request": request}).data if milestone is not None else None,
+                "detail": "Subcontractor payment processed.",
+                "result": payload,
+            },
+            status=status.HTTP_200_OK,
+        )

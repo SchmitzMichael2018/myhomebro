@@ -57,6 +57,7 @@ from projects.models import (
     MilestoneComment,
     MilestoneFile,
     MilestonePayout,
+    MilestonePayoutExecutionMode,
     MilestonePayoutStatus,
     MaintenanceStatus,
     MilestoneBenchmarkAggregate,
@@ -142,6 +143,16 @@ from projects.services.regions import build_normalized_region_key
 from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
 from projects.services.template_discovery import discover_templates
 from projects.services.milestone_payouts import sync_milestone_payout
+from projects.services.subcontractor_milestone_agreements import (
+    accept_subcontractor_milestone_agreement,
+    upsert_subcontractor_milestone_agreement,
+)
+from projects.services.subcontractor_payout_orchestration import (
+    evaluate_subcontractor_payout_eligibility,
+    orchestrate_subcontractor_payout_for_milestone,
+    release_subcontractor_payment,
+    serialize_subcontractor_payout_orchestration,
+)
 from projects.services.project_email_reports import (
     build_project_email_report,
     send_project_email_report,
@@ -6916,6 +6927,287 @@ class SubcontractorStripePayoutExecutionTests(TestCase):
         self.assertEqual(self.payout.failure_reason, "")
         self.assertIsNone(self.payout.failed_at)
         self.assertIsNotNone(self.payout.ready_for_payout_at)
+
+
+@override_settings(
+    STRIPE_ENABLED=True,
+    STRIPE_SECRET_KEY="sk_test_subcontractor_orchestration",
+    FRONTEND_URL="http://localhost:4173",
+)
+class SubcontractorPayoutOrchestrationTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="orch-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Orchestration Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Jordan Demo",
+            email="jordan@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Orchestration Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            total_cost=Decimal("8000.00"),
+            payment_mode="escrow",
+            status=ProjectStatus.SIGNED,
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+            reviewed=True,
+            reviewed_at=timezone.now(),
+        )
+        self.subcontractor_user = user_model.objects.create_user(
+            email="orch-sub@example.com",
+            password="testpass123",
+        )
+        self.connected_account = ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_orch_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.accepted_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="orch-sub@example.com",
+            invite_name="Orch Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.subcontractor_user,
+            accepted_at=timezone.now(),
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Cabinet Install",
+            description="Install cabinets and finish trim.",
+            amount="2000.00",
+            completed=True,
+            completed_at=timezone.now(),
+            assigned_subcontractor_invitation=self.accepted_invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.APPROVED,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.subcontractor_user,
+            subcontractor_reviewed_at=timezone.now(),
+            subcontractor_reviewed_by=self.contractor_user,
+            is_invoiced=True,
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=self.milestone.amount,
+            status=InvoiceStatus.PENDING,
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.milestone.invoice = self.invoice
+        self.milestone.save(update_fields=["invoice"])
+        self.client = APIClient()
+
+    def _create_terms(self, *, payment_release_mode="manual_release", agreed_pay="1750.00", accepted=False):
+        agreement = upsert_subcontractor_milestone_agreement(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            milestone=self.milestone,
+            invitation=self.accepted_invitation,
+            agreed_pay=agreed_pay,
+            payment_release_mode=payment_release_mode,
+            send_agreement=True,
+        )
+        if accepted:
+            agreement = accept_subcontractor_milestone_agreement(
+                agreement_obj=agreement,
+                user=self.subcontractor_user,
+            )
+        self.milestone.refresh_from_db()
+        return agreement
+
+    def _mark_customer_paid(self, *, paid_at=None):
+        paid_at = paid_at or timezone.now()
+        self.invoice.status = InvoiceStatus.PAID
+        self.invoice.approved_at = self.invoice.approved_at or paid_at
+        self.invoice.escrow_released = True
+        self.invoice.escrow_released_at = paid_at
+        self.invoice.save(
+            update_fields=["status", "approved_at", "escrow_released", "escrow_released_at"]
+        )
+        self.milestone.is_invoiced = True
+        self.milestone.completed = True
+        self.milestone.completed_at = self.milestone.completed_at or paid_at
+        self.milestone.save(update_fields=["is_invoiced", "completed", "completed_at"])
+
+    def test_manual_release_default_creates_not_due_status(self):
+        agreement = self._create_terms(payment_release_mode="manual_release", accepted=True)
+        self.milestone.refresh_from_db()
+
+        eligibility = evaluate_subcontractor_payout_eligibility(agreement)
+        self.assertEqual(eligibility["next_status"], "not_due")
+        self.assertFalse(eligibility["can_manual_release"])
+        self.assertIn("customer_not_approved_or_paid", eligibility["blocking_reasons"])
+
+    def test_manual_release_becomes_ready_after_customer_payment(self):
+        agreement = self._create_terms(payment_release_mode="manual_release", accepted=True)
+        self._mark_customer_paid()
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.READY_FOR_PAYOUT)
+
+        eligibility = evaluate_subcontractor_payout_eligibility(agreement)
+        self.assertEqual(eligibility["next_status"], "ready")
+        self.assertTrue(eligibility["can_manual_release"])
+
+    def test_manual_release_endpoint_uses_existing_payout_execution(self):
+        agreement = self._create_terms(payment_release_mode="manual_release", accepted=True)
+        self._mark_customer_paid()
+        sync_milestone_payout(self.milestone.id)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            return_value={"id": "tr_manual_release_123"},
+        ):
+            response = self.client.post(
+                f"/api/projects/subcontractor-agreements/{agreement.id}/release-payment/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        payout = self.milestone.payout_record
+        self.assertEqual(payout.status, MilestonePayoutStatus.PAID)
+        self.assertEqual(payout.stripe_transfer_id, "tr_manual_release_123")
+        self.assertEqual(payout.execution_mode, MilestonePayoutExecutionMode.MANUAL)
+
+    def test_auto_release_mode_does_not_pay_before_customer_payment(self):
+        agreement = self._create_terms(payment_release_mode="auto_after_customer_approval", accepted=True)
+        eligibility = evaluate_subcontractor_payout_eligibility(agreement)
+        self.assertEqual(eligibility["next_status"], "not_due")
+        self.assertFalse(eligibility["can_auto_release"])
+
+        with patch("projects.services.milestone_payout_execution.stripe.Transfer.create") as transfer_create:
+            payout = orchestrate_subcontractor_payout_for_milestone(
+                self.milestone.id,
+                trigger="customer_payment_released",
+                actor_user=self.contractor_user,
+            )
+
+        self.assertFalse(transfer_create.called)
+        self.assertIn(payout["next_status"], {"not_due", "blocked"})
+
+    def test_auto_release_after_customer_payment_executes_once(self):
+        agreement = self._create_terms(payment_release_mode="auto_after_customer_approval", accepted=True)
+        self._mark_customer_paid()
+
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            return_value={"id": "tr_auto_release_123"},
+        ) as transfer_create:
+            payload = orchestrate_subcontractor_payout_for_milestone(
+                self.milestone.id,
+                trigger="customer_payment_released",
+                actor_user=self.contractor_user,
+            )
+            second = orchestrate_subcontractor_payout_for_milestone(
+                self.milestone.id,
+                trigger="customer_payment_released",
+                actor_user=self.contractor_user,
+            )
+
+        self.assertEqual(transfer_create.call_count, 1)
+        self.assertEqual(payload["payout_state"], "paid")
+        self.assertEqual(second["payout_state"], "paid")
+        self.milestone.refresh_from_db()
+        self.assertEqual(self.milestone.payout_record.stripe_transfer_id, "tr_auto_release_123")
+
+    def test_dispute_blocks_payout(self):
+        agreement = self._create_terms(payment_release_mode="manual_release", accepted=True)
+        self._mark_customer_paid()
+        Dispute.objects.create(
+            agreement=self.agreement,
+            milestone=self.milestone,
+            status="open",
+            created_by=self.contractor_user,
+            initiator="contractor",
+            reason="Payment dispute",
+            description="Customer approved the milestone, but subcontractor payment is under dispute.",
+        )
+
+        payload = orchestrate_subcontractor_payout_for_milestone(
+            self.milestone.id,
+            trigger="customer_payment_released",
+            actor_user=self.contractor_user,
+        )
+
+        self.assertEqual(payload["next_status"], "cancelled")
+        self.assertIn("active_dispute", payload["blocking_reasons"])
+        self.milestone.refresh_from_db()
+        self.assertEqual(self.milestone.payout_record.status, MilestonePayoutStatus.NOT_ELIGIBLE)
+        self.assertFalse((self.milestone.payout_record.stripe_transfer_id or "").strip())
+
+    def test_subcontractor_cannot_release_own_payment(self):
+        agreement = self._create_terms(payment_release_mode="manual_release", accepted=True)
+        self._mark_customer_paid()
+        sync_milestone_payout(self.milestone.id)
+
+        self.client.force_authenticate(user=self.subcontractor_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor-agreements/{agreement.id}/release-payment/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_unrelated_contractor_cannot_release_payment(self):
+        agreement = self._create_terms(payment_release_mode="manual_release", accepted=True)
+        self._mark_customer_paid()
+        sync_milestone_payout(self.milestone.id)
+        other_user = get_user_model().objects.create_user(
+            email="other-owner@example.com",
+            password="testpass123",
+        )
+        other_contractor = Contractor.objects.create(
+            user=other_user,
+            business_name="Other Contractor",
+        )
+
+        self.client.force_authenticate(user=other_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor-agreements/{agreement.id}/release-payment/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(other_contractor.business_name, "Other Contractor")
+
+    def test_subcontractor_safe_serializer_hides_customer_totals(self):
+        agreement = self._create_terms(payment_release_mode="manual_release", accepted=True)
+
+        contractor_payload = serialize_subcontractor_payout_orchestration(agreement, contractor_view=True)
+        subcontractor_payload = serialize_subcontractor_payout_orchestration(agreement, subcontractor_view=True)
+
+        self.assertIn("customer_milestone_amount", contractor_payload)
+        self.assertIn("customer_agreement_total", contractor_payload)
+        self.assertNotIn("customer_milestone_amount", subcontractor_payload)
+        self.assertNotIn("customer_agreement_total", subcontractor_payload)
 
 
 class ReviewerQueueTests(TestCase):

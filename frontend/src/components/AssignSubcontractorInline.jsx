@@ -127,6 +127,7 @@ export default function AssignSubcontractorInline({
   const complianceSnapshot = currentCompliance || {};
   const currentWarning = complianceSnapshot?.warning_snapshot || {};
   const decisionEvaluation = decision?.compliance_evaluation || {};
+  const currentPayout = currentAgreement?.payout_orchestration || {};
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -175,6 +176,11 @@ export default function AssignSubcontractorInline({
           <div className="mt-1">
             Status: {currentAgreement.agreement_acceptance_status_label || currentAgreement.agreement_acceptance_status || "not_sent"}
           </div>
+          {currentPayout?.payout_state || currentPayout?.safe_summary ? (
+            <div className="mt-1">
+              Payment: {currentPayout.safe_summary || currentPayout.payout_state}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

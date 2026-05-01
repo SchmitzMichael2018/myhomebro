@@ -513,6 +513,19 @@ def finalize_direct_pay_invoice_paid(
         inv.save(update_fields=list(set(update_fields)))
 
     sync_payout_for_invoice(inv)
+    try:
+        from projects.services.subcontractor_payout_orchestration import orchestrate_subcontractor_payout_for_milestone
+
+        milestone = getattr(inv, "source_milestone", None)
+        milestone_id = getattr(milestone, "id", None) or getattr(inv, "milestone_id_snapshot", None)
+        if milestone_id:
+            orchestrate_subcontractor_payout_for_milestone(
+                int(milestone_id),
+                trigger="customer_payment_released",
+                actor_user=None,
+            )
+    except Exception:
+        pass
 
     # recompute agreement completion after invoice becomes paid
     try:

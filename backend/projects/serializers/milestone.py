@@ -180,6 +180,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
     payout_stripe_transfer_id = serializers.SerializerMethodField()
     payout_failure_reason = serializers.SerializerMethodField()
     payout_execution_mode = serializers.SerializerMethodField()
+    subcontractor_payout_orchestration = serializers.SerializerMethodField()
     subcontractor_assignment_compliance = serializers.SerializerMethodField()
     subcontractor_milestone_agreement = serializers.SerializerMethodField()
 
@@ -256,6 +257,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "payout_stripe_transfer_id",
             "payout_failure_reason",
             "payout_execution_mode",
+            "subcontractor_payout_orchestration",
             "subcontractor_assignment_compliance",
             "subcontractor_milestone_agreement",
         )
@@ -699,6 +701,33 @@ class MilestoneSerializer(serializers.ModelSerializer):
         payload = self._get_payout_payload(obj)
         return "" if payload is None else payload.get("payout_execution_mode") or ""
 
+    def get_subcontractor_payout_orchestration(self, obj: Milestone):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        invitation = getattr(obj, "assigned_subcontractor_invitation", None)
+        if invitation is None:
+            return None
+
+        try:
+            from projects.services.subcontractor_milestone_agreements import get_latest_subcontractor_milestone_agreement
+            from projects.services.subcontractor_payout_orchestration import serialize_subcontractor_payout_orchestration
+        except Exception:
+            return None
+
+        latest = get_latest_subcontractor_milestone_agreement(obj, invitation)
+        if latest is None:
+            return None
+
+        contractor = get_contractor_for_user(user) if user is not None else None
+        owner = getattr(getattr(getattr(obj, "agreement", None), "project", None), "contractor", None)
+        if contractor is not None and owner is not None and contractor.id == owner.id:
+            return serialize_subcontractor_payout_orchestration(latest, contractor_view=True)
+
+        if getattr(invitation, "accepted_by_user_id", None) == getattr(user, "id", None):
+            return serialize_subcontractor_payout_orchestration(latest, subcontractor_view=True)
+
+        return None
+
     def get_subcontractor_assignment_compliance(self, obj: Milestone) -> dict[str, Any]:
         requested_by = getattr(obj, "subcontractor_license_requested_by", None)
         requested_by_display = ""
@@ -1027,6 +1056,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["payout_stripe_transfer_id"] = self.get_payout_stripe_transfer_id(instance)
         data["payout_failure_reason"] = self.get_payout_failure_reason(instance)
         data["payout_execution_mode"] = self.get_payout_execution_mode(instance)
+        data["subcontractor_payout_orchestration"] = self.get_subcontractor_payout_orchestration(instance)
         data["subcontractor_assignment_compliance"] = self.get_subcontractor_assignment_compliance(instance)
         data["subcontractor_milestone_agreement"] = self.get_subcontractor_milestone_agreement(instance)
 

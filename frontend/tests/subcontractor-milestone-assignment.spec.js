@@ -251,11 +251,11 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       };
       milestoneState.reviewer_display = 'Internal Reviewer';
     }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(milestoneState),
-    });
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(milestoneState),
+  });
   });
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}`, {
@@ -613,11 +613,11 @@ test('agreement detail shows subcontractor review state and lets contractor clea
     milestoneState.subcontractor_review_requested_at = null;
     milestoneState.subcontractor_review_note = '';
 
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(milestoneState),
-    });
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify(milestoneState),
+  });
   });
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}`, {
@@ -881,6 +881,55 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     payout_stripe_transfer_id: '',
     payout_failure_reason: '',
     payout_execution_mode: '',
+    subcontractor_payout_orchestration: {
+      payout_state: 'ready',
+      safe_summary: 'Ready for contractor release.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: true,
+      can_auto_release: false,
+      blocking_reasons_labels: [],
+      payout_amount: '1500.00',
+      payout_ready_for_payout_at: '2026-03-24T15:00:00Z',
+    },
+    subcontractor_milestone_agreement: {
+      id: 44,
+      milestone_id: MILESTONE_ID,
+      agreement_id: AGREEMENT_ID,
+      contractor_business_name: 'Kitchen Remodel Agreement',
+      contractor_name: 'Kitchen Remodel Agreement',
+      subcontractor_display_name: 'Accepted Sub',
+      subcontractor_email: 'accepted-sub@example.com',
+      milestone_title: 'Cabinet Install',
+      milestone_description: 'Install all cabinets',
+      agreed_pay: '1750.00',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      agreement_acceptance_status: 'accepted',
+      agreement_acceptance_status_label: 'Accepted',
+      payout_orchestration: {
+        payout_state: 'ready',
+        safe_summary: 'Ready for contractor release.',
+        payment_release_mode: 'manual_release',
+        payment_release_mode_label: 'Manual Release',
+        can_manual_release: true,
+        can_auto_release: false,
+        blocking_reasons_labels: [],
+        payout_amount: '1500.00',
+        payout_ready_for_payout_at: '2026-03-24T15:00:00Z',
+      },
+    },
+    subcontractor_payout_orchestration: {
+      payout_state: 'ready',
+      safe_summary: 'Ready for contractor release.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: true,
+      can_auto_release: false,
+      blocking_reasons_labels: [],
+      payout_amount: '1500.00',
+      payout_ready_for_payout_at: '2026-03-24T15:00:00Z',
+    },
   };
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -975,19 +1024,35 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     });
   });
 
-  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/execute-subcontractor-payout/`, async (route) => {
-    milestoneState.payout_status = 'paid';
-    milestoneState.payout_paid_at = '2026-03-24T16:00:00Z';
-    milestoneState.payout_failed_at = null;
-    milestoneState.payout_stripe_transfer_id = 'tr_sub_123';
-    milestoneState.payout_failure_reason = '';
-    milestoneState.payout_execution_mode = 'manual';
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(milestoneState),
-    });
-  });
+  await page.route(
+    `**/api/projects/subcontractor-agreements/44/release-payment/`,
+    async (route) => {
+      milestoneState.payout_status = 'paid';
+      milestoneState.payout_paid_at = '2026-03-24T16:00:00Z';
+      milestoneState.payout_failed_at = null;
+      milestoneState.payout_stripe_transfer_id = 'tr_sub_123';
+      milestoneState.payout_failure_reason = '';
+      milestoneState.payout_execution_mode = 'manual';
+      milestoneState.subcontractor_payout_orchestration.payout_state = 'paid';
+      milestoneState.subcontractor_payout_orchestration.safe_summary = 'Paid.';
+      milestoneState.subcontractor_payout_orchestration.payout_paid_at =
+        '2026-03-24T16:00:00Z';
+      milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_state = 'paid';
+      milestoneState.subcontractor_milestone_agreement.payout_orchestration.safe_summary = 'Paid.';
+      milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_paid_at =
+        '2026-03-24T16:00:00Z';
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          agreement: milestoneState.subcontractor_milestone_agreement.payout_orchestration,
+          milestone: milestoneState,
+          detail: 'Subcontractor payment processed.',
+          result: milestoneState.subcontractor_milestone_agreement.payout_orchestration,
+        }),
+      });
+    }
+  );
 
   await page.route(`**/api/projects/milestones/${MILESTONE_ID}/retry-subcontractor-payout/`, async (route) => {
     milestoneState.payout_status = 'paid';
@@ -996,6 +1061,15 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     milestoneState.payout_stripe_transfer_id = 'tr_retry_123';
     milestoneState.payout_failure_reason = '';
     milestoneState.payout_execution_mode = 'manual';
+    milestoneState.subcontractor_payout_orchestration.payout_state = 'paid';
+    milestoneState.subcontractor_payout_orchestration.safe_summary = 'Paid.';
+    milestoneState.subcontractor_payout_orchestration.payout_paid_at = '2026-03-24T17:00:00Z';
+    milestoneState.subcontractor_payout_orchestration.payout_failed_at = null;
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_state = 'paid';
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.safe_summary = 'Paid.';
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_paid_at =
+      '2026-03-24T17:00:00Z';
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_failed_at = null;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1008,6 +1082,18 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     milestoneState.payout_ready_for_payout_at = '2026-03-24T16:30:00Z';
     milestoneState.payout_failed_at = null;
     milestoneState.payout_failure_reason = '';
+    milestoneState.subcontractor_payout_orchestration.payout_state = 'ready';
+    milestoneState.subcontractor_payout_orchestration.safe_summary =
+      'Ready for contractor release.';
+    milestoneState.subcontractor_payout_orchestration.payout_ready_for_payout_at =
+      '2026-03-24T16:30:00Z';
+    milestoneState.subcontractor_payout_orchestration.payout_failed_at = null;
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_state = 'ready';
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.safe_summary =
+      'Ready for contractor release.';
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_ready_for_payout_at =
+      '2026-03-24T16:30:00Z';
+    milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_failed_at = null;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1020,12 +1106,19 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
   });
 
   const milestoneCard = page.getByTestId(`milestone-card-${MILESTONE_ID}`);
-  await expect(milestoneCard).toContainText('Payout: $1,500.00 (Ready for payout)');
+  await expect(milestoneCard).toContainText('Subcontractor Payment');
+  await expect(milestoneCard).toContainText('Release Mode');
+  await expect(milestoneCard).toContainText('Ready for contractor release.');
   await expect(page.getByTestId(`milestone-payout-ready-at-${MILESTONE_ID}`)).toBeVisible();
   await expect(page.getByTestId(`milestone-payout-execute-${MILESTONE_ID}`)).toBeVisible();
+  await expect(page.getByTestId(`milestone-payout-execute-${MILESTONE_ID}`)).toContainText(
+    'Release Subcontractor Payment'
+  );
 
   await page.getByTestId(`milestone-payout-execute-${MILESTONE_ID}`).click();
-  await expect(milestoneCard).toContainText('Payout: $1,500.00 (Paid)');
+  await expect(page.getByRole('button', { name: 'Release Payment' })).toBeVisible();
+  await page.getByRole('button', { name: 'Release Payment' }).click();
+  await expect(milestoneCard).toContainText('Paid.');
   await expect(milestoneCard).toContainText('Execution: Manual');
   await expect(page.getByTestId(`milestone-payout-paid-at-${MILESTONE_ID}`)).toBeVisible();
 
@@ -1034,8 +1127,17 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
   milestoneState.payout_paid_at = null;
   milestoneState.payout_stripe_transfer_id = '';
   milestoneState.payout_failure_reason = 'Transfer failed at Stripe.';
+  milestoneState.subcontractor_payout_orchestration.payout_state = 'failed';
+  milestoneState.subcontractor_payout_orchestration.safe_summary = 'Failed.';
+  milestoneState.subcontractor_payout_orchestration.payout_failed_at =
+    '2026-03-24T18:00:00Z';
+  milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_state =
+    'failed';
+  milestoneState.subcontractor_milestone_agreement.payout_orchestration.safe_summary = 'Failed.';
+  milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_failed_at =
+    '2026-03-24T18:00:00Z';
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(milestoneCard).toContainText('Payout: $1,500.00 (Failed)');
+  await expect(milestoneCard).toContainText('Failed:');
   await expect(page.getByTestId(`milestone-payout-failure-${MILESTONE_ID}`)).toContainText(
     'Transfer failed at Stripe.'
   );
@@ -1043,11 +1145,20 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
   await expect(page.getByTestId(`milestone-payout-reset-${MILESTONE_ID}`)).toBeVisible();
 
   await page.getByTestId(`milestone-payout-reset-${MILESTONE_ID}`).click();
-  await expect(milestoneCard).toContainText('Payout: $1,500.00 (Ready for payout)');
+  await expect(milestoneCard).toContainText('Ready for contractor release.');
 
   milestoneState.payout_status = 'failed';
   milestoneState.payout_failed_at = '2026-03-24T18:15:00Z';
   milestoneState.payout_failure_reason = 'Transfer failed at Stripe.';
+  milestoneState.subcontractor_payout_orchestration.payout_state = 'failed';
+  milestoneState.subcontractor_payout_orchestration.safe_summary = 'Failed.';
+  milestoneState.subcontractor_payout_orchestration.payout_failed_at =
+    '2026-03-24T18:15:00Z';
+  milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_state =
+    'failed';
+  milestoneState.subcontractor_milestone_agreement.payout_orchestration.safe_summary = 'Failed.';
+  milestoneState.subcontractor_milestone_agreement.payout_orchestration.payout_failed_at =
+    '2026-03-24T18:15:00Z';
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByTestId(`milestone-payout-retry-${MILESTONE_ID}`).click();
   await expect(milestoneCard).toContainText('Payout: $1,500.00 (Paid)');

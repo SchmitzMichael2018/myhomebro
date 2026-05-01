@@ -66,6 +66,18 @@ export default function SubcontractorAssignedWorkPage() {
     return "Manual release";
   }
 
+  function payoutStateLabel(state) {
+    const normalized = String(state || "").toLowerCase();
+    if (normalized === "blocked") return "Blocked";
+    if (normalized === "ready") return "Ready for contractor release";
+    if (normalized === "scheduled") return "Scheduled";
+    if (normalized === "processing") return "Processing";
+    if (normalized === "paid") return "Paid";
+    if (normalized === "failed") return "Failed / delayed";
+    if (normalized === "cancelled") return "Cancelled";
+    return "Not yet due";
+  }
+
   function formatMoney(value) {
     const amount = Number.parseFloat(String(value ?? "0"));
     return Number.isFinite(amount)
@@ -441,6 +453,27 @@ export default function SubcontractorAssignedWorkPage() {
                                   milestone.subcontractor_agreement.payment_release_mode
                                 )}
                               </div>
+                            </div>
+                            <div className="md:col-span-2">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Payment Status
+                              </div>
+                              <div className="font-semibold text-slate-900">
+                                {payoutStateLabel(
+                                  milestone.subcontractor_payout_orchestration?.payout_state ||
+                                    milestone.subcontractor_payout_orchestration?.next_status
+                                )}
+                              </div>
+                              {Array.isArray(
+                                milestone.subcontractor_payout_orchestration?.blocking_reasons_labels
+                              ) &&
+                              milestone.subcontractor_payout_orchestration.blocking_reasons_labels.length ? (
+                                <div className="mt-1 text-xs text-slate-500">
+                                  {milestone.subcontractor_payout_orchestration.blocking_reasons_labels.join(
+                                    " · "
+                                  )}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
 

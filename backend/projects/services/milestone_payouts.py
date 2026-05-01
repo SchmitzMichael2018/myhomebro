@@ -86,6 +86,27 @@ def _desired_payout_status(milestone: Milestone) -> str:
     return MilestonePayoutStatus.ELIGIBLE
 
 
+def _subcontractor_release_mode_for_milestone(milestone: Milestone) -> str | None:
+    """
+    Agreement-level release mode takes precedence over contractor-level auto payout settings.
+    Returns None when there is no subcontractor milestone agreement yet.
+    """
+    invitation = getattr(milestone, "assigned_subcontractor_invitation", None)
+    if invitation is None:
+        return None
+
+    try:
+        from projects.services.subcontractor_milestone_agreements import get_latest_subcontractor_milestone_agreement
+
+        agreement = get_latest_subcontractor_milestone_agreement(milestone, invitation)
+    except Exception:
+        agreement = None
+
+    if agreement is None:
+        return None
+    return str(getattr(agreement, "payment_release_mode", "") or "").strip().lower() or None
+
+
 def sync_milestone_payout(milestone: Milestone | int) -> MilestonePayout | None:
     milestone_id = getattr(milestone, "id", milestone)
     if not milestone_id:
@@ -170,7 +191,12 @@ def sync_milestone_payout(milestone: Milestone | int) -> MilestonePayout | None:
             payout.save(update_fields=sorted(set(update_fields)))
 
         contractor = getattr(getattr(getattr(locked, "agreement", None), "project", None), "contractor", None)
-        auto_enabled = bool(getattr(contractor, "auto_subcontractor_payouts_enabled", False))
+        agreement_release_mode = _subcontractor_release_mode_for_milestone(locked)
+        legacy_auto_enabled = bool(getattr(contractor, "auto_subcontractor_payouts_enabled", False))
+        auto_enabled = bool(
+            agreement_release_mode == "auto_after_customer_approval"
+            or (agreement_release_mode is None and legacy_auto_enabled)
+        )
         if (
             auto_enabled
             and previous_status != MilestonePayoutStatus.READY_FOR_PAYOUT

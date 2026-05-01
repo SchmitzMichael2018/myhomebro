@@ -63,6 +63,22 @@ def _agreement_has_active_dispute(agreement) -> bool:
         return False
 
 
+def _orchestrate_subcontractor_payout_for_invoice(invoice: Invoice, *, actor_user=None) -> None:
+    try:
+        from projects.services.subcontractor_payout_orchestration import orchestrate_subcontractor_payout_for_milestone
+
+        milestone = getattr(invoice, "source_milestone", None)
+        milestone_id = getattr(milestone, "id", None) or getattr(invoice, "milestone_id_snapshot", None)
+        if milestone_id:
+            orchestrate_subcontractor_payout_for_milestone(
+                int(milestone_id),
+                trigger="customer_payment_released",
+                actor_user=actor_user,
+            )
+    except Exception:
+        pass
+
+
 def _record_pricing_observation(invoice: Invoice) -> None:
     """
     Safe helper.
@@ -148,6 +164,7 @@ class MagicInvoiceApproveView(APIView):
                 sync_payout_for_invoice(invoice)
 
             _record_pricing_observation(invoice)
+            _orchestrate_subcontractor_payout_for_invoice(invoice, actor_user=request.user)
 
             try:
                 recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
@@ -281,6 +298,7 @@ class MagicInvoiceApproveView(APIView):
                 sync_payout_for_invoice(invoice)
 
                 _record_pricing_observation(invoice)
+                _orchestrate_subcontractor_payout_for_invoice(invoice, actor_user=request.user)
 
                 try:
                     recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
@@ -414,6 +432,7 @@ class MagicInvoiceApproveView(APIView):
                 sync_payout_for_invoice(invoice)
 
             _record_pricing_observation(invoice)
+            _orchestrate_subcontractor_payout_for_invoice(invoice, actor_user=request.user)
 
             try:
                 recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))

@@ -184,6 +184,19 @@ function formatExecutionMode(value) {
   return "";
 }
 
+function payoutOrchestrationLabel(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "blocked") return "Blocked";
+  if (normalized === "ready") return "Ready for contractor release";
+  if (normalized === "scheduled") return "Scheduled";
+  if (normalized === "processing") return "Processing";
+  if (normalized === "paid") return "Paid";
+  if (normalized === "failed") return "Failed";
+  if (normalized === "cancelled") return "Cancelled";
+  if (normalized === "not_due") return "Not yet due";
+  return String(value || "Not yet due").replaceAll("_", " ");
+}
+
 function normalizeAgreement(raw) {
   if (!raw || typeof raw !== "object")
     return { id: null, title: "—", invoices: [], milestones: [] };
@@ -334,6 +347,7 @@ export default function AgreementDetail() {
   const [completionResponseNotes, setCompletionResponseNotes] = useState({});
   const [completionDecisionBusy, setCompletionDecisionBusy] = useState({});
   const [payoutDecisionBusy, setPayoutDecisionBusy] = useState({});
+  const [payoutReleaseTarget, setPayoutReleaseTarget] = useState(null);
   const [warrantyForm, setWarrantyForm] = useState({
     title: "",
     coverage_details: "",
@@ -1067,6 +1081,53 @@ export default function AgreementDetail() {
       );
     } finally {
       setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  };
+
+  const requestReleaseSubcontractorPayment = (milestone) => {
+    const payoutAgreement = milestone?.subcontractor_milestone_agreement;
+    if (!payoutAgreement?.id) {
+      toast.error("No subcontractor payment terms were found for this milestone.");
+      return;
+    }
+    setPayoutReleaseTarget({
+      agreementId: payoutAgreement.id,
+      milestoneId: milestone.id,
+      milestoneTitle: milestone.title || "Milestone",
+      subcontractorName:
+        payoutAgreement.subcontractor_display_name ||
+        payoutAgreement.subcontractor_email ||
+        "Subcontractor",
+      amount: payoutAgreement.agreed_pay || milestone.payout_amount || "",
+    });
+  };
+
+  const confirmReleaseSubcontractorPayment = async () => {
+    if (!payoutReleaseTarget?.agreementId) return;
+    const { agreementId, milestoneId } = payoutReleaseTarget;
+    try {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const { data } = await api.post(
+        `/projects/subcontractor-agreements/${agreementId}/release-payment/`,
+        {}
+      );
+      setAgreement((prev) => {
+        if (!prev) return prev;
+        const updatedMilestone = data?.milestone || {};
+        return {
+          ...prev,
+          milestones: (prev.milestones || []).map((milestone) =>
+            milestone.id === milestoneId ? { ...milestone, ...updatedMilestone } : milestone
+          ),
+        };
+      });
+      setPayoutReleaseTarget(null);
+      toast.success("Subcontractor payment released.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to release subcontractor payment.");
+    } finally {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
     }
   };
 
@@ -2065,6 +2126,25 @@ export default function AgreementDetail() {
             {norm.milestones.map((m) => {
               const refunded = isRefundedMilestone(m);
               const label = milestoneStatusLabel(m);
+              const payoutOrchestration =
+                m.subcontractor_payout_orchestration ||
+                m.subcontractor_milestone_agreement?.payout_orchestration ||
+                {};
+              const payoutState = String(
+                payoutOrchestration.payout_state ||
+                  payoutOrchestration.next_status ||
+                  m.payout_status ||
+                  ""
+              ).toLowerCase();
+              const payoutMode =
+                m.subcontractor_milestone_agreement?.payment_release_mode_label ||
+                m.subcontractor_milestone_agreement?.payment_release_mode ||
+                "";
+              const payoutAmount =
+                payoutOrchestration.payout_amount ||
+                m.payout_amount ||
+                m.subcontractor_milestone_agreement?.agreed_pay ||
+                m.amount;
 
               return (
                 <div
@@ -2161,13 +2241,53 @@ export default function AgreementDetail() {
                   m.assigned_worker.kind === "subcontractor" ? (
                     <div
                       data-testid={`milestone-payout-state-${m.id}`}
-                      className="mt-2 text-sm text-gray-600"
+                      className="mt-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-gray-700"
                     >
                       <span className="font-semibold text-gray-900">Payout:</span>{" "}
                       {m.payout_amount ? formatMoney(m.payout_amount) : "—"}{" "}
                       <span className="text-gray-500">
                         ({formatPayoutStatus(m.payout_status)})
                       </span>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg bg-slate-50 px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Amount
+                          </div>
+                          <div className="font-semibold text-slate-900">
+                            {payoutAmount ? formatMoney(payoutAmount) : "—"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Release Mode
+                          </div>
+                          <div className="font-semibold text-slate-900">
+                            {payoutMode || "Manual Release"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-3 py-2 md:col-span-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Status
+                          </div>
+                          <div className="font-semibold text-slate-900">
+                            {payoutOrchestration.safe_summary ||
+                              payoutOrchestrationLabel(payoutState)}
+                          </div>
+                        </div>
+                      </div>
+                      {Array.isArray(payoutOrchestration.blocking_reasons_labels) &&
+                      payoutOrchestration.blocking_reasons_labels.length ? (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-slate-700">
+                          <div className="font-semibold text-slate-900">
+                            Blocking reasons
+                          </div>
+                          <ul className="mt-1 list-disc pl-5">
+                            {payoutOrchestration.blocking_reasons_labels.map((reason) => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                       {m.payout_ready_for_payout_at ? (
                         <div
                           data-testid={`milestone-payout-ready-at-${m.id}`}
@@ -2295,23 +2415,48 @@ export default function AgreementDetail() {
                           </button>
                         </div>
                       </div>
-                      {m.payout_status === "ready_for_payout" ? (
+                      {payoutState === "ready" || payoutState === "ready_for_payout" ? (
                         <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                           <div className="text-sm font-semibold text-emerald-900">
-                            Subcontractor payout is ready.
+                            Subcontractor payout is ready for contractor release.
                           </div>
                           <div className="mt-1 text-sm text-emerald-800">
                             Amount: {m.payout_amount ? formatMoney(m.payout_amount) : "—"}
                           </div>
-                          <button
-                            type="button"
-                            data-testid={`milestone-payout-execute-${m.id}`}
-                            onClick={() => executeMilestonePayout(m.id)}
-                            disabled={payoutDecisionBusy[m.id]}
-                            className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                          >
-                            {payoutDecisionBusy[m.id] ? "Processing..." : "Pay Subcontractor"}
-                          </button>
+                          {payoutOrchestration.can_manual_release ? (
+                            <button
+                              type="button"
+                              data-testid={`milestone-payout-execute-${m.id}`}
+                              onClick={() => requestReleaseSubcontractorPayment(m)}
+                              disabled={payoutDecisionBusy[m.id]}
+                              className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                            >
+                              {payoutDecisionBusy[m.id]
+                                ? "Processing..."
+                                : "Release Subcontractor Payment"}
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {payoutState === "scheduled" ? (
+                        <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                          <div className="text-sm font-semibold text-indigo-900">
+                            Subcontractor payout is scheduled.
+                          </div>
+                          <div className="mt-1 text-sm text-indigo-800">
+                            The system will release this payment after customer approval and payout setup checks.
+                          </div>
+                        </div>
+                      ) : null}
+                      {payoutState === "blocked" ? (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                          <div className="text-sm font-semibold text-amber-900">
+                            Subcontractor payout is blocked.
+                          </div>
+                          <div className="mt-1 text-sm text-amber-800">
+                            {payoutOrchestration.safe_summary ||
+                              "Review the blocking reasons shown above."}
+                          </div>
                         </div>
                       ) : null}
                       {m.payout_status === "failed" ? (
@@ -2958,6 +3103,37 @@ export default function AgreementDetail() {
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
               >
                 {paymentSaving ? "Saving…" : "Record Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {payoutReleaseTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+            <div className="text-lg font-semibold text-slate-900">
+              Release Subcontractor Payment
+            </div>
+            <div className="mt-2 text-sm text-slate-600">
+              Release {formatMoney(payoutReleaseTarget.amount || 0)} to{" "}
+              {payoutReleaseTarget.subcontractorName} for {payoutReleaseTarget.milestoneTitle}?
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPayoutReleaseTarget(null)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmReleaseSubcontractorPayment}
+                disabled={Boolean(payoutDecisionBusy[payoutReleaseTarget.milestoneId])}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {payoutDecisionBusy[payoutReleaseTarget.milestoneId] ? "Releasing..." : "Release Payment"}
               </button>
             </div>
           </div>

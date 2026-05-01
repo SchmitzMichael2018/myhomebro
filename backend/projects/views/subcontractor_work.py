@@ -53,12 +53,22 @@ def _milestone_payload(milestone: Milestone) -> dict:
     assigned_worker = get_assigned_worker(milestone)
     reviewer = get_effective_reviewer(milestone)
     subcontractor_agreement = None
+    subcontractor_payout_orchestration = None
     if assigned is not None:
         latest_agreement = get_latest_subcontractor_milestone_agreement(milestone, assigned)
         subcontractor_agreement = serialize_subcontractor_milestone_agreement(
             latest_agreement,
             subcontractor_view=True,
         )
+        try:
+            from projects.services.subcontractor_payout_orchestration import serialize_subcontractor_payout_orchestration
+
+            subcontractor_payout_orchestration = serialize_subcontractor_payout_orchestration(
+                latest_agreement,
+                subcontractor_view=True,
+            )
+        except Exception:
+            subcontractor_payout_orchestration = None
 
     return {
         "id": milestone.id,
@@ -87,6 +97,7 @@ def _milestone_payload(milestone: Milestone) -> dict:
         else None,
         "assigned_worker_display": getattr(assigned_worker, "display_name", "") or getattr(assigned_worker, "email", "") or "",
         "subcontractor_agreement": subcontractor_agreement,
+        "subcontractor_payout_orchestration": subcontractor_payout_orchestration,
         "reviewer": {
             "kind": getattr(reviewer, "kind", ""),
             "user_id": getattr(getattr(reviewer, "user", None), "id", None),
