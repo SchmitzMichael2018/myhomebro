@@ -90,6 +90,7 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
     title: 'Kitchen Remodel Agreement',
     description: 'Kitchen remodel with upgraded finishes.',
     total_cost: '25000.00',
+    pricing_strategy: 'fixed',
     project_type: 'Remodel',
     project_subtype: 'Kitchen Remodel',
     project_address_city: 'San Antonio',
@@ -107,6 +108,7 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
     },
     status: 'draft',
   };
+  let currentPricingStrategy = agreementResponse.pricing_strategy;
   expect(agreementResponse.total_cost, 'Step 2 estimate test agreements must include total_cost').toBeTruthy();
 
   await page.route(new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`), async (route) => {
@@ -118,6 +120,7 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
         contentType: 'application/json',
         body: JSON.stringify({
           ...agreementResponse,
+          pricing_strategy: payload?.pricing_strategy || currentPricingStrategy,
           ai_scope: {
             answers:
               payload?.ai_scope?.answers || {
@@ -128,13 +131,19 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
           },
         }),
       });
+      if (payload?.pricing_strategy) {
+        currentPricingStrategy = payload.pricing_strategy;
+      }
       return;
     }
 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(agreementResponse),
+      body: JSON.stringify({
+        ...agreementResponse,
+        pricing_strategy: currentPricingStrategy,
+      }),
     });
   });
 
@@ -176,6 +185,22 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(estimateResponse),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/321/subcontractor-invitations/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        accepted_subcontractors: [
+          {
+            id: 41,
+            accepted_name: 'Skyline Cabinets',
+            invite_email: 'cabinets@example.com',
+          },
+        ],
+      }),
     });
   });
 }
@@ -882,8 +907,49 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
         ],
         questions: [],
       }),
-    });
   });
+});
+
+test('step 1 pricing strategy selection persists and step 2 subcontractor pricing controls render', async ({
+  page,
+}) => {
+  await installAgreementWizardMocks(page, {
+    estimateResponse: {
+      suggested_total_price: '25000.00',
+      suggested_price_low: '22500.00',
+      suggested_price_high: '27500.00',
+      suggested_duration_days: 10,
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+        confidence_level: 'medium',
+      },
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, { waitUntil: 'domcontentloaded' });
+
+  const requiresQuoteButton = page.getByTestId('agreement-pricing-strategy-requires_sub_quote');
+  await expect(requiresQuoteButton).toBeVisible();
+  await requiresQuoteButton.click();
+  await expect(requiresQuoteButton).toHaveClass(/bg-indigo-50/);
+
+  await page.getByRole('button', { name: /Save & Next/i }).click();
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-card-list')).toBeVisible();
+  const requestQuoteButton = page.getByRole('button', { name: 'Request quote' }).first();
+  await expect(requestQuoteButton).toBeVisible();
+  await requestQuoteButton.click();
+  await expect(page.getByText('Request Quote')).toBeVisible();
+  await page.getByTestId('step2-quote-subcontractor-select').selectOption('41');
+  await page.getByTestId('step2-quote-message-input').fill('Please quote this milestone.');
+  await page.getByTestId('step2-request-quote-button').click();
+  await expect(page.getByText('Waiting for subcontractor quote.')).toBeVisible();
+  await expect(page.getByText('Quote received for Demo.')).toBeVisible();
+  await page.getByRole('button', { name: 'Use this quote' }).click();
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Fixed: 1');
+});
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
     waitUntil: 'domcontentloaded',

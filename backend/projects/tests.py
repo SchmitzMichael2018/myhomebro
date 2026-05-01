@@ -14538,6 +14538,41 @@ class AgreementStep1RecurringFieldSaveTests(TestCase):
         self.assertEqual(agreement.service_window_notes, "")
         self.assertEqual(agreement.recurring_summary_label, "")
 
+    def test_pricing_strategy_defaults_and_persists_from_step1_patch(self):
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "is_draft": True,
+                "wizard_step": 1,
+                "homeowner": self.homeowner.id,
+                "project_title": "Pricing Strategy Draft",
+                "title": "Pricing Strategy Draft",
+                "description": "Pricing strategy draft.",
+                "agreement_mode": AgreementMode.STANDARD,
+                "recurring_service_enabled": False,
+                "payment_mode": "escrow",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        agreement_id = response.json()["id"]
+        agreement = Agreement.objects.get(pk=agreement_id)
+        self.assertEqual(agreement.pricing_strategy, "fixed")
+
+        patched = self.client.patch(
+            f"/api/projects/agreements/{agreement_id}/",
+            {
+                "pricing_strategy": "requires_sub_quote",
+                "step_status": "step1",
+            },
+            format="json",
+        )
+
+        self.assertEqual(patched.status_code, 200)
+        agreement.refresh_from_db()
+        self.assertEqual(agreement.pricing_strategy, "requires_sub_quote")
+
 
 class CustomerPortalAccessTests(TestCase):
     def setUp(self):

@@ -3824,6 +3824,165 @@ test('agreement wizard step 4 shows a custom warranty summary preview', async ({
   await expect(page.getByRole('button', { name: 'Sign & Continue' })).toBeDisabled();
 });
 
+test('agreement wizard step 4 shows pricing readiness guidance and send warnings', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID + 2,
+    agreement_id: AGREEMENT_ID + 2,
+    project_title: 'Pricing Readiness Project',
+    title: 'Pricing Readiness Project',
+    description: 'Finalize pricing for review.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Kitchen Remodel',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    pricing_strategy: 'estimate',
+    status: 'draft',
+    pdf_version: 1,
+    pdf_viewed: true,
+    warranty_type: 'default',
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 11,
+        agreement: AGREEMENT_ID + 2,
+        order: 1,
+        title: 'Demo',
+        description: 'Demo and prep work.',
+        amount: '4000.00',
+      },
+      {
+        id: 12,
+        agreement: AGREEMENT_ID + 2,
+        order: 2,
+        title: 'Finish',
+        description: 'Install and finish work.',
+        amount: '6000.00',
+      },
+    ],
+    fundingPreview: {
+      project_amount: 10000,
+      homeowner_escrow: 10000,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID + 2}/wizard?step=4`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toBeVisible();
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText(
+    'Some pricing is estimated'
+  );
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Estimated: 2');
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Pending quotes: 0');
+  await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Send to Customer' }).click();
+  await expect(
+    page.getByText('Some pricing is estimated and may require adjustment later.')
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send Anyway' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Go Back' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Go Back' }).click();
+  await expect(
+    page.getByText('Some pricing is estimated and may require adjustment later.')
+  ).toHaveCount(0);
+});
+
+test('agreement wizard step 4 blocks sending when subcontractor quotes are pending', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+    window.sessionStorage.setItem(
+      'mhb_subcontractor_pricing_plan_123',
+      JSON.stringify({
+        11: {
+          assignmentMode: 'quote',
+          quoteStatus: 'requested',
+          quoteAmount: '',
+          quoteMilestoneTitle: 'Demo',
+        },
+      })
+    );
+  });
+
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Pending Quote Project',
+    title: 'Pending Quote Project',
+    description: 'Pricing still waiting on quotes.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Kitchen Remodel',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    pricing_strategy: 'requires_sub_quote',
+    status: 'draft',
+    pdf_version: 1,
+    pdf_viewed: true,
+    warranty_type: 'default',
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 11,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Demo',
+        description: 'Demo and prep work.',
+        amount: '4000.00',
+      },
+    ],
+    fundingPreview: {
+      project_amount: 4000,
+      homeowner_escrow: 4000,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=4`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText(
+    'Subcontractor pricing required before sending'
+  );
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Pending quotes: 1');
+  await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeDisabled();
+});
+
 test('agreement wizard step 4 shows missing warranty as a warning state', async ({ page }) => {
   let agreement = {
     id: AGREEMENT_ID + 2,

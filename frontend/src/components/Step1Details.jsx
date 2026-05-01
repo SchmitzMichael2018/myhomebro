@@ -255,6 +255,14 @@ function normalizeTaxonomyText(value) {
     .trim();
 }
 
+function normalizePricingStrategy(value) {
+  const normalized = safeTrim(value).toLowerCase();
+  if (normalized === "estimate" || normalized === "requires_sub_quote" || normalized === "fixed") {
+    return normalized;
+  }
+  return "fixed";
+}
+
 function extractNumericIdCandidate(value) {
   const raw = safeTrim(value);
   if (!raw) return "";
@@ -2989,6 +2997,12 @@ export default function Step1Details({
       schedulePatch({ description: value || "", scope_of_work: value || "", step_status: "step1" }, 450);
       return;
     }
+
+    if (name === "pricing_strategy") {
+      const normalized = normalizePricingStrategy(value);
+      schedulePatch({ pricing_strategy: normalized, step_status: "step1" }, 250);
+      return;
+    }
   };
 
   const activeStartModeLabel =
@@ -4609,6 +4623,55 @@ export default function Step1Details({
                     </div>
                   </div>
                 ) : null}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="text-sm font-semibold text-slate-900">How are you setting pricing?</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Pick the pricing approach that matches how you want to build the milestone plan.
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  {[
+                    {
+                      value: "fixed",
+                      label: "I know my pricing",
+                      body: "Use fixed milestone pricing now and keep the agreement ready to send.",
+                    },
+                    {
+                      value: "estimate",
+                      label: "I will estimate and adjust later",
+                      body: "Start with advisory pricing and keep room to refine milestone values.",
+                    },
+                    {
+                      value: "requires_sub_quote",
+                      label: "I need subcontractor pricing first",
+                      body: "Hold sending until subcontractor quote pricing is settled.",
+                    },
+                  ].map((option) => {
+                    const active = normalizePricingStrategy(dLocal?.pricing_strategy) === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        data-testid={`agreement-pricing-strategy-${option.value}`}
+                        onClick={() => {
+                          if (locked) return;
+                          setDLocal((prev) => ({ ...prev, pricing_strategy: option.value }));
+                          writeCache({ pricing_strategy: option.value });
+                          patchAgreement({ pricing_strategy: option.value, step_status: "step1" }, { silent: true });
+                        }}
+                        disabled={locked}
+                        className={`rounded-xl border px-4 py-3 text-left transition ${
+                          active ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white hover:bg-slate-50"
+                        } disabled:opacity-60`}
+                      >
+                        <div className="font-semibold text-slate-900">{option.label}</div>
+                        <div className="mt-1 text-sm text-slate-600">{option.body}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </StepSection>
           </div>

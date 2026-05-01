@@ -17,6 +17,7 @@ import ClarificationsModal from "./ClarificationsModal";
 import { useAuth } from "../context/AuthContext";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { buildStripeOnboardingGuidance } from "../lib/stripeOnboardingStatus.js";
+import { summarizeMilestonePricingPlan } from "../lib/subcontractorPricingPlan.js";
 
 /* ---------- helpers ---------- */
 
@@ -946,6 +947,7 @@ export default function Step4Finalize({
   const [paymentModeSaving, setPaymentModeSaving] = useState(false);
   const [legalAcknowledged, setLegalAcknowledged] = useState(false);
   const [customerSendState, setCustomerSendState] = useState({ sent: false, signUrl: "" });
+  const [pricingSendPrompt, setPricingSendPrompt] = useState(null);
   const { ready: authReady, isAuthed } = useAuth();
   const navigate = useNavigate();
 
@@ -969,6 +971,9 @@ export default function Step4Finalize({
   )
     .trim()
     .toLowerCase();
+  const pricingStrategy = String(agreement?.pricing_strategy || dLocal?.pricing_strategy || "fixed")
+    .trim()
+    .toLowerCase() || "fixed";
   const isProgressPayments = paymentStructure === "progress";
   const retainagePercent = Number(
     agreement?.retainage_percent ?? dLocal?.retainage_percent ?? 0
@@ -1031,6 +1036,30 @@ export default function Step4Finalize({
 
   const invalidAmountInfo = useMemo(() => firstInvalidMilestoneAmount(displayMilestones), [displayMilestones]);
   const hasInvalidMilestoneAmounts = !!invalidAmountInfo;
+  const pricingReadiness = useMemo(
+    () => summarizeMilestonePricingPlan(agreementId, displayMilestones, pricingStrategy),
+    [agreementId, displayMilestones, pricingStrategy]
+  );
+  const pricingReadinessTone =
+    pricingReadiness.pendingQuoteCount > 0
+      ? "danger"
+      : pricingReadiness.estimatedCount > 0
+      ? "warning"
+      : "success";
+  const pricingReadinessHeadline =
+    pricingReadiness.pendingQuoteCount > 0
+      ? "Subcontractor pricing required before sending"
+      : pricingReadiness.estimatedCount > 0
+      ? "Some pricing is estimated"
+      : "All pricing is set";
+  const pricingReadinessBody =
+    pricingReadiness.pendingQuoteCount > 0
+      ? "You still have pending subcontractor quotes."
+      : pricingReadiness.estimatedCount > 0
+      ? "Some milestones are still using estimated pricing."
+      : "Everything is priced and ready for final review.";
+  const sendBlockedByQuotes = pricingStrategy === "requires_sub_quote" && pricingReadiness.pendingQuoteCount > 0;
+  const sendNeedsEstimateWarning = pricingStrategy === "estimate" && pricingReadiness.estimatedCount > 0;
 
   const firstInvalidTitle = useMemo(() => {
     if (!invalidAmountInfo) return "";
@@ -1549,12 +1578,27 @@ export default function Step4Finalize({
     }
   };
 
-  const handleSendHomeownerLink = async () => {
+  const handleSendHomeownerLink = async (forceSend = false) => {
     if (!agreementId) return;
     if (handleGateToast("send the customer signing link")) return;
 
+    if (!forceSend) {
+      if (sendBlockedByQuotes) {
+        toast.error("Subcontractor pricing is still pending. Resolve quotes before sending.");
+        return;
+      }
+      if (sendNeedsEstimateWarning) {
+        setPricingSendPrompt({
+          strategy: pricingStrategy,
+          estimatedCount: pricingReadiness.estimatedCount,
+        });
+        return;
+      }
+    }
+
     setSendingLink(true);
     setSendError(null);
+    setPricingSendPrompt(null);
     try {
       const { data } = await api.post(`/projects/agreements/${agreementId}/send_signature_request/`);
       const signUrl = data?.sign_url || data?.view_url || data?.link || data?.url || "";
@@ -1847,6 +1891,58 @@ export default function Step4Finalize({
             </button>
           </div>
         </div>
+
+        <section
+          data-testid="step4-pricing-readiness-panel"
+          className={`mt-4 rounded-2xl border px-4 py-4 ${
+            pricingReadinessTone === "danger"
+              ? "border-rose-200 bg-rose-50 text-rose-900"
+              : pricingReadinessTone === "warning"
+              ? "border-amber-200 bg-amber-50 text-amber-900"
+              : "border-emerald-200 bg-emerald-50 text-emerald-900"
+          }`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-80">Pricing Readiness</div>
+              <div className="mt-1 text-base font-semibold">{pricingReadinessHeadline}</div>
+              <div className="mt-1 text-sm opacity-80">{pricingReadinessBody}</div>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+              <span className="rounded-full bg-white/85 px-2.5 py-1 text-slate-700">
+                Fixed: {pricingReadiness.fixedCount}
+              </span>
+              <span className="rounded-full bg-white/85 px-2.5 py-1 text-slate-700">
+                Estimated: {pricingReadiness.estimatedCount}
+              </span>
+              <span className="rounded-full bg-white/85 px-2.5 py-1 text-slate-700">
+                Pending quotes: {pricingReadiness.pendingQuoteCount}
+              </span>
+            </div>
+          </div>
+
+          {pricingSendPrompt ? (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-amber-900">
+              <div className="font-semibold">Some pricing is estimated and may require adjustment later.</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSendHomeownerLink(true)}
+                  className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800"
+                >
+                  Send Anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPricingSendPrompt(null)}
+                  className="rounded-lg border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50"
+                >
+                  Go Back
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </section>
 
       </div>
 
@@ -2452,7 +2548,7 @@ export default function Step4Finalize({
                 <button
                   type="button"
                   onClick={handleSendHomeownerLink}
-                  disabled={sendingLink || hasInvalidMilestoneAmounts}
+                  disabled={sendingLink || hasInvalidMilestoneAmounts || sendBlockedByQuotes}
                   className="mt-2 rounded bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {sendingLink ? "Sending link�" : "Send to Customer"}

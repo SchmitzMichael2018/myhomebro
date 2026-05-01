@@ -897,6 +897,17 @@ class Agreement(models.Model):
         db_index=True,
         help_text="SIMPLE keeps milestone-paid workflow intact. PROGRESS enables draw-based requests.",
     )
+    pricing_strategy = models.CharField(
+        max_length=32,
+        choices=[
+            ("fixed", "I know my pricing"),
+            ("estimate", "I will estimate and adjust later"),
+            ("requires_sub_quote", "I need subcontractor pricing first"),
+        ],
+        default="fixed",
+        db_index=True,
+        help_text="High-level pricing approach for agreement creation and send validation.",
+    )
     agreement_mode = models.CharField(
         max_length=24,
         choices=AgreementMode.choices,

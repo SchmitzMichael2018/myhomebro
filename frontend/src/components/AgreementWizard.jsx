@@ -367,6 +367,7 @@ function buildEmptyDLocal(projectFamilyContext = {}) {
     step_status: "step1",
     payment_mode: "escrow",
     payment_structure: "simple",
+    pricing_strategy: "fixed",
     retainage_percent: "0.00",
     description: "",
     address_line1: "",
@@ -883,6 +884,9 @@ export default function AgreementWizard() {
           step_status: data?.step_status || prev.step_status || "",
           payment_mode: data?.payment_mode || prev.payment_mode,
           payment_structure: data?.payment_structure || prev.payment_structure || "simple",
+          pricing_strategy:
+            String(data?.pricing_strategy || prev.pricing_strategy || "fixed").trim().toLowerCase() ||
+            "fixed",
           retainage_percent:
             data?.retainage_percent != null
               ? String(data.retainage_percent)
@@ -1567,6 +1571,10 @@ export default function AgreementWizard() {
           payment_mode: hydratedAgreement?.payment_mode || prev.payment_mode,
           payment_structure:
             hydratedAgreement?.payment_structure || prev.payment_structure || "simple",
+          pricing_strategy:
+            String(hydratedAgreement?.pricing_strategy || prev.pricing_strategy || "fixed")
+              .trim()
+              .toLowerCase() || "fixed",
           retainage_percent:
             hydratedAgreement?.retainage_percent != null
               ? String(hydratedAgreement.retainage_percent)
