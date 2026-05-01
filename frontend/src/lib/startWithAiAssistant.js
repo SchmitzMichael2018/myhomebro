@@ -1,3 +1,8 @@
+import {
+  buildMeasurementClarificationQuestion,
+  shouldAskMeasurementClarification,
+} from "./subtypeClarifications.js";
+
 const QUICK_ACTIONS = [
   { intent: "create_lead", label: "Create lead" },
   { intent: "start_agreement", label: "Start agreement" },
@@ -408,6 +413,9 @@ function buildClarificationQuestions(projectSummary, context) {
   }
   questions.push("Who is supplying materials?");
   questions.push("What timeline or completion date matters most?");
+  if (shouldAskMeasurementClarification(projectSummary, agreement?.project_subtype, agreement?.project_type)) {
+    questions.push(buildMeasurementClarificationQuestion());
+  }
   if (clean(projectSummary).toLowerCase().includes("remodel")) {
     questions.push("What fixtures or finish level should pricing assume?");
   }

@@ -2359,7 +2359,10 @@ export default function Step1Details({
   const effectiveClarificationSubtype = useMemo(() => {
     return safeTrim(
       dLocal?.project_subtype ||
+        agreement?.project_subtype ||
         dLocal?.project_family_label ||
+        agreement?.project_type ||
+        agreement?.project_family_label ||
         assistantDraftPayload?.project_family_label ||
         agreement?.selected_template?.project_subtype ||
         dLocal?.selected_template?.project_subtype ||
@@ -2369,14 +2372,32 @@ export default function Step1Details({
     );
   }, [
     dLocal?.project_subtype,
+    agreement?.project_subtype,
+    agreement?.project_type,
     agreement?.selected_template?.project_subtype,
     dLocal?.selected_template?.project_subtype,
     selectedTemplate?.project_subtype,
     assistantTopTemplatePreview?.project_subtype,
   ]);
+  const clarificationScopeText = useMemo(
+    () =>
+      [
+        effectiveClarificationSubtype,
+        safeTrim(dLocal?.project_title),
+        safeTrim(dLocal?.description),
+        safeTrim(agreement?.description),
+      ]
+        .filter(Boolean)
+        .join(" "),
+    [agreement?.description, dLocal?.description, dLocal?.project_title, effectiveClarificationSubtype]
+  );
   const clarificationQuestions = useMemo(
-    () => getSubtypeClarificationQuestions(effectiveClarificationSubtype),
-    [effectiveClarificationSubtype]
+    () =>
+      getSubtypeClarificationQuestions(
+        effectiveClarificationSubtype,
+        clarificationScopeText
+      ),
+    [clarificationScopeText, effectiveClarificationSubtype]
   );
   const agreementClarificationAnswers = useMemo(
     () => pickClarificationAnswers(clarificationQuestions, agreement?.ai_scope?.answers || {}),
@@ -3048,14 +3069,7 @@ export default function Step1Details({
       : startMode === "template"
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Review the agreement details below and keep editing.";
-  const shouldShowProjectDetails =
-    hasSavedProjectDetails ||
-    (startModeCommitted &&
-      (startMode === "manual" ||
-        startMode === "ai" ||
-        Boolean(appliedTemplateId) ||
-        Boolean(selectedTemplateId) ||
-        Boolean(aiSetupResult)));
+  const shouldShowProjectDetails = true;
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -4190,6 +4204,9 @@ export default function Step1Details({
                             data-testid={`agreement-clarification-question-${question.key}`}
                           >
                             <div className="text-sm font-medium text-slate-900">{question.label}</div>
+                            {question.help ? (
+                              <div className="mt-1 text-xs leading-5 text-slate-500">{question.help}</div>
+                            ) : null}
                             {question.kind === "yes_no" ? (
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {["yes", "no"].map((option) => {

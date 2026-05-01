@@ -6,6 +6,53 @@ function normalizeText(value) {
     .replace(/\s+/g, " ");
 }
 
+const MEASUREMENT_SCOPE_KEYWORDS = [
+  "flooring",
+  "floor",
+  "carpet",
+  "laminate",
+  "hardwood",
+  "vinyl",
+  "tile",
+  "drywall",
+  "paint",
+  "painting",
+  "roof",
+  "roofing",
+  "siding",
+  "concrete",
+  "patio",
+  "deck",
+  "decking",
+  "fence",
+  "landscaping",
+  "remodel",
+  "room",
+  "addition",
+  "shed",
+  "area",
+];
+
+export function buildMeasurementClarificationQuestion() {
+  return {
+    key: "measurements",
+    label: "Do you know the approximate square footage or dimensions of the work area?",
+    kind: "short_text",
+    placeholder: "Example: about 1,200 sq ft or 12x18 room",
+    help:
+      "Measurements help with planning, but the contractor should verify final measurements before pricing or work begins.",
+  };
+}
+
+export function shouldAskMeasurementClarification(...texts) {
+  const haystack = texts
+    .flatMap((value) => String(value || "").split(/\s+/))
+    .join(" ")
+    .toLowerCase();
+  if (!haystack) return false;
+  return MEASUREMENT_SCOPE_KEYWORDS.some((keyword) => haystack.includes(keyword));
+}
+
 const QUESTION_SETS = [
   {
     matchers: ["bathroom remodel"],
@@ -135,14 +182,21 @@ const QUESTION_SETS = [
   },
 ];
 
-export function getSubtypeClarificationQuestions(projectSubtype) {
+export function getSubtypeClarificationQuestions(projectSubtype, scopeText = "") {
   const normalizedSubtype = normalizeText(projectSubtype);
-  if (!normalizedSubtype) return [];
+  const wantsMeasurementQuestion = shouldAskMeasurementClarification(normalizedSubtype, scopeText);
+  if (!normalizedSubtype) {
+    return wantsMeasurementQuestion ? [buildMeasurementClarificationQuestion()] : [];
+  }
 
   const match = QUESTION_SETS.find((set) =>
     set.matchers.some((matcher) => normalizedSubtype.includes(normalizeText(matcher)))
   );
-  return Array.isArray(match?.questions) ? match.questions.slice(0, 4) : [];
+  const questions = Array.isArray(match?.questions) ? [...match.questions] : [];
+  if (wantsMeasurementQuestion) {
+    questions.push(buildMeasurementClarificationQuestion());
+  }
+  return questions.slice(0, 4);
 }
 
 export function pickClarificationAnswers(questions = [], answers = {}) {

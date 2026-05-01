@@ -630,7 +630,10 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   );
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
+  await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
 
   await page.getByTestId('step1-job-description-input').fill(
     'Build backyard 12x14 shed with slab foundation and cleanup'
@@ -655,6 +658,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue('Concrete Slab');
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
 
   await page.getByTestId('agreement-project-title-input').fill(
@@ -1300,6 +1304,145 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
 
   await page.getByTestId('agreement-clarification-skip').dispatchEvent('click');
   await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toBeVisible();
+});
+
+test('agreement wizard step 1 asks for measurements on area-based jobs and accepts the contractor-verify fallback', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Flooring', label: 'Flooring', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 21,
+            value: 'Flooring Installation',
+            label: 'Flooring Installation',
+            owner_type: 'system',
+            project_type: 'Flooring',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: AGREEMENT_ID,
+            agreement_id: AGREEMENT_ID,
+            step_status: 'step1',
+            project_title: '',
+            title: '',
+            project_type: '',
+            project_subtype: '',
+            payment_mode: 'escrow',
+            payment_structure: 'simple',
+            description: '',
+            homeowner: null,
+            status: 'draft',
+            ai_scope: {
+              answers: {},
+            },
+          }),
+        });
+        return;
+      }
+
+      if (request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: AGREEMENT_ID,
+            agreement_id: AGREEMENT_ID,
+            step_status: 'step1',
+            project_title: request.postDataJSON()?.project_title || '',
+            title: request.postDataJSON()?.title || '',
+            project_type: request.postDataJSON()?.project_type || '',
+            project_subtype: request.postDataJSON()?.project_subtype || '',
+            payment_mode: 'escrow',
+            payment_structure: 'simple',
+            description: request.postDataJSON()?.description || '',
+            homeowner: null,
+            status: 'draft',
+            ai_scope: {
+              answers: {
+                measurements: request.postDataJSON()?.scope_clarifications?.measurements || '',
+              },
+            },
+          }),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description:
+          'Replace flooring in the main living areas and hallway with new underlayment, trim, and cleanup.',
+        project_title: 'Flooring Replacement',
+        project_type: 'Flooring',
+        project_subtype: 'Flooring Installation',
+      }),
+    });
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(
+    'Replace flooring in the main living areas and hallway'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-question-measurements')).toContainText(
+    'Do you know the approximate square footage or dimensions of the work area?'
+  );
+  await expect(page.getByTestId('agreement-clarification-question-measurements')).toContainText(
+    'Measurements help with planning, but the contractor should verify final measurements before pricing or work begins.'
+  );
+
+  await page
+    .getByTestId('agreement-clarification-input-measurements')
+    .fill('Not sure — contractor should verify measurements.');
+  await expect(page.getByTestId('agreement-clarification-summary')).toContainText(
+    'Not sure — contractor should verify measurements.'
+  );
 });
 
 test('agreement wizard step 1 respects explicit mode switching when a template is already applied', async ({
