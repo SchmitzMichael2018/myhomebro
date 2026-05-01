@@ -22,6 +22,10 @@ from projects.services.subcontractor_milestone_agreements import (
     get_latest_subcontractor_milestone_agreement,
     serialize_subcontractor_milestone_agreement,
 )
+from projects.services.subcontractor_quotes import (
+    get_latest_subcontractor_quote_request,
+    serialize_subcontractor_quote_request,
+)
 from projects.services.milestone_workflow import (
     can_user_review_submitted_work,
     can_user_submit_work,
@@ -54,6 +58,7 @@ def _milestone_payload(milestone: Milestone) -> dict:
     reviewer = get_effective_reviewer(milestone)
     subcontractor_agreement = None
     subcontractor_payout_orchestration = None
+    subcontractor_quote_request = None
     if assigned is not None:
         latest_agreement = get_latest_subcontractor_milestone_agreement(milestone, assigned)
         subcontractor_agreement = serialize_subcontractor_milestone_agreement(
@@ -69,6 +74,14 @@ def _milestone_payload(milestone: Milestone) -> dict:
             )
         except Exception:
             subcontractor_payout_orchestration = None
+        try:
+            latest_quote = get_latest_subcontractor_quote_request(milestone, assigned)
+            subcontractor_quote_request = serialize_subcontractor_quote_request(
+                latest_quote,
+                subcontractor_view=True,
+            )
+        except Exception:
+            subcontractor_quote_request = None
 
     return {
         "id": milestone.id,
@@ -97,6 +110,7 @@ def _milestone_payload(milestone: Milestone) -> dict:
         else None,
         "assigned_worker_display": getattr(assigned_worker, "display_name", "") or getattr(assigned_worker, "email", "") or "",
         "subcontractor_agreement": subcontractor_agreement,
+        "subcontractor_quote_request": subcontractor_quote_request,
         "subcontractor_payout_orchestration": subcontractor_payout_orchestration,
         "reviewer": {
             "kind": getattr(reviewer, "kind", ""),

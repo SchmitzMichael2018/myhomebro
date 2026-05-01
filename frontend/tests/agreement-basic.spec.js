@@ -3910,21 +3910,6 @@ test('agreement wizard step 4 shows pricing readiness guidance and send warnings
 test('agreement wizard step 4 blocks sending when subcontractor quotes are pending', async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem('access', 'playwright-access-token');
-    window.sessionStorage.setItem(
-      'mhb_subcontractor_pricing_plan_123',
-      JSON.stringify({
-        11: {
-          assignmentMode: 'quote',
-          quoteStatus: 'requested',
-          quoteAmount: '',
-          quoteMilestoneTitle: 'Demo',
-        },
-      })
-    );
-  });
-
   const agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
@@ -3950,17 +3935,40 @@ test('agreement wizard step 4 blocks sending when subcontractor quotes are pendi
     step_status: '4',
   };
 
+  const milestoneWithPendingQuote = {
+    id: 11,
+    agreement: AGREEMENT_ID,
+    order: 1,
+    title: 'Demo',
+    description: 'Demo and prep work.',
+    amount: '4000.00',
+    subcontractor_quote_request: {
+      id: 9011,
+      agreement_id: AGREEMENT_ID,
+      milestone_id: 11,
+      status: 'sent',
+      status_label: 'Sent',
+      contractor_message: 'Please quote this milestone.',
+      quoted_amount: '',
+      subcontractor_message: '',
+      scope_snapshot: {
+        milestone_title: 'Demo',
+        milestone_description: 'Demo and prep work.',
+      },
+      linked_subcontractor_milestone_agreement: null,
+      can_respond: true,
+      can_accept: true,
+      can_decline: true,
+      can_request_revision: true,
+      can_cancel: true,
+      is_active: true,
+    },
+  };
+
   await installStep4FinalizeRoutes(page, {
     agreement,
     milestones: [
-      {
-        id: 11,
-        agreement: AGREEMENT_ID,
-        order: 1,
-        title: 'Demo',
-        description: 'Demo and prep work.',
-        amount: '4000.00',
-      },
+      milestoneWithPendingQuote,
     ],
     fundingPreview: {
       project_amount: 4000,
@@ -3981,6 +3989,81 @@ test('agreement wizard step 4 blocks sending when subcontractor quotes are pendi
   );
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Pending quotes: 1');
   await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeDisabled();
+});
+
+test('agreement wizard step 4 allows sending after subcontractor quote is accepted', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID + 1,
+    agreement_id: AGREEMENT_ID + 1,
+    project_title: 'Quote Accepted Project',
+    title: 'Quote Accepted Project',
+    description: 'Pricing is locked after quote acceptance.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Kitchen Remodel',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    pricing_strategy: 'requires_sub_quote',
+    status: 'draft',
+    pdf_version: 1,
+    pdf_viewed: true,
+    warranty_type: 'default',
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 21,
+        agreement: agreement.id,
+        order: 1,
+        title: 'Demo',
+        description: 'Demo and prep work.',
+        amount: '4000.00',
+        subcontractor_quote_request: {
+          id: 9021,
+          agreement_id: agreement.id,
+          milestone_id: 21,
+          status: 'accepted',
+          status_label: 'Accepted',
+          quoted_amount: '3800.00',
+          contractor_message: 'Please quote this milestone.',
+          subcontractor_message: 'Happy to do it.',
+          linked_subcontractor_milestone_agreement: {
+            id: 77,
+            payment_release_mode: 'manual_release',
+            payment_release_mode_label: 'Manual Release',
+            agreed_pay: '3800.00',
+          },
+          is_active: false,
+        },
+      },
+    ],
+    fundingPreview: {
+      project_amount: 4000,
+      homeowner_escrow: 4000,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+  });
+
+  await page.goto(`/app/agreements/${agreement.id}/wizard?step=4`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('All pricing is set');
+  await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeEnabled();
 });
 
 test('agreement wizard step 4 shows missing warranty as a warning state', async ({ page }) => {

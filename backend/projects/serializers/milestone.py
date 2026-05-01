@@ -36,6 +36,10 @@ from projects.services.subcontractor_milestone_agreements import (
     get_latest_subcontractor_milestone_agreement,
     serialize_subcontractor_milestone_agreement,
 )
+from projects.services.subcontractor_quotes import (
+    get_latest_subcontractor_quote_request,
+    serialize_subcontractor_quote_request,
+)
 from projects.services.milestone_payouts import payout_amount_cents_for_milestone, serialize_payout_for_milestone
 from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
 
@@ -183,6 +187,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
     subcontractor_payout_orchestration = serializers.SerializerMethodField()
     subcontractor_assignment_compliance = serializers.SerializerMethodField()
     subcontractor_milestone_agreement = serializers.SerializerMethodField()
+    subcontractor_quote_request = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
     assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
@@ -260,6 +265,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "subcontractor_payout_orchestration",
             "subcontractor_assignment_compliance",
             "subcontractor_milestone_agreement",
+            "subcontractor_quote_request",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -768,6 +774,27 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
         return None
 
+    def get_subcontractor_quote_request(self, obj: Milestone):
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        invitation = self._get_assigned_subcontractor_invitation(obj)
+        if invitation is None:
+            return None
+
+        latest = get_latest_subcontractor_quote_request(obj, invitation)
+        if latest is None:
+            return None
+
+        contractor = get_contractor_for_user(user) if user is not None else None
+        owner = getattr(getattr(getattr(obj, "agreement", None), "project", None), "contractor", None)
+        if contractor is not None and owner is not None and contractor.id == owner.id:
+            return serialize_subcontractor_quote_request(latest, contractor_view=True)
+
+        if getattr(invitation, "accepted_by_user_id", None) == getattr(user, "id", None):
+            return serialize_subcontractor_quote_request(latest, subcontractor_view=True)
+
+        return None
+
     # ------------------------ validation ------------------------ #
     @staticmethod
     def _as_date(value) -> Optional[date]:
@@ -1059,5 +1086,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["subcontractor_payout_orchestration"] = self.get_subcontractor_payout_orchestration(instance)
         data["subcontractor_assignment_compliance"] = self.get_subcontractor_assignment_compliance(instance)
         data["subcontractor_milestone_agreement"] = self.get_subcontractor_milestone_agreement(instance)
+        data["subcontractor_quote_request"] = self.get_subcontractor_quote_request(instance)
 
         return data

@@ -585,4 +585,44 @@ export async function requestContractorQuote(slug, payload) {
   return res.data;
 }
 
+export async function listSubcontractorQuotes(params = {}) {
+  const res = await api.get("/projects/subcontractor-quotes/", { params });
+  return res.data;
+}
+
+export async function createSubcontractorQuoteRequest(payload) {
+  const res = await api.post("/projects/subcontractor-quotes/", payload);
+  return res.data;
+}
+
+export async function respondToSubcontractorQuoteRequest(quoteId, payload) {
+  const res = await api.post(`/projects/subcontractor-quotes/${quoteId}/respond/`, payload);
+  return res.data;
+}
+
+export async function acceptSubcontractorQuoteRequest(quoteId, payload) {
+  const res = await api.post(`/projects/subcontractor-quotes/${quoteId}/accept/`, payload);
+  return res.data;
+}
+
+export async function declineSubcontractorQuoteRequest(quoteId) {
+  const res = await api.post(`/projects/subcontractor-quotes/${quoteId}/decline/`);
+  return res.data;
+}
+
+export async function requestSubcontractorQuoteRevision(quoteId, payload) {
+  const res = await api.post(`/projects/subcontractor-quotes/${quoteId}/request-revision/`, payload);
+  return res.data;
+}
+
+export async function cancelSubcontractorQuoteRequest(quoteId) {
+  const res = await api.post(`/projects/subcontractor-quotes/${quoteId}/cancel/`);
+  return res.data;
+}
+
+export async function getAssignedSubcontractorQuotes() {
+  const res = await api.get("/projects/subcontractor-quotes/assigned/");
+  return res.data;
+}
+
 export default api;

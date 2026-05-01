@@ -123,6 +123,15 @@ class SubcontractorPaymentReleaseMode(models.TextChoices):
     AUTO_AFTER_CUSTOMER_APPROVAL = "auto_after_customer_approval", "Auto-Release After Customer Approval"
 
 
+class SubcontractorQuoteRequestStatus(models.TextChoices):
+    SENT = "sent", "Sent"
+    RESPONDED = "responded", "Responded"
+    ACCEPTED = "accepted", "Accepted"
+    DECLINED = "declined", "Declined"
+    REVISION_REQUESTED = "revision_requested", "Revision Requested"
+    CANCELLED = "cancelled", "Cancelled"
+
+
 class SubcontractorMilestoneAgreement(models.Model):
     contractor = models.ForeignKey(
         "projects.Contractor",
@@ -257,3 +266,102 @@ class SubcontractorMilestoneAgreement(models.Model):
             if user is not None:
                 update_fields.append("accepted_by_user")
             self.save(update_fields=update_fields)
+
+
+class SubcontractorQuoteRequest(models.Model):
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="subcontractor_quote_requests",
+    )
+    subcontractor_invitation = models.ForeignKey(
+        "projects.SubcontractorInvitation",
+        on_delete=models.CASCADE,
+        related_name="quote_requests",
+    )
+    subcontractor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="subcontractor_quote_requests",
+    )
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="subcontractor_quote_requests",
+    )
+    milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.CASCADE,
+        related_name="subcontractor_quote_requests",
+    )
+    scope_snapshot = models.JSONField(default=dict, blank=True)
+    contractor_message = models.TextField(blank=True, default="")
+    quoted_amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    subcontractor_message = models.TextField(blank=True, default="")
+    estimated_start_date = models.DateField(null=True, blank=True)
+    estimated_completion_date = models.DateField(null=True, blank=True)
+    status = models.CharField(
+        max_length=32,
+        choices=SubcontractorQuoteRequestStatus.choices,
+        default=SubcontractorQuoteRequestStatus.SENT,
+        db_index=True,
+    )
+    revision_note = models.TextField(blank=True, default="")
+    override_reason = models.TextField(blank=True, default="")
+    linked_subcontractor_milestone_agreement = models.ForeignKey(
+        "projects.SubcontractorMilestoneAgreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="quote_requests",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_subcontractor_quote_requests",
+    )
+    responded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="responded_subcontractor_quote_requests",
+    )
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="accepted_subcontractor_quote_requests",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    declined_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    revision_requested_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["agreement", "milestone", "status"]),
+            models.Index(fields=["subcontractor", "status"]),
+            models.Index(fields=["contractor", "status"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            "SubcontractorQuoteRequest("
+            f"milestone={self.milestone_id}, subcontractor={self.subcontractor_id}, "
+            f"status={self.status})"
+        )

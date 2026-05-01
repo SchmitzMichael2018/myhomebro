@@ -175,6 +175,7 @@ from .views.subcontractor_milestone_agreements import (
     SubcontractorMilestoneAgreementDeclineView,
     SubcontractorMilestoneAgreementView,
 )
+from .views.subcontractor_quotes import SubcontractorQuoteRequestViewSet
 from .views.subcontractor_hub import (
     AgreementSubcontractorAssignmentsView,
     ContractorSubcontractorAssignmentsView,
@@ -296,6 +297,7 @@ router.register(r"project-subtypes", ProjectSubtypeViewSet, basename="project-su
 router.register(r"warranties", AgreementWarrantyViewSet, basename="warranties")
 router.register(r"intakes", ProjectIntakeViewSet, basename="project-intakes")
 router.register(r"support-tickets", SupportTicketViewSet, basename="support-tickets")
+router.register(r"subcontractor-quotes", SubcontractorQuoteRequestViewSet, basename="subcontractor-quotes")
 
 milestone_router = NestedDefaultRouter(
     router, r"milestones", lookup="milestone", trailing_slash="/?"

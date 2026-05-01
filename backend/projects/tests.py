@@ -87,6 +87,8 @@ from projects.models_subcontractor import (
     SubcontractorMilestoneAgreement,
     SubcontractorMilestoneAgreementStatus,
     SubcontractorPaymentReleaseMode,
+    SubcontractorQuoteRequest,
+    SubcontractorQuoteRequestStatus,
 )
 from projects.models_dispute import Dispute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
@@ -147,6 +149,7 @@ from projects.services.subcontractor_milestone_agreements import (
     accept_subcontractor_milestone_agreement,
     upsert_subcontractor_milestone_agreement,
 )
+from projects.services.subcontractor_quotes import get_pricing_readiness_for_agreement
 from projects.services.subcontractor_payout_orchestration import (
     evaluate_subcontractor_payout_eligibility,
     orchestrate_subcontractor_payout_for_milestone,
@@ -6927,6 +6930,234 @@ class SubcontractorStripePayoutExecutionTests(TestCase):
         self.assertEqual(self.payout.failure_reason, "")
         self.assertIsNone(self.payout.failed_at)
         self.assertIsNotNone(self.payout.ready_for_payout_at)
+
+
+class SubcontractorQuoteRequestTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="quote-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Quote Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Quote Homeowner",
+            email="quote-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Quote Workflow Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for subcontractor quote tests",
+            pricing_strategy="requires_sub_quote",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Cabinet Install",
+            description="Install cabinets and finish trim.",
+            amount="2000.00",
+        )
+
+        self.subcontractor_user = user_model.objects.create_user(
+            email="quote-sub@example.com",
+            password="testpass123",
+            first_name="Quote",
+            last_name="Sub",
+        )
+        self.other_subcontractor_user = user_model.objects.create_user(
+            email="other-quote-sub@example.com",
+            password="testpass123",
+        )
+        self.accepted_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="quote-sub@example.com",
+            invite_name="Quote Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.subcontractor_user,
+            accepted_at=timezone.now(),
+        )
+        SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="other-quote-sub@example.com",
+            invite_name="Other Quote Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.other_subcontractor_user,
+            accepted_at=timezone.now(),
+        )
+        self.client = APIClient()
+
+    def _create_quote(self, *, contractor_message="Please quote this milestone."):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            "/api/projects/subcontractor-quotes/",
+            {
+                "agreement_id": self.agreement.id,
+                "milestone_id": self.milestone.id,
+                "subcontractor_invitation_id": self.accepted_invitation.id,
+                "contractor_message": contractor_message,
+                "scope_snapshot": {
+                    "milestone_title": self.milestone.title,
+                    "milestone_description": self.milestone.description,
+                    "agreement_title": getattr(self.agreement, "title", "") or self.agreement.description,
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        return SubcontractorQuoteRequest.objects.get(pk=response.json()["id"])
+
+    def _respond_to_quote(self, quote, *, amount="1850.00"):
+        self.client.force_authenticate(user=self.subcontractor_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/respond/",
+            {
+                "quoted_amount": amount,
+                "subcontractor_message": "Happy to do it.",
+                "estimated_start_date": "2026-04-10",
+                "estimated_completion_date": "2026-04-14",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        quote.refresh_from_db()
+        return quote
+
+    def test_contractor_can_create_quote_request(self):
+        quote = self._create_quote()
+
+        self.assertEqual(quote.status, SubcontractorQuoteRequestStatus.SENT)
+        self.assertEqual(quote.contractor_message, "Please quote this milestone.")
+        self.assertEqual(quote.scope_snapshot["milestone_title"], "Cabinet Install")
+        self.assertEqual(quote.subcontractor_invitation_id, self.accepted_invitation.id)
+
+        readiness = get_pricing_readiness_for_agreement(self.agreement)
+        self.assertTrue(readiness["blocked"])
+        self.assertEqual(readiness["pending_quote_count"], 1)
+        self.assertEqual(readiness["safe_summary"], "Subcontractor pricing is still pending.")
+
+    def test_unrelated_subcontractor_cannot_view_or_respond(self):
+        quote = self._create_quote()
+
+        self.client.force_authenticate(user=self.other_subcontractor_user)
+        assigned = self.client.get("/api/projects/subcontractor-quotes/assigned/")
+        self.assertEqual(assigned.status_code, 200)
+        self.assertEqual(assigned.json()["results"], [])
+
+        response = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/respond/",
+            {"quoted_amount": "1800.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_subcontractor_can_respond_and_contractor_can_accept_quote(self):
+        quote = self._create_quote()
+        quote = self._respond_to_quote(quote)
+
+        self.client.force_authenticate(user=self.subcontractor_user)
+        subcontractor_view = self.client.get("/api/projects/subcontractor-quotes/assigned/")
+        self.assertEqual(subcontractor_view.status_code, 200)
+        row = subcontractor_view.json()["results"][0]
+        self.assertEqual(row["status"], SubcontractorQuoteRequestStatus.RESPONDED)
+        self.assertNotIn("customer_agreement_total", row)
+        self.assertNotIn("customer_milestone_amount", row)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        accept_response = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/accept/",
+            {"payment_release_mode": "manual_release"},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 200)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, SubcontractorQuoteRequestStatus.ACCEPTED)
+        self.assertIsNotNone(quote.linked_subcontractor_milestone_agreement_id)
+        agreement = quote.linked_subcontractor_milestone_agreement
+        self.assertEqual(agreement.agreed_pay, Decimal("1850.00"))
+        self.assertEqual(agreement.payment_release_mode, SubcontractorPaymentReleaseMode.MANUAL_RELEASE)
+        self.assertIsNone(getattr(self.milestone, "payout_record", None))
+
+        readiness = get_pricing_readiness_for_agreement(self.agreement)
+        self.assertFalse(readiness["blocked"])
+        self.assertEqual(readiness["pending_quote_count"], 0)
+        self.assertEqual(readiness["safe_summary"], "All requested subcontractor quotes are ready.")
+
+    def test_quote_over_milestone_amount_requires_override_reason(self):
+        quote = self._create_quote()
+        quote = self._respond_to_quote(quote, amount="2600.00")
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/accept/",
+            {"payment_release_mode": "manual_release"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("override_reason", str(response.json()).lower())
+
+        allowed = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/accept/",
+            {
+                "payment_release_mode": "auto_after_customer_approval",
+                "override_reason": "Scope expanded after customer approval.",
+            },
+            format="json",
+        )
+        self.assertEqual(allowed.status_code, 200)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, SubcontractorQuoteRequestStatus.ACCEPTED)
+        self.assertEqual(
+            quote.linked_subcontractor_milestone_agreement.payment_release_mode,
+            SubcontractorPaymentReleaseMode.AUTO_AFTER_CUSTOMER_APPROVAL,
+        )
+
+    def test_revision_decline_and_cancel_states_work(self):
+        quote = self._create_quote()
+        quote = self._respond_to_quote(quote)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        revision = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/request-revision/",
+            {"revision_note": "Please trim the labor scope."},
+            format="json",
+        )
+        self.assertEqual(revision.status_code, 200)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, SubcontractorQuoteRequestStatus.REVISION_REQUESTED)
+
+        decline = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/decline/",
+            {},
+            format="json",
+        )
+        self.assertEqual(decline.status_code, 200)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, SubcontractorQuoteRequestStatus.DECLINED)
+
+        next_quote = self._create_quote(contractor_message="Second quote request.")
+        cancel = self.client.post(f"/api/projects/subcontractor-quotes/{next_quote.id}/cancel/", {}, format="json")
+        self.assertEqual(cancel.status_code, 200)
+        next_quote.refresh_from_db()
+        self.assertEqual(next_quote.status, SubcontractorQuoteRequestStatus.CANCELLED)
 
 
 @override_settings(

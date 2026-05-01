@@ -21,6 +21,7 @@ from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent
 from .models_subcontractor import (  # noqa: E402,F401
     SubcontractorInvitation,
     SubcontractorMilestoneAgreement,
+    SubcontractorQuoteRequest,
 )
 
 

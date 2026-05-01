@@ -49,6 +49,8 @@ export default function SubcontractorAssignedWorkPage() {
   const [reviewBusy, setReviewBusy] = useState({});
   const [completionNotes, setCompletionNotes] = useState({});
   const [completionBusy, setCompletionBusy] = useState({});
+  const [quoteDrafts, setQuoteDrafts] = useState({});
+  const [quoteBusy, setQuoteBusy] = useState({});
 
   function completionStatusLabel(status) {
     const normalized = String(status || "not_submitted").toLowerCase();
@@ -76,6 +78,17 @@ export default function SubcontractorAssignedWorkPage() {
     if (normalized === "failed") return "Failed / delayed";
     if (normalized === "cancelled") return "Cancelled";
     return "Not yet due";
+  }
+
+  function quoteStatusLabel(status) {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "sent") return "Waiting for your quote";
+    if (normalized === "responded") return "Quote submitted";
+    if (normalized === "accepted") return "Accepted";
+    if (normalized === "declined") return "Declined";
+    if (normalized === "revision_requested") return "Revision requested";
+    if (normalized === "cancelled") return "Cancelled";
+    return "Open";
   }
 
   function formatMoney(value) {
@@ -292,6 +305,34 @@ export default function SubcontractorAssignedWorkPage() {
       );
     } finally {
       setCompletionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  }
+
+  async function submitQuoteResponse(milestoneId, quote) {
+    if (!quote?.id) return;
+    const draft = quoteDrafts[milestoneId] || {};
+    const quotedAmount = String(draft.quoted_amount || "").trim();
+    if (!quotedAmount) {
+      toast.error("Enter a quoted amount.");
+      return;
+    }
+    try {
+      setQuoteBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const { data } = await api.post(`/projects/subcontractor-quotes/${quote.id}/respond/`, {
+        quoted_amount: quotedAmount,
+        subcontractor_message: draft.subcontractor_message || "",
+        estimated_start_date: draft.estimated_start_date || null,
+        estimated_completion_date: draft.estimated_completion_date || null,
+      });
+      updateMilestoneInGroups(milestoneId, {
+        subcontractor_quote_request: data,
+      });
+      toast.success("Quote submitted.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to submit quote.");
+    } finally {
+      setQuoteBusy((prev) => ({ ...prev, [milestoneId]: false }));
     }
   }
 
@@ -516,6 +557,141 @@ export default function SubcontractorAssignedWorkPage() {
                         </div>
                       )}
                     </div>
+
+                    {milestone.subcontractor_quote_request ? (
+                      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">Quote Request</div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {quoteStatusLabel(milestone.subcontractor_quote_request.status)}
+                            </div>
+                          </div>
+                          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                            {quoteStatusLabel(milestone.subcontractor_quote_request.status)}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                          <div className="font-semibold text-slate-900">
+                            {milestone.subcontractor_quote_request.contractor_message ||
+                              "No contractor note provided."}
+                          </div>
+                          <div className="mt-1 whitespace-pre-wrap text-slate-600">
+                            {milestone.subcontractor_quote_request.scope_snapshot?.milestone_description ||
+                              milestone.subcontractor_quote_request.scope_snapshot?.milestone_title ||
+                              milestone.description ||
+                              "Please review the scope and submit your quote."}
+                          </div>
+                        </div>
+
+                        {["sent", "revision_requested"].includes(
+                          String(milestone.subcontractor_quote_request.status || "").toLowerCase()
+                        ) ? (
+                          <div className="mt-3 space-y-3">
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Quoted Amount
+                                </label>
+                                <input
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  value={quoteDrafts[milestone.id]?.quoted_amount || ""}
+                                  onChange={(e) =>
+                                    setQuoteDrafts((prev) => ({
+                                      ...prev,
+                                      [milestone.id]: {
+                                        ...(prev[milestone.id] || {}),
+                                        quoted_amount: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                  placeholder="0.00"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Estimated Start
+                                </label>
+                                <input
+                                  type="date"
+                                  value={quoteDrafts[milestone.id]?.estimated_start_date || ""}
+                                  onChange={(e) =>
+                                    setQuoteDrafts((prev) => ({
+                                      ...prev,
+                                      [milestone.id]: {
+                                        ...(prev[milestone.id] || {}),
+                                        estimated_start_date: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Estimated Completion
+                                </label>
+                                <input
+                                  type="date"
+                                  value={quoteDrafts[milestone.id]?.estimated_completion_date || ""}
+                                  onChange={(e) =>
+                                    setQuoteDrafts((prev) => ({
+                                      ...prev,
+                                      [milestone.id]: {
+                                        ...(prev[milestone.id] || {}),
+                                        estimated_completion_date: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Optional message
+                              </label>
+                              <textarea
+                                rows={3}
+                                value={quoteDrafts[milestone.id]?.subcontractor_message || ""}
+                                onChange={(e) =>
+                                  setQuoteDrafts((prev) => ({
+                                    ...prev,
+                                    [milestone.id]: {
+                                      ...(prev[milestone.id] || {}),
+                                      subcontractor_message: e.target.value,
+                                    },
+                                  }))
+                                }
+                                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                placeholder="Add a short message with your quote."
+                              />
+                            </div>
+
+                            <button
+                              type="button"
+                              data-testid={`assigned-milestone-submit-quote-${milestone.id}`}
+                              onClick={() => submitQuoteResponse(milestone.id, milestone.subcontractor_quote_request)}
+                              disabled={quoteBusy[milestone.id]}
+                              className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                            >
+                              {quoteBusy[milestone.id] ? "Submitting..." : "Submit Quote"}
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {String(milestone.subcontractor_quote_request.status || "").toLowerCase() === "responded" ? (
+                          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                            Your quote has been submitted. The contractor will review it next.
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                       <div className="text-sm font-semibold text-slate-900">

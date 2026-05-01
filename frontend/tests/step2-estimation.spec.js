@@ -928,6 +928,95 @@ test('step 1 pricing strategy selection persists and step 2 subcontractor pricin
     },
   });
 
+  const quoteState = {
+    id: 9901,
+    contractor_id: 77,
+    subcontractor_invitation_id: 41,
+    agreement_id: AGREEMENT_ID,
+    milestone_id: 801,
+    agreement_title: 'Kitchen Remodel Agreement',
+    milestone_title: 'Demo & Prep',
+    milestone_description: 'Protect work area and demo existing finishes.',
+    contractor_message: 'Please quote this milestone.',
+    subcontractor_message: '',
+    quoted_amount: '',
+    status: 'sent',
+    status_label: 'Sent',
+    revision_note: '',
+    override_reason: '',
+    scope_snapshot: {
+      milestone_title: 'Demo & Prep',
+      milestone_description: 'Protect work area and demo existing finishes.',
+      project_title: 'Kitchen Remodel Agreement',
+    },
+    linked_subcontractor_milestone_agreement: null,
+    created_at: '2026-04-01T10:00:00Z',
+    sent_at: '2026-04-01T10:00:00Z',
+    responded_at: null,
+    accepted_at: null,
+    declined_at: null,
+    cancelled_at: null,
+    revision_requested_at: null,
+    can_respond: true,
+    can_accept: true,
+    can_decline: true,
+    can_request_revision: true,
+    can_cancel: true,
+    is_active: true,
+    subcontractor_display_name: 'Skyline Cabinets',
+    subcontractor_email: 'cabinets@example.com',
+  };
+
+  await page.route('**/api/projects/subcontractor-quotes/', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    const body = route.request().postDataJSON();
+    quoteState.contractor_message = body.contractor_message || quoteState.contractor_message;
+    quoteState.subcontractor_invitation_id = Number(body.subcontractor_invitation_id || 41);
+    quoteState.scope_snapshot = body.scope_snapshot || quoteState.scope_snapshot;
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(quoteState),
+    });
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?\?.*agreement=321.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 801,
+            agreement: AGREEMENT_ID,
+            order: 1,
+            title: 'Demo & Prep',
+            description: 'Protect work area and demo existing finishes.',
+            amount: '4000.00',
+            start_date: '2026-04-01',
+            completion_date: '2026-04-02',
+            normalized_milestone_type: 'demolition',
+            subcontractor_quote_request: quoteState,
+          },
+          {
+            id: 802,
+            agreement: AGREEMENT_ID,
+            order: 2,
+            title: 'Install & Finish',
+            description: 'Install cabinets, finishes, and fixtures.',
+            amount: '12000.00',
+            start_date: '2026-04-03',
+            completion_date: '2026-04-08',
+            normalized_milestone_type: 'installation',
+          },
+        ],
+      }),
+    });
+  });
+
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, { waitUntil: 'domcontentloaded' });
 
   const requiresQuoteButton = page.getByTestId('agreement-pricing-strategy-requires_sub_quote');
@@ -946,9 +1035,10 @@ test('step 1 pricing strategy selection persists and step 2 subcontractor pricin
   await page.getByTestId('step2-quote-message-input').fill('Please quote this milestone.');
   await page.getByTestId('step2-request-quote-button').click();
   await expect(page.getByText('Waiting for subcontractor quote.')).toBeVisible();
-  await expect(page.getByText('Quote received for Demo.')).toBeVisible();
-  await page.getByRole('button', { name: 'Use this quote' }).click();
-  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Fixed: 1');
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Pending quotes: 1');
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText(
+    'Subcontractor pricing required before sending'
+  );
 });
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
