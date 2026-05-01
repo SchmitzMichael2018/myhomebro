@@ -3887,8 +3887,9 @@ test('agreement wizard step 4 shows pricing readiness guidance and send warnings
   });
 
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toBeVisible();
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Next Step');
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText(
-    'Some pricing is estimated'
+    'Good to send'
   );
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Estimated: 2');
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Pending quotes: 0');
@@ -3985,9 +3986,13 @@ test('agreement wizard step 4 blocks sending when subcontractor quotes are pendi
   });
 
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText(
-    'Subcontractor pricing required before sending'
+    'Needs attention'
   );
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Next Step');
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Pending quotes: 1');
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText(
+    '1 milestone is still waiting on subcontractor pricing.'
+  );
   await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeDisabled();
 });
 
@@ -4062,7 +4067,8 @@ test('agreement wizard step 4 allows sending after subcontractor quote is accept
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('All pricing is set');
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Next Step');
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText('Good to send');
   await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeEnabled();
 });
 

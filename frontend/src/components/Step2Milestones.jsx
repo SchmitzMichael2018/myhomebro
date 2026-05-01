@@ -1,4 +1,4 @@
-// frontend/src/components/Step2Milestones.jsx
+﻿// frontend/src/components/Step2Milestones.jsx
 // v2026-03-18-step2-template-aware-full
 // Changes:
 // - preserves existing Step 2 milestone workflow, AI suggestions, clarifications, save-as-template, edit modal
@@ -30,6 +30,11 @@ import {
 } from "../lib/milestoneDraftShaping.js";
 import {
   summarizeMilestonePricingPlan,
+  getMilestonePrimaryAction,
+  getMilestoneSubcontractorSummary,
+  getNextStepLabel,
+  getSimpleStateLabel,
+  getPricingReadinessCopy,
 } from "../lib/subcontractorPricingPlan.js";
 import {
   normalizeAssistantMilestoneSuggestion,
@@ -1206,24 +1211,7 @@ export default function Step2Milestones({
     () => summarizeMilestonePricingPlan(agreementId, effectiveMilestones, agreementPricingStrategy),
     [agreementId, agreementPricingStrategy, effectiveMilestones]
   );
-  const pricingReadinessTone =
-    pricingReadiness.pendingQuoteCount > 0
-      ? "danger"
-      : pricingReadiness.estimatedCount > 0
-      ? "warning"
-      : "success";
-  const pricingReadinessHeadline =
-    pricingReadiness.pendingQuoteCount > 0
-      ? "Subcontractor pricing required before sending"
-      : pricingReadiness.estimatedCount > 0
-      ? "Some milestones use estimated pricing"
-      : "All pricing is set";
-  const pricingReadinessBody =
-    pricingReadiness.pendingQuoteCount > 0
-      ? "Finish the pending subcontractor quotes before sending the agreement."
-      : pricingReadiness.estimatedCount > 0
-      ? "Estimated milestones can still be sent, but you may want to revisit them before final approval."
-      : "All milestones are in a send-ready pricing state.";
+  const pricingReadinessCopy = useMemo(() => getPricingReadinessCopy(pricingReadiness), [pricingReadiness]);
   const activeQuoteRequest = subcontractorQuoteTarget?.subcontractor_quote_request || null;
   const activeQuoteStatus = safeStr(activeQuoteRequest?.status).toLowerCase();
   const activeQuoteAmount = Number(activeQuoteRequest?.quoted_amount || 0);
@@ -1718,6 +1706,15 @@ export default function Step2Milestones({
     [acceptedSubcontractors, agreementId, effectiveMilestones]
   );
 
+  const closeQuoteTarget = useCallback(() => {
+    setSubcontractorQuoteTarget(null);
+    setQuoteFormMessage("");
+    setQuoteFormSubcontractorId("");
+    setQuoteReviewOverrideReason("");
+    setQuoteReviewRevisionNote("");
+    setQuoteReviewPaymentMode("manual_release");
+  }, []);
+
   const confirmQuoteRequest = useCallback(async () => {
     const current = subcontractorQuoteTarget;
     if (!current?.id) return;
@@ -1790,15 +1787,6 @@ export default function Step2Milestones({
 
   const closeSubcontractorAssignTarget = useCallback(() => {
     setSubcontractorAssignTarget(null);
-  }, []);
-
-  const closeQuoteTarget = useCallback(() => {
-    setSubcontractorQuoteTarget(null);
-    setQuoteFormMessage("");
-    setQuoteFormSubcontractorId("");
-    setQuoteReviewOverrideReason("");
-    setQuoteReviewRevisionNote("");
-    setQuoteReviewPaymentMode("manual_release");
   }, []);
 
   useEffect(() => {
@@ -4553,7 +4541,7 @@ export default function Step2Milestones({
           </div>
           <div className="mt-2 text-xs text-amber-900/80">
             Target total: {formatCurrency(rebalancePrompt.targetTotal)}
-            {rebalancePrompt.manualIds.length ? ` • ${rebalancePrompt.manualIds.length} manual milestone${rebalancePrompt.manualIds.length === 1 ? "" : "s"} detected` : ""}
+            {rebalancePrompt.manualIds.length ? ` â€¢ ${rebalancePrompt.manualIds.length} manual milestone${rebalancePrompt.manualIds.length === 1 ? "" : "s"} detected` : ""}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {rebalancePrompt.manualIds.length ? (
@@ -5657,18 +5645,18 @@ export default function Step2Milestones({
         <section
           data-testid="step2-pricing-readiness-panel"
           className={`mb-4 rounded-2xl border px-4 py-4 text-sm ${
-            pricingReadinessTone === "danger"
+            pricingReadinessCopy.tone === "danger"
               ? "border-rose-200 bg-rose-50 text-rose-900"
-              : pricingReadinessTone === "warning"
+              : pricingReadinessCopy.tone === "warning"
               ? "border-amber-200 bg-amber-50 text-amber-900"
               : "border-emerald-200 bg-emerald-50 text-emerald-900"
           }`}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide opacity-80">Pricing Readiness</div>
-              <div className="mt-1 font-semibold">{pricingReadinessHeadline}</div>
-              <div className="mt-1 text-xs opacity-80">{pricingReadinessBody}</div>
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-80">Next Step</div>
+              <div className="mt-1 font-semibold">{pricingReadinessCopy.title}</div>
+              <div className="mt-1 text-xs opacity-80">{pricingReadinessCopy.body}</div>
             </div>
             <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
               <span className="rounded-full bg-white/80 px-2.5 py-1 text-slate-700">
@@ -5709,47 +5697,47 @@ export default function Step2Milestones({
                 const isAiSuggested = m?.id != null && aiSuggestedMilestoneIds.includes(m.id);
                 const isManualAmount = m?.id != null && manualAmountMilestoneIdSet.has(String(m.id));
                 const isExpanded = expandedMilestoneId === m.id;
-                const summaryStart = friendly(toDateOnly(m.start_date || m.start));
-                const summaryDue = friendly(toDateOnly(m.completion_date || m.end_date || m.end));
-                const pricingShareLabel = projectEstimateGuidance?.share
-                  ? `${formatPercent(projectEstimateGuidance.share)} of total`
-                  : projectEstimateGuidance?.weightLabel || getMilestonePricingWeightLabel(m);
-                const milestoneShareTestId = `step2-milestone-share-${m.id || idx + 1}`;
                 const quoteRequest = m?.subcontractor_quote_request || null;
                 const quoteStatus = safeStr(quoteRequest?.status).toLowerCase();
                 const quoteAmount = quoteRequest?.quoted_amount || "";
+                const subcontractorAgreement = m?.subcontractor_milestone_agreement || null;
+                const payoutState = m?.subcontractor_payout_orchestration || null;
                 const assignedSubcontractorName =
                   m?.assigned_subcontractor?.display_name ||
                   m?.assigned_subcontractor?.email ||
                   m?.assigned_worker?.display_name ||
                   m?.assigned_worker?.email ||
+                  subcontractorAgreement?.subcontractor_display_name ||
+                  subcontractorAgreement?.subcontractor_email ||
                   "";
-                const subcontractorPay =
-                  m?.subcontractor_milestone_agreement?.agreed_pay ??
-                  m?.agreed_pay ??
-                  m?.subcontractor_payout_amount ??
-                  "";
-                const releaseMode =
-                  m?.subcontractor_milestone_agreement?.payment_release_mode ||
-                  m?.payment_release_mode ||
-                  "";
-                const planStatusLabel = quoteStatus === "sent"
-                  ? "Waiting for subcontractor quote"
-                  : quoteStatus === "responded"
-                  ? "Quote received"
-                  : quoteStatus === "revision_requested"
-                  ? "Revision requested"
-                  : quoteStatus === "accepted"
-                  ? "Quote accepted"
-                  : quoteStatus === "declined"
-                  ? "Quote declined"
-                  : quoteStatus === "cancelled"
-                  ? "Request cancelled"
-                  : m?.subcontractor_milestone_agreement?.agreement_acceptance_status === "accepted"
-                  ? "Fixed pay"
-                  : agreementPricingStrategy === "estimate"
-                  ? "Estimated"
-                  : "Planning";
+                const subcontractorSummary = getMilestoneSubcontractorSummary(m, agreementPricingStrategy);
+                const nextStepLabel = getNextStepLabel(
+                  m,
+                  agreementMeta || {},
+                  quoteRequest,
+                  subcontractorAgreement,
+                  payoutState
+                );
+                const primaryAction = getMilestonePrimaryAction(
+                  m,
+                  agreementMeta || {},
+                  quoteRequest,
+                  subcontractorAgreement,
+                  payoutState
+                );
+                const currentAgreementStatus = safeStr(subcontractorAgreement?.agreement_acceptance_status).toLowerCase();
+                const currentAgreementStatusLabel = currentAgreementStatus
+                  ? currentAgreementStatus === "accepted"
+                    ? "Approved"
+                    : currentAgreementStatus === "pending" || currentAgreementStatus === "not_sent"
+                    ? "Waiting"
+                    : currentAgreementStatus === "declined"
+                    ? "Declined"
+                    : currentAgreementStatus.charAt(0).toUpperCase() + currentAgreementStatus.slice(1)
+                  : "";
+                const currentPayoutState = safeStr(
+                  payoutState?.payout_state || payoutState?.next_status || payoutState?.payout_status
+                ).toLowerCase();
                 return (
                   <article
                     key={m.id || `${m.title}-${idx}`}
@@ -5781,61 +5769,85 @@ export default function Step2Milestones({
                       >
                         ::
                       </button>
-                      <button
-                        type="button"
-                        className="flex-1 text-left"
-                        onClick={() => toggleCardExpanded(m.id)}
-                        data-testid={`step2-milestone-summary-${m.id || idx + 1}`}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            data-testid={`step2-milestone-number-${m.id || idx + 1}`}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-900 bg-slate-900 text-sm font-bold leading-none text-white shadow-sm"
+                      <div className="flex-1">
+                        <button
+                          type="button"
+                          className="block w-full text-left"
+                          onClick={() => toggleCardExpanded(m.id)}
+                          data-testid={`step2-milestone-summary-${m.id || idx + 1}`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              data-testid={`step2-milestone-number-${m.id || idx + 1}`}
+                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-900 bg-slate-900 text-sm font-bold leading-none text-white shadow-sm"
+                            >
+                              {idx + 1}
+                            </span>
+                            <div className="text-base font-semibold text-slate-950">
+                              {m.title || "Untitled milestone"}
+                            </div>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            <div>
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                Customer Price
+                              </div>
+                              <div className="text-sm font-semibold text-slate-900">
+                                {Number(m.amount || 0).toLocaleString(undefined, {
+                                  style: "currency",
+                                  currency: "USD",
+                                })}
+                              </div>
+                            </div>
+                            <div
+                              data-testid={`step2-milestone-subcontractor-summary-${m.id || idx + 1}`}
+                              className="text-sm text-slate-700"
+                            >
+                              <span className="font-semibold text-slate-900">Subcontractor:</span>{" "}
+                              {subcontractorSummary}
+                            </div>
+                            <div
+                              data-testid={`step2-milestone-next-step-${m.id || idx + 1}`}
+                              className="text-sm text-slate-700"
+                            >
+                              <span className="font-semibold text-slate-900">Next Step:</span> {nextStepLabel}
+                            </div>
+                          </div>
+                        </button>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            data-testid={`step2-milestone-primary-action-${m.id || idx + 1}`}
+                            className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                            onClick={() => {
+                              if (primaryAction.key === "assign_subcontractor") {
+                                assignFixedPayTarget(m);
+                                return;
+                              }
+                              if (primaryAction.key === "assign_later") {
+                                assignLaterForMilestone(m.id);
+                                return;
+                              }
+                              if (
+                                primaryAction.key === "request_quote" ||
+                                primaryAction.key === "view_quote" ||
+                                primaryAction.key === "review_quote"
+                              ) {
+                                requestQuoteForMilestone(m.id);
+                                return;
+                              }
+                              if (primaryAction.key === "send_agreement") {
+                                assignFixedPayTarget(m);
+                                return;
+                              }
+                              toggleCardExpanded(m.id);
+                            }}
+                            disabled={milestonesLocked}
                           >
-                            {idx + 1}
-                          </span>
-                          <div className="text-base font-semibold text-slate-950">
-                            {m.title || "Untitled milestone"}
-                          </div>
-                          {isAiSuggested ? (
-                            <span
-                              data-testid={`step2-milestone-ai-indicator-${m.id || idx + 1}`}
-                              className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
-                            >
-                              AI suggested
-                            </span>
-                          ) : null}
-                          {estimate.type ? (
-                            <span
-                              className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700"
-                              data-testid={`step2-milestone-type-badge-${m.id || idx + 1}`}
-                            >
-                              {estimate.typeLabel}
-                            </span>
-                          ) : null}
+                            {primaryAction.label}
+                          </button>
                         </div>
-                        <div className={`mt-1 text-sm font-semibold ${pricingHighlight ? "text-amber-800" : "text-slate-900"}`}>
-                          {Number(m.amount || 0).toLocaleString(undefined, { style: "currency", currency: "USD" })}
-                        </div>
-                        {m.amount != null && String(m.amount).trim() !== "" ? (
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
-                            <span data-testid={milestoneShareTestId} className="rounded-full bg-slate-50 px-2 py-1 font-medium">
-                              {pricingShareLabel}
-                            </span>
-                            {isManualAmount ? (
-                              <span
-                                data-testid={`step2-milestone-manual-indicator-${m.id || idx + 1}`}
-                                className="rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-800"
-                              >
-                                Manual
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        <div className="mt-1 text-xs text-slate-600">
-                          {summaryStart || "Start"} - {summaryDue || "Due"}
-                        </div>
-                      </button>
+                      </div>
                       <div className="flex shrink-0 gap-2">
                         <button
                           type="button"
@@ -5850,88 +5862,133 @@ export default function Step2Milestones({
                           className="rounded border px-2 py-1 text-xs font-medium disabled:opacity-60"
                           onClick={() => handleDelete(m.id)}
                           disabled={milestonesLocked}
-                          >
-                            Delete
-                          </button>
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
 
-                    <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
+                                        <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
                       <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Subcontractor
+                        Plan details
                       </summary>
-                      <div className="mt-3 space-y-3 text-sm text-slate-700">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                            {planStatusLabel}
-                          </span>
-                          {assignedSubcontractorName ? (
-                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                              {assignedSubcontractorName}
-                            </span>
-                          ) : null}
-                          {subcontractorPay ? (
-                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                              Subcontractor pay: {formatCurrency(subcontractorPay)}
-                            </span>
-                          ) : null}
-                          {releaseMode ? (
-                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
-                              {paymentReleaseModeLabel(releaseMode)}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                            onClick={() => assignLaterForMilestone(m.id)}
-                            disabled={milestonesLocked}
-                          >
-                            Assign later
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
-                            onClick={() => assignFixedPayTarget(m)}
-                            disabled={milestonesLocked}
-                          >
-                            Assign with fixed pay
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
-                            onClick={() => requestQuoteForMilestone(m.id)}
-                            disabled={milestonesLocked || subcontractorsLoading}
-                          >
-                            Request quote
-                          </button>
-                        </div>
-
-                        {quoteStatus || m?.subcontractor_milestone_agreement?.agreement_acceptance_status ? (
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                            {quoteStatus === "sent"
-                              ? "Waiting for subcontractor quote."
-                              : quoteStatus === "responded"
-                              ? `Quote received${quoteAmount ? ` · ${formatCurrency(quoteAmount)}` : ""}`
-                              : quoteStatus === "revision_requested"
-                              ? "Revision requested from subcontractor."
-                              : quoteStatus === "accepted"
-                              ? `Quote accepted${quoteAmount ? ` · ${formatCurrency(quoteAmount)}` : ""}`
-                              : quoteStatus === "declined"
-                              ? "Quote declined."
-                              : m?.subcontractor_milestone_agreement?.agreement_acceptance_status === "accepted"
-                              ? "Fixed subcontractor pay planned."
-                              : agreementPricingStrategy === "estimate"
-                              ? "Milestone pricing is estimated."
-                              : "Subcontractor planning ready."}
+                      <div className="mt-3 space-y-4 text-sm text-slate-700">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scope</div>
+                          <div className="mt-1 whitespace-pre-wrap text-slate-700">
+                            {safeStr(m.description) || "No scope summary yet."}
                           </div>
-                        ) : agreementPricingStrategy !== "fixed" ? (
-                          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                            {pricingStrategyLabel(agreementPricingStrategy)}
+                        </div>
+
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer Price</div>
+                          <div className="mt-1 text-slate-900">{formatCurrency(m.amount) || "—"}</div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Subcontractor Plan</div>
+                          <div className="mt-1 space-y-1 text-slate-700">
+                            <div>
+                              <span className="font-medium text-slate-900">Status:</span> {subcontractorSummary}
+                            </div>
+                            {assignedSubcontractorName ? (
+                              <div>
+                                <span className="font-medium text-slate-900">Assigned:</span> {assignedSubcontractorName}
+                              </div>
+                            ) : null}
+                            {quoteStatus ? (
+                              <div>
+                                <span className="font-medium text-slate-900">Quote:</span> {getSimpleStateLabel(quoteStatus)}
+                                {quoteAmount ? ` — ${formatCurrency(quoteAmount)}` : ""}
+                              </div>
+                            ) : null}
+                            {subcontractorAgreement?.agreed_pay ? (
+                              <div>
+                                <span className="font-medium text-slate-900">Agreed pay:</span> {formatCurrency(subcontractorAgreement.agreed_pay)}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                              onClick={() => assignLaterForMilestone(m.id)}
+                              disabled={milestonesLocked}
+                            >
+                              Assign later
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+                              onClick={() => assignFixedPayTarget(m)}
+                              disabled={milestonesLocked}
+                            >
+                              Assign with fixed pay
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                              onClick={() => requestQuoteForMilestone(m.id)}
+                              disabled={milestonesLocked || subcontractorsLoading}
+                            >
+                              Request quote
+                            </button>
+                          </div>
+                        </div>
+
+                        {subcontractorAgreement?.agreement_acceptance_status ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Agreement Status
+                            </div>
+                            <div className="mt-1 text-slate-700">
+                              {currentAgreementStatusLabel || "Waiting"}
+                            </div>
                           </div>
                         ) : null}
+
+                        {subcontractorAgreement || payoutState ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment</div>
+                            <div className="mt-1 space-y-1 text-slate-700">
+                              {subcontractorAgreement?.payment_release_mode ? (
+                                <div>
+                                  <span className="font-medium text-slate-900">Release mode:</span> {paymentReleaseModeLabel(subcontractorAgreement.payment_release_mode)}
+                                </div>
+                              ) : null}
+                              {currentPayoutState ? (
+                                <div>
+                                  <span className="font-medium text-slate-900">Payout:</span> {getSimpleStateLabel(currentPayoutState)}
+                                </div>
+                              ) : null}
+                              {payoutState?.safe_summary ? <div>{payoutState.safe_summary}</div> : null}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <details className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-slate-600">
+                            Show financial details
+                          </summary>
+                          <div className="mt-3 grid gap-2 md:grid-cols-3">
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Customer Price</div>
+                              <div className="mt-1 font-semibold text-slate-900">{formatCurrency(m.amount) || "—"}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Subcontractor Pay</div>
+                              <div className="mt-1 font-semibold text-slate-900">{formatCurrency(subcontractorAgreement?.agreed_pay) || "—"}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Your Earnings</div>
+                              <div className="mt-1 font-semibold text-slate-900">
+                                {Number.isFinite(Number(m.amount)) && Number.isFinite(Number(subcontractorAgreement?.agreed_pay))
+                                  ? formatCurrency(Math.max(Number(m.amount) - Number(subcontractorAgreement.agreed_pay), 0))
+                                  : formatCurrency(m.amount) || "—"}
+                              </div>
+                            </div>
+                          </div>
+                        </details>
                       </div>
                     </details>
 
@@ -6851,7 +6908,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-lg font-semibold text-slate-900">Assign Subcontractor</div>
                 <div className="text-sm text-slate-600">
-                  {subcontractorAssignTarget.title || "Milestone"} · Customer price {formatCurrency(subcontractorAssignTarget.amount)}
+                  {subcontractorAssignTarget.title || "Milestone"} - Customer price {formatCurrency(subcontractorAssignTarget.amount)}
                 </div>
               </div>
               <button
@@ -6909,7 +6966,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-lg font-semibold text-slate-900">Request Quote</div>
                 <div className="text-sm text-slate-600">
-                  {subcontractorQuoteTarget.title || "Milestone"} · Scope from the milestone card
+                  {subcontractorQuoteTarget.title || "Milestone"} - Scope from the milestone card
                 </div>
               </div>
               <button
@@ -6996,9 +7053,9 @@ export default function Step2Milestones({
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
                   <div className="font-semibold text-slate-900">
                     {activeQuoteStatus === "responded"
-                      ? `Quote received${activeQuoteAmount > 0 ? ` · ${formatCurrency(activeQuoteAmount)}` : ""}`
+                      ? `Quote received${activeQuoteAmount > 0 ? ` - ${formatCurrency(activeQuoteAmount)}` : ""}`
                       : activeQuoteStatus === "accepted"
-                      ? `Quote accepted${activeQuoteAmount > 0 ? ` · ${formatCurrency(activeQuoteAmount)}` : ""}`
+                      ? `Quote accepted${activeQuoteAmount > 0 ? ` - ${formatCurrency(activeQuoteAmount)}` : ""}`
                       : activeQuoteStatus === "revision_requested"
                       ? "Revision requested"
                       : "Waiting for subcontractor quote"}
@@ -7436,3 +7493,5 @@ export default function Step2Milestones({
     </div>
   );
 }
+
+

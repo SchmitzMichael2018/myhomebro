@@ -17,7 +17,7 @@ import ClarificationsModal from "./ClarificationsModal";
 import { useAuth } from "../context/AuthContext";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { buildStripeOnboardingGuidance } from "../lib/stripeOnboardingStatus.js";
-import { summarizeMilestonePricingPlan } from "../lib/subcontractorPricingPlan.js";
+import { getPricingReadinessCopy, summarizeMilestonePricingPlan } from "../lib/subcontractorPricingPlan.js";
 
 /* ---------- helpers ---------- */
 
@@ -1040,24 +1040,7 @@ export default function Step4Finalize({
     () => summarizeMilestonePricingPlan(agreementId, displayMilestones, pricingStrategy),
     [agreementId, displayMilestones, pricingStrategy]
   );
-  const pricingReadinessTone =
-    pricingReadiness.pendingQuoteCount > 0
-      ? "danger"
-      : pricingReadiness.estimatedCount > 0
-      ? "warning"
-      : "success";
-  const pricingReadinessHeadline =
-    pricingReadiness.pendingQuoteCount > 0
-      ? "Subcontractor pricing required before sending"
-      : pricingReadiness.estimatedCount > 0
-      ? "Some pricing is estimated"
-      : "All pricing is set";
-  const pricingReadinessBody =
-    pricingReadiness.pendingQuoteCount > 0
-      ? "You still have pending subcontractor quotes."
-      : pricingReadiness.estimatedCount > 0
-      ? "Some milestones are still using estimated pricing."
-      : "Everything is priced and ready for final review.";
+  const pricingReadinessCopy = useMemo(() => getPricingReadinessCopy(pricingReadiness), [pricingReadiness]);
   const sendBlockedByQuotes = pricingStrategy === "requires_sub_quote" && pricingReadiness.pendingQuoteCount > 0;
   const sendNeedsEstimateWarning = pricingStrategy === "estimate" && pricingReadiness.estimatedCount > 0;
 
@@ -1895,18 +1878,18 @@ export default function Step4Finalize({
         <section
           data-testid="step4-pricing-readiness-panel"
           className={`mt-4 rounded-2xl border px-4 py-4 ${
-            pricingReadinessTone === "danger"
+            pricingReadinessCopy.tone === "danger"
               ? "border-rose-200 bg-rose-50 text-rose-900"
-              : pricingReadinessTone === "warning"
+              : pricingReadinessCopy.tone === "warning"
               ? "border-amber-200 bg-amber-50 text-amber-900"
               : "border-emerald-200 bg-emerald-50 text-emerald-900"
           }`}
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide opacity-80">Pricing Readiness</div>
-              <div className="mt-1 text-base font-semibold">{pricingReadinessHeadline}</div>
-              <div className="mt-1 text-sm opacity-80">{pricingReadinessBody}</div>
+              <div className="text-xs font-semibold uppercase tracking-wide opacity-80">Next Step</div>
+              <div className="mt-1 text-base font-semibold">{pricingReadinessCopy.title}</div>
+              <div className="mt-1 text-sm opacity-80">{pricingReadinessCopy.body}</div>
             </div>
             <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
               <span className="rounded-full bg-white/85 px-2.5 py-1 text-slate-700">
@@ -1948,15 +1931,13 @@ export default function Step4Finalize({
 
       <section
         className={`rounded-2xl border px-5 py-5 shadow-sm ${
-          readinessWarningCount === 0
-            ? "border-emerald-200 bg-emerald-50/70"
-            : "border-amber-200 bg-amber-50/60"
+          readinessWarningCount === 0 ? "border-emerald-200 bg-emerald-50/70" : "border-amber-200 bg-amber-50/60"
         }`}
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">
-              {readinessWarningCount === 0 ? "Ready to send" : "Ready for review"}
+              {readinessWarningCount === 0 ? "Good to send" : "Needs attention"}
             </h3>
             <p className="mt-1 text-sm text-slate-700">
               {readinessWarningCount === 0
@@ -1966,14 +1947,12 @@ export default function Step4Finalize({
           </div>
           <span
             className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-              readinessWarningCount === 0
-                ? "border border-emerald-200 bg-white text-emerald-700"
-                : "border border-amber-200 bg-white text-amber-800"
+              readinessWarningCount === 0 ? "border border-emerald-200 bg-white text-emerald-700" : "border border-amber-200 bg-white text-amber-800"
             }`}
           >
             {readinessWarningCount === 0
-              ? "Send-ready"
-              : `${readinessWarningCount} final check${readinessWarningCount === 1 ? "" : "s"}`}
+              ? "Good to send"
+              : `${readinessWarningCount} item${readinessWarningCount === 1 ? "" : "s"} need attention`}
           </span>
         </div>
 

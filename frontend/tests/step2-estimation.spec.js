@@ -657,10 +657,14 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   expect(milestone801After).toBe(milestone801Before);
   expect(milestone802After).toBe(milestone802Before);
 
-  await expect(page.getByTestId('step2-milestone-share-801')).toBeVisible();
-  await expect(page.getByTestId('step2-milestone-share-802')).toBeVisible();
-  await expect(page.getByTestId('step2-milestone-share-801')).toContainText(/% of total|Weighted/);
-  await expect(page.getByTestId('step2-milestone-share-802')).toContainText(/% of total|Weighted/);
+  await expect(page.getByTestId('step2-milestone-subcontractor-summary-801')).toContainText(/Subcontractor:/);
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText(/Next Step:/);
+
+  await page.getByTestId('step2-milestone-card-801').getByText('Plan details').click();
+  await page.getByTestId('step2-milestone-card-801').getByText('Show financial details').click();
+  await expect(page.getByTestId('step2-milestone-card-801')).toContainText('Customer Price');
+  await expect(page.getByTestId('step2-milestone-card-801')).toContainText('Subcontractor Pay');
+  await expect(page.getByTestId('step2-milestone-card-801')).toContainText('Your Earnings');
 
   await page.getByTestId('step2-target-project-total').fill('30000');
   await expect(page.getByTestId('step2-target-project-total')).toHaveValue('30000');
@@ -670,9 +674,7 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(rebalancePrompt).toContainText('This will overwrite your current milestone plan.');
   await rebalancePrompt.getByRole('button', { name: 'Rebalance Milestones' }).click();
   await expect(page.getByTestId('step2-pricing-feedback-banner')).toContainText('Milestone pricing updated');
-  await expect(page.getByTestId('step2-milestone-share-801')).toContainText(/% of total|Weighted/);
-  await expect(page.getByTestId('step2-milestone-share-802')).toContainText(/% of total|Weighted/);
-  await expect(page.getByTestId('step2-milestone-share-801')).not.toContainText('Manual');
+  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('$7,777.00');
 
   const num801BeforeDrag = await page.getByTestId('step2-milestone-number-801').textContent();
   const num802BeforeDrag = await page.getByTestId('step2-milestone-number-802').textContent();
@@ -684,7 +686,7 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
 
   await page.getByTestId('step2-milestone-summary-801').click();
   await page.getByTestId('step2-milestone-amount-801').fill('7777');
-  await expect(page.getByTestId('step2-milestone-manual-indicator-801')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('$7,777.00');
   await page.getByTestId('step2-rebalance-milestones').click();
   await expect(rebalancePrompt).toBeVisible();
   await expect(rebalancePrompt).toContainText('Keep manually edited amounts?');
@@ -692,8 +694,8 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await rebalancePrompt
     .getByRole('button', { name: 'Keep manual amounts and rebalance the rest' })
     .click();
-  await expect(page.getByTestId('step2-milestone-manual-indicator-801')).toBeVisible();
   await expect(page.getByTestId('step2-milestone-amount-801')).toHaveValue('7777');
+  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('$7,777.00');
 
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
   await expect(page.getByTestId('step2-suggest-milestone-pricing')).toBeVisible();
@@ -1034,10 +1036,14 @@ test('step 1 pricing strategy selection persists and step 2 subcontractor pricin
   await page.getByTestId('step2-quote-subcontractor-select').selectOption('41');
   await page.getByTestId('step2-quote-message-input').fill('Please quote this milestone.');
   await page.getByTestId('step2-request-quote-button').click();
-  await expect(page.getByText('Waiting for subcontractor quote.')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-subcontractor-summary-801')).toContainText('Waiting on subcontractor');
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('View quote');
+  await expect(page.getByTestId('step2-milestone-primary-action-801')).toHaveText('View Quote');
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Next Step');
   await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Pending quotes: 1');
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Needs attention');
   await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText(
-    'Subcontractor pricing required before sending'
+    '1 milestone is still waiting on subcontractor pricing.'
   );
 });
 

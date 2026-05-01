@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+﻿import { expect, test } from '@playwright/test';
 
 const AGREEMENT_ID = 321;
 
@@ -292,8 +292,11 @@ test('contractor requests a quote, subcontractor responds, and contractor accept
   await requestQuoteButton.click();
   await page.getByTestId('step2-quote-subcontractor-select').selectOption('41');
   await page.getByTestId('step2-request-quote-button').click();
-  await expect(page.getByText('Waiting for subcontractor quote.')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-subcontractor-summary-801')).toContainText('Waiting on subcontractor');
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('View quote');
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Next Step');
   await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Pending quotes: 1');
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Needs attention');
 
   roleState.current = 'subcontractor';
   await page.goto('/app/subcontractor/assigned-work', { waitUntil: 'domcontentloaded' });
@@ -310,11 +313,17 @@ test('contractor requests a quote, subcontractor responds, and contractor accept
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByText('Quote received')).toBeVisible();
-  await expect(page.getByText('$1,850.00')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-subcontractor-summary-801')).toContainText('Quote received');
+  await expect(page.getByTestId('step2-milestone-subcontractor-summary-801')).toContainText('$1,850.00');
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('Review quote');
+  await expect(page.getByTestId('step2-milestone-primary-action-801')).toHaveText('Review Quote');
   await page.getByRole('button', { name: 'Request quote' }).first().click();
   await expect(page.getByText('Quote received')).toBeVisible();
   await page.getByRole('button', { name: 'Accept Quote' }).click();
   await expect(page.getByText('Accepted quote for Demo & Prep.')).toBeVisible();
-  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('All pricing is set');
+  await expect(page.getByTestId('step2-milestone-subcontractor-summary-801')).toContainText('Skyline Cabinets');
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('Send Subcontractor Agreement');
+  await expect(page.getByTestId('step2-milestone-primary-action-801')).toHaveText('Send Subcontractor Agreement');
+  await expect(page.getByTestId('step2-pricing-readiness-panel')).toContainText('Good to send');
 });
+
