@@ -1,4 +1,4 @@
-// frontend/src/components/Step4Finalize.jsx
+﻿// frontend/src/components/Step4Finalize.jsx
 // v2026-03-15-step4-dedupe-clarifications-cleanup
 // Changes:
 // - Dedupe clarification rows by canonical concept
@@ -945,6 +945,7 @@ export default function Step4Finalize({
   const [unsigning, setUnsigning] = useState(false);
   const [paymentModeSaving, setPaymentModeSaving] = useState(false);
   const [legalAcknowledged, setLegalAcknowledged] = useState(false);
+  const [customerSendState, setCustomerSendState] = useState({ sent: false, signUrl: "" });
   const { ready: authReady, isAuthed } = useAuth();
   const navigate = useNavigate();
 
@@ -1193,6 +1194,51 @@ export default function Step4Finalize({
     agreement?.homeowner?.phone ||
     "—";
 
+  const agreementLifecycleStatus = String(agreement?.status || agreement?.workflow_status || "")
+    .trim()
+    .toLowerCase();
+  const canOpenContractWorkspace = [
+    "sent",
+    "signed",
+    "active",
+    "funded",
+    "in_progress",
+  ].includes(agreementLifecycleStatus);
+  const customerSendStorageKey = agreementId ? `agreement-customer-link:${agreementId}` : "";
+  const customerSendHasBackendSignal =
+    !!agreement?.signature_request_sent ||
+    !!agreement?.signature_request_sent_at ||
+    canOpenContractWorkspace;
+
+  useEffect(() => {
+    if (!agreementId) return;
+
+    let storedSignUrl = "";
+    if (customerSendStorageKey && typeof window !== "undefined") {
+      try {
+        storedSignUrl = window.sessionStorage.getItem(customerSendStorageKey) || "";
+      } catch {
+        storedSignUrl = "";
+      }
+    }
+
+    const shouldReveal = customerSendState.sent || customerSendHasBackendSignal || !!storedSignUrl;
+    if (!shouldReveal) {
+      return;
+    }
+
+    setCustomerSendState((prev) => {
+      const nextSignUrl = prev.signUrl || storedSignUrl;
+      if (prev.sent && prev.signUrl === nextSignUrl) {
+        return prev;
+      }
+      return {
+        sent: true,
+        signUrl: nextSignUrl,
+      };
+    });
+  }, [agreementId, customerSendStorageKey, customerSendHasBackendSignal, customerSendState.sent, customerSendState.signUrl]);
+
   const warrantyType = String(agreement?.warranty_type || "").trim().toLowerCase();
   const warrantyText = (
     customWarranty ||
@@ -1210,7 +1256,7 @@ export default function Step4Finalize({
     ? formatWarrantyPreview(defaultWarrantyText)
     : formatWarrantyPreview(warrantyText);
 
-  const status = agreement?.status || "draft";
+  const status = agreementLifecycleStatus || "draft";
 
   const signedByContractor =
     !!agreement?.signed_by_contractor ||
@@ -1510,7 +1556,16 @@ export default function Step4Finalize({
     setSendingLink(true);
     setSendError(null);
     try {
-      await api.post(`/projects/agreements/${agreementId}/send_signature_request/`);
+      const { data } = await api.post(`/projects/agreements/${agreementId}/send_signature_request/`);
+      const signUrl = data?.sign_url || data?.view_url || data?.link || data?.url || "";
+      setCustomerSendState({ sent: true, signUrl });
+      if (signUrl && typeof window !== "undefined" && customerSendStorageKey) {
+        try {
+          window.sessionStorage.setItem(customerSendStorageKey, signUrl);
+        } catch {
+          // ignore storage issues
+        }
+      }
       toast.success("Customer signing link sent.");
       await refreshAgreement();
     } catch (err) {
@@ -1519,6 +1574,30 @@ export default function Step4Finalize({
       toast.error(msg);
     } finally {
       setSendingLink(false);
+    }
+  };
+
+  const handleOpenContractWorkspace = () => {
+    if (!agreementId) return;
+    navigate(`/app/agreements/${agreementId}`, { state: { fromWizard: true } });
+  };
+
+  const handleCopyCustomerLink = async () => {
+    const link = customerSendState.signUrl || "";
+    if (!link) {
+      toast.error("Customer link is not available yet.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success("Customer link copied.");
+    } catch {
+      try {
+        window.prompt("Copy customer link:", link);
+      } catch {
+        toast.error("Unable to copy the customer link.");
+      }
     }
   };
 
@@ -2339,6 +2418,35 @@ export default function Step4Finalize({
                 <div className="mt-1">{homeownerSignedAt ? <>Signed: {String(homeownerSignedAt)}</> : "Signed: —"}</div>
                 <div className="mt-1">{homeownerSignedIp ? <>IP: {homeownerSignedIp}</> : null}</div>
               </div>
+            ) : reqCust && (customerSendState.sent || customerSendHasBackendSignal || !!customerSendState.signUrl) ? (
+              <div
+                data-testid="step4-customer-send-success"
+                className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-950"
+              >
+                <div className="font-semibold">{'\u2714'} Agreement sent to {customerNameDisplay}</div>
+                <div className="mt-1 text-[11px] text-emerald-900/80">
+                  They&apos;ll receive a secure link to review and sign the agreement.
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleOpenContractWorkspace}
+                    className="rounded bg-emerald-700 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-800"
+                    data-testid="step4-open-workspace-button"
+                  >
+                    Open Contract Workspace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyCustomerLink}
+                    disabled={!customerSendState.signUrl}
+                    className="rounded border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                    data-testid="step4-copy-customer-link-button"
+                  >
+                    Copy Customer Link
+                  </button>
+                </div>
+              </div>
             ) : reqCust ? (
               <>
                 <button
@@ -2347,7 +2455,7 @@ export default function Step4Finalize({
                   disabled={sendingLink || hasInvalidMilestoneAmounts}
                   className="mt-2 rounded bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {sendingLink ? "Sending link…" : "Send to Customer"}
+                  {sendingLink ? "Sending link�" : "Send to Customer"}
                 </button>
                 {sendError ? <div className="mt-1 text-[11px] text-red-600">{sendError}</div> : null}
               </>
@@ -2495,3 +2603,6 @@ export default function Step4Finalize({
     </div>
   );
 }
+
+
+

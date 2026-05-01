@@ -406,13 +406,19 @@ async function installStep4FinalizeRoutes(
           ...agreement,
           signature_request_sent: true,
           signature_request_sent_at: '2026-04-29T15:05:00Z',
+          status: 'sent',
+          workflow_status: 'sent',
         };
       }
 
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ok: true, agreement }),
+        body: JSON.stringify({
+          ok: true,
+          agreement,
+          sign_url: `https://www.myhomebro.com/public-sign/agreement-${agreement.id}?mode=customer`,
+        }),
       });
     }
   );
@@ -3748,6 +3754,12 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await page.getByRole('button', { name: 'Step 4 Finalize' }).click();
   await expect(page).toHaveURL(/step=4/);
   await expect(page.getByText('✓ Agreement PDF reviewed').first()).toBeVisible();
+  await expect(page.getByTestId('step4-customer-send-success')).toBeVisible();
+  await expect(page.getByTestId('step4-open-workspace-button')).toBeVisible();
+  await expect(page.getByTestId('step4-copy-customer-link-button')).toBeVisible();
+  await page.getByTestId('step4-open-workspace-button').click();
+  await expect(page).toHaveURL(new RegExp(`/app/agreements/${AGREEMENT_ID}$`));
+  await expect(page.getByRole('heading', { name: 'Contract Workspace' })).toBeVisible();
 });
 
 test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {
