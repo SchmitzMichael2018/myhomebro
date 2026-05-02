@@ -2,6 +2,14 @@ function safeStr(value) {
   return value == null ? "" : String(value).trim();
 }
 
+export function normalizeSubcontractorPlan(value) {
+  const normalized = safeStr(value).toLowerCase();
+  if (normalized === "none" || normalized === "some" || normalized === "unsure") {
+    return normalized;
+  }
+  return "unsure";
+}
+
 function formatCurrency(value) {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return "";
@@ -35,6 +43,20 @@ function getSubcontractorAgreementState(milestone) {
 
 function getPayoutState(milestone) {
   return milestone?.subcontractor_payout_orchestration || null;
+}
+
+export function milestoneHasSubcontractorLifecycleState(milestone) {
+  const quote = getQuoteState(milestone);
+  const quoteStatus = safeStr(quote?.status).toLowerCase();
+  const agreement = getSubcontractorAgreementState(milestone);
+  const agreementStatus = safeStr(agreement?.agreement_acceptance_status).toLowerCase();
+  const assignedName = getAssignedSubcontractorName(milestone);
+  return Boolean(
+    assignedName ||
+      quoteStatus ||
+      agreementStatus ||
+      safeStr(milestone?.assigned_subcontractor_invitation).length
+  );
 }
 
 export function getSimpleStateLabel(value) {
@@ -84,13 +106,18 @@ export function getPricingReadinessCopy(pricingReadiness = {}) {
   };
 }
 
-export function getMilestoneSubcontractorSummary(milestone, agreementPricingStrategy = "fixed") {
+export function getMilestoneSubcontractorSummary(
+  milestone,
+  agreementPricingStrategy = "fixed",
+  subcontractorPlan = "unsure"
+) {
   const quote = getQuoteState(milestone);
   const quoteStatus = safeStr(quote?.status).toLowerCase();
   const agreement = getSubcontractorAgreementState(milestone);
   const agreementStatus = safeStr(agreement?.agreement_acceptance_status).toLowerCase();
   const assignedName = getAssignedSubcontractorName(milestone);
   const pricingStrategy = safeStr(agreementPricingStrategy).toLowerCase() || "fixed";
+  const plan = normalizeSubcontractorPlan(subcontractorPlan);
 
   if (agreementStatus === "accepted") {
     return assignedName ? `${assignedName} (approved)` : "Approved";
@@ -113,32 +140,31 @@ export function getMilestoneSubcontractorSummary(milestone, agreementPricingStra
     return assignedName;
   }
 
-  if (pricingStrategy === "estimate") {
-    return "Assign later";
-  }
-
-  if (pricingStrategy === "requires_sub_quote") {
-    return "Not planned";
-  }
-
-  return "Not planned";
+  if (plan === "none") return "Not planned";
+  if (plan === "some") return pricingStrategy === "requires_sub_quote" ? "Waiting for subcontractor pricing" : "Not planned yet";
+  return pricingStrategy === "requires_sub_quote" ? "Waiting for subcontractor pricing" : "Not planned yet";
 }
 
-export function getNextStepLabel(milestone, agreement = {}, quote = null, subcontractorAgreement = null, payoutState = null) {
+export function getNextStepLabel(
+  milestone,
+  agreement = {},
+  quote = null,
+  subcontractorAgreement = null,
+  payoutState = null,
+  subcontractorPlan = "unsure"
+) {
   const milestoneQuote = quote || getQuoteState(milestone);
   const milestoneAgreement = subcontractorAgreement || getSubcontractorAgreementState(milestone);
   const milestonePayout = payoutState || getPayoutState(milestone);
   const pricingStrategy = safeStr(agreement?.pricing_strategy || milestone?.pricing_strategy || "fixed").toLowerCase() || "fixed";
+  const plan = normalizeSubcontractorPlan(subcontractorPlan);
   const quoteStatus = safeStr(milestoneQuote?.status).toLowerCase();
   const agreementStatus = safeStr(milestoneAgreement?.agreement_acceptance_status).toLowerCase();
   const workStatus = safeStr(milestone?.work_submission_status || milestone?.subcontractor_completion_status).toLowerCase();
   const payoutStatus = safeStr(
     milestonePayout?.payout_state || milestonePayout?.next_status || milestonePayout?.payout_status
   ).toLowerCase();
-  const assignedName = getAssignedSubcontractorName(milestone);
-  const hasAnySubcontractor = Boolean(
-    assignedName || quoteStatus || agreementStatus || safeStr(milestone?.assigned_subcontractor_invitation).length
-  );
+  const hasAnySubcontractor = milestoneHasSubcontractorLifecycleState(milestone);
 
   if (payoutStatus === "paid") return "Completed";
   if (payoutStatus === "scheduled") return "Payment scheduled";
@@ -167,13 +193,17 @@ export function getNextStepLabel(milestone, agreement = {}, quote = null, subcon
   }
 
   if (quoteStatus === "declined" || quoteStatus === "cancelled") {
-    return pricingStrategy === "requires_sub_quote" ? "Request quote" : "Add Subcontractor";
+    if (pricingStrategy === "requires_sub_quote") return "Request subcontractor quote";
+    return plan === "none" ? "Review milestone" : "Decide subcontractor";
+  }
+
+  if (pricingStrategy === "requires_sub_quote") {
+    return "Request subcontractor quote";
   }
 
   if (!hasAnySubcontractor) {
-    if (pricingStrategy === "requires_sub_quote") return "Request quote";
-    if (pricingStrategy === "estimate") return "Assign later";
-    return "Add Subcontractor";
+    if (plan === "some") return "Decide subcontractor";
+    return "Review milestone";
   }
 
   if (agreementStatus === "pending" || agreementStatus === "not_sent") {
@@ -183,17 +213,24 @@ export function getNextStepLabel(milestone, agreement = {}, quote = null, subcon
   return "View Details";
 }
 
-export function getMilestonePrimaryAction(milestone, agreement = {}, quote = null, subcontractorAgreement = null, payoutState = null) {
-  const nextStep = getNextStepLabel(milestone, agreement, quote, subcontractorAgreement, payoutState);
+export function getMilestonePrimaryAction(
+  milestone,
+  agreement = {},
+  quote = null,
+  subcontractorAgreement = null,
+  payoutState = null,
+  subcontractorPlan = "unsure"
+) {
+  const nextStep = getNextStepLabel(milestone, agreement, quote, subcontractorAgreement, payoutState, subcontractorPlan);
   const normalized = safeStr(nextStep).toLowerCase();
-  if (normalized === "add subcontractor") {
-    return { key: "assign_subcontractor", label: "Add Subcontractor" };
-  }
-  if (normalized === "assign later") {
-    return { key: "assign_later", label: "Assign later" };
-  }
-  if (normalized === "request quote") {
+  if (normalized === "request subcontractor quote") {
     return { key: "request_quote", label: "Request quote" };
+  }
+  if (normalized === "review milestone" || normalized === "save and continue") {
+    return { key: "review_milestone", label: "Review milestone" };
+  }
+  if (normalized === "decide subcontractor") {
+    return { key: "decide_subcontractor", label: "Decide subcontractor" };
   }
   if (normalized === "view quote") {
     return { key: "view_quote", label: "View Quote" };

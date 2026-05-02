@@ -185,6 +185,33 @@ async function installBaseRoutes(page, roleState, quoteState, milestoneState) {
     });
   });
 
+  await page.route('**/api/projects/agreements/321/estimate-preview/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        suggested_total_price: '4000.00',
+        suggested_price_low: '3600.00',
+        suggested_price_high: '4400.00',
+        suggested_duration_days: 4,
+        milestone_suggestions: [
+          {
+            milestone_id: 801,
+            title: 'Demo & Prep',
+            suggested_amount: '4000.00',
+            suggested_duration_days: 2,
+            suggested_order: 1,
+            allocation_percent: 1,
+          },
+        ],
+        suggested_plan: {
+          project_family_key: 'kitchen_remodel',
+          project_family_label: 'Kitchen Remodel',
+        },
+      }),
+    });
+  });
+
   await page.route(`**/api/projects/subcontractor-quotes/${quoteState.id}/respond/`, async (route) => {
     const body = route.request().postDataJSON();
     quoteState.status = 'responded';
@@ -287,7 +314,7 @@ test('contractor requests a quote, subcontractor responds, and contractor accept
     waitUntil: 'domcontentloaded',
   });
 
-  const requestQuoteButton = page.getByRole('button', { name: 'Request quote' }).first();
+  const requestQuoteButton = page.getByTestId('step2-milestone-primary-action-801');
   await expect(requestQuoteButton).toBeVisible();
   await requestQuoteButton.click();
   await page.getByTestId('step2-quote-subcontractor-select').selectOption('41');

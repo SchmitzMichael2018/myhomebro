@@ -707,6 +707,72 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-workflow-panel')).toBeVisible();
 });
 
+test('step 2 shows the global subcontractor preference and keeps subcontractor actions hidden until needed', async ({
+  page,
+}) => {
+  await installAgreementWizardMocks(page, {
+    estimateResponse: {
+      suggested_total_price: '25300.00',
+      suggested_price_low: '22770.00',
+      suggested_price_high: '27830.00',
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+      },
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-subcontractor-plan-panel')).toBeVisible();
+  await expect(page.getByTestId('step2-subcontractor-plan-unsure')).toBeVisible();
+  await page.getByTestId('step2-subcontractor-plan-none').click();
+  await expect(page.getByTestId('step2-subcontractor-plan-none')).toHaveClass(/bg-slate-900/);
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('Review milestone');
+
+  await page.getByTestId('step2-milestone-summary-801').click();
+  const milestoneCard = page.getByTestId('step2-milestone-card-801');
+  await milestoneCard.getByText('Plan details').click();
+  await expect(milestoneCard.getByText('Need one after all?')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Assign with fixed pay' })).toHaveCount(0);
+  await milestoneCard.getByText('Need one after all?').click();
+  await expect(page.getByRole('button', { name: 'Assign with fixed pay' })).toBeVisible();
+});
+
+test('step 2 shows subcontractor actions by default when some milestones may use subcontractors', async ({
+  page,
+}) => {
+  await installAgreementWizardMocks(page, {
+    estimateResponse: {
+      suggested_total_price: '25300.00',
+      suggested_price_low: '22770.00',
+      suggested_price_high: '27830.00',
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+      },
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByTestId('step2-subcontractor-plan-some').click();
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('Decide subcontractor');
+
+  await page.getByTestId('step2-milestone-summary-801').click();
+  const milestoneCard = page.getByTestId('step2-milestone-card-801');
+  await milestoneCard.getByText('Plan details').click();
+  await expect(page.getByRole('button', { name: 'Assign later' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Assign with fixed pay' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Request quote' })).toBeVisible();
+});
+
 test('step 2 timeline shifts past dates forward and preserves relative spacing and manual edits', async ({
   page,
 }) => {
