@@ -176,10 +176,6 @@ export function getNextStepLabel(
     return payoutStatus === "scheduled" ? "Payment scheduled" : "Release payment";
   }
 
-  if (agreementStatus === "accepted") {
-    return "Track work";
-  }
-
   if (quoteStatus === "accepted") {
     return "Send Subcontractor Agreement";
   }
@@ -194,7 +190,7 @@ export function getNextStepLabel(
 
   if (quoteStatus === "declined" || quoteStatus === "cancelled") {
     if (pricingStrategy === "requires_sub_quote") return "Request subcontractor quote";
-    return plan === "none" ? "Review milestone" : "Decide subcontractor";
+    return plan === "none" ? "" : "Decide subcontractor";
   }
 
   if (pricingStrategy === "requires_sub_quote") {
@@ -203,14 +199,14 @@ export function getNextStepLabel(
 
   if (!hasAnySubcontractor) {
     if (plan === "some") return "Decide subcontractor";
-    return "Review milestone";
+    return "";
   }
 
   if (agreementStatus === "pending" || agreementStatus === "not_sent") {
     return "Send Subcontractor Agreement";
   }
 
-  return "View Details";
+  return "";
 }
 
 export function getMilestonePrimaryAction(
@@ -223,11 +219,11 @@ export function getMilestonePrimaryAction(
 ) {
   const nextStep = getNextStepLabel(milestone, agreement, quote, subcontractorAgreement, payoutState, subcontractorPlan);
   const normalized = safeStr(nextStep).toLowerCase();
+  if (!normalized) {
+    return { key: "none", label: "" };
+  }
   if (normalized === "request subcontractor quote") {
     return { key: "request_quote", label: "Request quote" };
-  }
-  if (normalized === "review milestone" || normalized === "save and continue") {
-    return { key: "review_milestone", label: "Review milestone" };
   }
   if (normalized === "decide subcontractor") {
     return { key: "decide_subcontractor", label: "Decide subcontractor" };
@@ -241,22 +237,7 @@ export function getMilestonePrimaryAction(
   if (normalized === "send subcontractor agreement") {
     return { key: "send_agreement", label: "Send Subcontractor Agreement" };
   }
-  if (normalized === "track work") {
-    return { key: "track_work", label: "Track Work" };
-  }
-  if (normalized === "review work") {
-    return { key: "review_work", label: "Review Work" };
-  }
-  if (normalized === "release payment") {
-    return { key: "release_payment", label: "Release Payment" };
-  }
-  if (normalized === "payment scheduled") {
-    return { key: "payment_scheduled", label: "Payment Scheduled" };
-  }
-  if (normalized === "completed") {
-    return { key: "view_details", label: "View Details" };
-  }
-  return { key: "view_details", label: "View Details" };
+  return { key: "none", label: "" };
 }
 
 export function summarizeMilestonePricingPlan(agreementId, milestones = [], agreementPricingStrategy = "fixed") {

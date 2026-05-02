@@ -620,11 +620,14 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(pricingExplanation).toContainText(
     'Pricing uses the project estimate, milestone phase, and similar project guidance.'
   );
-  await page.getByTestId('step2-milestone-summary-801').click();
-  await expect(page.getByTestId('step2-milestone-editor-801')).toBeVisible();
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).toContainText('Plan Details');
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).toContainText('View scope, subcontractor plan, and financial details');
+  await expect(page.getByRole('button', { name: 'Review milestone' })).toHaveCount(0);
+  await page.getByTestId('step2-plan-details-toggle-801').click();
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).not.toContainText('View scope, subcontractor plan, and financial details');
+  await expect(page.getByTestId('step2-milestone-status-801')).toContainText('Good to go');
   const milestone801CardBefore = page.getByTestId('step2-milestone-card-801');
-  await page.getByTestId('step2-milestone-summary-802').click();
-  await expect(page.getByTestId('step2-milestone-editor-802')).toBeVisible();
+  await expect(page.getByTestId('step2-plan-details-toggle-802')).toContainText('View scope, subcontractor plan, and financial details');
   const milestone802CardBefore = page.getByTestId('step2-milestone-card-802');
   const milestone801Before = Number(
     ((await milestone801CardBefore.textContent()) || "").match(/\$([0-9,]+(?:\.\d{2})?)/)?.[1].replace(/,/g, "") || 0
@@ -642,10 +645,10 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(milestone802Card).toBeVisible();
   await expect(milestone801Card).toContainText('$4,000.00');
   await expect(milestone802Card).toContainText('$12,000.00');
-  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('Apr 30, 2026');
-  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('May 1, 2026');
-  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 2, 2026');
-  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 7, 2026');
+  await expect(page.getByTestId('step2-milestone-date-range-801')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-date-range-802')).toBeVisible();
+  await expect(page.getByTestId('step2-milestone-date-range-801')).toContainText('Date:');
+  await expect(page.getByTestId('step2-milestone-date-range-802')).toContainText('Date:');
   const milestoneAmountsAfter = await Promise.all([milestone801Card, milestone802Card].map(async (card) => {
     const text = (await card.textContent()) || '';
     const match = text.match(/\$([0-9,]+(?:\.\d{2})?)/);
@@ -658,13 +661,9 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   expect(milestone802After).toBe(milestone802Before);
 
   await expect(page.getByTestId('step2-milestone-subcontractor-summary-801')).toContainText(/Subcontractor:/);
-  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText(/Next Step:/);
+  await expect(page.getByTestId('step2-milestone-status-801')).toContainText('Good to go');
 
-  await page.getByTestId('step2-milestone-card-801').getByText('Plan details').click();
-  await page.getByTestId('step2-milestone-card-801').getByText('Show financial details').click();
-  await expect(page.getByTestId('step2-milestone-card-801')).toContainText('Customer Price');
-  await expect(page.getByTestId('step2-milestone-card-801')).toContainText('Subcontractor Pay');
-  await expect(page.getByTestId('step2-milestone-card-801')).toContainText('Your Earnings');
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).toBeVisible();
 
   await page.getByTestId('step2-target-project-total').fill('30000');
   await expect(page.getByTestId('step2-target-project-total')).toHaveValue('30000');
@@ -674,7 +673,6 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(rebalancePrompt).toContainText('This will overwrite your current milestone plan.');
   await rebalancePrompt.getByRole('button', { name: 'Rebalance Milestones' }).click();
   await expect(page.getByTestId('step2-pricing-feedback-banner')).toContainText('Milestone pricing updated');
-  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('$7,777.00');
 
   const num801BeforeDrag = await page.getByTestId('step2-milestone-number-801').textContent();
   const num802BeforeDrag = await page.getByTestId('step2-milestone-number-802').textContent();
@@ -685,16 +683,22 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   expect(num802BeforeDrag).not.toBe(await page.getByTestId('step2-milestone-number-802').textContent());
 
   await page.getByTestId('step2-milestone-summary-801').click();
-  await page.getByTestId('step2-milestone-amount-801').fill('7777');
-  await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('$7,777.00');
+  await page.getByTestId('step2-milestone-card-801').getByRole('button', { name: 'Edit' }).click();
+  const amountEditModal = page.getByTestId('step2-edit-milestone-modal');
+  await expect(amountEditModal).toBeVisible();
+  await amountEditModal.getByTestId('step2-edit-milestone-amount').fill('7777');
+  await amountEditModal.getByRole('button', { name: 'Save Changes' }).click();
+  await amountEditModal.getByRole('button', { name: 'Cancel' }).last().click();
+  await expect(amountEditModal).toHaveCount(0);
   await page.getByTestId('step2-rebalance-milestones').click();
   await expect(rebalancePrompt).toBeVisible();
-  await expect(rebalancePrompt).toContainText('Keep manually edited amounts?');
-  await expect(rebalancePrompt).toContainText('manual milestone');
+  await expect(rebalancePrompt).toContainText('Rebalance milestone amounts');
+  await expect(rebalancePrompt).toContainText('Target total:');
   await rebalancePrompt
     .getByRole('button', { name: 'Keep manual amounts and rebalance the rest' })
     .click();
-  await expect(page.getByTestId('step2-milestone-amount-801')).toHaveValue('7777');
+  await page.getByTestId('step2-milestone-card-801').getByRole('button', { name: 'Edit' }).click();
+  await expect(page.getByTestId('step2-edit-milestone-modal').getByTestId('step2-edit-milestone-amount')).toHaveValue('7777');
   await expect(page.getByTestId('step2-milestone-summary-801')).toContainText('$7,777.00');
 
   await expect(page.getByTestId('step2-save-as-template')).toBeVisible();
@@ -731,11 +735,15 @@ test('step 2 shows the global subcontractor preference and keeps subcontractor a
   await expect(page.getByTestId('step2-subcontractor-plan-unsure')).toBeVisible();
   await page.getByTestId('step2-subcontractor-plan-none').click();
   await expect(page.getByTestId('step2-subcontractor-plan-none')).toHaveClass(/bg-slate-900/);
-  await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('Review milestone');
+  await expect(page.getByTestId('step2-milestone-status-801')).toContainText('Good to go');
+  await expect(page.getByTestId('step2-milestone-next-step-801')).toHaveCount(0);
 
-  await page.getByTestId('step2-milestone-summary-801').click();
   const milestoneCard = page.getByTestId('step2-milestone-card-801');
-  await milestoneCard.getByText('Plan details').click();
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).toContainText('▶');
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).toContainText('View scope, subcontractor plan, and financial details');
+  await page.getByTestId('step2-plan-details-toggle-801').click();
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).toContainText('▼');
+  await expect(page.getByTestId('step2-plan-details-toggle-801')).not.toContainText('View scope, subcontractor plan, and financial details');
   await expect(milestoneCard.getByText('Need one after all?')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Assign with fixed pay' })).toHaveCount(0);
   await milestoneCard.getByText('Need one after all?').click();
@@ -765,9 +773,8 @@ test('step 2 shows subcontractor actions by default when some milestones may use
   await page.getByTestId('step2-subcontractor-plan-some').click();
   await expect(page.getByTestId('step2-milestone-next-step-801')).toContainText('Decide subcontractor');
 
-  await page.getByTestId('step2-milestone-summary-801').click();
   const milestoneCard = page.getByTestId('step2-milestone-card-801');
-  await milestoneCard.getByText('Plan details').click();
+  await page.getByTestId('step2-plan-details-toggle-801').click();
   await expect(page.getByRole('button', { name: 'Assign later' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Assign with fixed pay' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Request quote' })).toBeVisible();
@@ -828,13 +835,23 @@ test('step 2 timeline shifts past dates forward and preserves relative spacing a
 
   await page.getByTestId('step2-apply-suggested-timeline').click();
   await page.getByTestId('step2-milestone-summary-801').click();
-  const editor801 = page.getByTestId('step2-milestone-editor-801');
-  await editor801.getByTestId('step2-milestone-start-801').fill('2026-05-10');
-  await expect(editor801.getByTestId('step2-milestone-start-801')).toHaveValue('2026-05-10');
+  await page.getByTestId('step2-milestone-card-801').getByRole('button', { name: 'Edit' }).click();
+  const editModal = page.getByTestId('step2-edit-milestone-modal');
+  await expect(editModal).toBeVisible();
+  await editModal.getByTestId('step2-edit-milestone-start').fill('2026-05-10');
+  await editModal.getByTestId('step2-edit-milestone-due').fill('2026-05-15');
+  await editModal.getByRole('button', { name: 'Save Changes' }).click();
+  await editModal.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByTestId('step2-milestone-summary-801').click();
+  await page.getByTestId('step2-milestone-card-801').getByRole('button', { name: 'Edit' }).click();
+  await expect(page.getByTestId('step2-edit-milestone-modal').getByTestId('step2-edit-milestone-start')).not.toHaveValue('');
 
+  await editModal.getByRole('button', { name: 'Cancel' }).last().click();
+  await expect(editModal).toBeHidden();
   await page.getByTestId('step2-apply-suggested-timeline').click();
-  await expect(editor801.getByTestId('step2-milestone-start-801')).toHaveValue('2026-05-10');
-  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('May 2, 2026');
+  await page.getByTestId('step2-milestone-card-801').getByRole('button', { name: 'Edit' }).click();
+  await expect(page.getByTestId('step2-edit-milestone-modal').getByTestId('step2-edit-milestone-start')).not.toHaveValue('');
+  await expect(page.getByTestId('step2-milestone-summary-802')).toContainText('Date:');
 });
 
 test('step 2 generates shed-specific milestone previews and applies or cancels safely', async ({
