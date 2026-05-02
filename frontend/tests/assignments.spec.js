@@ -228,9 +228,21 @@ test("assignments page shows all projects and work controls", async ({ page }) =
   await expect(page.getByTestId("assignment-row-101")).toContainText("Unassigned");
   await expect(page.getByTestId("assignment-row-202")).toContainText("Awaiting Review");
   await expect(page.getByTestId("assignment-row-202")).toContainText("Owner: Taylor Crew");
+  await expect(page.getByTestId("assignment-row-101")).toContainText("Total 2");
+  await expect(page.getByTestId("assignment-row-202")).toContainText("Total 1");
+  await expect(page.getByTestId("assignment-remove-owner-button-202")).toBeVisible();
+  await expect(page.getByTestId("assignment-owner-select-101")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Assign Work" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "View Work" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /^Unassign$/ })).toHaveCount(0);
+
+  await page.getByTestId("assignment-owner-button-101").click();
+  await expect(page.getByTestId("assignment-owner-editor-101")).toBeVisible();
+  await expect(page.getByTestId("assignment-owner-select-101")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cancel" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).first().click();
+  await expect(page.getByTestId("assignment-owner-editor-101")).toHaveCount(0);
 
   await page.getByTestId("assignment-work-button-202").click();
   await expect(page.locator("div.fixed select").first()).toBeVisible();

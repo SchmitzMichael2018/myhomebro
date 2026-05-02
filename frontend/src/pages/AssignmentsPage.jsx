@@ -58,7 +58,7 @@ function Badge({ children, tone = "neutral" }) {
   );
 }
 
-function Btn({ children, onClick, disabled, tone = "primary", title }) {
+function Btn({ children, onClick, disabled, tone = "primary", title, ...rest }) {
   const cls =
     tone === "primary"
       ? "bg-blue-600 text-white hover:bg-blue-700"
@@ -72,42 +72,11 @@ function Btn({ children, onClick, disabled, tone = "primary", title }) {
       onClick={onClick}
       disabled={disabled}
       title={title}
+      {...rest}
       className={`rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60 ${cls}`}
     >
       {children}
     </button>
-  );
-}
-
-function StatPill({ label, value, tone = "neutral" }) {
-  const cls =
-    tone === "good"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : tone === "warn"
-        ? "border-amber-200 bg-amber-50 text-amber-800"
-        : tone === "danger"
-          ? "border-rose-200 bg-rose-50 text-rose-800"
-          : "border-slate-200 bg-slate-50 text-slate-700";
-
-  return (
-    <div className={`rounded-xl border px-3 py-2 ${cls}`}>
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] opacity-80">{label}</div>
-      <div className="mt-1 text-lg font-bold">{Number(value || 0).toLocaleString()}</div>
-    </div>
-  );
-}
-
-function AssignedMiniLine({ assignees }) {
-  if (!assignees || assignees.length === 0) return <span className="text-gray-500">â€”</span>;
-  // show first + count
-  const first = assignees[0];
-  const more = assignees.length - 1;
-  return (
-    <span className="text-gray-700">
-      <span className="font-semibold">{first.display_name || "Employee"}</span>
-      {first.email ? <span className="text-gray-500"> ({first.email})</span> : null}
-      {more > 0 ? <span className="text-gray-500"> +{more}</span> : null}
-    </span>
   );
 }
 
@@ -335,6 +304,7 @@ export default function AssignmentsPage() {
 
   // Selection state (per agreement)
   const [selectedEmployee, setSelectedEmployee] = useState({}); // agreementId -> subaccountId (string)
+  const [ownerEditorOpen, setOwnerEditorOpen] = useState({}); // agreementId -> bool
 
   // Conflict state (per agreement) â€” safe fallback if endpoint missing
   const [conflicts, setConflicts] = useState({});
@@ -534,7 +504,10 @@ export default function AssignmentsPage() {
   ----------------------------- */
   async function assignAgreement(agreementId) {
     const subId = selectedEmployee[String(agreementId)];
-    if (!subId) return toast.error("Select an employee first.");
+    if (!subId) {
+      toast.error("Select an employee first.");
+      return false;
+    }
 
     setBusy(true);
     try {
@@ -543,7 +516,7 @@ export default function AssignmentsPage() {
 
       if (chk && chk.ok === false && !isSupervisor) {
         toast.error(chk.message || "Conflict detected. Assignment blocked.");
-        return;
+        return false;
       }
 
       await assignAgreementToSubaccount(agreementId, Number(subId));
@@ -553,9 +526,11 @@ export default function AssignmentsPage() {
         const stA = await fetchAgreementAssignmentStatus(agreementId);
         setAgreementAssignees((prev) => ({ ...prev, [agreementId]: stA?.assigned_subaccounts || [] }));
       } catch {}
+      return true;
     } catch (e) {
       console.error(e);
       toast.error(e?.response?.data?.detail || "Agreement assignment failed.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -563,7 +538,10 @@ export default function AssignmentsPage() {
 
   async function unassignAgreement(agreementId) {
     const subId = selectedEmployee[String(agreementId)];
-    if (!subId) return toast.error("Select an employee first.");
+    if (!subId) {
+      toast.error("Select an employee first.");
+      return false;
+    }
 
     setBusy(true);
     try {
@@ -574,9 +552,11 @@ export default function AssignmentsPage() {
         const stA = await fetchAgreementAssignmentStatus(agreementId);
         setAgreementAssignees((prev) => ({ ...prev, [agreementId]: stA?.assigned_subaccounts || [] }));
       } catch {}
+      return true;
     } catch (e) {
       console.error(e);
       toast.error(e?.response?.data?.detail || "Agreement unassign failed.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -585,7 +565,17 @@ export default function AssignmentsPage() {
   async function confirmRemoveOwner(agreementId, agreementTitle, ownerName) {
     const message = `Remove project owner?\nThis will remove ${ownerName} as the project owner for ${agreementTitle}. It will not change milestone assignments.`;
     if (typeof window !== "undefined" && !window.confirm(message)) return;
-    await unassignAgreement(agreementId);
+    const ok = await unassignAgreement(agreementId);
+    if (ok) closeOwnerEditor(agreementId);
+  }
+
+  function openOwnerEditor(agreementId, ownerId = "") {
+    setSelectedEmployee((prev) => ({ ...prev, [String(agreementId)]: ownerId ? String(ownerId) : "" }));
+    setOwnerEditorOpen((prev) => ({ ...prev, [String(agreementId)]: true }));
+  }
+
+  function closeOwnerEditor(agreementId) {
+    setOwnerEditorOpen((prev) => ({ ...prev, [String(agreementId)]: false }));
   }
 
   /* -----------------------------
@@ -767,7 +757,7 @@ export default function AssignmentsPage() {
           No projects match your filters. Clear the project type or status chips to see more work.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-3">
           {filteredAgreements.map((a) => {
             const agreementId = a.id;
             const title = a.title || a.project_title || a.project?.title || `Agreement #${agreementId}`;
@@ -778,13 +768,10 @@ export default function AssignmentsPage() {
             const assignees = agreementAssignees[agreementId] || [];
             const summary = getAgreementWorkSummary(a, ms, assignees);
             const projectClass = deriveAgreementProjectClass(a);
-            const assignedText =
-              assignees.length > 0
-                ? assignees
-                    .map((sub) => sub.display_name || sub.email || "Employee")
-                    .slice(0, 2)
-                    .join(", ")
-                : "Unassigned";
+            const ownerId = assignees[0]?.id ? String(assignees[0].id) : "";
+            const ownerLine = summary.hasOwner
+              ? `${summary.ownerName}${summary.ownerRole ? ` • ${summary.ownerRole}` : ""}`
+              : "No owner";
 
             const statusLabel =
               summary.status === "unassigned"
@@ -814,117 +801,144 @@ export default function AssignmentsPage() {
                 data-testid={`assignment-row-${agreementId}`}
                 className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-lg font-bold text-slate-900" title={title}>
-                      {title}
-                    </div>
-                    <div className="mt-1 truncate text-sm text-gray-500" title={homeowner}>
-                      Customer: {homeowner}
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {fmtDate(start)} {end ? `• ${fmtDate(end)}` : ""}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => openDrawer(agreementId)}
-                    disabled={busy}
-                    className="shrink-0 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                    title={summary.actionButtonLabel}
-                    data-testid={`assignment-work-button-${agreementId}`}
-                  >
-                    {summary.actionButtonLabel}
-                  </button>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge tone={projectClassTone(projectClass)}>{projectClassLabel(projectClass)}</Badge>
-                  <Badge tone={statusTone}>{formatAgreementStatus(statusLabel)}</Badge>
-                  <Badge tone={summary.hasOwner ? "good" : "neutral"}>
-                    {summary.hasOwner ? `Owner: ${summary.ownerName}` : "No owner"}
-                  </Badge>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-                  <StatPill label="Total" value={summary.totalMilestones} />
-                  <StatPill label="Assigned" value={summary.assignedMilestonesCount} tone="good" />
-                  <StatPill label="Unassigned" value={summary.unassignedMilestonesCount} tone="neutral" />
-                  <StatPill label="Awaiting Review" value={summary.awaitingReviewCount} tone="warn" />
-                  <StatPill label="Overdue" value={summary.overdueCount} tone="danger" />
-                </div>
-
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Project Owner / Supervisor
+                      <div className="truncate text-lg font-bold text-slate-900" title={title}>
+                        {title}
                       </div>
-                      <div className="mt-1 text-sm font-semibold text-slate-900">
-                        {summary.hasOwner ? summary.ownerName : "No owner assigned"}
+                      <div className="mt-1 truncate text-sm text-gray-500" title={homeowner}>
+                        Customer: {homeowner}
                       </div>
-                      {summary.ownerRole ? (
-                        <div className="mt-1 text-xs text-slate-500">{summary.ownerRole}</div>
-                      ) : null}
-                      <div className="mt-2 text-xs text-slate-600">
-                        {summary.hasOwner
-                          ? "Remove project owner if you only want milestone-level work control."
-                          : "Assign an owner if this project should have a supervisor without changing milestone work."}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0 flex-1 lg:max-w-[520px]">
-                      <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Select owner / supervisor
-                      </label>
-                      <select
-                        value={selectedEmployee[String(agreementId)] || ""}
-                        onChange={async (e) => {
-                          const val = e.target.value;
-                          setSelectedEmployee((prev) => ({ ...prev, [String(agreementId)]: val }));
-                          if (val) await runConflictCheck(agreementId, val);
-                        }}
-                        disabled={busy}
-                        className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                        title="Select owner or supervisor"
-                      >
-                        <option value="">— Select —</option>
-                        {subs.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {(s.display_name || "Employee")} ({s.role})
-                          </option>
-                        ))}
-                      </select>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Btn
-                          onClick={() => assignAgreement(agreementId)}
-                          disabled={busy || !selectedEmployee[String(agreementId)]}
-                          title={summary.hasOwner ? "Change project owner" : "Assign project owner"}
-                        >
-                          {summary.hasOwner ? "Change Owner" : "Assign Owner"}
-                        </Btn>
-
-                        {summary.hasOwner ? (
-                          <Btn
-                            tone="secondary"
-                            onClick={() => confirmRemoveOwner(agreementId, title, summary.ownerName)}
-                            disabled={busy || !selectedEmployee[String(agreementId)]}
-                            title="Remove project owner"
-                          >
-                            Remove Owner
-                          </Btn>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
+                        <span className="font-semibold text-slate-700">Owner:</span>
+                        {" "}
+                        <span>{ownerLine}</span>
+                        <span className="text-slate-300">|</span>
+                        <span>{fmtDate(start)}</span>
+                        {end ? (
+                          <>
+                            <span className="text-slate-300">•</span>
+                            <span>{fmtDate(end)}</span>
+                          </>
                         ) : null}
                       </div>
                     </div>
+
+                    <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700">
+                        Total {summary.totalMilestones}
+                      </span>
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-800">
+                        Assigned {summary.assignedMilestonesCount}
+                      </span>
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">
+                        Unassigned {summary.unassignedMilestonesCount}
+                      </span>
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">
+                        Review {summary.awaitingReviewCount}
+                      </span>
+                      <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-800">
+                        Overdue {summary.overdueCount}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <Badge tone={projectClassTone(projectClass)}>{projectClassLabel(projectClass)}</Badge>
+                      <Badge tone={statusTone}>{formatAgreementStatus(statusLabel)}</Badge>
+                    </div>
                   </div>
 
-                  <div className="mt-4 text-xs text-slate-600">
-                    {assignedText === "Unassigned"
-                      ? "No work has been assigned yet. Use Assign Work to open the milestone drawer."
-                      : `Current owner selection: ${assignedText}. Use Assign Work to manage milestone-level work assignments.`}
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                    <Btn
+                      tone="secondary"
+                      onClick={() => openOwnerEditor(agreementId, ownerId)}
+                      disabled={busy}
+                      title={summary.hasOwner ? "Change project owner" : "Assign project owner"}
+                      data-testid={`assignment-owner-button-${agreementId}`}
+                    >
+                      {summary.hasOwner ? "Change Owner" : "Assign Owner"}
+                    </Btn>
+
+                    {summary.hasOwner ? (
+                      <Btn
+                        tone="secondary"
+                        onClick={() => confirmRemoveOwner(agreementId, title, summary.ownerName)}
+                        disabled={busy}
+                        title="Remove project owner"
+                        data-testid={`assignment-remove-owner-button-${agreementId}`}
+                      >
+                        Remove Owner
+                      </Btn>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => openDrawer(agreementId)}
+                      disabled={busy}
+                      className="shrink-0 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                      title={summary.actionButtonLabel}
+                      data-testid={`assignment-work-button-${agreementId}`}
+                    >
+                      {summary.actionButtonLabel}
+                    </button>
                   </div>
                 </div>
+
+                {ownerEditorOpen[String(agreementId)] ? (
+                  <div
+                    className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4"
+                    data-testid={`assignment-owner-editor-${agreementId}`}
+                  >
+                    <div className="flex flex-col gap-3">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Project Owner / Supervisor
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                        <div className="min-w-0">
+                          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            Select owner / supervisor
+                          </label>
+                          <select
+                            value={selectedEmployee[String(agreementId)] || ""}
+                            onChange={async (e) => {
+                              const val = e.target.value;
+                              setSelectedEmployee((prev) => ({ ...prev, [String(agreementId)]: val }));
+                              if (val) await runConflictCheck(agreementId, val);
+                            }}
+                            disabled={busy}
+                            className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                            title="Select owner or supervisor"
+                            data-testid={`assignment-owner-select-${agreementId}`}
+                          >
+                            <option value="">— Select —</option>
+                            {subs.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {(s.display_name || "Employee")} ({s.role})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Btn
+                            onClick={async () => {
+                              const ok = await assignAgreement(agreementId);
+                              if (ok) closeOwnerEditor(agreementId);
+                            }}
+                            disabled={busy || !selectedEmployee[String(agreementId)]}
+                            title={summary.hasOwner ? "Change project owner" : "Assign project owner"}
+                          >
+                            Save
+                          </Btn>
+                          <Btn tone="secondary" onClick={() => closeOwnerEditor(agreementId)} disabled={busy}>
+                            Cancel
+                          </Btn>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             );
           })}
