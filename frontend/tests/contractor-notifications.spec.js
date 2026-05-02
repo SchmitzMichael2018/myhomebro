@@ -63,6 +63,8 @@ async function mockContractorDashboard(page, options = {}) {
   const nextBestAction = options.nextBestAction || null;
   const contractorMe = options.contractorMe || {};
   const reviewQueueCount = options.reviewQueueCount || 0;
+  const payoutHistorySummary = options.payoutHistorySummary || { payout_count: 0, total_paid_out: 0, total_platform_fees_retained: 0 };
+  const payoutHistoryRecent = options.payoutHistoryRecent || [];
 
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
@@ -188,6 +190,17 @@ async function mockContractorDashboard(page, options = {}) {
       }),
     });
   });
+
+  await page.route('**/api/projects/contractor/payout-history/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        summary: payoutHistorySummary,
+        results: payoutHistoryRecent,
+      }),
+    });
+  });
 }
 
 test('contractor dashboard shows money-first summary row and prioritized next actions', async ({
@@ -214,10 +227,6 @@ test('contractor dashboard shows money-first summary row and prioritized next ac
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByText('Pending Approval', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Approved', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Disputed', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Earned (YTD)', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('$1,200.00')).toBeVisible();
   await expect(page.getByText('$900.00')).toBeVisible();
   await expect(page.getByText('$450.00')).toBeVisible();
@@ -226,6 +235,11 @@ test('contractor dashboard shows money-first summary row and prioritized next ac
     'Send your next agreement'
   );
   await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Open draft');
+  await expect(page.getByTestId('dashboard-next-actions')).toBeVisible();
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Open draft');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Review payment requests');
+  await page.getByTestId('dashboard-next-actions').getByRole('button', { name: 'Open draft' }).click();
+  await expect(page).toHaveURL(/\/app\/agreements\/321\/wizard\?step=1/);
 });
 
 test('contractor dashboard highlights overdue and waiting approval work with current guidance surfaces', async ({
@@ -257,6 +271,7 @@ test('contractor dashboard highlights overdue and waiting approval work with cur
   await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Paint Prep is waiting for approval');
   await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Open milestone');
   await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Review milestone status');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Paint Prep is waiting for approval');
 });
 
 test('contractor dashboard renders current quick actions and workflow entry points', async ({

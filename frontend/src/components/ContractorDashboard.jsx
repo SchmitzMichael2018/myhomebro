@@ -29,13 +29,13 @@ import {
   Sparkles,
   ArrowRight,
 } from "lucide-react";
-import { getDashboardNextSteps } from "../lib/workflowHints.js";
 import {
   buildUnifiedPaymentRecords,
   moneyStatusLabel,
   projectClassLabel,
   summarizePaymentRecords,
 } from "../utils/paymentRecords.js";
+import { getContractorNextActions } from "../lib/contractorNextActions.js";
 
 /* Ensure react-modal knows the root */
 Modal.setAppElement("#root");
@@ -118,21 +118,6 @@ function getInvoiceDueDate(inv) {
     parseDateAny(inv?.created_at) ||
     null
   );
-}
-
-function pluralizeNeedsAttention(count, noun) {
-  return `${count} ${noun}${count === 1 ? " is" : "s are"}`;
-}
-
-function buildNeedsAttentionRouteItem({ key, label, filterType }) {
-  return {
-    id: key,
-    key,
-    label,
-    filterType,
-    href: `/app/agreements?focus=needs_attention&filter=${filterType}`,
-    ctaText: "Open",
-  };
 }
 
 /* ========================================================================== */
@@ -1591,16 +1576,6 @@ export default function ContractorDashboard() {
     [invoices, drawRequests]
   );
   const paymentSummary = useMemo(() => summarizePaymentRecords(paymentRecords), [paymentRecords]);
-  const dashboardNextSteps = useMemo(
-    () =>
-      getDashboardNextSteps({
-        leads: publicLeads,
-        agreements,
-        milestones,
-      }),
-    [agreements, milestones, publicLeads]
-  );
-
   // ✅ Earned YTD (Jan 1 -> today) for the stat card
   const earnedYtdAmount = useMemo(() => {
     const from = startOfYear(new Date());
@@ -1902,18 +1877,53 @@ export default function ContractorDashboard() {
     () => (agreements || []).length > 0 || (milestones || []).length > 0 || (invoices || []).length > 0,
     [agreements, invoices, milestones]
   );
-  const heroAction = useMemo(() => {
+  const sanitizedNextBestAction = useMemo(() => {
     const backendLooksLikeSetupPrompt =
       typeof nextBestAction?.title === "string"
         && /finish onboarding|finish your setup|resume onboarding|complete setup/i.test(nextBestAction.title);
 
     if (nextBestAction?.title && !(isOnboardingComplete && backendLooksLikeSetupPrompt)) {
+      return nextBestAction;
+    }
+
+    return null;
+  }, [isOnboardingComplete, nextBestAction]);
+  const contractorNextActions = useMemo(
+    () =>
+      getContractorNextActions({
+        nextBestAction: sanitizedNextBestAction,
+        agreements,
+        milestones,
+        invoices,
+        drawRequests,
+        payoutHistorySummary,
+        payoutHistoryRecent,
+        activityFeed,
+      }),
+    [
+      agreements,
+      activityFeed,
+      drawRequests,
+      invoices,
+      milestones,
+      payoutHistoryRecent,
+      payoutHistorySummary,
+      sanitizedNextBestAction,
+    ]
+  );
+  const needsAttentionItems = useMemo(
+    () => contractorNextActions.filter((item) => item.category === "attention").slice(0, 3),
+    [contractorNextActions]
+  );
+  const heroAction = useMemo(() => {
+    const topAction = contractorNextActions[0];
+    if (topAction) {
       return {
-        title: nextBestAction.title,
-        message: nextBestAction.message,
-        rationale: nextBestAction.rationale,
-        ctaLabel: nextBestAction.cta_label || "Open",
-        navigationTarget: nextBestAction.navigation_target || "/app/dashboard",
+        title: topAction.title,
+        message: topAction.description,
+        rationale: "",
+        ctaLabel: topAction.buttonLabel,
+        navigationTarget: topAction.navigationTarget,
         action: null,
       };
     }
@@ -1937,116 +1947,7 @@ export default function ContractorDashboard() {
       navigationTarget: "/app/assistant",
       action: goStartFirstProjectWithAi,
     };
-  }, [goStartFirstProjectWithAi, hasProjectsStarted, isOnboardingComplete, nextBestAction]);
-  const needsAttentionItems = useMemo(() => {
-    const mapped = [];
-    const seen = new Set();
-    const addItem = (item) => {
-      if (!item || seen.has(item.key)) return;
-      seen.add(item.key);
-      mapped.push(item);
-    };
-
-    if (dStats.paymentPendingCount > 0) {
-      addItem({
-        id: "draw-payment-pending",
-        key: "draw-payment-pending",
-        label: `${pluralizeNeedsAttention(dStats.paymentPendingCount, "payment request")} awaiting payment.`,
-        href: "/app/agreements?focus=payment_requests&filter=payment_pending",
-        ctaText: "Open",
-      });
-    }
-
-    if (dStats.requestedChangesCount > 0) {
-      addItem({
-        id: "draw-changes-requested",
-        key: "draw-changes-requested",
-        label: `${pluralizeNeedsAttention(dStats.requestedChangesCount, "payment request")} waiting on requested changes.`,
-        href: "/app/agreements?focus=payment_requests&filter=changes_requested",
-        ctaText: "Open",
-      });
-    }
-
-    if (failedPaymentItems.length > 0) {
-      addItem({
-        id: "failed-payments",
-        key: "failed-payments",
-        label: `${pluralizeNeedsAttention(failedPaymentItems.length, "payment")} failed and needs follow-up.`,
-        href: "/app/dashboard",
-        ctaText: "Review",
-      });
-    }
-
-    (Array.isArray(dashboardNextSteps) ? dashboardNextSteps : []).forEach((item) => {
-      const label = String(item || "").trim();
-      const lower = label.toLowerCase();
-      if (!label) return;
-
-      if (lower.includes("waiting for signature")) {
-        addItem(
-          buildNeedsAttentionRouteItem({
-            key: "awaiting_signature",
-            label,
-            filterType: "awaiting_signature",
-          })
-        );
-        return;
-      }
-
-      if (lower.includes("waiting for funding")) {
-        addItem(
-          buildNeedsAttentionRouteItem({
-            key: "awaiting_funding",
-            label,
-            filterType: "awaiting_funding",
-          })
-        );
-        return;
-      }
-
-      if (lower.includes("awaiting review") || lower.includes("pending approval")) {
-        addItem(
-          buildNeedsAttentionRouteItem({
-            key: "pending_approval",
-            label,
-            filterType: "pending_approval",
-          })
-        );
-        return;
-      }
-
-      addItem({
-        id: `needs-attention-${mapped.length}`,
-        key: `needs-attention-${mapped.length}`,
-        label,
-        filterType: "",
-        href: "/app/agreements",
-        ctaText: "Open",
-      });
-    });
-
-    if (iStats.pendingCount > 0) {
-      addItem(
-        buildNeedsAttentionRouteItem({
-          key: "pending_approval",
-          label: `${pluralizeNeedsAttention(iStats.pendingCount, "invoice")} pending approval.`,
-          filterType: "pending_approval",
-        })
-      );
-    }
-
-    if (iStats.disputedCount > 0) {
-      addItem(
-        buildNeedsAttentionRouteItem({
-          key: "disputed",
-          label: `${pluralizeNeedsAttention(iStats.disputedCount, "invoice")} disputed.`,
-          filterType: "disputed",
-        })
-      );
-    }
-
-    return mapped.slice(0, 3);
-  }, [dStats.paymentPendingCount, dStats.requestedChangesCount, dashboardNextSteps, failedPaymentItems.length, iStats.disputedCount, iStats.pendingCount]);
+  }, [contractorNextActions, goStartFirstProjectWithAi, hasProjectsStarted, isOnboardingComplete]);
   const greetingName = useMemo(() => {
     const raw =
       who?.first_name ||
@@ -2090,7 +1991,7 @@ export default function ContractorDashboard() {
         `${heroAction.title || ""} ${heroAction.message || ""}`
       );
 
-    if (!nextBestAction?.title && hasProjectsStarted && !hasOperationalPressure) {
+    if (!contractorNextActions.length && hasProjectsStarted && !hasOperationalPressure) {
       return {
         label: "ALL CAUGHT UP",
         title: "Nothing urgent is blocking work or payment right now.",
@@ -2117,14 +2018,15 @@ export default function ContractorDashboard() {
     dueSchedule.today.count,
     hasProjectsStarted,
     heroAction,
+    contractorNextActions.length,
     dStats.awaitingApprovalCount,
     dStats.paymentPendingCount,
     isOnboardingComplete,
     mStats.reviewedCount,
     mStats.completedCount,
     needsAttentionItems.length,
-    nextBestAction?.title,
   ]);
+  const nextActionCards = useMemo(() => contractorNextActions.slice(1, 11), [contractorNextActions]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
   const workPipelineRows = [
     {
@@ -2362,23 +2264,80 @@ export default function ContractorDashboard() {
                 <div className="space-y-2">
                   {needsAttentionItems.map((item) => (
                     <button
-                      key={item.id}
-                      data-testid={item.filterType ? `dashboard-needs-attention-item-${item.filterType}` : undefined}
+                      key={item.key}
+                      data-testid={item.dataTestId || (item.filterType ? `dashboard-needs-attention-item-${item.filterType}` : undefined)}
                       type="button"
-                      onClick={() => navigate(item.href || "/app/dashboard")}
-                      className="flex w-full items-center gap-3 rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-left transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                      onClick={() => navigate(item.navigationTarget || item.href || "/app/dashboard")}
+                      className="flex w-full items-start justify-between gap-4 rounded-xl border border-amber-200/80 bg-white px-4 py-3 text-left transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
                     >
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
-                      <span className="min-w-0 flex-1 text-sm font-medium text-slate-800">{item.label}</span>
-                      <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
-                        {item.ctaText || "Open"}
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900">{item.title || item.label}</div>
+                        <div className="mt-1 text-sm text-slate-600">{item.description || item.label}</div>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
+                        {item.buttonLabel || item.ctaText || "Open"}
                       </span>
                     </button>
                   ))}
                 </div>
               </DashboardCard>
             </DashboardSection>
-          ) : null}
+          ) : (
+            <DashboardSection
+              title="Needs Attention"
+              subtitle="Urgent approvals, signatures, disputes, or funding issues."
+            >
+              <DashboardCard
+                testId="dashboard-needs-attention"
+                tone="subtle"
+                className="border-amber-200/90 bg-amber-50/75 p-4 shadow-[0_10px_26px_rgba(245,158,11,0.08)]"
+              >
+                <div className="rounded-xl border border-dashed border-amber-200 bg-white/80 px-4 py-3 text-sm text-slate-700">
+                  No urgent items right now.
+                </div>
+              </DashboardCard>
+            </DashboardSection>
+          )}
+
+          <DashboardSection
+            title="Next Actions"
+            subtitle="Top priorities from agreements, milestones, quotes, approvals, and payouts."
+          >
+            <DashboardCard
+              testId="dashboard-next-actions"
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+            >
+              {nextActionCards.length ? (
+                <div className="space-y-2.5">
+                  {nextActionCards.map((item) => (
+                    <button
+                      key={item.key}
+                      data-testid={`dashboard-next-action-item-${item.key}`}
+                      type="button"
+                      onClick={() => navigate(item.navigationTarget || "/app/dashboard")}
+                      className="flex w-full items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                        <div className="mt-1 text-sm leading-6 text-slate-600">{item.description}</div>
+                      </div>
+                      <span
+                        data-testid={`dashboard-next-action-button-${item.key}`}
+                        className="shrink-0 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white"
+                      >
+                        {item.buttonLabel || "Open"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  No next actions surfaced yet.
+                </div>
+              )}
+            </DashboardCard>
+          </DashboardSection>
 
           <DashboardSection
             title="Schedule"
