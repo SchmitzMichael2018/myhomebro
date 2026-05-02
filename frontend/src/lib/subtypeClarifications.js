@@ -6,51 +6,126 @@ function normalizeText(value) {
     .replace(/\s+/g, " ");
 }
 
-const MEASUREMENT_SCOPE_KEYWORDS = [
-  "flooring",
-  "floor",
-  "carpet",
-  "laminate",
-  "hardwood",
-  "vinyl",
-  "tile",
-  "drywall",
-  "paint",
-  "painting",
-  "roof",
-  "roofing",
-  "siding",
-  "concrete",
-  "patio",
-  "deck",
-  "decking",
-  "fence",
-  "landscaping",
-  "remodel",
-  "room",
-  "addition",
-  "shed",
-  "area",
-];
+const MEASUREMENT_HELP =
+  "Measurements help with planning, but the contractor should verify final measurements before pricing or work begins.";
 
-export function buildMeasurementClarificationQuestion() {
-  return {
-    key: "measurements",
-    label: "Do you know the approximate square footage or dimensions of the work area?",
-    kind: "short_text",
-    placeholder: "Example: about 1,200 sq ft or 12x18 room",
-    help:
-      "Measurements help with planning, but the contractor should verify final measurements before pricing or work begins.",
-  };
+const SHEET_STYLE_MEASUREMENT_KEYWORDS = ["shed", "outbuilding"];
+const FLOOR_MEASUREMENT_KEYWORDS = ["flooring", "floor", "carpet", "laminate", "hardwood", "vinyl", "tile"];
+const ROOF_MEASUREMENT_KEYWORDS = ["roof", "roofing"];
+const WALL_MEASUREMENT_KEYWORDS = ["siding", "paint", "painting", "drywall"];
+const AREA_MEASUREMENT_KEYWORDS = ["concrete", "patio", "driveway", "deck", "decking"];
+const REMODEL_MEASUREMENT_KEYWORDS = ["remodel", "addition", "room"];
+const GENERIC_MEASUREMENT_KEYWORDS = ["area", "space", "dimensions"];
+
+function buildClarificationHaystack(...texts) {
+  return normalizeText(texts.filter(Boolean).join(" "));
+}
+
+function hasAnyKeyword(haystack, keywords) {
+  return Boolean(haystack) && keywords.some((keyword) => haystack.includes(normalizeText(keyword)));
+}
+
+function buildMeasurementQuestionFromContext(context = {}) {
+  const haystack = buildClarificationHaystack(
+    context.projectTitle,
+    context.jobDescription,
+    context.scopeOfWork,
+    context.projectType,
+    context.projectSubtype,
+    context.projectFamilyLabel,
+    context.scopeText
+  );
+  if (!haystack) return null;
+
+  if (hasAnyKeyword(haystack, SHEET_STYLE_MEASUREMENT_KEYWORDS)) {
+    return {
+      key: "measurements",
+      label: "What size shed are you planning?",
+      kind: "short_text",
+      placeholder: "Example: 8x10, 10x12, 12x16, or not sure yet",
+      help: MEASUREMENT_HELP,
+    };
+  }
+
+  if (hasAnyKeyword(haystack, ROOF_MEASUREMENT_KEYWORDS)) {
+    return {
+      key: "measurements",
+      label: "Do you already have roof measurements, or should the contractor verify them?",
+      kind: "short_text",
+      placeholder: "Example: contractor should verify them",
+      help: MEASUREMENT_HELP,
+    };
+  }
+
+  if (hasAnyKeyword(haystack, WALL_MEASUREMENT_KEYWORDS)) {
+    return {
+      key: "measurements",
+      label: "Do you know the approximate wall or room dimensions?",
+      kind: "short_text",
+      placeholder: "Example: 14x20 room, 40 linear feet of wall, or not sure yet",
+      help: MEASUREMENT_HELP,
+    };
+  }
+
+  if (hasAnyKeyword(haystack, AREA_MEASUREMENT_KEYWORDS)) {
+    return {
+      key: "measurements",
+      label: "Do you know the approximate length and width of the area?",
+      kind: "short_text",
+      placeholder: "Example: 12x20 patio, 20x30 driveway, or not sure yet",
+      help: MEASUREMENT_HELP,
+    };
+  }
+
+  if (hasAnyKeyword(haystack, FLOOR_MEASUREMENT_KEYWORDS)) {
+    return {
+      key: "measurements",
+      label: "Do you know the approximate square footage or room dimensions?",
+      kind: "short_text",
+      placeholder: "Example: about 1,200 sq ft or a 12x18 room",
+      help: MEASUREMENT_HELP,
+    };
+  }
+
+  if (hasAnyKeyword(haystack, REMODEL_MEASUREMENT_KEYWORDS)) {
+    return {
+      key: "measurements",
+      label: "Which room or area is being remodeled, and do you know its approximate size?",
+      kind: "short_text",
+      placeholder: "Example: kitchen, primary bath, or 14x18 living room",
+      help: MEASUREMENT_HELP,
+    };
+  }
+
+  if (hasAnyKeyword(haystack, GENERIC_MEASUREMENT_KEYWORDS)) {
+    return {
+      key: "measurements",
+      label: "Do you know the approximate square footage or dimensions of the work area?",
+      kind: "short_text",
+      placeholder: "Example: about 1,200 sq ft or 12x18 room",
+      help: MEASUREMENT_HELP,
+    };
+  }
+
+  return null;
+}
+
+export function buildMeasurementClarificationQuestion(context = {}) {
+  return buildMeasurementQuestionFromContext(context);
 }
 
 export function shouldAskMeasurementClarification(...texts) {
-  const haystack = texts
-    .flatMap((value) => String(value || "").split(/\s+/))
-    .join(" ")
-    .toLowerCase();
+  const haystack = buildClarificationHaystack(...texts);
   if (!haystack) return false;
-  return MEASUREMENT_SCOPE_KEYWORDS.some((keyword) => haystack.includes(keyword));
+  return (
+    hasAnyKeyword(haystack, SHEET_STYLE_MEASUREMENT_KEYWORDS) ||
+    hasAnyKeyword(haystack, FLOOR_MEASUREMENT_KEYWORDS) ||
+    hasAnyKeyword(haystack, ROOF_MEASUREMENT_KEYWORDS) ||
+    hasAnyKeyword(haystack, WALL_MEASUREMENT_KEYWORDS) ||
+    hasAnyKeyword(haystack, AREA_MEASUREMENT_KEYWORDS) ||
+    hasAnyKeyword(haystack, REMODEL_MEASUREMENT_KEYWORDS) ||
+    hasAnyKeyword(haystack, GENERIC_MEASUREMENT_KEYWORDS)
+  );
 }
 
 const QUESTION_SETS = [
@@ -182,21 +257,76 @@ const QUESTION_SETS = [
   },
 ];
 
-export function getSubtypeClarificationQuestions(projectSubtype, scopeText = "") {
-  const normalizedSubtype = normalizeText(projectSubtype);
-  const wantsMeasurementQuestion = shouldAskMeasurementClarification(normalizedSubtype, scopeText);
-  if (!normalizedSubtype) {
-    return wantsMeasurementQuestion ? [buildMeasurementClarificationQuestion()] : [];
+function normalizeQuestionEntry(question, index = 0) {
+  if (!question) return null;
+  if (typeof question === "string") {
+    const label = String(question || "").trim();
+    return label
+      ? {
+          key: `clarification_${index + 1}`,
+          label,
+          kind: "short_text",
+        }
+      : null;
+  }
+  const next = { ...question };
+  if (!next.key) next.key = `clarification_${index + 1}`;
+  if (!next.label) next.label = String(next.question || next.key || "").trim();
+  if (!next.label) return null;
+  next.kind = next.kind || next.type || "short_text";
+  return next;
+}
+
+function findClarificationSet(haystack) {
+  return QUESTION_SETS.find((set) =>
+    set.matchers.some((matcher) => haystack.includes(normalizeText(matcher)))
+  );
+}
+
+export function getProjectClarificationQuestions(context = {}) {
+  const pending = Array.isArray(context.pendingClarifications) ? context.pendingClarifications : [];
+  if (pending.length) {
+    return pending
+      .map((question, index) => normalizeQuestionEntry(question, index))
+      .filter(Boolean)
+      .slice(0, 4);
   }
 
-  const match = QUESTION_SETS.find((set) =>
-    set.matchers.some((matcher) => normalizedSubtype.includes(normalizeText(matcher)))
+  const haystack = buildClarificationHaystack(
+    context.projectTitle,
+    context.jobDescription,
+    context.scopeOfWork,
+    context.projectType,
+    context.projectSubtype,
+    context.projectFamilyLabel,
+    context.scopeText
   );
+
+  const match = findClarificationSet(haystack);
   const questions = Array.isArray(match?.questions) ? [...match.questions] : [];
-  if (wantsMeasurementQuestion) {
-    questions.push(buildMeasurementClarificationQuestion());
+  const measurementQuestion = buildMeasurementClarificationQuestion(context);
+  if (measurementQuestion) {
+    questions.push(measurementQuestion);
   }
-  return questions.slice(0, 4);
+
+  const uniqueQuestions = [];
+  const seen = new Set();
+  for (const question of questions) {
+    const normalized = normalizeQuestionEntry(question, uniqueQuestions.length);
+    if (!normalized) continue;
+    const key = normalized.key || normalized.label;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    uniqueQuestions.push(normalized);
+  }
+  return uniqueQuestions.slice(0, 4);
+}
+
+export function getSubtypeClarificationQuestions(projectSubtype, scopeText = "") {
+  return getProjectClarificationQuestions({
+    projectSubtype,
+    scopeText,
+  });
 }
 
 export function pickClarificationAnswers(questions = [], answers = {}) {

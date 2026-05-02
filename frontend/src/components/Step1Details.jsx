@@ -20,7 +20,7 @@ import useStep1Templates from "./step1/useStep1Templates.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
 import {
   buildClarificationNotes,
-  getSubtypeClarificationQuestions,
+  getProjectClarificationQuestions,
   pickClarificationAnswers,
 } from "../lib/subtypeClarifications.js";
 import { buildLeadProposalDraft, leadSummaryFromRow } from "../lib/leadProposalDraft";
@@ -2356,48 +2356,57 @@ export default function Step1Details({
       dLocal?.selected_template_name_snapshot ||
       selectedTemplate?.name
   );
-  const effectiveClarificationSubtype = useMemo(() => {
-    return safeTrim(
-      dLocal?.project_subtype ||
-        agreement?.project_subtype ||
+  const clarificationContext = useMemo(
+    () => ({
+      projectTitle: safeTrim(dLocal?.project_title || agreement?.project_title),
+      jobDescription: safeTrim(step1JobDescriptionPrompt || dLocal?.description || agreement?.description),
+      scopeOfWork: safeTrim(dLocal?.description || agreement?.description),
+      projectType: safeTrim(dLocal?.project_type || agreement?.project_type),
+      projectSubtype: safeTrim(
+        dLocal?.project_subtype ||
+          agreement?.project_subtype ||
+          dLocal?.project_family_label ||
+          agreement?.project_family_label ||
+          assistantDraftPayload?.project_family_label ||
+          agreement?.selected_template?.project_subtype ||
+          dLocal?.selected_template?.project_subtype ||
+          selectedTemplate?.project_subtype ||
+          assistantTopTemplatePreview?.project_subtype ||
+          ""
+      ),
+      projectFamilyLabel: safeTrim(
         dLocal?.project_family_label ||
-        agreement?.project_type ||
-        agreement?.project_family_label ||
-        assistantDraftPayload?.project_family_label ||
-        agreement?.selected_template?.project_subtype ||
-        dLocal?.selected_template?.project_subtype ||
-        selectedTemplate?.project_subtype ||
-        assistantTopTemplatePreview?.project_subtype ||
-        ""
-    );
-  }, [
-    dLocal?.project_subtype,
-    agreement?.project_subtype,
-    agreement?.project_type,
-    agreement?.selected_template?.project_subtype,
-    dLocal?.selected_template?.project_subtype,
-    selectedTemplate?.project_subtype,
-    assistantTopTemplatePreview?.project_subtype,
-  ]);
-  const clarificationScopeText = useMemo(
-    () =>
-      [
-        effectiveClarificationSubtype,
-        safeTrim(dLocal?.project_title),
-        safeTrim(dLocal?.description),
-        safeTrim(agreement?.description),
-      ]
-        .filter(Boolean)
-        .join(" "),
-    [agreement?.description, dLocal?.description, dLocal?.project_title, effectiveClarificationSubtype]
+          agreement?.project_family_label ||
+          assistantDraftPayload?.project_family_label ||
+          ""
+      ),
+      pendingClarifications: Array.isArray(agreement?.pending_clarifications)
+        ? agreement.pending_clarifications
+        : [],
+    }),
+    [
+      agreement?.description,
+      agreement?.pending_clarifications,
+      agreement?.project_family_label,
+      agreement?.project_subtype,
+      agreement?.project_title,
+      agreement?.project_type,
+      agreement?.selected_template?.project_subtype,
+      assistantDraftPayload?.project_family_label,
+      assistantTopTemplatePreview?.project_subtype,
+      dLocal?.description,
+      dLocal?.project_family_label,
+      dLocal?.project_subtype,
+      dLocal?.project_title,
+      dLocal?.project_type,
+      dLocal?.selected_template?.project_subtype,
+      selectedTemplate?.project_subtype,
+      step1JobDescriptionPrompt,
+    ]
   );
   const clarificationQuestions = useMemo(
-    () =>
-      getSubtypeClarificationQuestions(
-        effectiveClarificationSubtype,
-        clarificationScopeText
-      ),
-    [clarificationScopeText, effectiveClarificationSubtype]
+    () => getProjectClarificationQuestions(clarificationContext),
+    [clarificationContext]
   );
   const agreementClarificationAnswers = useMemo(
     () => pickClarificationAnswers(clarificationQuestions, agreement?.ai_scope?.answers || {}),
@@ -2406,7 +2415,7 @@ export default function Step1Details({
   useEffect(() => {
     setClarificationAnswers(agreementClarificationAnswers);
     setClarificationsSkipped(false);
-  }, [agreementClarificationAnswers, effectiveClarificationSubtype]);
+  }, [agreementClarificationAnswers, clarificationContext.projectSubtype]);
   const clarificationSummaryLines = useMemo(
     () => buildClarificationNotes(clarificationQuestions, clarificationAnswers),
     [clarificationQuestions, clarificationAnswers]
@@ -3820,6 +3829,113 @@ export default function Step1Details({
           </section>
         ) : null}
 
+        {clarificationQuestions.length ? (
+          <div
+            data-testid="agreement-clarification-section"
+            className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Clarify project details</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Answer a few quick questions so the scope and milestone plan fit this{" "}
+                  {clarificationContext.projectSubtype || clarificationContext.projectType || "project"} more closely.
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={clarificationsSkipped ? () => setClarificationsSkipped(false) : handleSkipClarifications}
+                  disabled={locked}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  data-testid="agreement-clarification-skip"
+                >
+                  {clarificationsSkipped ? "Show questions" : "Skip for now"}
+                </button>
+              </div>
+            </div>
+
+            {clarificationsSkipped ? (
+              <div
+                data-testid="agreement-clarification-skipped"
+                className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600"
+              >
+                You can skip these for now and still keep moving. Come back anytime before generating milestones.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {clarificationQuestions.map((question) => {
+                  const currentValue = safeTrim(clarificationAnswers?.[question.key]);
+                  return (
+                    <div
+                      key={question.key}
+                      className="rounded-xl border border-slate-200 bg-white p-3"
+                      data-testid={`agreement-clarification-question-${question.key}`}
+                    >
+                      <div className="text-sm font-medium text-slate-900">{question.label}</div>
+                      {question.help ? (
+                        <div className="mt-1 text-xs leading-5 text-slate-500">{question.help}</div>
+                      ) : null}
+                      {question.kind === "yes_no" ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {["yes", "no"].map((option) => {
+                            const active = currentValue === option;
+                            return (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => handleClarificationAnswerChange(question.key, option)}
+                                disabled={locked}
+                                className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${
+                                  active
+                                    ? "border-indigo-600 bg-indigo-600 text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                                }`}
+                                data-testid={`agreement-clarification-${question.key}-${option}`}
+                              >
+                                {option === "yes" ? "Yes" : "No"}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={currentValue}
+                          onChange={(e) => handleClarificationAnswerChange(question.key, e.target.value)}
+                          placeholder={question.placeholder || "Add a quick note"}
+                          disabled={locked}
+                          className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                          data-testid={`agreement-clarification-input-${question.key}`}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {clarificationSummaryLines.length ? (
+              <div
+                data-testid="agreement-clarification-summary"
+                className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3"
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
+                  Saved to project context
+                </div>
+                <div className="mt-1 text-sm text-emerald-900">
+                  These details will help refine the scope and milestone suggestions.
+                </div>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-900">
+                  {clarificationSummaryLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="space-y-6">
           <StepSection
             title="Project Details"
@@ -4579,116 +4695,6 @@ export default function Step1Details({
               </div>
             </StepSection>
 
-            {clarificationQuestions.length ? (
-              <div
-                data-testid="agreement-clarification-section"
-                className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">
-                      Clarify project details
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      Answer a few quick questions so the scope and milestone plan fit this{" "}
-                      {effectiveClarificationSubtype || "project"} more closely.
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={clarificationsSkipped ? () => setClarificationsSkipped(false) : handleSkipClarifications}
-                      disabled={locked}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                      data-testid="agreement-clarification-skip"
-                    >
-                      {clarificationsSkipped ? "Show questions" : "Skip for now"}
-                    </button>
-                  </div>
-                </div>
-
-                {clarificationsSkipped ? (
-                  <div
-                    data-testid="agreement-clarification-skipped"
-                    className="mt-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600"
-                  >
-                    You can skip these for now and still keep moving. Come back anytime before generating milestones.
-                  </div>
-                ) : (
-                  <div className="mt-4 space-y-3">
-                    {clarificationQuestions.map((question) => {
-                      const currentValue = safeTrim(clarificationAnswers?.[question.key]);
-                      return (
-                        <div
-                          key={question.key}
-                          className="rounded-xl border border-slate-200 bg-white p-3"
-                          data-testid={`agreement-clarification-question-${question.key}`}
-                        >
-                          <div className="text-sm font-medium text-slate-900">{question.label}</div>
-                          {question.help ? (
-                            <div className="mt-1 text-xs leading-5 text-slate-500">{question.help}</div>
-                          ) : null}
-                          {question.kind === "yes_no" ? (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {["yes", "no"].map((option) => {
-                                const active = currentValue === option;
-                                return (
-                                  <button
-                                    key={option}
-                                    type="button"
-                                    onClick={() => handleClarificationAnswerChange(question.key, option)}
-                                    disabled={locked}
-                                    className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${
-                                      active
-                                        ? "border-indigo-600 bg-indigo-600 text-white"
-                                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                                    }`}
-                                    data-testid={`agreement-clarification-${question.key}-${option}`}
-                                  >
-                                    {option === "yes" ? "Yes" : "No"}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <input
-                              type="text"
-                              value={currentValue}
-                              onChange={(e) =>
-                                handleClarificationAnswerChange(question.key, e.target.value)
-                              }
-                              placeholder={question.placeholder || "Add a quick note"}
-                              disabled={locked}
-                              className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                              data-testid={`agreement-clarification-input-${question.key}`}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {clarificationSummaryLines.length ? (
-                  <div
-                    data-testid="agreement-clarification-summary"
-                    className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3"
-                  >
-                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">
-                      Saved to project context
-                    </div>
-                    <div className="mt-1 text-sm text-emerald-900">
-                      These details will help refine the scope and milestone suggestions.
-                    </div>
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-emerald-900">
-                      {clarificationSummaryLines.map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </div>
 
 

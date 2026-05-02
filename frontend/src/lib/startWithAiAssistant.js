@@ -1,6 +1,5 @@
 import {
-  buildMeasurementClarificationQuestion,
-  shouldAskMeasurementClarification,
+  getProjectClarificationQuestions,
 } from "./subtypeClarifications.js";
 
 const QUICK_ACTIONS = [
@@ -400,26 +399,23 @@ function buildSuggestedMilestones(projectSummary, milestoneSummary = {}) {
 }
 
 function buildClarificationQuestions(projectSummary, context) {
-  const questions = [];
   const agreement = context.agreement_summary;
-  const existing = Array.isArray(agreement.pending_clarifications)
-    ? agreement.pending_clarifications
-    : [];
-  if (existing.length) {
-    return existing.slice(0, 4).map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (!clean(projectSummary)) {
-    questions.push("What work is included in the project scope?");
-  }
-  questions.push("Who is supplying materials?");
-  questions.push("What timeline or completion date matters most?");
-  if (shouldAskMeasurementClarification(projectSummary, agreement?.project_subtype, agreement?.project_type)) {
-    questions.push(buildMeasurementClarificationQuestion());
-  }
-  if (clean(projectSummary).toLowerCase().includes("remodel")) {
-    questions.push("What fixtures or finish level should pricing assume?");
-  }
-  return [...new Set(questions)].slice(0, 4);
+  return getProjectClarificationQuestions({
+    projectTitle: clean(agreement?.project_title || agreement?.title || ""),
+    jobDescription: clean(projectSummary),
+    scopeOfWork: clean(
+      agreement?.scope_of_work ||
+        agreement?.description ||
+        projectSummary ||
+        ""
+    ),
+    projectType: clean(agreement?.project_type),
+    projectSubtype: clean(agreement?.project_subtype),
+    projectFamilyLabel: clean(agreement?.project_family_label),
+    pendingClarifications: Array.isArray(agreement?.pending_clarifications)
+      ? agreement.pending_clarifications
+      : [],
+  });
 }
 
 function buildResumeAgreementPlan(context, collectedData) {

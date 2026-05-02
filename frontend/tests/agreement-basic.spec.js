@@ -1311,7 +1311,153 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
   await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toBeVisible();
 });
 
-test('agreement wizard step 1 asks for measurements on area-based jobs and accepts the contractor-verify fallback', async ({
+test('agreement wizard step 1 asks for shed size on shed builds and accepts the contractor-verify fallback', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Outdoor', label: 'Outdoor', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 21,
+            value: 'Shed Build',
+            label: 'Shed Build',
+            owner_type: 'system',
+            project_type: 'Outdoor',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: AGREEMENT_ID,
+            agreement_id: AGREEMENT_ID,
+            step_status: 'step1',
+            project_title: '',
+            title: '',
+            project_type: '',
+            project_subtype: '',
+            payment_mode: 'escrow',
+            payment_structure: 'simple',
+            description: '',
+            homeowner: null,
+            status: 'draft',
+            ai_scope: {
+              answers: {},
+            },
+          }),
+        });
+        return;
+      }
+
+      if (request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: AGREEMENT_ID,
+            agreement_id: AGREEMENT_ID,
+            step_status: 'step1',
+            project_title: request.postDataJSON()?.project_title || '',
+            title: request.postDataJSON()?.title || '',
+            project_type: request.postDataJSON()?.project_type || '',
+            project_subtype: request.postDataJSON()?.project_subtype || '',
+            payment_mode: 'escrow',
+            payment_structure: 'simple',
+            description: request.postDataJSON()?.description || '',
+            homeowner: null,
+            status: 'draft',
+            ai_scope: {
+              answers: {
+                measurements: request.postDataJSON()?.scope_clarifications?.measurements || '',
+              },
+            },
+          }),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description:
+          'Build a 12x16 backyard shed with site prep, framing, roofing, and cleanup.',
+        project_title: 'Backyard Shed Build',
+        project_type: 'Outdoor',
+        project_subtype: 'Shed Build',
+      }),
+    });
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
+  await page.getByTestId('step1-job-description-input').fill(
+    'Build a 12x16 backyard shed with site prep and cleanup'
+  );
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-question-measurements')).toContainText(
+    'What size shed are you planning?'
+  );
+  await expect(page.getByTestId('agreement-clarification-question-measurements')).toContainText(
+    'Measurements help with planning, but the contractor should verify final measurements before pricing or work begins.'
+  );
+  await expect(page.getByTestId('agreement-clarification-input-measurements')).toHaveAttribute(
+    'placeholder',
+    'Example: 8x10, 10x12, 12x16, or not sure yet'
+  );
+
+  await page
+    .getByTestId('agreement-clarification-input-measurements')
+    .fill('Not sure — contractor should verify measurements.');
+  await expect(page.getByTestId('agreement-clarification-summary')).toContainText(
+    'Not sure — contractor should verify measurements.'
+  );
+});
+
+test('agreement wizard step 1 asks for square footage on flooring projects and accepts the contractor-verify fallback', async ({
   page,
 }) => {
   await installWizardAuthRoutes(page);
@@ -1424,22 +1570,14 @@ test('agreement wizard step 1 asks for measurements on area-based jobs and accep
   });
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
-  await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
-  await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
   await page.getByTestId('step1-job-description-input').fill(
     'Replace flooring in the main living areas and hallway'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
-
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-question-measurements')).toContainText(
-    'Do you know the approximate square footage or dimensions of the work area?'
+    'Do you know the approximate square footage or room dimensions?'
   );
   await expect(page.getByTestId('agreement-clarification-question-measurements')).toContainText(
     'Measurements help with planning, but the contractor should verify final measurements before pricing or work begins.'
