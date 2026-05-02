@@ -9,8 +9,10 @@ export default function DashboardCard({
   const toneClass =
     tone === "subtle"
       ? "border-slate-200 bg-slate-50"
-      : tone === "signal"
+      : tone === "signal" || tone === "warning"
       ? "border-amber-200 bg-amber-50"
+      : tone === "action"
+      ? "border-sky-200 bg-gradient-to-br from-[#0f3c66] via-[#1b4d85] to-[#2f6fb3] text-white"
       : "border-slate-200 bg-white";
 
   return (

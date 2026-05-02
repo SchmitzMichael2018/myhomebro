@@ -2003,7 +2003,7 @@ export default function ContractorDashboard() {
     }
 
     return {
-      label: "NEXT ACTION",
+      label: "NEXT ACTIONS",
       title: heroAction.title,
       message: heroAction.message,
       rationale: heroAction.rationale,
@@ -2141,12 +2141,9 @@ export default function ContractorDashboard() {
         <div className="space-y-5">
           <DashboardCard
             testId="dashboard-next-best-action"
+            tone={heroBand.quiet ? "subtle" : "action"}
             className={`overflow-hidden border p-0 shadow-[0_20px_48px_rgba(15,23,42,0.12)] ${
-              heroBand.quiet
-                ? "border-[#d6e1ee] bg-white"
-                : heroBand.setup
-                ? "border-[#b8d1eb] bg-gradient-to-r from-[#eef5fc] via-white to-[#f7fbff]"
-                : "border-[#1e558f] bg-gradient-to-r from-[#18395f] via-[#1b4d85] to-[#245b96]"
+              heroBand.quiet ? "border-slate-200 bg-white" : "border-sky-900/20"
             }`}
           >
             <div className="flex flex-col gap-5 px-5 py-5 md:px-7 md:py-6 lg:flex-row lg:items-end lg:justify-between">
@@ -2155,8 +2152,6 @@ export default function ContractorDashboard() {
                   className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${
                     heroBand.quiet
                       ? "text-[#4f6f95]"
-                      : heroBand.setup
-                      ? "text-[#2b5d95]"
                       : "text-sky-100"
                   }`}
                 >
@@ -2164,20 +2159,20 @@ export default function ContractorDashboard() {
                 </div>
                 <div
                   className={`mt-3 text-2xl font-semibold tracking-tight md:text-[2rem] ${
-                    heroBand.quiet ? "text-[#19395f]" : heroBand.setup ? "text-[#18395f]" : "text-white"
+                    heroBand.quiet ? "text-[#19395f]" : "text-white"
                   }`}
                 >
                   {heroBand.title}
                 </div>
                 <div
                   className={`mt-2 text-sm md:text-[15px] ${
-                    heroBand.quiet ? "text-slate-700" : heroBand.setup ? "text-slate-700" : "text-sky-50"
+                    heroBand.quiet ? "text-slate-700" : "text-sky-50"
                   }`}
                 >
                   {heroBand.message}
                 </div>
                 {heroBand.rationale ? (
-                  <div className={`mt-3 text-xs font-medium ${heroBand.setup ? "text-[#526d8a]" : "text-sky-100/90"}`}>
+                  <div className={`mt-3 text-xs font-medium ${heroBand.quiet ? "text-slate-600" : "text-sky-100/90"}`}>
                     {heroBand.rationale}
                   </div>
                 ) : null}
@@ -2192,17 +2187,58 @@ export default function ContractorDashboard() {
                     }
                     navigate(heroBand.navigationTarget || "/app/dashboard");
                   }}
-                  className={`inline-flex items-center justify-center gap-2 self-start rounded-xl px-4 py-2.5 text-sm font-semibold ${
-                    heroBand.setup
-                      ? "bg-[#18395f] text-white hover:bg-[#15314f]"
-                      : "bg-white text-[#18395f] hover:bg-sky-50"
-                  }`}
+                  className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#18395f] hover:bg-sky-50"
                 >
                   {heroBand.ctaLabel}
                   <ArrowRight className="h-4 w-4" />
                 </button>
               ) : null}
             </div>
+          </DashboardCard>
+
+          <DashboardCard
+            testId="dashboard-next-actions"
+            tone="subtle"
+            className="border-sky-200/80 bg-sky-50/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+          >
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#3f6d9e]">
+                  More Next Actions
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Top priorities from agreements, milestones, quotes, approvals, and payouts.
+                </div>
+              </div>
+            </div>
+            {nextActionCards.length ? (
+              <div className="space-y-2.5">
+                {nextActionCards.map((item) => (
+                  <button
+                    key={item.key}
+                    data-testid={`dashboard-next-action-item-${item.key}`}
+                    type="button"
+                    onClick={() => navigate(item.navigationTarget || "/app/dashboard")}
+                    className="flex w-full items-start justify-between gap-4 rounded-xl border border-sky-200 bg-white px-4 py-3 text-left transition hover:-translate-y-px hover:border-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                      <div className="mt-1 text-sm leading-6 text-slate-600">{item.description}</div>
+                    </div>
+                    <span
+                      data-testid={`dashboard-next-action-button-${item.key}`}
+                      className="shrink-0 rounded-full bg-[#18395f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white"
+                    >
+                      {item.buttonLabel || "Open"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-sky-200 bg-white px-4 py-3 text-sm text-slate-600">
+                No next actions surfaced yet.
+              </div>
+            )}
           </DashboardCard>
 
           <DashboardSection
@@ -2298,46 +2334,6 @@ export default function ContractorDashboard() {
               </DashboardCard>
             </DashboardSection>
           )}
-
-          <DashboardSection
-            title="Next Actions"
-            subtitle="Top priorities from agreements, milestones, quotes, approvals, and payouts."
-          >
-            <DashboardCard
-              testId="dashboard-next-actions"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-            >
-              {nextActionCards.length ? (
-                <div className="space-y-2.5">
-                  {nextActionCards.map((item) => (
-                    <button
-                      key={item.key}
-                      data-testid={`dashboard-next-action-item-${item.key}`}
-                      type="button"
-                      onClick={() => navigate(item.navigationTarget || "/app/dashboard")}
-                      className="flex w-full items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:border-slate-300 hover:bg-white focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                        <div className="mt-1 text-sm leading-6 text-slate-600">{item.description}</div>
-                      </div>
-                      <span
-                        data-testid={`dashboard-next-action-button-${item.key}`}
-                        className="shrink-0 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white"
-                      >
-                        {item.buttonLabel || "Open"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  No next actions surfaced yet.
-                </div>
-              )}
-            </DashboardCard>
-          </DashboardSection>
 
           <DashboardSection
             title="Schedule"
