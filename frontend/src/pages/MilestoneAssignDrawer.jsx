@@ -2,6 +2,7 @@
 // v2026-01-08 — Option A milestone drawer (bulk select + assign/clear overrides)
 
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 function Chip({ children, tone = "neutral" }) {
   const cls =
@@ -57,6 +58,23 @@ export default function MilestoneAssignDrawer({
 }) {
   const [selectedSet, setSelectedSet] = useState(new Set());
   const [localWorking, setLocalWorking] = useState(false);
+
+  const employeeOptions = useMemo(
+    () =>
+      (subs || []).filter((sub) => {
+        const role = String(sub?.role || "").toLowerCase();
+        return role && !role.includes("subcontractor");
+      }),
+    [subs]
+  );
+  const subcontractorOptions = useMemo(
+    () =>
+      (subs || []).filter((sub) => {
+        const role = String(sub?.role || "").toLowerCase();
+        return role.includes("subcontractor");
+      }),
+    [subs]
+  );
 
   // reset selection on open/agreement change
   useEffect(() => {
@@ -162,7 +180,26 @@ export default function MilestoneAssignDrawer({
         {/* employee + actions */}
         <div className="p-4 border-b border-gray-200 space-y-3">
           <div>
-            <div className="text-sm font-semibold text-gray-800 mb-2">Assign employee</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-gray-800">Assign work</div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
+                  Employees {employeeOptions.length}
+                </span>
+                <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-semibold text-slate-700">
+                  Subcontractors {subcontractorOptions.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-2 text-xs text-gray-500">
+              Select an employee or subcontractor to assign the selected milestones.
+            </div>
+
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Assign to team member
+              </div>
             <select
               value={selectedEmployeeId || ""}
               onChange={async (e) => {
@@ -174,15 +211,48 @@ export default function MilestoneAssignDrawer({
               }}
               disabled={disableUI}
               className="w-full rounded-lg border border-gray-300 px-3 py-2"
+              data-testid="assign-work-assignee-select"
             >
-              <option value="">— Select employee —</option>
-              {subs.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {(s.display_name || "Employee")} — {s.email} ({s.role})
-                </option>
-              ))}
+              <option value="">— Select employee or subcontractor —</option>
+              {employeeOptions.length ? (
+                <optgroup label="Employees">
+                  {employeeOptions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {(s.display_name || "Employee")} — {s.email} ({s.role})
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {subcontractorOptions.length ? (
+                <optgroup label="Subcontractors">
+                  {subcontractorOptions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {(s.display_name || "Subcontractor")} — {s.email} ({s.role})
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
             </select>
+            </div>
           </div>
+
+          {subcontractorOptions.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+              <div className="font-semibold text-slate-800">No subcontractors yet</div>
+              <div className="mt-1 text-xs text-slate-500">
+                Add one now if you want to assign work to a subcontractor later.
+              </div>
+              <div className="mt-3">
+                <Link
+                  to="/app/subcontractors"
+                  className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  data-testid="add-subcontractor-link"
+                >
+                  Add Subcontractor
+                </Link>
+              </div>
+            </div>
+          ) : null}
 
           {conflicts?.message ? (
             conflicts.ok === false ? (
@@ -220,7 +290,7 @@ export default function MilestoneAssignDrawer({
           </div>
 
           <div className="text-xs text-gray-500">
-            Tip: Project owner controls visibility; milestone assignment lets you assign specific tasks to different employees.
+            Tip: Project owner controls visibility; milestone assignment lets you assign specific tasks to different team members.
           </div>
         </div>
 

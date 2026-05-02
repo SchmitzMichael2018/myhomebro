@@ -138,9 +138,15 @@ const subaccountsPayload = [
     email: "jordan@example.com",
     role: "employee_milestones",
   },
+  {
+    id: 3,
+    display_name: "Skyline Subs",
+    email: "skyline@example.com",
+    role: "subcontractor",
+  },
 ];
 
-async function installAssignmentsRoutes(page, assignedActionCount = 4) {
+async function installAssignmentsRoutes(page, assignedActionCount = 4, subaccounts = subaccountsPayload) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
   });
@@ -165,7 +171,7 @@ async function installAssignmentsRoutes(page, assignedActionCount = 4) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(subaccountsPayload),
+      body: JSON.stringify(subaccounts),
     });
   });
 
@@ -245,6 +251,27 @@ test("assignments page shows all projects and work controls", async ({ page }) =
   await expect(page.getByTestId("assignment-owner-editor-101")).toHaveCount(0);
 
   await page.getByTestId("assignment-work-button-202").click();
-  await expect(page.locator("div.fixed select").first()).toBeVisible();
+  await expect(page.getByTestId("assign-work-assignee-select")).toBeVisible();
+  await expect(page.getByText("Employees 2")).toBeVisible();
+  await expect(page.getByText("Subcontractors 1")).toBeVisible();
+  await expect(page.locator('[data-testid="assign-work-assignee-select"] optgroup[label="Employees"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="assign-work-assignee-select"] optgroup[label="Subcontractors"]')).toHaveCount(1);
+  await expect(page.getByTestId("assign-work-assignee-select")).toContainText("Taylor Crew");
+  await expect(page.getByTestId("assign-work-assignee-select")).toContainText("Skyline Subs");
   await expect(page.getByRole("button", { name: "Remove Assignment" }).first()).toBeVisible();
+});
+
+test("assign work shows empty subcontractor state with add button", async ({ page }) => {
+  const employeesOnly = subaccountsPayload.filter((sub) => String(sub.role || "").toLowerCase() !== "subcontractor");
+  await installAssignmentsRoutes(page, 4, employeesOnly);
+
+  await page.goto("/app/assignments", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("assignment-work-button-202").click();
+
+  await expect(page.getByText("No subcontractors yet")).toBeVisible();
+  await expect(page.getByTestId("add-subcontractor-link")).toHaveAttribute("href", "/app/subcontractors");
+  await expect(page.getByText("Employees 2")).toBeVisible();
+  await expect(page.getByText("Subcontractors 0")).toBeVisible();
+  await expect(page.locator('[data-testid="assign-work-assignee-select"] optgroup[label="Employees"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="assign-work-assignee-select"] optgroup[label="Subcontractors"]')).toHaveCount(0);
 });
