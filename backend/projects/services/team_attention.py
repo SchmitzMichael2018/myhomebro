@@ -36,6 +36,7 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
             "submitted_for_review_count": 0,
             "unassigned_assignment_count": 0,
             "assigned_work_count": 0,
+            "assigned_action_count": 0,
             "overdue_milestone_count": 0,
             "pending_invites_count": 0,
             "active_subcontractor_count": 0,
@@ -75,6 +76,23 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
         completed=False,
         completion_date__lt=today,
     ).count()
+
+    active_assigned_count = milestone_qs.filter(
+        completed=False,
+        assigned_subcontractor_invitation__isnull=False,
+    ).exclude(
+        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    ).exclude(
+        completion_date__lt=today
+    ).count()
+    overdue_assigned_count = milestone_qs.filter(
+        completed=False,
+        assigned_subcontractor_invitation__isnull=False,
+        completion_date__lt=today,
+    ).exclude(
+        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    ).count()
+    assigned_action_count = active_assigned_count + awaiting_review_count + overdue_assigned_count
     pending_invites_count = SubcontractorInvitation.objects.filter(
         contractor=contractor,
         status=SubcontractorInvitationStatus.PENDING,
@@ -96,6 +114,7 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
         "submitted_for_review_count": awaiting_review_count,
         "unassigned_assignment_count": unassigned_assignment_count,
         "assigned_work_count": assigned_work_count,
+        "assigned_action_count": assigned_action_count,
         "overdue_milestone_count": overdue_milestone_count,
         "pending_invites_count": pending_invites_count,
         "active_subcontractor_count": active_subcontractor_count,

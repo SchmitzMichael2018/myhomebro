@@ -100,11 +100,13 @@ export default function MilestonesAssign() {
 
               <div className="mt-3">
                 <AssignEmployeeInline
-                  label="Assign This Milestone (Override)"
+                  label="Assign Work"
                   help="Only the selected employee will see this milestone (even if the agreement is assigned broadly)."
                   currentAssignees={overrideMap[m.id] || []}
                   onAssign={(subId) => assign(m.id, subId)}
                   onUnassign={() => unassign(m.id)}
+                  assignButtonLabel="Assign Work"
+                  unassignButtonLabel="Remove Assignment"
                 />
               </div>
             </div>

@@ -12,6 +12,7 @@ const whoamiPayload = {
     submitted_for_review_count: 1,
     unassigned_assignment_count: 1,
     assigned_work_count: 2,
+    assigned_action_count: 4,
     overdue_milestone_count: 1,
     pending_invites_count: 1,
     active_subcontractor_count: 2,
@@ -79,7 +80,7 @@ const milestoneRowsByAgreement = {
       {
         id: 1001,
         title: "Demo Prep",
-        completion_date: "2026-04-10",
+        completion_date: "2026-12-10",
         subcontractor_completion_status: "not_submitted",
         completed: false,
         project_class: "residential",
@@ -92,7 +93,7 @@ const milestoneRowsByAgreement = {
       {
         id: 2001,
         title: "Cabinet Install",
-        completion_date: "2026-04-28",
+        completion_date: "2026-12-28",
         subcontractor_completion_status: "submitted_for_review",
         completed: false,
         project_class: "commercial",
@@ -238,8 +239,8 @@ const calendarPayload = {
     {
       id: "AA-202-1",
       title: "Taylor Crew — Commercial Buildout",
-      start: "2026-04-22",
-      end: "2026-04-30",
+      start: "2026-05-04",
+      end: "2026-05-09",
       allDay: true,
       extendedProps: {
         type: "agreement_assignment",
@@ -255,8 +256,8 @@ const calendarPayload = {
     {
       id: "MA-2001-1",
       title: "A#202 • M1 — Cabinet Install",
-      start: "2026-04-28",
-      end: "2026-04-29",
+      start: "2026-05-06",
+      end: "2026-05-07",
       allDay: true,
       extendedProps: {
         type: "milestone_override",
@@ -479,7 +480,7 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await page.goto("/app/team-overview", { waitUntil: "domcontentloaded" });
 
   await expect(page.locator("aside a[href='/app/reviewer/queue']").locator("span").last()).toHaveText("1");
-  await expect(page.locator("aside a[href='/app/assignments']").locator("span").last()).toHaveText("1");
+  await expect(page.locator("aside a[href='/app/assignments']").locator("span").last()).toHaveText("4");
   await expect(page.locator("aside a[href='/app/subcontractors']").locator("span").last()).toHaveText("1");
 
   await expect(page.getByTestId("team-overview-summary")).toContainText("Active Team");

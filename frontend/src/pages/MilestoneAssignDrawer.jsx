@@ -90,7 +90,7 @@ export default function MilestoneAssignDrawer({
 
   const headerTitle = agreement
     ? agreement.title || agreement.project_title || agreement.project?.title || `Agreement #${agreement.id}`
-    : "Milestones";
+    : "Work";
 
   const homeowner = agreement ? agreement.homeowner_name || agreement.homeowner?.full_name || "" : "";
 
@@ -142,7 +142,7 @@ export default function MilestoneAssignDrawer({
         {/* top bar */}
         <div className="p-4 border-b border-gray-200 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-lg font-bold">Milestones</div>
+            <div className="text-lg font-bold">Assign Work</div>
             <div className="text-sm text-gray-600 truncate">
               <b>{headerTitle}</b>
               {homeowner ? <span className="text-gray-500"> — {homeowner}</span> : null}
@@ -200,18 +200,18 @@ export default function MilestoneAssignDrawer({
             <SmallButton
               onClick={handleAssignSelected}
               disabled={disableUI || !selectedEmployeeId || selectedCount === 0}
-              title="Assign selected milestones as overrides"
+              title="Assign selected milestones to the selected employee"
             >
-              Assign Selected
+              Assign to Selected Milestones
             </SmallButton>
 
             <SmallButton
               tone="secondary"
               onClick={handleClearSelected}
               disabled={disableUI || selectedCount === 0}
-              title="Clear overrides for selected milestones"
+              title="Remove assignment from selected milestones"
             >
-              Clear Overrides
+              Remove Assignment
             </SmallButton>
 
             <div className="ml-auto text-xs text-gray-500 flex items-center">
@@ -220,7 +220,7 @@ export default function MilestoneAssignDrawer({
           </div>
 
           <div className="text-xs text-gray-500">
-            Tip: Agreement assignment controls visibility; milestone overrides let you assign specific tasks to different employees.
+            Tip: Project owner controls visibility; milestone assignment lets you assign specific tasks to different employees.
           </div>
         </div>
 

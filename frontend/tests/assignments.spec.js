@@ -1,0 +1,238 @@
+import { expect, test } from "@playwright/test";
+
+function buildWhoAmI(assignedActionCount = 4) {
+  return {
+    user_id: 7,
+    email: "owner@example.com",
+    type: "contractor",
+    role: "contractor_owner",
+    identity_type: "contractor_owner",
+    review_queue_count: 1,
+    attention_counts: {
+      awaiting_review_count: 1,
+      submitted_for_review_count: 1,
+      unassigned_assignment_count: 1,
+      assigned_work_count: 2,
+      assigned_action_count: assignedActionCount,
+      overdue_milestone_count: 1,
+      pending_invites_count: 1,
+      active_subcontractor_count: 2,
+      total_attention_count: 4,
+    },
+  };
+}
+
+const agreementsPayload = {
+  results: [
+    {
+      id: 101,
+      title: "Residential Refresh",
+      project_class: "residential",
+      homeowner_name: "Jordan Customer",
+      start: "2026-04-01",
+      end: "2026-04-15",
+    },
+    {
+      id: 202,
+      title: "Commercial Buildout",
+      project_class: "commercial",
+      homeowner_name: "Acme LLC",
+      start: "2026-04-03",
+      end: "2026-04-30",
+    },
+  ],
+};
+
+const milestonesByAgreement = {
+  101: {
+    results: [
+      {
+        id: 1001,
+        title: "Demo Prep",
+        completion_date: "2026-12-10",
+        subcontractor_completion_status: "not_submitted",
+        completed: false,
+        project_class: "residential",
+        assigned_worker_display: "",
+      },
+      {
+        id: 1002,
+        title: "Site Cleanup",
+        completion_date: "2026-12-11",
+        subcontractor_completion_status: "not_submitted",
+        completed: false,
+        project_class: "residential",
+        assigned_worker_display: "",
+      },
+    ],
+  },
+  202: {
+    results: [
+      {
+        id: 2001,
+        title: "Cabinet Install",
+        completion_date: "2026-12-28",
+        subcontractor_completion_status: "submitted_for_review",
+        completed: false,
+        project_class: "commercial",
+        assigned_worker_display: "Taylor Crew",
+        assigned_worker: { subaccount_id: 1, display_name: "Taylor Crew" },
+      },
+    ],
+  },
+};
+
+const agreementStatusById = {
+  101: { agreement_id: 101, assigned_subaccounts: [], count: 0 },
+  202: {
+    agreement_id: 202,
+    assigned_subaccounts: [
+      { id: 1, display_name: "Taylor Crew", email: "taylor@example.com", role: "employee_supervisor", is_active: true },
+    ],
+    count: 1,
+  },
+};
+
+const milestoneStatusById = {
+  1001: {
+    milestone_id: 1001,
+    agreement_id: 101,
+    override_subaccount: null,
+    agreement_assigned_subaccounts: [],
+    agreement_count: 0,
+  },
+  1002: {
+    milestone_id: 1002,
+    agreement_id: 101,
+    override_subaccount: null,
+    agreement_assigned_subaccounts: [],
+    agreement_count: 0,
+  },
+  2001: {
+    milestone_id: 2001,
+    agreement_id: 202,
+    override_subaccount: {
+      id: 1,
+      display_name: "Taylor Crew",
+      email: "taylor@example.com",
+      role: "employee_supervisor",
+      is_active: true,
+    },
+    agreement_assigned_subaccounts: [
+      { id: 1, display_name: "Taylor Crew", email: "taylor@example.com", role: "employee_supervisor", is_active: true },
+    ],
+    agreement_count: 1,
+  },
+};
+
+const subaccountsPayload = [
+  {
+    id: 1,
+    display_name: "Taylor Crew",
+    email: "taylor@example.com",
+    role: "employee_supervisor",
+  },
+  {
+    id: 2,
+    display_name: "Jordan Crew",
+    email: "jordan@example.com",
+    role: "employee_milestones",
+  },
+];
+
+async function installAssignmentsRoutes(page, assignedActionCount = 4) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildWhoAmI(assignedActionCount)),
+    });
+  });
+
+  await page.route("**/api/payments/onboarding/status/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ onboarding_status: "complete", connected: true }),
+    });
+  });
+
+  await page.route("**/api/projects/subaccounts**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(subaccountsPayload),
+    });
+  });
+
+  await page.route("**/api/projects/agreements**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.match(/\/api\/projects\/agreements\/\d+\/milestones\/$/)) {
+      const agreementId = Number(url.pathname.split("/").filter(Boolean)[3]);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(milestonesByAgreement[agreementId] || { results: [] }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(agreementsPayload),
+    });
+  });
+
+  await page.route("**/api/projects/assignments/agreements/*/status**", async (route) => {
+    const url = new URL(route.request().url());
+    const agreementId = Number(url.pathname.split("/").filter(Boolean)[4]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(agreementStatusById[agreementId] || { agreement_id: agreementId, assigned_subaccounts: [], count: 0 }),
+    });
+  });
+
+  await page.route("**/api/projects/assignments/milestones/*/status**", async (route) => {
+    const url = new URL(route.request().url());
+    const milestoneId = Number(url.pathname.split("/").filter(Boolean)[4]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(milestoneStatusById[milestoneId] || { milestone_id: milestoneId, agreement_count: 0 }),
+    });
+  });
+}
+
+test("sidebar badge hides when no assigned action count is present", async ({ page }) => {
+  await installAssignmentsRoutes(page, 0);
+
+  await page.goto("/app/assignments", { waitUntil: "domcontentloaded" });
+
+  await expect(page.locator("aside a[href='/app/assignments'] .ml-auto")).toHaveCount(0);
+});
+
+test("assignments page shows all projects and work controls", async ({ page }) => {
+  await installAssignmentsRoutes(page, 4);
+
+  await page.goto("/app/assignments", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("Residential Refresh")).toBeVisible();
+  await expect(page.getByText("Commercial Buildout")).toBeVisible();
+  await expect(page.getByTestId("assignment-row-101")).toContainText("No owner");
+  await expect(page.getByTestId("assignment-row-101")).toContainText("Unassigned");
+  await expect(page.getByTestId("assignment-row-202")).toContainText("Awaiting Review");
+  await expect(page.getByTestId("assignment-row-202")).toContainText("Owner: Taylor Crew");
+  await expect(page.getByRole("button", { name: "Assign Work" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "View Work" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Unassign$/ })).toHaveCount(0);
+
+  await page.getByTestId("assignment-work-button-202").click();
+  await expect(page.locator("div.fixed select").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Remove Assignment" }).first()).toBeVisible();
+});

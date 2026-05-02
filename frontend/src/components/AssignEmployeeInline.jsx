@@ -13,6 +13,8 @@ export default function AssignEmployeeInline({
   help = "",
   onAssign,
   onUnassign,
+  assignButtonLabel = "Assign",
+  unassignButtonLabel = "Remove Assignment",
   disabled = false,
 }) {
   const [loading, setLoading] = useState(true);
@@ -113,7 +115,7 @@ export default function AssignEmployeeInline({
           disabled={disabled || loading || busy || !selected}
           className="rounded-lg bg-blue-600 text-white px-4 py-2 font-semibold hover:bg-blue-700 disabled:opacity-60"
         >
-          {busy ? "Working..." : "Assign"}
+          {busy ? "Working..." : assignButtonLabel}
         </button>
 
         <button
@@ -121,7 +123,7 @@ export default function AssignEmployeeInline({
           disabled={disabled || loading || busy || !selected}
           className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"
         >
-          {busy ? "Working..." : "Unassign"}
+          {busy ? "Working..." : unassignButtonLabel}
         </button>
       </div>
     </div>

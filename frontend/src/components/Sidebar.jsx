@@ -364,7 +364,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
         <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} count={Number(attentionCounts.pending_invites_count || 0)} />
         <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
-        <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} count={Number(attentionCounts.unassigned_assignment_count || 0)} />
+        <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} count={Number(attentionCounts.assigned_action_count || 0)} />
         <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
@@ -667,7 +667,7 @@ export default function Sidebar({ variant = "desktop" }) {
                 to={`${APP_BASE}/assignments`}
                 label="Assignments"
                 icon={BriefcaseBusiness}
-                count={Number(attentionCounts.unassigned_assignment_count || 0)}
+                count={Number(attentionCounts.assigned_action_count || 0)}
               />
               <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
             </NavGroup>

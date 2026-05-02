@@ -58,6 +58,7 @@ def _empty_attention_counts() -> dict:
         "submitted_for_review_count": 0,
         "unassigned_assignment_count": 0,
         "assigned_work_count": 0,
+        "assigned_action_count": 0,
         "overdue_milestone_count": 0,
         "pending_invites_count": 0,
         "active_subcontractor_count": 0,

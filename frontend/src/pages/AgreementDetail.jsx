@@ -1498,6 +1498,8 @@ export default function AgreementDetail() {
           help="Assigning an agreement makes all milestones visible to that employee unless a milestone is explicitly assigned to someone else."
           onAssign={(subId) => assignAgreement(subId)}
           onUnassign={(subId) => unassignAgreement(subId)}
+          assignButtonLabel="Assign Owner"
+          unassignButtonLabel="Remove Owner"
         />
       )}
 

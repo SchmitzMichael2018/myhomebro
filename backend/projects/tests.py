@@ -7718,6 +7718,7 @@ class ContractorWhoAmIReviewQueueCountTests(TestCase):
         attention = payload["attention_counts"]
         self.assertEqual(attention["awaiting_review_count"], 1)
         self.assertEqual(attention["unassigned_assignment_count"], 1)
+        self.assertEqual(attention["assigned_action_count"], 1)
         self.assertEqual(attention["overdue_milestone_count"], 1)
         self.assertEqual(attention["pending_invites_count"], 1)
         self.assertGreaterEqual(attention["total_attention_count"], 4)
