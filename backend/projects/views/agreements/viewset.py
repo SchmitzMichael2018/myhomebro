@@ -49,6 +49,7 @@ from projects.services.agreements.pdf_actions import (
     mark_agreement_previewed,
     finalize_agreement_pdf,
 )
+from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 
 from projects.services.agreement_completion import (
     check_agreement_completion,
@@ -756,6 +757,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def finalize_pdf(self, request, pk=None):
         ag = self.get_object()
+        try:
+            assert_pricing_ready_for_agreement(ag)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         addr_error = self._validate_required_addresses(ag)
         if addr_error:
             return addr_error
@@ -784,6 +790,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def send_signature_request(self, request, pk=None):
         ag: Agreement = self.get_object()
+        try:
+            assert_pricing_ready_for_agreement(ag)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         addr_error = self._validate_required_addresses(ag)
         if addr_error:
             return addr_error
@@ -819,6 +830,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="send_final_agreement_link")
     def send_final_agreement_link(self, request, pk=None):
         ag: Agreement = self.get_object()
+        try:
+            assert_pricing_ready_for_agreement(ag)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         addr_error = self._validate_required_addresses(ag)
         if addr_error:
             return addr_error
@@ -856,11 +872,16 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag: Agreement = self.get_object()
         require_contractor_sign_allowed(request.user, ag)
 
-        satisfied_before = self._signature_satisfied(ag)
+        try:
+            assert_pricing_ready_for_agreement(ag)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         addr_error = self._validate_required_addresses(ag)
         if addr_error:
             return addr_error
+
+        satisfied_before = self._signature_satisfied(ag)
 
         name = (request.data.get("typed_name") or request.data.get("name") or "").strip()
         signature_file = request.FILES.get("signature")

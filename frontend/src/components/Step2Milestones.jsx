@@ -1284,6 +1284,7 @@ export default function Step2Milestones({
     };
   }, [effectiveMilestones]);
   const agreementPricingStrategy = safeStr(agreementMeta?.pricing_strategy || "fixed").toLowerCase() || "fixed";
+  // Canonical Step 2 wizard state lives here; legacy milestone draft keys are kept out of this flow.
   const subcontractorPlanStorageKey = useMemo(
     () => `mhb_step2_subcontractor_plan_${agreementId || "new"}`,
     [agreementId]
@@ -7460,6 +7461,7 @@ export default function Step2Milestones({
                   subcontractorAssignTarget.subcontractor_milestone_agreement ||
                   subcontractorAssignTarget
                 }
+                milestoneAmount={subcontractorAssignTarget.amount}
                 onAssign={async (invitationId, options) => {
                   await assignMilestoneSubcontractor(subcontractorAssignTarget.id, invitationId, options);
                   if (typeof reloadMilestones === "function") {

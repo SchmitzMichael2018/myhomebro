@@ -4272,6 +4272,68 @@ test('agreement wizard step 4 blocks sending when subcontractor quotes are pendi
   await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText(
     '1 milestone is still waiting on subcontractor pricing.'
   );
+  await expect(page.getByTestId('step4-resolve-quotes-panel')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeDisabled();
+});
+
+test('agreement wizard step 4 blocks sending when requires_sub_quote has no accepted quote yet', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID + 20,
+    agreement_id: AGREEMENT_ID + 20,
+    project_title: 'Unresolved Quote Project',
+    title: 'Unresolved Quote Project',
+    description: 'Pricing still needs an accepted subcontractor quote.',
+    project_class: 'residential',
+    project_type: 'Residential',
+    project_subtype: 'Kitchen Remodel',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    homeowner_phone: '555-555-5555',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    pricing_strategy: 'requires_sub_quote',
+    status: 'draft',
+    pdf_version: 1,
+    pdf_viewed: true,
+    warranty_type: 'default',
+    require_contractor_signature: true,
+    require_customer_signature: true,
+    step_status: '4',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 21,
+        agreement: agreement.id,
+        order: 1,
+        title: 'Cabinet Install',
+        description: 'Install cabinets and finish trim.',
+        amount: '4000.00',
+      },
+    ],
+    fundingPreview: {
+      project_amount: 4000,
+      homeowner_escrow: 4000,
+      escrow_funded: false,
+      rate: 0.05,
+      flat_fee: 1,
+      fee_cap: 750,
+    },
+  });
+
+  await page.goto(`/app/agreements/${agreement.id}/wizard?step=4`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step4-pricing-readiness-panel')).toContainText(
+    'This agreement requires subcontractor pricing before it can be sent.'
+  );
+  await expect(page.getByTestId('step4-resolve-quotes-panel')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeDisabled();
 });
 

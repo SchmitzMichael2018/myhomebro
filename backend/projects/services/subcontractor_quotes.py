@@ -28,6 +28,8 @@ ACTIVE_QUOTE_STATUSES = {
     SubcontractorQuoteRequestStatus.REVISION_REQUESTED,
 }
 
+REQUIRES_SUB_QUOTE_BLOCKER_MESSAGE = "This agreement requires subcontractor pricing before it can be sent."
+
 
 def _normalize_money(value: Any) -> Decimal:
     if value is None or value == "":
@@ -405,7 +407,10 @@ def accept_quote_request(
     override_reason = (override_reason or quote.override_reason or "").strip()
     milestone_amount = _normalize_money(getattr(quote.milestone, "amount", 0))
     if _normalize_money(quote.quoted_amount) > milestone_amount and not override_reason:
-        raise ValueError("accepting this quote requires an override_reason because it exceeds the milestone amount.")
+        raise ValueError(
+            "Subcontractor pay exceeds this milestone's customer price. You may lose money on this milestone. "
+            "Add an override reason to continue."
+        )
 
     quote.override_reason = override_reason
     agreement_obj = upsert_subcontractor_milestone_agreement(
@@ -459,11 +464,38 @@ def get_pricing_readiness_for_agreement(agreement: Agreement) -> dict[str, Any]:
     fixed_count = 0
     estimated_count = 0
     pending_quote_count = 0
+    unresolved_required_quote_count = 0
+    accepted_required_quote_count = 0
     blockers = []
 
     for milestone in milestones:
         latest_quote = latest_by_milestone.get(milestone.id)
         latest_status = latest_quote.status if latest_quote is not None else ""
+        if pricing_strategy == "requires_sub_quote":
+            if latest_status == SubcontractorQuoteRequestStatus.ACCEPTED:
+                accepted_required_quote_count += 1
+                fixed_count += 1
+                continue
+
+            unresolved_required_quote_count += 1
+            if latest_status in ACTIVE_QUOTE_STATUSES:
+                pending_quote_count += 1
+            blockers.append(
+                {
+                    "milestone_id": milestone.id,
+                    "milestone_title": getattr(milestone, "title", "") or "",
+                    "quote_id": latest_quote.id if latest_quote else None,
+                    "quote_status": latest_status,
+                    "quote_status_label": latest_quote.get_status_display() if latest_quote else "",
+                    "quote_amount": _money_text(latest_quote.quoted_amount) if latest_quote and latest_quote.quoted_amount is not None else "",
+                    "subcontractor_name": _safe_display_name(
+                        getattr(latest_quote.subcontractor_invitation, "accepted_by_user", None)
+                    ) if latest_quote else "",
+                    "reason": "pending_quote" if latest_status in ACTIVE_QUOTE_STATUSES else "quote_pricing_required",
+                }
+            )
+            continue
+
         if pricing_strategy == "estimate":
             estimated_count += 1
 
@@ -488,11 +520,11 @@ def get_pricing_readiness_for_agreement(agreement: Agreement) -> dict[str, Any]:
         if pricing_strategy == "fixed":
             fixed_count += 1
 
-    blocked = pricing_strategy == "requires_sub_quote" and pending_quote_count > 0
-    if pricing_strategy == "requires_sub_quote" and not pending_quote_count:
-        safe_summary = "All requested subcontractor quotes are ready."
+    blocked = pricing_strategy == "requires_sub_quote" and unresolved_required_quote_count > 0
+    if pricing_strategy == "requires_sub_quote" and not unresolved_required_quote_count:
+        safe_summary = "All required subcontractor pricing is ready."
     elif pricing_strategy == "requires_sub_quote":
-        safe_summary = "Subcontractor pricing is still pending."
+        safe_summary = REQUIRES_SUB_QUOTE_BLOCKER_MESSAGE
     elif pricing_strategy == "estimate":
         safe_summary = "Some pricing is estimated and may require adjustment later."
     else:
@@ -504,8 +536,17 @@ def get_pricing_readiness_for_agreement(agreement: Agreement) -> dict[str, Any]:
         "fixed_count": fixed_count,
         "estimated_count": estimated_count,
         "pending_quote_count": pending_quote_count,
+        "requires_sub_quote_unresolved_count": unresolved_required_quote_count,
+        "requires_sub_quote_accepted_count": accepted_required_quote_count,
         "blocked": blocked,
         "next_status": "blocked" if blocked else "ready",
         "blockers": blockers,
         "safe_summary": safe_summary,
     }
+
+
+def assert_pricing_ready_for_agreement(agreement: Agreement) -> dict[str, Any]:
+    readiness = get_pricing_readiness_for_agreement(agreement)
+    if readiness.get("blocked"):
+        raise ValueError(REQUIRES_SUB_QUOTE_BLOCKER_MESSAGE)
+    return readiness

@@ -213,7 +213,10 @@ def _validate_terms(
     if agreed_pay <= Decimal("0.00"):
         raise ValueError("agreed_pay must be greater than 0.")
     if agreed_pay > milestone_amount and not override_reason.strip():
-        raise ValueError("agreed_pay cannot exceed the milestone amount without an override reason.")
+        raise ValueError(
+            "Subcontractor pay exceeds this milestone's customer price. You may lose money on this milestone. "
+            "Add an override reason to continue."
+        )
 
 
 @transaction.atomic

@@ -1041,7 +1041,7 @@ export default function Step4Finalize({
     [agreementId, displayMilestones, pricingStrategy]
   );
   const pricingReadinessCopy = useMemo(() => getPricingReadinessCopy(pricingReadiness), [pricingReadiness]);
-  const sendBlockedByQuotes = pricingStrategy === "requires_sub_quote" && pricingReadiness.pendingQuoteCount > 0;
+  const sendBlockedByQuotes = pricingStrategy === "requires_sub_quote" && Boolean(pricingReadiness.blocked);
   const sendNeedsEstimateWarning = pricingStrategy === "estimate" && pricingReadiness.estimatedCount > 0;
 
   const firstInvalidTitle = useMemo(() => {
@@ -1567,7 +1567,7 @@ export default function Step4Finalize({
 
     if (!forceSend) {
       if (sendBlockedByQuotes) {
-        toast.error("Subcontractor pricing is still pending. Resolve quotes before sending.");
+        toast.error("This agreement requires subcontractor pricing before it can be sent.");
         return;
       }
       if (sendNeedsEstimateWarning) {
@@ -1626,6 +1626,11 @@ export default function Step4Finalize({
         toast.error("Unable to copy the customer link.");
       }
     }
+  };
+
+  const handleResolveQuotes = () => {
+    if (!agreementId) return;
+    navigate(`/app/agreements/${agreementId}/wizard?step=2`);
   };
 
   const handleResendFinalLink = async () => {
@@ -1904,10 +1909,10 @@ export default function Step4Finalize({
             </div>
           </div>
 
-          {pricingSendPrompt ? (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-amber-900">
-              <div className="font-semibold">Some pricing is estimated and may require adjustment later.</div>
-              <div className="mt-3 flex flex-wrap gap-2">
+        {pricingSendPrompt ? (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-amber-900">
+            <div className="font-semibold">Some pricing is estimated and may require adjustment later.</div>
+            <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => handleSendHomeownerLink(true)}
@@ -1922,10 +1927,28 @@ export default function Step4Finalize({
                 >
                   Go Back
                 </button>
-              </div>
             </div>
-          ) : null}
-        </section>
+          </div>
+        ) : null}
+
+        {sendBlockedByQuotes ? (
+          <div
+            data-testid="step4-resolve-quotes-panel"
+            className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+          >
+            <div className="font-semibold">This agreement requires subcontractor pricing before it can be sent.</div>
+            <div className="mt-1">Resolve the quotes in Step 2, then come back here to continue.</div>
+            <button
+              type="button"
+              onClick={handleResolveQuotes}
+              className="mt-3 rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800"
+              data-testid="step4-resolve-quotes-button"
+            >
+              Resolve Quotes
+            </button>
+          </div>
+        ) : null}
+      </section>
 
       </div>
 
@@ -2532,6 +2555,11 @@ export default function Step4Finalize({
                 >
                   {sendingLink ? "Sending link�" : "Send to Customer"}
                 </button>
+                {sendBlockedByQuotes ? (
+                  <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-800">
+                    This agreement requires subcontractor pricing before it can be sent.
+                  </div>
+                ) : null}
                 {sendError ? <div className="mt-1 text-[11px] text-red-600">{sendError}</div> : null}
               </>
             ) : (

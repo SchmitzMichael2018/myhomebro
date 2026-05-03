@@ -1283,6 +1283,42 @@ test('step 1 pricing strategy selection persists and step 2 subcontractor pricin
   );
 });
 
+test('step 2 warns before saving subcontractor pay above the customer milestone amount', async ({
+  page,
+}) => {
+  await installAgreementWizardMocks(page, {
+    estimateResponse: {
+      suggested_total_price: '25000.00',
+      suggested_price_low: '22500.00',
+      suggested_price_high: '27500.00',
+      suggested_duration_days: 10,
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+        confidence_level: 'medium',
+      },
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('step2-plan-details-toggle-801').click();
+  await expect(page.getByRole('button', { name: 'Assign with fixed pay' })).toBeVisible();
+  await page.getByRole('button', { name: 'Assign with fixed pay' }).first().click();
+  await expect(page.getByText('Assign Subcontractor')).toBeVisible();
+
+  await page.getByTestId('subcontractor-assignment-select').selectOption('41');
+  await page.getByTestId('subcontractor-agreed-pay-input').fill('5000');
+  await page.getByTestId('subcontractor-assign-button').click();
+
+  await expect(page.getByTestId('subcontractor-overpay-warning')).toContainText(
+    "Subcontractor pay exceeds this milestone's customer price. You may lose money on this milestone."
+  );
+  await expect(page.getByTestId('subcontractor-overpay-warning')).toContainText('Adjust Amount');
+  await expect(page.getByTestId('subcontractor-overpay-warning')).toContainText('Continue Anyway');
+});
+
 test('step 2 reset work plan clears milestones, keeps pricing intact, and shows the empty state', async ({
   page,
 }) => {

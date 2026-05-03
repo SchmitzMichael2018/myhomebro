@@ -2,6 +2,15 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import DateField from "./DateField.jsx";
+import {
+  clearStep2MilestoneDraft,
+  readStep2MilestoneDraft,
+  writeStep2MilestoneDraft,
+} from "../lib/step2MilestoneDraftStorage";
+
+// Legacy Step 2 component retained only for older routes.
+// Canonical wizard Step 2 is Step2Milestones.jsx, and this file migrates any old milestone draft once
+// into the shared canonical draft key before writing updates back.
 
 const daysOptions = Array.from({ length: 31 }, (_, i) => i);
 const hoursOptions = Array.from({ length: 24 }, (_, i) => i);
@@ -36,13 +45,13 @@ const san = (m, idx) => ({
 });
 
 export default function AgreementMilestoneStep({ step1Data, onBack, onSubmit, draftKey: draftKeyProp }) {
-  const draftKey = useMemo(() => {
+  const draftAgreementKey = useMemo(() => {
     const base =
       draftKeyProp ||
       step1Data?.agreementId ||
       step1Data?.projectId ||
       (step1Data?.title ? step1Data.title.replace(/\s+/g, "_").slice(0, 40) : "new");
-    return `agreement:milestones:${base}`;
+    return base;
   }, [draftKeyProp, step1Data]);
 
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -52,14 +61,7 @@ export default function AgreementMilestoneStep({ step1Data, onBack, onSubmit, dr
   const [loadedFromDraft, setLoadedFromDraft] = useState(false);
 
   useEffect(() => {
-    let loaded = null;
-    try {
-      const raw = localStorage.getItem(draftKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed?.milestones)) loaded = parsed;
-      }
-    } catch {}
+    let loaded = readStep2MilestoneDraft(draftAgreementKey);
     if (!loaded && Array.isArray(step1Data?.milestones) && step1Data.milestones.length > 0) {
       loaded = { milestones: step1Data.milestones, lastSavedAt: null };
     }
@@ -122,17 +124,17 @@ export default function AgreementMilestoneStep({ step1Data, onBack, onSubmit, dr
   const saveDraft = useCallback(() => {
     try {
       const ts = new Date().toISOString();
-      localStorage.setItem(draftKey, JSON.stringify({ milestones, lastSavedAt: ts }));
+      writeStep2MilestoneDraft(draftAgreementKey, { milestones, lastSavedAt: ts });
       setLastSavedAt(ts);
       setLoadedFromDraft(true);
     } catch {}
-  }, [draftKey, milestones]);
+  }, [draftAgreementKey, milestones]);
 
   const clearDraft = useCallback(() => {
-    try { localStorage.removeItem(draftKey); } catch {}
+    clearStep2MilestoneDraft(draftAgreementKey);
     setLastSavedAt(null);
     setLoadedFromDraft(false);
-  }, [draftKey]);
+  }, [draftAgreementKey]);
 
   const next = () => {
     const err = validate();

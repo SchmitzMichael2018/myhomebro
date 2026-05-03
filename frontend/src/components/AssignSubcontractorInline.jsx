@@ -31,6 +31,7 @@ export default function AssignSubcontractorInline({
   currentAssignment = null,
   currentCompliance = null,
   currentAgreement = null,
+  milestoneAmount = null,
   onAssign,
   onUnassign,
   disabled = false,
@@ -42,6 +43,7 @@ export default function AssignSubcontractorInline({
   const [err, setErr] = useState("");
   const [decision, setDecision] = useState(null);
   const [overrideReason, setOverrideReason] = useState("");
+  const [showOverpayWarning, setShowOverpayWarning] = useState(false);
 
   const options = useMemo(
     () =>
@@ -57,7 +59,16 @@ export default function AssignSubcontractorInline({
     [acceptedSubcontractors]
   );
 
-  async function runAssign(complianceAction = "") {
+  const currentMilestoneAmount = Number(milestoneAmount ?? currentAgreement?.customer_milestone_amount ?? currentAgreement?.milestone_amount ?? currentAgreement?.amount ?? NaN);
+  const agreedPayNumber = Number(agreedPay);
+  const overpayWarningNeeded =
+    Number.isFinite(currentMilestoneAmount) &&
+    Number.isFinite(agreedPayNumber) &&
+    currentMilestoneAmount > 0 &&
+    agreedPayNumber > currentMilestoneAmount &&
+    !String(overrideReason || "").trim();
+
+  async function runAssign(complianceAction = "", overrideReasonValue = overrideReason) {
     setErr("");
     if (!selected) {
       setErr("Select a subcontractor first.");
@@ -69,7 +80,7 @@ export default function AssignSubcontractorInline({
     try {
       await onAssign(Number(selected), {
         complianceAction,
-        overrideReason,
+        overrideReason: overrideReasonValue,
         agreedPay,
         paymentReleaseMode,
         sendAgreement: true,
@@ -79,6 +90,7 @@ export default function AssignSubcontractorInline({
       setPaymentReleaseMode("manual_release");
       setDecision(null);
       setOverrideReason("");
+      setShowOverpayWarning(false);
     } catch (e) {
       console.error(e);
       const payload = e?.response?.data;
@@ -97,6 +109,10 @@ export default function AssignSubcontractorInline({
   }
 
   async function handleAssign() {
+    if (overpayWarningNeeded) {
+      setShowOverpayWarning(true);
+      return;
+    }
     await runAssign("");
   }
 
@@ -107,6 +123,15 @@ export default function AssignSubcontractorInline({
       return;
     }
     await runAssign(action);
+  }
+
+  async function handleContinueAnyway() {
+    const fallbackReason =
+      String(overrideReason || "").trim() ||
+      "Subcontractor pay exceeds this milestone's customer price. You may lose money on this milestone.";
+    setOverrideReason(fallbackReason);
+    setShowOverpayWarning(false);
+    await runAssign("", fallbackReason);
   }
 
   async function handleUnassign() {
@@ -190,6 +215,37 @@ export default function AssignSubcontractorInline({
         </div>
       ) : null}
 
+      {showOverpayWarning ? (
+        <div
+          data-testid="subcontractor-overpay-warning"
+          className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <div className="font-semibold">
+            Subcontractor pay exceeds this milestone&apos;s customer price. You may lose money on this milestone.
+          </div>
+          <div className="mt-2 text-xs text-amber-800">
+            Add an override reason before saving or adjust the amount to keep the milestone profitable.
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setShowOverpayWarning(false)}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              Adjust Amount
+            </button>
+            <button
+              type="button"
+              onClick={handleContinueAnyway}
+              className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-800"
+              data-testid="subcontractor-overpay-continue"
+            >
+              Continue Anyway
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-3 flex flex-col gap-2 md:flex-row">
         <select
           data-testid="subcontractor-assignment-select"
@@ -261,7 +317,7 @@ export default function AssignSubcontractorInline({
             Compliance review needed
           </div>
           <div className="mt-2 text-sm text-slate-700">
-            {decisionEvaluation.warning_message ||
+              {decisionEvaluation.warning_message ||
               "This assignment typically requires licensing or insurance context."}
           </div>
           <div className="mt-2 text-xs text-slate-600">

@@ -21,6 +21,7 @@ from projects.services.activity_feed import create_activity_event
 from projects.services.pdf import build_agreement_pdf_bytes, attach_pdf_to_agreement
 from projects.services.mailer import email_signed_agreement
 from projects.services.sms import sms_link_to_parties  # safe: no-op if not configured
+from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 
 
 DATA_URL_RE = re.compile(r"^data:(?P<mime>[-\w.\/]+);base64,(?P<b64>.+)$", re.IGNORECASE)
@@ -247,6 +248,11 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         ag = self._get_agreement(pk)
         if not IsAgreementParticipant().has_object_permission(request, self, ag):
             return response.Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            assert_pricing_ready_for_agreement(ag)
+        except ValueError as exc:
+            return response.Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         # Enforce review gate if the model supports it
         if hasattr(ag, "reviewed_at") and not getattr(ag, "reviewed_at"):

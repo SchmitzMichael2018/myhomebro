@@ -16,6 +16,7 @@ from projects.services.agreements.public_sign import (
     apply_homeowner_signature,
     maybe_send_final_copy_after_homeowner_sign,
 )
+from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 from projects.services.notification_center import create_notification
 from projects.services.agreements.pdf_stream import serve_public_pdf
 from projects.services.agreements.pdf_loader import load_pdf_services
@@ -102,10 +103,14 @@ def _active_public_funding_link(agreement) -> AgreementFundingLink | None:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def send_final_agreement_link_view(request, agreement_id: int):
-    # Manual resend ALWAYS sends; the final_link service has its own guard for non-force.
+    # Keep the same pricing gate as the main send/finalize flow before resending the final link.
     from projects.services.agreements.final_link import send_final_link_for_agreement
 
     ag = get_object_or_404(Agreement, pk=agreement_id)
+    try:
+        assert_pricing_ready_for_agreement(ag)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     try:
         payload = send_final_link_for_agreement(ag, force_send=True)
         return Response(payload, status=status.HTTP_200_OK)
@@ -272,6 +277,10 @@ def agreement_public_sign(request):
         return Response({"detail": "Missing token."}, status=400)
 
     ag = unsign_public_token(token)
+    try:
+        assert_pricing_ready_for_agreement(ag)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
 
     typed_name = (request.data.get("typed_name") or "").strip()
     if not typed_name:

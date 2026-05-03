@@ -12,6 +12,7 @@ from django.utils.timezone import now
 
 from projects.models import Agreement
 from projects.services.agreements.final_link import send_final_link_for_agreement
+from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 
 # ✅ NEW: PDF auto-finalize hook (same behavior as contractor sign)
 from projects.services.agreements.pdf_loader import load_pdf_services
@@ -182,6 +183,8 @@ def maybe_send_final_copy_after_homeowner_sign(
     (Guarded by pdf_version inside send_final_link_for_agreement.)
     """
     try:
+        assert_pricing_ready_for_agreement(ag)
+
         # Only send when homeowner JUST signed in this request
         if was_homeowner_signed:
             return

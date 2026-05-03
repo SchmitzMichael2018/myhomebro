@@ -2344,6 +2344,7 @@ export default function AgreementDetail() {
                         currentAssignment={m.assigned_subcontractor}
                         currentCompliance={m.subcontractor_assignment_compliance}
                         currentAgreement={m.subcontractor_milestone_agreement}
+                        milestoneAmount={m.amount}
                         onAssign={(invitationId, options) =>
                           assignMilestoneSubcontractor(m.id, invitationId, options)
                         }

@@ -1,8 +1,9 @@
 // src/context/MilestonesDraftContext.jsx
 'use client';
 
-import React, { createContext, useContext, useMemo, useCallback } from "react";
+import React, { createContext, useContext, useMemo, useCallback, useEffect } from "react";
 import usePersistentState from "@/hooks/usePersistentState";
+import { getStep2MilestoneDraftStorageKeys } from "../lib/step2MilestoneDraftStorage";
 
 const newId = () =>
   globalThis.crypto?.randomUUID?.() ??
@@ -35,12 +36,36 @@ export function MilestonesDraftProvider({
   initialMilestones = [],
   children,
 }) {
-  const storageKey = `milestonesDraft:${agreementKey}`;
+  // Canonical milestone draft storage for legacy draft consumers.
+  const { canonicalKey: storageKey } = getStep2MilestoneDraftStorageKeys(agreementKey);
 
   const [draft, setDraft, clearDraft] = usePersistentState(storageKey, {
     ...DEFAULT,
     milestones: withIds(initialMilestones),
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const { canonicalKey, legacyKey } = getStep2MilestoneDraftStorageKeys(agreementKey);
+    try {
+      const canonicalRaw = window.localStorage.getItem(canonicalKey);
+      if (canonicalRaw) return;
+      const legacyRaw = window.localStorage.getItem(legacyKey);
+      if (!legacyRaw) return;
+      const parsed = JSON.parse(legacyRaw);
+      if (!Array.isArray(parsed?.milestones)) return;
+      const migrated = {
+        ...DEFAULT,
+        ...parsed,
+        milestones: withIds(parsed.milestones),
+      };
+      window.localStorage.setItem(canonicalKey, JSON.stringify(migrated));
+      window.localStorage.removeItem(legacyKey);
+      setDraft(migrated);
+    } catch {
+      // ignore storage migration failures
+    }
+  }, [agreementKey, setDraft]);
 
   // One-time hydrate/replace from server (or whenever you call it)
   const hydrateFromServer = useCallback(

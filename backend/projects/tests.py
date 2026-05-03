@@ -7052,7 +7052,9 @@ class SubcontractorQuoteRequestTests(TestCase):
         readiness = get_pricing_readiness_for_agreement(self.agreement)
         self.assertTrue(readiness["blocked"])
         self.assertEqual(readiness["pending_quote_count"], 1)
-        self.assertEqual(readiness["safe_summary"], "Subcontractor pricing is still pending.")
+        self.assertEqual(readiness["safe_summary"], "This agreement requires subcontractor pricing before it can be sent.")
+        self.assertEqual(readiness["requires_sub_quote_unresolved_count"], 1)
+        self.assertEqual(readiness["requires_sub_quote_accepted_count"], 0)
 
     def test_unrelated_subcontractor_cannot_view_or_respond(self):
         quote = self._create_quote()
@@ -7099,7 +7101,9 @@ class SubcontractorQuoteRequestTests(TestCase):
         readiness = get_pricing_readiness_for_agreement(self.agreement)
         self.assertFalse(readiness["blocked"])
         self.assertEqual(readiness["pending_quote_count"], 0)
-        self.assertEqual(readiness["safe_summary"], "All requested subcontractor quotes are ready.")
+        self.assertEqual(readiness["safe_summary"], "All required subcontractor pricing is ready.")
+        self.assertEqual(readiness["requires_sub_quote_unresolved_count"], 0)
+        self.assertEqual(readiness["requires_sub_quote_accepted_count"], 1)
 
     def test_quote_over_milestone_amount_requires_override_reason(self):
         quote = self._create_quote()
@@ -7112,7 +7116,7 @@ class SubcontractorQuoteRequestTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("override_reason", str(response.json()).lower())
+        self.assertIn("customer price", str(response.json()).lower())
 
         allowed = self.client.post(
             f"/api/projects/subcontractor-quotes/{quote.id}/accept/",
@@ -7129,6 +7133,43 @@ class SubcontractorQuoteRequestTests(TestCase):
             quote.linked_subcontractor_milestone_agreement.payment_release_mode,
             SubcontractorPaymentReleaseMode.AUTO_AFTER_CUSTOMER_APPROVAL,
         )
+
+    def test_public_sign_blocks_until_required_subcontractor_quote_is_accepted(self):
+        token = build_public_sign_url(self.agreement).rsplit("/", 1)[-1]
+        blocked_response = self.client.post(
+            "/api/projects/agreements/public_sign/",
+            {
+                "token": token,
+                "typed_name": "Quote Customer",
+                "signature_data_url": "data:image/png;base64," + base64.b64encode(b"signature").decode(),
+            },
+            format="multipart",
+        )
+        self.assertEqual(blocked_response.status_code, 400)
+        self.assertIn("subcontractor pricing", str(blocked_response.json()).lower())
+
+        quote = self._create_quote()
+        quote = self._respond_to_quote(quote)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        accept_response = self.client.post(
+            f"/api/projects/subcontractor-quotes/{quote.id}/accept/",
+            {"payment_release_mode": "manual_release"},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 200)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        allowed_response = self.client.post(
+            "/api/projects/agreements/public_sign/",
+            {
+                "token": token,
+                "typed_name": "Quote Customer",
+                "signature_data_url": "data:image/png;base64," + base64.b64encode(b"signature").decode(),
+            },
+            format="multipart",
+        )
+        self.assertEqual(allowed_response.status_code, 200)
 
     def test_revision_decline_and_cancel_states_work(self):
         quote = self._create_quote()

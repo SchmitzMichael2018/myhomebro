@@ -12,11 +12,13 @@ from projects.models import Agreement
 from projects.services.mailer import email_signing_invite
 from projects.services.sms import sms_link_to_parties
 from projects.services.agreements.public_sign import build_public_sign_url
+from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 
 logger = logging.getLogger(__name__)
 
 
 def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
+    assert_pricing_ready_for_agreement(ag)
     homeowner = getattr(ag, "homeowner", None)
     homeowner_email = getattr(homeowner, "email", None)
     if not homeowner_email:

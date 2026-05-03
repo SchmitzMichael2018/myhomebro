@@ -78,6 +78,19 @@ export function getSimpleStateLabel(value) {
 export function getPricingReadinessCopy(pricingReadiness = {}) {
   const pendingQuoteCount = Number(pricingReadiness.pendingQuoteCount || 0);
   const estimatedCount = Number(pricingReadiness.estimatedCount || 0);
+  const blocked = Boolean(pricingReadiness.blocked);
+  const unresolvedRequiredQuoteCount = Number(pricingReadiness.requiresSubQuoteUnresolvedCount || 0);
+
+  if (blocked) {
+    const count = unresolvedRequiredQuoteCount > 0 ? unresolvedRequiredQuoteCount : pendingQuoteCount;
+    const noun = count === 1 ? "milestone" : "milestones";
+    const verb = count === 1 ? "is" : "are";
+    return {
+      tone: "danger",
+      title: "Needs attention",
+      body: `${count} ${noun} ${verb} still waiting on subcontractor pricing.`,
+    };
+  }
 
   if (pendingQuoteCount > 0) {
     const noun = pendingQuoteCount === 1 ? "milestone" : "milestones";
@@ -246,12 +259,37 @@ export function summarizeMilestonePricingPlan(agreementId, milestones = [], agre
   let fixedCount = 0;
   let estimatedCount = 0;
   let pendingQuoteCount = 0;
+  let requiresSubQuoteUnresolvedCount = 0;
+  let requiresSubQuoteAcceptedCount = 0;
   const blockers = [];
+  const pricingStrategy = String(agreementPricingStrategy).toLowerCase();
 
   rows.forEach((milestone) => {
     const quote = milestone?.subcontractor_quote_request || {};
     const quoteStatus = String(quote?.status || "").toLowerCase();
     const quoteAmount = quote?.quoted_amount || "";
+
+    if (pricingStrategy === "requires_sub_quote") {
+      if (quoteStatus === "accepted") {
+        fixedCount += 1;
+        requiresSubQuoteAcceptedCount += 1;
+        return;
+      }
+
+      requiresSubQuoteUnresolvedCount += 1;
+      if (quoteStatus === "sent" || quoteStatus === "responded" || quoteStatus === "revision_requested") {
+        pendingQuoteCount += 1;
+      }
+      blockers.push({
+        milestone_id: milestone?.id,
+        milestone_title: milestone?.title || "",
+        quote_id: quote?.id || null,
+        quote_status: quoteStatus,
+        quote_amount: quoteAmount,
+        reason: quoteStatus === "sent" || quoteStatus === "responded" || quoteStatus === "revision_requested" ? "pending_quote" : "quote_pricing_required",
+      });
+      return;
+    }
 
     if (quoteStatus === "sent" || quoteStatus === "responded" || quoteStatus === "revision_requested") {
       pendingQuoteCount += 1;
@@ -283,6 +321,9 @@ export function summarizeMilestonePricingPlan(agreementId, milestones = [], agre
     fixedCount,
     estimatedCount,
     pendingQuoteCount,
+    requiresSubQuoteUnresolvedCount,
+    requiresSubQuoteAcceptedCount,
+    blocked: pricingStrategy === "requires_sub_quote" && requiresSubQuoteUnresolvedCount > 0,
     blockers,
   };
 }
