@@ -234,30 +234,50 @@ function buildTemplateDescriptionDraft(context = {}, promptText = "") {
     context?.project_subtype || context?.template_summary?.project_subtype || ""
   ).trim();
   const scopeHints = collectTemplateScopeHints(promptText, context);
-  const subtypePhrase = projectSubtype || projectType || "project";
+  const lowerPrompt = String(promptText || "").toLowerCase();
+  const optionalItems = lowerPrompt.includes("window")
+    ? ["windows", "trim", "hardware"]
+    : lowerPrompt.includes("door")
+    ? ["doors", "hardware", "trim"]
+    : ["doors", "windows", "trim", "shelving", "finishes"];
 
-  const optionalComponents = String(promptText || "").toLowerCase().includes("window")
-    ? "Optional components may include windows, trim, hardware, and other upgrades only when specified."
-    : String(promptText || "").toLowerCase().includes("door")
-    ? "Optional components may include doors, hardware, trim, and other upgrades only when specified."
-    : "Optional components may include doors, windows, trim, shelving, finishes, or other upgrades only when specified.";
-
-  const customerResponsibility =
-    "Customer will confirm selections, approvals, and any changes that affect the written scope before work proceeds.";
-  const contractorResponsibility =
-    "Contractor will verify measurements, site conditions, and build constraints before installation begins.";
-  const exclusions =
-    "Not included unless specified: permit fees, engineering, utility relocation, hidden-condition repairs, custom upgrades, and other job-specific extras.";
+  const customerItems = ["material selections", "design approvals", "scope changes"];
+  const contractorItems = ["measurements", "site conditions", "access"];
+  const exclusionItems = [
+    "Electrical",
+    "Plumbing",
+    "Landscaping",
+    "Permits",
+    "Custom upgrades",
+  ];
 
   return [
+    "Scope of Work",
     scopeHints.opening,
-    `This draft is reusable for ${subtypePhrase.toLowerCase()} agreements without hard-coded dimensions, pricing, or material takeoffs.`,
-    scopeHints.included,
-    optionalComponents,
-    customerResponsibility,
-    contractorResponsibility,
-    exclusions,
-  ].join(" ");
+    "",
+    "Included Work Phases",
+    `- ${scopeHints.included.replace(/^Included work phases:\s*/i, "")}`,
+    "- Site preparation",
+    "- Framing",
+    "- Roofing",
+    "- Exterior finishing",
+    "- Final cleanup",
+    "",
+    "Optional Components",
+    `- May include ${optionalItems.join(", ")} when specified.`,
+    "",
+    "Customer Responsibilities",
+    `- Customer will confirm ${customerItems.join(", ")} prior to work.`,
+    "",
+    "Contractor Responsibilities",
+    `- Contractor will verify ${contractorItems.join(", ")} before starting work.`,
+    "",
+    "Exclusions",
+    "- The following are not included unless explicitly added:",
+    ...exclusionItems.map((item) => `- ${item}`),
+  ]
+    .map((line) => String(line).trimEnd())
+    .join("\n");
 }
 
 function buildTemplateMilestoneDrafts(context = {}) {
@@ -839,7 +859,7 @@ export default function StartWithAIAssistant({
     ? "AI Copilot"
     : "AI Assistant";
   const inputHelperText = isFieldAwareDescriptionMode
-    ? "Generate reusable template scope text with phases, responsibilities, and exclusions."
+    ? "Generate a contractor-grade Scope of Work with sections, responsibilities, and exclusions."
     : isFieldAwareMilestonesMode
     ? "Generate reusable milestone titles for this template."
     : isFieldAwareExclusionsMode
@@ -855,14 +875,14 @@ export default function StartWithAIAssistant({
     ? "Generate exclusions and assumptions for this template"
     : userFacingPanel.headline;
   const helperText = isFieldAwareDescriptionMode
-    ? "Use the current template name, type, and subtype to draft reusable scope language with a clear opening sentence, included phases, optional components, responsibilities, and exclusions."
+    ? "Use the current template name, type, and subtype to draft a reusable Scope of Work with the exact section structure."
     : isFieldAwareMilestonesMode
     ? "Use the current template scope, type, and subtype to draft a reusable milestone sequence for this template."
     : isFieldAwareExclusionsMode
     ? "Use the current template scope, type, and subtype to draft reusable exclusions and assumptions that define clear project boundaries."
     : userFacingPanel.helperText;
   const promptPlaceholder = isFieldAwareDescriptionMode
-    ? 'Optional: add scope guidance like "include site prep, framing, finish work, and cleanup."'
+    ? 'Optional: add scope guidance like "include site prep, framing, roofing, finishing, and cleanup."'
     : isFieldAwareMilestonesMode
     ? 'Optional: add sequencing guidance like "include permit review and punch list."'
     : isFieldAwareExclusionsMode

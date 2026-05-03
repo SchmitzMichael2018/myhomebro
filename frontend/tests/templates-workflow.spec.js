@@ -1398,6 +1398,20 @@ test('template AI improves shed build descriptions into structured contractor sc
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
     /Work includes a reusable shed build scope/
   );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(/Scope of Work/);
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Included Work Phases/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Optional Components/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Customer Responsibilities/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Contractor Responsibilities/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(/Exclusions/);
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
     /Included work phases:/
   );

@@ -195,18 +195,26 @@ def _clarification_question_objects(questions: List[str]) -> List[Dict[str, Any]
 
 def _template_scope_description_prompt() -> str:
     return (
-        "Write the template description in a structured contractor style.\n"
-        "Use clear section labels in this order:\n"
-        "1. Opening sentence defining the work.\n"
-        "2. Included work phases such as site prep, framing, roofing, installation, finish work, and closeout as relevant.\n"
-        "3. Optional components such as doors, windows, trim, shelving, finishes, or other upgrades only when they fit the job.\n"
-        "4. Customer responsibility for confirming selections and approvals.\n"
-        "5. Contractor responsibility for verifying measurements and site conditions.\n"
-        "6. Explicit exclusions.\n"
-        "Use contractor language such as 'Work includes', 'Installation may include', 'Customer will confirm', 'Contractor will verify', and 'Not included unless specified'.\n"
-        "Do NOT use filler phrases like efficiency, adaptable, various conditions, or standard process.\n"
-        "Do NOT include exact dimensions, exact pricing, or job-specific materials.\n"
-        "Keep the result reusable, direct, professional, and slightly contractual.\n"
+        "Produce a contractor-grade 'Scope of Work' for a reusable project template.\n"
+        "Use the exact sections below and keep the formatting clear and structured.\n"
+        "Scope of Work\n"
+        "(1-2 sentences describing the job at a high level, what is being built or installed)\n"
+        "Included Work Phases\n"
+        "- List the major phases of the job in order\n"
+        "- Keep phases practical\n"
+        "Optional Components\n"
+        "- List items that may be included only if specified\n"
+        "- Use generic reusable component names\n"
+        "Customer Responsibilities\n"
+        "- List what the customer must confirm or provide\n"
+        "Contractor Responsibilities\n"
+        "- List what the contractor will verify or ensure\n"
+        "Exclusions\n"
+        "- Start with: 'The following are not included unless explicitly added:'\n"
+        "- List commonly excluded items\n"
+        "Use direct contractor language. Prefer verbs like Construct, Install, Verify, and Provide.\n"
+        "Do NOT include exact dimensions, exact pricing, brand names, SKUs, or filler phrases like efficiency, adaptable, various conditions, or standard process.\n"
+        "Keep the result reusable across similar projects, specific about inclusions and exclusions, and concise.\n"
     )
 
 
