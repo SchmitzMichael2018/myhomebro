@@ -68,16 +68,48 @@ export default function SubcontractorAssignedWorkPage() {
     return "Manual release";
   }
 
-  function payoutStateLabel(state) {
-    const normalized = String(state || "").toLowerCase();
-    if (normalized === "blocked") return "Blocked";
-    if (normalized === "ready") return "Ready for contractor release";
-    if (normalized === "scheduled") return "Scheduled";
-    if (normalized === "processing") return "Processing";
-    if (normalized === "paid") return "Paid";
-    if (normalized === "failed") return "Failed / delayed";
-    if (normalized === "cancelled") return "Cancelled";
-    return "Not yet due";
+  function paymentStatusCopy(milestone) {
+    const payout = milestone?.subcontractor_payout_orchestration || milestone?.payout_orchestration || {};
+    const releaseMode = String(
+      payout.payment_release_mode ||
+        milestone?.subcontractor_agreement?.payment_release_mode ||
+        milestone?.payment_release_mode ||
+        ""
+    ).toLowerCase();
+    const payoutState = String(payout.payout_state || payout.next_status || "").toLowerCase();
+    const workStatus = String(
+      milestone?.work_submission_status || milestone?.subcontractor_completion_status || ""
+    ).toLowerCase();
+    const isWorkApproved = workStatus === "approved" || payoutState === "ready" || payoutState === "scheduled";
+
+    if (payoutState === "paid" || payout.payout_paid_at) {
+      return {
+        label: "Payment paid.",
+        tone: "text-emerald-900",
+      };
+    }
+    if (payoutState === "failed" || payout.payout_failed_at) {
+      return {
+        label: "Payment delayed — your contractor has been notified.",
+        tone: "text-rose-900",
+      };
+    }
+    if (!isWorkApproved) {
+      return {
+        label: "Waiting on customer approval.",
+        tone: "text-slate-700",
+      };
+    }
+    if (releaseMode === "auto_after_customer_approval" || payoutState === "scheduled") {
+      return {
+        label: "Payment will release automatically after customer approval.",
+        tone: "text-sky-900",
+      };
+    }
+    return {
+      label: "Payment pending — your contractor will release payment after customer approval.",
+      tone: "text-amber-900",
+    };
   }
 
   function quoteStatusLabel(status) {
@@ -499,11 +531,11 @@ export default function SubcontractorAssignedWorkPage() {
                               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 Payment Status
                               </div>
-                              <div className="font-semibold text-slate-900">
-                                {payoutStateLabel(
-                                  milestone.subcontractor_payout_orchestration?.payout_state ||
-                                    milestone.subcontractor_payout_orchestration?.next_status
-                                )}
+                              <div
+                                data-testid={`assigned-milestone-payment-status-${milestone.id}`}
+                                className={`font-semibold ${paymentStatusCopy(milestone).tone}`}
+                              >
+                                {paymentStatusCopy(milestone).label}
                               </div>
                               {Array.isArray(
                                 milestone.subcontractor_payout_orchestration?.blocking_reasons_labels

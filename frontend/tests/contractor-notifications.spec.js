@@ -242,6 +242,89 @@ test('contractor dashboard shows money-first summary row and prioritized next ac
   await expect(page).toHaveURL(/\/app\/agreements\/321\/wizard\?step=1/);
 });
 
+test('contractor dashboard keeps the review queue next action visible while submitted work remains', async ({
+  page,
+}) => {
+  let milestones = [
+    {
+      id: 101,
+      title: 'Cabinet Install',
+      agreement_id: 654,
+      agreement: { id: 654, title: 'Kitchen Remodel', project_class: 'residential' },
+      status: 'submitted',
+      submitted_at: '2026-03-24T10:00:00Z',
+    },
+    {
+      id: 102,
+      title: 'Trim Finish',
+      agreement_id: 654,
+      agreement: { id: 654, title: 'Kitchen Remodel', project_class: 'residential' },
+      status: 'submitted',
+      submitted_at: '2026-03-24T11:00:00Z',
+    },
+  ];
+
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 654,
+        title: 'Kitchen Remodel',
+        project_title: 'Kitchen Remodel',
+        status: 'draft',
+        signature_is_satisfied: true,
+        is_fully_signed: true,
+      },
+    ],
+    milestones,
+    reviewQueueCount: 2,
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const reviewAction = page.getByTestId('dashboard-next-action-item-milestone-submitted-review');
+  await expect(reviewAction).toBeVisible();
+  await expect(reviewAction).toContainText('2 milestones are waiting for review.');
+  await reviewAction.click();
+  await expect(page).toHaveURL(/\/app\/reviewer\/queue/);
+});
+
+test('contractor dashboard does not surface payout history in next actions', async ({ page }) => {
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 321,
+        title: 'Kitchen Remodel',
+        project_title: 'Kitchen Remodel',
+        status: 'draft',
+        signature_is_satisfied: true,
+        is_fully_signed: true,
+      },
+    ],
+    invoices: [
+      {
+        id: 1,
+        amount: 950,
+        status: 'pending_approval',
+      },
+    ],
+    payoutHistorySummary: {
+      payout_count: 4,
+      total_paid_out: 4800,
+      total_platform_fees_retained: 160,
+    },
+    payoutHistoryRecent: [
+      { id: 1, label: 'Completed payout' },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Review payment requests');
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Review payout history');
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('View payout history');
+  await expect(page.getByTestId('dashboard-next-action-item-payout-history')).toHaveCount(0);
+});
+
 test('contractor dashboard highlights overdue and waiting approval work with current guidance surfaces', async ({
   page,
 }) => {

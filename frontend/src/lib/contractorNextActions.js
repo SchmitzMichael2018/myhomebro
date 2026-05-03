@@ -171,8 +171,6 @@ export function getContractorNextActions({
   milestones = [],
   invoices = [],
   drawRequests = [],
-  payoutHistorySummary = null,
-  payoutHistoryRecent = [],
   activityFeed = [],
 } = {}) {
   const actions = [];
@@ -314,7 +312,7 @@ export function getContractorNextActions({
   if (latestSubmittedMilestone?.id) {
     actions.push(
       buildAction({
-        key: `milestone-submitted:${latestSubmittedMilestone.id}`,
+        key: "milestone-submitted-review",
         title: "Review submitted work",
         description: `${countLabel(submittedMilestones.length, "milestone")} ${isAre(submittedMilestones.length)} waiting for review.`,
         buttonLabel: "Open review queue",
@@ -386,27 +384,6 @@ export function getContractorNextActions({
         category: "attention",
         source: "quotes",
         dataTestId: "dashboard-next-action-quote-required",
-      })
-    );
-  }
-
-  const payoutReadyCount = Array.isArray(payoutHistoryRecent) ? payoutHistoryRecent.length : 0;
-  const payoutCount = safeNumber(payoutHistorySummary?.payout_count);
-  if (payoutReadyCount > 0 || payoutCount > 0) {
-    actions.push(
-      buildAction({
-        key: "payout-history",
-        title: "Review payout history",
-        description:
-          payoutCount > 0
-            ? `${countLabel(payoutCount, "completed payout")} recorded in your payout history.`
-            : `${countLabel(payoutReadyCount, "recent payout")} available to review.`,
-        buttonLabel: "View payout history",
-        navigationTarget: "/app/payout-history",
-        priorityScore: 42,
-        category: "money",
-        source: "payouts",
-        dataTestId: "dashboard-next-action-payout-history",
       })
     );
   }

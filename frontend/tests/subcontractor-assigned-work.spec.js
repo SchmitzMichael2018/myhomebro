@@ -16,7 +16,65 @@ function subcontractorOpsPayload() {
   };
 }
 
-test('subcontractor assigned work page renders grouped milestones and empty state', async ({
+function buildAssignedWorkMilestoneState(overrides = {}) {
+  return {
+    id: 901,
+    title: 'Cabinet Install',
+    description: 'Install all upper and lower cabinets.',
+    status: 'pending',
+    start_date: '2026-03-25',
+    completion_date: '2026-03-28',
+    assigned_worker_display: 'Taylor Sub',
+    reviewer_display: 'Contractor Owner',
+    can_current_user_submit_work: true,
+    customer_milestone_amount: '3500.00',
+    customer_agreement_total: '9500.00',
+    contractor_margin: '1250.00',
+    subcontractor_agreement: {
+      id: 44,
+      milestone_id: 901,
+      agreement_id: 321,
+      contractor_business_name: 'Kitchen Remodel Agreement',
+      contractor_name: 'Kitchen Remodel Agreement',
+      subcontractor_display_name: 'Taylor Sub',
+      subcontractor_email: 'subcontractor@example.com',
+      milestone_title: 'Cabinet Install',
+      milestone_description: 'Install all upper and lower cabinets.',
+      agreed_pay: '1750.00',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      agreement_acceptance_status: 'accepted',
+      agreement_acceptance_status_label: 'Accepted',
+    },
+    subcontractor_payout_orchestration: {
+      payout_state: 'not_due',
+      next_status: 'not_due',
+      safe_summary: 'Waiting for customer approval.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: false,
+      can_auto_release: false,
+      blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+    },
+    payout_orchestration: {
+      payout_state: 'not_due',
+      safe_summary: 'Waiting for customer approval.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: false,
+      can_auto_release: false,
+      blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
+    },
+    assigned_subcontractor: {
+      invitation_id: 77,
+      display_name: 'Taylor Sub',
+      email: 'subcontractor@example.com',
+    },
+    ...overrides,
+  };
+}
+
+test('subcontractor assigned work page shows waiting payment status and empty state', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -24,6 +82,7 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
   });
 
   let emptyMode = false;
+  const milestoneState = buildAssignedWorkMilestoneState();
 
   await page.route('**/api/projects/whoami/', async (route) => {
     await route.fulfill({
@@ -59,165 +118,13 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
                   agreement_id: 321,
                   agreement_title: 'Kitchen Remodel Agreement',
                   project_title: 'Kitchen Remodel Agreement',
-                  milestones: [
-                    {
-                      id: 901,
-                      title: 'Cabinet Install',
-                      description: 'Install all upper and lower cabinets.',
-                      status: 'pending',
-                      start_date: '2026-03-25',
-                      completion_date: '2026-03-28',
-                      assigned_worker_display: 'Taylor Sub',
-                      reviewer_display: 'Contractor Owner',
-                      can_current_user_submit_work: true,
-                      subcontractor_agreement: {
-                        id: 44,
-                        milestone_id: 901,
-                        agreement_id: 321,
-                        contractor_business_name: 'Kitchen Remodel Agreement',
-                        contractor_name: 'Kitchen Remodel Agreement',
-                        subcontractor_display_name: 'Taylor Sub',
-                        subcontractor_email: 'subcontractor@example.com',
-                        milestone_title: 'Cabinet Install',
-                        milestone_description: 'Install all upper and lower cabinets.',
-                      agreed_pay: '1750.00',
-                      payment_release_mode: 'manual_release',
-                      payment_release_mode_label: 'Manual Release',
-                      agreement_acceptance_status: 'accepted',
-                      agreement_acceptance_status_label: 'Accepted',
-                      subcontractor_payout_orchestration: {
-                        payout_state: 'not_due',
-                        next_status: 'not_due',
-                        safe_summary: 'Waiting for customer approval.',
-                        payment_release_mode: 'manual_release',
-                        payment_release_mode_label: 'Manual Release',
-                        can_manual_release: false,
-                        can_auto_release: false,
-                        blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
-                      },
-                      payout_orchestration: {
-                        payout_state: 'not_due',
-                        safe_summary: 'Waiting for customer approval.',
-                        payment_release_mode: 'manual_release',
-                        payment_release_mode_label: 'Manual Release',
-                          can_manual_release: false,
-                          can_auto_release: false,
-                          blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
-                        },
-                      },
-                      assigned_subcontractor: {
-                        invitation_id: 77,
-                        display_name: 'Taylor Sub',
-                        email: 'subcontractor@example.com',
-                      },
-                    },
-                  ],
+                  milestones: [milestoneState],
                 },
               ],
               milestones: [{ id: 901, title: 'Cabinet Install' }],
               count: 1,
             }
       ),
-    });
-  });
-
-  await page.route('**/api/projects/subcontractor/milestones/901/agreement/accept/**', async (route) => {
-    const acceptedAgreement = {
-      id: 44,
-      milestone_id: 901,
-      agreement_id: 321,
-      contractor_business_name: 'Kitchen Remodel Agreement',
-      contractor_name: 'Kitchen Remodel Agreement',
-      subcontractor_display_name: 'Taylor Sub',
-      subcontractor_email: 'subcontractor@example.com',
-      milestone_title: 'Cabinet Install',
-      milestone_description: 'Install all upper and lower cabinets.',
-      agreed_pay: '1750.00',
-      payment_release_mode: 'manual_release',
-      payment_release_mode_label: 'Manual Release',
-      agreement_acceptance_status: 'accepted',
-      agreement_acceptance_status_label: 'Accepted',
-      subcontractor_payout_orchestration: {
-        payout_state: 'not_due',
-        next_status: 'not_due',
-        safe_summary: 'Waiting for customer approval.',
-        payment_release_mode: 'manual_release',
-        payment_release_mode_label: 'Manual Release',
-        can_manual_release: false,
-        can_auto_release: false,
-        blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
-      },
-      payout_orchestration: {
-        payout_state: 'not_due',
-        safe_summary: 'Waiting for customer approval.',
-        payment_release_mode: 'manual_release',
-        payment_release_mode_label: 'Manual Release',
-        can_manual_release: false,
-        can_auto_release: false,
-        blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
-      },
-    };
-    emptyMode = false;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        milestone_id: 901,
-        agreement: acceptedAgreement,
-        can_current_user_submit_work: true,
-      }),
-    });
-  });
-
-  await page.route('**/api/projects/milestones/901/submit-work/**', async (route) => {
-    if (route.request().method() !== 'POST') {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        id: 901,
-        title: 'Cabinet Install',
-        work_submission_status: 'submitted_for_review',
-        can_current_user_submit_work: false,
-        subcontractor_agreement: {
-          id: 44,
-          milestone_id: 901,
-          agreement_id: 321,
-          contractor_business_name: 'Kitchen Remodel Agreement',
-          contractor_name: 'Kitchen Remodel Agreement',
-          subcontractor_display_name: 'Taylor Sub',
-          subcontractor_email: 'subcontractor@example.com',
-          milestone_title: 'Cabinet Install',
-          milestone_description: 'Install all upper and lower cabinets.',
-          agreed_pay: '1750.00',
-          payment_release_mode: 'manual_release',
-          payment_release_mode_label: 'Manual Release',
-          agreement_acceptance_status: 'accepted',
-          agreement_acceptance_status_label: 'Accepted',
-          subcontractor_payout_orchestration: {
-            payout_state: 'not_due',
-            next_status: 'not_due',
-            safe_summary: 'Waiting for customer approval.',
-            payment_release_mode: 'manual_release',
-            payment_release_mode_label: 'Manual Release',
-            can_manual_release: false,
-            can_auto_release: false,
-            blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
-          },
-          payout_orchestration: {
-            payout_state: 'not_due',
-            safe_summary: 'Waiting for customer approval.',
-            payment_release_mode: 'manual_release',
-            payment_release_mode_label: 'Manual Release',
-            can_manual_release: false,
-            can_auto_release: false,
-            blocking_reasons_labels: ['Customer approval or payment release is still pending.'],
-          },
-        },
-      }),
     });
   });
 
@@ -233,28 +140,307 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
     'Cabinet Install'
   );
   await expect(page.getByTestId('assigned-milestone-901')).toContainText('Taylor Sub');
-  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText('$1,750.00');
+  await expect(page.getByTestId('assigned-milestone-payment-status-901')).toContainText(
+    'Waiting on customer approval.'
+  );
+  await expect(page.getByTestId('assigned-milestone-payment-status-901')).not.toContainText(
+    'Payment pending'
+  );
+  await expect(page.getByText('$9,500.00')).toHaveCount(0);
+  await expect(page.getByText('$1,250.00')).toHaveCount(0);
+  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
+    '$1,750.00'
+  );
   await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
     'Agreement accepted'
   );
-  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
-    'Payment Status'
-  );
-  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
-    'Not yet due'
-  );
-  await expect(page.getByTestId('assigned-milestone-submit-complete-901')).toBeEnabled();
-  await expect(page.getByTestId('assigned-milestone-accept-agreement-901')).toHaveCount(0);
-  await page.getByTestId('assigned-milestone-submit-complete-901').click();
-  await expect(page.getByTestId('assigned-milestone-completion-state-901')).toContainText(
-    'Submitted for review'
-  );
-  await expect(page.getByTestId('assigned-milestone-payout-state-901')).toHaveCount(0);
-  await expect(page.getByTestId('subcontractor-payout-account-status')).toHaveCount(0);
 
   emptyMode = true;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('subcontractor-assigned-work-empty')).toBeVisible();
+});
+
+test('subcontractor assigned work shows manual release payment copy after approval', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const milestoneState = buildAssignedWorkMilestoneState({
+    status: 'approved',
+    work_submission_status: 'approved',
+    subcontractor_completion_status: 'approved',
+    subcontractor_payout_orchestration: {
+      payout_state: 'ready',
+      next_status: 'ready',
+      safe_summary: 'Ready for contractor release.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: true,
+      can_auto_release: false,
+      blocking_reasons_labels: [],
+    },
+    payout_orchestration: {
+      payout_state: 'ready',
+      safe_summary: 'Ready for contractor release.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: true,
+      can_auto_release: false,
+      blocking_reasons_labels: [],
+    },
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user_id: 99,
+        email: 'subcontractor@example.com',
+        type: 'subcontractor',
+        role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(subcontractorOpsPayload()),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/my-assigned/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        groups: [
+          {
+            agreement_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            project_title: 'Kitchen Remodel Agreement',
+            milestones: [milestoneState],
+          },
+        ],
+        milestones: [milestoneState],
+        count: 1,
+      }),
+    });
+  });
+
+  await page.goto('/app/subcontractor/assigned-work', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('assigned-milestone-payment-status-901')).toContainText(
+    'Payment pending — your contractor will release payment after customer approval.'
+  );
+  await expect(page.getByTestId('assigned-milestone-agreement-summary-901')).toContainText(
+    'Agreement accepted'
+  );
+  await expect(page.getByText('$9,500.00')).toHaveCount(0);
+  await expect(page.getByText('$1,250.00')).toHaveCount(0);
+});
+
+test('subcontractor assigned work shows automatic payment copy for auto release agreements', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const milestoneState = buildAssignedWorkMilestoneState({
+    status: 'approved',
+    work_submission_status: 'approved',
+    subcontractor_completion_status: 'approved',
+    subcontractor_agreement: {
+      ...buildAssignedWorkMilestoneState().subcontractor_agreement,
+      payment_release_mode: 'auto_after_customer_approval',
+      payment_release_mode_label: 'Auto-Release After Customer Approval',
+    },
+    subcontractor_payout_orchestration: {
+      payout_state: 'scheduled',
+      next_status: 'scheduled',
+      safe_summary: 'Auto-release is scheduled once the customer release is complete.',
+      payment_release_mode: 'auto_after_customer_approval',
+      payment_release_mode_label: 'Auto-Release After Customer Approval',
+      can_manual_release: false,
+      can_auto_release: true,
+      blocking_reasons_labels: [],
+    },
+    payout_orchestration: {
+      payout_state: 'scheduled',
+      safe_summary: 'Auto-release is scheduled once the customer release is complete.',
+      payment_release_mode: 'auto_after_customer_approval',
+      payment_release_mode_label: 'Auto-Release After Customer Approval',
+      can_manual_release: false,
+      can_auto_release: true,
+      blocking_reasons_labels: [],
+    },
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user_id: 99,
+        email: 'subcontractor@example.com',
+        type: 'subcontractor',
+        role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(subcontractorOpsPayload()),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/my-assigned/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        groups: [
+          {
+            agreement_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            project_title: 'Kitchen Remodel Agreement',
+            milestones: [milestoneState],
+          },
+        ],
+        milestones: [milestoneState],
+        count: 1,
+      }),
+    });
+  });
+
+  await page.goto('/app/subcontractor/assigned-work', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('assigned-milestone-payment-status-901')).toContainText(
+    'Payment will release automatically after customer approval.'
+  );
+});
+
+test('subcontractor assigned work shows paid and delayed payment statuses', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  let milestoneState = buildAssignedWorkMilestoneState({
+    status: 'approved',
+    work_submission_status: 'approved',
+    subcontractor_completion_status: 'approved',
+    subcontractor_payout_orchestration: {
+      payout_state: 'paid',
+      next_status: 'paid',
+      safe_summary: 'Payout is paid.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: false,
+      can_auto_release: false,
+      blocking_reasons_labels: [],
+    },
+    payout_orchestration: {
+      payout_state: 'paid',
+      safe_summary: 'Payout is paid.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      can_manual_release: false,
+      can_auto_release: false,
+      blocking_reasons_labels: [],
+    },
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user_id: 99,
+        email: 'subcontractor@example.com',
+        type: 'subcontractor',
+        role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(subcontractorOpsPayload()),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/my-assigned/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        groups: [
+          {
+            agreement_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            project_title: 'Kitchen Remodel Agreement',
+            milestones: [milestoneState],
+          },
+        ],
+        milestones: [milestoneState],
+        count: 1,
+      }),
+    });
+  });
+
+  await page.goto('/app/subcontractor/assigned-work', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('assigned-milestone-payment-status-901')).toContainText(
+    'Payment paid.'
+  );
+
+  milestoneState = buildAssignedWorkMilestoneState({
+    status: 'approved',
+    work_submission_status: 'approved',
+    subcontractor_completion_status: 'approved',
+    subcontractor_payout_orchestration: {
+      payout_state: 'failed',
+      next_status: 'failed',
+      safe_summary: 'Payment delayed.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      payout_failed_at: '2026-03-25T09:00:00Z',
+      can_manual_release: false,
+      can_auto_release: false,
+      blocking_reasons_labels: ['Payment delayed.'],
+    },
+    payout_orchestration: {
+      payout_state: 'failed',
+      safe_summary: 'Payment delayed.',
+      payment_release_mode: 'manual_release',
+      payment_release_mode_label: 'Manual Release',
+      payout_failed_at: '2026-03-25T09:00:00Z',
+      can_manual_release: false,
+      can_auto_release: false,
+      blocking_reasons_labels: ['Payment delayed.'],
+    },
+  });
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('assigned-milestone-payment-status-901')).toContainText(
+    'Payment delayed — your contractor has been notified.'
+  );
 });
 
 test('subcontractor assigned work supports comments and file upload for assigned milestone', async ({
