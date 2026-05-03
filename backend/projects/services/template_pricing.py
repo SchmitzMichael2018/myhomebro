@@ -126,7 +126,7 @@ def _pick_best_baseline(
 
 
 def _template_defaults_for_milestone(m: ProjectTemplateMilestone) -> dict[str, Decimal]:
-    fixed = _d(getattr(m, "suggested_amount_fixed", None))
+    fixed = _d(getattr(m, "suggested_amount_fixed", None)) if getattr(m, "pricing_advisory", False) else Decimal("0.00")
     low = _d(getattr(m, "suggested_amount_low", None))
     high = _d(getattr(m, "suggested_amount_high", None))
 

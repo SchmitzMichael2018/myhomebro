@@ -244,6 +244,7 @@ class SaveAgreementAsTemplateView(APIView):
                 contractor=contractor,
                 name=serializer.validated_data["name"],
                 description=serializer.validated_data.get("description", ""),
+                scope_description=serializer.validated_data.get("scope_description", ""),
                 is_active=serializer.validated_data.get("is_active", True),
             )
         except ValueError as exc:

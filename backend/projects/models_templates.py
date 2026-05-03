@@ -200,6 +200,16 @@ class ProjectTemplateMilestone(models.Model):
         blank=True,
         help_text="Optional duration hint for scheduling logic.",
     )
+    start_offset = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Canonical start offset in days from agreement start.",
+    )
+    duration_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Canonical duration hint in days for this milestone.",
+    )
 
     suggested_amount_percent = models.DecimalField(
         max_digits=6,
@@ -214,6 +224,10 @@ class ProjectTemplateMilestone(models.Model):
         null=True,
         blank=True,
         help_text="Optional fixed amount for this milestone.",
+    )
+    pricing_advisory = models.BooleanField(
+        default=False,
+        help_text="Marks milestone pricing as advisory only instead of enforced.",
     )
 
     normalized_milestone_type = models.CharField(
@@ -267,7 +281,7 @@ class ProjectTemplateMilestone(models.Model):
         return f"{self.template.name} #{self.sort_order} - {self.title}"
 
     def resolved_amount(self, total_amount: Decimal | None = None) -> Decimal:
-        if self.suggested_amount_fixed is not None:
+        if self.pricing_advisory and self.suggested_amount_fixed is not None:
             return Decimal(self.suggested_amount_fixed)
 
         if self.suggested_amount_percent is not None and total_amount is not None:

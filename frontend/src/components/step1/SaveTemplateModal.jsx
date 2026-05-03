@@ -30,18 +30,20 @@ export default function SaveTemplateModal({
 }) {
   const [name, setName] = useState(defaultName || "");
   const [description, setDescription] = useState(defaultDescription || "");
+  const [scope, setScope] = useState(scopeDescription || "");
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
     if (!open) return;
     setName(defaultName || "");
     setDescription(defaultDescription || "");
+    setScope(scopeDescription || "");
     setIsActive(true);
-  }, [open, defaultName, defaultDescription]);
+  }, [open, defaultName, defaultDescription, scopeDescription]);
 
   const trimmedName = useMemo(() => safeTrim(name), [name]);
   const trimmedDescription = useMemo(() => safeTrim(description), [description]);
-  const reviewedScope = useMemo(() => safeTrim(scopeDescription), [scopeDescription]);
+  const trimmedScope = useMemo(() => safeTrim(scope), [scope]);
   const reviewedMilestones = useMemo(
     () => (Array.isArray(milestones) ? milestones.filter(Boolean) : []),
     [milestones]
@@ -81,16 +83,33 @@ export default function SaveTemplateModal({
             </div>
           </div>
 
-          {reviewedScope ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+              Reusable Scope
+            </label>
+            <textarea
+              data-testid="save-template-scope-input"
+              className="mt-2 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm leading-6"
+              rows={5}
+              value={scope}
+              onChange={(e) => setScope(e.target.value)}
+              placeholder="Describe the reusable scope in generic terms without job-specific measurements or pricing."
+            />
+            <div className="mt-1 text-[11px] text-slate-500">
+              Keep this generic so it works across similar projects.
+            </div>
+          </div>
+
+          {trimmedScope ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                Agreement description
+                Scope Preview
               </div>
               <div
                 className="mt-2 text-sm leading-6 text-slate-700"
                 data-testid="save-template-scope-preview"
               >
-                {reviewedScope}
+                {trimmedScope}
               </div>
             </div>
           ) : null}
@@ -189,6 +208,7 @@ export default function SaveTemplateModal({
               onSubmit?.({
                 name: trimmedName,
                 description: trimmedDescription,
+                scope_description: trimmedScope,
                 is_active: !!isActive,
               })
             }

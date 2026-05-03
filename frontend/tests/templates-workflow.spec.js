@@ -50,13 +50,16 @@ function buildMilestone(id, title, description, sort_order = 1) {
     title,
     description,
     sort_order,
+    start_offset: sort_order === 1 ? 0 : sort_order - 1,
+    duration_days: 1,
+    pricing_advisory: false,
     normalized_milestone_type: '',
     suggested_amount_fixed: null,
     suggested_amount_low: null,
     suggested_amount_high: null,
     pricing_confidence: '',
     pricing_source_note: '',
-    recommended_days_from_start: sort_order === 1 ? 0 : null,
+    recommended_days_from_start: sort_order === 1 ? 1 : sort_order,
     recommended_duration_days: null,
     materials_hint: '',
     is_optional: false,
@@ -600,6 +603,7 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
     new RegExp(`/api/projects/agreements/${agreement.id}/save-as-template/$`),
     async (route) => {
       const payload = route.request().postDataJSON();
+      const sourceScope = String(payload?.scope_description || agreement.description || '').trim();
       const created = buildTemplate({
         id: store.nextTemplateId++,
         name: payload?.name || `${agreement.project_title || agreement.title || 'Agreement'} Template`,
@@ -611,19 +615,22 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
           title: row.title,
           description: row.description,
           sort_order: Number(row.order || idx + 1) || idx + 1,
+          start_offset: idx,
+          duration_days: 1,
+          pricing_advisory: false,
           normalized_milestone_type: row.normalized_milestone_type || '',
-          suggested_amount_fixed: row.amount || null,
+          suggested_amount_fixed: null,
           suggested_amount_low: null,
           suggested_amount_high: null,
           pricing_confidence: '',
           pricing_source_note: '',
-          recommended_days_from_start: idx === 0 ? 0 : null,
-          recommended_duration_days: null,
+          recommended_days_from_start: idx + 1,
+          recommended_duration_days: 1,
           materials_hint: '',
           is_optional: false,
         })),
       });
-      created.default_scope = agreement.description || '';
+      created.default_scope = sourceScope;
       created.is_active = payload?.is_active !== false;
       created.internal_note = payload?.description || '';
       created.milestone_count = created.milestones.length;
@@ -1052,7 +1059,10 @@ test('templates page can return to a neutral start state and top-level AI uses a
             suggested_amount_high: 1200,
             pricing_confidence: 'medium',
             pricing_source_note: 'Initial planning allowance.',
-            recommended_days_from_start: 0,
+            start_offset: 0,
+            duration_days: 1,
+            pricing_advisory: true,
+            recommended_days_from_start: 1,
             recommended_duration_days: 1,
             materials_hint: 'Protection materials',
             is_optional: false,
@@ -1142,7 +1152,10 @@ test('template AI shows section-aware progress while generation is pending', asy
             suggested_amount_high: 1200,
             pricing_confidence: 'medium',
             pricing_source_note: 'Initial planning allowance.',
-            recommended_days_from_start: 0,
+            start_offset: 0,
+            duration_days: 1,
+            pricing_advisory: true,
+            recommended_days_from_start: 1,
             recommended_duration_days: 1,
             materials_hint: 'Protection materials',
             is_optional: false,
@@ -1240,7 +1253,10 @@ test('template AI partial response still fills supported sections and marks reco
             suggested_amount_high: 1400,
             pricing_confidence: 'medium',
             pricing_source_note: 'Fallback plan',
-            recommended_days_from_start: 0,
+            start_offset: 0,
+            duration_days: 1,
+            pricing_advisory: true,
+            recommended_days_from_start: 1,
             recommended_duration_days: 1,
             materials_hint: 'Protection materials',
             is_optional: false,
@@ -1460,10 +1476,10 @@ test('wizard save as template stores the current setup and supports reuse in a l
     waitUntil: 'domcontentloaded',
   });
 
-  await page.locator('summary').filter({ hasText: 'More' }).click();
-  await page.getByRole('button', { name: 'Save as Template' }).click();
+  await page.getByTestId('step2-save-as-template').click();
 
   await expect(page.getByTestId('save-template-name-input')).toBeVisible();
+  await expect(page.getByTestId('save-template-scope-input')).toBeVisible();
   await expect(page.getByTestId('save-template-scope-preview')).toContainText(
     'Complete bathroom remodel'
   );
@@ -1475,6 +1491,9 @@ test('wizard save as template stores the current setup and supports reuse in a l
   );
 
   await page.getByTestId('save-template-name-input').fill('Bathroom Remodel Reusable');
+  await page.getByTestId('save-template-scope-input').fill(
+    'Reusable bathroom remodel scope covering demo, waterproofing, tile, fixtures, and closeout.'
+  );
   await page.getByTestId('save-template-note-input').fill(
     'Reusable bathroom remodel structure for future projects.'
   );
@@ -1483,9 +1502,24 @@ test('wizard save as template stores the current setup and supports reuse in a l
   await expect.poll(() =>
     store.templates.some((row) => row.name === 'Bathroom Remodel Reusable')
   ).toBe(true);
+  await expect.poll(() => {
+    const saved = store.templates.find((row) => row.name === 'Bathroom Remodel Reusable');
+    return saved
+      ? {
+          default_scope: saved.default_scope,
+          milestoneOffsets: saved.milestones.map((row) => row.start_offset),
+          pricing: saved.milestones.map((row) => row.suggested_amount_fixed),
+        }
+      : null;
+  }).toMatchObject({
+    default_scope: 'Reusable bathroom remodel scope covering demo, waterproofing, tile, fixtures, and closeout.',
+    milestoneOffsets: [0, 1, 2],
+    pricing: [null, null, null],
+  });
+  const savedTemplate = store.templates.find((row) => row.name === 'Bathroom Remodel Reusable');
 
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Bathroom Remodel Reusable' })).toBeVisible();
+  await expect(page.getByTestId(`template-discovery-card-${savedTemplate.id}`)).toBeVisible();
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
     waitUntil: 'domcontentloaded',

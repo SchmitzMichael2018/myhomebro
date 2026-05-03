@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+import re
 from typing import Optional, Any
 
 from django.db import transaction
@@ -157,7 +158,16 @@ def _build_milestone_amounts(template: ProjectTemplate, agreement_total: Decimal
         return []
 
     has_amount_hints = any(
-        row.suggested_amount_fixed is not None or row.suggested_amount_percent is not None
+        (
+            bool(getattr(row, "pricing_advisory", False))
+            and (
+                row.suggested_amount_fixed is not None
+                or row.suggested_amount_percent is not None
+                or row.suggested_amount_low is not None
+                or row.suggested_amount_high is not None
+            )
+        )
+        or row.suggested_amount_percent is not None
         for row in rows
     )
 
@@ -167,7 +177,7 @@ def _build_milestone_amounts(template: ProjectTemplate, agreement_total: Decimal
         unresolved_indexes: list[int] = []
 
         for idx, row in enumerate(rows):
-            if row.suggested_amount_fixed is not None:
+            if getattr(row, "pricing_advisory", False) and row.suggested_amount_fixed is not None:
                 amt = _safe_decimal(row.suggested_amount_fixed)
                 amounts.append(amt)
                 remaining -= amt
@@ -241,6 +251,90 @@ def _safe_scope_text(template: ProjectTemplate) -> str:
         or getattr(template, "description", None)
         or ""
     ).strip()
+
+
+_MEASUREMENT_PATTERNS = [
+    re.compile(r"\b\d+(?:\.\d+)?\s*(?:x|×)\s*\d+(?:\.\d+)?(?:\s*(?:x|×)\s*\d+(?:\.\d+)?)?\b", re.I),
+    re.compile(r"\b\d+(?:\.\d+)?\s*(?:sq\.?\s*ft|sq ft|square feet|square foot|sf|ft|feet|foot|in|inch|inches|yd|yard|yards)\b", re.I),
+    re.compile(r"\b\d+\s*(?:count|counts|pcs?|pieces|units)\b", re.I),
+]
+
+
+def _genericize_scope_text(scope_text: str) -> str:
+    text = str(scope_text or "").strip()
+    if not text:
+        return ""
+
+    generic = text
+    for pattern in _MEASUREMENT_PATTERNS:
+        generic = pattern.sub("standard size", generic)
+
+    generic = re.sub(r"\s{2,}", " ", generic)
+    generic = re.sub(r"\s+,", ",", generic)
+    generic = re.sub(r"\s+\.", ".", generic)
+    return generic.strip(" ,;:-")
+
+
+def _coerce_template_offset(value) -> Optional[int]:
+    try:
+        if value in (None, ""):
+            return None
+        n = int(value)
+        return n if n >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_template_duration(value) -> Optional[int]:
+    try:
+        if value in (None, ""):
+            return None
+        n = int(value)
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_template_milestone_offset(row) -> Optional[int]:
+    offset = _coerce_template_offset(getattr(row, "start_offset", None))
+    if offset is not None:
+        return offset
+
+    legacy_days = _coerce_template_offset(getattr(row, "recommended_days_from_start", None))
+    if legacy_days is None:
+        return None
+
+    return max(legacy_days - 1, 0)
+
+
+def _resolve_template_milestone_duration(row) -> Optional[int]:
+    duration = _coerce_template_duration(getattr(row, "duration_days", None))
+    if duration is not None:
+        return duration
+    return _coerce_template_duration(getattr(row, "recommended_duration_days", None))
+
+
+def _infer_milestone_duration_days(milestone: Milestone) -> int:
+    hinted = _coerce_template_duration(getattr(milestone, "recommended_duration_days", None))
+    if hinted is not None:
+        return hinted
+
+    duration = getattr(milestone, "duration", None)
+    if duration is not None:
+        try:
+            duration_days = int(duration.days)
+            if duration_days > 0:
+                return duration_days
+        except Exception:
+            pass
+
+    if milestone.start_date and milestone.completion_date:
+        try:
+            return max((milestone.completion_date - milestone.start_date).days + 1, 1)
+        except Exception:
+            pass
+
+    return 1
 
 
 def _safe_question_list(template: ProjectTemplate) -> list[dict]:
@@ -492,10 +586,13 @@ def duplicate_template_for_contractor(
                 "title": m.title,
                 "description": m.description or "",
                 "sort_order": m.sort_order,
+                "start_offset": getattr(m, "start_offset", None),
+                "duration_days": getattr(m, "duration_days", None),
                 "recommended_days_from_start": m.recommended_days_from_start,
                 "recommended_duration_days": m.recommended_duration_days,
                 "suggested_amount_percent": m.suggested_amount_percent,
                 "suggested_amount_fixed": m.suggested_amount_fixed,
+                "pricing_advisory": getattr(m, "pricing_advisory", False),
                 "normalized_milestone_type": m.normalized_milestone_type or "",
                 "suggested_amount_low": m.suggested_amount_low,
                 "suggested_amount_high": m.suggested_amount_high,
@@ -549,10 +646,13 @@ def duplicate_template_for_contractor(
             sort_order=row.get("sort_order") or idx,
             title=str(row.get("title") or "").strip(),
             description=str(row.get("description") or "").strip(),
+            start_offset=row.get("start_offset"),
+            duration_days=row.get("duration_days"),
             recommended_days_from_start=row.get("recommended_days_from_start"),
             recommended_duration_days=row.get("recommended_duration_days"),
             suggested_amount_percent=row.get("suggested_amount_percent"),
             suggested_amount_fixed=row.get("suggested_amount_fixed"),
+            pricing_advisory=bool(row.get("pricing_advisory", False)),
             normalized_milestone_type=str(row.get("normalized_milestone_type") or "").strip(),
             suggested_amount_low=row.get("suggested_amount_low"),
             suggested_amount_high=row.get("suggested_amount_high"),
@@ -605,7 +705,7 @@ def _extract_agreement_clarification_questions(agreement: Agreement) -> list[dic
 
 
 def _template_row_suggested_amount(row, agreement_total: Decimal) -> Decimal:
-    if row.suggested_amount_fixed is not None:
+    if getattr(row, "pricing_advisory", False) and row.suggested_amount_fixed is not None:
         return _safe_decimal(row.suggested_amount_fixed)
 
     if row.suggested_amount_percent is not None and agreement_total > 0:
@@ -645,11 +745,11 @@ def _resolve_row_schedule(
     Prefer row-level scheduling hints when present; otherwise fall back
     to even distribution across agreement date range.
     """
-    hinted_offset = _coerce_positive_int(getattr(row, "recommended_days_from_start", None))
-    hinted_duration = _coerce_positive_int(getattr(row, "recommended_duration_days", None))
+    hinted_offset = _resolve_template_milestone_offset(row)
+    hinted_duration = _resolve_template_milestone_duration(row)
 
     if hinted_offset is not None:
-        row_start = agreement_start + timedelta(days=max(hinted_offset - 1, 0))
+        row_start = agreement_start + timedelta(days=max(hinted_offset, 0))
     else:
         row_start = fallback_start
 
@@ -731,8 +831,8 @@ def apply_template_to_agreement(
                 row=row,
             )
         else:
-            hinted_offset = _coerce_positive_int(getattr(row, "recommended_days_from_start", None))
-            hinted_duration = _coerce_positive_int(getattr(row, "recommended_duration_days", None))
+            hinted_offset = _resolve_template_milestone_offset(row)
+            hinted_duration = _resolve_template_milestone_duration(row)
             row_start = None
             due_date = None
             duration_delta = None
@@ -801,24 +901,24 @@ def save_agreement_as_template(
     contractor: Contractor,
     name: str,
     description: str = "",
+    scope_description: str = "",
     is_active: bool = True,
 ) -> ProjectTemplate:
     if not name or not str(name).strip():
         raise ValueError("Template name is required.")
 
-    start_date = agreement.start or timezone.localdate()
-    end_date = agreement.end or start_date
-    estimated_days = max((end_date - start_date).days + 1, 1)
-
-    template_scope_text = _extract_agreement_scope_text(agreement)
+    raw_scope_text = (scope_description or _extract_agreement_scope_text(agreement) or "").strip()
+    template_scope_text = _genericize_scope_text(raw_scope_text)
     template_questions = _extract_agreement_clarification_questions(agreement)
+    milestone_qs = list(agreement.milestones.all().order_by("order", "id"))
+    estimated_days = max(sum(_infer_milestone_duration_days(m) for m in milestone_qs), 1)
 
     template = ProjectTemplate.objects.create(
         contractor=contractor,
         name=name.strip(),
         project_type=agreement.project_type or "",
         project_subtype=agreement.project_subtype or "",
-        description=(description or agreement.description or "").strip(),
+        description=(description or "").strip(),
         estimated_days=estimated_days,
         payment_structure=getattr(agreement, "payment_structure", "simple") or "simple",
         retainage_percent=_safe_decimal(getattr(agreement, "retainage_percent", None), Decimal("0.00")),
@@ -851,48 +951,31 @@ def save_agreement_as_template(
         region_tags=list(getattr(getattr(agreement, "selected_template", None), "region_tags", []) or []),
     )
 
-    milestone_qs = agreement.milestones.all().order_by("order", "id")
+    sequential_offset = 0
     for milestone in milestone_qs:
         ProjectTemplateMilestone = template.milestones.model
 
-        recommended_days_from_start = None
-        if milestone.start_date and start_date:
-            try:
-                recommended_days_from_start = max((milestone.start_date - start_date).days + 1, 1)
-            except Exception:
-                recommended_days_from_start = None
-
-        recommended_duration_days = None
-        if getattr(milestone, "recommended_duration_days", None):
-            recommended_duration_days = milestone.recommended_duration_days
-        elif getattr(milestone, "duration", None):
-            try:
-                recommended_duration_days = max(int(milestone.duration.days), 1)
-            except Exception:
-                recommended_duration_days = None
-        elif milestone.start_date and milestone.completion_date:
-            try:
-                recommended_duration_days = max(
-                    (milestone.completion_date - milestone.start_date).days + 1,
-                    1,
-                )
-            except Exception:
-                recommended_duration_days = None
+        duration_days = _infer_milestone_duration_days(milestone)
 
         ProjectTemplateMilestone.objects.create(
             template=template,
             title=milestone.title,
             description=milestone.description or "",
             sort_order=milestone.order,
-            recommended_days_from_start=recommended_days_from_start,
-            recommended_duration_days=recommended_duration_days,
-            suggested_amount_fixed=milestone.amount if milestone.amount and milestone.amount > 0 else None,
+            start_offset=sequential_offset,
+            duration_days=duration_days,
+            recommended_days_from_start=sequential_offset + 1,
+            recommended_duration_days=duration_days,
+            suggested_amount_fixed=None,
+            suggested_amount_percent=None,
+            suggested_amount_low=None,
+            suggested_amount_high=None,
+            pricing_advisory=False,
             normalized_milestone_type=(getattr(milestone, "normalized_milestone_type", "") or "").strip(),
-            suggested_amount_low=getattr(milestone, "suggested_amount_low", None),
-            suggested_amount_high=getattr(milestone, "suggested_amount_high", None),
-            pricing_confidence=(getattr(milestone, "pricing_confidence", "") or "").strip(),
-            pricing_source_note=(getattr(milestone, "pricing_source_note", "") or "").strip(),
+            pricing_confidence="",
+            pricing_source_note="",
             materials_hint=(getattr(milestone, "materials_hint", "") or "").strip(),
         )
+        sequential_offset += max(duration_days, 1)
 
     return template

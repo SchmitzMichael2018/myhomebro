@@ -4010,6 +4010,7 @@ export default function Step2Milestones({
       const requestPayload = {
         name,
         description: safeStr(payload?.description || saveTemplateDescription),
+        scope_description: safeStr(payload?.scope_description || ""),
         is_active: payload?.is_active !== false,
       };
 
@@ -7347,6 +7348,7 @@ export default function Step2Milestones({
         projectSubtype={safeStr(agreementMeta?.project_subtype)}
         milestoneCount={effectiveMilestones.length}
         scopeDescription={
+          safeStr(agreementMeta?.ai_scope?.scope_text) ||
           safeStr(agreementMeta?.description) ||
           safeStr(agreementMeta?.project_description) ||
           safeStr(agreementMeta?.scope)

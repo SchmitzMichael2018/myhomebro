@@ -13,10 +13,13 @@ class ProjectTemplateMilestoneSerializer(serializers.ModelSerializer):
             "title",
             "description",
             "sort_order",
+            "start_offset",
+            "duration_days",
             "recommended_days_from_start",
             "recommended_duration_days",
             "suggested_amount_percent",
             "suggested_amount_fixed",
+            "pricing_advisory",
             "normalized_milestone_type",
             "suggested_amount_low",
             "suggested_amount_high",
@@ -264,6 +267,12 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
     milestones = ProjectTemplateMilestoneSerializer(many=True, required=False)
     source_template_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
 
+    @staticmethod
+    def _clean_int(value):
+        if value in ("", None):
+            return None
+        return value
+
     class Meta:
         model = ProjectTemplate
         fields = [
@@ -319,15 +328,22 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
         template = ProjectTemplate.objects.create(**validated_data)
 
         for idx, row in enumerate(milestones_data, start=1):
+            start_offset = row.get("start_offset")
+            duration_days = row.get("duration_days")
+            recommended_days_from_start = row.get("recommended_days_from_start")
+            recommended_duration_days = row.get("recommended_duration_days")
             ProjectTemplateMilestone.objects.create(
                 template=template,
                 sort_order=row.get("sort_order") or idx,
                 title=row["title"],
                 description=row.get("description", ""),
-                recommended_days_from_start=row.get("recommended_days_from_start"),
-                recommended_duration_days=row.get("recommended_duration_days"),
+                start_offset=self._clean_int(start_offset if start_offset not in ("", None) else recommended_days_from_start),
+                duration_days=self._clean_int(duration_days if duration_days not in ("", None) else recommended_duration_days),
+                recommended_days_from_start=self._clean_int(recommended_days_from_start if recommended_days_from_start not in ("", None) else start_offset),
+                recommended_duration_days=self._clean_int(recommended_duration_days if recommended_duration_days not in ("", None) else duration_days),
                 suggested_amount_percent=row.get("suggested_amount_percent"),
                 suggested_amount_fixed=row.get("suggested_amount_fixed"),
+                pricing_advisory=bool(row.get("pricing_advisory", False)),
                 normalized_milestone_type=row.get("normalized_milestone_type", "") or "",
                 suggested_amount_low=row.get("suggested_amount_low"),
                 suggested_amount_high=row.get("suggested_amount_high"),
@@ -350,15 +366,22 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
         if milestones_data is not None:
             instance.milestones.all().delete()
             for idx, row in enumerate(milestones_data, start=1):
+                start_offset = row.get("start_offset")
+                duration_days = row.get("duration_days")
+                recommended_days_from_start = row.get("recommended_days_from_start")
+                recommended_duration_days = row.get("recommended_duration_days")
                 ProjectTemplateMilestone.objects.create(
                     template=instance,
                     sort_order=row.get("sort_order") or idx,
                     title=row["title"],
                     description=row.get("description", ""),
-                    recommended_days_from_start=row.get("recommended_days_from_start"),
-                    recommended_duration_days=row.get("recommended_duration_days"),
+                    start_offset=self._clean_int(start_offset if start_offset not in ("", None) else recommended_days_from_start),
+                    duration_days=self._clean_int(duration_days if duration_days not in ("", None) else recommended_duration_days),
+                    recommended_days_from_start=self._clean_int(recommended_days_from_start if recommended_days_from_start not in ("", None) else start_offset),
+                    recommended_duration_days=self._clean_int(recommended_duration_days if recommended_duration_days not in ("", None) else duration_days),
                     suggested_amount_percent=row.get("suggested_amount_percent"),
                     suggested_amount_fixed=row.get("suggested_amount_fixed"),
+                    pricing_advisory=bool(row.get("pricing_advisory", False)),
                     normalized_milestone_type=row.get("normalized_milestone_type", "") or "",
                     suggested_amount_low=row.get("suggested_amount_low"),
                     suggested_amount_high=row.get("suggested_amount_high"),
@@ -410,4 +433,5 @@ class ApplyTemplateSerializer(serializers.Serializer):
 class SaveAgreementAsTemplateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True, default="")
+    scope_description = serializers.CharField(required=False, allow_blank=True, default="")
     is_active = serializers.BooleanField(default=True)

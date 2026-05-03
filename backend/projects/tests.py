@@ -12721,6 +12721,63 @@ class SeededBenchmarkFoundationTests(TestCase):
         self.assertEqual(custom_template.benchmark_profile_id, system_template.benchmark_profile_id)
         self.assertEqual(custom_template.contractor_id, self.contractor.id)
 
+    def test_save_agreement_as_template_preserves_structure_and_clears_pricing(self):
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Outdoor",
+            project_subtype="Shed Build",
+            total_cost=Decimal("5000.00"),
+            description="10x12 shed build with 8 ft walls and site cleanup.",
+            start=timezone.localdate(),
+            end=timezone.localdate() + timedelta(days=5),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Prep & materials",
+            description="Stage materials and prepare the site.",
+            amount=Decimal("1200.00"),
+            start_date=timezone.localdate(),
+            completion_date=timezone.localdate() + timedelta(days=1),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Primary installation",
+            description="Build the main shed structure.",
+            amount=Decimal("2800.00"),
+            start_date=timezone.localdate() + timedelta(days=2),
+            completion_date=timezone.localdate() + timedelta(days=4),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=3,
+            title="Cleanup & walkthrough",
+            description="Finish cleanup and final walkthrough.",
+            amount=Decimal("1000.00"),
+            start_date=timezone.localdate() + timedelta(days=5),
+            completion_date=timezone.localdate() + timedelta(days=5),
+        )
+
+        template = save_agreement_as_template(
+            agreement=agreement,
+            contractor=self.contractor,
+            name="Shed Build Template",
+            scope_description="10x12 shed build with 8 ft walls and final cleanup.",
+        )
+
+        rows = list(template.milestones.order_by("sort_order", "id"))
+
+        self.assertEqual(template.default_scope, "standard size shed build with standard size walls and final cleanup.")
+        self.assertEqual([row.start_offset for row in rows], [0, 2, 5])
+        self.assertEqual([row.duration_days for row in rows], [2, 3, 1])
+        self.assertTrue(all(row.suggested_amount_fixed is None for row in rows))
+        self.assertFalse(any(row.pricing_advisory for row in rows))
+        self.assertEqual([row.recommended_days_from_start for row in rows], [1, 3, 6])
+        self.assertEqual([row.recommended_duration_days for row in rows], [2, 3, 1])
+
     def test_runtime_resolution_returns_estimation_ready_shape(self):
         result = resolve_seed_benchmark_defaults(
             project_type="Painting",

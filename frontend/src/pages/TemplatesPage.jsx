@@ -51,6 +51,13 @@ function dayLabel(v) {
   return `${n} day${n === 1 ? "" : "s"}`;
 }
 
+function offsetLabel(v) {
+  if (v === "" || v == null) return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return "—";
+  return `${n} day${n === 1 ? "" : "s"} after start`;
+}
+
 function startDayLabel(v) {
   const n = toDayNumber(v);
   if (n == null) return "—";
@@ -59,6 +66,7 @@ function startDayLabel(v) {
 
 function hasAnyPricing(m) {
   return (
+    !!m?.pricing_advisory ||
     Number(m?.suggested_amount_fixed) > 0 ||
     Number(m?.suggested_amount_low) > 0 ||
     Number(m?.suggested_amount_high) > 0
@@ -220,25 +228,59 @@ function buildBlankMilestone(sortOrder = 1) {
     title: "",
     description: "",
     sort_order: sortOrder,
+    start_offset: sortOrder === 1 ? 0 : "",
+    duration_days: "",
+    pricing_advisory: false,
     normalized_milestone_type: "",
     suggested_amount_fixed: "",
     suggested_amount_low: "",
     suggested_amount_high: "",
     pricing_confidence: "",
     pricing_source_note: "",
-    recommended_days_from_start: sortOrder === 1 ? 0 : "",
+    recommended_days_from_start: sortOrder === 1 ? 1 : "",
     recommended_duration_days: "",
     materials_hint: "",
     is_optional: false,
   };
 }
 
+function toCanonicalStartOffset(value, fallbackIndex = 0) {
+  if (value === "" || value == null) {
+    return fallbackIndex === 0 ? 0 : "";
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallbackIndex === 0 ? 0 : "";
+  return Math.round(n);
+}
+
+function legacyRecommendedFromOffset(offset) {
+  if (offset === "" || offset == null) return null;
+  const n = Number(offset);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n) + 1;
+}
+
 function normalizeMilestoneForEdit(m, idx) {
+  const startOffset =
+    m?.start_offset != null
+      ? m.start_offset
+      : m?.recommended_days_from_start != null
+      ? Math.max(Number(m.recommended_days_from_start) - 1, 0)
+      : idx === 0
+      ? 0
+      : "";
+  const durationDays = m?.duration_days ?? m?.recommended_duration_days ?? "";
+  const pricingAdvisory =
+    m?.pricing_advisory != null ? !!m.pricing_advisory : hasAnyPricing(m);
+
   return {
     id: m?.id ?? null,
     title: m?.title ?? "",
     description: m?.description ?? "",
     sort_order: m?.sort_order ?? idx + 1,
+    start_offset: startOffset,
+    duration_days: durationDays,
+    pricing_advisory: pricingAdvisory,
     normalized_milestone_type: standardizeTemplateMilestoneType(
       m?.normalized_milestone_type ?? "",
       `${m?.title ?? ""} ${m?.description ?? ""}`
@@ -249,8 +291,8 @@ function normalizeMilestoneForEdit(m, idx) {
     pricing_confidence: m?.pricing_confidence ?? "",
     pricing_source_note: m?.pricing_source_note ?? "",
     recommended_days_from_start:
-      m?.recommended_days_from_start ?? (idx === 0 ? 0 : ""),
-    recommended_duration_days: m?.recommended_duration_days ?? "",
+      m?.recommended_days_from_start ?? legacyRecommendedFromOffset(startOffset) ?? "",
+    recommended_duration_days: m?.recommended_duration_days ?? durationDays ?? "",
     materials_hint: m?.materials_hint ?? "",
     is_optional: !!m?.is_optional,
   };
@@ -295,26 +337,43 @@ function buildTemplatePayload(header, milestones, extras = {}) {
       title: m?.title ?? "",
       description: m?.description ?? "",
       sort_order: Number(m?.sort_order || idx + 1) || idx + 1,
+      start_offset:
+        m?.start_offset === "" || m?.start_offset == null
+          ? idx === 0
+            ? 0
+            : null
+          : toCanonicalStartOffset(m?.start_offset, idx),
+      duration_days:
+        m?.duration_days === "" || m?.duration_days == null
+          ? m?.recommended_duration_days === "" || m?.recommended_duration_days == null
+            ? null
+            : Number(m?.recommended_duration_days)
+          : Number(m?.duration_days),
+      pricing_advisory: !!m?.pricing_advisory,
       normalized_milestone_type: standardizeTemplateMilestoneType(
         m?.normalized_milestone_type ?? "",
         `${m?.title ?? ""} ${m?.description ?? ""}`
       ),
       suggested_amount_fixed:
-        m?.suggested_amount_fixed === "" ? null : m?.suggested_amount_fixed,
+        m?.pricing_advisory && m?.suggested_amount_fixed !== "" ? m?.suggested_amount_fixed : null,
       suggested_amount_low:
-        m?.suggested_amount_low === "" ? null : m?.suggested_amount_low,
+        m?.pricing_advisory && m?.suggested_amount_low !== "" ? m?.suggested_amount_low : null,
       suggested_amount_high:
-        m?.suggested_amount_high === "" ? null : m?.suggested_amount_high,
-      pricing_confidence: m?.pricing_confidence ?? "",
-      pricing_source_note: m?.pricing_source_note ?? "",
+        m?.pricing_advisory && m?.suggested_amount_high !== "" ? m?.suggested_amount_high : null,
+      pricing_confidence: m?.pricing_advisory ? m?.pricing_confidence ?? "" : "",
+      pricing_source_note: m?.pricing_advisory ? m?.pricing_source_note ?? "" : "",
       recommended_days_from_start:
-        m?.recommended_days_from_start === ""
+        m?.start_offset === "" || m?.start_offset == null
           ? idx === 0
-            ? 0
+            ? 1
             : null
-          : m?.recommended_days_from_start,
+          : legacyRecommendedFromOffset(toCanonicalStartOffset(m?.start_offset, idx)),
       recommended_duration_days:
-        m?.recommended_duration_days === "" ? null : m?.recommended_duration_days,
+        m?.duration_days === "" || m?.duration_days == null
+          ? m?.recommended_duration_days === ""
+            ? null
+            : m?.recommended_duration_days
+          : Number(m?.duration_days),
       materials_hint: m?.materials_hint ?? "",
       is_optional: !!m?.is_optional,
     })),
@@ -2265,10 +2324,10 @@ export default function TemplatesPage() {
               {activeTab === "pricing" ? (
                 <SectionCard title="Pricing">
                   <div className="mb-2 text-xs text-slate-500">
-                    Pricing here is a guideline. Actual pricing can vary per project and can be adjusted before sending to the customer.
+                    Template pricing is advisory only. Reusable templates should not store enforced milestone prices.
                   </div>
                   <div className="mb-3 text-[11px] text-slate-500">
-                    Pricing is generated as part of the full AI template build and can be refined here before saving.
+                    If you add advisory pricing, contractors can review it later without the template enforcing a fixed amount.
                   </div>
 
                   {generatedPricingGuidance ? (
@@ -2293,7 +2352,7 @@ export default function TemplatesPage() {
                       <thead className="bg-slate-50">
                         <tr className="text-left [&>*]:px-3 [&>*]:py-2">
                           <th>Milestone</th>
-                          <th>Target</th>
+                          <th>Advisory Amount</th>
                           <th>Min</th>
                           <th>Max</th>
                           <th>Confidence</th>
@@ -2309,75 +2368,115 @@ export default function TemplatesPage() {
 
                             <td className="px-3 py-2">
                               {(editMode || creatingNew) ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.suggested_amount_fixed || ""}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, { suggested_amount_fixed: e.target.value })
-                                  }
-                                />
-                              ) : hasAnyPricing(m) ? (
+                                <div className="space-y-2">
+                                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!m?.pricing_advisory}
+                                      onChange={(e) =>
+                                        updateMilestone(idx, { pricing_advisory: e.target.checked })
+                                      }
+                                    />
+                                    Advisory pricing
+                                  </label>
+                                  {m?.pricing_advisory ? (
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+                                      value={m?.suggested_amount_fixed || ""}
+                                      onChange={(e) =>
+                                        updateMilestone(idx, {
+                                          pricing_advisory: true,
+                                          suggested_amount_fixed: e.target.value,
+                                        })
+                                      }
+                                    />
+                                  ) : (
+                                    <span className="text-xs text-slate-500">No fixed pricing stored.</span>
+                                  )}
+                                </div>
+                              ) : hasAnyPricing(m) && m?.pricing_advisory ? (
                                 toMoney(m?.suggested_amount_fixed) || "—"
                               ) : (
-                                <span className="text-xs font-medium text-amber-600">Needs pricing</span>
+                                <span className="text-xs text-slate-500">No fixed pricing stored.</span>
                               )}
                             </td>
 
                             <td className="px-3 py-2">
                               {(editMode || creatingNew) ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.suggested_amount_low || ""}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, { suggested_amount_low: e.target.value })
-                                  }
-                                />
-                              ) : hasAnyPricing(m) ? (
+                                m?.pricing_advisory ? (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+                                    value={m?.suggested_amount_low || ""}
+                                    onChange={(e) =>
+                                      updateMilestone(idx, {
+                                        pricing_advisory: true,
+                                        suggested_amount_low: e.target.value,
+                                      })
+                                    }
+                                  />
+                                ) : (
+                                  <span className="text-xs text-slate-500">—</span>
+                                )
+                              ) : hasAnyPricing(m) && m?.pricing_advisory ? (
                                 toMoney(m?.suggested_amount_low) || "—"
                               ) : (
-                                <span className="text-xs text-amber-600">Needs pricing</span>
+                                <span className="text-xs text-slate-500">—</span>
                               )}
                             </td>
 
                             <td className="px-3 py-2">
                               {(editMode || creatingNew) ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.suggested_amount_high || ""}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, { suggested_amount_high: e.target.value })
-                                  }
-                                />
-                              ) : hasAnyPricing(m) ? (
+                                m?.pricing_advisory ? (
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+                                    value={m?.suggested_amount_high || ""}
+                                    onChange={(e) =>
+                                      updateMilestone(idx, {
+                                        pricing_advisory: true,
+                                        suggested_amount_high: e.target.value,
+                                      })
+                                    }
+                                  />
+                                ) : (
+                                  <span className="text-xs text-slate-500">—</span>
+                                )
+                              ) : hasAnyPricing(m) && m?.pricing_advisory ? (
                                 toMoney(m?.suggested_amount_high) || "—"
                               ) : (
-                                <span className="text-xs text-amber-600">Needs pricing</span>
+                                <span className="text-xs text-slate-500">—</span>
                               )}
                             </td>
 
                             <td className="px-3 py-2">
                               {(editMode || creatingNew) ? (
-                                <select
-                                  className="rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.pricing_confidence || ""}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, { pricing_confidence: e.target.value })
-                                  }
-                                >
-                                  <option value="">Not set</option>
-                                  <option value="low">Low</option>
-                                  <option value="medium">Medium</option>
-                                  <option value="high">High</option>
-                                </select>
+                                m?.pricing_advisory ? (
+                                  <select
+                                    className="rounded border border-slate-300 px-2 py-1 text-sm"
+                                    value={m?.pricing_confidence || ""}
+                                    onChange={(e) =>
+                                      updateMilestone(idx, {
+                                        pricing_advisory: true,
+                                        pricing_confidence: e.target.value,
+                                      })
+                                    }
+                                  >
+                                    <option value="">Not set</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                  </select>
+                                ) : (
+                                  <span className="text-xs text-slate-500">—</span>
+                                )
                               ) : (
                                 <ConfidenceBadge value={m?.pricing_confidence || ""} />
                               )}
@@ -2385,15 +2484,22 @@ export default function TemplatesPage() {
 
                             <td className="px-3 py-2">
                               {(editMode || creatingNew) ? (
-                                <input
-                                  className="w-full min-w-[180px] rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.pricing_source_note || ""}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, { pricing_source_note: e.target.value })
-                                  }
-                                />
+                                m?.pricing_advisory ? (
+                                  <input
+                                    className="w-full min-w-[180px] rounded border border-slate-300 px-2 py-1 text-sm"
+                                    value={m?.pricing_source_note || ""}
+                                    onChange={(e) =>
+                                      updateMilestone(idx, {
+                                        pricing_advisory: true,
+                                        pricing_source_note: e.target.value,
+                                      })
+                                    }
+                                  />
+                                ) : (
+                                  <span className="text-xs text-slate-500">Advisory only</span>
+                                )
                               ) : (
-                                safeTrim(m?.pricing_source_note) || "—"
+                                m?.pricing_advisory ? safeTrim(m?.pricing_source_note) || "—" : "Advisory only"
                               )}
                             </td>
                           </tr>
@@ -2404,33 +2510,34 @@ export default function TemplatesPage() {
 
                   <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                      Estimated Project Total
+                      Advisory Pricing Summary
                     </div>
 
-                    <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                      <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                        Target:{" "}
-                        <span className="font-semibold text-slate-900">
-                          {moneyOrDash(pricingTotals.fixed)}
-                        </span>
+                    {currentMilestones.some((row) => row?.pricing_advisory) ? (
+                      <>
+                        <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                          <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                            Min:{" "}
+                            <span className="font-semibold text-slate-900">
+                              {moneyOrDash(pricingTotals.low)}
+                            </span>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                            Max:{" "}
+                            <span className="font-semibold text-slate-900">
+                              {moneyOrDash(pricingTotals.high)}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          Advisory pricing is visible for review only. Templates should not enforce fixed dollar amounts.
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-2 text-sm text-slate-600">
+                        No fixed pricing is stored on this template.
                       </div>
-                      <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                        Min:{" "}
-                        <span className="font-semibold text-slate-900">
-                          {moneyOrDash(pricingTotals.low)}
-                        </span>
-                      </div>
-                      <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                        Max:{" "}
-                        <span className="font-semibold text-slate-900">
-                          {moneyOrDash(pricingTotals.high)}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-2 text-[11px] text-slate-500">
-                      Template pricing is a reusable planning baseline. Final project pricing can still be adjusted per customer and scope.
-                    </div>
+                    )}
                   </div>
                 </SectionCard>
               ) : null}
@@ -2438,7 +2545,7 @@ export default function TemplatesPage() {
               {activeTab === "schedule" ? (
                 <SectionCard title="Schedule">
                   <div className="mb-2 text-xs text-slate-500">
-                    These are estimated timelines. Actual scheduling will be calculated when the agreement is created.
+                    These are estimated offsets and durations. Actual scheduling will be calculated when the agreement is created.
                   </div>
 
                   <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -2446,7 +2553,7 @@ export default function TemplatesPage() {
                       <thead className="bg-slate-50">
                         <tr className="text-left [&>*]:px-3 [&>*]:py-2">
                           <th>Milestone</th>
-                          <th>Starts Day</th>
+                          <th>Start Offset</th>
                           <th>Duration</th>
                         </tr>
                       </thead>
@@ -2462,15 +2569,17 @@ export default function TemplatesPage() {
                                   type="number"
                                   min="0"
                                   className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.recommended_days_from_start ?? ""}
+                                  value={m?.start_offset ?? ""}
                                   onChange={(e) =>
                                     updateMilestone(idx, {
-                                      recommended_days_from_start: e.target.value,
+                                      start_offset: e.target.value,
+                                      recommended_days_from_start:
+                                        e.target.value === "" ? "" : Number(e.target.value) + 1,
                                     })
                                   }
                                 />
                               ) : (
-                                startDayLabel(m?.recommended_days_from_start)
+                                offsetLabel(m?.start_offset ?? (m?.recommended_days_from_start != null ? Number(m.recommended_days_from_start) - 1 : ""))
                               )}
                             </td>
                             <td className="px-3 py-2">
@@ -2479,13 +2588,16 @@ export default function TemplatesPage() {
                                   type="number"
                                   min="1"
                                   className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.recommended_duration_days || ""}
+                                  value={m?.duration_days || m?.recommended_duration_days || ""}
                                   onChange={(e) =>
-                                    updateMilestone(idx, { recommended_duration_days: e.target.value })
+                                    updateMilestone(idx, {
+                                      duration_days: e.target.value,
+                                      recommended_duration_days: e.target.value,
+                                    })
                                   }
                                 />
                               ) : (
-                                dayLabel(m?.recommended_duration_days) || "—"
+                                dayLabel(m?.duration_days || m?.recommended_duration_days) || "—"
                               )}
                             </td>
                           </tr>

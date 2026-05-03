@@ -4735,10 +4735,11 @@ export default function Step1Details({
         onSubmit={onSubmitSaveAsTemplate}
         busy={savingTemplate}
         defaultName={defaultTemplateName}
-        defaultDescription={safeTrim(dLocal?.description)}
+        defaultDescription=""
         projectType={safeTrim(dLocal?.project_type)}
         projectSubtype={safeTrim(dLocal?.project_subtype)}
         milestoneCount={agreement?.milestone_count ?? agreement?.milestones?.length ?? null}
+        scopeDescription={safeTrim(agreement?.ai_scope?.scope_text) || safeTrim(dLocal?.description)}
       />
     </>
   );
