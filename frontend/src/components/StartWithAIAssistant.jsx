@@ -174,30 +174,90 @@ function isTemplateExclusionsMode(context = {}) {
   );
 }
 
-function buildTemplateDescriptionDraft(context = {}) {
-  const templateName = String(context?.template_name || context?.template_summary?.name || "").trim();
+function collectTemplateScopeHints(promptText = "", context = {}) {
+  const text = String(promptText || "").toLowerCase();
+  const subtype = String(
+    context?.project_subtype || context?.template_summary?.project_subtype || ""
+  ).toLowerCase();
+  const type = String(context?.project_type || context?.template_summary?.project_type || "").toLowerCase();
+  const seed = `${subtype} ${type} ${text}`;
+
+  if (seed.includes("shed")) {
+    return {
+      opening:
+        "Work includes a reusable shed build scope covering site prep, layout, framing, roof assembly, exterior finishing, and closeout.",
+      included:
+        "Included work phases: site preparation, layout, foundation or pad preparation, framing, wall assembly, roof installation, trim, and final cleanup.",
+    };
+  }
+
+  if (seed.includes("deck")) {
+    return {
+      opening:
+        "Work includes a reusable deck build scope covering site prep, framing, decking, guardrail installation, finishing, and closeout.",
+      included:
+        "Included work phases: site preparation, layout, footing or support work, framing, decking installation, railing or stair installation, and cleanup.",
+    };
+  }
+
+  if (seed.includes("bath")) {
+    return {
+      opening:
+        "Work includes a reusable bathroom remodel scope covering demo, rough work, finish installation, final adjustments, and closeout.",
+      included:
+        "Included work phases: site protection, demolition, rough plumbing or electrical coordination, waterproofing, tile or finish installation, and walkthrough.",
+    };
+  }
+
+  if (seed.includes("kitchen")) {
+    return {
+      opening:
+        "Work includes a reusable kitchen remodel scope covering site prep, demo, rough coordination, finish installation, and closeout.",
+      included:
+        "Included work phases: site protection, demolition, rough-in coordination, cabinet installation, finish work, and final walkthrough.",
+    };
+  }
+
+  return {
+    opening:
+      "Work includes a reusable project scope covering site prep, core installation, finish work, and closeout for similar jobs.",
+    included:
+      "Included work phases: site preparation, layout, installation, finish work, final adjustments, and cleanup.",
+  };
+}
+
+function buildTemplateDescriptionDraft(context = {}, promptText = "") {
   const projectType = String(
     context?.project_type || context?.template_summary?.project_type || ""
   ).trim();
   const projectSubtype = String(
     context?.project_subtype || context?.template_summary?.project_subtype || ""
   ).trim();
-
+  const scopeHints = collectTemplateScopeHints(promptText, context);
   const subtypePhrase = projectSubtype || projectType || "project";
-  const typePhrase = projectType && projectType !== projectSubtype ? projectType.toLowerCase() : "";
 
-  const opening = subtypePhrase
-    ? `Reusable ${subtypePhrase.toLowerCase()} scope covering the typical planning, preparation, core work, and closeout needed for this type of project.`
-    : "Reusable project scope covering the typical planning, preparation, execution, and closeout needed for this type of work.";
+  const optionalComponents = String(promptText || "").toLowerCase().includes("window")
+    ? "Optional components may include windows, trim, hardware, and other upgrades only when specified."
+    : String(promptText || "").toLowerCase().includes("door")
+    ? "Optional components may include doors, hardware, trim, and other upgrades only when specified."
+    : "Optional components may include doors, windows, trim, shelving, finishes, or other upgrades only when specified.";
 
-  const middle = [
-    "Includes the work commonly expected by the customer, coordination between major phases, and the standard finishing steps needed to deliver a complete result.",
-    typePhrase
-      ? `Built to give teams a clean starting point for repeatable ${typePhrase} jobs while leaving room for project-specific pricing, clarifications, and milestone detail.`
-      : "Built to give teams a clean starting point for repeatable jobs while leaving room for project-specific pricing, clarifications, and milestone detail.",
-  ];
+  const customerResponsibility =
+    "Customer will confirm selections, approvals, and any changes that affect the written scope before work proceeds.";
+  const contractorResponsibility =
+    "Contractor will verify measurements, site conditions, and build constraints before installation begins.";
+  const exclusions =
+    "Not included unless specified: permit fees, engineering, utility relocation, hidden-condition repairs, custom upgrades, and other job-specific extras.";
 
-  return [opening, ...middle].join(" ");
+  return [
+    scopeHints.opening,
+    `This draft is reusable for ${subtypePhrase.toLowerCase()} agreements without hard-coded dimensions, pricing, or material takeoffs.`,
+    scopeHints.included,
+    optionalComponents,
+    customerResponsibility,
+    contractorResponsibility,
+    exclusions,
+  ].join(" ");
 }
 
 function buildTemplateMilestoneDrafts(context = {}) {
@@ -779,7 +839,7 @@ export default function StartWithAIAssistant({
     ? "AI Copilot"
     : "AI Assistant";
   const inputHelperText = isFieldAwareDescriptionMode
-    ? "Generate reusable template scope text for this description field."
+    ? "Generate reusable template scope text with phases, responsibilities, and exclusions."
     : isFieldAwareMilestonesMode
     ? "Generate reusable milestone titles for this template."
     : isFieldAwareExclusionsMode
@@ -795,14 +855,14 @@ export default function StartWithAIAssistant({
     ? "Generate exclusions and assumptions for this template"
     : userFacingPanel.headline;
   const helperText = isFieldAwareDescriptionMode
-    ? "Use the current template name, type, and subtype to draft reusable scope language for the Description / Scope field."
+    ? "Use the current template name, type, and subtype to draft reusable scope language with a clear opening sentence, included phases, optional components, responsibilities, and exclusions."
     : isFieldAwareMilestonesMode
     ? "Use the current template scope, type, and subtype to draft a reusable milestone sequence for this template."
     : isFieldAwareExclusionsMode
     ? "Use the current template scope, type, and subtype to draft reusable exclusions and assumptions that define clear project boundaries."
     : userFacingPanel.helperText;
   const promptPlaceholder = isFieldAwareDescriptionMode
-    ? 'Optional: add extra scope guidance like "include prep, finish work, and cleanup."'
+    ? 'Optional: add scope guidance like "include site prep, framing, finish work, and cleanup."'
     : isFieldAwareMilestonesMode
     ? 'Optional: add sequencing guidance like "include permit review and punch list."'
     : isFieldAwareExclusionsMode
@@ -865,10 +925,8 @@ export default function StartWithAIAssistant({
     event?.preventDefault();
     const cleanPrompt = String(prompt || "").trim();
     if (isFieldAwareDescriptionMode) {
-      const baseDraft = buildTemplateDescriptionDraft(normalizedContext);
-      const finalDraft = cleanPrompt
-        ? `${baseDraft} ${cleanPrompt}`.trim()
-        : baseDraft;
+      const baseDraft = buildTemplateDescriptionDraft(normalizedContext, cleanPrompt);
+      const finalDraft = baseDraft;
       setFieldDraft(finalDraft);
       setHistory((prev) => [
         ...prev,

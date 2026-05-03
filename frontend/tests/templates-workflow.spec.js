@@ -229,12 +229,42 @@ async function installTemplateRoutes(page, store) {
     const payload = route.request().postDataJSON();
     const projectType = String(payload?.project_type || '').trim();
     const projectSubtype = String(payload?.project_subtype || '').trim();
+    const seed = `${projectType} ${projectSubtype} ${payload?.description || ''}`.toLowerCase();
+    const isShed = seed.includes('shed');
+    const isDeck = seed.includes('deck');
+    const isBath = seed.includes('bath');
+    const isKitchen = seed.includes('kitchen');
+    const opening = isShed
+      ? 'Work includes a reusable shed build scope covering site prep, layout, framing, roof assembly, exterior finishing, and closeout.'
+      : isDeck
+      ? 'Work includes a reusable deck build scope covering site prep, framing, decking, railing installation, finishing, and closeout.'
+      : isBath
+      ? 'Work includes a reusable bathroom remodel scope covering demo, rough work, finish installation, final adjustments, and closeout.'
+      : isKitchen
+      ? 'Work includes a reusable kitchen remodel scope covering site prep, demo, rough coordination, finish installation, and closeout.'
+      : `${projectSubtype || projectType || 'Project'} work includes a reusable scope covering site prep, installation, finish work, and closeout.`;
+    const phases = isShed
+      ? 'Included work phases: site preparation, layout, foundation or pad preparation, framing, wall assembly, roof installation, trim, and final cleanup.'
+      : isDeck
+      ? 'Included work phases: site preparation, layout, footing or support work, framing, decking installation, railing or stair installation, and cleanup.'
+      : isBath
+      ? 'Included work phases: site protection, demolition, rough plumbing or electrical coordination, waterproofing, tile or finish installation, and walkthrough.'
+      : isKitchen
+      ? 'Included work phases: site protection, demolition, rough-in coordination, cabinet installation, finish work, and final walkthrough.'
+      : 'Included work phases: site preparation, layout, installation, finish work, final adjustments, and cleanup.';
 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        description: `${projectSubtype || projectType || 'Project'} scope with clear milestones and reusable language. Includes the work commonly expected by the customer.`,
+        description: [
+          opening,
+          phases,
+          'Optional components may include doors, windows, trim, shelving, finishes, or other upgrades only when specified.',
+          'Customer will confirm selections, approvals, and any changes that affect the written scope before work proceeds.',
+          'Contractor will verify measurements, site conditions, and build constraints before installation begins.',
+          'Not included unless specified: permit fees, engineering, utility relocation, hidden-condition repairs, custom upgrades, and other job-specific extras.',
+        ].join(' '),
       }),
     });
   });
@@ -1334,7 +1364,62 @@ test('template inline AI can improve description field text', async ({ page }) =
   await page.getByTestId('templates-ai-improve-description-button').click();
 
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Includes the work commonly expected by the customer/
+    /Work includes a reusable kitchen remodel scope/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Included work phases:/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Customer will confirm/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Contractor will verify/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Not included unless specified/
+  );
+});
+
+test('template AI improves shed build descriptions into structured contractor scope', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Shed Build Starter');
+  await page.getByTestId('templates-project-type-input').fill('Outdoor');
+  await page.getByTestId('templates-project-subtype-input').fill('Shed Build');
+  await page.getByTestId('templates-description-input').fill('Backyard shed build scope.');
+
+  await page.getByTestId('templates-ai-improve-description-button').click();
+
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Work includes a reusable shed build scope/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Included work phases:/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Optional components may include/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Customer will confirm/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Contractor will verify/
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Not included unless specified/
+  );
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/efficiency/i);
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/adaptable/i);
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(
+    /various conditions/i
+  );
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(
+    /standard process/i
   );
 });
 

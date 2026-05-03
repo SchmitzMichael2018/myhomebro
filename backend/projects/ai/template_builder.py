@@ -193,6 +193,23 @@ def _clarification_question_objects(questions: List[str]) -> List[Dict[str, Any]
     return normalized
 
 
+def _template_scope_description_prompt() -> str:
+    return (
+        "Write the template description in a structured contractor style.\n"
+        "Use clear section labels in this order:\n"
+        "1. Opening sentence defining the work.\n"
+        "2. Included work phases such as site prep, framing, roofing, installation, finish work, and closeout as relevant.\n"
+        "3. Optional components such as doors, windows, trim, shelving, finishes, or other upgrades only when they fit the job.\n"
+        "4. Customer responsibility for confirming selections and approvals.\n"
+        "5. Contractor responsibility for verifying measurements and site conditions.\n"
+        "6. Explicit exclusions.\n"
+        "Use contractor language such as 'Work includes', 'Installation may include', 'Customer will confirm', 'Contractor will verify', and 'Not included unless specified'.\n"
+        "Do NOT use filler phrases like efficiency, adaptable, various conditions, or standard process.\n"
+        "Do NOT include exact dimensions, exact pricing, or job-specific materials.\n"
+        "Keep the result reusable, direct, professional, and slightly contractual.\n"
+    )
+
+
 def _range_bounds(value: Any, spread: int = 1) -> List[int]:
     base = max(_safe_int(value, 0), 0)
     if base <= 0:
@@ -747,12 +764,7 @@ def improve_template_description(
     system = (
         "You are a construction template writer.\n"
         "Rewrite a reusable project template description.\n"
-        "Rules:\n"
-        "- Make it generic and repeatable.\n"
-        "- Do NOT include exact measurements, exact counts, or exact quantities.\n"
-        "- Do NOT hardcode project-specific dimensions.\n"
-        "- Put job-specific details into clarifications later, not into the template description.\n"
-        "- Keep it professional, concise, and reusable across similar jobs.\n"
+        f"{_template_scope_description_prompt()}"
         "- Return only JSON.\n"
     )
 
@@ -872,9 +884,8 @@ def create_template_from_scope(
     system = (
         "You are an AI contractor assistant building reusable construction project templates.\n"
         "Create a reusable template draft from a rough scope.\n"
-        "Rules:\n"
-        "- Template description must be generic and reusable.\n"
-        "- Do NOT include exact measurements, exact counts, or exact quantities in reusable descriptions.\n"
+        f"{_template_scope_description_prompt()}"
+        "Additional template rules:\n"
         "- Put missing specifics into clarification questions.\n"
         "- Milestone descriptions must be generic and repeatable.\n"
         "- Include milestone pricing guidance, schedule hints, and materials hints.\n"
