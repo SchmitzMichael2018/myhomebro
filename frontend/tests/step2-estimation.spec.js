@@ -1283,6 +1283,190 @@ test('step 1 pricing strategy selection persists and step 2 subcontractor pricin
   );
 });
 
+test('step 2 reset work plan clears milestones, keeps pricing intact, and shows the empty state', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Shed Build Agreement',
+    title: 'Shed Build Agreement',
+    description: 'Simple shed build for backyard storage.',
+    total_cost: '5000.00',
+    pricing_strategy: 'fixed',
+    project_type: 'Remodel',
+    project_subtype: 'Shed Build',
+    project_address_city: 'Austin',
+    project_address_state: 'TX',
+    start: '2026-04-01',
+    status: 'draft',
+    ai_scope: {
+      answers: {},
+      questions: [],
+    },
+  };
+  const milestoneState = {
+    nextId: 900,
+    items: [
+      {
+        id: 801,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Prep & Materials',
+        description: 'Site prep and material staging.',
+        amount: '1000.00',
+        start_date: '2026-04-01',
+        completion_date: '2026-04-02',
+        normalized_milestone_type: 'prep',
+      },
+      {
+        id: 802,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Primary Installation',
+        description: 'Build and install the shed shell.',
+        amount: '2500.00',
+        start_date: '2026-04-03',
+        completion_date: '2026-04-06',
+        normalized_milestone_type: 'installation',
+      },
+    ],
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [{ id: 11, value: 'Shed Build', label: 'Shed Build', owner_type: 'system' }],
+    milestoneState,
+    estimateResponse: {
+      suggested_total_price: '5000.00',
+      suggested_price_low: '4500.00',
+      suggested_price_high: '6500.00',
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'shed_build',
+        project_family_label: 'Shed Build',
+      },
+    },
+  });
+
+  await page.route('**/api/projects/milestones/reset-work-plan/', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+    milestoneState.items = [];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        agreement_id: agreement.id,
+        deleted_milestones: 2,
+        milestone_count: 0,
+      }),
+    });
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-milestone-card-list')).toBeVisible();
+  await expect(page.getByTestId('step2-reset-work-plan')).toBeVisible();
+  await expect(page.getByTestId('step2-target-project-total')).toHaveValue('5000');
+
+  await page.getByTestId('step2-reset-work-plan').click();
+  const resetModal = page.getByTestId('step2-reset-work-plan-confirmation');
+  await expect(resetModal).toBeVisible();
+  await expect(resetModal).toContainText('Reset work plan?');
+  await expect(resetModal).toContainText('This will remove all current milestones for this agreement.');
+  await resetModal.getByTestId('step2-reset-work-plan-cancel').click();
+  await expect(resetModal).toHaveCount(0);
+  await expect(page.getByTestId('step2-milestone-card-801')).toBeVisible();
+
+  await page.getByTestId('step2-reset-work-plan').click();
+  await page.getByTestId('step2-reset-work-plan-confirm').click();
+
+  await expect(page.getByTestId('step2-milestone-empty-state')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('step2-milestone-empty-state')).toContainText('No milestones yet.');
+  await expect(page.getByTestId('step2-empty-generate-milestones')).toBeVisible();
+  await expect(page.getByTestId('step2-empty-add-milestone')).toBeVisible();
+  await expect(page.getByTestId('step2-target-project-total')).toHaveValue('5000');
+});
+
+test('step 2 reset work plan warns and blocks protected milestone activity', async ({ page }) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Shed Build Agreement',
+    title: 'Shed Build Agreement',
+    description: 'Simple shed build for backyard storage.',
+    total_cost: '5000.00',
+    pricing_strategy: 'fixed',
+    project_type: 'Remodel',
+    project_subtype: 'Shed Build',
+    project_address_city: 'Austin',
+    project_address_state: 'TX',
+    start: '2026-04-01',
+    status: 'draft',
+    ai_scope: {
+      answers: {},
+      questions: [],
+    },
+  };
+  const milestoneState = {
+    nextId: 900,
+    items: [
+      {
+        id: 901,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Primary Installation',
+        description: 'Build and install the shed shell.',
+        amount: '2500.00',
+        start_date: '2026-04-03',
+        completion_date: '2026-04-06',
+        normalized_milestone_type: 'installation',
+        invoice_id: 1201,
+        is_invoiced: true,
+        completed: true,
+        assigned_subcontractor_invitation: { id: 88, invite_email: 'crew@example.com' },
+        subcontractor_milestone_agreement: { id: 77 },
+      },
+    ],
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [{ id: 11, value: 'Shed Build', label: 'Shed Build', owner_type: 'system' }],
+    milestoneState,
+    estimateResponse: {
+      suggested_total_price: '5000.00',
+      suggested_price_low: '4500.00',
+      suggested_price_high: '6500.00',
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'shed_build',
+        project_family_label: 'Shed Build',
+      },
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByTestId('step2-reset-work-plan').click();
+  const resetModal = page.getByTestId('step2-reset-work-plan-confirmation');
+  await expect(resetModal).toBeVisible();
+  await expect(resetModal).toContainText('Reset is blocked because this agreement already has');
+  await expect(resetModal.getByTestId('step2-reset-work-plan-confirm')).toBeDisabled();
+  await expect(resetModal).toContainText('invoice/completed work');
+  await expect(resetModal).toContainText('subcontractor activity');
+});
+
 if (false) {
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
     waitUntil: 'domcontentloaded',

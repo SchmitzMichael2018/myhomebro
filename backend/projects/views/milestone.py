@@ -39,10 +39,16 @@ from projects.models import (
     Invoice,
     InvoiceStatus,
     Agreement,
+    MilestonePayout,
     SubcontractorComplianceStatus,
     SubcontractorCompletionStatus,
 )
-from projects.models_subcontractor import SubcontractorInvitation, SubcontractorInvitationStatus
+from projects.models_subcontractor import (
+    SubcontractorInvitation,
+    SubcontractorInvitationStatus,
+    SubcontractorMilestoneAgreement,
+    SubcontractorQuoteRequest,
+)
 from projects.serializers.milestone import MilestoneSerializer
 from projects.serializers.milestone_file import MilestoneFileSerializer
 from projects.serializers.milestone_comment import MilestoneCommentSerializer
@@ -459,6 +465,77 @@ def _agreement_has_template_derived_state(agreement: Agreement) -> bool:
             return True
 
     return False
+
+
+def _agreement_reset_work_plan_blockers(agreement: Agreement) -> dict[str, Any]:
+    milestone_qs = Milestone.objects.filter(agreement=agreement)
+
+    started_qs = milestone_qs.filter(Q(completed=True) | Q(is_invoiced=True) | Q(invoice__isnull=False))
+    payout_qs = MilestonePayout.objects.filter(milestone__agreement=agreement)
+    subcontractor_agreement_qs = SubcontractorMilestoneAgreement.objects.filter(agreement=agreement)
+    subcontractor_quote_qs = SubcontractorQuoteRequest.objects.filter(agreement=agreement)
+    assigned_qs = milestone_qs.filter(assigned_subcontractor_invitation__isnull=False)
+
+    blockers: List[Dict[str, Any]] = []
+
+    started = list(started_qs.order_by("order", "id").values("id", "title"))
+    if started:
+        blockers.append(
+            {
+                "code": "MILESTONE_STARTED",
+                "count": len(started),
+                "milestone_ids": [row["id"] for row in started[:10]],
+                "titles": [row["title"] for row in started[:10]],
+            }
+        )
+
+    payout_rows = list(payout_qs.order_by("milestone_id", "id").values("milestone_id"))
+    if payout_rows:
+        blockers.append(
+            {
+                "code": "MILESTONE_PAYOUT_ACTIVITY",
+                "count": len(payout_rows),
+                "milestone_ids": [row["milestone_id"] for row in payout_rows[:10]],
+            }
+        )
+
+    subcontractor_agreement_rows = list(
+        subcontractor_agreement_qs.order_by("milestone_id", "id").values("milestone_id")
+    )
+    if subcontractor_agreement_rows:
+        blockers.append(
+            {
+                "code": "SUBCONTRACTOR_AGREEMENT_ACTIVITY",
+                "count": len(subcontractor_agreement_rows),
+                "milestone_ids": [row["milestone_id"] for row in subcontractor_agreement_rows[:10]],
+            }
+        )
+
+    subcontractor_quote_rows = list(subcontractor_quote_qs.order_by("milestone_id", "id").values("milestone_id"))
+    if subcontractor_quote_rows:
+        blockers.append(
+            {
+                "code": "SUBCONTRACTOR_QUOTE_ACTIVITY",
+                "count": len(subcontractor_quote_rows),
+                "milestone_ids": [row["milestone_id"] for row in subcontractor_quote_rows[:10]],
+            }
+        )
+
+    assigned_rows = list(assigned_qs.order_by("order", "id").values("id", "title"))
+    if assigned_rows:
+        blockers.append(
+            {
+                "code": "ASSIGNED_SUBCONTRACTOR_ACTIVITY",
+                "count": len(assigned_rows),
+                "milestone_ids": [row["id"] for row in assigned_rows[:10]],
+                "titles": [row["title"] for row in assigned_rows[:10]],
+            }
+        )
+
+    return {
+        "blockers": blockers,
+        "milestone_count": milestone_qs.count(),
+    }
 
 
 # ----------------------------- NEW: business rule gating ----------------------------- #
@@ -1153,6 +1230,72 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         out = MilestoneSerializer(created_objs, many=True, context={"request": request}).data
         return Response({"created": out, "count": len(created_objs)}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["post"], url_path="reset-work-plan")
+    def reset_work_plan(self, request):
+        payload = request.data or {}
+        agreement_id = payload.get("agreement_id") or payload.get("agreement")
+
+        if not agreement_id:
+            return Response({"detail": "agreement_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            ag_id = int(agreement_id)
+        except Exception:
+            return Response({"detail": "agreement_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        agreement = get_object_or_404(Agreement.objects.select_related("project"), pk=ag_id)
+
+        if not can_edit_milestones_under_agreement(agreement, allow_amendment=_is_amendment_request(request)):
+            return _locked_response(agreement)
+
+        contractor = get_contractor_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+
+        if getattr(agreement, "project", None) is None or getattr(agreement.project, "contractor_id", None) != contractor.id:
+            return Response({"detail": "Not authorized for this agreement."}, status=status.HTTP_403_FORBIDDEN)
+
+        with transaction.atomic():
+            existing = list(Milestone.objects.select_for_update().filter(agreement_id=ag_id))
+            if not existing:
+                return Response(
+                    {
+                        "ok": True,
+                        "agreement_id": agreement.id,
+                        "deleted_milestones": 0,
+                        "milestone_count": 0,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            safety = _agreement_reset_work_plan_blockers(agreement)
+            blockers = safety.get("blockers") or []
+            if blockers:
+                return Response(
+                    {
+                        "detail": "Reset work plan is blocked because this agreement already has milestone activity.",
+                        "code": "RESET_WORK_PLAN_BLOCKED",
+                        "agreement_id": agreement.id,
+                        "milestone_count": safety.get("milestone_count", len(existing)),
+                        "blockers": blockers,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            deleted_count = len(existing)
+            Milestone.objects.filter(agreement_id=ag_id).delete()
+
+        _recompute_agreement_total_cost(agreement)
+        return Response(
+            {
+                "ok": True,
+                "agreement_id": agreement.id,
+                "deleted_milestones": deleted_count,
+                "milestone_count": 0,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     # ---------------- completion actions ---------------- #
     @action(detail=True, methods=["post"], url_path="complete")

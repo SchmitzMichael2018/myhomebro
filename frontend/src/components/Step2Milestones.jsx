@@ -1105,6 +1105,9 @@ export default function Step2Milestones({
   const [editOpen, setEditOpen] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [newMilestoneOpen, setNewMilestoneOpen] = useState(false);
+  const [resetWorkPlanOpen, setResetWorkPlanOpen] = useState(false);
+  const [resetWorkPlanBusy, setResetWorkPlanBusy] = useState(false);
+  const [resetWorkPlanError, setResetWorkPlanError] = useState("");
   const [expandedMilestoneId, setExpandedMilestoneId] = useState(null);
   const newMilestoneTitleRef = useRef(null);
   const dragSourceIndexRef = useRef(null);
@@ -1224,6 +1227,62 @@ export default function Step2Milestones({
   const effectiveMilestones = useMemo(() => {
     return Array.isArray(fallbackMilestones) ? fallbackMilestones : Array.isArray(milestones) ? milestones : [];
   }, [fallbackMilestones, milestones]);
+  const resetWorkPlanSafety = useMemo(() => {
+    const rows = Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
+    const blockers = [];
+    const seen = new Set();
+
+    const addBlocker = (kind, row, label) => {
+      const key = `${kind}:${row?.id ?? label ?? ""}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      blockers.push({
+        kind,
+        id: row?.id ?? null,
+        label: label || safeStr(row?.title) || `Milestone ${blockers.length + 1}`,
+      });
+    };
+
+    rows.forEach((row, idx) => {
+      const title = safeStr(row?.title) || `Milestone ${idx + 1}`;
+      const hasInvoice = !!row?.invoice_id || !!row?.is_invoiced || !!row?.completed || !!row?.invoice;
+      const hasPayout =
+        !!row?.payout_record ||
+        !!row?.subcontractor_payout_orchestration ||
+        Number(row?.subcontractor_payout_amount_cents || 0) > 0;
+      const completionStatus = safeStr(row?.subcontractor_completion_status).toLowerCase();
+      const hasSubcontractorActivity =
+        !!row?.assigned_subcontractor_invitation ||
+        !!row?.subcontractor_milestone_agreement ||
+        !!row?.subcontractor_quote_request ||
+        (completionStatus && completionStatus !== "not_submitted");
+
+      if (hasInvoice) addBlocker("invoice", row, title);
+      if (hasPayout) addBlocker("payout", row, title);
+      if (hasSubcontractorActivity) addBlocker("subcontractor", row, title);
+    });
+
+    const hasProtectedActivity = blockers.length > 0;
+    const summary = hasProtectedActivity
+      ? Array.from(
+          new Set(
+            blockers.map((blocker) =>
+              blocker.kind === "invoice"
+                ? "invoice/completed work"
+                : blocker.kind === "payout"
+                ? "payout records"
+                : "subcontractor activity"
+            )
+          )
+        )
+      : [];
+
+    return {
+      hasProtectedActivity,
+      blockers,
+      summary,
+    };
+  }, [effectiveMilestones]);
   const agreementPricingStrategy = safeStr(agreementMeta?.pricing_strategy || "fixed").toLowerCase() || "fixed";
   const subcontractorPlanStorageKey = useMemo(
     () => `mhb_step2_subcontractor_plan_${agreementId || "new"}`,
@@ -3712,6 +3771,47 @@ export default function Step2Milestones({
     }
   }
 
+  async function handleResetWorkPlan() {
+    if (milestonesLocked) {
+      lockToast();
+      return;
+    }
+    if (!agreementId) {
+      toast.error("Missing agreement id.");
+      return;
+    }
+    if (resetWorkPlanSafety.hasProtectedActivity) {
+      setResetWorkPlanError(
+        "Reset is blocked because one or more milestones already have invoice, payout, or subcontractor activity."
+      );
+      return;
+    }
+
+    setResetWorkPlanBusy(true);
+    setResetWorkPlanError("");
+    try {
+      await api.post("/projects/milestones/reset-work-plan/", { agreement_id: agreementId });
+      toast.success("Work plan reset.");
+      setResetWorkPlanOpen(false);
+      setNewMilestoneOpen(false);
+      setEditOpen(false);
+      setEditMilestone(null);
+      setEditAiPreview("");
+      markMilestonesUserModified();
+      await refreshMilestonesSafe();
+    } catch (e) {
+      const detail =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        e?.message ||
+        "Reset work plan failed.";
+      setResetWorkPlanError(detail);
+      toast.error(detail);
+    } finally {
+      setResetWorkPlanBusy(false);
+    }
+  }
+
   function handleEditClick(m, idx, options = {}) {
     if (milestonesLocked) {
       lockToast();
@@ -4723,6 +4823,9 @@ export default function Step2Milestones({
               <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-600">
                 <span>Suggest Milestone Pricing: Create initial pricing for each phase.</span>
                 <span>Rebalance Milestones: Redistribute your current total across milestones.</span>
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                AI suggestions are advisory. Review before applying. MyHomeBro will avoid adding duplicate phases.
               </div>
               {aiLoading || aiMilestoneGenerationBusy ? (
                 <div
@@ -5834,6 +5937,20 @@ export default function Step2Milestones({
             >
               {newMilestoneOpen ? "Hide Add Milestone" : "+ Add Milestone"}
             </button>
+            {effectiveMilestones.length ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setResetWorkPlanError("");
+                  setResetWorkPlanOpen(true);
+                }}
+                className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                disabled={milestonesLocked}
+                data-testid="step2-reset-work-plan"
+              >
+                Reset Work Plan
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -6428,21 +6545,30 @@ export default function Step2Milestones({
             data-testid="step2-milestone-empty-state"
           >
             <div className="text-base font-semibold text-slate-950">Start your work plan</div>
-        <div className="mt-1 text-sm text-slate-600">
-          Add a milestone card or let AI draft one to get moving quickly.
-        </div>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => setNewMilestoneOpen(true)}
-            disabled={milestonesLocked}
-            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-          >
-            Add Milestone
-          </button>
-        </div>
-        <div className="mt-3 text-xs text-slate-500">AI milestone generation coming next.</div>
-      </div>
+            <div className="mt-1 text-sm text-slate-600">
+              No milestones yet.
+            </div>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleRunAiSuggest}
+                disabled={milestonesLocked || aiLoading || aiMilestoneGenerationBusy || templateApplied}
+                className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-50 disabled:opacity-60"
+                data-testid="step2-empty-generate-milestones"
+              >
+                {aiLoading || aiMilestoneGenerationBusy ? "Generating milestones..." : "Generate Suggested Milestones"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewMilestoneOpen(true)}
+                disabled={milestonesLocked}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                data-testid="step2-empty-add-milestone"
+              >
+                Add Milestone Manually
+              </button>
+            </div>
+          </div>
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -7137,6 +7263,60 @@ export default function Step2Milestones({
       </div>
       </section>
       )}
+
+      {resetWorkPlanOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div
+            className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl"
+            data-testid="step2-reset-work-plan-confirmation"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="step2-reset-work-plan-title"
+          >
+            <div className="text-lg font-semibold text-slate-950" id="step2-reset-work-plan-title">
+              Reset work plan?
+            </div>
+            <div className="mt-2 text-sm text-slate-700">
+              This will remove all current milestones for this agreement. Your project details, customer info, and pricing strategy will stay the same.
+            </div>
+            {resetWorkPlanSafety.hasProtectedActivity ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                Reset is blocked because this agreement already has {resetWorkPlanSafety.summary.join(", ")}.
+                Remove or resolve those records first.
+              </div>
+            ) : null}
+            {resetWorkPlanError ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                {resetWorkPlanError}
+              </div>
+            ) : null}
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (resetWorkPlanBusy) return;
+                  setResetWorkPlanOpen(false);
+                  setResetWorkPlanError("");
+                }}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                disabled={resetWorkPlanBusy}
+                data-testid="step2-reset-work-plan-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResetWorkPlan}
+                disabled={resetWorkPlanBusy || resetWorkPlanSafety.hasProtectedActivity}
+                className="rounded-xl border border-rose-300 bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60"
+                data-testid="step2-reset-work-plan-confirm"
+              >
+                {resetWorkPlanBusy ? "Resetting..." : "Reset Plan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 flex items-center justify-between">
         <button type="button" onClick={handleBackClick} className="rounded border px-3 py-2 text-sm">
