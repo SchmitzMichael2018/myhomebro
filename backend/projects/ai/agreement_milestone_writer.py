@@ -786,6 +786,123 @@ def _fallback_milestone_rows(description: Any) -> List[Dict[str, Any]]:
     )
 
 
+def _milestone_title_fingerprint(value: Any) -> str:
+    raw = _safe_str(value).lower().replace("&", " and ")
+    raw = re.sub(r"[^a-z0-9\s]+", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    if not raw:
+        return ""
+
+    stop_words = {
+        "a",
+        "an",
+        "and",
+        "at",
+        "by",
+        "final",
+        "for",
+        "from",
+        "in",
+        "into",
+        "is",
+        "it",
+        "major",
+        "main",
+        "of",
+        "on",
+        "or",
+        "phase",
+        "project",
+        "site",
+        "stage",
+        "step",
+        "the",
+        "to",
+        "with",
+        "without",
+        "within",
+        "work",
+        "primary",
+    }
+
+    tokens = [token for token in raw.split(" ") if token and token not in stop_words]
+    if not tokens:
+        return ""
+    return " ".join(sorted(set(tokens)))
+
+
+def _is_simple_structure_scope(*, project_type: Any, project_subtype: Any, description: Any) -> bool:
+    hay = " ".join(
+        _normalize_baseline_key(value)
+        for value in (project_type, project_subtype, description)
+        if _safe_str(value)
+    )
+    return any(
+        token in hay
+        for token in (
+            "shed",
+            "storage shed",
+            "tool shed",
+            "garden shed",
+            "backyard shed",
+            "outbuilding",
+        )
+    )
+
+
+def _dedupe_milestone_rows(rows: List[Dict[str, Any]], *, existing_rows: List[Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
+    existing_fingerprints = {
+        fp
+        for fp in (_milestone_title_fingerprint((row or {}).get("title")) for row in (existing_rows or []))
+        if fp
+    }
+    seen: Dict[str, Dict[str, Any]] = {}
+    deduped: List[Dict[str, Any]] = []
+
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        fingerprint = _milestone_title_fingerprint(row.get("title"))
+        if not fingerprint or fingerprint in existing_fingerprints:
+            continue
+
+        current = {
+            **row,
+            "title": _safe_str(row.get("title")),
+            "description": _safe_str(row.get("description")),
+        }
+
+        previous = seen.get(fingerprint)
+        if previous is None:
+            seen[fingerprint] = current
+            deduped.append(current)
+            continue
+
+        merged = {
+            **previous,
+            **current,
+            "description": current["description"]
+            if len(current["description"]) > len(previous.get("description", ""))
+            else previous.get("description", ""),
+        }
+        seen[fingerprint] = merged
+        index = next(
+            (i for i, item in enumerate(deduped) if _milestone_title_fingerprint((item or {}).get("title")) == fingerprint),
+            -1,
+        )
+        if index >= 0:
+            deduped[index] = merged
+
+    return [
+        {**row, "order": idx + 1}
+        for idx, row in enumerate(deduped)
+    ]
+
+
+def _milestone_plan_limit(*, project_type: Any, project_subtype: Any, description: Any) -> int:
+    return 6 if _is_simple_structure_scope(project_type=project_type, project_subtype=project_subtype, description=description) else 8
+
+
 def _apply_milestone_rule_action(rows: List[Dict[str, Any]], action: Dict[str, Any], answers: Dict[str, Any]) -> List[Dict[str, Any]]:
     next_rows = list(rows or [])
     if not isinstance(action, dict):
@@ -880,6 +997,10 @@ def _shape_milestone_rows_for_clarifications(
             continue
         for action in operation.get("actions") or []:
             rows = _apply_milestone_rule_action(rows, action, answers)
+
+    rows = _dedupe_milestone_rows(rows)
+    plan_limit = _milestone_plan_limit(project_type=project_type, project_subtype=project_subtype, description=description)
+    rows = rows[:plan_limit]
 
     default_amounts = _default_milestone_amounts(len(rows), total_budget)
     shaped: List[Dict[str, Any]] = []
@@ -1398,6 +1519,7 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         base_milestones=milestones,
     )
     milestones = _shift_milestones_to_today(milestones)
+    milestones = _dedupe_milestone_rows(milestones)
 
     questions = _canonicalize_questions(questions_raw)
 

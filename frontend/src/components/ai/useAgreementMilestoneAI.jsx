@@ -14,6 +14,7 @@
 import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../../api";
+import { dedupeMilestoneRows } from "../../lib/milestonePlanGuardrails.js";
 
 function safeStr(v) {
   return v == null ? "" : String(v).trim();
@@ -142,7 +143,8 @@ function shiftMilestoneDatesToToday(list) {
 function normalizeCreatedMilestones(list) {
   if (!Array.isArray(list)) return [];
   return shiftMilestoneDatesToToday(
-    list.map((m, idx) => ({
+    dedupeMilestoneRows(
+      list.map((m, idx) => ({
       id: m?.id ?? null,
       order: m?.order ?? m?.sort_order ?? idx + 1,
       title: safeStr(m?.title),
@@ -165,14 +167,17 @@ function normalizeCreatedMilestones(list) {
       pricing_source_note: safeStr(m?.pricing_source_note),
       recommended_duration_days: m?.recommended_duration_days ?? "",
       materials_hint: safeStr(m?.materials_hint),
-    }))
+      })),
+      {}
+    )
   );
 }
 
 function normalizeAiMilestones(list) {
   if (!Array.isArray(list)) return [];
   return shiftMilestoneDatesToToday(
-    list.map((m, idx) => {
+    dedupeMilestoneRows(
+      list.map((m, idx) => {
       const title = safeStr(m?.title) || `Milestone ${idx + 1}`;
       const description = safeStr(m?.description);
       const start_date = toDateOnly(m?.start_date ?? null);
@@ -193,7 +198,9 @@ function normalizeAiMilestones(list) {
         recommended_duration_days: m?.recommended_duration_days ?? "",
         note: safeStr(m?.note),
       };
-    })
+      }),
+      {}
+    )
   );
 }
 
@@ -754,7 +761,7 @@ export default function useAgreementMilestoneAI({
           agreement_id: agreementId,
           mode,
           spread_strategy: spreadEnabled ? "equal" : "keep_existing_amounts",
-          milestones: aiPreview.milestones,
+          milestones: dedupeMilestoneRows(aiPreview.milestones || []),
           auto_schedule: !!autoSchedule,
           project_family_key: resolvedProjectFamily.project_family_key,
           project_family_label: resolvedProjectFamily.project_family_label,

@@ -236,6 +236,70 @@ def _norm_text(s: str) -> str:
     return s
 
 
+_MILESTONE_TITLE_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "into",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+    "without",
+    "within",
+    "final",
+    "main",
+    "major",
+    "phase",
+    "project",
+    "site",
+    "stage",
+    "step",
+    "work",
+    "primary",
+}
+
+
+def _milestone_title_fingerprint(value: Any) -> str:
+    raw = _norm_text(_safe_str(value)).replace("&", " and ")
+    tokens = [token for token in raw.split() if token and token not in _MILESTONE_TITLE_STOP_WORDS]
+    if not tokens:
+        return ""
+    return " ".join(sorted(set(tokens)))
+
+
+def _dedupe_milestone_rows(rows: list[dict[str, Any]], *, max_count: int = 8) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        fingerprint = _milestone_title_fingerprint(row.get("title"))
+        if not fingerprint or fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        out.append(dict(row))
+
+    if max_count and len(out) > max_count:
+        out = out[:max_count]
+
+    for idx, row in enumerate(out, start=1):
+        row["order"] = idx
+
+    return out
+
+
 def _qmoney(v: Decimal | float | int | str) -> Decimal:
     return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -719,7 +783,7 @@ def _template_milestones_to_payload(
                 "source": "template",
             }
         )
-    return out
+    return _dedupe_milestone_rows(out)
 
 
 def _fallback_milestones_to_payload(project_subtype: str, *, suggested_total: Decimal, project_type: str = "") -> list[dict[str, Any]]:
@@ -749,7 +813,7 @@ def _fallback_milestones_to_payload(project_subtype: str, *, suggested_total: De
             last_amt = Decimal(str(out[-1]["suggested_amount"]))
             out[-1]["suggested_amount"] = float(_qmoney(last_amt + drift))
 
-    return out
+    return _dedupe_milestone_rows(out)
 
 
 def _openai_refine_scope(
@@ -900,6 +964,8 @@ def draft_project_structure(
             # AI clarifications replace fallback/template clarifications for the draft result,
             # but are canonicalized so reruns are more stable.
             clarifications = _canonicalize_clarifications(ai_clarifications, source="ai")
+
+    milestones = _dedupe_milestone_rows(milestones)
 
     total_days = 0
     for m in milestones:

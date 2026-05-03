@@ -1,4 +1,5 @@
 import rules from "../../../shared/milestone_shaping_rules.json" with { type: "json" };
+import { dedupeMilestoneRows } from "./milestonePlanGuardrails.js";
 
 function safeStr(value) {
   return value == null ? "" : String(value).trim();
@@ -299,6 +300,8 @@ export function buildClarificationAwareMilestoneDraft({
       rows = applyAction(rows, action, clarificationAnswers);
     }
   }
+
+  rows = dedupeMilestoneRows(rows);
 
   const defaultAmounts = buildDefaultMilestoneAmounts(rows.length, totalBudget);
   return rows.map((row, idx) => {

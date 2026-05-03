@@ -29,6 +29,11 @@ import {
   buildClarificationAwareMilestoneDraft,
 } from "../lib/milestoneDraftShaping.js";
 import {
+  assessMilestonePlanGuardrails,
+  dedupeMilestoneRows,
+  formatMilestoneGuardrailSummary,
+} from "../lib/milestonePlanGuardrails.js";
+import {
   summarizeMilestonePricingPlan,
   normalizeSubcontractorPlan,
   getMilestonePrimaryAction,
@@ -1202,6 +1207,9 @@ export default function Step2Milestones({
   const [aiMilestonePreviewMode, setAiMilestonePreviewMode] = useState("");
   const [aiMilestoneGenerationBusy, setAiMilestoneGenerationBusy] = useState(false);
   const [aiMilestoneGenerationError, setAiMilestoneGenerationError] = useState("");
+  const [aiMilestoneApplyPrompt, setAiMilestoneApplyPrompt] = useState(null);
+  const [aiMilestonePlanWarningPrompt, setAiMilestonePlanWarningPrompt] = useState(null);
+  const [aiMilestonePlanAnalysis, setAiMilestonePlanAnalysis] = useState(null);
   const { highlights: aiHighlights, markUpdated: markAiUpdated } = useAiFieldHighlights({
     durationMs: 5000,
   });
@@ -2687,17 +2695,19 @@ export default function Step2Milestones({
 
     return {
       ...preview,
-      milestones: buildClarificationAwareMilestoneDraft({
-        projectType,
-        projectSubtype,
-        projectFamilyKey: resolvedProjectFamily.project_family_key,
-        projectFamilyLabel: resolvedProjectFamily.project_family_label,
-        description:
-          safeStr(agreementMeta?.description || agreementMeta?.project_description || preview.scope_text),
-        clarificationAnswers: agreementMeta?.ai_scope?.answers || {},
-        amountMode: "preserve_base",
-      baseMilestones: preview.milestones,
-      }),
+      milestones: dedupeMilestoneRows(
+        buildClarificationAwareMilestoneDraft({
+          projectType,
+          projectSubtype,
+          projectFamilyKey: resolvedProjectFamily.project_family_key,
+          projectFamilyLabel: resolvedProjectFamily.project_family_label,
+          description:
+            safeStr(agreementMeta?.description || agreementMeta?.project_description || preview.scope_text),
+          clarificationAnswers: agreementMeta?.ai_scope?.answers || {},
+          amountMode: "preserve_base",
+          baseMilestones: preview.milestones,
+        })
+      ),
     };
   }
 
@@ -2833,20 +2843,38 @@ export default function Step2Milestones({
     ];
   }
 
+  function analyzeMilestonePlan(rows, { existingRows = effectiveMilestones, currentTargetTotal = null } = {}) {
+    return assessMilestonePlanGuardrails(rows, {
+      existingRows,
+      currentTargetTotal:
+        currentTargetTotal != null
+          ? currentTargetTotal
+          : parseAmountStrict(projectBudgetInput) || parseAmountStrict(agreementMeta?.total_cost || agreementMeta?.total),
+      projectFamilyKey: resolvedProjectFamily.project_family_key,
+      projectFamilyLabel: resolvedProjectFamily.project_family_label,
+      projectTitle: agreementMeta?.project_title || agreementMeta?.title || "",
+      projectScope:
+        agreementMeta?.scope_of_work || agreementMeta?.description || agreementMeta?.project_description || "",
+    });
+  }
+
   function clearAiMilestonePreview({ clearSuggestedIds = true } = {}) {
     setAiPreview(null);
     setAiMilestonePreviewMode("");
     setAiMilestoneGenerationError("");
+    setAiMilestoneApplyPrompt(null);
+    setAiMilestonePlanWarningPrompt(null);
+    setAiMilestonePlanAnalysis(null);
     if (clearSuggestedIds) {
       setAiSuggestedMilestoneIds([]);
     }
   }
 
-  function materializeAiSuggestedMilestones(mode = "replace") {
+  function buildAiMilestonePreviewAnalysis(mode = "replace") {
     const source = Array.isArray(aiMilestonePreview) ? aiMilestonePreview : [];
-    if (!source.length) return [];
+    if (!source.length) return { rawRows: [], previewRows: [], analysis: null };
 
-    const previewRows = normalizeCardRows(
+    const rawRows = normalizeCardRows(
       source.map((row, idx) =>
         normalizeMilestoneForLocalFallback(
           {
@@ -2859,25 +2887,38 @@ export default function Step2Milestones({
       )
     ).filter(Boolean);
 
-    if (mode === "append") {
-      return sortFallbackMilestones([
-        ...effectiveMilestones,
-        ...previewRows.map((row, idx) => ({
-          ...row,
-          order: effectiveMilestones.length + idx + 1,
-        })),
-      ]);
-    }
-
-    return sortFallbackMilestones(
-      previewRows.map((row, idx) => ({
+    const existingRows = mode === "add_missing" ? effectiveMilestones : [];
+    const previewRows = sortFallbackMilestones(
+      dedupeMilestoneRows(rawRows, { existingRows }).map((row, idx) => ({
         ...row,
         order: idx + 1,
       }))
     );
+    const analysis = analyzeMilestonePlan(rawRows, {
+      existingRows,
+      currentTargetTotal: parseAmountStrict(projectBudgetInput) || parseAmountStrict(agreementMeta?.total_cost || agreementMeta?.total),
+    });
+
+    return { rawRows, previewRows, analysis };
   }
 
-  function applyAiSuggestedMilestones(mode = "replace") {
+  function materializeAiSuggestedMilestones(mode = "replace") {
+    const { previewRows } = buildAiMilestonePreviewAnalysis(mode);
+    if (!previewRows.length) return [];
+
+    if (mode === "add_missing") {
+      return sortFallbackMilestones(
+        dedupeMilestoneRows([...effectiveMilestones, ...previewRows], { existingRows: [] }).map((row, idx) => ({
+          ...row,
+          order: idx + 1,
+        }))
+      );
+    }
+
+    return sortFallbackMilestones(previewRows.map((row, idx) => ({ ...row, order: idx + 1 })));
+  }
+
+  function applyAiSuggestedMilestones(mode = "replace", { force = false } = {}) {
     if (!hasAiMilestonePreview) {
       toast("No AI milestone preview is available yet.");
       return;
@@ -2897,11 +2938,27 @@ export default function Step2Milestones({
       return;
     }
 
-    const nextRows = materializeAiSuggestedMilestones(mode);
-    if (!nextRows.length) {
+    const { previewRows, analysis } = buildAiMilestonePreviewAnalysis(mode);
+    if (!previewRows.length) {
       toast("No milestone suggestions are available to apply.");
       return;
     }
+    if (analysis?.blocked) {
+      toast.error(
+        analysis.issues?.find((issue) => issue.code === "too_many_milestones")?.message ||
+          "AI suggested too many milestones to apply safely."
+      );
+      setAiMilestonePlanAnalysis(analysis);
+      return;
+    }
+
+    if (!force && analysis?.needsConfirmation) {
+      setAiMilestonePlanAnalysis(analysis);
+      setAiMilestonePlanWarningPrompt({ mode, analysis });
+      return;
+    }
+
+    const nextRows = materializeAiSuggestedMilestones(mode);
 
     const nextIds = nextRows.map((row) => row?.id).filter(Boolean);
     setFallbackMilestones(nextRows);
@@ -2912,8 +2969,8 @@ export default function Step2Milestones({
     clearAiMilestonePreview({ clearSuggestedIds: false });
     setAiSuggestedMilestoneIds(nextIds);
     toast.success(
-      mode === "append"
-        ? `Appended ${nextRows.length} suggested milestone${nextRows.length === 1 ? "" : "s"} for review.`
+      mode === "add_missing"
+        ? `Added ${nextRows.length} milestone${nextRows.length === 1 ? "" : "s"} after skipping duplicates.`
         : `Applied ${nextRows.length} suggested milestone${nextRows.length === 1 ? "" : "s"} for review.`
     );
   }
@@ -2936,35 +2993,38 @@ export default function Step2Milestones({
     return "";
   }
 
-  function handleRunAiSuggest() {
-    if (!agreementId) return;
-    setAiMilestoneGenerationError("");
-    if (milestonesLocked) {
-      lockToast();
-      return;
-    }
-    if (templateApplied) {
-      toast("A template is already applied. Use the template-driven milestone structure instead of regenerating milestones with AI here.", {
-        icon: "",
-      });
-      return;
-    }
-
+  function startAiMilestoneGeneration(mode = "replace") {
     setAiMilestoneGenerationBusy(true);
     setTimeout(() => {
       try {
-        const previewRows = normalizeCardRows(
-          buildLocalMilestoneSuggestions().map((row, idx) =>
-            normalizeMilestoneForLocalFallback(
-              {
-                ...row,
-                id: `ai-${idx + 1}`,
-                order: idx + 1,
-              },
-              idx + 1
+        const previewRows = dedupeMilestoneRows(
+          normalizeCardRows(
+            buildLocalMilestoneSuggestions().map((row, idx) =>
+              normalizeMilestoneForLocalFallback(
+                {
+                  ...row,
+                  id: `ai-${idx + 1}`,
+                  order: idx + 1,
+                },
+                idx + 1
+              )
             )
-          )
-        ).filter(Boolean);
+          ).filter(Boolean),
+          { existingRows: mode === "add_missing" ? effectiveMilestones : [] }
+        );
+        const analysis = analyzeMilestonePlan(previewRows, {
+          existingRows: mode === "add_missing" ? effectiveMilestones : [],
+        });
+
+        if (!previewRows.length) {
+          setAiPreview(null);
+          setAiMilestonePlanAnalysis(analysis);
+          setAiMilestoneGenerationError(
+            "AI suggestions matched your existing milestones. Try replace plan or add milestones manually."
+          );
+          toast("AI suggestions matched your existing milestones.");
+          return;
+        }
 
         const preview = {
           scope_text:
@@ -2983,7 +3043,8 @@ export default function Step2Milestones({
         };
 
         setAiPreview(preview);
-        setAiMilestonePreviewMode(effectiveMilestones.length ? "replace" : "apply");
+        setAiMilestonePreviewMode(mode);
+        setAiMilestonePlanAnalysis(analysis);
         setAiSuggestedMilestoneIds([]);
         setAiChangeSummary("AI suggested milestones are ready for review.");
         onAiUpdateFeedback("AI suggested milestones are ready for review.");
@@ -3004,6 +3065,30 @@ export default function Step2Milestones({
         setAiMilestoneGenerationBusy(false);
       }
     }, 450);
+  }
+
+  function handleRunAiSuggest() {
+    if (!agreementId) return;
+    setAiMilestoneGenerationError("");
+    if (milestonesLocked) {
+      lockToast();
+      return;
+    }
+    if (templateApplied) {
+      toast("A template is already applied. Use the template-driven milestone structure instead of regenerating milestones with AI here.", {
+        icon: "",
+      });
+      return;
+    }
+
+    if (effectiveMilestones.length) {
+      setAiMilestoneApplyPrompt({
+        existingCount: effectiveMilestones.length,
+      });
+      return;
+    }
+
+    startAiMilestoneGeneration("replace");
   }
 
   async function handleApplyAiMilestonesBulk(mode) {
@@ -4091,8 +4176,14 @@ export default function Step2Milestones({
 
     try {
       setAssistantApplyingMilestones(true);
+      const filteredSuggestions = dedupeMilestoneRows(assistantSuggestionRows, { existingRows: effectiveMilestones });
+      if (!filteredSuggestions.length) {
+        toast("AI suggestions matched your existing milestones, so nothing new was added.");
+        setDismissedAssistantSuggestionSignature(assistantSuggestionSignature);
+        return;
+      }
       const createdIds = [];
-      for (const row of assistantSuggestionRows) {
+      for (const row of filteredSuggestions) {
         const result = await saveMilestone({
           title: row.title || "",
           description: row.description || "",
@@ -4109,15 +4200,15 @@ export default function Step2Milestones({
         markAiUpdated(createdIds);
       }
       {
-        const feedback = `Added ${assistantSuggestionRows.length} milestone suggestion${
-          assistantSuggestionRows.length === 1 ? "" : "s"
+        const feedback = `Added ${filteredSuggestions.length} milestone suggestion${
+          filteredSuggestions.length === 1 ? "" : "s"
         } from AI guidance.`;
         setAiChangeSummary(feedback);
         onAiUpdateFeedback(feedback);
       }
       toast.success(
-        `Added ${assistantSuggestionRows.length} suggested milestone${
-          assistantSuggestionRows.length === 1 ? "" : "s"
+        `Added ${filteredSuggestions.length} suggested milestone${
+          filteredSuggestions.length === 1 ? "" : "s"
         }.`
       );
       await refreshMilestonesSafe();
@@ -4757,6 +4848,26 @@ export default function Step2Milestones({
           <div className="mt-1 text-sm text-amber-950/80">
             AI is turning the project scope into work phases. Review the draft before applying it.
           </div>
+          <div className="mt-1 text-xs font-medium text-amber-900">
+            AI suggestions are advisory. Review before applying. MyHomeBro will avoid adding duplicate phases.
+          </div>
+          {aiMilestonePlanAnalysis?.issues?.length ? (
+            <div className="mt-3 rounded-xl border border-amber-300 bg-white px-3 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+                Plan quality warnings
+              </div>
+              <ul className="mt-2 space-y-1 text-sm text-amber-950">
+                {aiMilestonePlanAnalysis.issues.map((issue) => (
+                  <li key={issue.code}>{issue.message}</li>
+                ))}
+              </ul>
+              {formatMilestoneGuardrailSummary(aiMilestonePlanAnalysis).length ? (
+                <div className="mt-2 text-xs text-amber-900/90">
+                  {formatMilestoneGuardrailSummary(aiMilestonePlanAnalysis)[0]}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {aiMilestonePreview.map((row, idx) => {
               const previewAmount = Number(row?.amount || row?.suggested_amount || 0);
@@ -4806,57 +4917,120 @@ export default function Step2Milestones({
             </div>
           ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
-            {effectiveMilestones.length ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => applyAiSuggestedMilestones("replace")}
-                  disabled={aiLoading || milestonesLocked || templateApplied}
-                  className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
-                  data-testid="step2-apply-suggested-milestones"
-                >
-                  Replace Existing Milestones
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyAiSuggestedMilestones("append")}
-                  disabled={aiLoading || milestonesLocked || templateApplied}
-                  className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60"
-                >
-                  Append to Existing Milestones
-                </button>
-                <button
-                  type="button"
-                  onClick={clearAiMilestonePreview}
-                  disabled={aiLoading}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => applyAiSuggestedMilestones("replace")}
-                  disabled={aiLoading || milestonesLocked || templateApplied}
-                  className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
-                  data-testid="step2-apply-suggested-milestones"
-                >
-                  Apply Suggested Milestones
-                </button>
-                <button
-                  type="button"
-                  onClick={clearAiMilestonePreview}
-                  disabled={aiLoading}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  Cancel
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() => applyAiSuggestedMilestones(aiMilestonePreviewMode || "replace")}
+              disabled={
+                aiLoading ||
+                milestonesLocked ||
+                templateApplied ||
+                aiMilestonePlanAnalysis?.blocked
+              }
+              className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+              data-testid="step2-apply-suggested-milestones"
+            >
+              {aiMilestonePreviewMode === "add_missing"
+                ? "Add Missing Only"
+                : effectiveMilestones.length
+                ? "Replace Plan"
+                : "Apply Suggested Milestones"}
+            </button>
+            <button
+              type="button"
+              onClick={clearAiMilestonePreview}
+              disabled={aiLoading}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Cancel
+            </button>
           </div>
         </section>
+      ) : null}
+
+      {aiMilestoneApplyPrompt ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          data-testid="step2-ai-milestone-apply-prompt"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="text-lg font-semibold text-slate-900">Replace existing milestones or add missing phases?</div>
+            <div className="mt-2 text-sm text-slate-700">
+              You already have {aiMilestoneApplyPrompt.existingCount || 0} milestone
+              {aiMilestoneApplyPrompt.existingCount === 1 ? "" : "s"} on this agreement.
+              Choose how AI should handle the new draft.
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAiMilestoneApplyPrompt(null);
+                  startAiMilestoneGeneration("replace");
+                }}
+                className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+              >
+                Replace Plan
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiMilestoneApplyPrompt(null);
+                  startAiMilestoneGeneration("add_missing");
+                }}
+                className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
+              >
+                Add Missing Only
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiMilestoneApplyPrompt(null)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {aiMilestonePlanWarningPrompt ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          data-testid="step2-ai-plan-warning-prompt"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="text-lg font-semibold text-slate-900">Review plan quality warnings</div>
+            <div className="mt-2 text-sm text-slate-700">
+              This AI draft still needs a quick confirmation before it is applied.
+            </div>
+            {aiMilestonePlanWarningPrompt.analysis?.issues?.length ? (
+              <ul className="mt-3 space-y-1 text-sm text-slate-700">
+                {aiMilestonePlanWarningPrompt.analysis.issues.map((issue) => (
+                  <li key={issue.code}>- {issue.message}</li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const mode = aiMilestonePlanWarningPrompt.mode || "replace";
+                  setAiMilestonePlanWarningPrompt(null);
+                  applyAiSuggestedMilestones(mode, { force: true });
+                }}
+                className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+              >
+                Apply Anyway
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiMilestonePlanWarningPrompt(null)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {false && estimatePreview ? (
@@ -5343,6 +5517,14 @@ export default function Step2Milestones({
                   ? `Current target: ${formatCurrency(projectBudgetInput)}`
                   : "Set the target total above to rebalance milestone pricing."}
               </div>
+              {projectBudgetInput &&
+              Number.isFinite(Number(estimatePreview?.suggested_total_price)) &&
+              Number(estimatePreview?.suggested_total_price || 0) > Number(projectBudgetInput || 0) ? (
+                <div className="mt-1 text-xs text-amber-700">
+                  Similar projects may range higher, but your current total remains{" "}
+                  {formatCurrency(projectBudgetInput)} unless you apply changes.
+                </div>
+              ) : null}
               <div className="mt-1 text-xs text-slate-600">{step2ModeMeta.budgetDescription}</div>
             </div>
 
@@ -5606,7 +5788,7 @@ export default function Step2Milestones({
               disabled={aiApplying || milestonesLocked || templateApplied}
               className="rounded border px-3 py-2 text-sm disabled:opacity-60"
             >
-              {aiApplying ? "Applying" : "Append Milestones (Bulk)"}
+              {aiApplying ? "Applying" : "Add Missing Milestones (Bulk)"}
             </button>
             <button
               type="button"
