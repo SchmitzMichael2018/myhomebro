@@ -401,6 +401,7 @@ else:
     EMAIL_HOST_PASSWORD = POSTMARK_SERVER_TOKEN
 
 DEFAULT_FROM_EMAIL = get_env_var("DEFAULT_FROM_EMAIL", "MyHomeBro <info@myhomebro.com>")
+SERVER_EMAIL = get_env_var("SERVER_EMAIL", "no-reply@myhomebro.com")
 SUPPORT_EMAIL = get_env_var("SUPPORT_EMAIL", "support@myhomebro.com")
 SUPPORT_INBOUND_SYNC_ENABLED = get_bool("SUPPORT_INBOUND_SYNC_ENABLED", default=False)
 SUPPORT_GMAIL_SYNC_LOOKBACK_DAYS = int(get_env_var("SUPPORT_GMAIL_SYNC_LOOKBACK_DAYS", "14"))
