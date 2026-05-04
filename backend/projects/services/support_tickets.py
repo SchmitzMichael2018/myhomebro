@@ -132,14 +132,14 @@ def send_support_ticket_notifications(ticket: SupportTicket, request=None) -> di
 
 def send_support_ticket_reply_notification(ticket: SupportTicket, message: SupportMessage, request=None) -> bool:
     ctx = _ticket_context(ticket, request=request)
-    subject = f"Re: {ctx['ticket_number']} – {ctx['subject']}"
+    subject = f"Re: MyHomeBro Support Ticket {ctx['ticket_number']} – {ctx['subject']}"
     body_lines = [
-        f"Support ticket: {ctx['ticket_number']}",
+        f"Support ticket number: {ctx['ticket_number']}",
         f"Subject: {ctx['subject']}",
         "",
-        message.message_text,
+        getattr(message, "message", "") or getattr(message, "message_text", ""),
     ]
-    if getattr(message, "sender_role", "") == "support":
+    if getattr(message, "sender_type", getattr(message, "sender_role", "")) == "support":
         body_lines.insert(3, "Sender: Support")
     elif getattr(message, "sender", None) is not None:
         sender = getattr(message, "sender", None)

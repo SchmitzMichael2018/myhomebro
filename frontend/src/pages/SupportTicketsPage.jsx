@@ -202,6 +202,7 @@ export default function SupportTicketsPage() {
           id: `${detail.ticket_number || "ticket"}-initial`,
           sender_display: detail.submitted_by_name || detail.email || "User",
           sender_role_display: "User",
+          message: detail.message,
           message_text: detail.message,
           created_at: detail.created_at,
           is_internal: false,
@@ -221,7 +222,7 @@ export default function SupportTicketsPage() {
 
     setReplySaving(true);
     try {
-      const updated = await replyToSupportTicket(detail.ticket_number, { message_text: messageText });
+      const updated = await replyToSupportTicket(detail.ticket_number, { message: messageText });
       setSelectedTicket(updated);
       setTickets((prev) =>
         prev.map((ticket) => (ticket.ticket_number === updated.ticket_number ? updated : ticket))
@@ -345,7 +346,7 @@ export default function SupportTicketsPage() {
                         <div className="text-xs text-slate-500">{fmtDate(message.created_at)}</div>
                       </div>
                       <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                        {message.message_text || "—"}
+                        {message.message || message.message_text || "—"}
                       </div>
                       {message.is_internal ? (
                         <div className="mt-2 text-xs font-semibold text-amber-700">Internal note</div>
@@ -388,7 +389,7 @@ export default function SupportTicketsPage() {
                       className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <Send size={16} />
-                      {replySaving ? "Sending..." : "Submit Reply"}
+                      {replySaving ? "Sending..." : "Send Follow-up"}
                     </button>
                   </div>
                 </div>
@@ -456,4 +457,5 @@ function formatRelated(relatedObject) {
   const id = relatedObject.id ? ` #${relatedObject.id}` : "";
   return `${type}${id}`;
 }
+
 

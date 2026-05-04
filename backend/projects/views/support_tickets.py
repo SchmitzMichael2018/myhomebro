@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from django.db import transaction
 from django.db.models import Prefetch
+from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from projects.models_support import SupportMessage, SupportMessageSenderRole, SupportTicket
+from projects.models_support import (
+    SupportMessage,
+    SupportMessageSenderRole,
+    SupportTicket,
+)
 from projects.serializers.support_ticket import (
     SupportTicketDetailSerializer,
     SupportTicketReplySerializer,
@@ -75,12 +80,14 @@ class SupportTicketViewSet(
         SupportMessage.objects.create(
             ticket=ticket,
             sender=user if getattr(user, "is_authenticated", False) else None,
-            sender_role=(
+            sender_type=(
                 SupportMessageSenderRole.SUPPORT
                 if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
                 else SupportMessageSenderRole.USER
             ),
-            message_text=ticket.message or "",
+            sender_email=ticket.email or getattr(user, "email", "") or "",
+            message=ticket.message or "",
+            sent_at=timezone.now(),
             is_internal=False,
         )
 
@@ -101,8 +108,10 @@ class SupportTicketViewSet(
         message = SupportMessage.objects.create(
             ticket=ticket,
             sender=user if getattr(user, "is_authenticated", False) else None,
-            sender_role=sender_role,
-            message_text=serializer.validated_data["message_text"],
+            sender_type=sender_role,
+            sender_email=getattr(user, "email", "") or ticket.email or "",
+            message=serializer.validated_data["message"],
+            sent_at=timezone.now(),
             is_internal=bool(serializer.validated_data.get("is_internal", False)),
         )
 

@@ -153,9 +153,12 @@ class SupportTicketSerializer(serializers.ModelSerializer):
         return value
 
 
-class SupportMessageSerializer(serializers.ModelSerializer):
+class SupportTicketMessageSerializer(serializers.ModelSerializer):
     sender_display = serializers.SerializerMethodField()
-    sender_role_display = serializers.CharField(source="get_sender_role_display", read_only=True)
+    sender_type_display = serializers.CharField(source="get_sender_type_display", read_only=True)
+    sender_role_display = serializers.SerializerMethodField()
+    sender_role = serializers.CharField(source="sender_type", read_only=True)
+    message_text = serializers.SerializerMethodField()
 
     class Meta:
         model = SupportMessage
@@ -163,17 +166,26 @@ class SupportMessageSerializer(serializers.ModelSerializer):
             "id",
             "sender",
             "sender_display",
+            "sender_type",
+            "sender_type_display",
             "sender_role",
             "sender_role_display",
+            "sender_email",
+            "message",
             "message_text",
+            "gmail_message_id",
+            "gmail_thread_id",
             "is_internal",
+            "sent_at",
             "created_at",
         ]
         read_only_fields = [
             "id",
             "sender",
             "sender_display",
+            "sender_type_display",
             "sender_role_display",
+            "message_text",
             "created_at",
         ]
 
@@ -185,12 +197,21 @@ class SupportMessageSerializer(serializers.ModelSerializer):
             getattr(sender, "get_full_name", lambda: "")()
             or getattr(sender, "first_name", "")
             or getattr(sender, "email", "")
-            or obj.get_sender_role_display()
+            or obj.get_sender_type_display()
         )
+
+    def get_sender_role_display(self, obj):
+        return obj.get_sender_type_display()
+
+    def get_message_text(self, obj):
+        return getattr(obj, "message", "") or ""
+
+
+SupportMessageSerializer = SupportTicketMessageSerializer
 
 
 class SupportTicketDetailSerializer(SupportTicketSerializer):
-    messages = SupportMessageSerializer(many=True, read_only=True)
+    messages = SupportTicketMessageSerializer(many=True, read_only=True)
 
     class Meta(SupportTicketSerializer.Meta):
         fields = SupportTicketSerializer.Meta.fields + ["messages"]
@@ -198,11 +219,13 @@ class SupportTicketDetailSerializer(SupportTicketSerializer):
 
 
 class SupportTicketReplySerializer(serializers.Serializer):
-    message_text = serializers.CharField(allow_blank=False, trim_whitespace=True)
+    message = serializers.CharField(required=False, allow_blank=False, trim_whitespace=True)
+    message_text = serializers.CharField(required=False, allow_blank=False, trim_whitespace=True)
     is_internal = serializers.BooleanField(required=False, default=False)
 
-    def validate_message_text(self, value):
-        text = (value or "").strip()
+    def validate(self, attrs):
+        text = (attrs.get("message") or attrs.get("message_text") or "").strip()
         if not text:
-            raise serializers.ValidationError("Reply message is required.")
-        return text
+            raise serializers.ValidationError({"message": "Reply message is required."})
+        attrs["message"] = text
+        return attrs

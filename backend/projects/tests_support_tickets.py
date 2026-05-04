@@ -141,5 +141,6 @@ class SupportTicketApiTests(TransactionTestCase):
         self.assertEqual(SupportMessage.objects.filter(ticket__ticket_number=ticket_number).count(), 2)
         self.assertEqual(len(mail.outbox), 3)
         self.assertEqual(mail.outbox[-1].to, ["support@example.com"])
-        self.assertIn(f"Re: {ticket_number} –", mail.outbox[-1].subject)
+        self.assertIn(f"Re: MyHomeBro Support Ticket {ticket_number} \u2013", mail.outbox[-1].subject)
         self.assertIn("Here is the follow-up details.", mail.outbox[-1].body)
+

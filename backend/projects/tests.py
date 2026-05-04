@@ -15863,3 +15863,6 @@ class TemplateAIGenerationTests(TestCase):
         self.assertIn("timeline", result["insights"])
         self.assertIn("pricing", result["insights"])
         self.assertIn("completeness", result["insights"])
+
+
+from .support_ticket_tests import SupportTicketTests  # noqa: E402,F401

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -33,9 +34,13 @@ class SupportTicketStatus(models.TextChoices):
     CLOSED = "closed", "Closed"
 
 
-class SupportMessageSenderRole(models.TextChoices):
+class SupportTicketMessageSenderType(models.TextChoices):
     USER = "user", "User"
     SUPPORT = "support", "Support"
+    SYSTEM = "system", "System"
+
+
+SupportMessageSenderRole = SupportTicketMessageSenderType
 
 
 def support_ticket_attachment_upload_to(instance, filename: str) -> str:
@@ -122,7 +127,7 @@ class SupportTicket(models.Model):
             super().save(update_fields=["ticket_number"])
 
 
-class SupportMessage(models.Model):
+class SupportTicketMessage(models.Model):
     ticket = models.ForeignKey(
         SupportTicket,
         on_delete=models.CASCADE,
@@ -135,19 +140,51 @@ class SupportMessage(models.Model):
         blank=True,
         related_name="support_messages_sent",
     )
-    sender_role = models.CharField(
+    sender_type = models.CharField(
         max_length=16,
-        choices=SupportMessageSenderRole.choices,
-        default=SupportMessageSenderRole.USER,
+        choices=SupportTicketMessageSenderType.choices,
+        default=SupportTicketMessageSenderType.USER,
         db_index=True,
+        db_column="sender_role",
     )
-    message_text = models.TextField()
+    sender_email = models.EmailField(blank=True, default="")
+    message = models.TextField(db_column="message_text")
+    gmail_message_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    gmail_thread_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True, db_index=True)
     is_internal = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
+        db_table = "projects_supportmessage"
         ordering = ["created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["gmail_message_id"],
+                condition=~Q(gmail_message_id=""),
+                name="uniq_support_message_gmail_message_id",
+            )
+        ]
 
     def __str__(self) -> str:
         ticket_number = getattr(self.ticket, "ticket_number", "") or f"SupportTicket#{getattr(self.ticket, 'pk', 'new')}"
         return f"{ticket_number} message #{self.pk or 'new'}"
+
+    @property
+    def sender_role(self) -> str:
+        return self.sender_type
+
+    @sender_role.setter
+    def sender_role(self, value: str) -> None:
+        self.sender_type = value
+
+    @property
+    def message_text(self) -> str:
+        return self.message
+
+    @message_text.setter
+    def message_text(self, value: str) -> None:
+        self.message = value
+
+
+SupportMessage = SupportTicketMessage
