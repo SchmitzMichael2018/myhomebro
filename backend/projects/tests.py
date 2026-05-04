@@ -15899,6 +15899,59 @@ class AdminGeoTests(TestCase):
             any(sample["agreement_id"] == self.missing_agreement.id for sample in payload["missing_geo_samples"])
         )
 
+    def test_admin_overview_uses_active_dispute_count_and_dispute_filters(self):
+        active_dispute = Dispute.objects.create(
+            agreement=self.geo_agreement,
+            initiator="homeowner",
+            reason="Needs review",
+            description="Active dispute for attention count coverage.",
+            status="open",
+            fee_amount=Decimal("10.00"),
+        )
+        Dispute.objects.create(
+            agreement=self.geo_agreement,
+            initiator="contractor",
+            reason="Resolved issue",
+            description="Resolved dispute should not count toward attention.",
+            status="resolved_contractor",
+            fee_amount=Decimal("12.00"),
+        )
+
+        response = self.client.get("/api/projects/admin/overview/")
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        self.assertEqual(payload["summary"]["open_disputes"], 1)
+
+        active_response = self.client.get("/api/projects/admin/disputes/?status=active")
+        self.assertEqual(active_response.status_code, 200, active_response.data)
+        active_payload = active_response.json()
+        self.assertEqual(active_payload["count"], 1)
+        self.assertEqual(active_payload["results"][0]["id"], active_dispute.id)
+        self.assertEqual(active_payload["filter_label"], "Active disputes")
+
+        all_response = self.client.get("/api/projects/admin/disputes/?status=all")
+        self.assertEqual(all_response.status_code, 200, all_response.data)
+        all_payload = all_response.json()
+        self.assertEqual(all_payload["count"], 2)
+        self.assertEqual(all_payload["filter_label"], "All disputes")
+
+    def test_admin_agreements_support_escrow_in_flight_filter(self):
+        self.geo_agreement.escrow_funded_amount = Decimal("400.00")
+        self.geo_agreement.save(update_fields=["escrow_funded_amount"])
+
+        response = self.client.get("/api/projects/admin/overview/")
+        self.assertEqual(response.status_code, 200, response.data)
+        overview = response.json()
+        self.assertEqual(overview["money"]["escrow_in_flight_total"], "200.00")
+
+        agreements_response = self.client.get("/api/projects/admin/agreements/?escrow_status=in_flight")
+        self.assertEqual(agreements_response.status_code, 200, agreements_response.data)
+        agreements_payload = agreements_response.json()
+        self.assertEqual(agreements_payload["count"], 1)
+        self.assertEqual(agreements_payload["filter_label"], "Escrow in flight")
+        self.assertEqual(agreements_payload["results"][0]["id"], self.geo_agreement.id)
+        self.assertEqual(agreements_payload["results"][0]["escrow_status"], "in_flight")
+
 
 class TemplateAIGenerationTests(TestCase):
     def test_create_template_from_scope_returns_structured_guidance_bundle(self):

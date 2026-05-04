@@ -146,7 +146,6 @@ function SubItem({ to, label }) {
         ].join(" ")
       }
     >
-      <span className="text-[10px] opacity-70">â€¢</span>
       <span>{label}</span>
     </NavLink>
   );
@@ -530,7 +529,7 @@ export default function Sidebar({ variant = "desktop" }) {
                 disabled={closingOut}
                 className="rounded-lg bg-green-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-green-700 disabled:bg-green-400"
               >
-                {closingOut ? "Closing…" : "Yes, close & archive"}
+                {closingOut ? "Closing..." : "Yes, close & archive"}
               </button>
             </div>
           </div>
@@ -744,7 +743,7 @@ export default function Sidebar({ variant = "desktop" }) {
           Logout
         </button>
         <div className="mt-2 text-center text-[11px] text-slate-600">
-          © {new Date().getFullYear()} MyHomeBro
+          &copy; {new Date().getFullYear()} MyHomeBro
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
           <a
@@ -756,7 +755,7 @@ export default function Sidebar({ variant = "desktop" }) {
             Terms of Service
           </a>
           <span aria-hidden="true" className="text-slate-300">
-            •
+            |
           </span>
           <a
             href="/legal/privacy-policy/"

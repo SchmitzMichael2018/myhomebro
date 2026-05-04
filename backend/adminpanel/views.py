@@ -350,6 +350,48 @@ def _is_open_dispute_status(status_value: str) -> bool:
     }
 
 
+def _is_active_dispute_status(status_value: str) -> bool:
+    """
+    Active disputes are unresolved / actionable disputes.
+    Resolved / closed / canceled disputes are excluded from attention counts.
+    """
+    status_norm = str(status_value or "").strip().lower()
+    if not status_norm:
+        return False
+    if status_norm in {"closed", "canceled", "cancelled", "resolved", "resolved_contractor", "resolved_homeowner"}:
+        return False
+    if status_norm.startswith("resolved_"):
+        return False
+    return True
+
+
+def _agreement_escrow_status(agreement) -> str:
+    funded_amt = _to_dec(getattr(agreement, "escrow_funded_amount", None))
+    released_amt = D0
+    refunded_amt = D0
+    if Invoice is not None:
+        try:
+            agg = Invoice.objects.filter(agreement_id=getattr(agreement, "id", None)).filter(_invoice_released_q()).aggregate(total=Sum("amount"))
+            released_amt = _to_dec(agg.get("total"))
+        except Exception:
+            released_amt = D0
+    if Refund is not None and Payment is not None:
+        try:
+            agg = Refund.objects.filter(payment__agreement_id=getattr(agreement, "id", None), status="succeeded").aggregate(total=Sum("amount_cents"))
+            refunded_amt = _cents_to_dollars_dec(int(agg.get("total") or 0))
+        except Exception:
+            refunded_amt = D0
+
+    in_flight = funded_amt - released_amt - refunded_amt
+    if in_flight > D0:
+        return "in_flight"
+    if released_amt > D0 and funded_amt > D0 and released_amt >= funded_amt:
+        return "released"
+    if funded_amt > D0:
+        return "funded"
+    return "none"
+
+
 # -------------------------------------------------------------------
 # Views
 # -------------------------------------------------------------------
@@ -570,10 +612,10 @@ class AdminOverview(APIView):
         dispute_count_by_contractor = defaultdict(int)
         if Dispute is not None:
             for dispute in Dispute.objects.select_related("agreement", "agreement__contractor").all():
-                if _is_open_dispute_status(getattr(dispute, "status", "")):
+                if _is_active_dispute_status(getattr(dispute, "status", "")):
                     open_disputes += 1
                 contractor_id = safe_get(getattr(dispute, "agreement", None), ["contractor_id"], None)
-                if contractor_id:
+                if contractor_id and _is_active_dispute_status(getattr(dispute, "status", "")):
                     dispute_count_by_contractor[contractor_id] += 1
         elif Invoice is not None:
             open_disputes = Invoice.objects.filter(_invoice_disputed_q()).count()
@@ -962,11 +1004,19 @@ class AdminAgreements(APIView):
                 status=status.HTTP_200_OK,
             )
 
+        escrow_status_filter = (request.query_params.get("escrow_status") or "").strip().lower()
+        search_query = (request.query_params.get("q") or "").strip().lower()
         qs = Agreement.objects.all().order_by("-updated_at")[:500]
 
         results = []
         for a in qs:
             funded_amt = _to_dec(getattr(a, "escrow_funded_amount", None))
+            project = getattr(a, "project", None)
+            project_title = safe_get(project, ["title"], None) or f"Agreement #{a.id}"
+            project_city, project_state, project_zip = _get_project_geo(a)
+            escrow_status = _agreement_escrow_status(a)
+            if escrow_status_filter and escrow_status_filter != "all" and escrow_status != escrow_status_filter:
+                continue
 
             released_amt = D0
             if Invoice is not None:
@@ -995,10 +1045,26 @@ class AdminAgreements(APIView):
             pdf_name = getattr(pdf_field, "name", None) if pdf_field else None
 
             total_cost = _to_dec(getattr(a, "total_cost", None))
-            project = getattr(a, "project", None)
-            project_title = safe_get(project, ["title"], None) or f"Agreement #{a.id}"
 
-            project_city, project_state, project_zip = _get_project_geo(project)
+            if search_query:
+                blob = " ".join(
+                    str(value)
+                    for value in [
+                        a.id,
+                        project_title,
+                        project_city,
+                        project_state,
+                        project_zip,
+                        total_cost,
+                        funded_amt,
+                        released_amt,
+                        in_flight,
+                        "funded" if bool(getattr(a, "escrow_funded", False)) else "not funded",
+                    ]
+                    if value not in (None, "")
+                ).lower()
+                if search_query not in blob:
+                    continue
 
             results.append({
                 "id": a.id,
@@ -1006,6 +1072,7 @@ class AdminAgreements(APIView):
                 "project_city": project_city,
                 "project_state": project_state,
                 "project_zip": project_zip,
+                "escrow_status": escrow_status,
                 "source_lead_id": safe_get(a, ["source_lead_id"], None),
 
                 "created_at": safe_get(a, ["created_at"], None),
@@ -1027,7 +1094,21 @@ class AdminAgreements(APIView):
                 "amendment_number": int(getattr(a, "amendment_number", 0) or 0),
             })
 
-        return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
+        response_payload = {
+            "count": len(results),
+            "results": results,
+            "filters": {
+                "q": search_query or "",
+                "escrow_status": escrow_status_filter or "",
+            },
+        }
+        if escrow_status_filter and escrow_status_filter != "all":
+            response_payload["filter_label"] = {
+                "in_flight": "Escrow in flight",
+                "funded": "Escrow funded",
+                "released": "Escrow released",
+            }.get(escrow_status_filter, escrow_status_filter.replace("_", " ").title())
+        return Response(response_payload, status=status.HTTP_200_OK)
 
 
 class AdminGeo(APIView):
@@ -1336,6 +1417,10 @@ class AdminDisputes(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserRole]
 
     def get(self, request):
+        status_filter = (request.query_params.get("status") or "active").strip().lower()
+        if status_filter not in {"active", "all"}:
+            status_filter = "active"
+
         # Prefer Dispute model if present
         if Dispute is not None:
             qs = Dispute.objects.select_related(
@@ -1348,6 +1433,9 @@ class AdminDisputes(APIView):
             ).order_by("-id")[:500]
             results = []
             for d in qs:
+                dispute_status = safe_get(d, ["status"], None)
+                if status_filter == "active" and not _is_active_dispute_status(dispute_status):
+                    continue
                 agreement = safe_get(d, ["agreement"], None)
                 homeowner = safe_get(agreement, ["homeowner"], None) if agreement else None
                 project = safe_get(agreement, ["project"], None) if agreement else None
@@ -1366,7 +1454,13 @@ class AdminDisputes(APIView):
                     "initiator": safe_get(d, ["initiator"], None),
                     "milestone_title": safe_get(safe_get(d, ["milestone"], None), ["title"], None),
                 })
-            return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
+            payload = {
+                "count": len(results),
+                "results": results,
+                "filters": {"status": status_filter},
+                "filter_label": "Active disputes" if status_filter == "active" else "All disputes",
+            }
+            return Response(payload, status=status.HTTP_200_OK)
 
         # Fallback: derive disputes from invoices
         if Invoice is None:
@@ -1375,6 +1469,9 @@ class AdminDisputes(APIView):
         qs = Invoice.objects.filter(_invoice_disputed_q()).order_by("-created_at")[:500]
         results = []
         for inv in qs:
+            if status_filter != "all":
+                # Invoice fallback represents actionable disputes only.
+                pass
             agreement = safe_get(inv, ["agreement"], None)
             project = safe_get(agreement, ["project"], None) if agreement else None
             results.append({
@@ -1392,7 +1489,15 @@ class AdminDisputes(APIView):
                 "initiator": "",
                 "milestone_title": "",
             })
-        return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "count": len(results),
+                "results": results,
+                "filters": {"status": status_filter},
+                "filter_label": "Active disputes" if status_filter == "active" else "All disputes",
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminDownloadAgreementPDF(APIView):

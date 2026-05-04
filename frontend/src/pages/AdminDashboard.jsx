@@ -76,6 +76,11 @@ function getQ(search) {
   return (params.get("q") || "").toString();
 }
 
+function getParam(search, key) {
+  const params = getParams(search);
+  return (params.get(key) || "").toString();
+}
+
 function setParam(navigate, location, key, value) {
   const params = getParams(location.search);
   if (value === null || value === undefined || value === "") params.delete(key);
@@ -116,6 +121,26 @@ function softTone(status) {
   if (status === "on_track") return "bg-emerald-50 border-emerald-200";
   if (status === "at_risk") return "bg-amber-50 border-amber-200";
   return "bg-rose-50 border-rose-200";
+}
+
+function isActiveDisputeStatus(status) {
+  const next = String(status || "").trim().toLowerCase();
+  if (!next) return false;
+  if (next === "closed" || next === "canceled" || next === "cancelled") return false;
+  if (next === "resolved" || next === "resolved_contractor" || next === "resolved_homeowner") return false;
+  if (next.startsWith("resolved_")) return false;
+  return true;
+}
+
+function agreementEscrowStatus(row) {
+  const funded = toFloat(row?.escrow_funded_amount || 0);
+  const released = toFloat(row?.escrow_released_amount || 0);
+  const refunded = toFloat(row?.escrow_refunded_amount || 0);
+  const inFlight = Math.max(funded - released - refunded, 0);
+  if (inFlight > 0.01) return "in_flight";
+  if (released > 0 && funded > 0 && released >= funded) return "released";
+  if (funded > 0) return "funded";
+  return "none";
 }
 
 /* =========================
@@ -331,6 +356,14 @@ export default function AdminDashboard() {
     setParams(navigate, location, { view: "agreements", q: q || "" }, false);
   }
 
+  function goToAgreementsEscrow(escrowStatus) {
+    setParams(navigate, location, { view: "agreements", q: "", escrow_status: escrowStatus || "" }, false);
+  }
+
+  function goToDisputes(status) {
+    setParams(navigate, location, { view: "disputes", status: status || "active" }, false);
+  }
+
   async function loadCore() {
     const [o, g, c, s, h, a, d] = await Promise.all([
       api.get(`${ADMIN_BASE}/overview/`),
@@ -339,7 +372,7 @@ export default function AdminDashboard() {
       api.get(`${ADMIN_BASE}/subcontractors/`),
       api.get(`${ADMIN_BASE}/homeowners/`),
       api.get(`${ADMIN_BASE}/agreements/`),
-      api.get(`${ADMIN_BASE}/disputes/`),
+      api.get(`${ADMIN_BASE}/disputes/?status=all`),
     ]);
 
     setOverview(o.data);
@@ -485,13 +518,22 @@ export default function AdminDashboard() {
   const derived = goals?.derived || {};
 
   const status = tracker.status || "off_track";
-  const paceRatio = tracker.pace_ratio ?? 0;
+  const paceRatio = Number(tracker.pace_ratio || 0);
 
-  const disputeCount = counts.disputes || 0;
+  const disputeCount = Number(summary.open_disputes || 0);
   const inFlight = toFloat(moneyBlock.escrow_in_flight_total || 0);
   const refunded = toFloat(moneyBlock.escrow_refunded_total || 0);
   const feesTotal = toFloat(moneyBlock.platform_fee_total || 0);
   const escrowFunded = toFloat(moneyBlock.escrow_funded_total || 0);
+  const disputeStatusFilter = (getParam(location.search, "status") || "active").toLowerCase();
+  const disputeFilterLabel = disputeStatusFilter === "all" ? "All disputes" : "Active disputes";
+  const showDisputeFilterNote = disputeStatusFilter !== "all" || getView(location.search) === "disputes";
+  const agreementEscrowStatusFilter = (getParam(location.search, "escrow_status") || "").toLowerCase();
+  const agreementEscrowFilterLabel = {
+    in_flight: "Escrow in flight",
+    funded: "Escrow funded",
+    released: "Escrow released",
+  }[agreementEscrowStatusFilter] || "";
 
   // Attention feed
   const attentionItems = [];
@@ -519,7 +561,7 @@ export default function AdminDashboard() {
       title: `${disputeCount} dispute(s) need attention`,
       desc: "Review disputes to reduce refund risk and payout delays.",
       tone: "warn",
-      onClick: () => goTo("disputes"),
+      onClick: () => goToDisputes("active"),
     });
   }
 
@@ -539,7 +581,7 @@ export default function AdminDashboard() {
       title: "Escrow in flight",
       desc: `${fmtMoney(moneyBlock.escrow_in_flight_total || 0)} currently in flight.`,
       tone: "neutral",
-      onClick: () => goToAgreementsWithQ("in flight"),
+      onClick: () => goToAgreementsEscrow("in_flight"),
     });
   }
 
@@ -586,11 +628,18 @@ export default function AdminDashboard() {
 
   const homeownerRows = homeowners;
   const subcontractorRows = subcontractors;
+  const disputesFiltered = (() => {
+    if (disputeStatusFilter === "all") return disputes;
+    return disputes.filter((d) => isActiveDisputeStatus(d.status));
+  })();
 
   const agreementsFiltered = (() => {
     const q = (agreementQuery || "").trim().toLowerCase();
-    if (!q) return agreements;
     return agreements.filter((a) => {
+      if (agreementEscrowStatusFilter && agreementEscrowStatusFilter !== "all") {
+        if (agreementEscrowStatus(a) !== agreementEscrowStatusFilter) return false;
+      }
+      if (!q) return true;
       const blob = [
         a.id,
         a.project_title,
@@ -719,7 +768,7 @@ export default function AdminDashboard() {
                   <div className="rounded-2xl border border-black/10 bg-white/90 p-4 shadow-sm">
                     <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Quick Actions</div>
                     <div className="mt-3 grid grid-cols-1 gap-2">
-                      <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goTo("disputes")} />
+                      <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goToDisputes("active")} />
                       <ActionItem icon="🛟" title="View Support" desc="Check support requests and tickets." onClick={() => goTo("support")} />
                       <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
                       <ActionItem icon="📋" title="View Agreements" desc="Jump to agreement operations." onClick={() => goTo("agreements")} />
@@ -737,7 +786,7 @@ export default function AdminDashboard() {
                   <StatCard testId="admin-stat-contractors" label="Contractors" value={fmtNumber(counts.contractors || 0)} sub={`${fmtNumber(summary.new_contractors_this_month || 0)} new this month`} onClick={() => goTo("contractors")} />
                   <StatCard testId="admin-stat-customers" label="Customers" value={fmtNumber(counts.homeowners || 0)} sub="Captured homeowners" onClick={() => goTo("homeowners")} />
                   <StatCard testId="admin-stat-active-agreements" label="Active Agreements" value={fmtNumber(summary.active_agreements || 0)} sub={`${fmtNumber(summary.agreements_this_month || 0)} created this month`} onClick={() => goTo("agreements")} />
-                  <StatCard testId="admin-stat-open-disputes" label="Open Disputes" value={fmtNumber(summary.open_disputes || 0)} sub="Operator queue" tone={Number(summary.open_disputes || 0) > 0 ? "warn" : "good"} onClick={() => goTo("disputes")} />
+                    <StatCard testId="admin-stat-open-disputes" label="Open Disputes" value={fmtNumber(summary.open_disputes || 0)} sub="Operator queue" tone={Number(summary.open_disputes || 0) > 0 ? "warn" : "good"} onClick={() => goToDisputes("active")} />
                   <StatCard testId="admin-stat-month-fees" label="Fees This Month" value={fmtMoney(moneyBlock.platform_fee_this_month || 0)} sub="Platform revenue" onClick={() => goTo("fee_audit")} />
                 </div>
               </BorderedSection>
@@ -784,14 +833,14 @@ export default function AdminDashboard() {
                       value={fmtMoney(moneyBlock.escrow_funded_total || 0)}
                       sub="Pipeline (funded work)"
                       tone={escrowFunded > 0 ? "neutral" : "warn"}
-                      onClick={() => goToAgreementsWithQ("funded")}
+                      onClick={() => goToAgreementsEscrow("funded")}
                     />
                   </div>
 
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <StatCard label="Contractors" value={fmtNumber(counts.contractors || 0)} sub="Total profiles" onClick={() => goTo("contractors")} />
                     <StatCard label="Customers" value={fmtNumber(counts.homeowners || 0)} sub="Captured" onClick={() => goTo("homeowners")} />
-                    <StatCard label="Disputes" value={fmtNumber(counts.disputes || 0)} sub="Risk queue" tone={disputeCount > 0 ? "warn" : "good"} onClick={() => goTo("disputes")} />
+                    <StatCard label="Disputes" value={fmtNumber(summary.open_disputes || 0)} sub="Risk queue" tone={disputeCount > 0 ? "warn" : "good"} onClick={() => goToDisputes("active")} />
                   </div>
                 </BorderedSection>
 
@@ -802,13 +851,13 @@ export default function AdminDashboard() {
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <ThinStat label="Gross Paid" value={fmtMoney(moneyBlock.gross_paid_revenue || 0)} sub="Stripe-confirmed" onClick={() => goTo("fee_audit")} />
                     <ThinStat label="Platform Fees" value={fmtMoney(moneyBlock.platform_fee_total || 0)} sub="Your income" onClick={() => goTo("goals")} />
-                    <ThinStat label="Escrow Funded" value={fmtMoney(moneyBlock.escrow_funded_total || 0)} sub="Pipeline" onClick={() => goToAgreementsWithQ("funded")} />
-                    <ThinStat label="Escrow Released" value={fmtMoney(moneyBlock.escrow_released_total || 0)} sub="Paid out" onClick={() => goToAgreementsWithQ("released")} />
+                    <ThinStat label="Escrow Funded" value={fmtMoney(moneyBlock.escrow_funded_total || 0)} sub="Pipeline" onClick={() => goToAgreementsEscrow("funded")} />
+                    <ThinStat label="Escrow Released" value={fmtMoney(moneyBlock.escrow_released_total || 0)} sub="Paid out" onClick={() => goToAgreementsEscrow("released")} />
                   </div>
 
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <StatCard label="Escrow Refunded" value={fmtMoney(moneyBlock.escrow_refunded_total || 0)} sub="Money returned" tone={refunded > 0 ? "warn" : "neutral"} onClick={() => goToAgreementsWithQ("refunded")} />
-                    <StatCard label="In Flight" value={fmtMoney(moneyBlock.escrow_in_flight_total || 0)} sub="Potential stuck" onClick={() => goToAgreementsWithQ("in flight")} />
+                    <StatCard label="In Flight" value={fmtMoney(moneyBlock.escrow_in_flight_total || 0)} sub="Potential stuck" onClick={() => goToAgreementsEscrow("in_flight")} />
                   </div>
                 </BorderedSection>
 
@@ -1015,7 +1064,7 @@ export default function AdminDashboard() {
               </SoftCard>
 
               <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <StatCard label="Effective Take Rate (L12M)" value={pct(derived.effective_take_rate_l12m ?? 0)} sub="Platform fees ÷ escrow funded" />
+                <StatCard label="Effective Take Rate (L12M)" value={pct(derived.effective_take_rate_l12m || 0)} sub="Platform fees ÷ escrow funded" />
                 <StatCard label="Escrow Funded (L12M)" value={fmtMoney(goals?.drivers?.escrow_funded_l12m || 0)} sub="Driver metric" />
                 <StatCard label="Implied Escrow Needed" value={fmtMoney(derived.implied_escrow_needed_for_goal || 0)} sub="Goal ÷ take rate" />
               </div>
@@ -1196,6 +1245,18 @@ export default function AdminDashboard() {
                 </div>
               ) : null}
 
+              {agreementEscrowFilterLabel ? (
+                <div className="mb-3 text-xs text-slate-700">
+                  Filter: <span className="font-extrabold">{agreementEscrowFilterLabel}</span>{" "}
+                  <button
+                    className="ml-2 underline"
+                    onClick={() => setParam(navigate, location, "escrow_status", "")}
+                  >
+                    clear
+                  </button>
+                </div>
+              ) : null}
+
               {agreementOpsMsg ? (
                 <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
                   {agreementOpsMsg}
@@ -1274,14 +1335,20 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody>
                     {agreementsFiltered.length === 0 ? (
-                      <tr><Td colSpan={8} className="text-slate-600">No results.</Td></tr>
+                      <tr>
+                        <Td colSpan={8} className="text-slate-600">
+                          {agreementEscrowFilterLabel
+                            ? `No agreements match the ${agreementEscrowFilterLabel.toLowerCase()} filter.`
+                            : "No results."}
+                        </Td>
+                      </tr>
                     ) : (
                       agreementsFiltered.map((a) => (
                         <tr key={a.id} className="border-b border-black/5">
                           <Td>{a.id}</Td>
                           <Td>
                             <div className="font-extrabold text-slate-900">{a.project_title || `Agreement #${a.id}`}</div>
-                            <div className="text-xs text-slate-600">{a.is_archived ? "Archived" : "Active"} • PDF v{a.pdf_version ?? 0}</div>
+                            <div className="text-xs text-slate-600">{a.is_archived ? "Archived" : "Active"} • PDF v{a.pdf_version || 0}</div>
                           </Td>
                           <Td>{a.project_city || "—"}</Td>
                           <Td>{a.project_state || "—"}</Td>
@@ -1336,16 +1403,30 @@ export default function AdminDashboard() {
           {/* ===================== DISPUTES ===================== */}
           {view === "disputes" && (
             <div className="mt-6" data-testid="admin-disputes-view">
+              {showDisputeFilterNote ? (
+                <div className="mb-3 text-xs text-slate-700">
+                  Filter: <span className="font-extrabold">{disputeFilterLabel}</span>{" "}
+                  {disputeStatusFilter === "all" ? null : (
+                    <button
+                      className="ml-2 underline"
+                      onClick={() => setParam(navigate, location, "status", "all")}
+                    >
+                      show all
+                    </button>
+                  )}
+                </div>
+              ) : null}
+
               <TableShell>
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-black/10 bg-white/60">
                     <tr><Th>Dispute</Th><Th>Contractor / Customer</Th><Th>Project</Th><Th>Status</Th><Th>Amount</Th><Th>Updated</Th></tr>
                   </thead>
                   <tbody>
-                    {disputes.length === 0 ? (
-                      <tr><Td colSpan={6} className="text-slate-600">No disputes.</Td></tr>
+                    {disputesFiltered.length === 0 ? (
+                      <tr><Td colSpan={6} className="text-slate-600">{disputeStatusFilter === "all" ? "No disputes." : "No active disputes."}</Td></tr>
                     ) : (
-                      disputes.map((d) => (
+                      disputesFiltered.map((d) => (
                         <tr key={d.id} data-testid={`admin-dispute-row-${d.id}`} className="border-b border-black/5">
                           <Td>
                             <div className="font-extrabold text-slate-900">Dispute #{d.id}</div>
@@ -1556,8 +1637,8 @@ export default function AdminDashboard() {
                         <tr key={r.receipt_number} className="border-b border-black/5">
                           <Td className="font-extrabold">{r.receipt_number}</Td>
                           <Td>{(r.created_at || "").slice(0, 19).replace("T", " ")}</Td>
-                          <Td>{r.agreement_id ?? "—"}</Td>
-                          <Td>{r.invoice_id ?? "—"}</Td>
+                          <Td>{r.agreement_id || "—"}</Td>
+                          <Td>{r.invoice_id || "—"}</Td>
                           <Td>{r.fee_plan_code || r.tier_name || "—"}</Td>
                           <Td>{fmtMoney((r.fee_charged_cents || 0) / 100)}</Td>
                           <Td>{fmtMoney((r.fee_expected_cents || 0) / 100)}</Td>

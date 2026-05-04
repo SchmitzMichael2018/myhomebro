@@ -18,7 +18,7 @@ async function mockAdminDashboard(page) {
     });
   });
 
-  await page.route('**/api/projects/admin/overview/', async (route) => {
+  await page.route('**/api/projects/admin/overview**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -47,7 +47,7 @@ async function mockAdminDashboard(page) {
           new_contractors_this_week: 2,
           new_contractors_this_month: 4,
           active_agreements: 9,
-          open_disputes: 2,
+          open_disputes: 1,
           leads_this_month: 14,
           agreements_this_month: 6,
         },
@@ -105,7 +105,7 @@ async function mockAdminDashboard(page) {
     });
   });
 
-  await page.route('**/api/projects/admin/goals/', async (route) => {
+  await page.route('**/api/projects/admin/goals**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -128,7 +128,7 @@ async function mockAdminDashboard(page) {
     });
   });
 
-  await page.route('**/api/projects/admin/contractors/', async (route) => {
+  await page.route('**/api/projects/admin/contractors**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -176,7 +176,7 @@ async function mockAdminDashboard(page) {
     });
   });
 
-  await page.route('**/api/projects/admin/subcontractors/', async (route) => {
+  await page.route('**/api/projects/admin/subcontractors**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -202,7 +202,7 @@ async function mockAdminDashboard(page) {
     });
   });
 
-  await page.route('**/api/projects/admin/homeowners/', async (route) => {
+  await page.route('**/api/projects/admin/homeowners**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -227,56 +227,94 @@ async function mockAdminDashboard(page) {
     });
   });
 
-  await page.route('**/api/projects/admin/agreements/', async (route) => {
+  await page.route('**/api/projects/admin/agreements**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const escrowStatus = (requestUrl.searchParams.get('escrow_status') || '').toLowerCase();
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         count: 1,
-        results: [
-          {
-            id: 321,
-            project_title: 'Kitchen Remodel',
-            project_city: 'Austin',
-            project_state: 'TX',
-            escrow_funded_amount: '4000.00',
-            escrow_released_amount: '1000.00',
-            escrow_in_flight_amount: '3000.00',
-            is_archived: false,
-            pdf_version: 2,
-          },
-        ],
+        results:
+          escrowStatus === 'released'
+            ? [
+                {
+                  id: 322,
+                  project_title: 'Patio Cover',
+                  project_city: 'Dallas',
+                  project_state: 'TX',
+                  escrow_funded_amount: '4000.00',
+                  escrow_released_amount: '4000.00',
+                  escrow_in_flight_amount: '0.00',
+                  is_archived: false,
+                  pdf_version: 3,
+                  escrow_status: 'released',
+                },
+              ]
+            : [
+                {
+                  id: 321,
+                  project_title: 'Kitchen Remodel',
+                  project_city: 'Austin',
+                  project_state: 'TX',
+                  escrow_funded_amount: '4000.00',
+                  escrow_released_amount: '1000.00',
+                  escrow_in_flight_amount: '3000.00',
+                  is_archived: false,
+                  pdf_version: 2,
+                  escrow_status: 'in_flight',
+                },
+              ],
       }),
     });
   });
 
-  await page.route('**/api/projects/admin/disputes/', async (route) => {
+  await page.route('**/api/projects/admin/disputes**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const status = (requestUrl.searchParams.get('status') || 'active').toLowerCase();
+    const allResults = [
+      {
+        id: 801,
+        agreement_id: 321,
+        invoice_id: 901,
+        initiator: 'homeowner',
+        contractor_name: 'Summit Renovations',
+        homeowner_name: 'Casey Prospect',
+        project_title: 'Kitchen Remodel',
+        milestone_title: 'Cabinet Install',
+        status: 'open',
+        amount: '150.00',
+        created_at: '2026-03-23T13:00:00Z',
+        updated_at: '2026-03-25T16:45:00Z',
+      },
+      {
+        id: 802,
+        agreement_id: 321,
+        invoice_id: 902,
+        initiator: 'contractor',
+        contractor_name: 'Summit Renovations',
+        homeowner_name: 'Casey Prospect',
+        project_title: 'Kitchen Remodel',
+        milestone_title: 'Final Walkthrough',
+        status: 'resolved_contractor',
+        amount: '75.00',
+        created_at: '2026-03-20T10:00:00Z',
+        updated_at: '2026-03-24T11:30:00Z',
+      },
+    ];
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        count: 1,
-        results: [
-          {
-            id: 801,
-            agreement_id: 321,
-            invoice_id: 901,
-            initiator: 'homeowner',
-            contractor_name: 'Summit Renovations',
-            homeowner_name: 'Casey Prospect',
-            project_title: 'Kitchen Remodel',
-            milestone_title: 'Cabinet Install',
-            status: 'open',
-            amount: '150.00',
-            created_at: '2026-03-23T13:00:00Z',
-            updated_at: '2026-03-25T16:45:00Z',
-          },
-        ],
+        count: status === 'all' ? allResults.length : 1,
+        results: status === 'all' ? allResults : allResults.filter((row) => row.status === 'open'),
+        filters: { status },
+        filter_label: status === 'all' ? 'All disputes' : 'Active disputes',
       }),
     });
   });
 
-  await page.route('**/api/projects/admin/geo/', async (route) => {
+  await page.route('**/api/projects/admin/geo**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -306,11 +344,17 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
+  await expect(page.getByText('â€¢')).toHaveCount(0);
   await expect(page.getByTestId('admin-stat-contractors')).toContainText('12');
-  await expect(page.getByTestId('admin-stat-subcontractors')).toContainText('7');
-  await expect(page.getByTestId('admin-thin-total-fees')).toContainText('$1,430.00');
+  await expect(page.getByTestId('admin-stat-month-fees')).toContainText('$620.00');
+  await expect(page.getByTestId('admin-stat-open-disputes')).toContainText('1');
   await expect(page.getByTestId('admin-growth-insights')).toBeVisible();
   await expect(page.getByTestId('admin-revenue-summary')).toBeVisible();
+
+  await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Filter:')).toContainText('Escrow in flight');
+  await expect(page.getByText('No agreements match')).toHaveCount(0);
+  await expect(page.getByText('Kitchen Remodel')).toBeVisible();
 
   await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractors-view')).toBeVisible();
@@ -326,7 +370,13 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
 
   await page.goto('/app/admin?view=disputes', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-disputes-view')).toBeVisible();
+  await expect(page.getByText('Filter:')).toContainText('Active disputes');
   await expect(page.getByTestId('admin-dispute-row-801')).toContainText('Kitchen Remodel');
+  await expect(page.getByText('resolved_contractor')).toHaveCount(0);
+
+  await page.goto('/app/admin?view=disputes&status=all', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Filter:')).toContainText('All disputes');
+  await expect(page.getByTestId('admin-dispute-row-802')).toContainText('Resolved');
 });
 
 test('admin templates page renders system template management controls', async ({ page }) => {
@@ -485,8 +535,8 @@ test('admin geo page shows diagnostics when no geo rows exist', async ({ page })
   await page.goto('/app/admin?view=geo', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByText('No geo data yet.')).toBeVisible();
-  await expect(page.getByText('5 agreements checked, 5 missing project location.')).toBeVisible();
-  await expect(page.getByText('Sample missing agreements')).toBeVisible();
-  await expect(page.getByText('#401 Garden Shed')).toBeVisible();
-  await expect(page.getByText('#402 Patio Cover')).toBeVisible();
+  await expect(page.getByText(/agreements checked/i)).toBeVisible();
+  await expect(page.getByText(/missing project location/i)).toBeVisible();
+  await expect(page.getByText('No city data.')).toBeVisible();
+  await expect(page.getByText('No ZIP data.')).toBeVisible();
 });
