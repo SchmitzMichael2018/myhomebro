@@ -15541,7 +15541,10 @@ class TemplateAIGenerationTests(TestCase):
             "name": "Kitchen Remodel Starter",
             "project_type": "Remodel",
             "project_subtype": "Kitchen Remodel",
-            "description": "Reusable kitchen remodel scope covering planning, install, and closeout phases.",
+            "description_scope": "Scope of Work\nWork includes a reusable kitchen remodel scope.\n\nIncluded Work Phases\n- Planning\n- Demo\n- Install\n\nOptional Components\n- May include appliance upgrades when specified.",
+            "assumptions": "Customer Responsibilities\n- Customer will confirm selections.\n\nContractor Responsibilities\n- Contractor will verify measurements.",
+            "exclusions": "Exclusions\n- The following are not included unless explicitly added:\n- Structural changes\n- Permits",
+            "description": "Scope of Work\nWork includes a reusable kitchen remodel scope.\n\nIncluded Work Phases\n- Planning\n- Demo\n- Install\n\nOptional Components\n- May include appliance upgrades when specified.",
             "estimated_days": 14,
             "project_materials_hint": "Cabinetry, trim, fasteners, sealant, cleanup materials.",
             "pricing": {
@@ -15619,7 +15622,13 @@ class TemplateAIGenerationTests(TestCase):
                 description="Kitchen remodel with planning, install, and closeout.",
             )
 
-        self.assertEqual(result["description"], fake_payload["description"])
+        self.assertEqual(result["description_scope"], fake_payload["description_scope"])
+        self.assertEqual(result["assumptions"], fake_payload["assumptions"])
+        self.assertEqual(result["exclusions"], fake_payload["exclusions"])
+        self.assertEqual(result["description"], fake_payload["description_scope"])
+        self.assertEqual(result["default_scope"], fake_payload["description_scope"])
+        self.assertEqual(result["assumptions_text"], fake_payload["assumptions"])
+        self.assertEqual(result["exclusions_text"], fake_payload["exclusions"])
         self.assertEqual(result["timeline"], "About 14 working days")
         self.assertEqual(result["pricing"]["total_range"], "$18,000-$28,000")
         self.assertEqual(result["pricing"]["milestone_percentages"][0]["milestone"], "Planning & site protection")
@@ -15636,6 +15645,57 @@ class TemplateAIGenerationTests(TestCase):
         self.assertTrue(result["insights"]["completeness"]["has_clarifications"])
         self.assertEqual(result["milestones"][0]["payment_guidance"], "Use an initial deposit to cover setup and mobilization.")
         self.assertEqual(result["milestones"][0]["notes"], "Do not start demolition until selections are confirmed.")
+
+    def test_create_template_from_scope_splits_combined_scope_when_ai_returns_one_block(self):
+        from projects.ai.template_builder import create_template_from_scope
+
+        combined_payload = {
+            "name": "Shed Build Starter",
+            "project_type": "Outdoor",
+            "project_subtype": "Shed Build",
+            "description": (
+                "Scope of Work\nWork includes construction of an exterior shed structure.\n\n"
+                "Included Work Phases\n- Site preparation\n- Foundation setup\n- Framing\n\n"
+                "Optional Components\n- May include doors and windows when specified.\n\n"
+                "Customer Responsibilities\n- Customer will confirm selections.\n\n"
+                "Contractor Responsibilities\n- Contractor will verify site conditions.\n\n"
+                "Exclusions\n- The following are not included unless explicitly added:\n- Electrical\n- Plumbing"
+            ),
+            "estimated_days": 10,
+            "project_materials_hint": "Framing lumber, sheathing, roofing, fasteners.",
+            "pricing": {"total_range": "Consult contractor for pricing", "milestone_percentages": []},
+            "materials": [],
+            "timeline": "About 10 working days",
+            "clarification_questions": [],
+            "default_clarifications": [],
+            "milestones": [],
+        }
+
+        fake_client = SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: SimpleNamespace(output_text=json.dumps(combined_payload))
+            )
+        )
+
+        with patch("projects.ai.template_builder._require_openai_client", return_value=fake_client), patch(
+            "projects.ai.template_builder._model_name",
+            return_value="test-model",
+        ):
+            result = create_template_from_scope(
+                name="Shed Build Starter",
+                project_type="Outdoor",
+                project_subtype="Shed Build",
+                description="Backyard shed build scope.",
+            )
+
+        self.assertIn("Scope of Work", result["description_scope"])
+        self.assertIn("Included Work Phases", result["description_scope"])
+        self.assertNotIn("Exclusions", result["description_scope"])
+        self.assertIn("Customer Responsibilities", result["assumptions"])
+        self.assertIn("Contractor Responsibilities", result["assumptions"])
+        self.assertIn("The following are not included unless explicitly added", result["exclusions"])
+        self.assertNotIn("Customer Responsibilities", result["description_scope"])
+        self.assertNotIn("Contractor Responsibilities", result["description_scope"])
 
     def test_create_template_from_scope_falls_back_when_ai_times_out(self):
         from projects.ai.template_builder import create_template_from_scope

@@ -215,7 +215,94 @@ def _template_scope_description_prompt() -> str:
         "Use direct contractor language. Prefer verbs like Construct, Install, Verify, and Provide.\n"
         "Do NOT include exact dimensions, exact pricing, brand names, SKUs, or filler phrases like efficiency, adaptable, various conditions, or standard process.\n"
         "Keep the result reusable across similar projects, specific about inclusions and exclusions, and concise.\n"
+        "Return only JSON with these keys: description_scope, assumptions, exclusions.\n"
     )
+
+
+def _template_scope_split_lines(value: Any) -> Dict[str, str]:
+    text = _safe_str(value).replace("\r\n", "\n").strip()
+    if not text:
+        return {"description_scope": "", "assumptions": "", "exclusions": ""}
+
+    if not re.search(r"(?im)^\s*(scope of work|included work phases|optional components|customer responsibilities|contractor responsibilities|exclusions)\s*$", text):
+        return {"description_scope": text, "assumptions": "", "exclusions": ""}
+
+    scope_lines: List[str] = []
+    assumptions_lines: List[str] = []
+    exclusions_lines: List[str] = []
+    current = "description_scope"
+
+    for raw_line in text.split("\n"):
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            if current == "description_scope":
+                scope_lines.append("")
+            elif current == "assumptions":
+                assumptions_lines.append("")
+            elif current == "exclusions":
+                exclusions_lines.append("")
+            continue
+
+        header = re.sub(r"[:\s-]+$", "", stripped).lower()
+        if header == "scope of work" or header == "included work phases" or header == "optional components":
+            current = "description_scope"
+            if stripped.lower() == "scope of work":
+                scope_lines.append("Scope of Work")
+            else:
+                scope_lines.append(stripped)
+            continue
+        if header == "customer responsibilities" or header == "contractor responsibilities":
+            current = "assumptions"
+            if stripped.lower() == "customer responsibilities":
+                assumptions_lines.append("Customer Responsibilities")
+            else:
+                assumptions_lines.append("Contractor Responsibilities")
+            continue
+        if header == "exclusions":
+            current = "exclusions"
+            exclusions_lines.append("Exclusions")
+            continue
+
+        if current == "description_scope":
+            scope_lines.append(line)
+        elif current == "assumptions":
+            assumptions_lines.append(line)
+        else:
+            exclusions_lines.append(line)
+
+    scope_text = "\n".join(scope_lines).strip()
+    assumptions_text = "\n".join(assumptions_lines).strip()
+    exclusions_text = "\n".join(exclusions_lines).strip()
+
+    return {
+        "description_scope": scope_text,
+        "assumptions": assumptions_text,
+        "exclusions": exclusions_text,
+    }
+
+
+def _template_scope_fields_from_payload(payload: Any) -> Dict[str, str]:
+    if isinstance(payload, dict):
+        description_scope = _safe_str(payload.get("description_scope"))
+        assumptions = _safe_str(payload.get("assumptions"))
+        exclusions = _safe_str(payload.get("exclusions"))
+        if description_scope or assumptions or exclusions:
+            return {
+                "description_scope": description_scope,
+                "assumptions": assumptions,
+                "exclusions": exclusions,
+            }
+
+        combined = (
+            _safe_str(payload.get("description"))
+            or _safe_str(payload.get("default_scope"))
+            or _safe_str(payload.get("scope"))
+        )
+        if combined:
+            return _template_scope_split_lines(combined)
+
+    return _template_scope_split_lines(payload)
 
 
 def _range_bounds(value: Any, spread: int = 1) -> List[int]:
@@ -510,7 +597,12 @@ def _build_fallback_template_bundle(
         "description": _safe_str(description),
         "estimated_days": max(_safe_int(estimated_days, 1), 1),
         "project_materials_hint": project_materials_hint,
+        "description_scope": _safe_str(description),
+        "assumptions": "",
+        "exclusions": "",
         "default_scope": _safe_str(description),
+        "assumptions_text": "",
+        "exclusions_text": "",
         "default_clarifications": default_clarifications,
         "milestones": milestones,
         "pricing": pricing,
@@ -789,9 +881,11 @@ def improve_template_description(
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "description": {"type": "string"},
+                "description_scope": {"type": "string"},
+                "assumptions": {"type": "string"},
+                "exclusions": {"type": "string"},
             },
-            "required": ["description"],
+            "required": ["description_scope", "assumptions", "exclusions"],
         },
     }
 
@@ -812,10 +906,16 @@ def improve_template_description(
     )
 
     payload = json.loads(getattr(resp, "output_text", "") or "{}")
-    description_out = _safe_str(payload.get("description"))
-    if not description_out:
+    sections = _template_scope_fields_from_payload(payload)
+    if not any(sections.values()):
         raise RuntimeError("AI returned an empty template description.")
-    return {"description": description_out, "_model": model}
+    return {
+        "description_scope": sections["description_scope"],
+        "assumptions": sections["assumptions"],
+        "exclusions": sections["exclusions"],
+        "description": sections["description_scope"],
+        "_model": model,
+    }
 
 
 def suggest_template_type_subtype(
@@ -935,7 +1035,9 @@ def create_template_from_scope(
                 "name": {"type": "string"},
                 "project_type": {"type": "string"},
                 "project_subtype": {"type": "string"},
-                "description": {"type": "string"},
+                "description_scope": {"type": "string"},
+                "assumptions": {"type": "string"},
+                "exclusions": {"type": "string"},
                 "estimated_days": {"type": "integer"},
                 "project_materials_hint": {"type": "string"},
                 "pricing": {
@@ -1048,7 +1150,9 @@ def create_template_from_scope(
                 "name",
                 "project_type",
                 "project_subtype",
-                "description",
+                "description_scope",
+                "assumptions",
+                "exclusions",
                 "estimated_days",
                 "project_materials_hint",
                 "pricing",
@@ -1090,6 +1194,7 @@ def create_template_from_scope(
             estimated_days=14,
         )
 
+    sections = _template_scope_fields_from_payload(payload)
     milestones = _normalize_milestones(payload.get("milestones"))
     milestone_titles = [m.get("title") for m in milestones if _safe_str(m.get("title"))]
     pricing = _normalize_pricing(payload.get("pricing"), milestone_titles)
@@ -1127,7 +1232,14 @@ def create_template_from_scope(
         sections_status["clarifications"] = "fallback"
 
     project_materials_hint = _safe_str(payload.get("project_materials_hint")) or _materials_hint_from_materials(materials)
-    default_scope = _safe_str(payload.get("default_scope")) or _safe_str(payload.get("description")) or _safe_str(description)
+    default_scope = (
+        _safe_str(payload.get("default_scope"))
+        or sections["description_scope"]
+        or _safe_str(payload.get("description"))
+        or _safe_str(description)
+    )
+    assumptions_text = _safe_str(payload.get("assumptions_text")) or sections["assumptions"]
+    exclusions_text = _safe_str(payload.get("exclusions_text")) or sections["exclusions"]
     insights = _build_template_insights(
         milestones=milestones,
         pricing=pricing,
@@ -1144,10 +1256,15 @@ def create_template_from_scope(
         "name": _safe_str(payload.get("name")) or _safe_str(name) or "New Template Draft",
         "project_type": _safe_str(payload.get("project_type")) or _safe_str(project_type),
         "project_subtype": _safe_str(payload.get("project_subtype")) or _safe_str(project_subtype),
-        "description": _safe_str(payload.get("description")) or _safe_str(description),
+        "description_scope": sections["description_scope"] or _safe_str(payload.get("description")) or _safe_str(description),
+        "assumptions": assumptions_text,
+        "exclusions": exclusions_text,
+        "description": sections["description_scope"] or _safe_str(payload.get("description")) or _safe_str(description),
         "estimated_days": estimated_days,
         "project_materials_hint": project_materials_hint,
         "default_scope": default_scope,
+        "assumptions_text": assumptions_text,
+        "exclusions_text": exclusions_text,
         "default_clarifications": questions,
         "milestones": milestones,
         "pricing": pricing,

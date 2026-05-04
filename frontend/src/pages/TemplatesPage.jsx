@@ -20,6 +20,14 @@ function safeTrim(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function normalizeTemplateScopeSections(data = {}) {
+  return {
+    descriptionScope: safeTrim(data?.description_scope || data?.description || data?.default_scope),
+    assumptions: safeTrim(data?.assumptions || data?.assumptions_text),
+    exclusions: safeTrim(data?.exclusions || data?.exclusions_text),
+  };
+}
+
 function toMoney(v) {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return "";
@@ -1083,8 +1091,11 @@ export default function TemplatesPage() {
         description: currentHeader?.description,
       });
 
-      updateHeader("description", data?.description || "");
-      updateHeader("default_scope", data?.description || "");
+      const sections = normalizeTemplateScopeSections(data);
+      updateHeader("description", sections.descriptionScope || "");
+      updateHeader("default_scope", sections.descriptionScope || "");
+      updateHeader("assumptions_text", sections.assumptions || "");
+      updateHeader("exclusions_text", sections.exclusions || "");
       toast.success("Description improved.");
     } catch (e) {
       toast.error(
@@ -1143,15 +1154,18 @@ export default function TemplatesPage() {
         description: descriptionSeed,
         prompt,
       });
+      const sections = normalizeTemplateScopeSections(data);
 
       setEditHeader({
         ...headerSource,
         name: data?.name || headerSource?.name || "",
         project_type: data?.project_type || "",
         project_subtype: data?.project_subtype || "",
-        description: data?.description || "",
+        description: sections.descriptionScope || "",
         estimated_days: data?.estimated_days || 1,
-        default_scope: data?.default_scope || data?.description || "",
+        default_scope: sections.descriptionScope || "",
+        assumptions_text: sections.assumptions || "",
+        exclusions_text: sections.exclusions || "",
         default_clarifications: Array.isArray(data?.default_clarifications)
           ? data.default_clarifications
           : [],

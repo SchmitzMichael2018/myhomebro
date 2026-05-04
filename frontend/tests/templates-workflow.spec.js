@@ -257,6 +257,37 @@ async function installTemplateRoutes(page, store) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        description_scope: [
+          'Scope of Work',
+          opening,
+          '',
+          'Included Work Phases',
+          '- Site preparation',
+          '- Foundation setup',
+          '- Framing',
+          '- Roofing',
+          '- Exterior finishing',
+          '- Final cleanup',
+          '',
+          'Optional Components',
+          '- May include doors, windows, trim, shelving, and finishes when specified.',
+        ].join('\n'),
+        assumptions: [
+          'Customer Responsibilities',
+          '- Customer will confirm all material selections, design approvals, and changes prior to work.',
+          '',
+          'Contractor Responsibilities',
+          '- Contractor will verify measurements, site conditions, and access before starting work.',
+        ].join('\n'),
+        exclusions: [
+          'Exclusions',
+          '- The following are not included unless explicitly added:',
+          '- Electrical',
+          '- Plumbing',
+          '- Landscaping',
+          '- Permits',
+          '- Custom upgrades',
+        ].join('\n'),
         description: [
           opening,
           phases,
@@ -315,9 +346,14 @@ async function installTemplateRoutes(page, store) {
         name,
         project_type,
         project_subtype,
+        description_scope: description,
+        assumptions: 'Customer Responsibilities\n- Customer will confirm selections, approvals, and any changes prior to work.\n\nContractor Responsibilities\n- Contractor will verify measurements, site conditions, and access before starting work.',
+        exclusions: 'Exclusions\n- The following are not included unless explicitly added:\n- Permits\n- Engineering\n- Utility relocation',
         description,
         estimated_days: isDeck ? 12 : 14,
         default_scope: description,
+        assumptions_text: 'Customer Responsibilities\n- Customer will confirm selections, approvals, and any changes prior to work.\n\nContractor Responsibilities\n- Contractor will verify measurements, site conditions, and access before starting work.',
+        exclusions_text: 'Exclusions\n- The following are not included unless explicitly added:\n- Permits\n- Engineering\n- Utility relocation',
         default_clarifications: [
           { key: 'access', label: 'Access to the property', help: 'Confirm access and site readiness.' },
         ],
@@ -1364,19 +1400,26 @@ test('template inline AI can improve description field text', async ({ page }) =
   await page.getByTestId('templates-ai-improve-description-button').click();
 
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Work includes a reusable kitchen remodel scope/
+    /Scope of Work/
   );
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Included work phases:/
+    /Included Work Phases/
   );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Customer will confirm/
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(
+    /Customer Responsibilities/
   );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Contractor will verify/
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(
+    /Contractor Responsibilities/
   );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Not included unless specified/
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/Exclusions/i);
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
+    /Customer Responsibilities/
+  );
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
+    /Contractor Responsibilities/
+  );
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
+    /The following are not included unless explicitly added/
   );
 });
 
@@ -1396,36 +1439,26 @@ test('template AI improves shed build descriptions into structured contractor sc
   await page.getByTestId('templates-ai-improve-description-button').click();
 
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Work includes a reusable shed build scope/
+    /Scope of Work/
   );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(/Scope of Work/);
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
     /Included Work Phases/
+  );
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/Exclusions/i);
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue(
+    /Customer Responsibilities/
   );
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
     /Optional Components/
   );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
     /Customer Responsibilities/
   );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
     /Contractor Responsibilities/
   );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(/Exclusions/);
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Included work phases:/
-  );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Optional components may include/
-  );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Customer will confirm/
-  );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Contractor will verify/
-  );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Not included unless specified/
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
+    /The following are not included unless explicitly added/
   );
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/efficiency/i);
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/adaptable/i);
@@ -1435,6 +1468,8 @@ test('template AI improves shed build descriptions into structured contractor sc
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue(
     /standard process/i
   );
+  await expect(page.getByTestId('templates-assumptions-input')).not.toHaveValue(/efficiency/i);
+  await expect(page.getByTestId('templates-exclusions-input')).not.toHaveValue(/efficiency/i);
 });
 
 test('template inline AI can suggest type and subtype from the current scope', async ({ page }) => {

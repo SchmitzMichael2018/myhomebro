@@ -227,12 +227,6 @@ function collectTemplateScopeHints(promptText = "", context = {}) {
 }
 
 function buildTemplateDescriptionDraft(context = {}, promptText = "") {
-  const projectType = String(
-    context?.project_type || context?.template_summary?.project_type || ""
-  ).trim();
-  const projectSubtype = String(
-    context?.project_subtype || context?.template_summary?.project_subtype || ""
-  ).trim();
   const scopeHints = collectTemplateScopeHints(promptText, context);
   const lowerPrompt = String(promptText || "").toLowerCase();
   const optionalItems = lowerPrompt.includes("window")
@@ -251,7 +245,7 @@ function buildTemplateDescriptionDraft(context = {}, promptText = "") {
     "Custom upgrades",
   ];
 
-  return [
+  const description_scope = [
     "Scope of Work",
     scopeHints.opening,
     "",
@@ -265,19 +259,33 @@ function buildTemplateDescriptionDraft(context = {}, promptText = "") {
     "",
     "Optional Components",
     `- May include ${optionalItems.join(", ")} when specified.`,
-    "",
+  ]
+    .map((line) => String(line).trimEnd())
+    .join("\n");
+
+  const assumptions = [
     "Customer Responsibilities",
     `- Customer will confirm ${customerItems.join(", ")} prior to work.`,
     "",
     "Contractor Responsibilities",
     `- Contractor will verify ${contractorItems.join(", ")} before starting work.`,
-    "",
+  ]
+    .map((line) => String(line).trimEnd())
+    .join("\n");
+
+  const exclusions = [
     "Exclusions",
     "- The following are not included unless explicitly added:",
     ...exclusionItems.map((item) => `- ${item}`),
   ]
     .map((line) => String(line).trimEnd())
     .join("\n");
+
+  return { description_scope, assumptions, exclusions };
+}
+
+function formatTemplateDescriptionDraft(draft = {}) {
+  return [draft.description_scope, draft.assumptions, draft.exclusions].filter(Boolean).join("\n\n");
 }
 
 function buildTemplateMilestoneDrafts(context = {}) {
@@ -946,7 +954,7 @@ export default function StartWithAIAssistant({
     const cleanPrompt = String(prompt || "").trim();
     if (isFieldAwareDescriptionMode) {
       const baseDraft = buildTemplateDescriptionDraft(normalizedContext, cleanPrompt);
-      const finalDraft = baseDraft;
+      const finalDraft = formatTemplateDescriptionDraft(baseDraft);
       setFieldDraft(finalDraft);
       setHistory((prev) => [
         ...prev,
