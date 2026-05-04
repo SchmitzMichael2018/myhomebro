@@ -539,6 +539,12 @@ export async function createSupportTicket(payload) {
   return res.data;
 }
 
+export async function replyToSupportTicket(ticketNumber, payload) {
+  if (!ticketNumber) throw new Error("ticketNumber is required");
+  const res = await api.post(`/projects/support-tickets/${ticketNumber}/reply/`, payload);
+  return res.data;
+}
+
 export async function listNotifications(limit = 10) {
   const res = await api.get("/notifications/", { params: { limit } });
   return res.data;

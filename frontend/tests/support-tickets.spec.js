@@ -23,6 +23,33 @@ test("authenticated user can submit a support ticket and view it in My Tickets",
     attachment_name: "",
     created_at: "2026-04-21T14:20:00Z",
     updated_at: "2026-04-21T14:20:00Z",
+    messages: [
+      {
+        id: 1,
+        sender_display: "Pat Owner",
+        sender_role_display: "User",
+        sender_role: "user",
+        message_text: "Please review the latest agreement changes.",
+        is_internal: false,
+        created_at: "2026-04-21T14:20:00Z",
+      },
+    ],
+  };
+  const repliedTicket = {
+    ...createdTicket,
+    updated_at: "2026-04-21T15:20:00Z",
+    messages: [
+      ...createdTicket.messages,
+      {
+        id: 2,
+        sender_display: "Pat Owner",
+        sender_role_display: "User",
+        sender_role: "user",
+        message_text: "Here is the follow-up details.",
+        is_internal: false,
+        created_at: "2026-04-21T15:20:00Z",
+      },
+    ],
   };
 
   await page.addInitScript(() => {
@@ -91,7 +118,17 @@ test("authenticated user can submit a support ticket and view it in My Tickets",
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(createdTicket),
+        body: JSON.stringify(supportTickets.find((ticket) => ticket.ticket_number === createdTicket.ticket_number) || createdTicket),
+      });
+      return;
+    }
+
+    if (request.method() === "POST" && /\/api\/projects\/support-tickets\/MHB-\d+\/reply\/?$/.test(url)) {
+      supportTickets = [repliedTicket];
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(repliedTicket),
       });
       return;
     }
@@ -135,4 +172,11 @@ test("authenticated user can submit a support ticket and view it in My Tickets",
   await expect(page).toHaveURL(`/app/support/${createdTicket.ticket_number}`);
   await expect(page.getByTestId("support-ticket-detail")).toContainText(createdTicket.ticket_number);
   await expect(page.getByTestId("support-ticket-detail")).toContainText("Agreement Help");
+  await expect(page.getByTestId("support-ticket-detail")).toContainText("Conversation");
+  await page.getByTestId("support-ticket-add-reply-button").click();
+  await expect(page.getByTestId("support-ticket-reply-input")).toBeVisible();
+  await page.getByTestId("support-ticket-reply-input").fill("Here is the follow-up details.");
+  await page.getByTestId("support-ticket-submit-reply-button").click();
+  await expect(page.getByTestId("support-ticket-detail")).toContainText("Here is the follow-up details.");
+  await expect(page.getByTestId("support-ticket-detail")).toContainText("Conversation");
 });

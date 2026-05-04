@@ -5,6 +5,8 @@ from django.core import mail
 from django.test import TransactionTestCase, override_settings
 from rest_framework.test import APIClient
 
+from projects.models_support import SupportMessage, SupportTicket
+
 
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
@@ -64,6 +66,11 @@ class SupportTicketApiTests(TransactionTestCase):
         self.assertEqual(response.data["email"], self.user.email)
         self.assertEqual(response.data["related_object"]["type"], "agreement")
         self.assertEqual(response.data["related_object"]["id"], "42")
+        self.assertEqual(SupportMessage.objects.filter(ticket__ticket_number=ticket_number).count(), 1)
+        self.assertEqual(
+            SupportMessage.objects.get(ticket__ticket_number=ticket_number).message_text,
+            "Please help me review the latest agreement version.",
+        )
 
         self.assertEqual(len(mail.outbox), 2)
         self.assertEqual(
@@ -100,6 +107,39 @@ class SupportTicketApiTests(TransactionTestCase):
         detail_response = self.client.get(f"/api/projects/support-tickets/{own_ticket_number}/")
         self.assertEqual(detail_response.status_code, 200)
         self.assertEqual(detail_response.data["ticket_number"], own_ticket_number)
+        self.assertEqual(len(detail_response.data["messages"]), 1)
+        self.assertEqual(
+            detail_response.data["messages"][0]["message_text"],
+            "Please help me review the latest agreement version.",
+        )
 
         forbidden_response = self.client.get(f"/api/projects/support-tickets/{other_ticket_number}/")
         self.assertEqual(forbidden_response.status_code, 404)
+
+    def test_user_can_reply_to_existing_ticket_and_email_support(self):
+        self.client.force_authenticate(user=self.user)
+        create_response = self._submit_ticket(self.client)
+        self.assertEqual(create_response.status_code, 201)
+        ticket_number = create_response.data["ticket_number"]
+
+        reply_response = self.client.post(
+            f"/api/projects/support-tickets/{ticket_number}/reply/",
+            {"message_text": "Here is the follow-up details."},
+            format="json",
+        )
+
+        self.assertEqual(reply_response.status_code, 201, reply_response.data)
+        self.assertEqual(reply_response.data["ticket_number"], ticket_number)
+        self.assertEqual(
+            [m["message_text"] for m in reply_response.data["messages"]],
+            [
+                "Please help me review the latest agreement version.",
+                "Here is the follow-up details.",
+            ],
+        )
+        self.assertEqual(SupportTicket.objects.filter(ticket_number=ticket_number).count(), 1)
+        self.assertEqual(SupportMessage.objects.filter(ticket__ticket_number=ticket_number).count(), 2)
+        self.assertEqual(len(mail.outbox), 3)
+        self.assertEqual(mail.outbox[-1].to, ["support@example.com"])
+        self.assertIn(f"Re: {ticket_number} –", mail.outbox[-1].subject)
+        self.assertIn("Here is the follow-up details.", mail.outbox[-1].body)

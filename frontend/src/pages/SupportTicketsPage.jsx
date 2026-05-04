@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { CircleAlert, RefreshCw, Ticket } from "lucide-react";
+import { CircleAlert, MessageSquareReply, RefreshCw, Send, Ticket } from "lucide-react";
 
-import { getSupportTicket, listSupportTickets } from "../api";
+import { getSupportTicket, listSupportTickets, replyToSupportTicket } from "../api";
 import PageShell from "../components/PageShell.jsx";
 import SupportRequestModal from "../components/SupportRequestModal.jsx";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
@@ -123,6 +123,9 @@ export default function SupportTicketsPage() {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [supportOpen, setSupportOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
+  const [replySaving, setReplySaving] = useState(false);
 
   const currentEmail = identity?.email || identity?.user?.email || "";
 
@@ -179,12 +182,60 @@ export default function SupportTicketsPage() {
     };
   }, [ticketNumber, navigate]);
 
+  useEffect(() => {
+    setReplyOpen(false);
+    setReplyText("");
+  }, [ticketNumber]);
+
   const selectedTicketFromList = useMemo(
     () => tickets.find((ticket) => ticket.ticket_number === ticketNumber) || null,
     [tickets, ticketNumber]
   );
 
   const detail = selectedTicket || selectedTicketFromList;
+  const conversation = useMemo(() => {
+    if (!detail) return [];
+    if (Array.isArray(detail.messages) && detail.messages.length) return detail.messages;
+    if (detail.message) {
+      return [
+        {
+          id: `${detail.ticket_number || "ticket"}-initial`,
+          sender_display: detail.submitted_by_name || detail.email || "User",
+          sender_role_display: "User",
+          message_text: detail.message,
+          created_at: detail.created_at,
+          is_internal: false,
+        },
+      ];
+    }
+    return [];
+  }, [detail]);
+
+  const submitReply = async () => {
+    if (!detail?.ticket_number || replySaving) return;
+    const messageText = String(replyText || "").trim();
+    if (!messageText) {
+      toast.error("Please enter a reply message.");
+      return;
+    }
+
+    setReplySaving(true);
+    try {
+      const updated = await replyToSupportTicket(detail.ticket_number, { message_text: messageText });
+      setSelectedTicket(updated);
+      setTickets((prev) =>
+        prev.map((ticket) => (ticket.ticket_number === updated.ticket_number ? updated : ticket))
+      );
+      setReplyText("");
+      setReplyOpen(false);
+      toast.success("Reply added.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Unable to add your reply.");
+    } finally {
+      setReplySaving(false);
+    }
+  };
 
   const refresh = async () => {
     setRefreshing(true);
@@ -262,10 +313,86 @@ export default function SupportTicketsPage() {
             </div>
 
             <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-semibold text-slate-900">Message</div>
-              <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                {detail.message || "—"}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Conversation</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Keep replying here so the full thread stays in one ticket.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyOpen((prev) => !prev)}
+                  data-testid="support-ticket-add-reply-button"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <MessageSquareReply size={14} />
+                  Add Reply
+                </button>
               </div>
+
+              <div className="mt-4 space-y-3">
+                {conversation.length ? (
+                  conversation.map((message, idx) => (
+                    <div
+                      key={message.id || `${detail.ticket_number}-message-${idx}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          {message.sender_display || message.sender_role_display || "Message"}
+                        </div>
+                        <div className="text-xs text-slate-500">{fmtDate(message.created_at)}</div>
+                      </div>
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                        {message.message_text || "—"}
+                      </div>
+                      {message.is_internal ? (
+                        <div className="mt-2 text-xs font-semibold text-amber-700">Internal note</div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
+                    No conversation messages yet.
+                  </div>
+                )}
+              </div>
+
+              {replyOpen ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-semibold text-slate-700">Reply</span>
+                    <textarea
+                      data-testid="support-ticket-reply-input"
+                      rows={5}
+                      value={replyText}
+                      onChange={(event) => setReplyText(event.target.value)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none ring-0 focus:border-slate-500"
+                      placeholder="Add a follow-up message to this ticket."
+                    />
+                  </label>
+                  <div className="mt-3 flex flex-wrap justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setReplyOpen(false)}
+                      className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={submitReply}
+                      disabled={replySaving}
+                      data-testid="support-ticket-submit-reply-button"
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Send size={16} />
+                      {replySaving ? "Sending..." : "Submit Reply"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {detail.attachment_url ? (
@@ -329,3 +456,4 @@ function formatRelated(relatedObject) {
   const id = relatedObject.id ? ` #${relatedObject.id}` : "";
   return `${type}${id}`;
 }
+

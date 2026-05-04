@@ -6,7 +6,7 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
-from projects.models_support import SupportTicket
+from projects.models_support import SupportMessage, SupportTicket
 
 logger = logging.getLogger(__name__)
 
@@ -129,3 +129,31 @@ def send_support_ticket_notifications(ticket: SupportTicket, request=None) -> di
         "internal_sent": internal_sent,
     }
 
+
+def send_support_ticket_reply_notification(ticket: SupportTicket, message: SupportMessage, request=None) -> bool:
+    ctx = _ticket_context(ticket, request=request)
+    subject = f"Re: {ctx['ticket_number']} – {ctx['subject']}"
+    body_lines = [
+        f"Support ticket: {ctx['ticket_number']}",
+        f"Subject: {ctx['subject']}",
+        "",
+        message.message_text,
+    ]
+    if getattr(message, "sender_role", "") == "support":
+        body_lines.insert(3, "Sender: Support")
+    elif getattr(message, "sender", None) is not None:
+        sender = getattr(message, "sender", None)
+        sender_name = (
+            getattr(sender, "get_full_name", lambda: "")()
+            or getattr(sender, "first_name", "")
+            or getattr(sender, "email", "")
+            or "User"
+        )
+        body_lines.insert(3, f"Sender: {sender_name}")
+
+    return _send_email(
+        subject=subject,
+        body="\n".join(body_lines),
+        to_email=ctx["support_email"],
+        reply_to=[ctx["email"]] if ctx["email"] else [],
+    )

@@ -33,6 +33,11 @@ class SupportTicketStatus(models.TextChoices):
     CLOSED = "closed", "Closed"
 
 
+class SupportMessageSenderRole(models.TextChoices):
+    USER = "user", "User"
+    SUPPORT = "support", "Support"
+
+
 def support_ticket_attachment_upload_to(instance, filename: str) -> str:
     base, dot, ext = filename.rpartition(".")
     ext = (ext or "").lower()
@@ -115,3 +120,34 @@ class SupportTicket(models.Model):
         if new_object and not self.ticket_number:
             self.ticket_number = f"MHB-{self.pk:06d}"
             super().save(update_fields=["ticket_number"])
+
+
+class SupportMessage(models.Model):
+    ticket = models.ForeignKey(
+        SupportTicket,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="support_messages_sent",
+    )
+    sender_role = models.CharField(
+        max_length=16,
+        choices=SupportMessageSenderRole.choices,
+        default=SupportMessageSenderRole.USER,
+        db_index=True,
+    )
+    message_text = models.TextField()
+    is_internal = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        ticket_number = getattr(self.ticket, "ticket_number", "") or f"SupportTicket#{getattr(self.ticket, 'pk', 'new')}"
+        return f"{ticket_number} message #{self.pk or 'new'}"

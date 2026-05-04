@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from projects.models import Contractor
 from projects.models_support import (
+    SupportMessage,
     SupportTicket,
     SupportTicketCategory,
     SupportTicketPriority,
@@ -150,3 +151,58 @@ class SupportTicketSerializer(serializers.ModelSerializer):
         if value not in SupportTicketStatus.values:
             raise serializers.ValidationError("Choose a valid status.")
         return value
+
+
+class SupportMessageSerializer(serializers.ModelSerializer):
+    sender_display = serializers.SerializerMethodField()
+    sender_role_display = serializers.CharField(source="get_sender_role_display", read_only=True)
+
+    class Meta:
+        model = SupportMessage
+        fields = [
+            "id",
+            "sender",
+            "sender_display",
+            "sender_role",
+            "sender_role_display",
+            "message_text",
+            "is_internal",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "sender",
+            "sender_display",
+            "sender_role_display",
+            "created_at",
+        ]
+
+    def get_sender_display(self, obj):
+        sender = getattr(obj, "sender", None)
+        if not sender:
+            return obj.get_sender_role_display()
+        return (
+            getattr(sender, "get_full_name", lambda: "")()
+            or getattr(sender, "first_name", "")
+            or getattr(sender, "email", "")
+            or obj.get_sender_role_display()
+        )
+
+
+class SupportTicketDetailSerializer(SupportTicketSerializer):
+    messages = SupportMessageSerializer(many=True, read_only=True)
+
+    class Meta(SupportTicketSerializer.Meta):
+        fields = SupportTicketSerializer.Meta.fields + ["messages"]
+        read_only_fields = SupportTicketSerializer.Meta.read_only_fields + ["messages"]
+
+
+class SupportTicketReplySerializer(serializers.Serializer):
+    message_text = serializers.CharField(allow_blank=False, trim_whitespace=True)
+    is_internal = serializers.BooleanField(required=False, default=False)
+
+    def validate_message_text(self, value):
+        text = (value or "").strip()
+        if not text:
+            raise serializers.ValidationError("Reply message is required.")
+        return text
