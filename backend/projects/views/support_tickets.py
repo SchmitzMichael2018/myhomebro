@@ -7,6 +7,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from uuid import uuid4
 from projects.models_support import (
     SupportMessage,
     SupportMessageSenderRole,
@@ -87,6 +88,8 @@ class SupportTicketViewSet(
             ),
             sender_email=ticket.email or getattr(user, "email", "") or "",
             message=ticket.message or "",
+            gmail_message_id=f"local-{uuid4().hex}",
+            gmail_thread_id=f"local-thread-{ticket.ticket_number or ticket.pk or uuid4().hex}",
             sent_at=timezone.now(),
             is_internal=False,
         )
@@ -111,6 +114,8 @@ class SupportTicketViewSet(
             sender_type=sender_role,
             sender_email=getattr(user, "email", "") or ticket.email or "",
             message=serializer.validated_data["message"],
+            gmail_message_id=f"local-{uuid4().hex}",
+            gmail_thread_id=f"local-thread-{ticket.ticket_number or ticket.pk or uuid4().hex}",
             sent_at=timezone.now(),
             is_internal=bool(serializer.validated_data.get("is_internal", False)),
         )

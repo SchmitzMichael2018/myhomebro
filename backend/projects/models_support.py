@@ -156,14 +156,10 @@ class SupportTicketMessage(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
-        db_table = "projects_supportmessage"
+        db_table = "projects_supportticketmessage"
         ordering = ["created_at", "id"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["gmail_message_id"],
-                condition=~Q(gmail_message_id=""),
-                name="uniq_support_message_gmail_message_id",
-            )
+            models.UniqueConstraint(fields=["gmail_message_id"], name="uniq_support_message_gmail_message_id")
         ]
 
     def __str__(self) -> str:
