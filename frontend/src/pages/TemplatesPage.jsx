@@ -1054,6 +1054,7 @@ export default function TemplatesPage() {
         }
         setSelectedId(data?.id || null);
         setSelectedDetail(data);
+        setEditHeader(normalizeHeaderForEdit(data));
         setGeneratedAiDraft(null);
         setAiGenerationError("");
         setAiGenerationPartialSections([]);
@@ -1069,6 +1070,7 @@ export default function TemplatesPage() {
           payload
         );
         setSelectedDetail(data);
+        setEditHeader(normalizeHeaderForEdit(data));
         setGeneratedAiDraft(null);
         setAiGenerationError("");
         setAiGenerationPartialSections([]);

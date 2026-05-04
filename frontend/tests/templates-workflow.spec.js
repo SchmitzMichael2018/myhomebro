@@ -1531,6 +1531,53 @@ test('template milestone editor no longer shows a type dropdown and still saves 
   );
 });
 
+test('template assumptions and exclusions persist after save reload and reselection', async ({
+  page,
+}) => {
+  const { store } = await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Scope Persistence Template');
+  await page.getByTestId('templates-project-type-input').fill('Outdoor');
+  await page.getByTestId('templates-project-subtype-input').fill('Shed Build');
+  await page.getByTestId('templates-description-input').fill('Reusable shed build scope.');
+  await page.getByTestId('templates-exclusions-input').fill(
+    'Exclusions\n- The following are not included unless explicitly added:\n- Electrical\n- Plumbing'
+  );
+  await page.getByTestId('templates-assumptions-input').fill(
+    'Customer Responsibilities\n- Customer will confirm selections.\n\nContractor Responsibilities\n- Contractor will verify measurements and site conditions.'
+  );
+
+  await page.getByTestId('templates-save-button').click();
+
+  await expect(page.getByText('Template created.')).toBeVisible();
+  await expect.poll(() =>
+    store.templates.some((row) => row.name === 'Scope Persistence Template')
+  ).toBe(true);
+  const savedTemplate = store.templates.find((row) => row.name === 'Scope Persistence Template');
+  expect(savedTemplate).toMatchObject({
+    exclusions_text:
+      'Exclusions\n- The following are not included unless explicitly added:\n- Electrical\n- Plumbing',
+    assumptions_text:
+      'Customer Responsibilities\n- Customer will confirm selections.\n\nContractor Responsibilities\n- Contractor will verify measurements and site conditions.',
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId(`template-discovery-card-${savedTemplate.id}`).click();
+
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
+    'Exclusions\n- The following are not included unless explicitly added:\n- Electrical\n- Plumbing'
+  );
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
+    'Customer Responsibilities\n- Customer will confirm selections.\n\nContractor Responsibilities\n- Contractor will verify measurements and site conditions.'
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    'Reusable shed build scope.'
+  );
+});
+
 test('template schedule auto-sequence button computes sequential offsets from durations', async ({
   page,
 }) => {

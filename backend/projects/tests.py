@@ -13302,6 +13302,91 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual([row.duration_days for row in rows], [2, 3, 1])
         self.assertEqual([row.recommended_days_from_start for row in rows], [1, 3, 6])
 
+    def test_template_detail_persists_assumptions_and_exclusions(self):
+        create_response = self.client.post(
+            "/api/projects/templates/",
+            {
+                "name": "Scope Persistence Template",
+                "project_type": "Outdoor",
+                "project_subtype": "Shed Build",
+                "description": "Reusable shed build scope.",
+                "default_scope": "Reusable shed build scope.",
+                "assumptions_text": (
+                    "Customer Responsibilities\n"
+                    "- Customer will confirm selections and approvals.\n\n"
+                    "Contractor Responsibilities\n"
+                    "- Contractor will verify measurements and site conditions."
+                ),
+                "exclusions_text": (
+                    "Exclusions\n"
+                    "- The following are not included unless explicitly added:\n"
+                    "- Electrical\n"
+                    "- Plumbing"
+                ),
+                "milestones": [
+                    {
+                        "title": "Site prep",
+                        "description": "Prepare the site.",
+                        "sort_order": 1,
+                        "start_offset": 0,
+                        "duration_days": 2,
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        template_id = create_response.data["id"]
+        self.assertIn("assumptions_text", create_response.data)
+        self.assertIn("exclusions_text", create_response.data)
+        self.assertTrue(create_response.data["assumptions_text"])
+        self.assertTrue(create_response.data["exclusions_text"])
+
+        detail_response = self.client.get(f"/api/projects/templates/{template_id}/")
+        self.assertEqual(detail_response.status_code, 200, detail_response.data)
+        self.assertEqual(
+            detail_response.data["assumptions_text"],
+            create_response.data["assumptions_text"],
+        )
+        self.assertEqual(
+            detail_response.data["exclusions_text"],
+            create_response.data["exclusions_text"],
+        )
+
+        patch_response = self.client.patch(
+            f"/api/projects/templates/{template_id}/",
+            {
+                "assumptions_text": (
+                    "Customer Responsibilities\n"
+                    "- Customer will confirm selections.\n\n"
+                    "Contractor Responsibilities\n"
+                    "- Contractor will verify access."
+                ),
+                "exclusions_text": (
+                    "Exclusions\n"
+                    "- The following are not included unless explicitly added:\n"
+                    "- Permits"
+                ),
+            },
+            format="json",
+        )
+
+        self.assertEqual(patch_response.status_code, 200, patch_response.data)
+        self.assertEqual(
+            patch_response.data["assumptions_text"],
+            "Customer Responsibilities\n"
+            "- Customer will confirm selections.\n\n"
+            "Contractor Responsibilities\n"
+            "- Contractor will verify access.",
+        )
+        self.assertEqual(
+            patch_response.data["exclusions_text"],
+            "Exclusions\n"
+            "- The following are not included unless explicitly added:\n"
+            "- Permits",
+        )
+
     def test_system_templates_appear_in_discovery(self):
         response = self.client.get("/api/projects/templates/discover/", {"source": "system"})
         self.assertEqual(response.status_code, 200)
