@@ -40,6 +40,19 @@ def get_request_contractor(user) -> Optional[Contractor]:
         return None
 
 
+def user_can_use_template_ai(user) -> bool:
+    """
+    Template AI tools are available to contractors and admin/staff users.
+    """
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+
+    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        return True
+
+    return get_request_contractor(user) is not None
+
+
 def agreement_belongs_to_contractor(agreement: Agreement, contractor: Contractor) -> bool:
     if contractor is None:
         return False

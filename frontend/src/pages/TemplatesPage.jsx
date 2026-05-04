@@ -21,6 +21,19 @@ function safeTrim(v) {
   return v == null ? "" : String(v).trim();
 }
 
+const TEMPLATE_AI_PERMISSION_MESSAGE = "AI tools are available to contractors and admins";
+
+function formatTemplateAiError(error, fallbackMessage) {
+  const detail = safeTrim(error?.response?.data?.detail || error?.response?.data?.error);
+  if (
+    error?.response?.status === 403 ||
+    /Only contractors can use template AI tools/i.test(detail)
+  ) {
+    return TEMPLATE_AI_PERMISSION_MESSAGE;
+  }
+  return detail || fallbackMessage;
+}
+
 function normalizeTemplateScopeSections(data = {}) {
   return {
     descriptionScope: safeTrim(data?.description_scope || data?.description || data?.default_scope),
@@ -1158,11 +1171,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       updateHeader("exclusions_text", sections.exclusions || "");
       toast.success("Description improved.");
     } catch (e) {
-      toast.error(
-        e?.response?.data?.detail ||
-          e?.response?.data?.error ||
-          "Could not improve description."
-      );
+      toast.error(formatTemplateAiError(e, "Could not improve description."));
     } finally {
       setAiBusy(false);
     }
@@ -1180,11 +1189,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       updateHeader("project_subtype", data?.project_subtype || "");
       toast.success("Type / subtype suggested.");
     } catch (e) {
-      toast.error(
-        e?.response?.data?.detail ||
-          e?.response?.data?.error ||
-          "Could not suggest type / subtype."
-      );
+      toast.error(formatTemplateAiError(e, "Could not suggest type / subtype."));
     } finally {
       setAiBusy(false);
     }
@@ -1264,15 +1269,17 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     } catch (e) {
       setAiGenerationRecoveryNote("");
       setAiGenerationError(
-        e?.response?.data?.detail ||
-          e?.response?.data?.error ||
+        formatTemplateAiError(
+          e,
           "AI couldn?t finish this template right now. Your draft is still open. You can retry or continue manually."
+        )
       );
       setAiGenerationRecoveryMode(true);
       toast.error(
-        e?.response?.data?.detail ||
-          e?.response?.data?.error ||
+        formatTemplateAiError(
+          e,
           "AI couldn?t finish this template right now. Your draft is still open. You can retry or continue manually."
+        )
       );
     } finally {
       setAiBusy(false);
@@ -1414,11 +1421,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       toast.success("Materials suggestions refreshed.");
       setActiveTab("materials");
     } catch (e) {
-      toast.error(
-        e?.response?.data?.detail ||
-          e?.response?.data?.error ||
-          "Could not refresh materials."
-      );
+      toast.error(formatTemplateAiError(e, "Could not refresh materials."));
     } finally {
       setMaterialsRefreshing(false);
     }

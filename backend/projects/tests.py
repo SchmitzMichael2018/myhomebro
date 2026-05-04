@@ -16157,4 +16157,82 @@ class TemplateAIGenerationTests(TestCase):
         self.assertIn("completeness", result["insights"])
 
 
+class TemplateAIPermissionGateTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="template-ai-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Template AI Contractor",
+        )
+        self.admin_user = user_model.objects.create_superuser(
+            email="template-ai-admin@example.com",
+            password="testpass123",
+        )
+        self.normal_user = user_model.objects.create_user(
+            email="template-ai-user@example.com",
+            password="testpass123",
+        )
+        self.contractor_client = APIClient()
+        self.contractor_client.force_authenticate(user=self.contractor_user)
+        self.admin_client = APIClient()
+        self.admin_client.force_authenticate(user=self.admin_user)
+        self.normal_client = APIClient()
+        self.normal_client.force_authenticate(user=self.normal_user)
+
+    def test_template_ai_create_from_scope_allows_contractor_and_admin(self):
+        path = "/api/projects/templates/ai/create-from-scope/"
+        payload = {
+            "name": "Template AI Test",
+            "project_type": "Outdoor",
+            "project_subtype": "Shed Build",
+            "description": "Backyard shed build scope.",
+        }
+
+        with patch(
+            "projects.views.template_views.create_template_from_scope",
+            return_value={"description_scope": "ok", "assumptions": "", "exclusions": "", "milestones": []},
+        ):
+            contractor_response = self.contractor_client.post(path, payload, format="json")
+            admin_response = self.admin_client.post(path, payload, format="json")
+            normal_response = self.normal_client.post(path, payload, format="json")
+
+        self.assertEqual(contractor_response.status_code, 200, contractor_response.data)
+        self.assertEqual(admin_response.status_code, 200, admin_response.data)
+        self.assertEqual(normal_response.status_code, 403, normal_response.data)
+        self.assertEqual(
+            str(normal_response.data["detail"]),
+            "AI tools are available to contractors and admins",
+        )
+
+    def test_template_ai_generate_materials_allows_contractor_and_admin(self):
+        path = "/api/projects/templates/ai/generate-materials/"
+        payload = {
+            "name": "Template AI Test",
+            "project_type": "Outdoor",
+            "project_subtype": "Shed Build",
+            "description": "Backyard shed build scope.",
+            "milestones": [{"title": "Site prep", "description": "Prep the site."}],
+        }
+
+        with patch(
+            "projects.views_template.generate_materials_from_scope",
+            return_value={"milestones": [], "project_materials_hint": "Framing lumber, fasteners."},
+        ):
+            contractor_response = self.contractor_client.post(path, payload, format="json")
+            admin_response = self.admin_client.post(path, payload, format="json")
+            normal_response = self.normal_client.post(path, payload, format="json")
+
+        self.assertEqual(contractor_response.status_code, 200, contractor_response.data)
+        self.assertEqual(admin_response.status_code, 200, admin_response.data)
+        self.assertEqual(normal_response.status_code, 403, normal_response.data)
+        self.assertEqual(
+            str(normal_response.data["detail"]),
+            "AI tools are available to contractors and admins",
+        )
+
+
 from .support_ticket_tests import SupportTicketTests  # noqa: E402,F401

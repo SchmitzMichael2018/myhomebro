@@ -30,6 +30,7 @@ from projects.services.template_apply import (
     apply_template_to_agreement,
     get_request_contractor,
     save_agreement_as_template,
+    user_can_use_template_ai,
 )
 from projects.services.template_discovery import (
     attach_template_learning_metrics,
@@ -617,9 +618,8 @@ class TemplateImproveDescriptionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        contractor = get_request_contractor(request.user)
-        if contractor is None:
-            raise PermissionDenied("Only contractors can use template AI tools.")
+        if not user_can_use_template_ai(request.user):
+            raise PermissionDenied("AI tools are available to contractors and admins")
 
         try:
             result = improve_template_description(
@@ -638,9 +638,8 @@ class TemplateSuggestTypeSubtypeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        contractor = get_request_contractor(request.user)
-        if contractor is None:
-            raise PermissionDenied("Only contractors can use template AI tools.")
+        if not user_can_use_template_ai(request.user):
+            raise PermissionDenied("AI tools are available to contractors and admins")
 
         try:
             result = suggest_template_type_subtype(
@@ -657,9 +656,8 @@ class TemplateCreateFromScopeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        contractor = get_request_contractor(request.user)
-        if contractor is None:
-            raise PermissionDenied("Only contractors can use template AI tools.")
+        if not user_can_use_template_ai(request.user):
+            raise PermissionDenied("AI tools are available to contractors and admins")
 
         try:
             result = create_template_from_scope(

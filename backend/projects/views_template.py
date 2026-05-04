@@ -22,6 +22,7 @@ from projects.services.template_apply import (
     apply_template_to_agreement,
     get_request_contractor,
     save_agreement_as_template,
+    user_can_use_template_ai,
 )
 
 
@@ -263,9 +264,8 @@ class TemplateGenerateMaterialsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        contractor = get_request_contractor(request.user)
-        if contractor is None:
-            raise PermissionDenied("Only contractors can use template AI tools.")
+        if not user_can_use_template_ai(request.user):
+            raise PermissionDenied("AI tools are available to contractors and admins")
 
         data = request.data or {}
 
