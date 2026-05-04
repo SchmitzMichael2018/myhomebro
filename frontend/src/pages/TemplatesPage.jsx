@@ -15,6 +15,7 @@ import {
   buildTemplateInsightLines,
   deriveTemplateInsights,
 } from "../lib/templateInsights.js";
+import { computeSequentialOffsets, needsSequentialOffsets } from "../lib/templateScheduling.js";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -930,6 +931,11 @@ export default function TemplatesPage() {
     );
   }
 
+  function autoSequenceTimeline() {
+    setEditMilestones((prev) => computeSequentialOffsets(prev));
+    toast.success("Timeline sequenced.");
+  }
+
   function addMilestone() {
     setEditMilestones((prev) => [...prev, buildBlankMilestone(prev.length + 1)]);
   }
@@ -1030,7 +1036,10 @@ export default function TemplatesPage() {
 
     try {
       setSavingTemplate(true);
-      const payload = buildTemplatePayload(currentHeader, currentMilestones, {
+      const milestonesForSave = needsSequentialOffsets(currentMilestones)
+        ? computeSequentialOffsets(currentMilestones)
+        : currentMilestones;
+      const payload = buildTemplatePayload(currentHeader, milestonesForSave, {
         source_template_id: draftSourceTemplateId || undefined,
       });
 
@@ -1155,6 +1164,18 @@ export default function TemplatesPage() {
         prompt,
       });
       const sections = normalizeTemplateScopeSections(data);
+      const nextMilestones = Array.isArray(data?.milestones) && data.milestones.length
+        ? data.milestones.map((m, idx) =>
+            normalizeMilestoneForEdit(
+              {
+                ...m,
+                recommended_days_from_start:
+                  m?.recommended_days_from_start ?? (idx === 0 ? 0 : ""),
+              },
+              idx
+            )
+          )
+        : [buildBlankMilestone(1)];
 
       setEditHeader({
         ...headerSource,
@@ -1183,20 +1204,8 @@ export default function TemplatesPage() {
           ? `AI filled the draft with fallback guidance for ${formatAiGenerationSectionLabels(partialSections)}. Review those sections or retry when ready.`
           : ""
       );
-
       setEditMilestones(
-        Array.isArray(data?.milestones) && data.milestones.length
-          ? data.milestones.map((m, idx) =>
-              normalizeMilestoneForEdit(
-                {
-                  ...m,
-                  recommended_days_from_start:
-                    m?.recommended_days_from_start ?? (idx === 0 ? 0 : ""),
-                },
-                idx
-              )
-            )
-          : [buildBlankMilestone(1)]
+        needsSequentialOffsets(nextMilestones) ? computeSequentialOffsets(nextMilestones) : nextMilestones
       );
 
       toast.success("AI draft generated. Review and save to add it to your template library.");
@@ -2561,6 +2570,18 @@ export default function TemplatesPage() {
                   <div className="mb-2 text-xs text-slate-500">
                     These are estimated offsets and durations. Actual scheduling will be calculated when the agreement is created.
                   </div>
+                  {(editMode || creatingNew) ? (
+                    <div className="mb-3">
+                      <button
+                        type="button"
+                        onClick={autoSequenceTimeline}
+                        className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                        data-testid="templates-auto-sequence-timeline"
+                      >
+                        Auto Sequence Timeline
+                      </button>
+                    </div>
+                  ) : null}
 
                   <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                     <table className="w-full text-sm">
@@ -2584,6 +2605,7 @@ export default function TemplatesPage() {
                                   min="0"
                                   className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
                                   value={m?.start_offset ?? ""}
+                                  data-testid={`templates-milestone-start-offset-${idx + 1}`}
                                   onChange={(e) =>
                                     updateMilestone(idx, {
                                       start_offset: e.target.value,
@@ -2603,6 +2625,7 @@ export default function TemplatesPage() {
                                   min="1"
                                   className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
                                   value={m?.duration_days || m?.recommended_duration_days || ""}
+                                  data-testid={`templates-milestone-duration-${idx + 1}`}
                                   onChange={(e) =>
                                     updateMilestone(idx, {
                                       duration_days: e.target.value,

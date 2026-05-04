@@ -13259,6 +13259,49 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertTrue(system_template.is_system)
         self.assertEqual(system_template.milestones.count(), source_milestone_count)
 
+    def test_template_create_sequences_blank_offsets_from_duration(self):
+        response = self.client.post(
+            "/api/projects/templates/",
+            {
+                "name": "Auto Sequence Template",
+                "project_type": "Outdoor",
+                "project_subtype": "Shed Build",
+                "description": "Reusable shed build scope.",
+                "default_scope": "Reusable shed build scope.",
+                "milestones": [
+                    {
+                        "title": "Site prep",
+                        "description": "Prepare the site.",
+                        "sort_order": 1,
+                        "start_offset": 0,
+                        "duration_days": 2,
+                    },
+                    {
+                        "title": "Framing",
+                        "description": "Frame the structure.",
+                        "sort_order": 2,
+                        "start_offset": 0,
+                        "duration_days": 3,
+                    },
+                    {
+                        "title": "Cleanup",
+                        "description": "Finish cleanup.",
+                        "sort_order": 3,
+                        "start_offset": 0,
+                        "duration_days": 1,
+                    },
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        template = ProjectTemplate.objects.get(pk=response.data["id"])
+        rows = list(template.milestones.order_by("sort_order", "id"))
+        self.assertEqual([row.start_offset for row in rows], [0, 2, 5])
+        self.assertEqual([row.duration_days for row in rows], [2, 3, 1])
+        self.assertEqual([row.recommended_days_from_start for row in rows], [1, 3, 6])
+
     def test_system_templates_appear_in_discovery(self):
         response = self.client.get("/api/projects/templates/discover/", {"source": "system"})
         self.assertEqual(response.status_code, 200)

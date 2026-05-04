@@ -1522,13 +1522,51 @@ test('template milestone editor no longer shows a type dropdown and still saves 
     .toMatchObject({
       name: 'Milestone Draft Template',
       milestones: [
-        { title: 'Project setup' },
-        { title: 'Closeout' },
+        { title: 'Project setup', start_offset: 0, duration_days: 1 },
+        { title: 'Closeout', start_offset: 1, duration_days: 1 },
       ],
     });
   await expect(page.getByTestId('templates-detail-name')).toContainText(
     'Milestone Draft Template'
   );
+});
+
+test('template schedule auto-sequence button computes sequential offsets from durations', async ({
+  page,
+}) => {
+  const { store } = await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Auto Sequence Template');
+  await page.getByTestId('templates-project-type-input').fill('Outdoor');
+  await page.getByTestId('templates-project-subtype-input').fill('Shed Build');
+  await page.getByTestId('templates-tab-milestones').click();
+
+  await page.getByTestId('templates-milestone-title-1').fill('Site prep');
+  await page.getByTestId('templates-milestone-duration-1').fill('2');
+  await page.getByTestId('templates-add-milestone-button').click();
+  await page.getByTestId('templates-milestone-title-2').fill('Framing');
+  await page.getByTestId('templates-milestone-duration-2').fill('3');
+  await page.getByTestId('templates-add-milestone-button').click();
+  await page.getByTestId('templates-milestone-title-3').fill('Cleanup');
+  await page.getByTestId('templates-milestone-duration-3').fill('1');
+
+  await page.getByTestId('templates-tab-schedule').click();
+  await page.getByTestId('templates-auto-sequence-timeline').click();
+
+  await expect(page.getByTestId('templates-milestone-start-offset-1')).toHaveValue('0');
+  await expect(page.getByTestId('templates-milestone-start-offset-2')).toHaveValue('2');
+  await expect(page.getByTestId('templates-milestone-start-offset-3')).toHaveValue('5');
+
+  await page.getByTestId('templates-save-button').click();
+
+  await expect(page.getByText('Template created.')).toBeVisible();
+  await expect.poll(() => {
+    const saved = store.templates.find((row) => row.name === 'Auto Sequence Template');
+    return saved ? saved.milestones.map((row) => row.start_offset) : null;
+  }).toEqual([0, 2, 5]);
 });
 
 test('template AI-generated milestones still render while type controls stay hidden', async ({

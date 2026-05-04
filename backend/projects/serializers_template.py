@@ -3,6 +3,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
+from projects.services.template_apply import sequence_template_milestone_dicts
 
 
 class ProjectTemplateMilestoneSerializer(serializers.ModelSerializer):
@@ -301,7 +302,6 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
         contractor = validated_data.get("contractor")
 
         if source_template_id:
-            from projects.models_templates import ProjectTemplate
             from projects.services.template_apply import duplicate_template_for_contractor
 
             try:
@@ -320,12 +320,13 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
             template = duplicate_template_for_contractor(
                 contractor=contractor,
                 source_template=source_template,
-                template_data={**validated_data, "milestones": milestones_data},
+                template_data={**validated_data, "milestones": sequence_template_milestone_dicts(milestones_data)},
                 is_active=validated_data.get("is_active", True),
             )
             return template
 
         template = ProjectTemplate.objects.create(**validated_data)
+        milestones_data = sequence_template_milestone_dicts(milestones_data)
 
         for idx, row in enumerate(milestones_data, start=1):
             start_offset = row.get("start_offset")
@@ -365,6 +366,7 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
 
         if milestones_data is not None:
             instance.milestones.all().delete()
+            milestones_data = sequence_template_milestone_dicts(milestones_data)
             for idx, row in enumerate(milestones_data, start=1):
                 start_offset = row.get("start_offset")
                 duration_days = row.get("duration_days")

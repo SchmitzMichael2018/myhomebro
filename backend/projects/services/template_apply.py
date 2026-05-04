@@ -603,6 +603,7 @@ def duplicate_template_for_contractor(
             }
             for m in source_template.milestones.all().order_by("sort_order", "id")
         ]
+    milestone_rows = sequence_template_milestone_dicts(milestone_rows)
 
     template = ProjectTemplate.objects.create(
         contractor=contractor,
@@ -728,6 +729,85 @@ def _coerce_positive_int(value) -> Optional[int]:
         return None
 
 
+def _template_milestones_need_sequence(rows: list[Any]) -> bool:
+    if len(rows) <= 1:
+        return False
+    saw_positive_offset = False
+    saw_any_offset = False
+    for row in rows:
+        offset = _coerce_template_offset(getattr(row, "start_offset", None))
+        if offset is None:
+            offset = _coerce_template_offset(getattr(row, "recommended_days_from_start", None))
+        if offset is None:
+            continue
+        saw_any_offset = True
+        if offset > 0:
+            saw_positive_offset = True
+            break
+    return saw_any_offset and not saw_positive_offset
+
+
+def sequence_template_milestone_dicts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Sequence blank or zero-offset milestone payloads while preserving any
+    manual positive offsets the caller already supplied.
+    """
+    if len(rows) <= 1:
+        return rows
+
+    for row in rows:
+        start_offset = _coerce_template_offset(row.get("start_offset"))
+        if start_offset is None:
+            start_offset = _coerce_template_offset(row.get("recommended_days_from_start"))
+            if start_offset is not None:
+                start_offset = max(start_offset - 1, 0)
+        if start_offset is not None and start_offset > 0:
+            return rows
+
+    sequenced: list[dict[str, Any]] = []
+    current_offset = 0
+    for idx, row in enumerate(rows, start=1):
+        duration_days = max(
+            _coerce_positive_int(row.get("duration_days"))
+            or _coerce_positive_int(row.get("recommended_duration_days"))
+            or 1,
+            1,
+        )
+        next_row = dict(row)
+        next_row["sort_order"] = row.get("sort_order") or idx
+        next_row["start_offset"] = current_offset
+        next_row["duration_days"] = duration_days
+        next_row["recommended_days_from_start"] = current_offset + 1
+        next_row["recommended_duration_days"] = duration_days
+        sequenced.append(next_row)
+        current_offset += duration_days
+    return sequenced
+
+
+def _compute_sequential_offsets(rows: list[Any]) -> list[dict[str, Any]]:
+    sequenced: list[dict[str, Any]] = []
+    current_offset = 0
+    for idx, row in enumerate(rows, start=1):
+        duration_days = max(
+            _coerce_positive_int(getattr(row, "duration_days", None))
+            or _coerce_positive_int(getattr(row, "recommended_duration_days", None))
+            or 1,
+            1,
+        )
+        sequenced.append(
+            {
+                "row": row,
+                "start_offset": current_offset,
+                "duration_days": duration_days,
+                "recommended_days_from_start": current_offset + 1,
+                "recommended_duration_days": duration_days,
+                "sort_order": getattr(row, "sort_order", idx) or idx,
+            }
+        )
+        current_offset += duration_days
+    return sequenced
+
+
 def _fallback_duration_days(row_start: date, due_date: date) -> int:
     if due_date < row_start:
         return 1
@@ -779,6 +859,16 @@ def apply_template_to_agreement(
     template_rows = list(template.milestones.all().order_by("sort_order", "id"))
     if not template_rows:
         raise ValueError("Selected template has no milestone rows.")
+
+    if _template_milestones_need_sequence(template_rows):
+        sequenced_rows = _compute_sequential_offsets(template_rows)
+        for item in sequenced_rows:
+            row = item["row"]
+            row.start_offset = item["start_offset"]
+            row.duration_days = item["duration_days"]
+            row.recommended_days_from_start = item["recommended_days_from_start"]
+            row.recommended_duration_days = item["recommended_duration_days"]
+            row.sort_order = item["sort_order"]
 
     preclear_milestone_total = _milestone_sum(agreement)
     deleted_count = 0
