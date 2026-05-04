@@ -400,9 +400,25 @@ else:
     EMAIL_HOST_USER = POSTMARK_SERVER_TOKEN
     EMAIL_HOST_PASSWORD = POSTMARK_SERVER_TOKEN
 
-DEFAULT_FROM_EMAIL = get_env_var("DEFAULT_FROM_EMAIL", "MyHomeBro <info@myhomebro.com>")
-SERVER_EMAIL = get_env_var("SERVER_EMAIL", "no-reply@myhomebro.com")
-SUPPORT_EMAIL = get_env_var("SUPPORT_EMAIL", "support@myhomebro.com")
+DEFAULT_FROM_EMAIL = get_env_var(
+    "DEFAULT_FROM_EMAIL",
+    "MyHomeBro <no-reply@myhomebro.com>"
+)
+
+SERVER_EMAIL = get_env_var(
+    "SERVER_EMAIL",
+    "no-reply@myhomebro.com"
+)
+
+SUPPORT_EMAIL = get_env_var(
+    "SUPPORT_EMAIL",
+    "support@myhomebro.com"
+)
+
+INFO_EMAIL = get_env_var(
+    "INFO_EMAIL",
+    "info@myhomebro.com"
+)
 SUPPORT_INBOUND_SYNC_ENABLED = get_bool("SUPPORT_INBOUND_SYNC_ENABLED", default=False)
 SUPPORT_GMAIL_SYNC_LOOKBACK_DAYS = int(get_env_var("SUPPORT_GMAIL_SYNC_LOOKBACK_DAYS", "14"))
 SUPPORT_GMAIL_IMAP_HOST = get_env_var("SUPPORT_GMAIL_IMAP_HOST", "imap.gmail.com")
