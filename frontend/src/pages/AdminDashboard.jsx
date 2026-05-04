@@ -621,6 +621,8 @@ export default function AdminDashboard() {
 
   const selectedCities = geo?.cities_by_state?.[geoState] || [];
   const selectedZips = geo?.zips_by_state?.[geoState] || [];
+  const geoHasRows = (geo?.states || []).length > 0;
+  const geoMissingSamples = geo?.missing_geo_samples || [];
 
   /* =========================
      Guards
@@ -1420,10 +1422,41 @@ export default function AdminDashboard() {
                               <Td>{fmtNumber(s.agreements || 0)}</Td>
                             </tr>
                           ))
-                        )}
+                          )}
                       </tbody>
                     </table>
                   </TableShell>
+
+                  {!geoHasRows ? (
+                    <div className="mt-3 rounded-2xl border border-dashed border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                      <div className="font-extrabold">No geo data yet.</div>
+                      <div className="mt-1">
+                        {fmtNumber(geo?.total_agreements_l12m || 0)} agreements checked,{" "}
+                        {fmtNumber(geo?.agreements_missing_geo || 0)} missing project location.
+                      </div>
+                      {fmtNumber(geo?.receipts_l12m || 0) !== "0" ? (
+                        <div className="mt-1">
+                          {fmtNumber(geo?.receipts_l12m || 0)} receipts checked,{" "}
+                          {fmtNumber(geo?.receipts_missing_geo || 0)} missing geo.
+                        </div>
+                      ) : null}
+                      {geoMissingSamples.length > 0 ? (
+                        <div className="mt-2">
+                          <div className="font-extrabold">Sample missing agreements</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {geoMissingSamples.slice(0, 5).map((sample) => (
+                              <span
+                                key={`${sample.agreement_id}-${sample.project_title}`}
+                                className="rounded-full border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold"
+                              >
+                                #{sample.agreement_id} {sample.project_title || "Untitled"}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </SoftCard>
 
                 <SoftCard className="p-4">

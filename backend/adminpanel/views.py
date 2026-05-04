@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date as _date, timedelta
 from decimal import Decimal
+import re
 from typing import Any, Dict, Optional, List, Tuple
 
 from django.apps import apps
@@ -141,18 +142,139 @@ def _invoice_disputed_q() -> Q:
 
 def _get_project_geo(project) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
-    Best-effort extraction of city/state/zip from Project model.
-    Tries multiple common field names.
+    Best-effort extraction of city/state/zip from a project-like object.
+
+    This is intentionally defensive:
+    - project fields are preferred
+    - agreement snapshot fields are supported
+    - related lead / intake / homeowner fallbacks are checked when available
     """
-    city = safe_get(project, ["city", "project_city", "address_city"], None)
-    state = safe_get(project, ["state", "project_state", "address_state"], None)
-    zipc = safe_get(project, ["zip", "zip_code", "zipcode", "postal_code", "project_zip"], None)
-    if city:
-        city = str(city).strip()
-    if state:
-        state = str(state).strip().upper()
-    if zipc:
-        zipc = str(zipc).strip()
+
+    US_STATE_NAME_TO_CODE = {
+        "alabama": "AL",
+        "alaska": "AK",
+        "arizona": "AZ",
+        "arkansas": "AR",
+        "california": "CA",
+        "colorado": "CO",
+        "connecticut": "CT",
+        "delaware": "DE",
+        "florida": "FL",
+        "georgia": "GA",
+        "hawaii": "HI",
+        "idaho": "ID",
+        "illinois": "IL",
+        "indiana": "IN",
+        "iowa": "IA",
+        "kansas": "KS",
+        "kentucky": "KY",
+        "louisiana": "LA",
+        "maine": "ME",
+        "maryland": "MD",
+        "massachusetts": "MA",
+        "michigan": "MI",
+        "minnesota": "MN",
+        "mississippi": "MS",
+        "missouri": "MO",
+        "montana": "MT",
+        "nebraska": "NE",
+        "nevada": "NV",
+        "new hampshire": "NH",
+        "new jersey": "NJ",
+        "new mexico": "NM",
+        "new york": "NY",
+        "north carolina": "NC",
+        "north dakota": "ND",
+        "ohio": "OH",
+        "oklahoma": "OK",
+        "oregon": "OR",
+        "pennsylvania": "PA",
+        "rhode island": "RI",
+        "south carolina": "SC",
+        "south dakota": "SD",
+        "tennessee": "TN",
+        "texas": "TX",
+        "utah": "UT",
+        "vermont": "VT",
+        "virginia": "VA",
+        "washington": "WA",
+        "west virginia": "WV",
+        "wisconsin": "WI",
+        "wyoming": "WY",
+        "district of columbia": "DC",
+    }
+
+    def _clean_text(value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    def _normalize_state(value):
+        text = _clean_text(value)
+        if not text:
+            return None
+        upper = text.upper()
+        if len(upper) == 2 and upper.isalpha():
+            return upper
+        mapped = US_STATE_NAME_TO_CODE.get(text.lower())
+        if mapped:
+            return mapped
+        return upper
+
+    def _normalize_zip(value):
+        text = _clean_text(value)
+        if not text:
+            return None
+        digits = re.sub(r"\D", "", text)
+        if len(digits) >= 5:
+            return digits[:5]
+        return digits or None
+
+    def _pick(obj, field_names):
+        if obj is None:
+            return None
+        return safe_get(obj, field_names, None)
+
+    def _update_from(obj, city, state, zipc):
+        if obj is None:
+            return city, state, zipc
+        city = city or _clean_text(_pick(obj, ["city", "project_city", "project_address_city", "home_city", "customer_city"]))
+        state = state or _normalize_state(_pick(obj, ["state", "project_state", "project_address_state", "home_state", "customer_state"]))
+        zipc = zipc or _normalize_zip(
+            _pick(
+                obj,
+                [
+                    "zip",
+                    "zip_code",
+                    "zipcode",
+                    "postal_code",
+                    "project_zip",
+                    "project_zip_code",
+                    "project_postal_code",
+                    "home_postal_code",
+                    "customer_postal_code",
+                ],
+            )
+        )
+        return city, state, zipc
+
+    city, state, zipc = None, None, None
+    city, state, zipc = _update_from(project, city, state, zipc)
+
+    # Agreements expose snapshot fields directly; Projects do not.
+    project_like = safe_get(project, ["project"], None)
+    city, state, zipc = _update_from(project_like, city, state, zipc)
+
+    # Linked lead/intake data can fill in missing geo details.
+    lead = safe_get(project, ["source_lead", "public_lead", "lead"], None)
+    city, state, zipc = _update_from(lead, city, state, zipc)
+    source_intake = safe_get(lead, ["source_intake"], None) if lead is not None else safe_get(project, ["source_intake"], None)
+    city, state, zipc = _update_from(source_intake, city, state, zipc)
+
+    homeowner = safe_get(project, ["homeowner"], None)
+    city, state, zipc = _update_from(homeowner, city, state, zipc)
+
     return city, state, zipc
 
 
@@ -918,8 +1040,20 @@ class AdminGeo(APIView):
     def get(self, request):
         if Agreement is None or Receipt is None:
             return Response(
-                {"generated_at": now().isoformat(), "states": [], "cities_by_state": {}, "zips_by_state": {},
-                 "warning": "Agreement or Receipt model not available."},
+                {
+                    "generated_at": now().isoformat(),
+                    "states": [],
+                    "cities_by_state": {},
+                    "zips_by_state": {},
+                    "total_agreements_l12m": 0,
+                    "agreements_with_geo": 0,
+                    "agreements_missing_geo": 0,
+                    "receipts_l12m": 0,
+                    "receipts_with_geo": 0,
+                    "receipts_missing_geo": 0,
+                    "missing_geo_samples": [],
+                    "warning": "Agreement or Receipt model not available.",
+                },
                 status=status.HTTP_200_OK,
             )
 
@@ -932,27 +1066,55 @@ class AdminGeo(APIView):
         agreements_by_city = defaultdict(int)
         agreements_by_zip = defaultdict(int)
 
+        total_agreements_l12m = 0
+        agreements_with_geo = 0
+        agreements_missing_geo = 0
+        receipts_l12m = 0
+        receipts_with_geo = 0
+        receipts_missing_geo = 0
+        missing_geo_samples: List[Dict[str, Any]] = []
+
+        def _record_missing_sample(agreement) -> None:
+            if len(missing_geo_samples) >= 10:
+                return
+            project = getattr(agreement, "project", None)
+            missing_geo_samples.append(
+                {
+                    "agreement_id": getattr(agreement, "id", None),
+                    "project_title": safe_get(project, ["title"], None) or f"Agreement #{getattr(agreement, 'id', '')}",
+                }
+            )
+
         # Agreements (escrow)
-        qs_a = Agreement.objects.filter(created_at__gte=start).select_related("project")
-        qs_a = qs_a.only("id", "created_at", "project", "escrow_funded_amount")
+        qs_a = Agreement.objects.filter(created_at__gte=start).select_related(
+            "project",
+            "project__homeowner",
+            "homeowner",
+            "source_lead",
+            "source_lead__source_intake",
+        )
 
         for a in qs_a:
-          project = getattr(a, "project", None)
-          city, state, zipc = _get_project_geo(project)
-          if not state:
-              continue
+            total_agreements_l12m += 1
+            city, state, zipc = _get_project_geo(a)
+            if not state:
+                agreements_missing_geo += 1
+                _record_missing_sample(a)
+                continue
 
-          escrow_amt = _to_dec(getattr(a, "escrow_funded_amount", None))
-          escrow_by_state[state] += escrow_amt
-          agreements_by_state[state] += 1
+            agreements_with_geo += 1
+            escrow_amt = _to_dec(getattr(a, "escrow_funded_amount", None))
+            escrow_by_state[state] += escrow_amt
+            agreements_by_state[state] += 1
 
-          if city:
-              escrow_by_city[(city, state)] += escrow_amt
-              agreements_by_city[(city, state)] += 1
+            if city:
+                city_key = city.strip().lower()
+                escrow_by_city[(city_key, state)] += escrow_amt
+                agreements_by_city[(city_key, state)] += 1
 
-          if zipc:
-              escrow_by_zip[(zipc, state)] += escrow_amt
-              agreements_by_zip[(zipc, state)] += 1
+            if zipc:
+                escrow_by_zip[(zipc, state)] += escrow_amt
+                agreements_by_zip[(zipc, state)] += 1
 
         # Receipts (platform fees)
         fees_by_state = defaultdict(lambda: D0)
@@ -962,21 +1124,30 @@ class AdminGeo(APIView):
         qs_r = Receipt.objects.filter(created_at__gte=start).select_related(
             "agreement",
             "agreement__project",
-        ).only("created_at", "platform_fee_cents", "agreement", "agreement__project")
+            "agreement__project__homeowner",
+            "agreement__homeowner",
+            "agreement__source_lead",
+            "agreement__source_lead__source_intake",
+            "invoice",
+            "invoice__agreement",
+        )
 
         # Safety limit to keep admin snappy
         qs_r = qs_r.order_by("-created_at")[:10000]
 
         for r in qs_r:
+            receipts_l12m += 1
             fee = _cents_to_dollars_dec(int(getattr(r, "platform_fee_cents", 0) or 0))
-            ag = getattr(r, "agreement", None)
-            project = getattr(ag, "project", None) if ag else None
-            city, state, zipc = _get_project_geo(project)
+            ag = getattr(r, "agreement", None) or safe_get(getattr(r, "invoice", None), ["agreement"], None)
+            city, state, zipc = _get_project_geo(ag) if ag is not None else (None, None, None)
             if not state:
+                receipts_missing_geo += 1
                 continue
+            receipts_with_geo += 1
             fees_by_state[state] += fee
             if city:
-                fees_by_city[(city, state)] += fee
+                city_key = city.strip().lower()
+                fees_by_city[(city_key, state)] += fee
             if zipc:
                 fees_by_zip[(zipc, state)] += fee
 
@@ -997,17 +1168,20 @@ class AdminGeo(APIView):
         states.sort(key=lambda s: Decimal(s["fees"]), reverse=True)
 
         cities_by_state: Dict[str, List[Dict[str, Any]]] = {}
-        for (city, state), escrow in escrow_by_city.items():
-            fees = fees_by_city.get((city, state), D0)
+        for (city_key, state), escrow in escrow_by_city.items():
+            fees = fees_by_city.get((city_key, state), D0)
             take = float(fees / escrow) if escrow and escrow > D0 else 0.0
-            cities_by_state.setdefault(state, []).append({
-                "city": city,
-                "state": state,
-                "fees": _fmt_money(fees),
-                "escrow": _fmt_money(escrow),
-                "take_rate": take,
-                "agreements": agreements_by_city[(city, state)],
-            })
+            display_city = city_key.title()
+            cities_by_state.setdefault(state, []).append(
+                {
+                    "city": display_city,
+                    "state": state,
+                    "fees": _fmt_money(fees),
+                    "escrow": _fmt_money(escrow),
+                    "take_rate": take,
+                    "agreements": agreements_by_city[(city_key, state)],
+                }
+            )
         for st in cities_by_state:
             cities_by_state[st].sort(key=lambda r: Decimal(r["fees"]), reverse=True)
 
@@ -1030,6 +1204,13 @@ class AdminGeo(APIView):
                 "states": states,
                 "cities_by_state": cities_by_state,
                 "zips_by_state": zips_by_state,
+                "total_agreements_l12m": total_agreements_l12m,
+                "agreements_with_geo": agreements_with_geo,
+                "agreements_missing_geo": agreements_missing_geo,
+                "receipts_l12m": receipts_l12m,
+                "receipts_with_geo": receipts_with_geo,
+                "receipts_missing_geo": receipts_missing_geo,
+                "missing_geo_samples": missing_geo_samples,
             },
             status=status.HTTP_200_OK,
         )

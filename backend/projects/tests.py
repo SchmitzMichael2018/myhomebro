@@ -81,6 +81,7 @@ from projects.models_attachments import AgreementAttachment
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
+from receipts.models import Receipt
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
@@ -15785,6 +15786,118 @@ class AdminTemplateManagementTests(TestCase):
         self.assertIsNone(duplicated.contractor_id)
         self.assertEqual(duplicated.source_system_template_id, None)
         self.assertEqual(duplicated.name, "Admin Copy of Contractor Template")
+
+
+class AdminGeoTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin_user = user_model.objects.create_superuser(
+            email="admin-geo@example.com",
+            password="testpass123",
+        )
+        contractor_user = user_model.objects.create_user(
+            email="geo-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=contractor_user,
+            business_name="Geo Contractor",
+            city="Austin",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Geo Homeowner",
+            email="geo-homeowner@example.com",
+            city="Austin",
+            state="Texas",
+            zip_code="78701-1234",
+        )
+        self.geo_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Geo Enabled Project",
+            project_city="Austin",
+            project_state="Texas",
+            project_zip_code="78701-1234",
+        )
+        self.geo_agreement = Agreement.objects.create(
+            project=self.geo_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Geo agreement",
+            project_type="Outdoor",
+            project_subtype="Shed Build",
+        )
+        self.missing_project = Project.objects.create(
+            contractor=self.contractor,
+            title="Missing Geo Project",
+        )
+        self.missing_agreement = Agreement.objects.create(
+            project=self.missing_project,
+            contractor=self.contractor,
+            description="Missing geo agreement",
+            project_type="Outdoor",
+            project_subtype="Shed Build",
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.geo_agreement,
+            amount=Decimal("200.00"),
+            status=InvoiceStatus.PAID,
+            escrow_released=True,
+            escrow_released_at=timezone.now(),
+            stripe_payment_intent_id="pi_geo_001",
+            platform_fee_cents=3500,
+        )
+        Receipt.objects.create(
+            invoice=self.invoice,
+            agreement=self.geo_agreement,
+            receipt_number="R-ADMIN-GEO-001",
+            stripe_payment_intent_id="pi_geo_001",
+            stripe_charge_id="ch_geo_001",
+            amount_paid_cents=20000,
+            platform_fee_cents=3500,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+    def test_admin_geo_returns_state_city_zip_and_debug_counts(self):
+        response = self.client.get("/api/projects/admin/geo/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+
+        self.assertEqual(payload["total_agreements_l12m"], 2)
+        self.assertEqual(payload["agreements_with_geo"], 1)
+        self.assertEqual(payload["agreements_missing_geo"], 1)
+        self.assertEqual(payload["receipts_l12m"], 1)
+        self.assertEqual(payload["receipts_with_geo"], 1)
+        self.assertEqual(payload["receipts_missing_geo"], 0)
+        self.assertGreaterEqual(len(payload["missing_geo_samples"]), 1)
+
+        states = {row["state"] for row in payload["states"]}
+        self.assertIn("TX", states)
+
+        tx_cities = payload["cities_by_state"].get("TX", [])
+        tx_zips = payload["zips_by_state"].get("TX", [])
+        self.assertTrue(any(row["city"] == "Austin" for row in tx_cities))
+        self.assertTrue(any(row["zip"] == "78701" for row in tx_zips))
+
+        tx_state = next(row for row in payload["states"] if row["state"] == "TX")
+        self.assertEqual(tx_state["agreements"], 1)
+        self.assertEqual(tx_state["fees"], "35.00")
+        self.assertEqual(tx_state["escrow"], "0.00")
+
+    def test_admin_geo_missing_project_geo_does_not_crash(self):
+        response = self.client.get("/api/projects/admin/geo/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        self.assertEqual(payload["agreements_missing_geo"], 1)
+        self.assertEqual(payload["receipts_missing_geo"], 0)
+        self.assertTrue(
+            any(sample["agreement_id"] == self.missing_agreement.id for sample in payload["missing_geo_samples"])
+        )
 
 
 class TemplateAIGenerationTests(TestCase):

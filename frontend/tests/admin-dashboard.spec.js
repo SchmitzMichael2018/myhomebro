@@ -275,6 +275,29 @@ async function mockAdminDashboard(page) {
       }),
     });
   });
+
+  await page.route('**/api/projects/admin/geo/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        generated_at: '2026-03-26T12:00:00Z',
+        states: [],
+        cities_by_state: {},
+        zips_by_state: {},
+        total_agreements_l12m: 5,
+        agreements_with_geo: 0,
+        agreements_missing_geo: 5,
+        receipts_l12m: 2,
+        receipts_with_geo: 0,
+        receipts_missing_geo: 2,
+        missing_geo_samples: [
+          { agreement_id: 401, project_title: 'Garden Shed' },
+          { agreement_id: 402, project_title: 'Patio Cover' },
+        ],
+      }),
+    });
+  });
 }
 
 test('owner admin dashboard smoke renders overview and core admin views', async ({ page }) => {
@@ -454,4 +477,16 @@ test('admin templates page renders system template management controls', async (
   await page.getByTestId('templates-market-tab-system').click();
   await expect(page.getByTestId('template-discovery-card-901')).toBeVisible();
   await expect(page.getByTestId('template-discovery-card-902')).toHaveCount(0);
+});
+
+test('admin geo page shows diagnostics when no geo rows exist', async ({ page }) => {
+  await mockAdminDashboard(page);
+
+  await page.goto('/app/admin?view=geo', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByText('No geo data yet.')).toBeVisible();
+  await expect(page.getByText('5 agreements checked, 5 missing project location.')).toBeVisible();
+  await expect(page.getByText('Sample missing agreements')).toBeVisible();
+  await expect(page.getByText('#401 Garden Shed')).toBeVisible();
+  await expect(page.getByText('#402 Patio Cover')).toBeVisible();
 });
