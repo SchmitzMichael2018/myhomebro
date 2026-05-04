@@ -305,3 +305,153 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-disputes-view')).toBeVisible();
   await expect(page.getByTestId('admin-dispute-row-801')).toContainText('Kitchen Remodel');
 });
+
+test('admin templates page renders system template management controls', async ({ page }) => {
+  await mockAdminDashboard(page);
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const pathname = requestUrl.pathname.replace(/^\/api/, '');
+
+    if (route.request().method() === 'GET' && pathname === '/projects/templates/') {
+      const source = (requestUrl.searchParams.get('source') || 'all').toLowerCase();
+      const results = [
+        {
+          id: 901,
+          name: 'Admin Shed System',
+          project_type: 'Outdoor',
+          project_subtype: 'Shed Build',
+          description: 'System managed shed template.',
+          default_scope: 'System managed shed template.',
+          exclusions_text: '',
+          assumptions_text: '',
+          visibility: 'system',
+          is_system: true,
+          is_system_template: true,
+          is_published: true,
+          allow_discovery: true,
+          owner_type: 'system',
+          source_label: 'system',
+          milestone_count: 3,
+          milestones: [],
+        },
+        {
+          id: 902,
+          name: 'Contractor Shed Template',
+          project_type: 'Outdoor',
+          project_subtype: 'Shed Build',
+          description: 'Contractor owned shed template.',
+          default_scope: 'Contractor owned shed template.',
+          exclusions_text: '',
+          assumptions_text: '',
+          visibility: 'private',
+          is_system: false,
+          is_system_template: false,
+          is_published: false,
+          allow_discovery: false,
+          owner_type: 'contractor',
+          source_label: 'private',
+          milestone_count: 2,
+          milestones: [],
+        },
+      ];
+
+      const filtered =
+        source === 'system'
+          ? results.filter((row) => row.is_system)
+          : source === 'public'
+          ? []
+          : source === 'regional'
+          ? []
+          : results;
+
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(filtered),
+      });
+    }
+
+    if (route.request().method() === 'GET' && /\/projects\/templates\/\d+\/$/.test(pathname)) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 901,
+          name: 'Admin Shed System',
+          project_type: 'Outdoor',
+          project_subtype: 'Shed Build',
+          description: 'System managed shed template.',
+          default_scope: 'System managed shed template.',
+          exclusions_text: '',
+          assumptions_text: '',
+          visibility: 'system',
+          is_system: true,
+          is_system_template: true,
+          is_published: true,
+          allow_discovery: true,
+          milestones: [],
+        }),
+      });
+    }
+
+    if (route.request().method() === 'PATCH') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 901,
+          name: 'Admin Shed System',
+          project_type: 'Outdoor',
+          project_subtype: 'Shed Build',
+          description: 'System managed shed template.',
+          default_scope: 'System managed shed template.',
+          exclusions_text: '',
+          assumptions_text: '',
+          visibility: 'system',
+          is_system: true,
+          is_system_template: true,
+          is_published: false,
+          allow_discovery: false,
+          milestones: [],
+        }),
+      });
+    }
+
+    if (route.request().method() === 'POST') {
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 903,
+          name: 'Admin Created System Template',
+          project_type: 'Outdoor',
+          project_subtype: 'Shed Build',
+          description: 'Admin created system template.',
+          default_scope: 'Admin created system template.',
+          exclusions_text: '',
+          assumptions_text: '',
+          visibility: 'system',
+          is_system: true,
+          is_system_template: true,
+          is_published: false,
+          allow_discovery: false,
+          milestones: [],
+        }),
+      });
+    }
+
+    return route.continue();
+  });
+
+  await page.goto('/app/admin/templates', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByRole('heading', { name: 'Admin Templates' })).toBeVisible();
+  await expect(page.getByTestId('templates-new-draft-button')).toContainText('Create System Template');
+  await expect(page.getByTestId('template-discovery-card-901')).toBeVisible();
+  await expect(page.getByTestId('template-discovery-card-902')).toBeVisible();
+
+  await page.getByTestId('templates-market-tab-system').click();
+  await expect(page.getByTestId('template-discovery-card-901')).toBeVisible();
+  await expect(page.getByTestId('template-discovery-card-902')).toHaveCount(0);
+});

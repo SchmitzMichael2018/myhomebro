@@ -326,6 +326,7 @@ function normalizeHeaderForEdit(detail) {
 }
 
 function buildTemplatePayload(header, milestones, extras = {}) {
+  const isPublished = extras?.is_published;
   return {
     name: header?.name ?? "",
     project_type: header?.project_type ?? "",
@@ -341,6 +342,8 @@ function buildTemplatePayload(header, milestones, extras = {}) {
     project_materials_hint: header?.project_materials_hint ?? "",
     is_active: header?.is_active ?? true,
     source_template_id: extras?.source_template_id,
+    is_system: !!extras?.is_system,
+    ...(isPublished === undefined ? {} : { is_published: !!isPublished }),
     milestones: milestones.map((m, idx) => ({
       ...(m?.id ? { id: m.id } : {}),
       title: m?.title ?? "",
@@ -389,14 +392,14 @@ function buildTemplatePayload(header, milestones, extras = {}) {
   };
 }
 
-export default function TemplatesPage() {
+export default function TemplatesPage({ adminMode = false } = {}) {
   const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [templates, setTemplates] = useState([]);
 
-  const [discoverySource, setDiscoverySource] = useState("mine");
+  const [discoverySource, setDiscoverySource] = useState(adminMode ? "all" : "mine");
   const [search, setSearch] = useState("");
   const [projectTypeFilter, setProjectTypeFilter] = useState("");
   const [projectSubtypeFilter, setProjectSubtypeFilter] = useState("");
@@ -419,6 +422,7 @@ export default function TemplatesPage() {
   const [assistantField, setAssistantField] = useState("description");
   const [generatedAiDraft, setGeneratedAiDraft] = useState(null);
   const [draftSourceTemplateId, setDraftSourceTemplateId] = useState(null);
+  const [draftIsSystemTemplate, setDraftIsSystemTemplate] = useState(false);
   const [keepEditorOpenAfterSave, setKeepEditorOpenAfterSave] = useState(false);
   const [aiGenerationStageIndex, setAiGenerationStageIndex] = useState(-1);
   const [aiGenerationError, setAiGenerationError] = useState("");
@@ -442,7 +446,7 @@ export default function TemplatesPage() {
     () => buildAssistantHandoffSignature(assistantHandoff),
     [assistantHandoff]
   );
-  const isSystemDiscovery = discoverySource === "system";
+  const isSystemDiscovery = !adminMode && discoverySource === "system";
 
   async function loadTemplates(options = {}) {
     try {
@@ -450,17 +454,27 @@ export default function TemplatesPage() {
       setErr("");
       const source = options?.source || discoverySource;
 
-      const { data } = await api.get("/projects/templates/discover/", {
-        params: {
-          source,
-          q: search || undefined,
-          project_type: projectTypeFilter || undefined,
-          project_subtype: projectSubtypeFilter || undefined,
-          region_state: regionStateFilter || undefined,
-          region_city: regionCityFilter || undefined,
-          sort: sortBy || "relevant",
-        },
-      });
+      const { data } = adminMode
+        ? await api.get("/projects/templates/", {
+            params: {
+              source,
+              q: search || undefined,
+              project_type: projectTypeFilter || undefined,
+              project_subtype: projectSubtypeFilter || undefined,
+              include_inactive: true,
+            },
+          })
+        : await api.get("/projects/templates/discover/", {
+            params: {
+              source,
+              q: search || undefined,
+              project_type: projectTypeFilter || undefined,
+              project_subtype: projectSubtypeFilter || undefined,
+              region_state: regionStateFilter || undefined,
+              region_city: regionCityFilter || undefined,
+              sort: sortBy || "relevant",
+            },
+          });
       const rows = Array.isArray(data) ? data : data?.results || [];
       setTemplates(rows);
     } catch (e) {
@@ -477,6 +491,7 @@ export default function TemplatesPage() {
   useEffect(() => {
     loadTemplates();
   }, [
+    adminMode,
     discoverySource,
     search,
     projectTypeFilter,
@@ -648,6 +663,7 @@ export default function TemplatesPage() {
     setEditMode(true);
     setActiveTab("setup");
     setDraftSourceTemplateId(null);
+    setDraftIsSystemTemplate(false);
   }
 
   function startNewTemplate() {
@@ -656,6 +672,7 @@ export default function TemplatesPage() {
     setEditMilestones([buildBlankMilestone(1)]);
     setTemplateAiPrompt("");
     setDraftSourceTemplateId(null);
+    setDraftIsSystemTemplate(Boolean(adminMode));
   }
 
   function openDraftForGeneration(seed = {}) {
@@ -672,10 +689,12 @@ export default function TemplatesPage() {
     });
     setEditMilestones([buildBlankMilestone(1)]);
     setDraftSourceTemplateId(null);
+    setDraftIsSystemTemplate(false);
   }
 
-  function openDraftFromExistingTemplate(template, bannerText = "") {
+  function openDraftFromExistingTemplate(template, bannerText = "", options = {}) {
     if (!template) return;
+    const asSystem = Boolean(options?.asSystem);
 
     setSelectedId(null);
     setSelectedDetail(null);
@@ -700,7 +719,8 @@ export default function TemplatesPage() {
       bannerText ||
         "Copied from a system template. Review and save it to add it to your template library."
     );
-    setDraftSourceTemplateId(template?.is_system ? template.id : null);
+    setDraftSourceTemplateId(template?.id || null);
+    setDraftIsSystemTemplate(asSystem);
   }
 
   function clearTemplateSelection() {
@@ -719,6 +739,7 @@ export default function TemplatesPage() {
     setTemplateAiPrompt("");
     setAssistantPrefillBanner("");
     setDraftSourceTemplateId(null);
+    setDraftIsSystemTemplate(false);
     setEditHeader(buildBlankHeader());
     setEditMilestones([buildBlankMilestone(1)]);
   }
@@ -881,7 +902,7 @@ export default function TemplatesPage() {
   }, [assistantHandoff, assistantHandoffSignature]);
 
   function startEditMode() {
-    if (!selectedDetail || isSelectedBuiltIn) return;
+    if (!selectedDetail || (isSelectedBuiltIn && !adminMode)) return;
     setEditHeader(normalizeHeaderForEdit(selectedDetail));
     setEditMilestones(
       Array.isArray(selectedDetail?.milestones) && selectedDetail.milestones.length
@@ -900,6 +921,7 @@ export default function TemplatesPage() {
       setEditMode(false);
       setCreatingNew(false);
       setDraftSourceTemplateId(null);
+      setDraftIsSystemTemplate(Boolean(adminMode));
       return;
     }
 
@@ -910,6 +932,7 @@ export default function TemplatesPage() {
         : [buildBlankMilestone(1)]
     );
     setEditMode(false);
+    setDraftIsSystemTemplate(false);
   }
 
   function updateHeader(field, value) {
@@ -1021,6 +1044,30 @@ export default function TemplatesPage() {
     }
   }
 
+  async function toggleSystemPublish() {
+    if (!selectedDetail?.id || !selectedDetail?.is_system) return;
+
+    try {
+      setVisibilitySaving("publish");
+      const nextIsPublished = !Boolean(selectedDetail?.is_published);
+      const { data } = await api.patch(`/projects/templates/${selectedDetail.id}/`, {
+        is_published: nextIsPublished,
+      });
+      setSelectedDetail(data);
+      setEditHeader(normalizeHeaderForEdit(data));
+      toast.success(nextIsPublished ? "System template published." : "System template unpublished.");
+      await loadTemplates();
+    } catch (e) {
+      toast.error(
+        e?.response?.data?.detail ||
+          e?.response?.data?.error ||
+          "Could not update publish status."
+      );
+    } finally {
+      setVisibilitySaving("");
+    }
+  }
+
   async function saveTemplateEdits() {
     const hasBlankTitle = currentMilestones.some((m) => !safeTrim(m?.title));
     if (hasBlankTitle) {
@@ -1041,11 +1088,13 @@ export default function TemplatesPage() {
         : currentMilestones;
       const payload = buildTemplatePayload(currentHeader, milestonesForSave, {
         source_template_id: draftSourceTemplateId || undefined,
+        is_system: draftIsSystemTemplate,
+        is_published: draftIsSystemTemplate ? Boolean(selectedDetail?.is_published) : undefined,
       });
 
       if (creatingNew) {
         const { data } = await api.post("/projects/templates/", payload);
-        const copiedFromSystem = !!draftSourceTemplateId;
+        const copiedFromSystem = !adminMode && !!draftSourceTemplateId;
         toast.success(copiedFromSystem ? "Template saved to your templates" : "Template created.");
         await loadTemplates({ source: copiedFromSystem ? "mine" : discoverySource });
         if (copiedFromSystem) {
@@ -1377,45 +1426,86 @@ export default function TemplatesPage() {
 
   return (
     <ContractorPageSurface
-      eyebrow="Core"
-      title="Templates"
-      subtitle="Create reusable project setups to speed up your agreements."
+      eyebrow={adminMode ? "Admin" : "Core"}
+      title={adminMode ? "Admin Templates" : "Templates"}
+      subtitle={
+        adminMode
+          ? "Create and manage reusable system templates for the platform."
+          : "Create reusable project setups to speed up your agreements."
+      }
       actions={null}
     >
 
       <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 text-sm text-slate-600">
-          Use templates to quickly create consistent agreements with predefined scope, milestones, and pricing.
+          {adminMode
+            ? "Manage reusable platform templates. Publish system starters, duplicate contractor templates, and keep milestone structure consistent."
+            : "Use templates to quickly create consistent agreements with predefined scope, milestones, and pricing."}
         </div>
         <div className="flex flex-wrap gap-2">
-          <TabButton
-            data-testid="templates-market-tab-mine"
-            active={discoverySource === "mine"}
-            onClick={() => setDiscoverySource("mine")}
-          >
-            My Templates
-          </TabButton>
-          <TabButton
-            data-testid="templates-market-tab-system"
-            active={discoverySource === "system"}
-            onClick={() => setDiscoverySource("system")}
-          >
-            System Templates
-          </TabButton>
-          <TabButton
-            data-testid="templates-market-tab-regional"
-            active={discoverySource === "regional"}
-            onClick={() => setDiscoverySource("regional")}
-          >
-            Regional Templates
-          </TabButton>
-          <TabButton
-            data-testid="templates-market-tab-public"
-            active={discoverySource === "public"}
-            onClick={() => setDiscoverySource("public")}
-          >
-            Public Templates
-          </TabButton>
+          {adminMode ? (
+            <>
+              <TabButton
+                data-testid="templates-market-tab-all"
+                active={discoverySource === "all"}
+                onClick={() => setDiscoverySource("all")}
+              >
+                All Templates
+              </TabButton>
+              <TabButton
+                data-testid="templates-market-tab-system"
+                active={discoverySource === "system"}
+                onClick={() => setDiscoverySource("system")}
+              >
+                System Templates
+              </TabButton>
+              <TabButton
+                data-testid="templates-market-tab-regional"
+                active={discoverySource === "regional"}
+                onClick={() => setDiscoverySource("regional")}
+              >
+                Regional Templates
+              </TabButton>
+              <TabButton
+                data-testid="templates-market-tab-public"
+                active={discoverySource === "public"}
+                onClick={() => setDiscoverySource("public")}
+              >
+                Public Templates
+              </TabButton>
+            </>
+          ) : (
+            <>
+              <TabButton
+                data-testid="templates-market-tab-mine"
+                active={discoverySource === "mine"}
+                onClick={() => setDiscoverySource("mine")}
+              >
+                My Templates
+              </TabButton>
+              <TabButton
+                data-testid="templates-market-tab-system"
+                active={discoverySource === "system"}
+                onClick={() => setDiscoverySource("system")}
+              >
+                System Templates
+              </TabButton>
+              <TabButton
+                data-testid="templates-market-tab-regional"
+                active={discoverySource === "regional"}
+                onClick={() => setDiscoverySource("regional")}
+              >
+                Regional Templates
+              </TabButton>
+              <TabButton
+                data-testid="templates-market-tab-public"
+                active={discoverySource === "public"}
+                onClick={() => setDiscoverySource("public")}
+              >
+                Public Templates
+              </TabButton>
+            </>
+          )}
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -1638,7 +1728,7 @@ export default function TemplatesPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {!editMode && !creatingNew && selectedDetail && !isSelectedBuiltIn ? (
+                {!editMode && !creatingNew && selectedDetail && (adminMode || !isSelectedBuiltIn) ? (
                   <button
                     type="button"
                     onClick={startEditMode}
@@ -1646,6 +1736,23 @@ export default function TemplatesPage() {
                     className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                   >
                     Edit Template
+                  </button>
+                ) : null}
+
+                {!editMode && !creatingNew && adminMode && selectedDetail && !selectedDetail?.is_system ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openDraftFromExistingTemplate(
+                        selectedDetail,
+                        "Duplicated from a contractor template. Review and publish it as a system starter.",
+                        { asSystem: true }
+                      )
+                    }
+                    data-testid="templates-duplicate-contractor-button"
+                    className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                  >
+                    Duplicate from Contractor Template
                   </button>
                 ) : null}
 
@@ -1673,9 +1780,21 @@ export default function TemplatesPage() {
                           : "bg-indigo-600 hover:bg-indigo-700"
                       }`}
                     >
-                      {savingTemplate ? "Saving…" : creatingNew ? "Create Template" : "Save Template"}
+                      {savingTemplate ? "Saving…" : creatingNew ? (adminMode && draftIsSystemTemplate ? "Create System Template" : "Create Template") : "Save Template"}
                     </button>
                   </>
+                ) : null}
+
+                {!editMode && !creatingNew && adminMode && selectedDetail?.is_system ? (
+                  <button
+                    type="button"
+                    onClick={toggleSystemPublish}
+                    disabled={visibilitySaving === "publish"}
+                    data-testid="templates-publish-toggle"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {selectedDetail?.is_published ? "Unpublish" : "Publish"}
+                  </button>
                 ) : null}
 
                 {!creatingNew && selectedDetail && !selectedDetail?.is_system ? (
@@ -1718,7 +1837,7 @@ export default function TemplatesPage() {
                   </>
                 ) : null}
 
-                {selectedDetail && isSelectedBuiltIn ? (
+                {!adminMode && selectedDetail && isSelectedBuiltIn ? (
                   <>
                     <button
                       type="button"
@@ -1767,8 +1886,14 @@ export default function TemplatesPage() {
                 </div>
               ) : (
                 <div>
-                  <div className="text-base font-semibold text-slate-900">Start a new template</div>
-                  <div className="mt-1">Start blank or describe the job and let AI create a draft.</div>
+                  <div className="text-base font-semibold text-slate-900">
+                    {adminMode ? "Create a system template" : "Start a new template"}
+                  </div>
+                  <div className="mt-1">
+                    {adminMode
+                      ? "Start blank or duplicate a contractor template, then publish it as a reusable system starter."
+                      : "Start blank or describe the job and let AI create a draft."}
+                  </div>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -1776,7 +1901,7 @@ export default function TemplatesPage() {
                       data-testid="templates-new-draft-button"
                       className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
                     >
-                      New Template Draft
+                      {adminMode ? "Create System Template" : "New Template Draft"}
                     </button>
                   </div>
                   <div className="mt-4 flex flex-col gap-2 sm:max-w-lg">
@@ -2781,3 +2906,4 @@ function formatAiGenerationSectionLabels(keys) {
   if (!unique.length) return "some sections";
   return unique.map((key) => AI_GENERATION_SECTION_LABELS[key] || key).join(", ");
 }
+

@@ -315,6 +315,7 @@ export default function Sidebar({ variant = "desktop" }) {
           {isOnAdminRoute && (
             <div className="mt-2 space-y-1">
               <SubItem to="/app/admin" label="Overview" />
+              <SubItem to="/app/admin/templates" label="Templates" />
               <SubItem to="/app/admin?view=goals" label="Goals (CEO)" />
               <SubItem to="/app/admin?view=contractors" label="Contractors" />
               <SubItem to="/app/admin?view=homeowners" label="Customers" />
@@ -646,15 +647,15 @@ export default function Sidebar({ variant = "desktop" }) {
               <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
             </NavGroup>
 
-            <NavGroup label="Work" className="pt-1">
+            <NavGroup label="Operations" className="pt-1">
               <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
               <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
-              <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
               <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
+              <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
             </NavGroup>
 
-            <NavGroup label="Team" className="pt-1">
+            <NavGroup label="Users" className="pt-1">
               <Item to={`${APP_BASE}/team-overview`} label="Team Overview" icon={Gauge} />
               <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
               <Item
@@ -672,16 +673,17 @@ export default function Sidebar({ variant = "desktop" }) {
               <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
             </NavGroup>
 
-            <NavGroup label="Business" className="pt-1">
+            <NavGroup label="Finance" className="pt-1">
               <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
               <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
-              <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
+              <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
               <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
               <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />
-              <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
             </NavGroup>
 
-            <NavGroup label="ACCOUNT" className="pt-1">
+            <NavGroup label="Tools" className="pt-1">
+              <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
+              <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
               <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
               <Item
                 to={`${APP_BASE}/onboarding/stripe`}
@@ -723,12 +725,12 @@ export default function Sidebar({ variant = "desktop" }) {
           <div className="space-y-2">{mainNav}</div>
         </div>
 
-        <div>
-          <div className="mb-2 px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
-            ACCOUNT
+          <div>
+            <div className="mb-2 px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
+              Tools
+            </div>
+            <div className="space-y-2">{accountNav}</div>
           </div>
-          <div className="space-y-2">{accountNav}</div>
-        </div>
         </>
         ) : null}
       </nav>

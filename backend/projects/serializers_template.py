@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rest_framework import serializers
+from django.utils import timezone
 
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.services.template_apply import sequence_template_milestone_dicts
@@ -271,6 +272,8 @@ class ProjectTemplateDetailSerializer(serializers.ModelSerializer):
 class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
     milestones = ProjectTemplateMilestoneSerializer(many=True, required=False)
     source_template_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
+    is_system = serializers.BooleanField(required=False, write_only=True, default=False)
+    is_published = serializers.BooleanField(required=False, write_only=True, default=False)
 
     @staticmethod
     def _clean_int(value):
@@ -296,14 +299,27 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
             "project_materials_hint",
             "is_active",
             "normalized_region_key",
+            "is_system",
+            "is_published",
             "source_template_id",
             "milestones",
         ]
 
+    def _is_admin_request(self) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+
     def create(self, validated_data):
         milestones_data = validated_data.pop("milestones", [])
         source_template_id = validated_data.pop("source_template_id", None)
+        is_system_requested = bool(validated_data.pop("is_system", False))
+        is_published = bool(validated_data.pop("is_published", False))
         contractor = validated_data.get("contractor")
+        is_admin = self._is_admin_request()
+
+        if is_admin:
+            is_system_requested = True
 
         if source_template_id:
             from projects.services.template_apply import duplicate_template_for_contractor
@@ -316,18 +332,39 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
             if source_template.is_system_template and not source_template.is_published:
                 raise serializers.ValidationError({"source_template_id": "Template not found."})
 
-            if not source_template.is_system and (
-                contractor is None or source_template.contractor_id != getattr(contractor, "id", None)
-            ):
-                raise serializers.ValidationError({"source_template_id": "You cannot duplicate this template."})
+            if not source_template.is_system:
+                if not is_system_requested and (
+                    contractor is None or source_template.contractor_id != getattr(contractor, "id", None)
+                ):
+                    raise serializers.ValidationError({"source_template_id": "You cannot duplicate this template."})
+                if is_system_requested and not is_admin:
+                    raise serializers.ValidationError({"source_template_id": "You cannot duplicate this template."})
 
             template = duplicate_template_for_contractor(
-                contractor=contractor,
+                contractor=None if is_system_requested else contractor,
                 source_template=source_template,
                 template_data={**validated_data, "milestones": sequence_template_milestone_dicts(milestones_data)},
                 is_active=validated_data.get("is_active", True),
+                is_system=is_system_requested,
+                is_published=is_published,
             )
+            if is_system_requested and is_published and getattr(template, "published_by_id", None) is None:
+                template.published_by = self.context.get("request").user
+                template.save(update_fields=["published_by", "published_at", "updated_at"])
             return template
+
+        if is_system_requested and not is_admin:
+            raise serializers.ValidationError({"is_system": "Only admins can create system templates."})
+
+        if is_system_requested:
+            validated_data["contractor"] = None
+            validated_data["is_system"] = True
+            validated_data["is_system_template"] = True
+            validated_data["is_published"] = is_published
+            validated_data["visibility"] = ProjectTemplate.Visibility.SYSTEM
+            validated_data["allow_discovery"] = is_published
+            validated_data["published_at"] = timezone.now() if is_published else None
+            validated_data["published_by"] = self.context.get("request").user if is_published else None
 
         template = ProjectTemplate.objects.create(**validated_data)
         milestones_data = sequence_template_milestone_dicts(milestones_data)
@@ -363,9 +400,35 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         milestones_data = validated_data.pop("milestones", None)
         validated_data.pop("source_template_id", None)
+        is_system_requested = bool(validated_data.pop("is_system", False))
+        is_published_requested = validated_data.pop("is_published", None)
+        is_admin = self._is_admin_request()
+
+        if is_system_requested and not is_admin:
+            validated_data.pop("is_system", None)
+        if is_published_requested is not None and not is_admin:
+            validated_data.pop("is_published", None)
 
         for field, value in validated_data.items():
             setattr(instance, field, value)
+
+        if instance.is_system_template:
+            if is_published_requested is not None:
+                instance.is_published = bool(is_published_requested)
+                instance.allow_discovery = bool(is_published_requested)
+                if instance.is_published:
+                    instance.published_at = timezone.now()
+                    request = self.context.get("request")
+                    instance.published_by = getattr(request, "user", None)
+                else:
+                    instance.published_at = None
+                    instance.published_by = None
+            instance.visibility = ProjectTemplate.Visibility.SYSTEM
+            instance.is_system = True
+            instance.is_system_template = True
+            if instance.contractor_id is not None and is_admin:
+                instance.contractor = None
+
         instance.save()
 
         if milestones_data is not None:

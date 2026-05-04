@@ -31,6 +31,7 @@ import MilestoneDetail from "../pages/MilestoneDetail.jsx";
 
 /* Templates */
 import TemplatesPage from "../pages/TemplatesPage.jsx";
+import AdminTemplatesPage from "../pages/AdminTemplatesPage.jsx";
 
 /* Assignments */
 import AssignmentsPage from "../pages/AssignmentsPage.jsx";
@@ -131,6 +132,7 @@ export function protectedRoutes() {
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>
           <Route path="admin" element={<AdminDashboard />} />
+          <Route path="admin/templates" element={<AdminTemplatesPage />} />
           <Route path="admin/disputes" element={<Disputes />} />
         </Route>
 

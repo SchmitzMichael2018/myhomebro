@@ -216,7 +216,9 @@ const ActionItem = ({ icon, title, desc, onClick, tone = "neutral" }) => {
       ? "border-rose-200 bg-rose-50"
       : tone === "warn"
         ? "border-amber-200 bg-amber-50"
-        : "border-black/10 bg-white/70";
+        : tone === "good"
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-black/10 bg-white/70";
 
   return (
     <button
@@ -233,6 +235,39 @@ const ActionItem = ({ icon, title, desc, onClick, tone = "neutral" }) => {
     </button>
   );
 };
+
+const alertToneClass = {
+  bad: "border-rose-200 bg-rose-50 text-rose-900",
+  warn: "border-amber-200 bg-amber-50 text-amber-900",
+  good: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  neutral: "border-slate-200 bg-slate-50 text-slate-800",
+};
+
+const AlertBadge = ({ tone = "neutral", children }) => (
+  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${tonePill(tone)}`}>
+    {children}
+  </span>
+);
+
+const SectionCard = ({ title, subtitle, children, testId, className = "", tone = "neutral" }) => (
+  <div
+    data-testid={testId}
+    className={[
+      "rounded-3xl border p-5 shadow-sm backdrop-blur-md",
+      tone === "bad"
+        ? "border-rose-200 bg-rose-50/90"
+        : tone === "warn"
+          ? "border-amber-200 bg-amber-50/90"
+          : tone === "good"
+            ? "border-emerald-200 bg-emerald-50/90"
+            : "border-black/10 bg-white/80",
+      className,
+    ].join(" ")}
+  >
+    <SectionTitle title={title} subtitle={subtitle} />
+    {children}
+  </div>
+);
 
 /* =========================
    Component
@@ -660,33 +695,56 @@ export default function AdminDashboard() {
         <>
           {/* ===================== OVERVIEW ===================== */}
           {view === "overview" && (
-            <div className="mt-6 space-y-5">
+            <div className="mt-6 space-y-6">
+              <SectionCard
+                title="Needs Attention"
+                subtitle="Primary alerts rise to the top. Act on these before anything else."
+                testId="admin-needs-attention"
+                tone={attentionItems.some((item) => item.tone === "bad") ? "bad" : attentionItems.some((item) => item.tone === "warn") ? "warn" : "neutral"}
+              >
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
+                  <div className="space-y-2">
+                    {attentionItems.length === 0 ? (
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
+                        Nothing urgent right now. The platform is stable.
+                      </div>
+                    ) : (
+                      attentionItems.slice(0, 4).map((it, idx) => (
+                        <ActionItem key={idx} icon={it.icon} title={it.title} desc={it.desc} tone={it.tone} onClick={it.onClick} />
+                      ))
+                    )}
+                  </div>
+                  <div className="rounded-2xl border border-black/10 bg-white/90 p-4 shadow-sm">
+                    <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Quick Actions</div>
+                    <div className="mt-3 grid grid-cols-1 gap-2">
+                      <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goTo("disputes")} />
+                      <ActionItem icon="🛟" title="View Support" desc="Check support requests and tickets." onClick={() => goTo("support")} />
+                      <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
+                      <ActionItem icon="📋" title="View Agreements" desc="Jump to agreement operations." onClick={() => goTo("agreements")} />
+                    </div>
+                  </div>
+                </div>
+              </SectionCard>
+
               <BorderedSection
                 title="Platform Overview"
-                subtitle="Growth, operations, disputes, customers, and platform revenue in one place."
+                subtitle="Four core signals that tell you the shape of the business at a glance."
                 testId="admin-overview-cards"
               >
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
                   <StatCard testId="admin-stat-contractors" label="Contractors" value={fmtNumber(counts.contractors || 0)} sub={`${fmtNumber(summary.new_contractors_this_month || 0)} new this month`} onClick={() => goTo("contractors")} />
-                  <StatCard testId="admin-stat-subcontractors" label="Subcontractors" value={fmtNumber(counts.subcontractors || 0)} sub="Invited + accepted" onClick={() => goTo("subcontractors")} />
                   <StatCard testId="admin-stat-customers" label="Customers" value={fmtNumber(counts.homeowners || 0)} sub="Captured homeowners" onClick={() => goTo("homeowners")} />
                   <StatCard testId="admin-stat-active-agreements" label="Active Agreements" value={fmtNumber(summary.active_agreements || 0)} sub={`${fmtNumber(summary.agreements_this_month || 0)} created this month`} onClick={() => goTo("agreements")} />
                   <StatCard testId="admin-stat-open-disputes" label="Open Disputes" value={fmtNumber(summary.open_disputes || 0)} sub="Operator queue" tone={Number(summary.open_disputes || 0) > 0 ? "warn" : "good"} onClick={() => goTo("disputes")} />
-                </div>
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-                  <ThinStat testId="admin-thin-total-fees" label="Total Fees" value={fmtMoney(moneyBlock.platform_fee_total || 0)} sub="All time" onClick={() => goTo("fee_audit")} />
-                  <ThinStat testId="admin-thin-fees-this-month" label="Fees This Month" value={fmtMoney(moneyBlock.platform_fee_this_month || 0)} sub="Current month" onClick={() => goTo("fee_audit")} />
-                  <ThinStat testId="admin-thin-gross-paid" label="Gross Paid" value={fmtMoney(moneyBlock.gross_paid_revenue || 0)} sub="Stripe-confirmed" onClick={() => goTo("fee_audit")} />
-                  <ThinStat testId="admin-thin-leads-this-month" label="Leads This Month" value={fmtNumber(summary.leads_this_month || 0)} sub="Unified intake volume" onClick={() => goTo("contractors")} />
-                  <ThinStat testId="admin-thin-new-this-week" label="New This Week" value={fmtNumber(summary.new_contractors_this_week || 0)} sub="Contractor signups" onClick={() => goTo("contractors")} />
+                  <StatCard testId="admin-stat-month-fees" label="Fees This Month" value={fmtMoney(moneyBlock.platform_fee_this_month || 0)} sub="Platform revenue" onClick={() => goTo("fee_audit")} />
                 </div>
               </BorderedSection>
 
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
               <div className="lg:col-span-2 space-y-5">
                 <BorderedSection
-                  title="Business Health"
-                  subtitle="The three numbers that tell you if MyHomeBro is winning this month."
+                  title="System Health"
+                  subtitle="The three numbers that tell you whether the platform is steady or slipping."
                 >
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                     <div className="md:col-span-2">
@@ -737,25 +795,23 @@ export default function AdminDashboard() {
 
                 <BorderedSection
                   title="Money Flow"
-                  subtitle="Click any tile to drill into the most relevant view."
+                  subtitle="Cash movement, escrow state, and payout direction."
                 >
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                     <ThinStat label="Gross Paid" value={fmtMoney(moneyBlock.gross_paid_revenue || 0)} sub="Stripe-confirmed" onClick={() => goTo("fee_audit")} />
                     <ThinStat label="Platform Fees" value={fmtMoney(moneyBlock.platform_fee_total || 0)} sub="Your income" onClick={() => goTo("goals")} />
                     <ThinStat label="Escrow Funded" value={fmtMoney(moneyBlock.escrow_funded_total || 0)} sub="Pipeline" onClick={() => goToAgreementsWithQ("funded")} />
                     <ThinStat label="Escrow Released" value={fmtMoney(moneyBlock.escrow_released_total || 0)} sub="Paid out" onClick={() => goToAgreementsWithQ("released")} />
-                    <ThinStat label="In Flight" value={fmtMoney(moneyBlock.escrow_in_flight_total || 0)} sub="Potential stuck" onClick={() => goToAgreementsWithQ("in flight")} />
                   </div>
 
-                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     <StatCard label="Escrow Refunded" value={fmtMoney(moneyBlock.escrow_refunded_total || 0)} sub="Money returned" tone={refunded > 0 ? "warn" : "neutral"} onClick={() => goToAgreementsWithQ("refunded")} />
-                    <StatCard label="Receipts" value={fmtNumber(counts.receipts || 0)} sub="Confirmed payments" onClick={() => goTo("fee_audit")} />
-                    <StatCard label="Agreements" value={fmtNumber(counts.agreements || 0)} sub="Total agreements" onClick={() => goTo("agreements")} />
+                    <StatCard label="In Flight" value={fmtMoney(moneyBlock.escrow_in_flight_total || 0)} sub="Potential stuck" onClick={() => goToAgreementsWithQ("in flight")} />
                   </div>
                 </BorderedSection>
 
                 <BorderedSection
-                  title="Growth Insights"
+                  title="Operational Signals"
                   subtitle="Rules-first signals that surface activation gaps, conversion misses, and operational risk."
                   testId="admin-growth-insights"
                 >
@@ -784,7 +840,7 @@ export default function AdminDashboard() {
                 </BorderedSection>
 
                 <BorderedSection
-                  title="Revenue Signals"
+                  title="Insights"
                   subtitle="Fee trend, payment mix, and the categories driving platform revenue."
                   testId="admin-revenue-summary"
                 >

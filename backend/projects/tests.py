@@ -13428,6 +13428,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+
     def test_recommend_endpoint_can_return_seeded_starter_template(self):
         response = self.client.post(
             "/api/projects/templates/recommend/",
@@ -15659,6 +15660,131 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn("Invalid portal link", response.data["detail"])
+
+
+class AdminTemplateManagementTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin_user = user_model.objects.create_superuser(
+            email="admin-template-manager@example.com",
+            password="testpass123",
+        )
+        contractor_user = user_model.objects.create_user(
+            email="admin-template-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=contractor_user,
+            business_name="Contractor Library",
+            city="Austin",
+            state="TX",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin_user)
+
+        self.contractor_template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Contractor Shed Template",
+            project_type="Outdoor",
+            project_subtype="Shed Build",
+            description="Contractor-owned shed template.",
+            default_scope="Contractor-owned shed template.",
+            visibility=ProjectTemplate.Visibility.PRIVATE,
+            allow_discovery=False,
+        )
+        self.contractor_template.milestones.create(
+            title="Prep",
+            description="Prepare site.",
+            sort_order=1,
+            start_offset=0,
+            duration_days=2,
+            recommended_days_from_start=1,
+            recommended_duration_days=2,
+        )
+        self.system_template = ProjectTemplate.objects.create(
+            name="System Shed Template",
+            project_type="Outdoor",
+            project_subtype="Shed Build",
+            description="System shed starter.",
+            default_scope="System shed starter.",
+            is_system=True,
+            is_system_template=True,
+            is_published=True,
+            visibility=ProjectTemplate.Visibility.SYSTEM,
+            allow_discovery=True,
+            published_by=self.admin_user,
+            published_at=timezone.now(),
+        )
+
+    def test_admin_lists_all_templates_and_filters_system(self):
+        response = self.client.get("/api/projects/templates/", {"source": "all", "q": "shed"})
+        self.assertEqual(response.status_code, 200, response.data)
+        names = {row["name"] for row in response.data}
+        self.assertIn(self.contractor_template.name, names)
+        self.assertIn(self.system_template.name, names)
+
+        system_response = self.client.get("/api/projects/templates/", {"source": "system"})
+        self.assertEqual(system_response.status_code, 200, system_response.data)
+        system_names = {row["name"] for row in system_response.data}
+        self.assertIn(self.system_template.name, system_names)
+        self.assertNotIn(self.contractor_template.name, system_names)
+
+    def test_admin_can_create_publish_and_duplicate_system_template(self):
+        create_response = self.client.post(
+            "/api/projects/templates/",
+            {
+                "name": "Admin System Template Draft",
+                "project_type": "Outdoor",
+                "project_subtype": "Shed Build",
+                "description": "Admin system draft.",
+                "default_scope": "Admin system draft.",
+                "is_system": True,
+                "milestones": [
+                    {
+                        "title": "Site prep",
+                        "description": "Prepare site.",
+                        "sort_order": 1,
+                        "start_offset": 0,
+                        "duration_days": 2,
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        created = ProjectTemplate.objects.get(pk=create_response.data["id"])
+        self.assertTrue(created.is_system_template)
+        self.assertTrue(created.is_system)
+        self.assertEqual(created.visibility, ProjectTemplate.Visibility.SYSTEM)
+        self.assertFalse(created.allow_discovery)
+
+        publish_response = self.client.patch(
+            f"/api/projects/templates/{created.id}/",
+            {"is_published": True},
+            format="json",
+        )
+        self.assertEqual(publish_response.status_code, 200, publish_response.data)
+        created.refresh_from_db()
+        self.assertTrue(created.is_published)
+        self.assertTrue(created.allow_discovery)
+        self.assertEqual(created.published_by_id, self.admin_user.id)
+
+        duplicate_response = self.client.post(
+            "/api/projects/templates/",
+            {
+                "source_template_id": self.contractor_template.id,
+                "name": "Admin Copy of Contractor Template",
+                "is_system": True,
+            },
+            format="json",
+        )
+        self.assertEqual(duplicate_response.status_code, 201, duplicate_response.data)
+        duplicated = ProjectTemplate.objects.get(pk=duplicate_response.data["id"])
+        self.assertTrue(duplicated.is_system_template)
+        self.assertTrue(duplicated.is_system)
+        self.assertIsNone(duplicated.contractor_id)
+        self.assertEqual(duplicated.source_system_template_id, None)
+        self.assertEqual(duplicated.name, "Admin Copy of Contractor Template")
 
 
 class TemplateAIGenerationTests(TestCase):

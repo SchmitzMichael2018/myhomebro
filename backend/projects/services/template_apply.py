@@ -565,10 +565,12 @@ def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) 
 @transaction.atomic
 def duplicate_template_for_contractor(
     *,
-    contractor: Contractor,
+    contractor: Contractor | None,
     source_template: ProjectTemplate,
     template_data: dict[str, Any] | None = None,
     is_active: bool = True,
+    is_system: bool = False,
+    is_published: bool = False,
 ) -> ProjectTemplate:
     """
     Create a contractor-owned copy of a source template.
@@ -626,16 +628,20 @@ def duplicate_template_for_contractor(
         project_materials_hint=str(
             template_data.get("project_materials_hint") or source_template.project_materials_hint or ""
         ).strip(),
-        is_system=False,
+        is_system=bool(is_system),
+        is_system_template=bool(is_system),
+        is_published=bool(is_published) if is_system else False,
         is_active=is_active,
-        visibility=ProjectTemplate.Visibility.PRIVATE,
-        allow_discovery=False,
-        source_system_template=source_template,
+        visibility=ProjectTemplate.Visibility.SYSTEM if is_system else ProjectTemplate.Visibility.PRIVATE,
+        allow_discovery=bool(is_published) if is_system else False,
+        source_system_template=source_template if source_template.is_system_template or source_template.is_system else None,
         created_from_agreement=None,
         benchmark_profile=getattr(source_template, "benchmark_profile", None),
         benchmark_match_key=str(source_template.benchmark_match_key or "").strip(),
         normalized_region_key=str(source_template.normalized_region_key or "").strip(),
         region_tags=list(template_data.get("region_tags") or source_template.region_tags or []),
+        published_at=timezone.now() if is_system and is_published else None,
+        published_by=None,
     )
 
     ProjectTemplateMilestone = template.milestones.model

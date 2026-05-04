@@ -58,21 +58,55 @@ def _template_queryset():
     return get_template_detail_queryset()
 
 
+def _is_admin_user(user) -> bool:
+    return bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+
+
 class TemplateListCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         contractor = get_request_contractor(request.user)
+        is_admin = _is_admin_user(request.user)
         project_type = request.query_params.get("project_type", "").strip()
         project_subtype = request.query_params.get("project_subtype", "").strip()
+        q = request.query_params.get("q", "").strip()
+        source = request.query_params.get("source", "").strip().lower()
         include_inactive = (
             request.query_params.get("include_inactive", "false").lower() == "true"
         )
 
-        qs = _template_queryset().filter(Q(is_system_template=True, is_published=True) | Q(contractor=contractor))
+        if is_admin:
+            qs = _template_queryset()
+            if source == "system":
+                qs = qs.filter(is_system_template=True)
+            elif source == "regional":
+                qs = qs.filter(
+                    is_system_template=False,
+                    visibility=ProjectTemplate.Visibility.REGIONAL,
+                    allow_discovery=True,
+                )
+            elif source == "public":
+                qs = qs.filter(
+                    is_system_template=False,
+                    visibility=ProjectTemplate.Visibility.PUBLIC,
+                    allow_discovery=True,
+                )
+            elif source == "contractor":
+                qs = qs.filter(is_system_template=False)
+        else:
+            qs = _template_queryset().filter(Q(is_system_template=True, is_published=True) | Q(contractor=contractor))
 
         if not include_inactive:
             qs = qs.filter(is_active=True)
+
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q)
+                | Q(project_type__icontains=q)
+                | Q(project_subtype__icontains=q)
+                | Q(description__icontains=q)
+            )
 
         if project_type:
             qs = qs.filter(project_type__iexact=project_type)
@@ -87,15 +121,18 @@ class TemplateListCreateView(APIView):
 
     def post(self, request):
         contractor = get_request_contractor(request.user)
-        if contractor is None:
+        is_admin = _is_admin_user(request.user)
+        if contractor is None and not is_admin:
             raise PermissionDenied("Only contractors can create templates.")
 
-        serializer = ProjectTemplateCreateUpdateSerializer(data=request.data)
+        serializer = ProjectTemplateCreateUpdateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
+        is_system_requested = bool(request.data.get("is_system", False)) or is_admin
         template = serializer.save(
-            contractor=contractor,
-            is_system=False,
+            contractor=None if is_system_requested else contractor,
+            is_system=is_system_requested,
+            is_published=bool(request.data.get("is_published", False)),
         )
 
         template = _template_queryset().get(pk=template.pk)
@@ -108,6 +145,7 @@ class TemplateDetailView(APIView):
 
     def get_object(self, request, pk: int) -> ProjectTemplate:
         contractor = get_request_contractor(request.user)
+        is_admin = _is_admin_user(request.user)
 
         try:
             template = _template_queryset().get(pk=pk)
@@ -115,6 +153,9 @@ class TemplateDetailView(APIView):
             raise ValidationError("Template not found.")
 
         region_key = request.query_params.get("normalized_region_key", "").strip()
+        if is_admin:
+            attach_template_learning_metrics([template])
+            return template
         if not can_access_template(template, contractor, region_key=region_key):
             raise PermissionDenied("You do not have access to this template.")
         attach_template_learning_metrics([template])
@@ -128,14 +169,16 @@ class TemplateDetailView(APIView):
 
     def patch(self, request, pk: int):
         template = self.get_object(request, pk)
+        is_admin = _is_admin_user(request.user)
 
-        if template.is_system_template:
+        if template.is_system_template and not is_admin:
             raise PermissionDenied("System templates cannot be edited here.")
 
         serializer = ProjectTemplateCreateUpdateSerializer(
             template,
             data=request.data,
             partial=True,
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
         template = serializer.save()
@@ -663,7 +706,8 @@ class TemplateVisibilityUpdateView(APIView):
 
     def post(self, request, pk: int):
         contractor = get_request_contractor(request.user)
-        if contractor is None:
+        is_admin = _is_admin_user(request.user)
+        if contractor is None and not is_admin:
             raise PermissionDenied("Only contractors can update template visibility.")
 
         try:
@@ -671,9 +715,9 @@ class TemplateVisibilityUpdateView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if template.is_system_template:
+        if template.is_system_template and not is_admin:
             raise PermissionDenied("System templates are managed through the system seed/admin path.")
-        if template.contractor_id != contractor.id:
+        if not is_admin and template.contractor_id != contractor.id:
             raise PermissionDenied("You do not have permission to update this template.")
 
         visibility = _safe_str(request.data.get("visibility")).lower() or ProjectTemplate.Visibility.PRIVATE
