@@ -9,5 +9,29 @@ class Migration(migrations.Migration):
         ('projects', '0153_supportticketmessage_delete_supportmessage_and_more'),
     ]
 
+    from django.db import migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('projects', '0153_supportticketmessage_delete_supportmessage_and_more'),
+    ]
+
     operations = [
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[
+                migrations.RenameField(
+                    model_name='supportticketmessage',
+                    old_name='message_text',
+                    new_name='message',
+                ),
+                migrations.RenameField(
+                    model_name='supportticketmessage',
+                    old_name='sender_role',
+                    new_name='sender_type',
+                ),
+            ],
+        ),
     ]
