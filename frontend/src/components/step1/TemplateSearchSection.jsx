@@ -1223,7 +1223,7 @@ export default function TemplateSearchSection({
               }
               disabled={locked}
             >
-              <option value="">— Select Type —</option>
+              <option value="">Select Type</option>
               {typeOptions.map((t) => (
                 <option key={String(t.id ?? t.value)} value={String(t.value)}>
                   {String(t.label)}
@@ -1292,7 +1292,7 @@ export default function TemplateSearchSection({
               disabled={locked || !hasType}
             >
               <option value="">
-                {hasType ? "— Select Subtype —" : "Select Type first"}
+                {hasType ? "Select Subtype" : "Select Type first"}
               </option>
               {subtypeOptions.map((st) => (
                 <option key={String(st.id ?? st.value)} value={String(st.value)}>
