@@ -859,6 +859,7 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
   });
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
   await page.getByTestId('step1-job-description-input').fill(
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
@@ -868,16 +869,27 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
   await expect(page.getByTestId('step1-starting-point-error-card')).toHaveCount(0);
   await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
-  await expect(page.getByText('Recommended from your description')).toBeVisible();
+  await expect(page.getByText('No template found — let\'s build this together')).toBeVisible();
   await expect(page.getByText('Siding Replacement')).toBeVisible();
-  await expect(page.getByTestId('step1-ai-setup-build-without-template')).toBeVisible();
-  await expect(page.getByTestId('step1-ai-setup-description-only')).toBeVisible();
+  await expect(page.getByTestId('step1-ai-setup-build-with-ai')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toHaveValue(
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
-  await page.getByTestId('step1-ai-setup-build-without-template').click();
+  await page.getByTestId('step1-ai-setup-build-with-ai').click();
+  await expect(page.getByTestId('step1-ai-setup-result')).toContainText('Description ready');
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Siding Replacement');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Siding');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Siding Replacement'
+  );
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(
+    'Work includes removal and replacement of exterior siding on the areas identified in the project description.'
+  );
+  await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
+  await page.getByTestId('step1-change-start-mode').click();
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 });
 
 test('agreement wizard step 1 keeps empty descriptions blocked', async ({ page }) => {

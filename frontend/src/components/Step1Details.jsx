@@ -2677,14 +2677,14 @@ export default function Step1Details({
     );
 
     return {
-      kind: "fallback_recommendation",
+      kind: "no_template",
       confidenceLevel: "medium",
       refinedDescription,
       message:
         message ||
-        "Recommended from your description. Review the suggested starting point before you continue.",
+        "No template found — let’s build this together. We’ll generate a custom agreement based on your description.",
       recommendationReason:
-        recommendationReason || "Recommended from your description.",
+        recommendationReason || "No template found — let’s build this together.",
       recommendedTemplate: null,
       suggestedTitle: nextTitle || "Recommended starting point",
       suggestedProjectType: safeTrim(suggestedSetupValues?.project_type || dLocal?.project_type || ""),
@@ -2693,7 +2693,7 @@ export default function Step1Details({
       ),
       setupFieldKeys: Array.isArray(setupFieldKeys) ? setupFieldKeys : [],
       recommendationSource: "fallback",
-      fallbackLabel: "Recommended from your description",
+      fallbackLabel: "No template found — let’s build this together",
     };
   }
 
@@ -3173,6 +3173,7 @@ export default function Step1Details({
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Review the agreement details below and keep editing.";
   const shouldShowProjectDetails = true;
+  const showStep1Clarifications = false;
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -3647,13 +3648,14 @@ export default function Step1Details({
           </section>
         ) : null}
 
-        {startMode === "ai" && aiSetupResult?.kind === "fallback_recommendation" ? (
+        {startMode === "ai" &&
+        (aiSetupResult?.kind === "fallback_recommendation" || aiSetupResult?.kind === "no_template") ? (
           <section
             data-testid="step1-ai-setup-result"
             className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
           >
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-              Recommended from your description
+              No template found — let&apos;s build this together
             </div>
             <div className="mt-2 text-base font-semibold text-slate-900">
               {aiSetupResult.suggestedTitle || "Recommended starting point"}
@@ -3698,25 +3700,16 @@ export default function Step1Details({
             </div>
             <div className="mt-3 text-sm text-slate-700">{aiSetupResult.recommendationReason}</div>
             <div className="mt-3 text-xs text-slate-600">
-              Review this starting point, keep editing the agreement details, or continue without a
-              template if that is the right fit.
+              We&apos;ll generate a custom agreement based on your description.
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                data-testid="step1-ai-setup-build-without-template"
-                onClick={handleBuildAgreementWithoutTemplate}
+                data-testid="step1-ai-setup-build-with-ai"
+                onClick={handleUseAiDescriptionOnly}
                 className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
-                Build Without Template
-              </button>
-              <button
-                type="button"
-                data-testid="step1-ai-setup-description-only"
-                onClick={handleUseAiDescriptionOnly}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Use Description Only
+                Build with AI
               </button>
               <button
                 type="button"
@@ -3760,11 +3753,11 @@ export default function Step1Details({
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                data-testid="step1-ai-setup-build-without-template"
+                data-testid="step1-ai-setup-continue-without-template"
                 onClick={handleBuildAgreementWithoutTemplate}
                 className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
-                Build Without Template
+                Continue without template
               </button>
               <button
                 type="button"
@@ -4028,7 +4021,7 @@ export default function Step1Details({
           </section>
         ) : null}
 
-        {clarificationQuestions.length ? (
+        {showStep1Clarifications && clarificationQuestions.length ? (
           <div
             data-testid="agreement-clarification-section"
             className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
