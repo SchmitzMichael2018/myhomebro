@@ -631,6 +631,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Describe the job' })).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
@@ -650,6 +651,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(projectDetailsCard).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
   await expect(projectDetailsCard).toHaveAttribute('data-emphasis', 'true');
   await expect(page.getByTestId('step1-review-project-details-jump')).toBeVisible();
   await expect(page.getByTestId('step1-review-project-details-jump')).toContainText('Jump');
@@ -665,6 +667,9 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
+  await page.getByTestId('step1-change-start-mode').click();
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 
   await page.getByTestId('agreement-project-title-input').fill(
     'Playwright Agreement Smoke'

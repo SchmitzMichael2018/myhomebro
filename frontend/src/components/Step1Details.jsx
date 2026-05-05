@@ -607,9 +607,14 @@ function inferStartMode({
   assistantGuidedFlow,
   assistantTemplateRecommendations,
   assistantTopTemplatePreview,
+  isNewAgreement,
+  hasMeaningfulSavedProjectDetails,
 }) {
   if (agreement?.selected_template?.id || agreement?.selected_template_id) {
     return "template";
+  }
+  if (isNewAgreement && !hasMeaningfulSavedProjectDetails) {
+    return "manual";
   }
   if (
     assistantGuidedFlow?.guided_question ||
@@ -620,6 +625,20 @@ function inferStartMode({
     return "ai";
   }
   return "manual";
+}
+
+function hasMeaningfulStep1DraftState({ agreement, dLocal }) {
+  return Boolean(
+    safeTrim(dLocal?.project_title || agreement?.project_title || agreement?.title) ||
+      safeTrim(dLocal?.project_type || agreement?.project_type) ||
+      safeTrim(dLocal?.project_subtype || agreement?.project_subtype) ||
+      safeTrim(
+        dLocal?.description ||
+          dLocal?.scope_of_work ||
+          agreement?.description ||
+          agreement?.scope_of_work
+      )
+  );
 }
 
 function normalizeTemplateConfidenceLevel(value) {
@@ -977,6 +996,18 @@ export default function Step1Details({
   }, [agreement?.source_lead, agreement?.source_lead_id, assistantDraftPayload?.lead_id, assistantLeadContext?.lead_id]);
 
   const isNewAgreement = !agreementId;
+  const hasMeaningfulSavedProjectDetails = hasMeaningfulStep1DraftState({ agreement, dLocal });
+  const canRestoreStartMode =
+    !isNewAgreement ||
+    hasMeaningfulSavedProjectDetails ||
+    Boolean(
+      agreement?.selected_template?.id ||
+        agreement?.selected_template_id ||
+        dLocal?.selected_template?.id ||
+        dLocal?.selected_template_id ||
+        dLocal?.project_template_id ||
+        dLocal?.template_id
+    );
 
   const cacheKey = useMemo(() => {
     const id = agreementId ? String(agreementId) : "new";
@@ -988,7 +1019,9 @@ export default function Step1Details({
   const [startMode, setStartMode] = useState(() => {
     try {
       const saved = sessionStorage.getItem(startModeStorageKey);
-      if (saved === "ai" || saved === "template" || saved === "manual") return saved;
+      if (saved === "ai" || saved === "template" || saved === "manual") {
+        if (canRestoreStartMode || saved === "manual") return saved;
+      }
     } catch {
       // ignore
     }
@@ -997,13 +1030,17 @@ export default function Step1Details({
       assistantGuidedFlow,
       assistantTemplateRecommendations,
       assistantTopTemplatePreview,
+      isNewAgreement,
+      hasMeaningfulSavedProjectDetails,
     });
   });
   const [startModeCommitted, setStartModeCommitted] = useState(() => {
     try {
       const saved = sessionStorage.getItem(startModeCommittedStorageKey);
-      if (saved === "1") return true;
-      if (saved === "0") return false;
+      if (canRestoreStartMode) {
+        if (saved === "1") return true;
+        if (saved === "0") return false;
+      }
     } catch {
       // ignore
     }
@@ -1019,11 +1056,11 @@ export default function Step1Details({
         saved === "assistant" ||
         saved === "template_apply"
       ) {
-        return saved;
+        if (canRestoreStartMode) return saved;
       }
       const savedMode = sessionStorage.getItem(startModeStorageKey);
       if (savedMode === "ai" || savedMode === "template" || savedMode === "manual") {
-        return "session";
+        if (canRestoreStartMode) return "session";
       }
     } catch {
       // ignore
@@ -1077,13 +1114,9 @@ export default function Step1Details({
   }
 
   useEffect(() => {
-    if (!isNewAgreement) return;
-    try {
-      sessionStorage.removeItem("mhb_step1_cache_new");
-    } catch {
-      // ignore
-    }
-  }, [isNewAgreement]);
+    if (!isNewAgreement || hasMeaningfulSavedProjectDetails) return;
+    clearStep1SessionState();
+  }, [hasMeaningfulSavedProjectDetails, isNewAgreement]);
 
   useEffect(() => {
     const normalized = normalizeProjectClass(dLocal?.project_class);
@@ -1324,7 +1357,7 @@ export default function Step1Details({
       {
         key: "ai",
         title: "Describe the job",
-        description: "AI will suggest the best starting point and help prefill setup details.",
+        description: "AI will recommend a matching template or help build the agreement.",
       },
       {
         key: "template",
@@ -1347,20 +1380,16 @@ export default function Step1Details({
     assistantGuidedFlow,
     assistantTemplateRecommendations,
     assistantTopTemplatePreview,
+    isNewAgreement,
+    hasMeaningfulSavedProjectDetails,
   });
-  const hasSavedProjectDetails =
-    Boolean(safeTrim(dLocal?.project_title || agreement?.project_title || agreement?.title)) &&
-    Boolean(safeTrim(dLocal?.project_type || agreement?.project_type)) &&
-    Boolean(safeTrim(dLocal?.project_subtype || agreement?.project_subtype)) &&
-    Boolean(
-      safeTrim(
-        dLocal?.description ||
-          dLocal?.scope_of_work ||
-          agreement?.description ||
-          agreement?.scope_of_work
-      )
-    );
   useEffect(() => {
+    if (isNewAgreement && startModeSource === "derived" && !startModeCommitted) {
+      if (startMode !== "manual") {
+        setStartMode("manual");
+      }
+      return;
+    }
     if (startModeSource === "derived" && startMode !== derivedStartMode) {
       setStartMode(derivedStartMode);
     }
@@ -1371,7 +1400,7 @@ export default function Step1Details({
             assistantTopTemplatePreview?.id ||
             assistantTopTemplatePreview?.milestone_count ||
             assistantTemplateRecommendations.length))) ||
-        hasSavedProjectDetails) &&
+        hasMeaningfulSavedProjectDetails) &&
       !startModeCommitted
     ) {
       setStartModeCommitted(true);
@@ -1385,14 +1414,15 @@ export default function Step1Details({
     agreement?.project_type,
     agreement?.scope_of_work,
     derivedStartMode,
-    hasSavedProjectDetails,
+    hasMeaningfulSavedProjectDetails,
+    isNewAgreement,
     startMode,
     startModeCommitted,
     startModeSource,
   ]);
 
   useEffect(() => {
-    if (!hasSavedProjectDetails) return;
+    if (!hasMeaningfulSavedProjectDetails) return;
     const hasAppliedTemplateReference = Boolean(
       agreement?.selected_template?.id ||
         agreement?.selected_template_id ||
@@ -1416,7 +1446,7 @@ export default function Step1Details({
     agreement?.selected_template?.id,
     agreement?.selected_template_id,
     agreement?.template_id,
-    hasSavedProjectDetails,
+    hasMeaningfulSavedProjectDetails,
     dLocal?.project_template_id,
     dLocal?.selected_template?.id,
     dLocal?.selected_template_id,
@@ -3799,7 +3829,7 @@ export default function Step1Details({
                 templateDetail={templateDetail}
                 templateDetailLoading={templateDetailLoading}
                 templateDetailErr={templateDetailErr}
-                suppressNoMatchPanel={hasSavedProjectDetails}
+                suppressNoMatchPanel={hasMeaningfulSavedProjectDetails}
                 aiCredits={aiCredits}
                 aiBusy={aiBusy}
                 aiErr={aiErr}
