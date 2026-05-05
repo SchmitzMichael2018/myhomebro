@@ -289,6 +289,7 @@ export default function TemplateSearchSection({
   onGenerateAiDraft = null,
   onContinueToStep2 = null,
   onStartFromScratch = null,
+  onResetStep1 = null,
   jobPrompt = "",
   spreadEnabled,
   setSpreadEnabled,
@@ -606,6 +607,10 @@ export default function TemplateSearchSection({
     if (locked || startingPointBusy) return;
     setSelectedTemplateId?.(null);
     setTemplateDropdownOpen(false);
+    if (noTemplateMatch) {
+      onStartFromScratch?.();
+      return;
+    }
     const prompt =
       safeTrim(jobPrompt) ||
       safeTrim(aiPrompt) ||
@@ -667,12 +672,14 @@ export default function TemplateSearchSection({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="mb-4">
-        <div className="text-base font-semibold text-gray-900">Starting points</div>
-        <div className="mt-1 text-sm text-gray-600">
-          Choose the best agreement starting point for this job.
+      {noTemplateMatch ? null : (
+        <div className="mb-4">
+          <div className="text-base font-semibold text-gray-900">Starting points</div>
+          <div className="mt-1 text-sm text-gray-600">
+            Choose the best agreement starting point for this job.
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
         <aside className="space-y-4">
@@ -787,26 +794,72 @@ export default function TemplateSearchSection({
             {!detailTemplate ? (
               <div className="space-y-4">
                 <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                  <div className="text-base font-semibold text-slate-900">
-                    {noTemplateMatch
-                      ? "No template found — let's build this agreement with AI"
-                      : "Recommended starting point"}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {noTemplateMatch
-                      ? "We couldn't find a saved template that matches this job. MyHomeBro prepared editable project details from your description."
-                      : "Select a template to preview it, or build the agreement directly from your description."}
-                  </div>
-                  <div className="mt-3">
-                    <button
-                      type="button"
-                      onClick={handleBuildWithoutTemplate}
-                      disabled={locked || startingPointBusy}
-                      data-testid="step1-build-agreement-ai-button"
-                      className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                    >
-                      {startingPointBusy ? "Building agreement draft..." : "Build with AI"}
-                    </button>
+                  <div
+                    data-testid="step1-no-template-card"
+                    className={noTemplateMatch ? "" : "space-y-3"}
+                  >
+                    <div className="text-base font-semibold text-slate-900">
+                      {noTemplateMatch
+                        ? "No template found — let's build this together"
+                        : "Recommended starting point"}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      {noTemplateMatch
+                        ? "We couldn't find a saved template for this job. MyHomeBro can build editable project details from your description."
+                        : "Select a template to preview it, or build the agreement directly from your description."}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid="step1-review-project-details-jump"
+                        onClick={handleBuildWithoutTemplate}
+                        disabled={locked || startingPointBusy}
+                        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                      >
+                        Review Project Details
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBuildWithoutTemplate}
+                        disabled={locked || startingPointBusy}
+                        data-testid="step1-build-agreement-ai-button"
+                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        {startingPointBusy ? "Building agreement draft..." : "Build with AI"}
+                      </button>
+                      {noTemplateMatch ? (
+                        <button
+                          type="button"
+                          onClick={() => onResetStep1?.()}
+                          disabled={locked || startingPointBusy}
+                          data-testid="step1-start-over-button"
+                          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        >
+                          Start over
+                        </button>
+                      ) : null}
+                      {noTemplateMatch ? (
+                        <button
+                          type="button"
+                          onClick={() => onStartModeChange?.("manual")}
+                          disabled={locked}
+                          className="rounded-lg border border-transparent px-2 py-2 text-sm font-semibold text-slate-600 hover:underline"
+                        >
+                          Change description
+                        </button>
+                      ) : null}
+                      {noTemplateMatch ? (
+                        <button
+                          type="button"
+                          data-testid="step1-browse-templates-manually-button"
+                          onClick={() => onStartModeChange?.("template")}
+                          disabled={locked}
+                          className="rounded-lg border border-transparent px-2 py-2 text-sm font-semibold text-slate-600 hover:underline"
+                        >
+                          Browse templates manually
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
 

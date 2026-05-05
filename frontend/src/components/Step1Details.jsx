@@ -446,6 +446,81 @@ const LIMITED_SCOPE_SUBTYPE_RULES = [
   },
 ];
 
+const STEP1_LOCAL_FALLBACK_RULES = [
+  {
+    patterns: [/\breplace\s+siding\b/i, /\bsiding\s+replacement\b/i, /\bsiding\b.*\breplace\b/i],
+    project_type: "Siding",
+    project_subtype: "Siding Replacement",
+    project_title: "Siding Replacement",
+    scope:
+      "Remove or prepare existing siding as needed, install replacement siding and related trim, complete finish details, and clean the work area. Contractor will verify measurements, material requirements, and site conditions before final pricing or work begins.",
+  },
+  {
+    patterns: [/\breplace\s+roof\b/i, /\broof\s+replacement\b/i, /\bnew\s+roof\b/i],
+    project_type: "Roofing",
+    project_subtype: "Roof Replacement",
+    project_title: "Roof Replacement",
+    scope:
+      "Remove and replace existing roofing materials, complete related flashing and trim, verify roof conditions, and finish with cleanup after installation.",
+  },
+  {
+    patterns: [/\bbathroom\s+remodel\b/i, /\bremodel\s+bathroom\b/i],
+    project_type: "Remodeling",
+    project_subtype: "Bathroom Remodeling",
+    project_title: "Bathroom Remodeling",
+    scope:
+      "Update the bathroom layout and finishes as specified, complete demolition, installation, finishing, and cleanup, and verify site conditions before final pricing or work begins.",
+  },
+  {
+    patterns: [/\bkitchen\s+remodel\b/i, /\bremodel\s+kitchen\b/i],
+    project_type: "Remodeling",
+    project_subtype: "Kitchen Remodeling",
+    project_title: "Kitchen Remodeling",
+    scope:
+      "Update the kitchen layout and finishes as specified, complete demolition, installation, finishing, and cleanup, and verify site conditions before final pricing or work begins.",
+  },
+  {
+    patterns: [/\bpaint\s+bedroom\b/i, /\binterior\s+painting\b/i, /\bbedroom\s+painting\b/i],
+    project_type: "Painting",
+    project_subtype: "Interior Painting",
+    project_title: "Bedroom Painting",
+    scope:
+      "Prepare interior surfaces, apply paint to the specified room or rooms, complete trim and touch-up work as needed, and clean the work area when finished.",
+  },
+  {
+    patterns: [/\binstall\s+tile\b/i, /\btile\s+installation\b/i, /\breplace\s+tile\b/i],
+    project_type: "Tile",
+    project_subtype: "Tile Installation",
+    project_title: "Tile Installation",
+    scope:
+      "Prepare the substrate, install tile to the specified areas, complete grout and finish details, and clean the work area after installation.",
+  },
+  {
+    patterns: [/\bfix\s+leaking\s+faucet\b/i, /\bfaucet\s+repair\b/i, /\bleaking\s+faucet\b/i],
+    project_type: "Plumbing",
+    project_subtype: "Faucet Repair",
+    project_title: "Faucet Repair",
+    scope:
+      "Inspect the faucet, repair or replace the faulty components, confirm proper water flow and shutoff, and clean the work area after the repair.",
+  },
+  {
+    patterns: [/\binstall\s+fence\b/i, /\bfence\s+installation\b/i, /\breplace\s+fence\b/i],
+    project_type: "Fencing",
+    project_subtype: "Fence Installation",
+    project_title: "Fence Installation",
+    scope:
+      "Set fence layout, install posts and panels or pickets as specified, complete alignment and finish details, and clean the work area after installation.",
+  },
+  {
+    patterns: [/\bdrywall\s+repair\b/i, /\brepair\s+drywall\b/i, /\bdrywall\s+patch\b/i],
+    project_type: "Drywall",
+    project_subtype: "Drywall Repair",
+    project_title: "Drywall Repair",
+    scope:
+      "Repair damaged drywall areas, complete patching, sanding, finishing, and touch-up work as needed, and leave the work area clean.",
+  },
+];
+
 function inferSpecificLimitedScopeSubtype(text = "", projectSubtypeOptions = []) {
   const cleaned = stripNegativeScopeClaims(text);
   const matchedRule = LIMITED_SCOPE_SUBTYPE_RULES.find((rule) =>
@@ -625,6 +700,41 @@ function inferStartMode({
     return "ai";
   }
   return "manual";
+}
+
+function buildDeterministicStep1Setup(sourceText = "") {
+  const cleaned = safeTrim(sourceText);
+  const matchedRule = STEP1_LOCAL_FALLBACK_RULES.find((rule) =>
+    rule.patterns.some((pattern) => pattern.test(cleaned))
+  );
+  if (matchedRule) {
+    return {
+      project_type: matchedRule.project_type,
+      project_subtype: matchedRule.project_subtype,
+      project_title: matchedRule.project_title,
+      description: matchedRule.scope,
+    };
+  }
+
+  const dominantCategory = inferDominantProjectCategory(cleaned);
+  const projectType = safeTrim(dominantCategory.category || "");
+  const projectSubtype = safeTrim(dominantCategory.subtype || "");
+  const projectTitle = buildProjectFriendlyTitle({
+    subtype: projectSubtype,
+    category: projectType,
+    rawTitle: "",
+    sourceText: cleaned,
+  });
+  const description = cleaned
+    ? `Work includes ${cleaned}. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.`
+    : "";
+
+  return {
+    project_type: projectType || "Custom Project",
+    project_subtype: projectSubtype || "",
+    project_title: projectTitle || "Custom Project",
+    description,
+  };
 }
 
 function hasMeaningfulStep1DraftState({ agreement, dLocal }) {
@@ -2302,26 +2412,97 @@ export default function Step1Details({
     }
   }
 
-  function handleBuildAgreementWithoutTemplate() {
+  function applyNoTemplateFallbackSetup(sourceText) {
+    const deterministicFallback = buildDeterministicStep1Setup(
+      safeTrim(sourceText || dLocal?.description || agreement?.description || step1JobDescriptionPrompt || "")
+    );
+    const nextTitle = safeTrim(deterministicFallback.project_title);
+    const nextType = safeTrim(deterministicFallback.project_type);
+    const nextSubtype = safeTrim(deterministicFallback.project_subtype);
+    const nextDescription = safeTrim(
+      deterministicFallback.description ||
+        sourceText ||
+        dLocal?.description ||
+        agreement?.description ||
+        ""
+    );
+
+    const nextTypeRef =
+      (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
+    const nextSubtypeRef =
+      (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === nextSubtype)?.id || null;
+
     setAiSetupBusy(false);
     setAiSetupError("");
     setAiSetupResult(null);
+    setDismissedAiTemplateRecommendation(true);
     setSelectedTemplateId(null);
     setTemplateSearch("");
     setAiPreview("");
     setAiMilestonePreview(null);
     setAiErr("");
     activateStartMode("manual", { committed: true, source: "user" });
-    queueProjectDetailsReview(["project_title", "project_type", "project_subtype", "description"]);
+
+    setDLocal((prev) => ({
+      ...prev,
+      project_title: nextTitle || prev.project_title || "",
+      title: nextTitle || prev.title || "",
+      project_type: nextType || prev.project_type || "",
+      project_type_ref: nextTypeRef,
+      project_subtype: nextSubtype || prev.project_subtype || "",
+      project_subtype_ref: nextSubtypeRef,
+      description: nextDescription || prev.description || "",
+      scope_of_work: nextDescription || prev.scope_of_work || "",
+      step_status: "step1",
+    }));
+
     if (agreementId) {
       patchAgreement(
         {
+          project_title: nextTitle || "",
+          title: nextTitle || "",
+          project_type: nextType || "",
+          project_type_ref: nextTypeRef,
+          project_subtype: nextSubtype || "",
+          project_subtype_ref: nextSubtypeRef,
+          description: nextDescription || "",
+          scope_of_work: nextDescription || "",
           step_status: "step1",
-          scope_of_work: safeTrim(dLocal?.description || agreement?.description || ""),
         },
         { silent: true }
       );
     }
+
+    if (!isNewAgreement) {
+      writeCache({
+        project_title: nextTitle || "",
+        title: nextTitle || "",
+        project_type: nextType || "",
+        project_type_ref: nextTypeRef,
+        project_subtype: nextSubtype || "",
+        project_subtype_ref: nextSubtypeRef,
+        description: nextDescription || "",
+        scope_of_work: nextDescription || "",
+        step_status: "step1",
+      });
+    }
+
+    queueProjectDetailsReview(["project_title", "project_type", "project_subtype", "description"]);
+
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => scrollToProjectDetails({ allowAutoScroll: false }));
+    }
+
+    return {
+      project_title: nextTitle,
+      project_type: nextType,
+      project_subtype: nextSubtype,
+      description: nextDescription,
+    };
+  }
+
+  function handleBuildAgreementWithoutTemplate() {
+    applyNoTemplateFallbackSetup();
   }
 
   async function handleTemplateApplyWithOptions(template, options = {}) {
@@ -2678,9 +2859,13 @@ export default function Step1Details({
     recommendationReason,
     message,
   }) {
+    const deterministicFallback = buildDeterministicStep1Setup(
+      refinedDescription || dLocal?.description || step1JobDescriptionPrompt || ""
+    );
     const nextTitle = safeTrim(
       suggestedSetupValues?.project_title ||
         dLocal?.project_title ||
+        deterministicFallback.project_title ||
         buildProjectFriendlyTitle({
           subtype: suggestedSetupValues?.project_subtype || dLocal?.project_subtype || "",
           category: suggestedSetupValues?.project_type || dLocal?.project_type || "",
@@ -2696,18 +2881,26 @@ export default function Step1Details({
       refinedDescription,
       message:
         message ||
-        "No template found — let’s build this together. We’ll generate a custom agreement based on your description.",
+        "No template found � let's build this together. We'll generate a custom agreement based on your description.",
       recommendationReason:
-        recommendationReason || "No template found — let’s build this together.",
+        recommendationReason || "No template found � let's build this together.",
       recommendedTemplate: null,
-      suggestedTitle: nextTitle || "Recommended starting point",
-      suggestedProjectType: safeTrim(suggestedSetupValues?.project_type || dLocal?.project_type || ""),
+      suggestedTitle: nextTitle || deterministicFallback.project_title || "Custom Project",
+      suggestedProjectType: safeTrim(
+        suggestedSetupValues?.project_type ||
+          dLocal?.project_type ||
+          deterministicFallback.project_type ||
+          ""
+      ),
       suggestedProjectSubtype: safeTrim(
-        suggestedSetupValues?.project_subtype || dLocal?.project_subtype || ""
+        suggestedSetupValues?.project_subtype ||
+          dLocal?.project_subtype ||
+          deterministicFallback.project_subtype ||
+          ""
       ),
       setupFieldKeys: Array.isArray(setupFieldKeys) ? setupFieldKeys : [],
       recommendationSource: "fallback",
-      fallbackLabel: "No template found — let’s build this together",
+      fallbackLabel: "No template found � let's build this together",
     };
   }
 
@@ -2857,18 +3050,30 @@ export default function Step1Details({
       }
     } catch (e) {
       if (refinedDescription || safeTrim(roughDescription)) {
+        const deterministicFallback = buildDeterministicStep1Setup(
+          refinedDescription || roughDescription
+        );
+        const deterministicApplied = applyAiSetupFields({
+          description: deterministicFallback.description || refinedDescription || roughDescription,
+          project_title: deterministicFallback.project_title,
+          project_type: deterministicFallback.project_type,
+          project_subtype: deterministicFallback.project_subtype,
+        });
         setAiSetupResult(
           buildFallbackAiSetupResult({
-            refinedDescription: refinedDescription || roughDescription,
-            suggestedSetupValues,
-            setupFieldKeys,
+            refinedDescription:
+              deterministicFallback.description || refinedDescription || roughDescription,
+            suggestedSetupValues: deterministicApplied?.nextValues || suggestedSetupValues,
+            setupFieldKeys: deterministicApplied?.changedKeys || setupFieldKeys,
             recommendationReason: "Recommended from your description.",
-            message:
-              "Recommended from your description. AI fallback was used because the matching service was unavailable.",
+            message: "No template found � let's build this together.",
           })
         );
         setSelectedTemplateId(null);
-        queueProjectDetailsReview(["description", ...setupFieldKeys]);
+        queueProjectDetailsReview([
+          "description",
+          ...(deterministicApplied?.changedKeys || setupFieldKeys),
+        ]);
         return;
       }
 
@@ -2953,6 +3158,7 @@ export default function Step1Details({
       setShowQuickAdd(false);
       setShowResetStep1Confirm(false);
       clearStep1SessionState();
+      setStep1ManualBrowseSignal(0);
       setStartMode("manual");
       setStartModeCommitted(false);
       setStartModeSource("session");
@@ -3188,6 +3394,8 @@ export default function Step1Details({
       : "Review the agreement details below and keep editing.";
   const shouldShowProjectDetails = true;
   const showStep1Clarifications = false;
+  const shouldShowTemplateBrowserSection =
+    startMode === "template" && (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -3415,14 +3623,13 @@ export default function Step1Details({
                   className="rounded-2xl border border-rose-200 bg-white px-4 py-4 shadow-sm"
                 >
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
-                    Couldn’t finish this step
+                    Couldn�t finish this step
                   </div>
                   <div className="mt-2 text-base font-semibold text-slate-900">
-                    AI couldn’t finish this step. Your description is still saved.
+                    AI couldn�t finish this step. Your description is still saved.
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
-                    You can try again or continue manually without losing the work you already
-                    entered.
+                    You can try again or continue manually without losing the work you already entered.
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <button
@@ -3489,54 +3696,73 @@ export default function Step1Details({
                     ) : null}
                   </div>
                 </div>
-              ) : aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation" ? (
+              ) : ((aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation" || noTemplateMatch) && !shouldShowTemplateBrowserSection && startMode !== "manual") ? (
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="max-w-3xl">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                      No template found — let&apos;s build this agreement with AI
+                      No template found - let&apos;s build this together
                     </div>
                     <div className="mt-1 text-base font-semibold text-slate-900">
-                      We couldn&apos;t find a saved template that matches this job.
+                      We couldn&apos;t find a saved template for this job. MyHomeBro can build editable project details from your description.
                     </div>
                     <div className="mt-1 text-sm text-slate-600">
-                      We&apos;ll generate a custom agreement based on your description.
+                      Review the fields below, make any changes, then click Save and Next.
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         data-testid="step1-review-project-details-jump"
                         onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
-                        className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                        disabled={locked || aiSetupBusy}
+                        className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >
                         Review Project Details
                       </button>
                       <button
                         type="button"
-                        data-testid="step1-change-description-button"
+                        data-testid="step1-build-agreement-ai-button"
+                        onClick={() => applyNoTemplateFallbackSetup(step1JobDescriptionPrompt || dLocal?.description || agreement?.description || "")}
+                        disabled={locked || aiSetupBusy}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        Build with AI
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="step1-start-over-button"
+                        onClick={() => setShowResetStep1Confirm(true)}
+                        disabled={locked || aiSetupBusy}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        Start over
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => {
                           reopenStartModeChooser();
                           scrollToStartModeChooser();
                         }}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        disabled={locked}
+                        className="rounded-xl border border-transparent px-2 py-2 text-sm font-semibold text-slate-600 hover:underline"
                       >
                         Change description
                       </button>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {canResetStep1 && hasResettableStep1State ? (
                       <button
                         type="button"
-                        data-testid="step1-reset-form-button"
-                        onClick={() => setShowResetStep1Confirm(true)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        data-testid="step1-browse-templates-manually-button"
+                        onClick={() => {
+                            setStep1ManualBrowseSignal((prev) => prev + 1);
+                            activateStartMode("template", { committed: true, source: "user" });
+                          }}
+                        disabled={locked}
+                        className="rounded-xl border border-transparent px-2 py-2 text-sm font-semibold text-slate-600 hover:underline"
                       >
-                        Reset form
+                        Browse templates manually
                       </button>
-                    ) : null}
+                    </div>
                   </div>
                 </div>
-              ) : aiSetupResult?.kind === "description_only" ? null : (
+              ) : startMode === "template" ? (
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -3546,23 +3772,22 @@ export default function Step1Details({
                       {activeStartModeLabel}
                     </div>
                     <div className="mt-1 text-sm text-slate-600">{activeStartModeSummary}</div>
-                      <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
-                        <div className="text-sm font-semibold text-slate-900">
-                          Review Project Details
-                        </div>
-                        <div className="mt-1 text-sm text-slate-600">
-                          We’ve created a starting point. Jump to the editable details when you’re
-                          ready.
-                        </div>
-                        <button
-                          type="button"
-                          data-testid="step1-review-project-details-jump"
-                          onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
-                          className="mt-3 inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                        >
-                          Review Project Details
-                        </button>
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Review Project Details
                       </div>
+                      <div className="mt-1 text-sm text-slate-600">
+                        We've created a starting point. Review the editable details when you're ready.
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="step1-review-project-details-jump"
+                        onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
+                        className="mt-3 inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                      >
+                        Review Project Details
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {canResetStep1 && hasResettableStep1State ? (
@@ -3585,7 +3810,7 @@ export default function Step1Details({
                     </button>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           ) : (
             <div data-testid="step1-start-mode-chooser" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -3754,82 +3979,6 @@ export default function Step1Details({
           </section>
         ) : null}
 
-        {startMode === "ai" &&
-        (aiSetupResult?.kind === "fallback_recommendation" || aiSetupResult?.kind === "no_template") ? (
-          <section
-            data-testid="step1-ai-setup-result"
-            className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-              No template found — let&apos;s build this together
-            </div>
-            <div className="mt-2 text-base font-semibold text-slate-900">
-              {aiSetupResult.suggestedTitle || "Recommended starting point"}
-            </div>
-            <div className="mt-1 text-sm text-slate-700">
-              {aiSetupResult.message ||
-                "We used your description to build a usable starting point."}
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl border border-sky-200 bg-white p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Suggested title
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">
-                  {aiSetupResult.suggestedTitle || "Recommended starting point"}
-                </div>
-              </div>
-              <div className="rounded-xl border border-sky-200 bg-white p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Suggested project type
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">
-                  {aiSetupResult.suggestedProjectType || "Not available"}
-                </div>
-              </div>
-              <div className="rounded-xl border border-sky-200 bg-white p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Suggested subtype
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">
-                  {aiSetupResult.suggestedProjectSubtype || "Not available"}
-                </div>
-              </div>
-            </div>
-            <div className="mt-3 rounded-xl border border-white/80 bg-white/80 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Refined description
-              </div>
-              <div className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
-                {aiSetupResult.refinedDescription}
-              </div>
-            </div>
-            <div className="mt-3 text-sm text-slate-700">{aiSetupResult.recommendationReason}</div>
-            <div className="mt-3 text-xs text-slate-600">
-              We&apos;ll generate a custom agreement based on your description.
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                data-testid="step1-ai-setup-build-with-ai"
-                onClick={handleUseAiDescriptionOnly}
-                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                Build with AI
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setStep1ManualBrowseSignal((prev) => prev + 1);
-                  activateStartMode("template", { committed: true, source: "user" });
-                }}
-                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"
-              >
-                Browse templates manually
-              </button>
-            </div>
-          </section>
-        ) : null}
 
         {startMode === "ai" && aiSetupResult?.kind === "description_only" ? (
           <section
@@ -3878,6 +4027,7 @@ export default function Step1Details({
               </button>
               <button
                 type="button"
+                data-testid="step1-browse-templates-manually-button"
                 onClick={() => {
                   setStep1ManualBrowseSignal((prev) => prev + 1);
                   activateStartMode("template", { committed: true, source: "user" });
@@ -3890,7 +4040,7 @@ export default function Step1Details({
           </section>
         ) : null}
 
-        {startMode === "template" ? (
+        {shouldShowTemplateBrowserSection ? (
           <section
             data-testid="step1-template-browser"
             className="rounded-2xl border border-indigo-200 bg-indigo-50/40 shadow-sm"
@@ -3934,12 +4084,12 @@ export default function Step1Details({
                 handleUpdateTemplateDays={handleUpdateTemplateDays}
                 setSelectedTemplateId={setSelectedTemplateId}
                 setShowSaveTemplateModal={setShowSaveTemplateModal}
-                noTemplateMatch={noTemplateMatch}
+                noTemplateMatch={isNoTemplateFlow}
                 noTemplateReason={noTemplateReason}
                 templateDetail={templateDetail}
                 templateDetailLoading={templateDetailLoading}
                 templateDetailErr={templateDetailErr}
-                suppressNoMatchPanel={hasMeaningfulSavedProjectDetails}
+                suppressNoMatchPanel={startMode === "manual" && !aiSetupResult && hasMeaningfulSavedProjectDetails}
                 aiCredits={aiCredits}
                 aiBusy={aiBusy}
                 aiErr={aiErr}
@@ -3964,6 +4114,7 @@ export default function Step1Details({
                 jobPrompt={step1JobDescriptionPrompt}
                 startingPointBusy={aiSetupBusy}
                 onStartFromScratch={handleBuildAgreementWithoutTemplate}
+                onResetStep1={() => setShowResetStep1Confirm(true)}
                 onGenerateAiDraft={requestStep1AiSetup}
                 onContinueToStep2={onStep1Continue}
                 spreadEnabled={spreadEnabled}
@@ -4019,7 +4170,6 @@ export default function Step1Details({
                 <button
                   type="button"
                   data-testid="step1-ai-template-browse"
-                  onClick={() => activateStartMode("template")}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   View template options

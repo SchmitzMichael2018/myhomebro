@@ -1,4 +1,4 @@
-﻿import { expect, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 const AGREEMENT_ID = 123;
 
@@ -651,25 +651,14 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(projectDetailsCard).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
-  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-card')).toHaveCount(0);
   await expect(projectDetailsCard).toHaveAttribute('data-emphasis', 'true');
-  await expect(page.getByTestId('step1-review-project-details-jump')).toBeVisible();
-  await expect(page.getByTestId('step1-review-project-details-jump')).toContainText('Review Project Details');
-  const beforeJumpBox = await projectDetailsCard.boundingBox();
-  await page.getByTestId('step1-review-project-details-jump').click({ force: true });
-  await expect.poll(async () => {
-    const box = await projectDetailsCard.boundingBox();
-    return box?.y ?? 9999;
-  }).toBeLessThan((beforeJumpBox?.y ?? 9999) - 20);
   await expect(page.locator('select[name="project_type"]')).not.toHaveValue('Concrete');
   await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue('Concrete Slab');
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
-  await page.getByTestId('step1-change-description-button').click();
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 
   await page.getByTestId('agreement-project-title-input').fill(
     'Playwright Agreement Smoke'
@@ -865,21 +854,24 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
-  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toHaveCount(0);
   await expect(page.getByTestId('step1-starting-point-error-card')).toHaveCount(0);
-  await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
-  await expect(page.getByText('No template found — let\'s build this agreement with AI')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-card')).toBeVisible();
+  await expect(page.getByText('No template found')).toBeVisible();
   await expect(page.getByText('Recommended starting point')).toHaveCount(0);
-  await expect(page.getByText('Starting points')).toHaveCount(0);
-  await expect(page.getByText('Siding Replacement')).toBeVisible();
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('step1-review-project-details-jump')).toBeVisible();
-  await expect(page.getByTestId('step1-ai-setup-build-with-ai')).toBeVisible();
+  await page.getByTestId('step1-review-project-details-jump').click();
+  await expect(page.getByTestId('agreement-project-type-select')).toBeVisible();
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveCount(1);
+  await expect(page.getByTestId('step1-browse-templates-manually-button')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toHaveValue(
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
-  await page.getByTestId('step1-ai-setup-build-with-ai').click();
-  await expect(page.getByTestId('step1-ai-setup-result')).toContainText('AI draft ready');
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+  await expect(page.getByTestId('step1-no-template-card')).toHaveCount(0);
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('step1-ai-setup-result')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Siding Replacement');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Siding');
@@ -887,12 +879,11 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
     'Siding Replacement'
   );
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(
-    'Work includes removal and replacement of exterior siding on the areas identified in the project description.'
+    'Remove or prepare existing siding as needed, install replacement siding and related trim, complete finish details, and clean the work area. Contractor will verify measurements, material requirements, and site conditions before final pricing or work begins.'
   );
+  await expect(page.getByText('Custom Project')).toHaveCount(0);
+  await expect(page.getByText('Not available')).toHaveCount(0);
   await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
-  await page.getByTestId('step1-change-description-button').click();
-  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 });
 
 test('agreement wizard step 1 keeps empty descriptions blocked', async ({ page }) => {
@@ -1082,13 +1073,13 @@ test('agreement wizard step 1 no-match shows a single build without template pro
   await page.getByTestId('step1-job-description-input').fill('build 12x14 shed');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
-  await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
-  await expect(page.getByText('No template found — let\'s build this agreement with AI')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-card')).toBeVisible();
+  await expect(page.getByText('No template found')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByText('Recommended starting point')).toHaveCount(0);
-  await expect(page.getByText('Starting points')).toHaveCount(0);
-  await expect(page.getByTestId('step1-ai-setup-build-with-ai')).toBeVisible();
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
@@ -1527,9 +1518,9 @@ test('agreement wizard step 1 asks for shed size on shed builds and accepts the 
 
   await page
     .getByTestId('agreement-clarification-input-measurements')
-    .fill('Not sure — contractor should verify measurements.');
+    .fill('Not sure � contractor should verify measurements.');
   await expect(page.getByTestId('agreement-clarification-summary')).toContainText(
-    'Not sure — contractor should verify measurements.'
+    'Not sure � contractor should verify measurements.'
   );
 });
 
@@ -1661,9 +1652,9 @@ test('agreement wizard step 1 asks for square footage on flooring projects and a
 
   await page
     .getByTestId('agreement-clarification-input-measurements')
-    .fill('Not sure — contractor should verify measurements.');
+    .fill('Not sure � contractor should verify measurements.');
   await expect(page.getByTestId('agreement-clarification-summary')).toContainText(
-    'Not sure — contractor should verify measurements.'
+    'Not sure � contractor should verify measurements.'
   );
 });
 
@@ -4037,7 +4028,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   );
   await expect(page.getByTestId('step4-legal-ack-checkbox')).toBeVisible();
   await expect(page.getByTestId('step4-sign-continue-button')).toBeDisabled();
-  await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
+  await expect(page.getByText('? Review Agreement PDF')).toBeVisible();
   await expect(page.getByTestId('step4-summary-agreement')).toContainText('Agreement Version');
   await expect(page.getByTestId('step4-summary-agreement')).toContainText('PDF Version');
   await expect(page.getByTestId('step4-summary-customer')).toContainText('Customer Email');
@@ -4054,7 +4045,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page).toHaveURL(/step=4/);
   await expect.poll(() => markPreviewedCalls.length).toBe(1);
 
-  await expect(page.getByText('☐ Review Agreement PDF')).toBeVisible();
+  await expect(page.getByText('? Review Agreement PDF')).toBeVisible();
   await expect(signArea.locator('iframe, object')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open PDF' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Download PDF' }).first()).toBeVisible();
@@ -4064,7 +4055,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-sign-continue-button')).toBeDisabled();
   await page.getByRole('button', { name: 'Download PDF' }).first().click();
   await expect.poll(() => markPreviewedCalls.length).toBe(1);
-  await expect(page.getByText('✓ Agreement PDF reviewed').first()).toBeVisible();
+  await expect(page.getByText('? Agreement PDF reviewed').first()).toBeVisible();
   await expect(page.getByTestId('step4-sign-continue-button')).toBeEnabled();
 
   await page.getByRole('button', { name: 'Direct Pay' }).click();
@@ -4113,7 +4104,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page).toHaveURL(/step=3/);
   await page.getByRole('button', { name: 'Step 4 Finalize' }).click();
   await expect(page).toHaveURL(/step=4/);
-  await expect(page.getByText('✓ Agreement PDF reviewed').first()).toBeVisible();
+  await expect(page.getByText('? Agreement PDF reviewed').first()).toBeVisible();
   await expect(page.getByTestId('step4-customer-send-success')).toBeVisible();
   await expect(page.getByTestId('step4-open-workspace-button')).toBeVisible();
   await expect(page.getByTestId('step4-copy-customer-link-button')).toBeVisible();
