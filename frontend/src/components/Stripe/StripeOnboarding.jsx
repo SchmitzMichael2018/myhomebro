@@ -4,18 +4,74 @@ import api from "../../api";
 import { trackOnboardingEvent } from "../../lib/onboardingAnalytics.js";
 import StripeOnboardingButton from "../StripeOnboardingButton.jsx";
 
-const TRADE_OPTIONS = [
-  "HVAC",
-  "Landscaping",
-  "Pest Control",
-  "Pool Service",
-  "Electrical",
-  "Plumbing",
-  "Painting",
-  "Roofing",
-  "Inspection",
-  "Lawn Care",
+const TRADE_CATALOG = [
+  { label: "General Contractor", popular: true },
+  { label: "Handyman", popular: true },
+  { label: "Remodeling", popular: true },
+  { label: "Bathroom Remodeling", popular: true },
+  { label: "Kitchen Remodeling", popular: true },
+  { label: "Flooring", popular: true },
+  { label: "Tile", popular: true },
+  { label: "Drywall", popular: true },
+  { label: "Painting", popular: true },
+  { label: "Roofing", popular: true },
+  { label: "Siding", popular: true },
+  { label: "Windows & Doors", popular: true },
+  { label: "Framing", popular: false },
+  { label: "Carpentry", popular: false },
+  { label: "Cabinets", popular: false },
+  { label: "Countertops", popular: false },
+  { label: "Concrete", popular: false },
+  { label: "Masonry", popular: false },
+  { label: "Fencing", popular: false },
+  { label: "Decks & Patios", popular: false },
+  { label: "Landscaping", popular: true },
+  { label: "Lawn Care", popular: true },
+  { label: "Irrigation", popular: false },
+  { label: "Tree Service", popular: false },
+  { label: "Pest Control", popular: true },
+  { label: "Pool Service", popular: true },
+  { label: "HVAC", popular: true },
+  { label: "Electrical", popular: true },
+  { label: "Plumbing", popular: true },
+  { label: "Appliance Repair", popular: false },
+  { label: "Garage Doors", popular: false },
+  { label: "Insulation", popular: false },
+  { label: "Gutters", popular: false },
+  { label: "Pressure Washing", popular: false },
+  { label: "Junk Removal", popular: false },
+  { label: "Moving Help", popular: false },
+  { label: "Cleaning", popular: false },
+  { label: "Home Inspection", popular: false },
+  { label: "Foundation Repair", popular: false },
+  { label: "Water Damage Restoration", popular: false },
+  { label: "Mold Remediation", popular: false },
+  { label: "Security Systems", popular: false },
+  { label: "Smart Home", popular: false },
+  { label: "Solar", popular: false },
 ];
+
+const POPULAR_TRADES = TRADE_CATALOG.filter((trade) => trade.popular);
+
+function normalizeTradeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim();
+}
+
+function getTradeOptionTestId(label) {
+  return `contractor-onboarding-trade-option-${normalizeTradeText(label).replace(/\s+/g, "-")}`;
+}
+
+function getTradeChipTestId(label) {
+  return `contractor-onboarding-trade-chip-${normalizeTradeText(label).replace(/\s+/g, "-")}`;
+}
+
+function tradeMatchesQuery(trade, query) {
+  if (!query) return true;
+  return normalizeTradeText(trade.label).includes(normalizeTradeText(query));
+}
 
 const STATE_OPTIONS = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -122,6 +178,7 @@ export default function StripeOnboarding() {
   const [meData, setMeData] = useState(null);
   const [stripeStatus, setStripeStatus] = useState(null);
   const [localStep, setLocalStep] = useState(null);
+  const [tradeSearch, setTradeSearch] = useState("");
   const [form, setForm] = useState({
     business_name: "",
     city: "",
@@ -199,6 +256,30 @@ export default function StripeOnboarding() {
       };
     });
   }
+
+  function addSkill(skill) {
+    setForm((current) => {
+      if (current.skills.includes(skill)) {
+        return current;
+      }
+      return {
+        ...current,
+        skills: [...current.skills, skill],
+      };
+    });
+  }
+
+  function removeSkill(skill) {
+    setForm((current) => ({
+      ...current,
+      skills: current.skills.filter((item) => item !== skill),
+    }));
+  }
+
+  const filteredTrades = useMemo(() => {
+    const query = normalizeTradeText(tradeSearch);
+    return TRADE_CATALOG.filter((trade) => tradeMatchesQuery(trade, query));
+  }, [tradeSearch]);
 
   async function patchOnboarding(payload) {
     setSaving(true);
@@ -345,28 +426,113 @@ export default function StripeOnboarding() {
         <PrimaryCard
           eyebrow={`Step ${stepNumber} of ${stepTotal}`}
           title="Pick your trades"
-          description="Keep this quick. Tapping one or two trades is enough to personalize your templates, estimates, and compliance guidance."
+          description="Select one or more trades you offer. You can update this later from your profile."
           testId="contractor-onboarding-trades"
         >
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-            {TRADE_OPTIONS.map((skill) => {
-              const active = form.skills.includes(skill);
-              return (
-                <button
-                  key={skill}
-                  type="button"
-                  onClick={() => toggleSkill(skill)}
-                  className={`min-h-12 rounded-2xl border px-3 py-3 text-sm font-semibold transition ${
-                    active
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  {skill}
-                </button>
-              );
-            })}
+          <div className="space-y-5">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Popular trades</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {POPULAR_TRADES.map((trade) => {
+                  const active = form.skills.includes(trade.label);
+                  return (
+                    <button
+                      key={trade.label}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => toggleSkill(trade.label)}
+                      className={`min-h-11 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        active
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      {trade.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Search all trades</div>
+              <label htmlFor="trade-search" className="block text-sm font-semibold text-slate-900">
+                Search your trade
+              </label>
+              <input
+                id="trade-search"
+                type="text"
+                value={tradeSearch}
+                onChange={(event) => setTradeSearch(event.target.value)}
+                placeholder="Start typing to search for your trade…"
+                className="mt-1 h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 placeholder:text-slate-400"
+                data-testid="contractor-onboarding-trade-search"
+              />
+              <div
+                className="mt-3 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2"
+                data-testid="contractor-onboarding-trade-results"
+              >
+                {filteredTrades.length ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {filteredTrades.map((trade) => {
+                      const active = form.skills.includes(trade.label);
+                      return (
+                        <button
+                          key={trade.label}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => addSkill(trade.label)}
+                          data-testid={getTradeOptionTestId(trade.label)}
+                          className={`min-h-12 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition ${
+                            active
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <div>{trade.label}</div>
+                          <div className={`mt-1 text-xs ${active ? "text-slate-200" : "text-slate-500"}`}>
+                            Tap to add to your selected trades
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-3 py-4 text-sm text-slate-600">
+                    No matching trade found. Try a broader term.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Selected trades</div>
+              <div className="mt-3 flex flex-wrap gap-2" data-testid="contractor-onboarding-selected-trades">
+                {form.skills.length ? (
+                  form.skills.map((skill) => (
+                    <span
+                      key={skill}
+                      data-testid={getTradeChipTestId(skill)}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+                    >
+                      {skill}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${skill}`}
+                        onClick={() => removeSkill(skill)}
+                        className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))
+                ) : (
+                  <div className="text-sm text-slate-500">Select one or more trades to personalize your setup.</div>
+                )}
+              </div>
+            </div>
           </div>
+
           <div className="mt-4">
             <label className="block text-sm font-semibold text-slate-900">Business name</label>
             <input

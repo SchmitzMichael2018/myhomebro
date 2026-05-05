@@ -254,3 +254,29 @@ test("intelligent onboarding builds and saves a contractor setup", async ({ page
   expect(handoffState?.assistantDraftPayload?.project_family_label).toBe("Roofing");
   expect(handoffState?.assistantSuggestedMilestones?.length).toBeGreaterThan(0);
 });
+
+test("contractor onboarding trade picker supports search, chips, and removals", async ({ page }) => {
+  await installOnboardingRoutes(page);
+
+  await page.goto("/app/onboarding", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("contractor-onboarding-trades")).toBeVisible();
+  await expect(page.getByTestId("contractor-onboarding-save-basics")).toBeDisabled();
+
+  await page.getByRole("button", { name: "Electrical" }).first().click();
+  await expect(page.getByTestId("contractor-onboarding-trade-chip-electrical")).toBeVisible();
+  await expect(page.getByTestId("contractor-onboarding-save-basics")).toBeEnabled();
+
+  await page.getByLabel("Search your trade").fill("tile");
+  await expect(page.getByRole("button", { name: "Tile" })).toBeVisible();
+  await page.getByRole("button", { name: "Tile" }).first().click();
+  await expect(page.getByTestId("contractor-onboarding-trade-chip-tile")).toBeVisible();
+
+  await page.getByRole("button", { name: "Tile" }).first().click();
+  await expect(page.getByTestId("contractor-onboarding-trade-chip-tile")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Remove Tile" }).click();
+  await expect(page.getByTestId("contractor-onboarding-trade-chip-tile")).toHaveCount(0);
+
+  await page.getByLabel("Search your trade").fill("zzzz-not-a-trade");
+  await expect(page.getByText("No matching trade found. Try a broader term.")).toBeVisible();
+});
