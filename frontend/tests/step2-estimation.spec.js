@@ -1211,6 +1211,8 @@ test('step 2 milestone shaping uses the current project type and subtype instead
     'Install New Siding and Trim',
     'Final Inspection and Cleanup',
   ]);
+  expect(sidingRows[0].description).toContain('- Prepare the site and protect nearby surfaces.');
+  expect(sidingRows.some((row) => /kitchen/i.test(row.description))).toBe(false);
   expect(sidingRows.some((row) => /kitchen/i.test(row.title))).toBe(false);
 
   const roofRows = buildClarificationAwareMilestoneDraft({
@@ -1230,6 +1232,7 @@ test('step 2 milestone shaping uses the current project type and subtype instead
     'Install New Roofing System',
     'Final Inspection and Cleanup',
   ]);
+  expect(roofRows[0].description).toContain('- Protect the property, landscaping, and staging area.');
 
   const paintRows = buildClarificationAwareMilestoneDraft({
     projectType: 'Painting',
@@ -1247,6 +1250,7 @@ test('step 2 milestone shaping uses the current project type and subtype instead
     'Prime and Paint',
     'Touch-Ups and Cleanup',
   ]);
+  expect(paintRows[1].description).toContain('- Apply primer and paint to the selected areas and surfaces.');
 
   const kitchenRows = buildClarificationAwareMilestoneDraft({
     projectType: 'Remodeling',
@@ -1265,6 +1269,7 @@ test('step 2 milestone shaping uses the current project type and subtype instead
     'Countertops & Finish Install',
     'Cleanup & Handoff',
   ]);
+  expect(kitchenRows[0].description).toContain('- Protect the space and remove existing finishes or fixtures.');
 });
 
 test('step 2 milestone guardrails block overly large AI plans and dedupe repeated titles', async () => {

@@ -763,25 +763,377 @@ def _milestone_rule_matches(rule: Dict[str, Any], *, project_type: Any, project_
     return subtype_matches and type_matches
 
 
-def _fallback_milestone_rows(description: Any) -> List[Dict[str, Any]]:
+def _fallback_milestone_rows(project_type: Any, project_subtype: Any, description: Any) -> List[Dict[str, Any]]:
+    def bullet_description(*lines: Any) -> str:
+        return "\n".join(f"- {_safe_str(line)}" for line in lines if _safe_str(line))
+
+    normalized = " ".join(
+        _normalize_baseline_key(value)
+        for value in (project_type, project_subtype, description)
+        if _safe_str(value)
+    )
+    has_siding = bool(re.search(r"\bsiding\b", normalized))
+    has_roof = bool(re.search(r"\broof|roofing\b", normalized))
+    has_painting = bool(re.search(r"\bpaint|painting\b", normalized))
+    has_plumbing = bool(re.search(r"\bplumb|faucet\b", normalized))
+    has_bathroom = bool(re.search(r"\bbathroom\b", normalized))
+    has_kitchen = bool(re.search(r"\bkitchen\b", normalized))
+    has_tile = bool(re.search(r"\btile\b", normalized))
+    has_drywall = bool(re.search(r"\bdrywall\b", normalized))
+
+    if has_siding:
+        return [
+            {
+                "title": "Site Preparation and Material Staging",
+                "description": bullet_description(
+                    "Prepare the site and protect nearby surfaces.",
+                    "Stage siding, trim, fasteners, and weather barrier materials.",
+                    "Confirm measurements and install sequencing.",
+                ),
+            },
+            {
+                "title": "Remove Existing Siding",
+                "description": bullet_description(
+                    "Remove or prepare existing siding and related trim as needed.",
+                    "Expose the substrate for inspection and repairs.",
+                    "Clear debris and prep the wall assembly for replacement.",
+                ),
+            },
+            {
+                "title": "Install New Siding and Trim",
+                "description": bullet_description(
+                    "Install replacement siding panels and trim components.",
+                    "Fasten materials for proper alignment and weather protection.",
+                    "Complete finish details around openings and transitions.",
+                ),
+            },
+            {
+                "title": "Final Inspection and Cleanup",
+                "description": bullet_description(
+                    "Complete the final review and punch-list items.",
+                    "Check alignment, caulking, and weatherproofing details.",
+                    "Cleanup the work area and prepare for handoff.",
+                ),
+            },
+        ]
+
+    if has_roof:
+        return [
+            {
+                "title": "Site Setup and Safety Prep",
+                "description": bullet_description(
+                    "Protect the property, landscaping, and staging area.",
+                    "Stage materials and prep roof access points.",
+                    "Confirm safety setup before roof work begins.",
+                ),
+            },
+            {
+                "title": "Remove Existing Roofing",
+                "description": bullet_description(
+                    "Remove existing roofing materials and underlayment.",
+                    "Inspect and prep the roof deck or substrate.",
+                    "Address any visible repair needs before install.",
+                ),
+            },
+            {
+                "title": "Install New Roofing System",
+                "description": bullet_description(
+                    "Install underlayment, flashing, and the new roofing system.",
+                    "Secure key weatherproofing details at penetrations and edges.",
+                    "Complete the primary roof assembly.",
+                ),
+            },
+            {
+                "title": "Final Inspection and Cleanup",
+                "description": bullet_description(
+                    "Complete the final inspection and walkthrough.",
+                    "Perform magnet sweep and cleanup.",
+                    "Confirm punch-list items are closed out.",
+                ),
+            },
+        ]
+
+    if has_painting:
+        return [
+            {
+                "title": "Prep Surfaces and Protect Areas",
+                "description": bullet_description(
+                    "Mask and protect floors, fixtures, and adjacent finishes.",
+                    "Prep surfaces for paint adhesion.",
+                    "Complete patching and surface cleanup before coating.",
+                ),
+            },
+            {
+                "title": "Prime and Paint",
+                "description": bullet_description(
+                    "Apply primer and paint to the selected areas and surfaces.",
+                    "Use the selected finish system and color specifications.",
+                    "Verify coverage and uniform appearance.",
+                ),
+            },
+            {
+                "title": "Touch-Ups and Cleanup",
+                "description": bullet_description(
+                    "Complete touch-ups and detail work.",
+                    "Address edges, trim, and finish transitions.",
+                    "Cleanup the space for handoff.",
+                ),
+            },
+        ]
+
+    if has_plumbing:
+        return [
+            {
+                "title": "Assess and Prep",
+                "description": bullet_description(
+                    "Confirm the affected plumbing area and prep the work.",
+                    "Verify access, shutoff, and fixture conditions.",
+                    "Protect the surrounding area before service begins.",
+                ),
+            },
+            {
+                "title": "Repair or Replace Fixture",
+                "description": bullet_description(
+                    "Complete the plumbing repair or fixture replacement work.",
+                    "Install required parts, fittings, or fixtures.",
+                    "Restore the system to working condition.",
+                ),
+            },
+            {
+                "title": "Test and Verify",
+                "description": bullet_description(
+                    "Test the repair, check for leaks, and verify operation.",
+                    "Confirm water flow and fixture performance.",
+                    "Address final adjustments if needed.",
+                ),
+            },
+            {
+                "title": "Cleanup and Walkthrough",
+                "description": bullet_description(
+                    "Finish cleanup and remove service debris.",
+                    "Review the completed work with the customer.",
+                    "Confirm closeout details.",
+                ),
+            },
+        ]
+
+    if has_kitchen:
+        return [
+            {
+                "title": "Demo & Prep",
+                "description": bullet_description(
+                    "Protect the space and remove existing finishes or fixtures.",
+                    "Stage materials and prepare for rough-in work.",
+                    "Confirm layout and selection details.",
+                ),
+            },
+            {
+                "title": "Cabinets / Layout Work",
+                "description": bullet_description(
+                    "Complete cabinet, layout, and rough-in work.",
+                    "Set the main kitchen structure and align utilities.",
+                    "Verify dimensions and fit before finish install.",
+                ),
+            },
+            {
+                "title": "Countertops & Finish Install",
+                "description": bullet_description(
+                    "Install countertops, backsplash, and finish items.",
+                    "Complete trim, hardware, and final surface details.",
+                    "Check fit and finish against the approved scope.",
+                ),
+            },
+            {
+                "title": "Cleanup & Handoff",
+                "description": bullet_description(
+                    "Clean the site and remove debris.",
+                    "Walk through the completed kitchen with the customer.",
+                    "Confirm punch-list items and handoff.",
+                ),
+            },
+        ]
+
+    if has_bathroom:
+        return [
+            {
+                "title": "Demo and Protection",
+                "description": bullet_description(
+                    "Protect surrounding finishes and fixtures.",
+                    "Remove existing materials as needed.",
+                    "Stage the room for rough-in and waterproofing.",
+                ),
+            },
+            {
+                "title": "Rough Plumbing and Electrical",
+                "description": bullet_description(
+                    "Complete rough work needed for the remodel layout.",
+                    "Coordinate plumbing and electrical changes as needed.",
+                    "Prepare for finish installation.",
+                ),
+            },
+            {
+                "title": "Tile, Fixtures, and Finishes",
+                "description": bullet_description(
+                    "Install tile, fixtures, and finish selections.",
+                    "Complete waterproofing and trim details.",
+                    "Verify fit, alignment, and appearance.",
+                ),
+            },
+            {
+                "title": "Final Cleanup and Walkthrough",
+                "description": bullet_description(
+                    "Finish cleanup and remove protection materials.",
+                    "Review the remodeled bathroom with the customer.",
+                    "Confirm punch-list items are complete.",
+                ),
+            },
+        ]
+
+    if has_tile:
+        return [
+            {
+                "title": "Site Prep and Surface Prep",
+                "description": bullet_description(
+                    "Prepare the work area and surfaces for tile installation.",
+                    "Confirm subfloor, wall, or substrate readiness.",
+                    "Stage setting materials and tile layout.",
+                ),
+            },
+            {
+                "title": "Install Tile",
+                "description": bullet_description(
+                    "Install the tile and related setting materials.",
+                    "Maintain layout, spacing, and alignment.",
+                    "Complete the core tile field work.",
+                ),
+            },
+            {
+                "title": "Grout, Trim, and Cleanup",
+                "description": bullet_description(
+                    "Complete grout, trim details, and finish edges.",
+                    "Check transitions, corners, and sealant areas.",
+                    "Cleanup for handoff.",
+                ),
+            },
+        ]
+
+    if has_drywall:
+        return [
+            {
+                "title": "Prep and Protect",
+                "description": bullet_description(
+                    "Protect surrounding areas and prepare damaged surfaces.",
+                    "Stage materials and cover adjacent finishes.",
+                    "Confirm repair scope before patching begins.",
+                ),
+            },
+            {
+                "title": "Repair or Replace Drywall",
+                "description": bullet_description(
+                    "Complete drywall repair or replacement work.",
+                    "Install patch or replacement board and secure it properly.",
+                    "Prepare the repair for finish work.",
+                ),
+            },
+            {
+                "title": "Tape, Mud, and Finish",
+                "description": bullet_description(
+                    "Tape, mud, sand, and finish the repaired areas.",
+                    "Match the surface texture as needed.",
+                    "Prepare for final paint or trim touch-up.",
+                ),
+            },
+            {
+                "title": "Cleanup and Walkthrough",
+                "description": bullet_description(
+                    "Clean the site and remove dust/debris.",
+                    "Review the finished repair with the customer.",
+                    "Confirm closeout items are complete.",
+                ),
+            },
+        ]
+
     normalized = _normalize_baseline_key(description)
     limited_scope = bool(re.search(r"\binstall(?:ation)?\b", normalized)) and not bool(
         re.search(r"\b(remodel|renovation|addition)\b", normalized)
     )
     return (
         [
-            {"title": "Prep & materials", "description": "Confirm scope, stage materials, and prep the work area."},
-            {"title": "Primary installation", "description": "Complete the core installation or replacement work."},
-            {"title": "Adjustments & finish", "description": "Make adjustments, complete finish details, and test where needed."},
-            {"title": "Cleanup & walkthrough", "description": "Clean the site and review the finished work with the customer."},
+            {
+                "title": "Prep & materials",
+                "description": bullet_description(
+                    "Confirm scope, measurements, and site readiness.",
+                    "Stage materials and protect adjacent finishes.",
+                    "Prepare the work area for installation.",
+                ),
+            },
+            {
+                "title": "Primary installation",
+                "description": bullet_description(
+                    "Complete the core installation or replacement work.",
+                    "Install the selected system or materials.",
+                    "Verify basic fit, alignment, and coverage.",
+                ),
+            },
+            {
+                "title": "Adjustments & finish",
+                "description": bullet_description(
+                    "Make adjustments and complete finish details.",
+                    "Address trim, seal, or touch-up items.",
+                    "Test where needed before closeout.",
+                ),
+            },
+            {
+                "title": "Cleanup & walkthrough",
+                "description": bullet_description(
+                    "Clean the site and remove debris.",
+                    "Review the finished work with the customer.",
+                    "Confirm any final punch-list items.",
+                ),
+            },
         ]
         if limited_scope
         else [
-            {"title": "Planning & prep", "description": "Confirm scope, materials, and site readiness for the project."},
-            {"title": "Core work phase 1", "description": "Begin the main work and complete the first major phase."},
-            {"title": "Core work phase 2", "description": "Continue the main work and complete the next major phase."},
-            {"title": "Finish work", "description": "Complete finish details, punch items, and final quality checks."},
-            {"title": "Cleanup & handoff", "description": "Complete cleanup and customer walkthrough before closeout."},
+            {
+                "title": "Planning & prep",
+                "description": bullet_description(
+                    "Confirm scope, materials, and site readiness.",
+                    "Review measurements, access, and sequencing.",
+                    "Protect nearby areas before work begins.",
+                ),
+            },
+            {
+                "title": "Core work phase 1",
+                "description": bullet_description(
+                    "Begin the primary work and complete the first major phase.",
+                    "Install or build the main project components.",
+                    "Verify fit, alignment, and progress against scope.",
+                ),
+            },
+            {
+                "title": "Core work phase 2",
+                "description": bullet_description(
+                    "Continue the main work and complete the next major phase.",
+                    "Finish the remaining structural or system work.",
+                    "Resolve any adjustments needed before finish work.",
+                ),
+            },
+            {
+                "title": "Finish work",
+                "description": bullet_description(
+                    "Complete finish details and punch-list items.",
+                    "Seal, trim, paint, or connect final components as required.",
+                    "Perform final quality checks.",
+                ),
+            },
+            {
+                "title": "Cleanup & handoff",
+                "description": bullet_description(
+                    "Complete cleanup and remove job debris.",
+                    "Walk the customer through the finished project.",
+                    "Confirm closeout items and handoff.",
+                ),
+            },
         ]
     )
 
@@ -989,7 +1341,7 @@ def _shape_milestone_rows_for_clarifications(
     rows: List[Dict[str, Any]] = (
         [_clone_milestone_row(row) for row in (subtype_rule.get("baseRows") or [])]
         if isinstance(subtype_rule, dict)
-        else _fallback_milestone_rows(description)
+        else _fallback_milestone_rows(project_type, project_subtype, description)
     )
 
     for operation in (subtype_rule.get("operations") or []) if isinstance(subtype_rule, dict) else []:
@@ -1395,8 +1747,12 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         "Rules:\n"
         "- Milestones must be measurable deliverables.\n"
         "- Each milestone must have a clear completion condition.\n"
+        "- Milestone titles should read like real contractor phases: prep, removal, install, finish, cleanup.\n"
+        "- Milestone descriptions should be 2 to 4 short bullet-style scope lines using direct, action-oriented language.\n"
         "- Avoid vague terms and hidden scope.\n"
         "- Use the current agreement scope of work, project type, subtype, and title as the primary context.\n"
+        "- Use clarification answers, including measurements, to scale the number of phases and level of detail.\n"
+        "- Small jobs usually need 3 to 4 milestones, medium jobs 4 to 6, and larger jobs 5 to 8.\n"
         "- Amounts should sum approximately to the total budget (within rounding).\n"
         "- Provide 3 to 10 milestones depending on the target.\n"
         "- Use YYYY-MM-DD for dates if provided, otherwise return empty string.\n"

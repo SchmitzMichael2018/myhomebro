@@ -2788,6 +2788,7 @@ export default function Step2Milestones({
     if (safeStr(projectContextSummary?.projectFamilyLabel)) return safeStr(projectContextSummary.projectFamilyLabel);
     return "Current agreement";
   }, [projectContextSummary]);
+  const milestonePlanActionLabel = effectiveMilestones.length ? "Regenerate Plan" : "Generate Suggested Milestones";
 
   function shapeAiMilestonePreview(preview) {
     if (!preview || !Array.isArray(preview.milestones)) return preview;
@@ -2837,27 +2838,47 @@ export default function Step2Milestones({
       return [
         {
           title: "Site Prep and Foundation",
-          description: "Prepare the site and pour or set the foundation.",
+          description: [
+            "- Prepare the site and verify layout.",
+            "- Pour or set the foundation/base support.",
+            "- Confirm the footprint before framing begins.",
+          ].join("\n"),
           recommended_duration_days: 2,
         },
         {
           title: "Floor and Framing",
-          description: "Frame the floor, walls, and primary structure.",
+          description: [
+            "- Frame the floor, walls, and primary structure.",
+            "- Secure structure alignment and spacing.",
+            "- Prepare for roof and exterior shell installation.",
+          ].join("\n"),
           recommended_duration_days: 2,
         },
         {
           title: "Roof, Siding, and Weatherproofing",
-          description: "Install roof, siding, and exterior weatherproofing.",
+          description: [
+            "- Install roof, siding, and exterior weatherproofing.",
+            "- Complete trim, flashing, and sealed transitions.",
+            "- Protect the structure against weather exposure.",
+          ].join("\n"),
           recommended_duration_days: 3,
         },
         {
           title: "Doors, Windows, and Finish Details",
-          description: "Install doors, windows, trim, and finish details.",
+          description: [
+            "- Install doors, windows, trim, and finish details.",
+            "- Adjust fit, alignment, and hardware.",
+            "- Complete visible finish components.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
         {
           title: "Final Inspection and Cleanup",
-          description: "Complete inspection, punch list, and cleanup.",
+          description: [
+            "- Complete inspection and punch-list items.",
+            "- Cleanup the site and remove debris.",
+            "- Review handoff details with the customer.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
       ];
@@ -2867,22 +2888,38 @@ export default function Step2Milestones({
       return [
         {
           title: "Site Setup and Protection",
-          description: "Protect the home, staging area, and landscaping before roof work begins.",
+          description: [
+            "- Protect the home, staging area, and landscaping.",
+            "- Stage materials and prep access points.",
+            "- Confirm safety setup before roof work begins.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
         {
           title: "Tear-Off and Deck Prep",
-          description: "Remove existing roofing and prepare the deck for repair or replacement.",
+          description: [
+            "- Remove existing roofing and underlayment.",
+            "- Prepare the deck for repair or replacement.",
+            "- Address visible substrate issues before install.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
         {
           title: "Roof Installation",
-          description: "Install underlayment, flashing, and new roofing materials.",
+          description: [
+            "- Install underlayment, flashing, and roofing materials.",
+            "- Secure edge, penetration, and transition details.",
+            "- Complete the primary roof assembly.",
+          ].join("\n"),
           recommended_duration_days: 2,
         },
         {
           title: "Cleanup and Final Inspection",
-          description: "Complete cleanup, magnet sweep, and final walkthrough.",
+          description: [
+            "- Complete cleanup and magnet sweep.",
+            "- Review the roof with the customer.",
+            "- Confirm punch-list items and closeout.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
       ];
@@ -2892,22 +2929,38 @@ export default function Step2Milestones({
       return [
         {
           title: "Site Layout and Excavation",
-          description: "Lay out the work area and complete excavation or grading.",
+          description: [
+            "- Lay out the work area and confirm elevations.",
+            "- Complete excavation or grading.",
+            "- Prepare for forming and pour work.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
         {
           title: "Forming and Reinforcement",
-          description: "Set forms, reinforcement, and base preparation.",
+          description: [
+            "- Set forms, reinforcement, and base preparation.",
+            "- Confirm thickness, slope, and support requirements.",
+            "- Prep the surface for placement.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
         {
           title: "Pour and Finish",
-          description: "Place, finish, and cure the slab or foundation.",
+          description: [
+            "- Place, finish, and cure the slab or foundation.",
+            "- Maintain thickness and finish quality.",
+            "- Protect the pour during initial cure.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
         {
           title: "Cleanup and Closeout",
-          description: "Remove forms, clean the area, and complete closeout.",
+          description: [
+            "- Remove forms and clean the area.",
+            "- Review final details and closeout items.",
+            "- Confirm the work area is ready for handoff.",
+          ].join("\n"),
           recommended_duration_days: 1,
         },
       ];
@@ -4839,9 +4892,7 @@ export default function Step2Milestones({
                   className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-50 disabled:opacity-60"
                   data-testid="step2-generate-suggested-milestones"
                 >
-                  {aiLoading || aiMilestoneGenerationBusy
-                    ? "Generating milestones..."
-                    : "Generate Suggested Milestones"}
+                  {aiLoading || aiMilestoneGenerationBusy ? "Generating milestones..." : milestonePlanActionLabel}
                 </button>
                 <button
                   type="button"
@@ -6161,6 +6212,7 @@ export default function Step2Milestones({
             >
               Milestones generated for: {milestoneGenerationContextLabel}
             </div>
+            <div className="text-xs text-slate-500">Drag to reorder. Click edit to customize.</div>
 
             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {normalizeCardRows(effectiveMilestones).map((m, idx) => {

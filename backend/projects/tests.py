@@ -583,6 +583,109 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(user_json["project_type"], "Remodel")
         self.assertEqual(user_json["project_subtype"], "Siding Replacement")
 
+    def test_service_falls_back_to_contractordriven_rows_for_siding_roofing_and_painting(self):
+        def make_agreement(*, project_title, **agreement_kwargs):
+            project = Project.objects.create(
+                contractor=self.contractor,
+                homeowner=self.homeowner,
+                title=project_title,
+            )
+            agreement = Agreement.objects.create(
+                project=project,
+                contractor=self.contractor,
+                homeowner=self.homeowner,
+                description=agreement_kwargs.pop("description"),
+                project_type=agreement_kwargs.pop("project_type", "Remodel"),
+                project_subtype=agreement_kwargs.pop("project_subtype", ""),
+                total_cost=Decimal("24000.00"),
+                milestone_count=5,
+            )
+            AgreementAIScope.objects.create(agreement=agreement, answers=agreement_kwargs.pop("answers", {}) or {})
+            return agreement
+
+        class FakeResponses:
+            def create(self, **kwargs):
+                payload = {
+                    "scope_text": "AI generated scope text",
+                    "milestones": [
+                        {
+                            "order": 1,
+                            "title": "Generic Work",
+                            "description": "Generic work.",
+                            "amount": 1200,
+                            "start_date": "",
+                            "completion_date": "",
+                        }
+                    ],
+                    "questions": [],
+                }
+                return SimpleNamespace(output_text=json.dumps(payload))
+
+        fake_client = SimpleNamespace(responses=FakeResponses())
+
+        cases = [
+            (
+                make_agreement(
+                    project_title="Siding Replacement",
+                    project_subtype="Siding Replacement",
+                    description="Replace siding on a single-story home with trim repairs and cleanup.",
+                    answers={"measurements_provided": "Yes", "measurement_exterior_square_footage": "1200"},
+                ),
+                [
+                    "Site Preparation and Material Staging",
+                    "Remove Existing Siding",
+                    "Install New Siding and Trim",
+                    "Final Inspection and Cleanup",
+                ],
+                "replace siding",
+            ),
+            (
+                make_agreement(
+                    project_title="Roof Replacement",
+                    project_subtype="Roof Replacement",
+                    description="Replace roof with new shingles and cleanup.",
+                    answers={"measurements_provided": "Yes", "measurement_cubic_yards": "3"},
+                ),
+                [
+                    "Site Setup and Safety Prep",
+                    "Remove Existing Roofing",
+                    "Install New Roofing System",
+                    "Final Inspection and Cleanup",
+                ],
+                "replace roof",
+            ),
+            (
+                make_agreement(
+                    project_title="Painting",
+                    project_type="Painting",
+                    project_subtype="Interior Painting",
+                    description="Paint bedroom walls and trim.",
+                    answers={"measurements_provided": "Yes", "measurement_room_count": "3"},
+                ),
+                [
+                    "Prep Surfaces and Protect Areas",
+                    "Prime and Paint",
+                    "Touch-Ups and Cleanup",
+                ],
+                "paint bedroom",
+            ),
+        ]
+
+        with patch(
+            "projects.ai.agreement_milestone_writer._require_openai_client",
+            return_value=fake_client,
+        ), patch(
+            "projects.ai.agreement_milestone_writer._model_name",
+            return_value="test-model",
+        ):
+            for agreement, expected_titles, context_phrase in cases:
+                result = suggest_scope_and_milestones(agreement=agreement, notes="")
+                self.assertEqual([row["title"] for row in result["milestones"]], expected_titles)
+                self.assertTrue(all("\n-" in row["description"] for row in result["milestones"]))
+                self.assertTrue(all("kitchen" not in row["title"].lower() for row in result["milestones"]))
+                self.assertTrue(all("generic" not in row["description"].lower() for row in result["milestones"]))
+                self.assertIn(context_phrase.split()[0], agreement.description.lower())
+
     def test_service_removes_bathroom_tile_phase_when_scope_is_excluded(self):
         agreement = self._agreement(
             project_subtype="Bathroom Remodel",
