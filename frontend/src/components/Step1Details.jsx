@@ -887,6 +887,7 @@ export default function Step1Details({
       safeTrim(assistantDraftPayload?.description)
   );
   const projectDetailsSectionRef = useRef(null);
+  const startModeChooserRef = useRef(null);
   const projectDetailsPulseTimerRef = useRef(null);
   const projectDetailsScrollFrameRef = useRef(null);
   const projectDetailsFocusFrameRef = useRef(null);
@@ -2290,6 +2291,17 @@ export default function Step1Details({
     }
   }
 
+  function scrollToStartModeChooser() {
+    if (typeof window === "undefined") return;
+    const target = startModeChooserRef.current;
+    if (!target) return;
+    try {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch {
+      target.scrollIntoView();
+    }
+  }
+
   function handleBuildAgreementWithoutTemplate() {
     setAiSetupBusy(false);
     setAiSetupError("");
@@ -2476,6 +2488,8 @@ export default function Step1Details({
   const aiCompactRecommendationConfidence = normalizeTemplateConfidenceLevel(
     recommendationConfidence || "low"
   );
+  const isNoTemplateFlow =
+    aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation";
   const shouldShowCompactTemplateRecommendation =
     startMode === "ai" &&
     !appliedTemplateId &&
@@ -3277,6 +3291,7 @@ export default function Step1Details({
 
         {startMode === "ai" &&
         assistantTemplateRecommendations.length &&
+        !isNoTemplateFlow &&
         !shouldShowCompactTemplateRecommendation ? (
           <div
             data-testid="assistant-template-preview-step1"
@@ -3430,7 +3445,98 @@ export default function Step1Details({
                     </button>
                   </div>
                 </div>
-              ) : (
+              ) : aiSetupResult?.kind === "template_match" ? (
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="max-w-3xl">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                      Template match found
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-slate-900">
+                      We found a saved template that may fit this job.
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      You can use it as a starting point or continue building manually.
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid="step1-use-template-button"
+                        onClick={() => handleTemplateApplyWithOptions(aiSetupResult.recommendedTemplate)}
+                        className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                      >
+                        Use Template
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="step1-build-with-ai-instead-button"
+                        onClick={handleUseAiDescriptionOnly}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Build with AI instead
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canResetStep1 && hasResettableStep1State ? (
+                      <button
+                        type="button"
+                        data-testid="step1-reset-form-button"
+                        onClick={() => setShowResetStep1Confirm(true)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Reset form
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation" ? (
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="max-w-3xl">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                      No template found — let&apos;s build this agreement with AI
+                    </div>
+                    <div className="mt-1 text-base font-semibold text-slate-900">
+                      We couldn&apos;t find a saved template that matches this job.
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      We&apos;ll generate a custom agreement based on your description.
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid="step1-review-project-details-jump"
+                        onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
+                        className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                      >
+                        Review Project Details
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="step1-change-description-button"
+                        onClick={() => {
+                          reopenStartModeChooser();
+                          scrollToStartModeChooser();
+                        }}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Change description
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canResetStep1 && hasResettableStep1State ? (
+                      <button
+                        type="button"
+                        data-testid="step1-reset-form-button"
+                        onClick={() => setShowResetStep1Confirm(true)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Reset form
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : aiSetupResult?.kind === "description_only" ? null : (
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -3454,7 +3560,7 @@ export default function Step1Details({
                           onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
                           className="mt-3 inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                         >
-                          Jump ↓
+                          Review Project Details
                         </button>
                       </div>
                   </div>
@@ -3731,10 +3837,10 @@ export default function Step1Details({
             className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm"
           >
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-              Description ready
+              AI draft ready
             </div>
             <div className="mt-2 text-base font-semibold text-slate-900">
-              Refined description added
+              Your editable project details are ready below.
             </div>
             <div className="mt-2 rounded-xl border border-white/80 bg-white/80 px-4 py-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -3748,16 +3854,27 @@ export default function Step1Details({
               {aiSetupResult.message}
             </div>
             <div className="mt-2 text-xs text-slate-600">
-              Review the Project Details section below and keep editing before you continue.
+              Review the Project Details section below, make any changes, then click Save and Next.
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                data-testid="step1-ai-setup-continue-without-template"
-                onClick={handleBuildAgreementWithoutTemplate}
+                data-testid="step1-review-project-details-jump"
+                onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
                 className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               >
-                Continue without template
+                Review Project Details
+              </button>
+              <button
+                type="button"
+                data-testid="step1-change-description-button"
+                onClick={() => {
+                  reopenStartModeChooser();
+                  scrollToStartModeChooser();
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Change description
               </button>
               <button
                 type="button"
@@ -4936,3 +5053,4 @@ export default function Step1Details({
     </>
   );
 }
+

@@ -654,7 +654,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
   await expect(projectDetailsCard).toHaveAttribute('data-emphasis', 'true');
   await expect(page.getByTestId('step1-review-project-details-jump')).toBeVisible();
-  await expect(page.getByTestId('step1-review-project-details-jump')).toContainText('Jump');
+  await expect(page.getByTestId('step1-review-project-details-jump')).toContainText('Review Project Details');
   const beforeJumpBox = await projectDetailsCard.boundingBox();
   await page.getByTestId('step1-review-project-details-jump').click({ force: true });
   await expect.poll(async () => {
@@ -667,7 +667,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
-  await page.getByTestId('step1-change-start-mode').click();
+  await page.getByTestId('step1-change-description-button').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 
@@ -869,14 +869,17 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
   await expect(page.getByTestId('step1-starting-point-error-card')).toHaveCount(0);
   await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
-  await expect(page.getByText('No template found — let\'s build this together')).toBeVisible();
+  await expect(page.getByText('No template found — let\'s build this agreement with AI')).toBeVisible();
+  await expect(page.getByText('Recommended starting point')).toHaveCount(0);
+  await expect(page.getByText('Starting points')).toHaveCount(0);
   await expect(page.getByText('Siding Replacement')).toBeVisible();
+  await expect(page.getByTestId('step1-review-project-details-jump')).toBeVisible();
   await expect(page.getByTestId('step1-ai-setup-build-with-ai')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toHaveValue(
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
   await page.getByTestId('step1-ai-setup-build-with-ai').click();
-  await expect(page.getByTestId('step1-ai-setup-result')).toContainText('Description ready');
+  await expect(page.getByTestId('step1-ai-setup-result')).toContainText('AI draft ready');
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Siding Replacement');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Siding');
@@ -887,7 +890,7 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
     'Work includes removal and replacement of exterior siding on the areas identified in the project description.'
   );
   await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
-  await page.getByTestId('step1-change-start-mode').click();
+  await page.getByTestId('step1-change-description-button').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 });
@@ -1079,10 +1082,13 @@ test('agreement wizard step 1 no-match shows a single build without template pro
   await page.getByTestId('step1-job-description-input').fill('build 12x14 shed');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
+  await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
+  await expect(page.getByText('No template found — let\'s build this agreement with AI')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
-  await expect(page.getByText('No strong template match found')).toHaveCount(0);
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveCount(0);
+  await expect(page.getByText('Recommended starting point')).toHaveCount(0);
+  await expect(page.getByText('Starting points')).toHaveCount(0);
+  await expect(page.getByTestId('step1-ai-setup-build-with-ai')).toBeVisible();
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({

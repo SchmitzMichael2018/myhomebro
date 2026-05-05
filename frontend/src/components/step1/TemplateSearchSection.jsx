@@ -788,11 +788,13 @@ export default function TemplateSearchSection({
               <div className="space-y-4">
                 <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
                   <div className="text-base font-semibold text-slate-900">
-                    {noTemplateMatch ? "No strong template match found" : "Recommended starting point"}
+                    {noTemplateMatch
+                      ? "No template found — let's build this agreement with AI"
+                      : "Recommended starting point"}
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
                     {noTemplateMatch
-                      ? "AI can still help build this agreement from your description."
+                      ? "We couldn't find a saved template that matches this job. MyHomeBro prepared editable project details from your description."
                       : "Select a template to preview it, or build the agreement directly from your description."}
                   </div>
                   <div className="mt-3">
@@ -803,16 +805,12 @@ export default function TemplateSearchSection({
                       data-testid="step1-build-agreement-ai-button"
                       className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                     >
-                      {startingPointBusy && startMode === "ai"
-                        ? "Building agreement draft..."
-                        : startMode === "template" && startingPointBusy
-                        ? "Building agreement draft..."
-                        : "Build Agreement with AI"}
+                      {startingPointBusy ? "Building agreement draft..." : "Build with AI"}
                     </button>
                   </div>
                 </div>
 
-                {topRecommendedTemplates.length ? (
+                {!noTemplateMatch && topRecommendedTemplates.length ? (
                   <div className="space-y-3">
                     <div className="text-sm font-semibold text-slate-900">
                       Recommended starting point
@@ -918,7 +916,7 @@ export default function TemplateSearchSection({
                               >
                               {startingPointBusy && startMode === "ai"
                                 ? "Building agreement draft..."
-                                : "Build Agreement with AI"}
+                                : "Build with AI"}
                               </button>
                             </div>
                           </div>
