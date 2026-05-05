@@ -1299,27 +1299,27 @@ export default function AdminDashboard() {
                                 onClick={() => goToAgreementPricing(a.id)}
                                 className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
                               >
-                                Pricing
+                                Financials
                               </button>
                               <button
                                 onClick={() => viewAgreementAiContext(a.id)}
                                 className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
                               >
-                                View AI
+                                AI Context
                               </button>
                               <button
                                 onClick={() => refreshAgreementPricing(a.id)}
                                 disabled={agreementOpBusy === `pricing-${a.id}`}
                                 className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                               >
-                                {agreementOpBusy === `pricing-${a.id}` ? "Refreshing..." : "Refresh Pricing"}
+                                {agreementOpBusy === `pricing-${a.id}` ? "Recalculating..." : "Recalculate Pricing"}
                               </button>
                               <button
                                 onClick={() => resendAgreementSignature(a.id)}
                                 disabled={agreementOpBusy === `signature-${a.id}`}
                                 className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                               >
-                                {agreementOpBusy === `signature-${a.id}` ? "Sending..." : "Resend Email"}
+                                {agreementOpBusy === `signature-${a.id}` ? "Sending..." : "Resend Customer Email"}
                               </button>
                             </div>
                           </Td>

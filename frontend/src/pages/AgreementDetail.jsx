@@ -197,6 +197,36 @@ function payoutOrchestrationLabel(value) {
   return String(value || "Not yet due").replaceAll("_", " ");
 }
 
+function normalizeAdminTab(tab) {
+  const normalized = String(tab || "").trim().toLowerCase();
+  if (!normalized) return "overview";
+  if (normalized === "pricing" || normalized === "financials") return "financials";
+  if (["overview", "milestones", "communication", "disputes", "ai", "audit"].includes(normalized)) {
+    return normalized;
+  }
+  return "overview";
+}
+
+function adminTabToQuery(tab) {
+  const normalized = normalizeAdminTab(tab);
+  if (normalized === "overview") return "";
+  if (normalized === "financials") return "pricing";
+  return normalized;
+}
+
+function adminRiskToneLabel(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "high") return { tone: "bad", label: "High" };
+  if (normalized === "medium") return { tone: "warn", label: "Medium" };
+  return { tone: "good", label: "Low" };
+}
+
+function titleCase(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 function normalizeAgreement(raw) {
   if (!raw || typeof raw !== "object")
     return { id: null, title: "—", invoices: [], milestones: [] };
@@ -282,6 +312,430 @@ function openInNewTab(url) {
   window.open(abs, "_blank", "noopener,noreferrer");
 }
 
+function AdminAgreementCommandCenter({
+  agreement,
+  norm,
+  id,
+  adminTab,
+  onBackToList,
+  onNavigateTab,
+  onRefreshPricing,
+  onResendSignature,
+  onGoToFeeAudit,
+  fundingPreview,
+  adminAiContext,
+  adminAiLoading,
+  agreementOpsMsg,
+}) {
+  const contractValue = toMoney(norm?.totalCost || agreement?.total_cost || 0);
+  const funded = toMoney(
+    pick(
+      agreement?.escrow_funded_amount,
+      agreement?.escrow_funded_total,
+      fundingPreview?.homeowner_escrow,
+      0
+    )
+  );
+  const released = toMoney(
+    pick(
+      agreement?.escrow_released_amount,
+      agreement?.escrow_released_total,
+      fundingPreview?.released_amount,
+      0
+    )
+  );
+  const refunded = toMoney(agreement?.escrow_refunded_amount || 0);
+  const pendingRelease = Math.max(funded - released - refunded, 0);
+  const platformFeeEstimate = toMoney(
+    pick(fundingPreview?.platform_fee, agreement?.platform_fee_estimate, agreement?.platform_fee, 0)
+  );
+  const openDisputes = Number(
+    agreement?.open_disputes_count || agreement?.dispute_count || agreement?.disputes_count || 0
+  );
+  const contractorLabel =
+    pick(
+      agreement?.contractor_name,
+      agreement?.contractor?.business_name,
+      agreement?.contractor?.name,
+      agreement?.contractor?.display_name,
+      agreement?.assigned_contractor_name
+    ) || "—";
+  const customerLabel = norm?.homeownerName || agreement?.homeowner_name || "—";
+  const statusLabel = titleCase(agreement?.status || agreement?.workflow_status || agreement?.state || "draft");
+  const riskTone = adminRiskToneLabel(
+    openDisputes > 0 || pendingRelease > contractValue * 0.5
+      ? "high"
+      : pendingRelease > contractValue * 0.2 || String(agreement?.pricing_strategy || "").toLowerCase() === "requires_sub_quote"
+        ? "medium"
+        : "low"
+  );
+  const tabs = [
+    ["overview", "Overview"],
+    ["financials", "Financials"],
+    ["milestones", "Milestones"],
+    ["communication", "Communication"],
+    ["disputes", "Disputes"],
+    ["ai", "AI Context"],
+    ["audit", "Audit Log"],
+  ];
+  const milestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
+  const disputeRows = Array.isArray(agreement?.disputes) ? agreement.disputes : [];
+  const canonicalTab = normalizeAdminTab(adminTab);
+  const activeFinancials = canonicalTab === "financials";
+  const activeOverview = canonicalTab === "overview";
+  const activeMilestones = canonicalTab === "milestones";
+  const activeCommunication = canonicalTab === "communication";
+  const activeDisputes = canonicalTab === "disputes";
+  const activeAi = canonicalTab === "ai";
+  const activeAudit = canonicalTab === "audit";
+
+  const setTab = (nextTab) => {
+    const queryTab = adminTabToQuery(nextTab);
+    onNavigateTab(queryTab ? `?tab=${encodeURIComponent(queryTab)}` : "");
+  };
+
+  return (
+    <ContractorPageSurface
+      eyebrow="Admin"
+      title="Admin Agreement Detail"
+      subtitle="Command center for financial, operational, communication, and audit review."
+      actions={
+        <button
+          onClick={onBackToList}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          Back to Admin Agreements
+        </button>
+      }
+    >
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-3xl font-bold tracking-tight text-slate-950">
+                {norm?.title || agreement?.project_title || `Agreement #${id}`}
+              </h2>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-extrabold text-slate-700">
+                #{id}
+              </span>
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${riskTone.tone === "bad" ? "border-rose-200 bg-rose-50 text-rose-800" : riskTone.tone === "warn" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+                Risk {riskTone.label}
+              </span>
+            </div>
+            <div className="text-sm text-slate-700">
+              <span className="font-semibold text-slate-900">Status:</span> {statusLabel}
+              <span className="mx-2 text-slate-300">|</span>
+              <span className="font-semibold text-slate-900">Contractor:</span> {contractorLabel}
+              <span className="mx-2 text-slate-300">|</span>
+              <span className="font-semibold text-slate-900">Customer:</span> {customerLabel}
+            </div>
+          </div>
+          <div className="grid min-w-[320px] grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <SummaryCard label="Contract Value" value={formatMoney(contractValue)} className="border-slate-200 bg-slate-50" />
+            <SummaryCard label="Funded" value={formatMoney(funded)} className="border-slate-200 bg-slate-50" />
+            <SummaryCard label="Released" value={formatMoney(released)} className="border-slate-200 bg-slate-50" />
+            <SummaryCard label="Pending Release" value={formatMoney(pendingRelease)} className="border-slate-200 bg-slate-50" />
+            <SummaryCard label="Platform Fee Estimate" value={formatMoney(platformFeeEstimate)} className="border-slate-200 bg-slate-50" />
+            <SummaryCard label="Risk Level" value={riskTone.label} className="border-slate-200 bg-slate-50" />
+          </div>
+        </div>
+      </section>
+
+      <div className="mt-5 flex flex-wrap gap-2" data-testid="admin-agreement-tabs">
+        {tabs.map(([tab, label]) => {
+          const active = canonicalTab === tab;
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setTab(tab)}
+              className={[
+                "rounded-full border px-4 py-2 text-sm font-extrabold transition",
+                active
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+              ].join(" ")}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {agreementOpsMsg ? (
+        <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+          {agreementOpsMsg}
+        </div>
+      ) : null}
+
+      {activeOverview ? (
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Project Summary</div>
+            <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">
+              {agreement?.description || agreement?.scope_description || agreement?.summary || "No project summary saved yet."}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Party Summary</div>
+            <div className="mt-2 text-sm text-slate-700">
+              Contractor: {contractorLabel}
+            </div>
+            <div className="mt-1 text-sm text-slate-700">
+              Customer: {customerLabel}
+            </div>
+            <div className="mt-1 text-sm text-slate-700">
+              Agreement ID: {id}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Signature / PDF Status</div>
+            <div className="mt-2 text-sm text-slate-700">
+              Signature: {norm?.isSigned ? "Signed" : "Pending"}
+            </div>
+            <div className="mt-1 text-sm text-slate-700">
+              PDF versions: {Array.isArray(norm?.pdfVersions) ? norm.pdfVersions.length : 0}
+            </div>
+            <div className="mt-1 text-sm text-slate-700">
+              Current PDF: {norm?.currentPdfUrl ? "Available" : "Not available"}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Admin Notes</div>
+            <div className="mt-2 text-sm text-slate-600">
+              Admin-only notes placeholder.
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeFinancials ? (
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Escrow Summary</div>
+            <div className="mt-2 grid gap-2 text-sm text-slate-700">
+              <div>Funded: {formatMoney(funded)}</div>
+              <div>Released: {formatMoney(released)}</div>
+              <div>Pending Release: {formatMoney(pendingRelease)}</div>
+              <div>Refunded: {formatMoney(refunded)}</div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Milestone Payment Breakdown</div>
+            <div className="mt-2 space-y-2 text-sm text-slate-700">
+              {milestones.length ? milestones.slice(0, 6).map((m) => (
+                <div key={m.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                  <span className="font-semibold text-slate-900">{m.title || `Milestone #${m.id}`}</span>
+                  <span>{formatMoney(m.amount || 0)}</span>
+                </div>
+              )) : <div>No milestone rows available.</div>}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Platform Revenue Estimate</div>
+            <div className="mt-2 text-sm text-slate-700">
+              {platformFeeEstimate ? formatMoney(platformFeeEstimate) : "Not available yet."}
+            </div>
+            {fundingPreview?.rate != null ? (
+              <div className="mt-1 text-xs text-slate-500">
+                Current rate: {(Number(fundingPreview.rate) * 100).toFixed(2)}% + $1
+              </div>
+            ) : null}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Actions</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onRefreshPricing(id)}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-slate-800"
+              >
+                Recalculate Pricing
+              </button>
+              <button
+                type="button"
+                onClick={onGoToFeeAudit}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+              >
+                View Fee Audit
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeMilestones ? (
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-sm font-extrabold text-slate-900">Milestones</div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left">Milestone</th>
+                  <th className="px-3 py-2 text-left">Amount</th>
+                  <th className="px-3 py-2 text-left">Status</th>
+                  <th className="px-3 py-2 text-left">Due</th>
+                  <th className="px-3 py-2 text-left">Approval / Release</th>
+                </tr>
+              </thead>
+              <tbody>
+                {milestones.length ? milestones.map((m) => (
+                  <tr key={m.id} className="border-b border-slate-100">
+                    <td className="px-3 py-2 font-semibold text-slate-900">{m.title || `Milestone #${m.id}`}</td>
+                    <td className="px-3 py-2">{formatMoney(m.amount || 0)}</td>
+                    <td className="px-3 py-2">{milestoneStatusLabel(m)}</td>
+                    <td className="px-3 py-2">{m.due_date || m.completion_date || "—"}</td>
+                    <td className="px-3 py-2">
+                      {m.approved_at ? "Approved" : "Pending"} / {m.released_at ? "Released" : "Not released"}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-4 text-slate-600">No milestone rows available.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {activeCommunication ? (
+        <div className="mt-5 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Communication History</div>
+            <div className="mt-2 text-sm text-slate-600">
+              Email and notification history placeholder.
+            </div>
+            {agreement?.last_sms_event?.summary ? (
+              <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
+                Last message: {agreement.last_sms_event.summary}
+              </div>
+            ) : null}
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm font-extrabold text-slate-900">Communication Actions</div>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={onResendSignature}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-extrabold text-white hover:bg-slate-800"
+              >
+                Resend Signature Request
+              </button>
+              <SendFundingLinkButton
+                agreementId={id}
+                isFullySigned={!!norm?.isSigned}
+                amount={contractValue}
+                label="Resend Payment Link"
+                variant="secondary"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeDisputes ? (
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-sm font-extrabold text-slate-900">Related Disputes</div>
+          <div className="mt-2 text-sm text-slate-600">
+            {disputeRows.length ? `${disputeRows.length} related dispute(s) available.` : "No dispute rows included in this agreement payload."}
+          </div>
+          <div className="mt-3 space-y-2">
+            {disputeRows.slice(0, 4).map((d) => (
+              <div key={d.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold text-slate-900">Dispute #{d.id}</div>
+                  <div className="text-xs font-extrabold text-slate-700">{isDisputeTerminal(d.status) ? "Resolved — read only" : titleCase(d.status || "open")}</div>
+                </div>
+                <div className="mt-2 text-xs text-slate-600">
+                  {d.summary || d.reason || "No summary available."}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button type="button" className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-slate-800">
+                    View
+                  </button>
+                  {isDisputeTerminal(d.status) ? (
+                    <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50">
+                      Archive
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {activeAi ? (
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-extrabold text-slate-900">AI Context</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Saved AI title, template, confidence, and reasons.
+              </div>
+            </div>
+            <button
+              type="button"
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+              onClick={() => toast("AI Review placeholder.")}
+            >
+              Run AI Review
+            </button>
+          </div>
+
+          {adminAiContext ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Suggested title</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{adminAiContext.suggested_title || "Not available"}</div>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Template</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{adminAiContext.template_name || "Not available"}</div>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Confidence</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{adminAiContext.confidence || "Not available"}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+              No AI context saved for this agreement.
+            </div>
+          )}
+
+          {adminAiContext?.reason ? (
+            <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
+              <span className="font-extrabold text-slate-900">Reason:</span> {adminAiContext.reason}
+            </div>
+          ) : null}
+
+          {adminAiLoading ? (
+            <div className="mt-3 text-sm text-slate-600">Loading AI context…</div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {activeAudit ? (
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-sm font-extrabold text-slate-900">Audit Log</div>
+          <div className="mt-2 text-sm text-slate-600">
+            Timeline placeholder using agreement timestamps and document history.
+          </div>
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">Created: {fmtDateTime(agreement?.created_at)}</div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">Updated: {fmtDateTime(agreement?.updated_at)}</div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">Signed: {fmtDateTime(agreement?.signed_at || agreement?.signed_date)}</div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">PDF versions tracked: {Array.isArray(norm?.pdfVersions) ? norm.pdfVersions.length : 0}</div>
+          </div>
+        </div>
+      ) : null}
+    </ContractorPageSurface>
+  );
+}
+
 export default function AgreementDetail({ adminMode = false }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -289,6 +743,7 @@ export default function AgreementDetail({ adminMode = false }) {
   const { user, ready, isAuthed } = useAuth();
   const isAdminMode = !!adminMode;
   const activeTab = useMemo(() => new URLSearchParams(location.search).get("tab") || "", [location.search]);
+  const adminTab = useMemo(() => normalizeAdminTab(activeTab), [activeTab]);
 
   const [agreement, setAgreement] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -317,6 +772,8 @@ export default function AgreementDetail({ adminMode = false }) {
   const [paymentTargetDraw, setPaymentTargetDraw] = useState(null);
   const [externalPayments, setExternalPayments] = useState([]);
   const [externalPaymentsLoading, setExternalPaymentsLoading] = useState(false);
+  const [agreementOpsMsg, setAgreementOpsMsg] = useState("");
+  const [agreementOpBusy, setAgreementOpBusy] = useState("");
   const [adminAiContext, setAdminAiContext] = useState(null);
   const [adminAiLoading, setAdminAiLoading] = useState(false);
   const [drawForm, setDrawForm] = useState({ title: "", notes: "", percents: {} });
@@ -405,6 +862,37 @@ export default function AgreementDetail({ adminMode = false }) {
       setLoading(false);
     }
   };
+
+  async function refreshAgreementPricing(agreementId) {
+    setAgreementOpsMsg("");
+    setAgreementOpBusy(`pricing-${agreementId}`);
+    try {
+      const res = await api.post(`/projects/admin/agreements/${agreementId}/refresh-pricing/`);
+      setAgreementOpsMsg(res.data?.detail || "Pricing guidance refreshed.");
+      navigate(`/app/admin/agreements/${agreementId}?tab=pricing`);
+    } catch (err) {
+      console.error("Admin pricing refresh error:", err);
+      setAgreementOpsMsg("Failed to refresh pricing guidance.");
+    } finally {
+      setAgreementOpBusy("");
+    }
+  }
+
+  async function resendAgreementSignature(agreementId) {
+    setAgreementOpsMsg("");
+    setAgreementOpBusy(`signature-${agreementId}`);
+    try {
+      const res = await api.post(`/projects/admin/agreements/${agreementId}/resend-signature/`);
+      setAgreementOpsMsg(res.data?.detail || "Signature invite resent.");
+    } catch (err) {
+      console.error("Admin resend signature error:", err);
+      setAgreementOpsMsg(
+        err?.response?.data?.detail || "Failed to resend the agreement signature invite."
+      );
+    } finally {
+      setAgreementOpBusy("");
+    }
+  }
 
   useEffect(() => {
     fetchAgreement();
@@ -878,7 +1366,7 @@ export default function AgreementDetail({ adminMode = false }) {
   };
 
   useEffect(() => {
-    if (!isAdminMode || activeTab !== "ai" || !id) {
+    if (!isAdminMode || adminTab !== "ai" || !id) {
       setAdminAiContext(null);
       setAdminAiLoading(false);
       return undefined;
@@ -904,10 +1392,30 @@ export default function AgreementDetail({ adminMode = false }) {
     return () => {
       cancelled = true;
     };
-  }, [activeTab, id, isAdminMode]);
+  }, [adminTab, id, isAdminMode]);
 
   if (loading) return <div className="p-6">Loading…</div>;
   if (!norm.id) return <div className="p-6">Agreement not found.</div>;
+
+  if (isAdminMode) {
+    return (
+      <AdminAgreementCommandCenter
+        agreement={agreement}
+        norm={norm}
+        id={id}
+        adminTab={adminTab}
+        onBackToList={() => navigate("/app/admin?view=agreements")}
+        onNavigateTab={(suffix) => navigate(`/app/admin/agreements/${id}${suffix || ""}`)}
+        onRefreshPricing={refreshAgreementPricing}
+        onResendSignature={resendAgreementSignature}
+        onGoToFeeAudit={() => navigate("/app/admin?view=fee_audit")}
+        fundingPreview={fundingPreview}
+        adminAiContext={adminAiContext}
+        adminAiLoading={adminAiLoading}
+        agreementOpsMsg={agreementOpsMsg}
+      />
+    );
+  }
 
   const submitInvitation = async () => {
     if (!invitationForm.invite_email.trim()) {

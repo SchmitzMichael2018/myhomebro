@@ -466,16 +466,21 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByText('Kitchen Remodel')).toBeVisible();
   await page.getByRole('button', { name: 'View Agreement' }).first().click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321$/);
+  await expect(page.getByRole('heading', { name: 'Admin Agreement Detail' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Back to Admin Agreements' })).toBeVisible();
+  await expect(page.getByTestId('admin-agreement-tabs')).toBeVisible();
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Pricing' }).first().click();
+  await page.getByRole('button', { name: 'Financials' }).first().click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=pricing$/);
+  await expect(page.getByText('Escrow Summary')).toBeVisible();
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'View AI' }).first().click();
+  await page.getByRole('button', { name: 'AI Context' }).first().click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=ai$/);
-  await expect(page.getByTestId('admin-agreement-ai-context')).toBeVisible();
+  await expect(page.getByText('Saved AI title, template, confidence, and reasons.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Run AI Review' })).toBeVisible();
+  await expect(page.getByText('Suggested title')).toBeVisible();
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Refresh Pricing' }).first().click();
+  await page.getByRole('button', { name: 'Recalculate Pricing' }).first().click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=pricing$/);
 
   await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
