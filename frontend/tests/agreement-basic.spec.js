@@ -1120,6 +1120,8 @@ test('agreement wizard step 1 no-template build with ai does not leave a ghost c
   await page.getByTestId('step1-job-description-input').fill('Patio extension');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
   await expect(page.getByTestId('step1-no-template-card')).toBeVisible();
   await expect(page.getByText('No template found')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();

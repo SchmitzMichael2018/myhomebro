@@ -716,6 +716,7 @@ function StepSection({
   emphasis = false,
   sectionRef = null,
   testId = "",
+  actions = null,
 }) {
   return (
     <section
@@ -736,11 +737,14 @@ function StepSection({
           <h3 className="text-base font-semibold text-slate-900">{title}</h3>
           {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
         </div>
-        {highlighted ? (
-          <span className="inline-flex shrink-0 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800">
-            {highlightLabel}
-          </span>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {actions}
+          {highlighted ? (
+            <span className="inline-flex shrink-0 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+              {highlightLabel}
+            </span>
+          ) : null}
+        </div>
       </div>
       {children}
     </section>
@@ -2907,7 +2911,19 @@ export default function Step1Details({
           safeTrim(dLocal?.project_type) ||
           safeTrim(dLocal?.project_subtype) ||
           safeTrim(dLocal?.description)
-      ));
+      )) ||
+    Boolean(appliedTemplateId) ||
+    (isEdit && hasMeaningfulStep1DraftState({ agreement, dLocal }));
+  const isLoadingState = Boolean(aiSetupBusy) && !isAiBuiltState;
+  const isTemplateFoundState =
+    !isLoadingState && aiSetupResult?.kind === "template_match" && !isAiBuiltState;
+  const isNoTemplateState =
+    !isLoadingState &&
+    !isAiBuiltState &&
+    (aiSetupResult?.kind === "no_template" ||
+      aiSetupResult?.kind === "fallback_recommendation" ||
+      noTemplateMatch);
+  const isInitialInputState = !isLoadingState && !isAiBuiltState && !isTemplateFoundState && !isNoTemplateState;
   const isNoTemplateFlow =
     aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation";
   const shouldShowCompactTemplateRecommendation =
@@ -3660,11 +3676,14 @@ export default function Step1Details({
       : startMode === "template"
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Review the agreement details below and keep editing.";
-  const shouldShowProjectDetails = true;
+  const shouldShowProjectDetails = isAiBuiltState;
   const showStep1Clarifications = false;
-  const shouldShowStartModePanel = !isAiBuiltState;
+  const shouldShowStartModePanel = !isAiBuiltState && !isLoadingState;
   const shouldShowTemplateBrowserSection =
-    !isAiBuiltState && startMode === "template" && (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
+    !isAiBuiltState &&
+    !isLoadingState &&
+    startMode === "template" &&
+    (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -3753,11 +3772,11 @@ export default function Step1Details({
               </div>
             ) : null}
 
-            {assistantGuidedFlow?.guided_question ? (
-              <div
-                data-testid="assistant-guided-step1"
-                className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
-              >
+        {assistantGuidedFlow?.guided_question ? (
+          <div
+            data-testid="assistant-guided-step1"
+            className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+          >
                 <div className="font-semibold">Guided next step</div>
                 <div className="mt-1">{assistantGuidedFlow.guided_question}</div>
                 {assistantGuidedFlow.why_this_matters ? (
@@ -3765,13 +3784,14 @@ export default function Step1Details({
                     {assistantGuidedFlow.why_this_matters}
                   </div>
                 ) : null}
-              </div>
-            ) : null}
+          </div>
+        ) : null}
 
-            {startMode === "ai" &&
-            assistantTemplateRecommendations.length &&
-            !isNoTemplateFlow &&
-            !shouldShowCompactTemplateRecommendation ? (
+        {isInitialInputState &&
+        startMode === "ai" &&
+        assistantTemplateRecommendations.length &&
+        !isNoTemplateFlow &&
+        !shouldShowCompactTemplateRecommendation ? (
               <div
                 data-testid="assistant-template-preview-step1"
                 className={`mb-3 rounded-md border px-4 py-3 text-sm ${
@@ -3797,13 +3817,13 @@ export default function Step1Details({
                     {assistantTopTemplatePreview.milestone_count === 1 ? "" : "s"}.
                   </div>
                 ) : null}
-              </div>
-            ) : null}
+          </div>
+        ) : null}
 
-            {assistantProactiveRecommendations.length ? (
-              <div
-                data-testid="assistant-proactive-step1"
-                className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        {isInitialInputState && assistantProactiveRecommendations.length ? (
+          <div
+            data-testid="assistant-proactive-step1"
+            className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
               >
                 <div className="font-semibold">Proactive recommendations</div>
                 <div className="mt-2 space-y-2">
@@ -3814,26 +3834,26 @@ export default function Step1Details({
                     </div>
                   ))}
                 </div>
-              </div>
-            ) : null}
+          </div>
+        ) : null}
 
-            {assistantPredictiveInsights.length ? (
-              <div
-                data-testid="assistant-predictive-step1"
-                className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+        {isInitialInputState && assistantPredictiveInsights.length ? (
+          <div
+            data-testid="assistant-predictive-step1"
+            className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
               >
                 <div className="font-semibold">Predictive insight</div>
                 <div className="mt-1">{assistantPredictiveInsights[0]?.title}</div>
                 <div className="mt-1 text-xs text-slate-700">
                   {assistantPredictiveInsights[0]?.summary}
                 </div>
-              </div>
-            ) : null}
+          </div>
+        ) : null}
 
-            {assistantConfirmationRequiredActions.length ? (
-              <div
-                data-testid="assistant-confirmation-step1"
-                className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+        {isInitialInputState && assistantConfirmationRequiredActions.length ? (
+          <div
+            data-testid="assistant-confirmation-step1"
+            className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
               >
                 <div className="font-semibold">Actions requiring confirmation</div>
                 <div className="mt-1 text-xs text-rose-800/90">
@@ -3864,10 +3884,34 @@ export default function Step1Details({
                   </ul>
                 ) : null}
               </div>
-            ) : null}
+        ) : null}
 
-            {shouldShowStartModePanel ? (
-              <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        {isLoadingState ? (
+          <div
+            data-testid="step1-starting-point-loading-card"
+            aria-live="polite"
+            className="rounded-2xl border border-indigo-200 bg-white px-4 py-4 shadow-sm"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+              Just a moment...
+            </div>
+            <div className="mt-2 text-base font-semibold text-slate-900">
+              {startingPointStatusTitle}
+            </div>
+            <div className="mt-1 text-sm text-slate-600">{startingPointStatusMessage}</div>
+            <ul className="mt-3 space-y-1 text-sm text-slate-700">
+              {startingPointChecklist.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-1 inline-block h-2 w-2 rounded-full bg-indigo-400" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {shouldShowStartModePanel ? (
+          <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             {startModeCommitted ? (
           <div
             data-testid="step1-start-mode-summary"
@@ -4711,6 +4755,18 @@ export default function Step1Details({
             description={projectDetailsDescription}
             sectionRef={projectDetailsSectionRef}
             testId="step1-project-details-card"
+            actions={
+              isAiBuiltState ? (
+                <button
+                  type="button"
+                  data-testid="step1-start-over-button"
+                  onClick={() => setShowResetStep1Confirm(true)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Start over
+                </button>
+              ) : null
+            }
             highlighted={hasAiSectionHighlight(
               "project_title",
               "project_type",
