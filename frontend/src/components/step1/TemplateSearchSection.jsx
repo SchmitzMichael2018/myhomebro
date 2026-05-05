@@ -289,6 +289,7 @@ export default function TemplateSearchSection({
   onGenerateAiDraft = null,
   onContinueToStep2 = null,
   onStartFromScratch = null,
+  onReviewProjectDetails = null,
   onResetStep1 = null,
   jobPrompt = "",
   spreadEnabled,
@@ -793,6 +794,7 @@ export default function TemplateSearchSection({
           >
             {!detailTemplate ? (
               <div className="space-y-4">
+                {showNoStrongMatchPanel ? (
                 <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
                   <div
                     data-testid="step1-no-template-card"
@@ -812,7 +814,7 @@ export default function TemplateSearchSection({
                       <button
                         type="button"
                         data-testid="step1-review-project-details-jump"
-                        onClick={handleBuildWithoutTemplate}
+                        onClick={() => onReviewProjectDetails?.()}
                         disabled={locked || startingPointBusy}
                         className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >
@@ -862,6 +864,7 @@ export default function TemplateSearchSection({
                     </div>
                   </div>
                 </div>
+                ) : null}
 
                 {!noTemplateMatch && topRecommendedTemplates.length ? (
                   <div className="space-y-3">

@@ -1,4 +1,4 @@
-// frontend/src/components/Step1Details.jsx
+﻿// frontend/src/components/Step1Details.jsx
 // v2026-03-17-step1-template-apply-sync
 // Updates:
 // - consumes returned agreement payload after template apply
@@ -163,7 +163,7 @@ function truncateProjectTitle(value = "", maxLength = 60) {
   const text = safeTrim(value);
   if (!text || text.length <= maxLength) return text;
   const shortened = text.slice(0, maxLength - 1);
-  return `${shortened.replace(/\s+\S*$/, "").trim()}…`;
+  return `${shortened.replace(/\s+\S*$/, "").trim()}â€¦`;
 }
 
 function extractTitleQualifier(text = "", subtype = "") {
@@ -298,7 +298,7 @@ function LeadContextField({ label, value }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
       <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-medium text-slate-900">{value || "â€”"}</div>
+      <div className="mt-1 text-sm font-medium text-slate-900">{value || "Ã¢â‚¬â€"}</div>
     </div>
   );
 }
@@ -1183,6 +1183,7 @@ export default function Step1Details({
   const [showResetStep1Confirm, setShowResetStep1Confirm] = useState(false);
   const [dismissedAiTemplateRecommendation, setDismissedAiTemplateRecommendation] =
     useState(false);
+  const [step1NoTemplateBuilt, setStep1NoTemplateBuilt] = useState(false);
   const [aiSetupBusy, setAiSetupBusy] = useState(false);
   const [aiSetupError, setAiSetupError] = useState("");
   const [aiSetupResult, setAiSetupResult] = useState(null);
@@ -2436,6 +2437,7 @@ export default function Step1Details({
     setAiSetupError("");
     setAiSetupResult(null);
     setDismissedAiTemplateRecommendation(true);
+    setStep1NoTemplateBuilt(true);
     setSelectedTemplateId(null);
     setTemplateSearch("");
     setAiPreview("");
@@ -2505,6 +2507,10 @@ export default function Step1Details({
     applyNoTemplateFallbackSetup();
   }
 
+  function handleReviewProjectDetails() {
+    scrollToProjectDetails({ allowAutoScroll: false });
+  }
+
   async function handleTemplateApplyWithOptions(template, options = {}) {
     if (typeof handleApplyTemplate !== "function") return null;
     return handleApplyTemplate(template, options);
@@ -2513,6 +2519,7 @@ export default function Step1Details({
   function requestStep1AiSetup(prompt) {
     const roughDescription = safeTrim(prompt);
     if (!roughDescription) return;
+    setStep1NoTemplateBuilt(false);
 
     const hasSavedStep1State =
       Boolean(agreementId) &&
@@ -2881,9 +2888,9 @@ export default function Step1Details({
       refinedDescription,
       message:
         message ||
-        "No template found � let's build this together. We'll generate a custom agreement based on your description.",
+        "No template found — let's build this together. We'll generate a custom agreement based on your description.",
       recommendationReason:
-        recommendationReason || "No template found � let's build this together.",
+        recommendationReason || "No template found — let's build this together.",
       recommendedTemplate: null,
       suggestedTitle: nextTitle || deterministicFallback.project_title || "Custom Project",
       suggestedProjectType: safeTrim(
@@ -2900,7 +2907,7 @@ export default function Step1Details({
       ),
       setupFieldKeys: Array.isArray(setupFieldKeys) ? setupFieldKeys : [],
       recommendationSource: "fallback",
-      fallbackLabel: "No template found � let's build this together",
+      fallbackLabel: "No template found — let's build this together",
     };
   }
 
@@ -3066,7 +3073,7 @@ export default function Step1Details({
             suggestedSetupValues: deterministicApplied?.nextValues || suggestedSetupValues,
             setupFieldKeys: deterministicApplied?.changedKeys || setupFieldKeys,
             recommendationReason: "Recommended from your description.",
-            message: "No template found � let's build this together.",
+            message: "No template found — let's build this together.",
           })
         );
         setSelectedTemplateId(null);
@@ -3157,6 +3164,7 @@ export default function Step1Details({
       setCustomerAddrMissing(null);
       setShowQuickAdd(false);
       setShowResetStep1Confirm(false);
+      setStep1NoTemplateBuilt(false);
       clearStep1SessionState();
       setStep1ManualBrowseSignal(0);
       setStartMode("manual");
@@ -3223,7 +3231,7 @@ export default function Step1Details({
       safeTrim(dLocal?.project_title),
     ].filter(Boolean);
 
-    return parts.length ? parts.join(" – ") : "My New Template";
+    return parts.length ? parts.join(" â€“ ") : "My New Template";
   }, [dLocal?.project_type, dLocal?.project_subtype, dLocal?.project_title]);
 
   const handleCreateNewType = () => {
@@ -3448,7 +3456,7 @@ export default function Step1Details({
           <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <div className="font-semibold">Locked</div>
             <div className="mt-1 text-xs text-amber-900/90">
-              This agreement is signed/executed. Step 1–3 are read-only. Create an
+              This agreement is signed/executed. Step 1â€“3 are read-only. Create an
               amendment to change details.
             </div>
           </div>
@@ -3517,7 +3525,7 @@ export default function Step1Details({
             <div className="mt-1">{assistantTemplateRecommendations[0]?.name}</div>
             {assistantTemplateRecommendations[0]?.rank_reasons?.length ? (
               <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
-                {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" • ")}
+                {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" â€¢ ")}
               </div>
             ) : null}
             {assistantTopTemplatePreview?.milestone_count ? (
@@ -3623,10 +3631,10 @@ export default function Step1Details({
                   className="rounded-2xl border border-rose-200 bg-white px-4 py-4 shadow-sm"
                 >
                   <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">
-                    Couldn�t finish this step
+                    Couldn’t finish this step
                   </div>
                   <div className="mt-2 text-base font-semibold text-slate-900">
-                    AI couldn�t finish this step. Your description is still saved.
+                    AI couldn’t finish this step. Your description is still saved.
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
                     You can try again or continue manually without losing the work you already entered.
@@ -4089,7 +4097,7 @@ export default function Step1Details({
                 templateDetail={templateDetail}
                 templateDetailLoading={templateDetailLoading}
                 templateDetailErr={templateDetailErr}
-                suppressNoMatchPanel={startMode === "manual" && !aiSetupResult && hasMeaningfulSavedProjectDetails}
+                suppressNoMatchPanel={((startMode === "manual" && !aiSetupResult && hasMeaningfulSavedProjectDetails) || step1NoTemplateBuilt)}
                 aiCredits={aiCredits}
                 aiBusy={aiBusy}
                 aiErr={aiErr}
@@ -4114,6 +4122,7 @@ export default function Step1Details({
                 jobPrompt={step1JobDescriptionPrompt}
                 startingPointBusy={aiSetupBusy}
                 onStartFromScratch={handleBuildAgreementWithoutTemplate}
+                onReviewProjectDetails={handleReviewProjectDetails}
                 onResetStep1={() => setShowResetStep1Confirm(true)}
                 onGenerateAiDraft={requestStep1AiSetup}
                 onContinueToStep2={onStep1Continue}
@@ -4222,7 +4231,7 @@ export default function Step1Details({
           </section>
         ) : null}
 
-        {hasLeadProposalContext && recommendedProjectSetup ? (
+{hasLeadProposalContext && recommendedProjectSetup && !isNoTemplateFlow && !step1NoTemplateBuilt ? (
           <section
             data-testid="recommended-setup-card"
             className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
@@ -4467,7 +4476,7 @@ export default function Step1Details({
                         {recurrenceStartDate
                           ? `Starts ${recurrenceStartDate}`
                           : "Pick a start date to generate the first service occurrence."}
-                        {nextOccurrenceDate ? ` • Next service: ${nextOccurrenceDate}` : ""}
+                        {nextOccurrenceDate ? ` â€¢ Next service: ${nextOccurrenceDate}` : ""}
                       </div>
                     </div>
 
@@ -4658,7 +4667,7 @@ export default function Step1Details({
                       onChange={locked ? undefined : handleStep1LocalChange}
                       disabled={locked}
                   >
-                    <option value="">— Select Type —</option>
+                    <option value="">â€” Select Type â€”</option>
                     {augmentedProjectTypeOptions.map((t) => (
                       <option key={String(t.id ?? t.value)} value={String(t.value)}>
                         {String(t.label)}
@@ -4708,7 +4717,7 @@ export default function Step1Details({
                       disabled={locked || !safeTrim(dLocal.project_type)}
                   >
                     <option value="">
-                      {safeTrim(dLocal.project_type) ? "— Select Subtype —" : "Select Type first"}
+                      {safeTrim(dLocal.project_type) ? "â€” Select Subtype â€”" : "Select Type first"}
                     </option>
                     {augmentedProjectSubtypeOptions.map((st) => (
                       <option key={String(st.id ?? st.value)} value={String(st.value)}>
@@ -4814,7 +4823,7 @@ export default function Step1Details({
                     className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
                     data-testid="agreement-ai-improve-scope-button"
                   >
-                    {aiBusy ? "Working…" : "Improve Existing Scope"}
+                    {aiBusy ? "Workingâ€¦" : "Improve Existing Scope"}
                   </button>
 
                   <button
@@ -4824,7 +4833,7 @@ export default function Step1Details({
                     className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
                     data-testid="agreement-ai-generate-scope-button"
                   >
-                    {aiBusy ? "Working…" : "Generate Scope Draft"}
+                    {aiBusy ? "Workingâ€¦" : "Generate Scope Draft"}
                   </button>
                 </div>
 
@@ -5203,4 +5212,6 @@ export default function Step1Details({
     </>
   );
 }
+
+
 

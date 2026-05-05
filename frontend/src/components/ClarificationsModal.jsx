@@ -14,6 +14,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
+import { getMeasurementFieldConfigForProjectType } from "../lib/measurementFields.js";
 
 function normStr(v) {
   return v == null ? "" : String(v).trim();
@@ -228,7 +229,7 @@ function friendlyLabelForCanonicalKey(key, fallback = "") {
   const labels = {
     materials_responsibility: "Who will purchase materials?",
     permits_responsibility: "Who obtains necessary building permits?",
-    measurements_provided: "Are detailed measurements provided?",
+    measurements_provided: "Do you have measurements for this project?",
     measurement_notes: "Measurement notes",
     allowances_selections: "Allowances / selections",
     flooring_finishes_later: "Will finished flooring be installed later?",
@@ -302,7 +303,7 @@ function inferQuestionOptions(q) {
     return [
       { value: "Yes", label: "Yes" },
       { value: "No", label: "No" },
-      { value: "Pending", label: "Pending / not yet confirmed" },
+      { value: "Not yet", label: "Not yet" },
     ];
   }
 
@@ -575,6 +576,11 @@ export default function ClarificationsModal({
   const [agreement, setAgreement] = useState(null);
   const [answers, setAnswers] = useState({});
   const [sessionQuestions, setSessionQuestions] = useState([]);
+  const measurementTypeKey = useMemo(() => guessProjectTypeKey(agreement || initialAgreement), [agreement, initialAgreement]);
+  const measurementFields = useMemo(
+    () => getMeasurementFieldConfigForProjectType(measurementTypeKey),
+    [measurementTypeKey]
+  );
 
   const sessionInitializedRef = useRef(false);
   const fetchedThisOpenRef = useRef(false);
@@ -797,6 +803,8 @@ export default function ClarificationsModal({
                 const val = answers?.[key];
                 const inputType = q.inputType || "textarea";
                 const options = Array.isArray(q.options) ? q.options : [];
+                const isMeasurementQuestion = key === "measurements_provided";
+                const measurementProvided = normStr(answers?.measurements_provided).toLowerCase();
 
                 return (
                   <div key={key} className="rounded-lg border p-3">
@@ -831,6 +839,71 @@ export default function ClarificationsModal({
                     )}
 
                     {help ? <div className="mt-2 text-[11px] text-gray-500">{help}</div> : null}
+
+                    {isMeasurementQuestion && measurementProvided === "yes" ? (
+                      <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Measurement details
+                        </div>
+                        <div className="mt-2 text-xs text-slate-600">
+                          Approximate measurements are fine. Contractor should verify before final pricing.
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                          {measurementFields.map((field) => {
+                            const fieldValue = normStr(answers?.[field.key]);
+                            return (
+                              <div key={field.key} className={field.type === "textarea" ? "md:col-span-2" : ""}>
+                                <label className="mb-1 block text-xs font-semibold text-slate-700" htmlFor={`measurement_${field.key}`}>
+                                  {field.label}
+                                </label>
+                                {field.type === "select" ? (
+                                  <select
+                                    id={`measurement_${field.key}`}
+                                    data-testid={`agreement-clarification-input-${field.key}`}
+                                    className="w-full rounded border px-3 py-2 text-sm"
+                                    value={fieldValue}
+                                    onChange={(e) => setAnswer(field.key, e.target.value)}
+                                  >
+                                    <option value="">Select</option>
+                                    {field.options.map((opt) => (
+                                      <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : field.type === "radio" ? (
+                                  <RadioGroup
+                                    name={`measurement_${field.key}`}
+                                    value={fieldValue}
+                                    options={field.options}
+                                    onChange={(nextVal) => setAnswer(field.key, nextVal)}
+                                  />
+                                ) : (
+                                  <input
+                                    id={`measurement_${field.key}`}
+                                    data-testid={`agreement-clarification-input-${field.key}`}
+                                    type="number"
+                                    className="w-full rounded border px-3 py-2 text-sm"
+                                    placeholder={field.placeholder || ""}
+                                    value={fieldValue}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      if (raw === "") {
+                                        setAnswer(field.key, "");
+                                        return;
+                                      }
+                                      if (/^-?\d*(?:\.\d+)?$/.test(raw)) {
+                                        setAnswer(field.key, raw);
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

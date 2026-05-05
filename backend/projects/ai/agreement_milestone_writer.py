@@ -46,11 +46,11 @@ CANONICAL_CLARIFICATION_KEYS: Dict[str, Dict[str, Any]] = {
         "required": True,
     },
     "measurements_provided": {
-        "label": "Are detailed measurements provided?",
+        "label": "Do you have measurements for this project?",
         "type": "select",
         "inputType": "radio",
-        "options": ["Yes", "No", "Pending"],
-        "help": "Confirm whether measurements and interface dimensions are already verified.",
+        "options": ["Yes", "No", "Not yet"],
+        "help": "Approximate measurements are fine. Contractor should verify before final pricing.",
         "required": True,
     },
     "site_access_working_hours": {
@@ -1422,6 +1422,9 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         "project_subtype": getattr(agreement, "project_subtype", "") or "",
         "scope_of_work": getattr(agreement, "scope_of_work", "") or getattr(agreement, "description", "") or "",
         "original_description": getattr(agreement, "description", "") or "",
+        "clarification_answers": _agreement_answers_snapshot(agreement) or dict(
+            getattr(agreement, "clarification_answers", {}) or {}
+        ),
         "notes": notes or "",
         "total_budget": total_cost,
         "milestone_count_target": milestone_count,

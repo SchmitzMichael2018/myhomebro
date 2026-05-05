@@ -521,6 +521,11 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         agreement = self._agreement(
             project_subtype="Siding Replacement",
             description="Replace siding on a single-story home with trim repairs and cleanup.",
+            answers={
+                "measurements_provided": "Yes",
+                "measurement_exterior_square_footage": "1200",
+                "measurement_notes": "Approximate measurements only.",
+            },
         )
         captured = {}
 
@@ -565,6 +570,15 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(
             user_json["original_description"],
             "Replace siding on a single-story home with trim repairs and cleanup.",
+        )
+        self.assertEqual(user_json["clarification_answers"]["measurements_provided"], "Yes")
+        self.assertEqual(
+            user_json["clarification_answers"]["measurement_exterior_square_footage"],
+            "1200",
+        )
+        self.assertEqual(
+            user_json["clarification_answers"]["measurement_notes"],
+            "Approximate measurements only.",
         )
         self.assertEqual(user_json["project_type"], "Remodel")
         self.assertEqual(user_json["project_subtype"], "Siding Replacement")

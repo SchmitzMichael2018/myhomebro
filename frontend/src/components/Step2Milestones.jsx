@@ -48,6 +48,7 @@ import {
   normalizeAssistantQuestion,
 } from "../lib/assistantHandoff.js";
 import { normalizeProjectFamilyContext } from "../lib/projectFamilyContext.js";
+import { getMeasurementFieldConfigForProjectType, getMeasurementFieldKeysForProjectType } from "../lib/measurementFields.js";
 
 function toDateOnly(v) {
   if (!v) return "";
@@ -780,6 +781,15 @@ function projectContextQuantitySignals(answers = {}, measurementNotes = "") {
     ["fixture_count", "Fixtures"],
     ["fixtures", "Fixtures"],
     ["gate_count", "Gates"],
+    ["measurement_exterior_square_footage", "Exterior square footage"],
+    ["measurement_linear_feet", "Linear feet"],
+    ["measurement_stories", "Stories"],
+    ["measurement_room_count", "Rooms"],
+    ["measurement_square_footage", "Square footage"],
+    ["measurement_ceiling_included", "Ceiling included"],
+    ["measurement_trim_included", "Trim included"],
+    ["measurement_thickness", "Thickness"],
+    ["measurement_cubic_yards", "Cubic yards"],
   ];
 
   const signals = [];
@@ -807,6 +817,15 @@ const PRICING_IMPACT_KEYS = [
   "measurements_provided",
   "measurement_notes",
   "measurements_notes",
+  "measurement_exterior_square_footage",
+  "measurement_linear_feet",
+  "measurement_stories",
+  "measurement_room_count",
+  "measurement_square_footage",
+  "measurement_ceiling_included",
+  "measurement_trim_included",
+  "measurement_thickness",
+  "measurement_cubic_yards",
 ];
 
 function normalizeMaterialsResponsibilityValue(v) {
@@ -1081,7 +1100,7 @@ export default function Step2Milestones({
   const [overlapConfirm, setOverlapConfirm] = useState(null);
 
   const [materialsWho, setMaterialsWho] = useState("Homeowner");
-  const [needsMeasurements, setNeedsMeasurements] = useState(true);
+  const [measurementStatus, setMeasurementStatus] = useState("Not yet");
   const [measurementNotes, setMeasurementNotes] = useState("");
   const [allowanceNotes, setAllowanceNotes] = useState("");
   const [permitNotes, setPermitNotes] = useState("");
@@ -2099,10 +2118,11 @@ export default function Step2Milestones({
 
         if (typeof answers.measurements_provided === "string") {
           const normalized = String(answers.measurements_provided).trim().toLowerCase();
-          if (normalized === "yes") setNeedsMeasurements(true);
-          else if (normalized === "no") setNeedsMeasurements(false);
+          if (normalized === "yes") setMeasurementStatus("Yes");
+          else if (normalized === "no") setMeasurementStatus("No");
+          else if (normalized === "not yet" || normalized === "pending") setMeasurementStatus("Not yet");
         } else if (typeof answers.measurements_needed === "boolean") {
-          setNeedsMeasurements(answers.measurements_needed);
+          setMeasurementStatus(answers.measurements_needed ? "Yes" : "No");
         }
 
         if (typeof answers.measurement_notes === "string") setMeasurementNotes(answers.measurement_notes);
@@ -2331,6 +2351,14 @@ export default function Step2Milestones({
         !!scopeSummary,
     };
   }, [agreementMeta, materialsWho, measurementNotes, resolvedProjectFamily, selectedTemplateMeta]);
+  const measurementFieldConfig = useMemo(
+    () => getMeasurementFieldConfigForProjectType(projectContextSummary?.projectType || agreementMeta?.project_type || ""),
+    [agreementMeta?.project_type, projectContextSummary?.projectType]
+  );
+  const measurementFieldKeys = useMemo(
+    () => getMeasurementFieldKeysForProjectType(projectContextSummary?.projectType || agreementMeta?.project_type || ""),
+    [agreementMeta?.project_type, projectContextSummary?.projectType]
+  );
   const estimateContextSignature = useMemo(
     () =>
       JSON.stringify({
@@ -2389,6 +2417,7 @@ export default function Step2Milestones({
 
   function buildStep2Answers() {
     const answers = {};
+    const agreementAnswers = agreementMeta?.ai_scope?.answers || {};
 
     if (permitNotes && String(permitNotes).trim()) {
       const v = String(permitNotes).trim();
@@ -2400,12 +2429,21 @@ export default function Step2Milestones({
       answers.materials_responsibility = v;
     }
 
-    answers.measurements_provided = needsMeasurements ? "Yes" : "No";
+    answers.measurements_provided = measurementStatus || "Not yet";
 
     if (measurementNotes && String(measurementNotes).trim()) {
       const v = String(measurementNotes).trim();
       answers.measurement_notes = v;
       answers.measurements_notes = v;
+    }
+
+    for (const key of measurementFieldKeys) {
+      const raw = agreementAnswers?.[key];
+      if (typeof raw === "string" && raw.trim()) {
+        answers[key] = raw.trim();
+      } else if (typeof raw === "number" && Number.isFinite(raw)) {
+        answers[key] = String(raw);
+      }
     }
 
     if (allowanceNotes && String(allowanceNotes).trim()) {
@@ -2473,7 +2511,7 @@ export default function Step2Milestones({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agreementId, materialsWho, needsMeasurements, measurementNotes, allowanceNotes, permitNotes]);
+  }, [agreementId, materialsWho, measurementStatus, measurementNotes, allowanceNotes, permitNotes, agreementMeta, measurementFieldKeys]);
 
   const {
     aiLoading,
@@ -5725,8 +5763,6 @@ export default function Step2Milestones({
         excludeKeys={[
           "permits_responsibility",
           "materials_responsibility",
-          "measurements_provided",
-          "measurement_notes",
           "allowances_selections",
           "allowance_notes",
         ]}

@@ -402,7 +402,7 @@ def _clarification_options(key: str, item: dict[str, Any]) -> list[Any]:
         return ["Contractor", "Homeowner", "Split / depends"]
 
     if key == "measurements_provided":
-        return ["Yes", "No", "Pending"]
+        return ["Yes", "No", "Not yet"]
 
     if key == "flooring_finishes_later":
         return ["Yes", "No", "Unsure"]
