@@ -26,11 +26,11 @@ export const PROJECT_TYPES = [
   { value: "DIY Help", label: "DIY Help" },
 
   // Catch-all
-  { value: "Other", label: "Other / Custom…" },
+  { value: "Other", label: "Other / Custom" },
 ];
 
 // Subtypes for the main categories used by the Wizard. For categories that
-// don’t have a fixed list (e.g., Installation, Outdoor, DIY Help), the UI
+// don't have a fixed list (e.g., Installation, Outdoor, DIY Help), the UI
 // will fall back to the "custom subtype" text box.
 export const SUBTYPES_BY_TYPE = {
   Remodel: ["Kitchen", "Bathroom", "Whole Home", "Basement", "Garage", "Patio / Deck"],

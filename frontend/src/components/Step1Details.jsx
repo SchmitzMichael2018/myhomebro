@@ -3738,7 +3738,7 @@ export default function Step1Details({
               <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 <div className="font-semibold">Locked</div>
                 <div className="mt-1 text-xs text-amber-900/90">
-                  This agreement is signed/executed. Step 1â€“3 are read-only. Create an
+                  This agreement is signed/executed. Step 1-3 are read-only. Create an
                   amendment to change details.
                 </div>
               </div>
@@ -3808,7 +3808,7 @@ export default function Step1Details({
                 <div className="mt-1">{assistantTemplateRecommendations[0]?.name}</div>
                 {assistantTemplateRecommendations[0]?.rank_reasons?.length ? (
                   <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
-                    {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" â€¢ ")}
+                    {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" - ")}
                   </div>
                 ) : null}
                 {assistantTopTemplatePreview?.milestone_count ? (
@@ -5033,7 +5033,7 @@ export default function Step1Details({
                       onChange={locked ? undefined : handleStep1LocalChange}
                       disabled={locked}
                   >
-                    <option value="">â€” Select Type â€”</option>
+                    <option value="">Select Type</option>
                     {augmentedProjectTypeOptions.map((t) => (
                       <option key={String(t.id ?? t.value)} value={String(t.value)}>
                         {String(t.label)}
@@ -5086,7 +5086,7 @@ export default function Step1Details({
                       disabled={locked || !safeTrim(dLocal.project_type)}
                   >
                     <option value="">
-                      {safeTrim(dLocal.project_type) ? "â€” Select Subtype â€”" : "Select Type first"}
+                      {safeTrim(dLocal.project_type) ? "Select Subtype" : "Select Type first"}
                     </option>
                     {augmentedProjectSubtypeOptions.map((st) => (
                       <option key={String(st.id ?? st.value)} value={String(st.value)}>
