@@ -3708,164 +3708,166 @@ export default function Step1Details({
 
   return (
     <>
-      <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="text-sm text-gray-600">
-          {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
-        </div>
-
-        {locked ? (
-          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <div className="font-semibold">Locked</div>
-            <div className="mt-1 text-xs text-amber-900/90">
-              This agreement is signed/executed. Step 1â€“3 are read-only. Create an
-              amendment to change details.
+      <div className="space-y-6">
+        {!isAiBuiltState ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-gray-600">
+              {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
             </div>
-          </div>
-        ) : null}
 
-        {complianceWarning?.warning_level && complianceWarning.warning_level !== "none" ? (
-          <div
-            data-testid="agreement-compliance-warning"
-            className={`mb-3 rounded-md border px-4 py-3 text-sm ${
-              complianceWarning.warning_level === "critical"
-                ? "border-rose-200 bg-rose-50 text-rose-900"
-                : complianceWarning.warning_level === "warning"
-                ? "border-amber-200 bg-amber-50 text-amber-900"
-                : "border-sky-200 bg-sky-50 text-sky-900"
-            }`}
-          >
-            <div className="font-semibold">Compliance note</div>
-            <div className="mt-1">
-              {complianceWarning.message || "This work may require a license in the project state."}
-            </div>
-            {complianceWarning.official_lookup_url ? (
-              <a
-                href={complianceWarning.official_lookup_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-block text-xs font-semibold underline"
-              >
-                View official source
-              </a>
-            ) : null}
-          </div>
-        ) : null}
-
-        {assistantGuidedFlow?.guided_question ? (
-          <div
-            data-testid="assistant-guided-step1"
-            className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
-          >
-            <div className="font-semibold">Guided next step</div>
-            <div className="mt-1">{assistantGuidedFlow.guided_question}</div>
-            {assistantGuidedFlow.why_this_matters ? (
-              <div className="mt-1 text-xs text-indigo-800/90">
-                {assistantGuidedFlow.why_this_matters}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {startMode === "ai" &&
-        assistantTemplateRecommendations.length &&
-        !isNoTemplateFlow &&
-        !shouldShowCompactTemplateRecommendation ? (
-          <div
-            data-testid="assistant-template-preview-step1"
-            className={`mb-3 rounded-md border px-4 py-3 text-sm ${
-              aiCompactRecommendationConfidence === "medium"
-                ? "border-amber-200 bg-amber-50 text-amber-900"
-                : "border-sky-200 bg-sky-50 text-sky-900"
-            }`}
-          >
-            <div className="font-semibold">
-              {aiCompactRecommendationConfidence === "medium"
-                ? "Optional template match"
-                : "Recommended template"}
-            </div>
-            <div className="mt-1">{assistantTemplateRecommendations[0]?.name}</div>
-            {assistantTemplateRecommendations[0]?.rank_reasons?.length ? (
-              <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
-                {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" â€¢ ")}
-              </div>
-            ) : null}
-            {assistantTopTemplatePreview?.milestone_count ? (
-              <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
-                Includes {assistantTopTemplatePreview.milestone_count} default milestone
-                {assistantTopTemplatePreview.milestone_count === 1 ? "" : "s"}.
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {assistantProactiveRecommendations.length ? (
-          <div
-            data-testid="assistant-proactive-step1"
-            className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-          >
-            <div className="font-semibold">Proactive recommendations</div>
-            <div className="mt-2 space-y-2">
-              {assistantProactiveRecommendations.slice(0, 2).map((item) => (
-                <div key={`${item.recommendation_type}-${item.title}`}>
-                  <div className="font-medium">{item.title}</div>
-                  <div className="text-xs text-amber-800/90">{item.message}</div>
+            {locked ? (
+              <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="font-semibold">Locked</div>
+                <div className="mt-1 text-xs text-amber-900/90">
+                  This agreement is signed/executed. Step 1â€“3 are read-only. Create an
+                  amendment to change details.
                 </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {assistantPredictiveInsights.length ? (
-          <div
-            data-testid="assistant-predictive-step1"
-            className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
-          >
-            <div className="font-semibold">Predictive insight</div>
-            <div className="mt-1">{assistantPredictiveInsights[0]?.title}</div>
-            <div className="mt-1 text-xs text-slate-700">
-              {assistantPredictiveInsights[0]?.summary}
-            </div>
-          </div>
-        ) : null}
-
-        {assistantConfirmationRequiredActions.length ? (
-          <div
-            data-testid="assistant-confirmation-step1"
-            className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
-          >
-            <div className="font-semibold">Actions requiring confirmation</div>
-            <div className="mt-1 text-xs text-rose-800/90">
-              {assistantConfirmationRequiredActions[0]?.action_label ||
-                assistantProposedActions[0]?.action_label ||
-                "Review AI-prepared changes before saving them."}
-            </div>
-          </div>
-        ) : null}
-
-        {step1ValidationMessage || Object.keys(step1FieldErrors).length ? (
-          <div
-            data-testid="step1-validation-banner"
-            className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
-          >
-            <div className="font-semibold">Please complete the highlighted fields before continuing.</div>
-            {step1ValidationMessage ? (
-              <div className="mt-1 text-sm text-rose-800">{step1ValidationMessage}</div>
+              </div>
             ) : null}
-            {Object.keys(step1FieldErrors).length ? (
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-rose-800">
-                {Object.entries(step1FieldErrors).map(([key, message]) => (
-                  <li key={key}>
-                    <span className="font-medium">{STEP1_FIELD_LABELS[key] || key.replaceAll("_", " ")}:</span>{" "}
-                    {message}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        ) : null}
 
-        {shouldShowStartModePanel ? (
-          <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            {complianceWarning?.warning_level && complianceWarning.warning_level !== "none" ? (
+              <div
+                data-testid="agreement-compliance-warning"
+                className={`mb-3 rounded-md border px-4 py-3 text-sm ${
+                  complianceWarning.warning_level === "critical"
+                    ? "border-rose-200 bg-rose-50 text-rose-900"
+                    : complianceWarning.warning_level === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : "border-sky-200 bg-sky-50 text-sky-900"
+                }`}
+              >
+                <div className="font-semibold">Compliance note</div>
+                <div className="mt-1">
+                  {complianceWarning.message || "This work may require a license in the project state."}
+                </div>
+                {complianceWarning.official_lookup_url ? (
+                  <a
+                    href={complianceWarning.official_lookup_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block text-xs font-semibold underline"
+                  >
+                    View official source
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+
+            {assistantGuidedFlow?.guided_question ? (
+              <div
+                data-testid="assistant-guided-step1"
+                className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+              >
+                <div className="font-semibold">Guided next step</div>
+                <div className="mt-1">{assistantGuidedFlow.guided_question}</div>
+                {assistantGuidedFlow.why_this_matters ? (
+                  <div className="mt-1 text-xs text-indigo-800/90">
+                    {assistantGuidedFlow.why_this_matters}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {startMode === "ai" &&
+            assistantTemplateRecommendations.length &&
+            !isNoTemplateFlow &&
+            !shouldShowCompactTemplateRecommendation ? (
+              <div
+                data-testid="assistant-template-preview-step1"
+                className={`mb-3 rounded-md border px-4 py-3 text-sm ${
+                  aiCompactRecommendationConfidence === "medium"
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : "border-sky-200 bg-sky-50 text-sky-900"
+                }`}
+              >
+                <div className="font-semibold">
+                  {aiCompactRecommendationConfidence === "medium"
+                    ? "Optional template match"
+                    : "Recommended template"}
+                </div>
+                <div className="mt-1">{assistantTemplateRecommendations[0]?.name}</div>
+                {assistantTemplateRecommendations[0]?.rank_reasons?.length ? (
+                  <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
+                    {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" â€¢ ")}
+                  </div>
+                ) : null}
+                {assistantTopTemplatePreview?.milestone_count ? (
+                  <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
+                    Includes {assistantTopTemplatePreview.milestone_count} default milestone
+                    {assistantTopTemplatePreview.milestone_count === 1 ? "" : "s"}.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {assistantProactiveRecommendations.length ? (
+              <div
+                data-testid="assistant-proactive-step1"
+                className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              >
+                <div className="font-semibold">Proactive recommendations</div>
+                <div className="mt-2 space-y-2">
+                  {assistantProactiveRecommendations.slice(0, 2).map((item) => (
+                    <div key={`${item.recommendation_type}-${item.title}`}>
+                      <div className="font-medium">{item.title}</div>
+                      <div className="text-xs text-amber-800/90">{item.message}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {assistantPredictiveInsights.length ? (
+              <div
+                data-testid="assistant-predictive-step1"
+                className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+              >
+                <div className="font-semibold">Predictive insight</div>
+                <div className="mt-1">{assistantPredictiveInsights[0]?.title}</div>
+                <div className="mt-1 text-xs text-slate-700">
+                  {assistantPredictiveInsights[0]?.summary}
+                </div>
+              </div>
+            ) : null}
+
+            {assistantConfirmationRequiredActions.length ? (
+              <div
+                data-testid="assistant-confirmation-step1"
+                className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+              >
+                <div className="font-semibold">Actions requiring confirmation</div>
+                <div className="mt-1 text-xs text-rose-800/90">
+                  {assistantConfirmationRequiredActions[0]?.action_label ||
+                    assistantProposedActions[0]?.action_label ||
+                    "Review AI-prepared changes before saving them."}
+                </div>
+              </div>
+            ) : null}
+
+            {step1ValidationMessage || Object.keys(step1FieldErrors).length ? (
+              <div
+                data-testid="step1-validation-banner"
+                className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
+              >
+                <div className="font-semibold">Please complete the highlighted fields before continuing.</div>
+                {step1ValidationMessage ? (
+                  <div className="mt-1 text-sm text-rose-800">{step1ValidationMessage}</div>
+                ) : null}
+                {Object.keys(step1FieldErrors).length ? (
+                  <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-rose-800">
+                    {Object.entries(step1FieldErrors).map(([key, message]) => (
+                      <li key={key}>
+                        <span className="font-medium">{STEP1_FIELD_LABELS[key] || key.replaceAll("_", " ")}:</span>{" "}
+                        {message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
+            {shouldShowStartModePanel ? (
+              <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             {startModeCommitted ? (
           <div
             data-testid="step1-start-mode-summary"
@@ -4168,36 +4170,38 @@ export default function Step1Details({
               </div>
             </div>
           )}
-          </section>
-        ) : null}
+              </section>
+            ) : null}
 
-        {showResetStep1Confirm && canResetStep1 ? (
-          <div
-            data-testid="step1-reset-form-confirm"
-            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900"
-          >
-            <div className="font-semibold">Start over?</div>
-            <div className="mt-1 text-sm text-rose-900/90">
-              This will clear your current setup so you can begin again.
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                data-testid="step1-reset-form-confirm-button"
-                onClick={handleResetStep1Setup}
-                className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+            {showResetStep1Confirm && canResetStep1 ? (
+              <div
+                data-testid="step1-reset-form-confirm"
+                className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900"
               >
-                Reset
-              </button>
-              <button
-                type="button"
-                data-testid="step1-reset-form-cancel-button"
-                onClick={() => setShowResetStep1Confirm(false)}
-                className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100"
-              >
-                Cancel
-              </button>
-            </div>
+                <div className="font-semibold">Start over?</div>
+                <div className="mt-1 text-sm text-rose-900/90">
+                  This will clear your current setup so you can begin again.
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="step1-reset-form-confirm-button"
+                    onClick={handleResetStep1Setup}
+                    className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="step1-reset-form-cancel-button"
+                    onClick={() => setShowResetStep1Confirm(false)}
+                    className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -4321,6 +4325,14 @@ export default function Step1Details({
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Change description
+              </button>
+              <button
+                type="button"
+                data-testid="step1-start-over-button"
+                onClick={() => setShowResetStep1Confirm(true)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Start over
               </button>
               <button
                 type="button"

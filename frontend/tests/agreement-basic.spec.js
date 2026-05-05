@@ -1135,11 +1135,17 @@ test('agreement wizard step 1 no-template build with ai does not leave a ghost c
   await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('step1-ai-template-recommendation')).toHaveCount(0);
+  await expect(page.getByText('New Agreement')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-project-type-select')).toBeVisible();
   await expect(page.getByTestId('agreement-project-subtype-select')).toBeVisible();
   await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
+  await expect(page.getByTestId('step1-start-over-button')).toBeVisible();
+  await page.getByTestId('step1-start-over-button').click();
+  await page.getByTestId('step1-reset-form-confirm-button').click();
+  await expect(page.getByText('Describe the job')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
