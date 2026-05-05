@@ -3728,7 +3728,7 @@ export default function Step1Details({
   return (
     <>
       <div className="space-y-6">
-        {!isAiBuiltState ? (
+        {!isAiBuiltState && !isLoadingState ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-sm text-gray-600">
               {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
