@@ -869,6 +869,7 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
   await page.getByTestId('step1-build-agreement-ai-button').click();
+  await expect(page.getByText('Save draft first')).toHaveCount(0);
   await expect(page.getByTestId('step1-no-template-card')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('step1-ai-setup-result')).toHaveCount(0);
@@ -922,6 +923,52 @@ test('agreement wizard step 1 keeps empty descriptions blocked', async ({ page }
   });
 
   await expect(page.getByTestId('step1-find-best-starting-point-button')).toBeDisabled();
+});
+
+test('agreement wizard step 1 save and next shows inline validation instead of raw server errors', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  let draftCreates = 0;
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      draftCreates += 1;
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: '',
+          title: '',
+          project_type: '',
+          project_subtype: '',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          description: '',
+          homeowner: null,
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Save & Next' }).click();
+
+  await expect(page.getByTestId('step1-validation-banner')).toBeVisible();
+  await expect(page.getByText('Project type is required.')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-type-select')).toBeFocused();
+  await expect(page.getByText('Server response (400)')).toHaveCount(0);
+  expect(draftCreates).toBe(0);
 });
 
 test('agreement wizard step 1 loads saved values without rerunning ai and resumes from persisted progress', async ({

@@ -3817,11 +3817,41 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertIn("Recommended from your description", payload["confidence_label"])
         self.assertTrue(payload["description"])
 
+    def test_ai_agreement_description_accepts_unsaved_payload_without_agreement(self):
+        with patch(
+            "projects.api.ai_agreement_views.generate_or_improve_description",
+            return_value={
+                "description": "AI-generated scope",
+                "project_title": "Replace Siding",
+                "project_type": "Siding",
+                "project_subtype": "Siding Replacement",
+                "_mode": "generate",
+                "_model": "test-model",
+            },
+        ):
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": None,
+                    "mode": "generate",
+                    "current_description": "Replace siding on a single-story home.",
+                    "project_title": "Replace Siding",
+                    "project_type": "Siding",
+                    "project_subtype": "Siding Replacement",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["description"], "AI-generated scope")
+        self.assertEqual(payload["project_type"], "Siding")
+        self.assertEqual(payload["project_subtype"], "Siding Replacement")
+
     def test_ai_agreement_description_requires_input(self):
         response = self.client.post(
             "/api/projects/agreements/ai/description/",
             {
-                "agreement_id": self.agreement.id,
                 "mode": "generate",
                 "current_description": "",
                 "project_title": "",
@@ -3833,7 +3863,119 @@ class AIFreeAccessRegressionTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         payload = response.json()
-        self.assertEqual(payload["code"], "DESCRIPTION_REQUIRED")
+        self.assertIn("errors", payload)
+        self.assertIn("current_description", payload["errors"])
+        self.assertIn("Add a description", payload["errors"]["current_description"][0])
+
+    def test_ai_draft_project_works_without_agreement_id(self):
+        with patch(
+            "projects.api.ai_agreement_views.build_project_intelligence",
+            return_value={
+                "analysis": {
+                    "project_type": "Siding",
+                    "project_subtype": "Siding Replacement",
+                    "project_title": "Replace Siding",
+                },
+                "suggested_plan": {},
+                "estimate_preview": None,
+                "confidence": "high",
+                "confidence_reasoning": "Looks good.",
+                "explanation_points": [],
+                "recommended_setup": {},
+                "quantity_context": {},
+                "source_metadata": {},
+            },
+        ), patch(
+            "projects.api.ai_agreement_views.draft_project_structure",
+            return_value={
+                "project_type": "Siding",
+                "project_subtype": "Siding Replacement",
+                "normalized_description": "Replace siding on the home.",
+                "suggested_template": None,
+                "template_confidence": "high",
+                "template_score": 87,
+                "template_reason": "Strong match.",
+                "milestones": [],
+                "clarifications": [],
+                "pricing_summary": {},
+                "estimated_days": 4,
+                "can_save_template": True,
+            },
+        ):
+            response = self.client.post(
+                "/api/projects/agreements/ai/draft/",
+                {
+                    "project_title": "Replace Siding",
+                    "description": "Replace siding on a single-story home.",
+                    "project_type": "Siding",
+                    "project_subtype": "Siding Replacement",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["project_type"], "Siding")
+        self.assertEqual(payload["project_subtype"], "Siding Replacement")
+        self.assertTrue(payload["can_save_template"])
+
+    def test_ai_draft_project_requires_input(self):
+        response = self.client.post(
+            "/api/projects/agreements/ai/draft/",
+            {
+                "project_title": "",
+                "description": "",
+                "project_type": "",
+                "project_subtype": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertIn("errors", payload)
+        self.assertIn("current_description", payload["errors"])
+
+    def test_ai_agreement_description_forbidden_for_other_contractors(self):
+        user_model = get_user_model()
+        other_user = user_model.objects.create_user(
+            email="other-contractor@example.com",
+            password="testpass123",
+        )
+        other_contractor = Contractor.objects.create(
+            user=other_user,
+            business_name="Other Contractor",
+        )
+        other_homeowner = Homeowner.objects.create(
+            created_by=other_contractor,
+            full_name="Other Homeowner",
+            email="other-homeowner@example.com",
+        )
+        other_project = Project.objects.create(
+            contractor=other_contractor,
+            homeowner=other_homeowner,
+            title="Other Project",
+        )
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=other_contractor,
+            homeowner=other_homeowner,
+            description="Other agreement",
+        )
+
+        response = self.client.post(
+            "/api/projects/agreements/ai/description/",
+            {
+                "agreement_id": other_agreement.id,
+                "mode": "generate",
+                "current_description": "Replace siding on a single-story home.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        payload = response.json()
+        self.assertEqual(payload["code"], "FORBIDDEN")
 
     def test_dispute_ai_recommendation_works_without_entitlement_rows(self):
         with patch(

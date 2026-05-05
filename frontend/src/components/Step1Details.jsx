@@ -56,6 +56,76 @@ function PrettyJson({ data }) {
   );
 }
 
+const STEP1_FIELD_LABELS = {
+  project_type: "Project Type",
+  project_subtype: "Subtype",
+  project_title: "Project Title",
+  description: "Scope of Work",
+  homeowner: "Customer",
+  address_line1: "Address",
+  address_city: "City",
+  address_state: "State",
+  address_postal_code: "ZIP code",
+  recurrence_pattern: "Frequency",
+  recurrence_start_date: "Start date",
+};
+
+function normalizeStep1ValidationFieldErrors(payload) {
+  const source = payload?.errors && typeof payload.errors === "object" ? payload.errors : payload;
+  if (!source || typeof source !== "object") return {};
+
+  const errors = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (["detail", "code", "status", "message", "ai_access", "ai_enabled", "ai_unlimited"].includes(key)) {
+      continue;
+    }
+    if (value == null) continue;
+
+    let message = "";
+    if (Array.isArray(value)) {
+      message = value.find((item) => safeTrim(item)) || "";
+    } else if (typeof value === "string") {
+      message = value;
+    } else if (typeof value === "object") {
+      const first = Object.values(value).flat?.()?.find?.((item) => safeTrim(item)) || "";
+      message = first || "";
+    }
+
+    if (safeTrim(message)) {
+      errors[key] = safeTrim(message);
+    }
+  }
+
+  return errors;
+}
+
+function getStep1FriendlyErrorMessage(payload, fieldErrors = {}) {
+  const detail = safeTrim(payload?.detail || payload?.message || "");
+  const statusCode = Number(payload?.status || payload?.statusCode || 0);
+  if (Object.keys(fieldErrors).length) {
+    return "Please complete the highlighted fields before continuing.";
+  }
+  if (statusCode === 401) {
+    return "Your session expired. Please sign in again.";
+  }
+  if (statusCode === 403) {
+    return "You don’t have permission to update this agreement.";
+  }
+  if (detail) {
+    if (/save draft first/i.test(detail)) {
+      return "AI can work from this draft automatically. Please try again.";
+    }
+    if (/permission/i.test(detail) || /forbidden/i.test(detail)) {
+      return "You don’t have permission to update this agreement.";
+    }
+    if (/ai/i.test(detail) && /fail|could not|unable|couldn’t|could not complete/i.test(detail)) {
+      return "AI could not complete this request, but you can continue manually.";
+    }
+    return detail;
+  }
+  return "AI could not complete this request, but you can continue manually.";
+}
+
 function formatRecurrenceSummary(pattern, interval) {
   const safePattern = safeTrim(pattern) || "monthly";
   const safeInterval = Math.max(1, Number(interval || 1) || 1);
@@ -1007,6 +1077,7 @@ export default function Step1Details({
   const projectTypeFieldRef = useRef(null);
   const projectTitleFieldRef = useRef(null);
   const projectScopeFieldRef = useRef(null);
+  const step1JobDescriptionInputRef = useRef(null);
   const projectDetailsRevealMountedRef = useRef(false);
   const projectDetailsRevealSeenRef = useRef(false);
 
@@ -1016,6 +1087,9 @@ export default function Step1Details({
 
   function formatApiError(error, fallback = "Could not save changes.") {
     const data = error?.response?.data;
+    const status = Number(error?.response?.status || 0);
+    if (status === 401) return "Your session expired. Please sign in again.";
+    if (status === 403) return "You don’t have permission to update this agreement.";
     if (!data) return fallback;
     if (typeof data === "string") return data;
     if (typeof data?.detail === "string") return data.detail;
@@ -1026,6 +1100,100 @@ export default function Step1Details({
     const message = Array.isArray(value) ? value[0] : value;
     if (typeof message === "string") return `${field.replaceAll("_", " ")}: ${message}`;
     return fallback;
+  }
+
+  function clearStep1FieldError(fieldName) {
+    if (!fieldName) return;
+    setStep1FieldErrors((prev) => {
+      if (!prev?.[fieldName]) return prev;
+      const next = { ...prev };
+      delete next[fieldName];
+      if (!Object.keys(next).length) {
+        setStep1ValidationMessage("");
+      }
+      return next;
+    });
+  }
+
+  function focusFirstStep1FieldError(errors = {}) {
+    const orderedFields = [
+      "project_type",
+      "project_title",
+      "description",
+      "homeowner",
+      "address_line1",
+      "address_city",
+      "address_state",
+      "recurrence_pattern",
+      "recurrence_start_date",
+    ];
+    const firstField = orderedFields.find((field) => safeTrim(errors?.[field]));
+    const fieldMap = {
+      project_type: projectTypeFieldRef,
+      project_title: projectTitleFieldRef,
+      description: projectScopeFieldRef,
+    };
+    const ref = firstField ? fieldMap[firstField] : null;
+    if (!ref?.current?.focus) return;
+    window.requestAnimationFrame(() => {
+      ref.current.focus();
+      if (typeof ref.current.scrollIntoView === "function") {
+        ref.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }
+
+  function syncValidationErrorsFromPayload(payload) {
+    const fieldErrors = normalizeStep1ValidationFieldErrors(payload);
+    setStep1FieldErrors(fieldErrors);
+    setStep1ValidationMessage(getStep1FriendlyErrorMessage(payload, fieldErrors));
+    return fieldErrors;
+  }
+
+  function validateStep1ForSave() {
+    const errors = {};
+    if (!safeTrim(dLocal?.project_type)) {
+      errors.project_type = "Project type is required.";
+    }
+    if (!safeTrim(dLocal?.project_title)) {
+      errors.project_title = "Project title is required.";
+    }
+    if (!safeTrim(dLocal?.description)) {
+      errors.description = "Scope of work is required.";
+    }
+    if (normalizeProjectClass(dLocal?.project_class) === "commercial" && normalizePaymentStructure(dLocal?.payment_structure) === "progress") {
+      if (!safeTrim(dLocal?.recurrence_pattern) && safeTrim(dLocal?.agreement_mode) === "maintenance") {
+        errors.recurrence_pattern = "Frequency is required.";
+      }
+      if (!safeTrim(dLocal?.recurrence_start_date) && safeTrim(dLocal?.agreement_mode) === "maintenance") {
+        errors.recurrence_start_date = "Start date is required.";
+      }
+    }
+    return errors;
+  }
+
+  function validateStep1ForAi(action = "description") {
+    const errors = {};
+    const description = safeTrim(dLocal?.description || step1JobDescriptionPrompt);
+    if ((action === "generate" || action === "description" || action === "refine") && !description) {
+      errors.description = "Add a description before using AI.";
+    }
+    return errors;
+  }
+
+  async function handleStep1Save(goNext = false) {
+    const validationErrors = validateStep1ForSave();
+    if (Object.keys(validationErrors).length) {
+      setStep1FieldErrors((prev) => ({ ...prev, ...validationErrors }));
+      setStep1ValidationMessage("Please complete the highlighted fields before continuing.");
+      focusFirstStep1FieldError(validationErrors);
+      toast.error("Please complete the highlighted fields before continuing.");
+      return;
+    }
+
+    setStep1FieldErrors({});
+    setStep1ValidationMessage("");
+    await saveStep1(goNext);
   }
 
   function normalizeRecurringText(value) {
@@ -1189,6 +1357,8 @@ export default function Step1Details({
   const [aiSetupResult, setAiSetupResult] = useState(null);
   const [lastAiSetupPrompt, setLastAiSetupPrompt] = useState("");
   const [aiSuggestedFieldMeta, setAiSuggestedFieldMeta] = useState({});
+  const [step1FieldErrors, setStep1FieldErrors] = useState({});
+  const [step1ValidationMessage, setStep1ValidationMessage] = useState("");
   const [projectDetailsReviewPulse, setProjectDetailsReviewPulse] = useState(false);
   const [pendingProjectDetailsReview, setPendingProjectDetailsReview] = useState(null);
 
@@ -1703,8 +1873,33 @@ export default function Step1Details({
     pendingProjectDetailsReview,
   ]);
 
+  useEffect(() => {
+    if (!last400) {
+      setStep1ValidationMessage("");
+      setStep1FieldErrors({});
+      return;
+    }
+    const fieldErrors = normalizeStep1ValidationFieldErrors(last400);
+    if (Object.keys(fieldErrors).length) {
+      setStep1FieldErrors((prev) => ({ ...prev, ...fieldErrors }));
+      focusFirstStep1FieldError(fieldErrors);
+    } else {
+      setStep1FieldErrors({});
+    }
+    setStep1ValidationMessage(getStep1FriendlyErrorMessage(last400, fieldErrors));
+  }, [last400]);
+
   async function runAiDescription(mode) {
     if (locked) return;
+
+    const validationErrors = validateStep1ForAi(mode === "improve" ? "refine" : "generate");
+    if (Object.keys(validationErrors).length) {
+      setStep1FieldErrors((prev) => ({ ...prev, ...validationErrors }));
+      setStep1ValidationMessage("Please complete the highlighted fields before continuing.");
+      focusFirstStep1FieldError(validationErrors);
+      setAiErr("Please complete the highlighted fields before continuing.");
+      return;
+    }
 
     setAiErr("");
     setAiPreview("");
@@ -1741,11 +1936,14 @@ export default function Step1Details({
         unlimited: res?.data?.ai_unlimited !== false,
       }));
     } catch (e) {
-      setAiErr(
-        e?.response?.data?.detail ||
-          e?.message ||
-          "AI description request failed."
-      );
+      const payload = e?.response?.data || {};
+      const fieldErrors = normalizeStep1ValidationFieldErrors(payload);
+      if (Object.keys(fieldErrors).length) {
+        setStep1FieldErrors((prev) => ({ ...prev, ...fieldErrors }));
+        setStep1ValidationMessage(getStep1FriendlyErrorMessage(payload, fieldErrors));
+        focusFirstStep1FieldError(fieldErrors);
+      }
+      setAiErr(getStep1FriendlyErrorMessage(payload, fieldErrors) || e?.message || "AI description request failed.");
     } finally {
       setAiBusy(false);
     }
@@ -1772,6 +1970,15 @@ export default function Step1Details({
 
   async function handleGenerateLeadProposalDraft() {
     if (locked || !hasLeadProposalContext) return;
+
+    const validationErrors = validateStep1ForAi("generate");
+    if (Object.keys(validationErrors).length) {
+      setStep1FieldErrors((prev) => ({ ...prev, ...validationErrors }));
+      setStep1ValidationMessage("Please complete the highlighted fields before continuing.");
+      focusFirstStep1FieldError(validationErrors);
+      setAiErr("Please complete the highlighted fields before continuing.");
+      return;
+    }
 
     setProposalLearningNote("");
     setProposalBrandNote("");
@@ -1833,6 +2040,21 @@ export default function Step1Details({
       }
     } catch (error) {
       const fallbackDraft = safeTrim(leadProposalDraft?.text);
+      const payload = error?.response?.data || {};
+      const fieldErrors = normalizeStep1ValidationFieldErrors(payload);
+      const status = Number(error?.response?.status || 0);
+      if (Object.keys(fieldErrors).length) {
+        setStep1FieldErrors((prev) => ({ ...prev, ...fieldErrors }));
+        setStep1ValidationMessage(getStep1FriendlyErrorMessage(payload, fieldErrors));
+        focusFirstStep1FieldError(fieldErrors);
+        setAiErr(getStep1FriendlyErrorMessage(payload, fieldErrors));
+        return;
+      }
+      if (status === 401 || status === 403) {
+        const friendly = getStep1FriendlyErrorMessage(payload, fieldErrors);
+        setAiErr(friendly);
+        return;
+      }
       if (!fallbackDraft) {
         throw error;
       }
@@ -2915,6 +3137,15 @@ export default function Step1Details({
     const roughDescription = safeTrim(promptText);
     if (!roughDescription) return;
 
+    const validationErrors = validateStep1ForAi("refine");
+    if (Object.keys(validationErrors).length) {
+      setStep1FieldErrors((prev) => ({ ...prev, ...validationErrors }));
+      setStep1ValidationMessage("Please complete the highlighted fields before continuing.");
+      focusFirstStep1FieldError(validationErrors);
+      setAiSetupError("Please complete the highlighted fields before continuing.");
+      return;
+    }
+
     setAiSetupBusy(true);
     setAiSetupError("");
     setAiSetupResult(null);
@@ -3056,6 +3287,20 @@ export default function Step1Details({
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       }
     } catch (e) {
+      const payload = e?.response?.data || {};
+      const fieldErrors = normalizeStep1ValidationFieldErrors(payload);
+      const status = Number(e?.response?.status || 0);
+      if (Object.keys(fieldErrors).length) {
+        setStep1FieldErrors((prev) => ({ ...prev, ...fieldErrors }));
+        setStep1ValidationMessage(getStep1FriendlyErrorMessage(payload, fieldErrors));
+        focusFirstStep1FieldError(fieldErrors);
+        return;
+      }
+      if (status === 401 || status === 403) {
+        setAiSetupError(getStep1FriendlyErrorMessage(payload, fieldErrors));
+        return;
+      }
+
       if (refinedDescription || safeTrim(roughDescription)) {
         const deterministicFallback = buildDeterministicStep1Setup(
           refinedDescription || roughDescription
@@ -3085,7 +3330,9 @@ export default function Step1Details({
       }
 
       setAiSetupError(
-        e?.response?.data?.detail || e?.message || "Could not refine and set up this agreement."
+        getStep1FriendlyErrorMessage(payload, fieldErrors) ||
+          e?.message ||
+          "Could not refine and set up this agreement."
       );
     } finally {
       setAiSetupBusy(false);
@@ -3283,6 +3530,8 @@ export default function Step1Details({
         return next;
       });
     }
+
+    clearStep1FieldError(name);
 
     onLocalChange?.(e);
 
@@ -3581,12 +3830,25 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        {last400 ? (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-            <div className="text-sm font-semibold text-red-700">
-              Server response (400)
-            </div>
-            <PrettyJson data={last400} />
+        {step1ValidationMessage || Object.keys(step1FieldErrors).length ? (
+          <div
+            data-testid="step1-validation-banner"
+            className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900"
+          >
+            <div className="font-semibold">Please complete the highlighted fields before continuing.</div>
+            {step1ValidationMessage ? (
+              <div className="mt-1 text-sm text-rose-800">{step1ValidationMessage}</div>
+            ) : null}
+            {Object.keys(step1FieldErrors).length ? (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-rose-800">
+                {Object.entries(step1FieldErrors).map(([key, message]) => (
+                  <li key={key}>
+                    <span className="font-medium">{STEP1_FIELD_LABELS[key] || key.replaceAll("_", " ")}:</span>{" "}
+                    {message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : null}
 
@@ -3634,7 +3896,7 @@ export default function Step1Details({
                     Couldn’t finish this step
                   </div>
                   <div className="mt-2 text-base font-semibold text-slate-900">
-                    AI couldn’t finish this step. Your description is still saved.
+                    {aiSetupError || "AI could not complete this request, but you can continue manually."}
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
                     You can try again or continue manually without losing the work you already entered.
@@ -3837,16 +4099,29 @@ export default function Step1Details({
               <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-900">
-                    Job description
+                    Job description <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Required</span>
                   </label>
                   <input
+                    ref={step1JobDescriptionInputRef}
                     value={step1JobDescriptionPrompt}
-                    onChange={(e) => setStep1JobDescriptionPrompt(e.target.value)}
+                    onChange={(e) => {
+                      setStep1JobDescriptionPrompt(e.target.value);
+                      if (safeTrim(e.target.value)) {
+                        clearStep1FieldError("description");
+                      }
+                    }}
                     placeholder="Example: Replace exterior siding on a single-story home..."
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                    className={`w-full rounded-xl px-3 py-2 text-sm ${
+                      step1FieldErrors.description
+                        ? "border border-rose-300 ring-1 ring-rose-200"
+                        : "border border-slate-200"
+                    }`}
                     data-testid="step1-job-description-input"
                     disabled={locked}
                   />
+                  {step1FieldErrors.description ? (
+                    <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.description}</div>
+                  ) : null}
                 </div>
                 <button
                   type="button"
@@ -4638,7 +4913,12 @@ export default function Step1Details({
                 <div>
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <label className="block text-sm font-medium text-slate-900">Project Type</label>
+                      <label className="block text-sm font-medium text-slate-900">
+                        Project Type{" "}
+                        <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                          Required
+                        </span>
+                      </label>
                       {getAiSuggestedIndicator("project_type") ? (
                         <span
                           data-testid="agreement-project-type-ai-indicator"
@@ -4661,7 +4941,11 @@ export default function Step1Details({
                     <select
                       data-testid="agreement-project-type-select"
                       ref={projectTypeFieldRef}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      className={`w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ${
+                        step1FieldErrors.project_type
+                          ? "border border-rose-300 ring-1 ring-rose-200"
+                          : "border border-slate-300"
+                      }`}
                       name="project_type"
                       value={dLocal.project_type || ""}
                       onChange={locked ? undefined : handleStep1LocalChange}
@@ -4683,6 +4967,9 @@ export default function Step1Details({
                         }`
                       : "Choose the main category for this job."}
                   </div>
+                  {step1FieldErrors.project_type ? (
+                    <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.project_type}</div>
+                  ) : null}
                 </div>
 
                 <div>
@@ -4754,7 +5041,11 @@ export default function Step1Details({
                   <input
                     data-testid="agreement-project-title-input"
                     ref={projectTitleFieldRef}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                    className={`w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ${
+                      step1FieldErrors.project_title
+                        ? "border border-rose-300 ring-1 ring-rose-200"
+                        : "border border-slate-300"
+                    }`}
                     name="project_title"
                     value={dLocal.project_title}
                     onChange={locked ? undefined : handleStep1LocalChange}
@@ -4764,10 +5055,18 @@ export default function Step1Details({
                 <div className="mt-1 text-[11px] text-slate-500">
                   Keep it short and recognizable so the customer can identify the job quickly.
                 </div>
+                {step1FieldErrors.project_title ? (
+                  <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.project_title}</div>
+                ) : null}
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-900">Scope of Work</label>
+                <label className="mb-1 block text-sm font-medium text-slate-900">
+                  Scope of Work{" "}
+                  <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                    Required
+                  </span>
+                </label>
                 <div className="mb-2 text-xs leading-5 text-slate-600">
                   Describe what is included so the customer understands the job clearly and milestone planning stays accurate.
                 </div>
@@ -4776,7 +5075,11 @@ export default function Step1Details({
                   data-testid="proposal-draft-textarea"
                   data-field="scope-of-work"
                   ref={projectScopeFieldRef}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className={`w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ${
+                    step1FieldErrors.description
+                      ? "border border-rose-300 ring-1 ring-rose-200"
+                      : "border border-slate-300"
+                  }`}
                   rows={8}
                   name="description"
                   value={dLocal.description || ""}
@@ -4784,6 +5087,9 @@ export default function Step1Details({
                   placeholder="Example: Remove existing materials, prepare surfaces, install new materials, complete finish work, and clean the job site..."
                   disabled={locked}
                 />
+                {step1FieldErrors.description ? (
+                  <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.description}</div>
+                ) : null}
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-600">
@@ -5170,7 +5476,7 @@ export default function Step1Details({
           <button
             data-testid="agreement-save-draft-button"
             type="button"
-            onClick={() => saveStep1(false)}
+            onClick={() => handleStep1Save(false)}
             disabled={locked}
             className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
           >
@@ -5188,7 +5494,7 @@ export default function Step1Details({
           ) : (
             <button
               type="button"
-              onClick={() => saveStep1(true)}
+              onClick={() => handleStep1Save(true)}
               className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
             >
               Save &amp; Next

@@ -36,6 +36,13 @@ def _deny(detail: str, code: str, status=HTTP_403_FORBIDDEN, extra: dict | None 
     return JsonResponse(payload, status=status)
 
 
+def _validation_error(errors: dict[str, list[str]] | dict[str, str], detail: str | None = None):
+    payload = {"errors": errors}
+    if detail:
+        payload["detail"] = detail
+    return JsonResponse(payload, status=HTTP_400_BAD_REQUEST)
+
+
 def _get_agreement_or_404(agreement_id: int):
     try:
         return Agreement.objects.get(id=int(agreement_id))
@@ -64,16 +71,18 @@ def ai_agreement_description(request):
     except Exception:
         agreement_id = 0
 
-    if not agreement_id:
-        return _deny("Save draft first to use AI.", "AGREEMENT_REQUIRED")
+    agreement = None
+    if agreement_id:
+        agreement = _get_agreement_or_404(agreement_id)
+        if not agreement:
+            return _validation_error(
+                {"agreement_id": ["Agreement not found."]},
+                "Agreement not found.",
+            )
 
-    agreement = _get_agreement_or_404(agreement_id)
-    if not agreement:
-        return _deny("Agreement not found.", "AGREEMENT_NOT_FOUND", status=HTTP_404_NOT_FOUND)
-
-    # Optional safety: only allow AI on own agreement
-    if agreement.contractor_id and agreement.contractor_id != contractor.id:
-        return _deny("Not your agreement.", "FORBIDDEN")
+        # Optional safety: only allow AI on own agreement
+        if agreement.contractor_id and agreement.contractor_id != contractor.id:
+            return _deny("Not your agreement.", "FORBIDDEN")
 
     raw_project_title = (request.data.get("project_title") or "").strip()
     raw_project_type = (request.data.get("project_type") or "").strip()
@@ -81,10 +90,9 @@ def ai_agreement_description(request):
     raw_description = (request.data.get("current_description") or "").strip()
 
     if not any([raw_project_title, raw_project_type, raw_project_subtype, raw_description]):
-        return _deny(
+        return _validation_error(
+            {"current_description": ["Add a description before asking AI to find a starting point."]},
             "Add a description before asking AI to find a starting point.",
-            "DESCRIPTION_REQUIRED",
-            status=HTTP_400_BAD_REQUEST,
         )
 
     try:
@@ -364,7 +372,7 @@ def ai_draft_project(request):
     POST /api/projects/agreements/ai/draft/
 
     Creates a smart Step 1 / Step 2 draft from:
-    - agreement_id (required; save draft first)
+    - agreement_id (optional; uses current draft when available)
     - project_title
     - description
     - optional requested type/subtype
@@ -395,15 +403,27 @@ def ai_draft_project(request):
     except Exception:
         agreement_id = 0
 
-    if not agreement_id:
-        return _deny("Save draft first to use AI.", "AGREEMENT_REQUIRED")
+    agreement = None
+    if agreement_id:
+        agreement = _get_agreement_or_404(agreement_id)
+        if not agreement:
+            return _validation_error({"agreement_id": ["Agreement not found."]}, "Agreement not found.")
 
-    agreement = _get_agreement_or_404(agreement_id)
-    if not agreement:
-        return _deny("Agreement not found.", "AGREEMENT_NOT_FOUND", status=HTTP_404_NOT_FOUND)
+        if agreement.contractor_id and agreement.contractor_id != contractor.id:
+            return _deny("Not your agreement.", "FORBIDDEN")
 
-    if agreement.contractor_id and agreement.contractor_id != contractor.id:
-        return _deny("Not your agreement.", "FORBIDDEN")
+    if not any(
+        [
+            (request.data.get("project_title") or "").strip(),
+            (request.data.get("description") or request.data.get("current_description") or "").strip(),
+            (request.data.get("project_type") or "").strip(),
+            (request.data.get("project_subtype") or "").strip(),
+        ]
+    ):
+        return _validation_error(
+            {"current_description": ["Add a description, project title, type, or subtype before using AI."]},
+            "Add a description, project title, type, or subtype before using AI.",
+        )
 
     try:
         intelligence = build_project_intelligence(

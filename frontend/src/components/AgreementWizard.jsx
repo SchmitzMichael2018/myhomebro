@@ -1309,8 +1309,15 @@ export default function AgreementWizard() {
       return newId;
     } catch (err) {
       const data = err?.response?.data;
+      const status = Number(err?.response?.status || 0);
       setLast400(data || { detail: "Create failed." });
-      toast.error(data?.detail || "Unable to create draft agreement.");
+      toast.error(
+        status === 401
+          ? "Your session expired. Please sign in again."
+          : status === 403
+          ? "You don’t have permission to update this agreement."
+          : data?.detail || "Unable to create draft agreement."
+      );
       return null;
     }
   };
@@ -1329,8 +1336,15 @@ export default function AgreementWizard() {
       if (goNext) goStep(2);
     } catch (err) {
       const data = err?.response?.data;
+      const status = Number(err?.response?.status || 0);
       setLast400(data || { detail: "Save failed." });
-      toast.error(data?.detail || "Unable to save Step 1.");
+      toast.error(
+        status === 401
+          ? "Your session expired. Please sign in again."
+          : status === 403
+          ? "You don’t have permission to update this agreement."
+          : data?.detail || "Unable to save Step 1."
+      );
     }
   };
 
