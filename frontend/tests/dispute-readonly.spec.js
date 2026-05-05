@@ -90,10 +90,13 @@ test("contractor dispute view hides actions for terminal disputes", async ({ pag
   await expect(activeRow.getByRole("button", { name: "Propose" })).toBeVisible();
 
   await expect(terminalRow).toBeVisible();
-  await expect(terminalRow.getByText("Resolved - read only")).toBeVisible();
+  await expect(terminalRow.getByText(/^Resolved$/)).toHaveCount(1);
+  await expect(terminalRow.getByText(/^Read only$/)).toHaveCount(1);
+  await expect(terminalRow.getByRole("button", { name: "View" })).toBeVisible();
   await expect(terminalRow.getByRole("button", { name: "Respond" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Cancel" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Upload" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Resolve" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Propose" })).toHaveCount(0);
+  await expect(terminalRow.getByText("Response received")).toHaveCount(0);
 });

@@ -376,8 +376,11 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
 
   await page.goto('/app/admin?view=disputes&status=all', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Filter:')).toContainText('All disputes');
-  await expect(page.getByTestId('admin-dispute-row-802')).toContainText('Resolved');
-  await expect(page.getByTestId('admin-dispute-row-802')).toContainText('Resolved - read only');
+  const resolvedRow = page.getByTestId('admin-dispute-row-802');
+  await expect(resolvedRow).toContainText('Resolved');
+  await expect(resolvedRow).toContainText('Read only');
+  await expect(resolvedRow.getByText(/^Resolved$/)).toHaveCount(1);
+  await expect(resolvedRow.getByText(/^Read only$/)).toHaveCount(1);
 });
 
 test('admin templates page renders system template management controls', async ({ page }) => {

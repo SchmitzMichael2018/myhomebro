@@ -38,5 +38,5 @@ export function canResolveDispute(status) {
 }
 
 export function getDisputeReadOnlyLabel(status) {
-  return isDisputeTerminal(status) ? "Resolved — read only" : "";
+  return isDisputeTerminal(status) ? "Read only" : "";
 }

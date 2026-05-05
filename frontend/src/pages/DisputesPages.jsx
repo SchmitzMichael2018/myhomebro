@@ -746,7 +746,7 @@ function DetailsModal({
               🧊 Escrow Frozen
             </Badge>
           ) : null}
-          {hasAnyResponse(dispute) ? <Badge tone="good">✅ Response received</Badge> : null}
+          {hasAnyResponse(dispute) && !isClosed(dispute) ? <Badge tone="good">Response received</Badge> : null}
         </div>
 
         <div className="mt-3">
@@ -1151,6 +1151,25 @@ export default function DisputesPages() {
   }, [allDisputes, filterKey, searchQuery, now]);
 
   const RowActions = ({ d }) => {
+    if (isClosed(d)) {
+      return (
+        <div className="flex flex-wrap gap-2 items-center opacity-85">
+          <Badge tone="default">{getDisputeReadOnlyLabel(d.status) || "Read only"}</Badge>
+          <button
+            className="mhb-btn"
+            onClick={() => {
+              setActiveDispute(d);
+              setDetailsOpen(true);
+            }}
+            title="View details"
+            type="button"
+          >
+            View
+          </button>
+        </div>
+      );
+    }
+
     const cancelAllowed = canCancel(d);
     const cancelTooltip = (() => {
       const status = String(d?.status || "").toLowerCase();
@@ -1198,21 +1217,19 @@ export default function DisputesPages() {
           View
         </button>
 
-        {!isClosed(d) ? (
-          <button
-            className="mhb-btn"
-            onClick={() => {
-              setActiveDispute(d);
-              setRespondOpen(true);
-            }}
-            disabled={!canRespond(d)}
-            type="button"
-          >
-            Respond
-          </button>
-        ) : null}
+        <button
+          className="mhb-btn"
+          onClick={() => {
+            setActiveDispute(d);
+            setRespondOpen(true);
+          }}
+          disabled={!canRespond(d)}
+          type="button"
+        >
+          Respond
+        </button>
 
-        {isContractor && !isClosed(d) && (
+        {isContractor && (
           <button
             className="mhb-btn"
             onClick={() => {
@@ -1226,45 +1243,41 @@ export default function DisputesPages() {
           </button>
         )}
 
-        {!isClosed(d) ? (
-          <>
-            <button
-              className="mhb-btn"
-              onClick={() => cancelDispute(d)}
-              disabled={!cancelAllowed}
-              title={cancelTooltip}
-              type="button"
-            >
-              Cancel
-            </button>
+        <button
+          className="mhb-btn"
+          onClick={() => cancelDispute(d)}
+          disabled={!cancelAllowed}
+          title={cancelTooltip}
+          type="button"
+        >
+          Cancel
+        </button>
 
-            {canUploadToDispute(d?.status) ? (
-              <label className="mhb-btn" title="Upload evidence">
-                Upload
-                <input
-                  type="file"
-                  hidden
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    await uploadAttachment(d, file, "photo");
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            ) : null}
-          </>
+        {canUploadToDispute(d?.status) ? (
+          <label className="mhb-btn" title="Upload evidence">
+            Upload
+            <input
+              type="file"
+              hidden
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                await uploadAttachment(d, file, "photo");
+                e.target.value = "";
+              }}
+            />
+          </label>
         ) : null}
 
-        {hasAnyResponse(d) && (
+        {hasAnyResponse(d) && !isClosed(d) && (
           <span
             className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
             title="At least one response has been submitted"
           >
-            ✅ Response received
+            Response received
           </span>
         )}
 
-        {isAdmin && !isClosed(d) && (
+        {isAdmin && (
           <button
             className="mhb-btn primary"
             onClick={() => {
@@ -1306,15 +1319,19 @@ export default function DisputesPages() {
           </thead>
           <tbody>
             {items.map((d) => (
-              <tr key={d.id} className="border-t align-top">
+              <tr key={d.id} className={`border-t align-top ${isClosed(d) ? "opacity-85" : ""}`}>
                 <td className="p-2 font-bold">#{d.id}</td>
                 <td className="p-2">{d.agreement_number || d.agreement}</td>
                 <td className="p-2">{d.milestone_title || "—"}</td>
                 <td className="p-2">
-                  <Badge tone={toneFor(d.status)}>{(d.status || "").replaceAll("_", " ")}</Badge>
+                  <Badge tone={isClosed(d) ? "danger" : toneFor(d.status)}>
+                    {isClosed(d) ? "Resolved" : (d.status || "").replaceAll("_", " ")}
+                  </Badge>
                 </td>
                 <td className="p-2">
-                  {d.fee_paid ? (
+                  {isClosed(d) ? (
+                    <span className="text-slate-500">—</span>
+                  ) : d.fee_paid ? (
                     <span className="text-emerald-700 font-bold">Paid</span>
                   ) : (
                     <span className="text-slate-700">{money(d.fee_amount || 0)}</span>

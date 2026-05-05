@@ -1431,7 +1431,7 @@ export default function AdminDashboard() {
                         <tr
                           key={d.id}
                           data-testid={`admin-dispute-row-${d.id}`}
-                          className={`border-b border-black/5 ${isDisputeTerminal(d.status) ? "opacity-70" : ""}`}
+                          className={`border-b border-black/5 ${isDisputeTerminal(d.status) ? "opacity-85" : ""}`}
                         >
                           <Td>
                             <div className="font-extrabold text-slate-900">Dispute #{d.id}</div>
@@ -1449,12 +1449,18 @@ export default function AdminDashboard() {
                           </Td>
                           <Td>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span>{titleCase(d.status || "—")}</span>
                               {isDisputeTerminal(d.status) ? (
-                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
-                                  Resolved - read only
-                                </span>
-                              ) : null}
+                                <>
+                                  <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-extrabold text-white">
+                                    Resolved
+                                  </span>
+                                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+                                    Read only
+                                  </span>
+                                </>
+                              ) : (
+                                <span>{titleCase(d.status || "—")}</span>
+                              )}
                             </div>
                           </Td>
                           <Td>{fmtMoney(d.amount || 0)}</Td>
