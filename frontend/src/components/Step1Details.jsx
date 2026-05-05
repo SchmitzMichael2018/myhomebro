@@ -2898,10 +2898,21 @@ export default function Step1Details({
   const aiCompactRecommendationConfidence = normalizeTemplateConfidenceLevel(
     recommendationConfidence || "low"
   );
+  const isAiBuiltState =
+    Boolean(step1NoTemplateBuilt) ||
+    aiSetupResult?.kind === "description_only" ||
+    (aiSetupResult?.kind === "fallback_recommendation" &&
+      Boolean(
+        safeTrim(dLocal?.project_title) ||
+          safeTrim(dLocal?.project_type) ||
+          safeTrim(dLocal?.project_subtype) ||
+          safeTrim(dLocal?.description)
+      ));
   const isNoTemplateFlow =
     aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation";
   const shouldShowCompactTemplateRecommendation =
     startMode === "ai" &&
+    !isAiBuiltState &&
     !appliedTemplateId &&
     !dismissedAiTemplateRecommendation &&
     !aiSetupResult &&
@@ -3651,8 +3662,9 @@ export default function Step1Details({
       : "Review the agreement details below and keep editing.";
   const shouldShowProjectDetails = true;
   const showStep1Clarifications = false;
+  const shouldShowStartModePanel = !isAiBuiltState;
   const shouldShowTemplateBrowserSection =
-    startMode === "template" && (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
+    !isAiBuiltState && startMode === "template" && (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -3852,11 +3864,12 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          {startModeCommitted ? (
-            <div
-              data-testid="step1-start-mode-summary"
-              className={`rounded-2xl border px-4 py-4 ${
+        {shouldShowStartModePanel ? (
+          <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            {startModeCommitted ? (
+          <div
+            data-testid="step1-start-mode-summary"
+            className={`rounded-2xl border px-4 py-4 ${
                 startMode === "ai"
                   ? "border-indigo-200 bg-indigo-50/70"
                   : startMode === "template"
@@ -4155,7 +4168,8 @@ export default function Step1Details({
               </div>
             </div>
           )}
-        </section>
+          </section>
+        ) : null}
 
         {showResetStep1Confirm && canResetStep1 ? (
           <div

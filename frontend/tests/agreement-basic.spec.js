@@ -1054,7 +1054,7 @@ test('agreement wizard step 1 loads saved values without rerunning ai and resume
   await expect(page.getByTestId('step1-start-mode-chooser')).toHaveCount(0);
 });
 
-test('agreement wizard step 1 no-match shows a single build without template prompt', async ({
+test('agreement wizard step 1 no-template build with ai does not leave a ghost container', async ({
   page,
 }) => {
   await installWizardAuthRoutes(page);
@@ -1117,7 +1117,7 @@ test('agreement wizard step 1 no-match shows a single build without template pro
 
   await expect(page.getByText('Describe the job')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
-  await page.getByTestId('step1-job-description-input').fill('build 12x14 shed');
+  await page.getByTestId('step1-job-description-input').fill('Patio extension');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
   await expect(page.getByTestId('step1-no-template-card')).toBeVisible();
@@ -1127,6 +1127,19 @@ test('agreement wizard step 1 no-match shows a single build without template pro
   await expect(page.getByText('Recommended starting point')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('step1-build-agreement-ai-button')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
+
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+
+  await expect(page.getByTestId('step1-no-template-card')).toHaveCount(0);
+  await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('step1-ai-template-recommendation')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-type-select')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-subtype-select')).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
