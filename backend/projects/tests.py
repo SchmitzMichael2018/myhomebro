@@ -517,6 +517,58 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
             3,
         )
 
+    def test_service_prompt_includes_scope_of_work_and_original_description(self):
+        agreement = self._agreement(
+            project_subtype="Siding Replacement",
+            description="Replace siding on a single-story home with trim repairs and cleanup.",
+        )
+        captured = {}
+
+        class FakeResponses:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                payload = {
+                    "scope_text": "AI generated scope text",
+                    "milestones": [
+                        {
+                            "order": 1,
+                            "title": "Site Prep",
+                            "description": "Prep the site.",
+                            "amount": 1200,
+                            "start_date": "",
+                            "completion_date": "",
+                        }
+                    ],
+                    "questions": [],
+                }
+                return SimpleNamespace(output_text=json.dumps(payload))
+
+        fake_client = SimpleNamespace(responses=FakeResponses())
+
+        with patch(
+            "projects.ai.agreement_milestone_writer._require_openai_client",
+            return_value=fake_client,
+        ), patch(
+            "projects.ai.agreement_milestone_writer._model_name",
+            return_value="test-model",
+        ):
+            result = suggest_scope_and_milestones(agreement=agreement, notes="")
+
+        self.assertTrue(result["milestones"])
+        user_message = next((item for item in captured.get("input", []) if item.get("role") == "user"), None)
+        self.assertIsNotNone(user_message)
+        user_json = json.loads(user_message["content"])
+        self.assertEqual(
+            user_json["scope_of_work"],
+            "Replace siding on a single-story home with trim repairs and cleanup.",
+        )
+        self.assertEqual(
+            user_json["original_description"],
+            "Replace siding on a single-story home with trim repairs and cleanup.",
+        )
+        self.assertEqual(user_json["project_type"], "Remodel")
+        self.assertEqual(user_json["project_subtype"], "Siding Replacement")
+
     def test_service_removes_bathroom_tile_phase_when_scope_is_excluded(self):
         agreement = self._agreement(
             project_subtype="Bathroom Remodel",

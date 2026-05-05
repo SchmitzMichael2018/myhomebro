@@ -1396,6 +1396,7 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         "- Milestones must be measurable deliverables.\n"
         "- Each milestone must have a clear completion condition.\n"
         "- Avoid vague terms and hidden scope.\n"
+        "- Use the current agreement scope of work, project type, subtype, and title as the primary context.\n"
         "- Amounts should sum approximately to the total budget (within rounding).\n"
         "- Provide 3 to 10 milestones depending on the target.\n"
         "- Use YYYY-MM-DD for dates if provided, otherwise return empty string.\n"
@@ -1419,7 +1420,8 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         "project_title": getattr(getattr(agreement, "project", None), "title", "") or "",
         "project_type": getattr(agreement, "project_type", "") or "",
         "project_subtype": getattr(agreement, "project_subtype", "") or "",
-        "description": getattr(agreement, "description", "") or "",
+        "scope_of_work": getattr(agreement, "scope_of_work", "") or getattr(agreement, "description", "") or "",
+        "original_description": getattr(agreement, "description", "") or "",
         "notes": notes or "",
         "total_budget": total_cost,
         "milestone_count_target": milestone_count,

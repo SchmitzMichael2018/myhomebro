@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { buildClarificationAwareMilestoneDraft } from '../src/lib/milestoneDraftShaping.js';
 
 const AGREEMENT_ID = 321;
 
@@ -1100,6 +1101,170 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
   ]) {
     await expect(page.getByText(title)).toBeVisible();
   }
+});
+
+test('step 2 shows the current agreement context when generating siding milestones', async ({ page }) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Siding Replacement',
+    title: 'Siding Replacement',
+    description: 'Replace siding on a single-story home with trim repairs and cleanup.',
+    project_type: 'Siding',
+    project_subtype: 'Siding Replacement',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {
+        clarifications_reviewed_step2: true,
+      },
+      questions: [],
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [
+      { id: 11, value: 'Siding', label: 'Siding', owner_type: 'system' },
+      { id: 12, value: 'Exterior', label: 'Exterior', owner_type: 'system' },
+    ],
+    projectSubtypes: [
+      {
+        id: 111,
+        value: 'Siding Replacement',
+        label: 'Siding Replacement',
+        owner_type: 'system',
+        project_type: 'Siding',
+      },
+    ],
+    milestoneState: {
+      items: [],
+      nextId: 900,
+      createCount: 0,
+      replacing: false,
+      replaceApplied: false,
+    },
+    estimateResponse: {
+      suggested_total_price: '14500.00',
+      suggested_price_low: '13000.00',
+      suggested_price_high: '16000.00',
+      suggested_duration_days: 9,
+      suggested_duration_low: 8,
+      suggested_duration_high: 10,
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'siding_replacement',
+        project_family_label: 'Siding Replacement',
+      },
+      price_adjustments: [],
+      timeline_adjustments: [],
+      explanation_lines: [],
+      benchmark_source: 'seeded_only',
+      learned_benchmark_used: false,
+      seeded_benchmark_used: true,
+      confidence_level: 'medium',
+      confidence_reasoning: 'Advisory siding replacement estimate.',
+      source_metadata: {},
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-generate-suggested-milestones')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('step2-milestone-generation-context')).toContainText(
+    'Milestones generated for: Siding / Siding Replacement'
+  );
+
+  await page.getByTestId('step2-generate-suggested-milestones').click();
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).toContainText(
+    'Site Preparation and Material Staging'
+  );
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).toContainText('Remove Existing Siding');
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).not.toContainText('Kitchen Remodel');
+  await expect(page.getByText('Milestones generated for: Siding / Siding Replacement')).toBeVisible();
+});
+
+test('step 2 milestone shaping uses the current project type and subtype instead of stale kitchen defaults', async () => {
+  const sidingRows = buildClarificationAwareMilestoneDraft({
+    projectType: 'Siding',
+    projectSubtype: 'Siding Replacement',
+    description: 'Replace siding on a single-story home with trim repairs and cleanup.',
+    projectFamilyKey: 'kitchen_remodel',
+    projectFamilyLabel: 'Kitchen Remodel',
+    totalBudget: 12000,
+    clarificationAnswers: {},
+    amountMode: 'preserve_base',
+    baseMilestones: [],
+  });
+  expect(sidingRows.map((row) => row.title)).toEqual([
+    'Site Preparation and Material Staging',
+    'Remove Existing Siding',
+    'Install New Siding and Trim',
+    'Final Inspection and Cleanup',
+  ]);
+  expect(sidingRows.some((row) => /kitchen/i.test(row.title))).toBe(false);
+
+  const roofRows = buildClarificationAwareMilestoneDraft({
+    projectType: 'Roofing',
+    projectSubtype: 'Roof Replacement',
+    description: 'Replace roof with new shingles and cleanup.',
+    projectFamilyKey: 'kitchen_remodel',
+    projectFamilyLabel: 'Kitchen Remodel',
+    totalBudget: 15000,
+    clarificationAnswers: {},
+    amountMode: 'preserve_base',
+    baseMilestones: [],
+  });
+  expect(roofRows.map((row) => row.title)).toEqual([
+    'Site Setup and Safety Prep',
+    'Remove Existing Roofing',
+    'Install New Roofing System',
+    'Final Inspection and Cleanup',
+  ]);
+
+  const paintRows = buildClarificationAwareMilestoneDraft({
+    projectType: 'Painting',
+    projectSubtype: 'Interior Painting',
+    description: 'Paint bedroom walls and trim.',
+    projectFamilyKey: 'kitchen_remodel',
+    projectFamilyLabel: 'Kitchen Remodel',
+    totalBudget: 6000,
+    clarificationAnswers: {},
+    amountMode: 'preserve_base',
+    baseMilestones: [],
+  });
+  expect(paintRows.map((row) => row.title)).toEqual([
+    'Prep Surfaces and Protect Areas',
+    'Prime and Paint',
+    'Touch-Ups and Cleanup',
+  ]);
+
+  const kitchenRows = buildClarificationAwareMilestoneDraft({
+    projectType: 'Remodeling',
+    projectSubtype: 'Kitchen Remodeling',
+    description: 'Full kitchen remodel with cabinets, countertops, and finishes.',
+    projectFamilyKey: 'kitchen_remodel',
+    projectFamilyLabel: 'Kitchen Remodel',
+    totalBudget: 18000,
+    clarificationAnswers: {},
+    amountMode: 'preserve_base',
+    baseMilestones: [],
+  });
+  expect(kitchenRows.map((row) => row.title)).toEqual([
+    'Demo & Prep',
+    'Cabinets / Layout Work',
+    'Countertops & Finish Install',
+    'Cleanup & Handoff',
+  ]);
 });
 
 test('step 2 milestone guardrails block overly large AI plans and dedupe repeated titles', async () => {

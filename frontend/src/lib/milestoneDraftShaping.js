@@ -169,8 +169,188 @@ function fallbackRows({ description }) {
         { title: "Core work phase 1", description: "Begin the main work and complete the first major phase." },
         { title: "Core work phase 2", description: "Continue the main work and complete the next major phase." },
         { title: "Finish work", description: "Complete finish details, punch items, and final quality checks." },
-        { title: "Cleanup & handoff", description: "Complete cleanup and customer walkthrough before closeout." },
+      { title: "Cleanup & handoff", description: "Complete cleanup and customer walkthrough before closeout." },
       ];
+}
+
+function projectSpecificFallbackRows({ projectType = "", projectSubtype = "", description = "" }) {
+  const projectText = normalizeMatchText(`${projectType} ${projectSubtype} ${description}`);
+  const hasKitchen = /\bkitchen\b/.test(projectText);
+  const hasBathroom = /\bbathroom\b/.test(projectText);
+  const hasRoof = /\broof|roofing\b/.test(projectText);
+  const hasPainting = /\bpaint|painting\b/.test(projectText);
+  const hasTile = /\btile\b/.test(projectText);
+  const hasPlumbing = /\bplumb|faucet\b/.test(projectText);
+  const hasFence = /\bfence|fencing\b/.test(projectText);
+  const hasDrywall = /\bdrywall\b/.test(projectText);
+  const hasSiding = /\bsiding\b/.test(projectText);
+
+  if (hasSiding) {
+    return [
+      {
+        title: "Site Preparation and Material Staging",
+        description: "Prepare the site, protect nearby surfaces, and stage siding materials for install.",
+      },
+      {
+        title: "Remove Existing Siding",
+        description: "Remove or prepare the existing siding and related trim as needed.",
+      },
+      {
+        title: "Install New Siding and Trim",
+        description: "Install replacement siding, trim, and finish details for the project area.",
+      },
+      {
+        title: "Final Inspection and Cleanup",
+        description: "Complete the final review, punch list items, and cleanup the work area.",
+      },
+    ];
+  }
+
+  if (hasRoof) {
+    return [
+      {
+        title: "Site Setup and Safety Prep",
+        description: "Protect the property, stage materials, and prep the work area before roof work begins.",
+      },
+      {
+        title: "Remove Existing Roofing",
+        description: "Remove existing roofing materials and prep the roof deck or substrate.",
+      },
+      {
+        title: "Install New Roofing System",
+        description: "Install underlayment, flashing, and the new roofing system.",
+      },
+      {
+        title: "Final Inspection and Cleanup",
+        description: "Complete the final inspection, magnet sweep, and cleanup.",
+      },
+    ];
+  }
+
+  if (hasPainting) {
+    return [
+      {
+        title: "Prep Surfaces and Protect Areas",
+        description: "Mask, protect, and prep the work area and painted surfaces.",
+      },
+      {
+        title: "Prime and Paint",
+        description: "Apply primer and paint to the selected areas and surfaces.",
+      },
+      {
+        title: "Touch-Ups and Cleanup",
+        description: "Complete touch-ups, detail work, and cleanup for handoff.",
+      },
+    ];
+  }
+
+  if (hasKitchen) {
+    return [
+      { title: "Demo & Prep", description: "Protect the space and remove existing finishes or fixtures." },
+      { title: "Cabinets / Layout Work", description: "Complete cabinet, layout, or rough-in work." },
+      { title: "Countertops & Finish Install", description: "Install countertops, backsplash, and finish items." },
+      { title: "Cleanup & Handoff", description: "Clean the site and walk through the completed kitchen." },
+    ];
+  }
+
+  if (hasBathroom) {
+    return [
+      {
+        title: "Demo and Protection",
+        description: "Protect surrounding finishes and remove existing materials as needed.",
+      },
+      {
+        title: "Rough Plumbing and Electrical",
+        description: "Complete rough work needed for the remodel layout.",
+      },
+      {
+        title: "Tile, Fixtures, and Finishes",
+        description: "Install tile, fixtures, and finish selections.",
+      },
+      {
+        title: "Final Cleanup and Walkthrough",
+        description: "Finish cleanup and review the remodeled bathroom.",
+      },
+    ];
+  }
+
+  if (hasTile) {
+    return [
+      {
+        title: "Site Prep and Surface Prep",
+        description: "Prepare the work area and surfaces for tile installation.",
+      },
+      {
+        title: "Install Tile",
+        description: "Install the tile and related setting materials.",
+      },
+      {
+        title: "Grout, Trim, and Cleanup",
+        description: "Complete grout, trim details, and cleanup for handoff.",
+      },
+    ];
+  }
+
+  if (hasPlumbing) {
+    return [
+      {
+        title: "Assess and Prep",
+        description: "Confirm the affected plumbing area and prep the work.",
+      },
+      {
+        title: "Repair or Replace Fixture",
+        description: "Complete the plumbing repair or fixture replacement work.",
+      },
+      {
+        title: "Test and Verify",
+        description: "Test the repair, check for leaks, and verify operation.",
+      },
+      {
+        title: "Cleanup and Walkthrough",
+        description: "Finish cleanup and review the completed work.",
+      },
+    ];
+  }
+
+  if (hasFence) {
+    return [
+      {
+        title: "Layout and Site Prep",
+        description: "Confirm the layout, set the work area, and prep for install.",
+      },
+      {
+        title: "Install Fence Sections",
+        description: "Set posts and install the fence sections or panels.",
+      },
+      {
+        title: "Finish Details and Cleanup",
+        description: "Complete gates, trim details, and cleanup the area.",
+      },
+    ];
+  }
+
+  if (hasDrywall) {
+    return [
+      {
+        title: "Prep and Protect",
+        description: "Protect surrounding areas and prepare the damaged surfaces.",
+      },
+      {
+        title: "Repair or Replace Drywall",
+        description: "Complete drywall repair or replacement work.",
+      },
+      {
+        title: "Tape, Mud, and Finish",
+        description: "Tape, mud, sand, and finish the repaired areas.",
+      },
+      {
+        title: "Cleanup and Walkthrough",
+        description: "Clean the site and review the finished repair.",
+      },
+    ];
+  }
+
+  return [];
 }
 
 function familyFallbackRows(projectFamilyKey = "", projectFamilyLabel = "") {
@@ -288,9 +468,11 @@ export function buildClarificationAwareMilestoneDraft({
   baseMilestones = [],
 }) {
   const subtypeRule = findSubtypeRule({ projectType, projectSubtype });
+  const projectRows = projectSpecificFallbackRows({ projectType, projectSubtype, description });
   const familyRows = familyFallbackRows(projectFamilyKey, projectFamilyLabel);
   let rows =
     subtypeRule?.baseRows?.map(cloneRow) ||
+    (Array.isArray(projectRows) && projectRows.length ? projectRows : null) ||
     (Array.isArray(familyRows) && familyRows.length ? familyRows : null) ||
     fallbackRows({ description });
 
