@@ -11,6 +11,7 @@ import {
   canCancelDispute,
   canUploadToDispute,
   canResolveDispute,
+  isDisputeArchived,
   getDisputeReadOnlyLabel,
 } from "../lib/disputeStatus.js";
 
@@ -1020,6 +1021,7 @@ export default function DisputesPages() {
   // Filters + Search
   const [filterKey, setFilterKey] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   // "now" ticker so countdown updates
   const [now, setNow] = useState(() => new Date());
@@ -1038,12 +1040,13 @@ export default function DisputesPages() {
   const fetchNewApi = async () => {
     try {
       setLoading(true);
+      const archivedParam = showArchived ? "&include_archived=1" : "";
       const reqs = [
-        api.get("/projects/disputes/?mine=true"),
-        api.get("/projects/disputes/?initiator=homeowner"),
+        api.get(`/projects/disputes/?mine=true${archivedParam}`),
+        api.get(`/projects/disputes/?initiator=homeowner${archivedParam}`),
       ];
 
-      if (isAdmin) reqs.push(api.get("/projects/disputes/"));
+      if (isAdmin) reqs.push(api.get(`/projects/disputes/?include_archived=${showArchived ? 1 : 0}`));
 
       const res = await Promise.all(reqs);
 
@@ -1083,7 +1086,7 @@ export default function DisputesPages() {
       if (!supportsDisputesApi) await fetchFallback();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
+  }, [isAdmin, showArchived]);
 
   const cancelDispute = async (d) => {
     if (!d?.id) return;
@@ -1130,27 +1133,49 @@ export default function DisputesPages() {
 
   // Counts source for filter pills
   const filterRowsSource = useMemo(() => {
-    if (isAdmin) return allDisputes;
-    return [...mine, ...customer];
-  }, [isAdmin, allDisputes, mine, customer]);
+    const rows = isAdmin ? allDisputes : [...mine, ...customer];
+    return showArchived ? rows : rows.filter((d) => !isDisputeArchived(d));
+  }, [isAdmin, allDisputes, mine, customer, showArchived]);
 
   // Apply filter/search + Stage E admin urgency sort
   const mineFiltered = useMemo(
-    () => applyFilterAndSearch(mine, filterKey, searchQuery, false, now),
-    [mine, filterKey, searchQuery, now]
+    () => applyFilterAndSearch(showArchived ? mine : mine.filter((d) => !isDisputeArchived(d)), filterKey, searchQuery, false, now),
+    [mine, filterKey, searchQuery, now, showArchived]
   );
 
   const customerFiltered = useMemo(
-    () => applyFilterAndSearch(customer, filterKey, searchQuery, false, now),
-    [customer, filterKey, searchQuery, now]
+    () => applyFilterAndSearch(showArchived ? customer : customer.filter((d) => !isDisputeArchived(d)), filterKey, searchQuery, false, now),
+    [customer, filterKey, searchQuery, now, showArchived]
   );
 
   const allFiltered = useMemo(() => {
-    const base = applyFilterAndSearch(allDisputes, filterKey, searchQuery, true, now);
+    const visible = showArchived ? allDisputes : allDisputes.filter((d) => !isDisputeArchived(d));
+    const base = applyFilterAndSearch(visible, filterKey, searchQuery, true, now);
     return sortAdminUrgency(base, now);
-  }, [allDisputes, filterKey, searchQuery, now]);
+  }, [allDisputes, filterKey, searchQuery, now, showArchived]);
 
   const RowActions = ({ d }) => {
+    const archived = isDisputeArchived(d);
+
+    if (archived) {
+      return (
+        <div className="flex flex-wrap gap-2 items-center opacity-85">
+          <Badge tone="warn">Archived</Badge>
+          <button
+            className="mhb-btn"
+            onClick={() => {
+              setActiveDispute(d);
+              setDetailsOpen(true);
+            }}
+            title="View details"
+            type="button"
+          >
+            View
+          </button>
+        </div>
+      );
+    }
+
     if (isClosed(d)) {
       return (
         <div className="flex flex-wrap gap-2 items-center opacity-85">
@@ -1166,6 +1191,28 @@ export default function DisputesPages() {
           >
             View
           </button>
+          {!archived ? (
+            <button
+              className="mhb-btn"
+              onClick={async () => {
+                try {
+                  await api.post(`/projects/disputes/${d.id}/archive/`, {});
+                  toast.success("Dispute archived.");
+                  refreshAll();
+                } catch (e) {
+                  toast.error(e?.response?.data?.detail || "Archive failed.");
+                }
+              }}
+              title="Archive dispute"
+              type="button"
+            >
+              Archive
+            </button>
+          ) : (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+              Archived
+            </span>
+          )}
         </div>
       );
     }
@@ -1408,6 +1455,13 @@ export default function DisputesPages() {
               now={now}
             />
             <SearchBox value={searchQuery} onChange={setSearchQuery} onClear={() => setSearchQuery("")} />
+            <button
+              type="button"
+              className={`mhb-btn ${showArchived ? "primary" : ""}`}
+              onClick={() => setShowArchived((prev) => !prev)}
+            >
+              {showArchived ? "Showing archived" : "Show archived"}
+            </button>
           </div>
 
           <div className="flex gap-2">

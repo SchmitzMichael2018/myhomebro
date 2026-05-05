@@ -607,6 +607,8 @@ class AdminOverview(APIView):
         dispute_count_by_contractor = defaultdict(int)
         if Dispute is not None:
             for dispute in Dispute.objects.select_related("agreement", "agreement__contractor").all():
+                if bool(getattr(dispute, "is_archived", False)):
+                    continue
                 if _is_active_dispute_status(getattr(dispute, "status", "")):
                     open_disputes += 1
                 contractor_id = safe_get(getattr(dispute, "agreement", None), ["contractor_id"], None)
@@ -1415,6 +1417,7 @@ class AdminDisputes(APIView):
         status_filter = (request.query_params.get("status") or "active").strip().lower()
         if status_filter not in {"active", "all"}:
             status_filter = "active"
+        include_archived = (request.query_params.get("include_archived") or "").strip().lower() in {"1", "true", "yes"}
 
         # Prefer Dispute model if present
         if Dispute is not None:
@@ -1429,6 +1432,8 @@ class AdminDisputes(APIView):
             results = []
             for d in qs:
                 dispute_status = safe_get(d, ["status"], None)
+                if not include_archived and bool(safe_get(d, ["is_archived"], False)):
+                    continue
                 if status_filter == "active" and not _is_active_dispute_status(dispute_status):
                     continue
                 agreement = safe_get(d, ["agreement"], None)
@@ -1448,12 +1453,17 @@ class AdminDisputes(APIView):
                     "amount": _fmt_money(_to_dec(safe_get(d, ["fee_amount"], None))),
                     "initiator": safe_get(d, ["initiator"], None),
                     "milestone_title": safe_get(safe_get(d, ["milestone"], None), ["title"], None),
+                    "is_archived": bool(safe_get(d, ["is_archived"], False)),
                 })
             payload = {
                 "count": len(results),
                 "results": results,
-                "filters": {"status": status_filter},
-                "filter_label": "Active disputes" if status_filter == "active" else "All disputes",
+                "filters": {"status": status_filter, "include_archived": include_archived},
+                "filter_label": (
+                    "Active disputes"
+                    if status_filter == "active"
+                    else "All disputes"
+                ) + (" (archived shown)" if include_archived else ""),
             }
             return Response(payload, status=status.HTTP_200_OK)
 

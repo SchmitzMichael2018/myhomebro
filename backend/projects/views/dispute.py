@@ -220,12 +220,22 @@ def _block_if_terminal(dispute: Dispute):
     return None
 
 
+def _block_if_archived(dispute: Dispute):
+    if bool(getattr(dispute, "is_archived", False)):
+        return Response({"detail": "This dispute is archived and cannot be modified."}, status=400)
+    return None
+
+
 class DisputeViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     queryset = Dispute.objects.all().order_by("-created_at")
 
     def get_queryset(self):
-        return _best_effort_dispute_queryset_for_user(self.request.user).order_by("-created_at")
+        qs = _best_effort_dispute_queryset_for_user(self.request.user)
+        include_archived = str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true", "yes")
+        if not include_archived and self.action not in {"retrieve", "archive"}:
+            qs = qs.filter(is_archived=False)
+        return qs.order_by("-created_at")
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -290,9 +300,29 @@ class DisputeViewSet(viewsets.ModelViewSet):
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=201)
 
+    @action(detail=True, methods=["post"], url_path="archive")
+    def archive(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+
+        if bool(getattr(dispute, "is_archived", False)):
+            return Response({"detail": "Dispute already archived."}, status=200)
+
+        if not is_terminal_dispute_status(getattr(dispute, "status", "")):
+            return Response({"detail": "Only terminal disputes can be archived."}, status=400)
+
+        dispute.is_archived = True
+        dispute.updated_at = timezone.now()
+        dispute.save(update_fields=["is_archived", "updated_at"])
+
+        return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
+
     @action(detail=True, methods=["post"], url_path="pay-fee")
     def pay_fee(self, request, pk=None):
         dispute: Dispute = self.get_object()
+
+        blocked = _block_if_archived(dispute)
+        if blocked is not None:
+            return blocked
 
         blocked = _block_if_terminal(dispute)
         if blocked is not None:
@@ -327,6 +357,10 @@ class DisputeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["patch"], url_path="respond")
     def respond(self, request, pk=None):
         dispute: Dispute = self.get_object()
+
+        blocked = _block_if_archived(dispute)
+        if blocked is not None:
+            return blocked
 
         blocked = _block_if_terminal(dispute)
         if blocked is not None:
@@ -388,6 +422,10 @@ class DisputeViewSet(viewsets.ModelViewSet):
     def cancel(self, request, pk=None):
         dispute: Dispute = self.get_object()
 
+        blocked = _block_if_archived(dispute)
+        if blocked is not None:
+            return blocked
+
         blocked = _block_if_terminal(dispute)
         if blocked is not None:
             return blocked
@@ -404,6 +442,10 @@ class DisputeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="attachments")
     def attachments(self, request, pk=None):
         dispute: Dispute = self.get_object()
+
+        blocked = _block_if_archived(dispute)
+        if blocked is not None:
+            return blocked
 
         blocked = _block_if_terminal(dispute)
         if blocked is not None:
@@ -430,6 +472,10 @@ class DisputeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], permission_classes=[IsAdminUser], url_path="resolve")
     def resolve(self, request, pk=None):
         dispute: Dispute = self.get_object()
+
+        blocked = _block_if_archived(dispute)
+        if blocked is not None:
+            return blocked
 
         blocked = _block_if_terminal(dispute)
         if blocked is not None:
@@ -503,6 +549,9 @@ def public_dispute_accept(request, dispute_id: int):
     if not dispute:
         return Response({"detail": "Not found."}, status=404)
 
+    if bool(getattr(dispute, "is_archived", False)):
+        return Response({"detail": "This dispute is archived and cannot be modified."}, status=400)
+
     if is_terminal_dispute_status(dispute.status):
         return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)
 
@@ -563,6 +612,9 @@ def public_dispute_reject(request, dispute_id: int):
     dispute = _get_dispute_by_public_token(dispute_id, token)
     if not dispute:
         return Response({"detail": "Not found."}, status=404)
+
+    if bool(getattr(dispute, "is_archived", False)):
+        return Response({"detail": "This dispute is archived and cannot be modified."}, status=400)
 
     if is_terminal_dispute_status(dispute.status):
         return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)

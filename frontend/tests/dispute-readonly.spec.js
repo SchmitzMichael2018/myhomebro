@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const ACTIVE_DISPUTE_ID = 8801;
 const TERMINAL_DISPUTE_ID = 8802;
+const ARCHIVED_DISPUTE_ID = 8803;
 
 async function mockDisputeLists(page, role = "contractor") {
   await page.addInitScript(() => {
@@ -61,6 +62,24 @@ async function mockDisputeLists(page, role = "contractor") {
             created_at: "2026-03-20T10:00:00Z",
             updated_at: "2026-03-21T10:00:00Z",
           },
+          {
+            id: ARCHIVED_DISPUTE_ID,
+            agreement: 323,
+            agreement_number: "323",
+            initiator: "contractor",
+            reason: "Archived issue",
+            description: "Archived dispute.",
+            status: "resolved_contractor",
+            is_archived: true,
+            fee_amount: 250,
+            fee_paid: true,
+            escrow_frozen: false,
+            homeowner_response: "",
+            contractor_response: "",
+            attachments: [],
+            created_at: "2026-03-19T10:00:00Z",
+            updated_at: "2026-03-20T10:00:00Z",
+          },
         ],
       }),
     });
@@ -88,15 +107,25 @@ test("contractor dispute view hides actions for terminal disputes", async ({ pag
   await expect(activeRow.getByRole("button", { name: "Cancel" })).toBeVisible();
   await expect(activeRow.getByRole("button", { name: "Upload" })).toBeVisible();
   await expect(activeRow.getByRole("button", { name: "Propose" })).toBeVisible();
+  await expect(activeRow.getByRole("button", { name: "Archive" })).toHaveCount(0);
 
   await expect(terminalRow).toBeVisible();
   await expect(terminalRow.getByText(/^Resolved$/)).toHaveCount(1);
   await expect(terminalRow.getByText(/^Read only$/)).toHaveCount(1);
   await expect(terminalRow.getByRole("button", { name: "View" })).toBeVisible();
+  await expect(terminalRow.getByRole("button", { name: "Archive" })).toBeVisible();
   await expect(terminalRow.getByRole("button", { name: "Respond" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Cancel" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Upload" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Resolve" })).toHaveCount(0);
   await expect(terminalRow.getByRole("button", { name: "Propose" })).toHaveCount(0);
   await expect(terminalRow.getByText("Response received")).toHaveCount(0);
+  await expect(page.locator("tr", { hasText: `#${ARCHIVED_DISPUTE_ID}` })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Show archived" }).click();
+  const archivedRow = page.locator("tr", { hasText: `#${ARCHIVED_DISPUTE_ID}` });
+  await expect(archivedRow).toBeVisible();
+  await expect(archivedRow.getByText(/^Archived$/)).toHaveCount(1);
+  await expect(archivedRow.getByRole("button", { name: "View" })).toBeVisible();
+  await expect(archivedRow.getByRole("button", { name: "Archive" })).toHaveCount(0);
 });

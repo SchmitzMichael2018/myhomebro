@@ -104,6 +104,7 @@ class Dispute(models.Model):
     description = models.TextField(blank=True)
 
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="initiated")
+    is_archived = models.BooleanField(default=False, db_index=True)
 
     fee_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     fee_paid = models.BooleanField(default=False)

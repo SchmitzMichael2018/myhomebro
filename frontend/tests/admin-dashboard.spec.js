@@ -272,6 +272,7 @@ async function mockAdminDashboard(page) {
   await page.route('**/api/projects/admin/disputes**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const status = (requestUrl.searchParams.get('status') || 'active').toLowerCase();
+    const includeArchived = (requestUrl.searchParams.get('include_archived') || '').toLowerCase() === '1';
     const allResults = [
       {
         id: 801,
@@ -286,6 +287,7 @@ async function mockAdminDashboard(page) {
         amount: '150.00',
         created_at: '2026-03-23T13:00:00Z',
         updated_at: '2026-03-25T16:45:00Z',
+        is_archived: false,
       },
       {
         id: 802,
@@ -300,16 +302,33 @@ async function mockAdminDashboard(page) {
         amount: '75.00',
         created_at: '2026-03-20T10:00:00Z',
         updated_at: '2026-03-24T11:30:00Z',
+        is_archived: false,
+      },
+      {
+        id: 803,
+        agreement_id: 321,
+        invoice_id: 903,
+        initiator: 'homeowner',
+        contractor_name: 'Summit Renovations',
+        homeowner_name: 'Casey Prospect',
+        project_title: 'Roof Repair',
+        milestone_title: 'Final Inspection',
+        status: 'resolved',
+        amount: '50.00',
+        created_at: '2026-03-18T10:00:00Z',
+        updated_at: '2026-03-22T11:30:00Z',
+        is_archived: true,
       },
     ];
+    const visible = includeArchived ? allResults : allResults.filter((row) => !row.is_archived);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        count: status === 'all' ? allResults.length : 1,
-        results: status === 'all' ? allResults : allResults.filter((row) => row.status === 'open'),
-        filters: { status },
-        filter_label: status === 'all' ? 'All disputes' : 'Active disputes',
+        count: status === 'all' ? visible.length : visible.filter((row) => row.status === 'open').length,
+        results: status === 'all' ? visible : visible.filter((row) => row.status === 'open'),
+        filters: { status, include_archived: includeArchived },
+        filter_label: `${status === 'all' ? 'All disputes' : 'Active disputes'}${includeArchived ? ' (archived shown)' : ''}`,
       }),
     });
   });
@@ -376,11 +395,20 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
 
   await page.goto('/app/admin?view=disputes&status=all', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Filter:')).toContainText('All disputes');
+  await expect(page.getByTestId('admin-dispute-row-801').getByRole('button', { name: 'Archive' })).toHaveCount(0);
   const resolvedRow = page.getByTestId('admin-dispute-row-802');
   await expect(resolvedRow).toContainText('Resolved');
   await expect(resolvedRow).toContainText('Read only');
   await expect(resolvedRow.getByText(/^Resolved$/)).toHaveCount(1);
   await expect(resolvedRow.getByText(/^Read only$/)).toHaveCount(1);
+  await expect(resolvedRow.getByRole('button', { name: 'View' })).toBeVisible();
+  await expect(resolvedRow.getByRole('button', { name: 'Archive' })).toBeVisible();
+  await expect(page.getByTestId('admin-dispute-row-803')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Show archived' }).click();
+  await expect(page.getByText('Filter:')).toContainText('Archived shown');
+  await expect(page.getByTestId('admin-dispute-row-803')).toContainText('Archived');
+  await expect(page.getByTestId('admin-dispute-row-803').getByRole('button', { name: 'Archive' })).toHaveCount(0);
 });
 
 test('admin templates page renders system template management controls', async ({ page }) => {

@@ -16038,6 +16038,52 @@ class DisputeMutationSafetyTests(TestCase):
             self.assertEqual(response.status_code, 400, response.data)
             self.assertEqual(str(response.data["detail"]), "This dispute is resolved and can no longer be modified.")
 
+    def test_terminal_dispute_can_be_archived_and_hidden_by_default(self):
+        archive_response = self.contractor_client.post(
+            f"/api/projects/disputes/{self.terminal_dispute.id}/archive/",
+            {},
+            format="json",
+        )
+        self.assertEqual(archive_response.status_code, 200, archive_response.data)
+        self.terminal_dispute.refresh_from_db()
+        self.assertTrue(self.terminal_dispute.is_archived)
+
+        default_list = self.contractor_client.get("/api/projects/disputes/?mine=true")
+        self.assertEqual(default_list.status_code, 200, default_list.data)
+        default_payload = default_list.json()
+        self.assertTrue(all(not row.get("is_archived") for row in default_payload))
+        self.assertFalse(any(row["id"] == self.terminal_dispute.id for row in default_payload))
+
+        include_archived = self.contractor_client.get("/api/projects/disputes/?mine=true&include_archived=1")
+        self.assertEqual(include_archived.status_code, 200, include_archived.data)
+        archived_payload = include_archived.json()
+        self.assertTrue(any(row["id"] == self.terminal_dispute.id and row.get("is_archived") for row in archived_payload))
+
+        admin_list = self.admin_client.get("/api/projects/admin/disputes/?status=all&include_archived=1")
+        self.assertEqual(admin_list.status_code, 200, admin_list.data)
+        admin_payload = admin_list.json()
+        self.assertTrue(any(row["id"] == self.terminal_dispute.id and row.get("is_archived") for row in admin_payload["results"]))
+
+    def test_active_dispute_cannot_be_archived(self):
+        active_dispute = Dispute.objects.create(
+            agreement=self.agreement,
+            initiator="homeowner",
+            reason="Active dispute",
+            description="Active dispute should not archive.",
+            status="open",
+            fee_amount=Decimal("10.00"),
+            fee_paid=True,
+            escrow_frozen=True,
+        )
+
+        response = self.contractor_client.post(
+            f"/api/projects/disputes/{active_dispute.id}/archive/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Only terminal disputes can be archived.", str(response.data["detail"]))
+
 
 class TemplateAIGenerationTests(TestCase):
     def test_create_template_from_scope_returns_structured_guidance_bundle(self):

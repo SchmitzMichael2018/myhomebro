@@ -340,6 +340,7 @@ export default function AdminDashboard() {
   const [agreementOpsMsg, setAgreementOpsMsg] = useState("");
   const [agreementAiContext, setAgreementAiContext] = useState(null);
   const [agreementOpBusy, setAgreementOpBusy] = useState("");
+  const [showArchivedDisputes, setShowArchivedDisputes] = useState(false);
 
   useEffect(() => {
     if (view === "agreements") {
@@ -373,7 +374,7 @@ export default function AdminDashboard() {
       api.get(`${ADMIN_BASE}/subcontractors/`),
       api.get(`${ADMIN_BASE}/homeowners/`),
       api.get(`${ADMIN_BASE}/agreements/`),
-      api.get(`${ADMIN_BASE}/disputes/?status=all`),
+      api.get(`${ADMIN_BASE}/disputes/?status=all&include_archived=${showArchivedDisputes ? 1 : 0}`),
     ]);
 
     setOverview(o.data);
@@ -420,7 +421,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!whoamiLoading && isAdmin) loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [whoamiLoading, isAdmin]);
+  }, [whoamiLoading, isAdmin, showArchivedDisputes]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -630,8 +631,10 @@ export default function AdminDashboard() {
   const homeownerRows = homeowners;
   const subcontractorRows = subcontractors;
   const disputesFiltered = (() => {
-    if (disputeStatusFilter === "all") return disputes;
-    return disputes.filter((d) => isActiveDisputeStatus(d.status));
+    const visible = showArchivedDisputes ? disputes : disputes.filter((d) => !d.is_archived);
+    if (showArchivedDisputes) return visible;
+    if (disputeStatusFilter === "all") return visible;
+    return visible.filter((d) => isActiveDisputeStatus(d.status));
   })();
 
   const agreementsFiltered = (() => {
@@ -1407,6 +1410,7 @@ export default function AdminDashboard() {
               {showDisputeFilterNote ? (
                 <div className="mb-3 text-xs text-slate-700">
                   Filter: <span className="font-extrabold">{disputeFilterLabel}</span>{" "}
+                  {showArchivedDisputes ? <span className="ml-2 font-extrabold">Archived shown</span> : null}
                   {disputeStatusFilter === "all" ? null : (
                     <button
                       className="ml-2 underline"
@@ -1421,11 +1425,11 @@ export default function AdminDashboard() {
               <TableShell>
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-black/10 bg-white/60">
-                    <tr><Th>Dispute</Th><Th>Contractor / Customer</Th><Th>Project</Th><Th>Status</Th><Th>Amount</Th><Th>Updated</Th></tr>
+                    <tr><Th>Dispute</Th><Th>Contractor / Customer</Th><Th>Project</Th><Th>Status</Th><Th>Amount</Th><Th>Updated</Th><Th>Actions</Th></tr>
                   </thead>
                   <tbody>
                     {disputesFiltered.length === 0 ? (
-                      <tr><Td colSpan={6} className="text-slate-600">{disputeStatusFilter === "all" ? "No disputes." : "No active disputes."}</Td></tr>
+                      <tr><Td colSpan={7} className="text-slate-600">{disputeStatusFilter === "all" ? "No disputes." : "No active disputes."}</Td></tr>
                     ) : (
                       disputesFiltered.map((d) => (
                         <tr
@@ -1465,12 +1469,50 @@ export default function AdminDashboard() {
                           </Td>
                           <Td>{fmtMoney(d.amount || 0)}</Td>
                           <Td>{fmtDateTime(d.updated_at || d.created_at)}</Td>
+                          <Td>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-slate-800"
+                                onClick={() => navigate("/app/disputes")}
+                              >
+                                View
+                              </button>
+                              {isDisputeTerminal(d.status) && !d.is_archived ? (
+                                <button
+                                  className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
+                                  onClick={async () => {
+                                    try {
+                                      await api.post(`/projects/disputes/${d.id}/archive/`, {});
+                                      await loadAll();
+                                    } catch (err) {
+                                      alert(err?.response?.data?.detail || "Archive failed.");
+                                    }
+                                  }}
+                                >
+                                  Archive
+                                </button>
+                              ) : d.is_archived ? (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+                                  Archived
+                                </span>
+                              ) : null}
+                            </div>
+                          </Td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
               </TableShell>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  className={`rounded-xl border px-3 py-2 text-sm font-extrabold ${showArchivedDisputes ? "border-slate-900 bg-slate-900 text-white" : "border-black/10 bg-white text-slate-700 hover:bg-slate-50"}`}
+                  onClick={() => setShowArchivedDisputes((prev) => !prev)}
+                >
+                  {showArchivedDisputes ? "Hide archived" : "Show archived"}
+                </button>
+              </div>
             </div>
           )}
 

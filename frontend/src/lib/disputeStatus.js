@@ -37,6 +37,10 @@ export function canResolveDispute(status) {
   return !isDisputeTerminal(status);
 }
 
+export function isDisputeArchived(dispute) {
+  return Boolean(dispute?.is_archived);
+}
+
 export function getDisputeReadOnlyLabel(status) {
   return isDisputeTerminal(status) ? "Read only" : "";
 }
