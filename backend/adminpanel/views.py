@@ -22,6 +22,7 @@ from .permissions import IsAdminUserRole
 from .utils import safe_get
 from projects.api.ai_agreement_views import _persist_pricing_estimates, suggest_pricing_refresh
 from projects.services.agreements.contractor_signing import send_signature_request_to_homeowner
+from projects.services.dispute_status import is_terminal_dispute_status
 
 User = get_user_model()
 
@@ -342,6 +343,7 @@ def _is_active_agreement(agreement) -> bool:
 def _is_open_dispute_status(status_value: str) -> bool:
     return str(status_value or "").strip().lower() not in {
         "resolved_contractor",
+        "resolved_customer",
         "resolved_homeowner",
         "resolved",
         "closed",
@@ -355,14 +357,7 @@ def _is_active_dispute_status(status_value: str) -> bool:
     Active disputes are unresolved / actionable disputes.
     Resolved / closed / canceled disputes are excluded from attention counts.
     """
-    status_norm = str(status_value or "").strip().lower()
-    if not status_norm:
-        return False
-    if status_norm in {"closed", "canceled", "cancelled", "resolved", "resolved_contractor", "resolved_homeowner"}:
-        return False
-    if status_norm.startswith("resolved_"):
-        return False
-    return True
+    return not is_terminal_dispute_status(status_value)
 
 
 def _agreement_escrow_status(agreement) -> str:

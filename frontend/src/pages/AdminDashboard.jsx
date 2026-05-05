@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
+import { isDisputeTerminal } from "../lib/disputeStatus.js";
 
 const ADMIN_BASE = "/api/projects/admin";
 
@@ -1427,7 +1428,11 @@ export default function AdminDashboard() {
                       <tr><Td colSpan={6} className="text-slate-600">{disputeStatusFilter === "all" ? "No disputes." : "No active disputes."}</Td></tr>
                     ) : (
                       disputesFiltered.map((d) => (
-                        <tr key={d.id} data-testid={`admin-dispute-row-${d.id}`} className="border-b border-black/5">
+                        <tr
+                          key={d.id}
+                          data-testid={`admin-dispute-row-${d.id}`}
+                          className={`border-b border-black/5 ${isDisputeTerminal(d.status) ? "opacity-70" : ""}`}
+                        >
                           <Td>
                             <div className="font-extrabold text-slate-900">Dispute #{d.id}</div>
                             <div className="text-xs text-slate-600">
@@ -1442,7 +1447,16 @@ export default function AdminDashboard() {
                             <div className="font-semibold text-slate-900">{d.project_title || "—"}</div>
                             <div className="text-xs text-slate-600">{d.milestone_title || d.reason || "No detail saved."}</div>
                           </Td>
-                          <Td>{titleCase(d.status || "—")}</Td>
+                          <Td>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span>{titleCase(d.status || "—")}</span>
+                              {isDisputeTerminal(d.status) ? (
+                                <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+                                  Resolved - read only
+                                </span>
+                              ) : null}
+                            </div>
+                          </Td>
                           <Td>{fmtMoney(d.amount || 0)}</Td>
                           <Td>{fmtDateTime(d.updated_at || d.created_at)}</Td>
                         </tr>

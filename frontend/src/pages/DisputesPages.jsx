@@ -5,6 +5,14 @@ import PageShell from "../components/PageShell.jsx";
 import DisputesCreateModal from "../components/DisputesCreateModal.jsx";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import { useNavigate } from "react-router-dom";
+import {
+  isDisputeTerminal,
+  canRespondToDispute,
+  canCancelDispute,
+  canUploadToDispute,
+  canResolveDispute,
+  getDisputeReadOnlyLabel,
+} from "../lib/disputeStatus.js";
 
 // ✅ NEW: AI Advisor (read-only, evidence-context-based)
 import DisputeAIAdvisor from "../components/ai/DisputeAIAdvisor.jsx";
@@ -76,6 +84,7 @@ const toneFor = (s) => {
       return "warn";
     case "resolved_contractor":
     case "resolved_homeowner":
+    case "resolved_customer":
       return "good";
     case "canceled":
       return "default";
@@ -91,33 +100,26 @@ const hasAnyResponse = (d) => {
 };
 
 const canRespond = (d) => {
-  const status = String(d?.status || "").toLowerCase();
-  return Boolean(d?.fee_paid) && (status === "open" || status === "under_review");
+  return Boolean(d?.fee_paid) && canRespondToDispute(d?.status);
 };
 
 // ✅ UX refinement: cancel only if early AND nobody has responded yet
 const canCancel = (d) => {
-  const status = String(d?.status || "").toLowerCase();
-  if (!["initiated", "open"].includes(status)) return false;
-  if (hasAnyResponse(d)) return false;
-  return true;
+  return canCancelDispute(d?.status) && !hasAnyResponse(d);
 };
 
 const canResolveAdmin = (d) => {
-  const status = String(d?.status || "").toLowerCase();
-  return !["resolved_contractor", "resolved_homeowner", "canceled"].includes(status);
+  return canResolveDispute(d?.status);
 };
 
 const isClosed = (d) => {
-  const s = String(d?.status || "").toLowerCase();
-  return ["resolved_contractor", "resolved_homeowner", "canceled"].includes(s);
+  return isDisputeTerminal(d?.status);
 };
 
 // Stage A: compute a "Next step" label for scanning
 const nextStepLabel = (d, isAdmin) => {
   const s = String(d?.status || "").toLowerCase();
-  if (s === "canceled") return "Closed";
-  if (s === "resolved_contractor" || s === "resolved_homeowner") return "Resolved";
+  if (isDisputeTerminal(s)) return "Resolved";
 
   if (!d?.fee_paid) return "Waiting on fee";
 
@@ -724,6 +726,7 @@ function DetailsModal({
 
   const statusText = String(dispute.status || "").replaceAll("_", " ");
   const next = nextStepLabel(dispute, isAdmin);
+  const readOnlyLabel = getDisputeReadOnlyLabel(dispute.status);
 
   const attachments = Array.isArray(dispute.attachments) ? dispute.attachments : [];
   const attachmentUrl = (a) => a?.url || a?.file_url || a?.file || a?.download_url || "";
@@ -735,6 +738,7 @@ function DetailsModal({
       <div className="mhb-glass" style={{ padding: 12 }}>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={toneFor(dispute.status)}>{statusText || "—"}</Badge>
+          {readOnlyLabel ? <Badge tone="default">{readOnlyLabel}</Badge> : null}
           <Badge tone={pillToneForNext(next)}>{next}</Badge>
           <DeadlineBadge dispute={dispute} now={now} />
           {dispute.escrow_frozen ? (
@@ -818,7 +822,7 @@ function DetailsModal({
       </div>
 
       <div className="flex flex-wrap justify-end gap-2">
-        {isContractor && (
+        {isContractor && !isClosed(dispute) && (
           <button
             className="mhb-btn"
             onClick={onOpenProposal}
@@ -829,11 +833,13 @@ function DetailsModal({
           </button>
         )}
 
-        <button className="mhb-btn" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">
-          Respond
-        </button>
+        {!isClosed(dispute) ? (
+          <button className="mhb-btn" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">
+            Respond
+          </button>
+        ) : null}
 
-        {isAdmin && (
+        {isAdmin && !isClosed(dispute) && (
           <button
             className="mhb-btn primary"
             onClick={onOpenResolve}
@@ -1168,12 +1174,16 @@ export default function DisputesPages() {
           </Badge>
         ) : null}
 
-        {!d.fee_paid ? (
-          <button className="mhb-btn" onClick={() => payFee(d)} title="Pay dispute fee (freezes escrow)" type="button">
-            Pay Fee
-          </button>
+        {!isClosed(d) ? (
+          !d.fee_paid ? (
+            <button className="mhb-btn" onClick={() => payFee(d)} title="Pay dispute fee (freezes escrow)" type="button">
+              Pay Fee
+            </button>
+          ) : (
+            <span className="text-emerald-700 font-bold text-sm">Fee Paid</span>
+          )
         ) : (
-          <span className="text-emerald-700 font-bold text-sm">Fee Paid</span>
+          <span className="text-slate-500 font-bold text-sm">Read only</span>
         )}
 
         <button
@@ -1188,19 +1198,21 @@ export default function DisputesPages() {
           View
         </button>
 
-        <button
-          className="mhb-btn"
-          onClick={() => {
-            setActiveDispute(d);
-            setRespondOpen(true);
-          }}
-          disabled={!canRespond(d)}
-          type="button"
-        >
-          Respond
-        </button>
+        {!isClosed(d) ? (
+          <button
+            className="mhb-btn"
+            onClick={() => {
+              setActiveDispute(d);
+              setRespondOpen(true);
+            }}
+            disabled={!canRespond(d)}
+            type="button"
+          >
+            Respond
+          </button>
+        ) : null}
 
-        {isContractor && (
+        {isContractor && !isClosed(d) && (
           <button
             className="mhb-btn"
             onClick={() => {
@@ -1214,28 +1226,34 @@ export default function DisputesPages() {
           </button>
         )}
 
-        <button
-          className="mhb-btn"
-          onClick={() => cancelDispute(d)}
-          disabled={!cancelAllowed}
-          title={cancelTooltip}
-          type="button"
-        >
-          Cancel
-        </button>
+        {!isClosed(d) ? (
+          <>
+            <button
+              className="mhb-btn"
+              onClick={() => cancelDispute(d)}
+              disabled={!cancelAllowed}
+              title={cancelTooltip}
+              type="button"
+            >
+              Cancel
+            </button>
 
-        <label className="mhb-btn" title="Upload evidence">
-          Upload
-          <input
-            type="file"
-            hidden
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              await uploadAttachment(d, file, "photo");
-              e.target.value = "";
-            }}
-          />
-        </label>
+            {canUploadToDispute(d?.status) ? (
+              <label className="mhb-btn" title="Upload evidence">
+                Upload
+                <input
+                  type="file"
+                  hidden
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    await uploadAttachment(d, file, "photo");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            ) : null}
+          </>
+        ) : null}
 
         {hasAnyResponse(d) && (
           <span
@@ -1246,7 +1264,7 @@ export default function DisputesPages() {
           </span>
         )}
 
-        {isAdmin && (
+        {isAdmin && !isClosed(d) && (
           <button
             className="mhb-btn primary"
             onClick={() => {
@@ -1260,7 +1278,7 @@ export default function DisputesPages() {
           </button>
         )}
 
-        {isClosed(d) ? <span className="text-xs text-slate-500 self-center">Closed</span> : null}
+        {isClosed(d) ? <span className="text-xs text-slate-500 self-center">Read only</span> : null}
       </div>
     );
   };

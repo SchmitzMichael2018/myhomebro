@@ -15953,6 +15953,92 @@ class AdminGeoTests(TestCase):
         self.assertEqual(agreements_payload["results"][0]["escrow_status"], "in_flight")
 
 
+class DisputeMutationSafetyTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="dispute-contractor@example.com",
+            password="testpass123",
+        )
+        self.admin_user = user_model.objects.create_superuser(
+            email="dispute-admin@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Dispute Contractor",
+            city="Austin",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Dispute Homeowner",
+            email="dispute-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Dispute Safety Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Dispute safety agreement",
+        )
+        self.terminal_dispute = Dispute.objects.create(
+            agreement=self.agreement,
+            initiator="contractor",
+            reason="Closed dispute",
+            description="Terminal dispute for mutation safety.",
+            status="closed",
+            fee_amount=Decimal("12.00"),
+            fee_paid=True,
+            escrow_frozen=False,
+        )
+        self.contractor_client = APIClient()
+        self.contractor_client.force_authenticate(user=self.contractor_user)
+        self.admin_client = APIClient()
+        self.admin_client.force_authenticate(user=self.admin_user)
+
+    def test_terminal_dispute_status_helper_covers_closed_aliases(self):
+        from projects.services.dispute_status import is_terminal_dispute_status
+
+        self.assertTrue(is_terminal_dispute_status("resolved_contractor"))
+        self.assertTrue(is_terminal_dispute_status("resolved_customer"))
+        self.assertTrue(is_terminal_dispute_status("closed"))
+        self.assertTrue(is_terminal_dispute_status("cancelled"))
+        self.assertFalse(is_terminal_dispute_status("open"))
+
+    def test_terminal_dispute_rejects_mutations(self):
+        attachment = SimpleUploadedFile("evidence.txt", b"terminal dispute evidence")
+
+        respond = self.contractor_client.patch(
+            f"/api/projects/disputes/{self.terminal_dispute.id}/respond/",
+            {"response": "This should not be accepted."},
+            format="json",
+        )
+        cancel = self.contractor_client.patch(
+            f"/api/projects/disputes/{self.terminal_dispute.id}/cancel/",
+            {},
+            format="json",
+        )
+        upload = self.contractor_client.post(
+            f"/api/projects/disputes/{self.terminal_dispute.id}/attachments/",
+            {"file": attachment, "kind": "photo"},
+            format="multipart",
+        )
+        resolve = self.admin_client.post(
+            f"/api/projects/disputes/{self.terminal_dispute.id}/resolve/",
+            {"outcome": "contractor", "admin_notes": "Should fail."},
+            format="json",
+        )
+
+        for response in (respond, cancel, upload, resolve):
+            self.assertEqual(response.status_code, 400, response.data)
+            self.assertEqual(str(response.data["detail"]), "This dispute is resolved and can no longer be modified.")
+
+
 class TemplateAIGenerationTests(TestCase):
     def test_create_template_from_scope_returns_structured_guidance_bundle(self):
         from projects.ai.template_builder import create_template_from_scope
