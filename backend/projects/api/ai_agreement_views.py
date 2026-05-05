@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
 
 from django.http import JsonResponse
@@ -11,7 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
-from projects.ai.agreement_description_writer import generate_or_improve_description
+from projects.ai.agreement_description_writer import _fallback_from_context, generate_or_improve_description
 from projects.ai.agreement_milestone_writer import (
     suggest_scope_and_milestones,
     suggest_pricing_refresh,
@@ -20,6 +21,8 @@ from projects.models import Agreement, Milestone
 from projects.services.ai_orchestrator import orchestrate_user_request
 from projects.services.ai.project_drafter import draft_project_structure
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
+
+logger = logging.getLogger(__name__)
 
 
 def _get_contractor_for_user(user):
@@ -72,22 +75,51 @@ def ai_agreement_description(request):
     if agreement.contractor_id and agreement.contractor_id != contractor.id:
         return _deny("Not your agreement.", "FORBIDDEN")
 
+    raw_project_title = (request.data.get("project_title") or "").strip()
+    raw_project_type = (request.data.get("project_type") or "").strip()
+    raw_project_subtype = (request.data.get("project_subtype") or "").strip()
+    raw_description = (request.data.get("current_description") or "").strip()
+
+    if not any([raw_project_title, raw_project_type, raw_project_subtype, raw_description]):
+        return _deny(
+            "Add a description before asking AI to find a starting point.",
+            "DESCRIPTION_REQUIRED",
+            status=HTTP_400_BAD_REQUEST,
+        )
+
     try:
         out = generate_or_improve_description(
             mode=(request.data.get("mode") or "").strip(),
-            project_title=request.data.get("project_title") or "",
-            project_type=request.data.get("project_type") or "",
-            project_subtype=request.data.get("project_subtype") or "",
-            current_description=request.data.get("current_description") or "",
+            project_title=raw_project_title,
+            project_type=raw_project_type,
+            project_subtype=raw_project_subtype,
+            current_description=raw_description,
         )
-    except Exception as e:
-        return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)
+    except Exception:
+        logger.exception("Agreement AI description fallback triggered after unexpected failure.")
+        out = {
+            **_fallback_from_context(
+                project_title=raw_project_title,
+                project_type=raw_project_type,
+                project_subtype=raw_project_subtype,
+                current_description=raw_description,
+            ),
+            "_mode": (request.data.get("mode") or "").strip(),
+        }
 
     payload = {
         "detail": "OK",
         "description": out["description"],
         "_mode": out.get("_mode"),
         "_model": out.get("_model"),
+        "project_title": out.get("project_title", raw_project_title),
+        "project_type": out.get("project_type", raw_project_type),
+        "project_subtype": out.get("project_subtype", raw_project_subtype),
+        "recommendation_source": out.get("recommendation_source", "ai"),
+        "confidence": out.get("confidence", "recommended"),
+        "confidence_label": out.get("confidence_label", ""),
+        "next_step_guidance": out.get("next_step_guidance", ""),
+        "reason": out.get("reason", ""),
         **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)

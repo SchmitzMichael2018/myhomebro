@@ -3625,6 +3625,47 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertTrue(payload["ai_enabled"])
         self.assertTrue(payload["ai_unlimited"])
 
+    def test_ai_agreement_description_falls_back_when_ai_fails(self):
+        with patch(
+            "projects.api.ai_agreement_views.generate_or_improve_description",
+            side_effect=RuntimeError("OpenAI unavailable"),
+        ):
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": self.agreement.id,
+                    "mode": "generate",
+                    "current_description": "Replace Siding on the west side of the home.",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["recommendation_source"], "fallback")
+        self.assertEqual(payload["project_type"], "Siding")
+        self.assertEqual(payload["project_subtype"], "Siding Replacement")
+        self.assertIn("Recommended from your description", payload["confidence_label"])
+        self.assertTrue(payload["description"])
+
+    def test_ai_agreement_description_requires_input(self):
+        response = self.client.post(
+            "/api/projects/agreements/ai/description/",
+            {
+                "agreement_id": self.agreement.id,
+                "mode": "generate",
+                "current_description": "",
+                "project_title": "",
+                "project_type": "",
+                "project_subtype": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["code"], "DESCRIPTION_REQUIRED")
+
     def test_dispute_ai_recommendation_works_without_entitlement_rows(self):
         with patch(
             "projects.api.disputes_ai_views.build_dispute_evidence_context",

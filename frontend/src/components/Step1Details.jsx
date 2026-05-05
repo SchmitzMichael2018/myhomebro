@@ -2627,6 +2627,46 @@ export default function Step1Details({
     return { changedKeys, nextValues };
   }
 
+  function buildFallbackAiSetupResult({
+    refinedDescription,
+    suggestedSetupValues,
+    setupFieldKeys,
+    recommendationReason,
+    message,
+  }) {
+    const nextTitle = safeTrim(
+      suggestedSetupValues?.project_title ||
+        dLocal?.project_title ||
+        buildProjectFriendlyTitle({
+          subtype: suggestedSetupValues?.project_subtype || dLocal?.project_subtype || "",
+          category: suggestedSetupValues?.project_type || dLocal?.project_type || "",
+          rawTitle: dLocal?.project_title || "",
+          sourceText: refinedDescription || dLocal?.description || step1JobDescriptionPrompt || "",
+        }) ||
+        ""
+    );
+
+    return {
+      kind: "fallback_recommendation",
+      confidenceLevel: "medium",
+      refinedDescription,
+      message:
+        message ||
+        "Recommended from your description. Review the suggested starting point before you continue.",
+      recommendationReason:
+        recommendationReason || "Recommended from your description.",
+      recommendedTemplate: null,
+      suggestedTitle: nextTitle || "Recommended starting point",
+      suggestedProjectType: safeTrim(suggestedSetupValues?.project_type || dLocal?.project_type || ""),
+      suggestedProjectSubtype: safeTrim(
+        suggestedSetupValues?.project_subtype || dLocal?.project_subtype || ""
+      ),
+      setupFieldKeys: Array.isArray(setupFieldKeys) ? setupFieldKeys : [],
+      recommendationSource: "fallback",
+      fallbackLabel: "Recommended from your description",
+    };
+  }
+
   async function runAiRefineAndSetup(promptText) {
     const roughDescription = safeTrim(promptText);
     if (!roughDescription) return;
@@ -2635,6 +2675,11 @@ export default function Step1Details({
     setAiSetupError("");
     setAiSetupResult(null);
     setDismissedAiTemplateRecommendation(false);
+
+    let refinedDescription = "";
+    let setupFieldKeys = [];
+    let suggestedSetupValues = null;
+    let recommendationData = null;
 
     try {
       const clarificationContext = buildDescriptionRequestContext(
@@ -2653,17 +2698,16 @@ export default function Step1Details({
       };
 
       const refineRes = await api.post(`/projects/agreements/ai/description/`, refinePayload);
-      const refinedDescription = safeTrim(refineRes?.data?.description || "");
+      refinedDescription = safeTrim(refineRes?.data?.description || "");
 
       if (!refinedDescription) {
         throw new Error("AI returned an empty description.");
       }
 
       applyRefinedDescription(refinedDescription);
-      const {
-        changedKeys: setupFieldKeys,
-        nextValues: suggestedSetupValues,
-      } = applyAiSetupFields(refineRes?.data || {});
+      const aiSetupFields = applyAiSetupFields(refineRes?.data || {});
+      setupFieldKeys = aiSetupFields.changedKeys;
+      suggestedSetupValues = aiSetupFields.nextValues;
 
       const recommendRes = await api.post("/projects/templates/recommend/", {
         project_title: suggestedSetupValues?.project_title || dLocal.project_title || "",
@@ -2675,7 +2719,7 @@ export default function Step1Details({
         description: refinedDescription,
       });
 
-      const recommendationData = recommendRes?.data || {};
+      recommendationData = recommendRes?.data || {};
       const resolvedProjectType = safeTrim(
         suggestedSetupValues?.project_type || dLocal.project_type || ""
       );
@@ -2753,17 +2797,37 @@ export default function Step1Details({
         }
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else {
-      setAiSetupResult({
-        kind: "description_only",
-        refinedDescription,
-        message:
-          "Agreement draft created. Review the highlighted sections below.",
-        setupFieldKeys,
-      });
+        setAiSetupResult(
+          buildFallbackAiSetupResult({
+            refinedDescription,
+            suggestedSetupValues,
+            setupFieldKeys,
+            recommendationReason,
+            message: recommendationData?.detail
+              ? `Recommended from your description. ${recommendationData.detail}`
+              : "Recommended from your description. Review the suggested starting point before you continue.",
+          })
+        );
         setSelectedTemplateId(null);
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       }
     } catch (e) {
+      if (refinedDescription || safeTrim(roughDescription)) {
+        setAiSetupResult(
+          buildFallbackAiSetupResult({
+            refinedDescription: refinedDescription || roughDescription,
+            suggestedSetupValues,
+            setupFieldKeys,
+            recommendationReason: "Recommended from your description.",
+            message:
+              "Recommended from your description. AI fallback was used because the matching service was unavailable.",
+          })
+        );
+        setSelectedTemplateId(null);
+        queueProjectDetailsReview(["description", ...setupFieldKeys]);
+        return;
+      }
+
       setAiSetupError(
         e?.response?.data?.detail || e?.message || "Could not refine and set up this agreement."
       );
@@ -3553,6 +3617,91 @@ export default function Step1Details({
           </section>
         ) : null}
 
+        {startMode === "ai" && aiSetupResult?.kind === "fallback_recommendation" ? (
+          <section
+            data-testid="step1-ai-setup-result"
+            className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+              Recommended from your description
+            </div>
+            <div className="mt-2 text-base font-semibold text-slate-900">
+              {aiSetupResult.suggestedTitle || "Recommended starting point"}
+            </div>
+            <div className="mt-1 text-sm text-slate-700">
+              {aiSetupResult.message ||
+                "We used your description to build a usable starting point."}
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-sky-200 bg-white p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Suggested title
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  {aiSetupResult.suggestedTitle || "Recommended starting point"}
+                </div>
+              </div>
+              <div className="rounded-xl border border-sky-200 bg-white p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Suggested project type
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  {aiSetupResult.suggestedProjectType || "Not available"}
+                </div>
+              </div>
+              <div className="rounded-xl border border-sky-200 bg-white p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Suggested subtype
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  {aiSetupResult.suggestedProjectSubtype || "Not available"}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 rounded-xl border border-white/80 bg-white/80 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Refined description
+              </div>
+              <div className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
+                {aiSetupResult.refinedDescription}
+              </div>
+            </div>
+            <div className="mt-3 text-sm text-slate-700">{aiSetupResult.recommendationReason}</div>
+            <div className="mt-3 text-xs text-slate-600">
+              Review this starting point, keep editing the agreement details, or continue without a
+              template if that is the right fit.
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="step1-ai-setup-build-without-template"
+                onClick={handleBuildAgreementWithoutTemplate}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Build Without Template
+              </button>
+              <button
+                type="button"
+                data-testid="step1-ai-setup-description-only"
+                onClick={handleUseAiDescriptionOnly}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Use Description Only
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep1ManualBrowseSignal((prev) => prev + 1);
+                  activateStartMode("template", { committed: true, source: "user" });
+                }}
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"
+              >
+                Browse templates manually
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         {startMode === "ai" && aiSetupResult?.kind === "description_only" ? (
           <section
             data-testid="step1-ai-setup-result"
@@ -3577,6 +3726,26 @@ export default function Step1Details({
             </div>
             <div className="mt-2 text-xs text-slate-600">
               Review the Project Details section below and keep editing before you continue.
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="step1-ai-setup-build-without-template"
+                onClick={handleBuildAgreementWithoutTemplate}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                Build Without Template
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep1ManualBrowseSignal((prev) => prev + 1);
+                  activateStartMode("template", { committed: true, source: "user" });
+                }}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Browse templates manually
+              </button>
             </div>
           </section>
         ) : null}

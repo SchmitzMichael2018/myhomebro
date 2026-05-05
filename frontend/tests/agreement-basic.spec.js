@@ -689,7 +689,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByText('No strong template match found')).toHaveCount(0);
 });
 
-test('agreement wizard step 1 shows a recovery state when AI starting point generation fails', async ({
+test('agreement wizard step 1 shows a recommended fallback when AI/template matching is unavailable', async ({
   page,
 }) => {
   const agreement = {
@@ -759,12 +759,23 @@ test('agreement wizard step 1 shows a recovery state when AI starting point gene
   });
 
   await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 250));
     await route.fulfill({
-      status: 500,
+      status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        detail: 'AI could not finish the starting point right now.',
+        project_title: 'Siding Replacement',
+        project_type: 'Siding',
+        project_subtype: 'Siding Replacement',
+        description:
+          'Work includes removal and replacement of exterior siding on the areas identified in the project description.',
+        recommendation_source: 'fallback',
+        confidence: 'fallback',
+        confidence_label: 'Recommended from your description',
+        next_step_guidance: 'Review the recommended starting point before continuing.',
+        reason: 'Recommended from your description.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
       }),
     });
   });
@@ -801,6 +812,7 @@ test('agreement wizard step 1 shows a recovery state when AI starting point gene
       body: JSON.stringify({
         confidence: 'none',
         candidates: [],
+        detail: 'No confident matching template exists yet for this type/subtype.',
       }),
     });
   });
@@ -849,13 +861,56 @@ test('agreement wizard step 1 shows a recovery state when AI starting point gene
 
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
-  await expect(page.getByTestId('step1-starting-point-error-card')).toBeVisible();
-  await expect(page.getByTestId('step1-starting-point-retry-button')).toBeVisible();
-  await expect(page.getByTestId('step1-starting-point-build-without-template-button')).toBeVisible();
-
-  await page.getByTestId('step1-starting-point-build-without-template-button').click();
+  await expect(page.getByTestId('step1-starting-point-error-card')).toHaveCount(0);
+  await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
+  await expect(page.getByText('Recommended from your description')).toBeVisible();
+  await expect(page.getByText('Siding Replacement')).toBeVisible();
+  await expect(page.getByTestId('step1-ai-setup-build-without-template')).toBeVisible();
+  await expect(page.getByTestId('step1-ai-setup-description-only')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toHaveValue(
+    'Replace siding on a single-story home with trim repairs and cleanup'
+  );
+  await page.getByTestId('step1-ai-setup-build-without-template').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+});
+
+test('agreement wizard step 1 keeps empty descriptions blocked', async ({ page }) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/agreements/123/**', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: '',
+          title: '',
+          project_type: '',
+          project_subtype: '',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          description: '',
+          homeowner: null,
+          status: 'draft',
+          compliance_warning: {
+            warning_level: 'none',
+            message: '',
+          },
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-find-best-starting-point-button')).toBeDisabled();
 });
 
 test('agreement wizard step 1 loads saved values without rerunning ai and resumes from persisted progress', async ({
