@@ -269,6 +269,96 @@ async function mockAdminDashboard(page) {
     });
   });
 
+  await page.route('**/api/projects/agreements/321/**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const pathname = requestUrl.pathname.replace(/^\/api/, '');
+
+    if (route.request().method() === 'GET' && pathname === '/projects/agreements/321/') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 321,
+          title: 'Kitchen Remodel',
+          homeowner_name: 'Casey Prospect',
+          homeowner_email: 'casey@example.com',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          status: 'sent',
+          workflow_status: 'sent',
+          project_class: 'residential',
+          total_cost: '12000.00',
+          is_fully_signed: true,
+          escrow_funded: true,
+          milestones: [],
+          pdf_versions: [],
+          current_pdf_url: '/media/agreement-321.pdf',
+          sms_enabled: false,
+          sms_opted_out: false,
+          last_sms_automation_decision: null,
+        }),
+      });
+    }
+
+    if (route.request().method() === 'GET' && pathname === '/projects/agreements/321/funding_preview/') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          project_amount: '12000.00',
+          platform_fee: '600.00',
+          contractor_payout: '11400.00',
+          homeowner_escrow: '12000.00',
+          rate: 0.05,
+          fixed_fee: 1,
+          high_risk_applied: false,
+          is_intro: false,
+          tier_name: 'standard',
+        }),
+      });
+    }
+
+    if (route.request().method() === 'GET' && pathname === '/projects/warranties/') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    }
+
+    return route.continue();
+  });
+
+  await page.route('**/api/projects/admin/agreements/321/ai-context/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement_id: 321,
+        source_lead_id: 55,
+        has_ai_analysis: true,
+        suggested_title: 'Kitchen Remodel',
+        template_name: 'Kitchen Remodel Template',
+        confidence: 'high',
+        reason: 'Strong match to the requested scope.',
+        pricing_sources: ['Template baseline', 'Historical project'],
+        pricing_confidence_levels: ['high', 'medium'],
+        ai_analysis: {},
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/admin/agreements/321/refresh-pricing/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Pricing guidance refreshed.',
+        persisted_count: 4,
+      }),
+    });
+  });
+
   await page.route('**/api/projects/admin/disputes**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const status = (requestUrl.searchParams.get('status') || 'active').toLowerCase();
@@ -374,6 +464,19 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByText('Filter:')).toContainText('Escrow in flight');
   await expect(page.getByText('No agreements match')).toHaveCount(0);
   await expect(page.getByText('Kitchen Remodel')).toBeVisible();
+  await page.getByRole('button', { name: 'View Agreement' }).first().click();
+  await expect(page).toHaveURL(/\/app\/admin\/agreements\/321$/);
+  await expect(page.getByRole('button', { name: 'Back to Admin Agreements' })).toBeVisible();
+  await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Pricing' }).first().click();
+  await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=pricing$/);
+  await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'View AI' }).first().click();
+  await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=ai$/);
+  await expect(page.getByTestId('admin-agreement-ai-context')).toBeVisible();
+  await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Refresh Pricing' }).first().click();
+  await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=pricing$/);
 
   await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractors-view')).toBeVisible();

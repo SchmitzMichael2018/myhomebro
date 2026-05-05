@@ -132,6 +132,7 @@ export function protectedRoutes() {
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>
           <Route path="admin" element={<AdminDashboard />} />
+          <Route path="admin/agreements/:id" element={<AgreementDetail adminMode />} />
           <Route path="admin/templates" element={<AdminTemplatesPage />} />
           <Route path="admin/disputes" element={<Disputes />} />
         </Route>

@@ -338,7 +338,6 @@ export default function AdminDashboard() {
   const [pwResetEmail, setPwResetEmail] = useState("");
   const [pwResetMsg, setPwResetMsg] = useState("");
   const [agreementOpsMsg, setAgreementOpsMsg] = useState("");
-  const [agreementAiContext, setAgreementAiContext] = useState(null);
   const [agreementOpBusy, setAgreementOpBusy] = useState("");
   const [showArchivedDisputes, setShowArchivedDisputes] = useState(false);
 
@@ -439,24 +438,17 @@ export default function AdminDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feeMismatchOnly]);
 
-  function goToAgreementFinalize(agreementId) {
-    navigate(`/app/agreements/${agreementId}/wizard?step=4`);
+  function goToAdminAgreementDetail(agreementId, tab = "") {
+    const suffix = tab ? `?tab=${encodeURIComponent(tab)}` : "";
+    navigate(`/app/admin/agreements/${agreementId}${suffix}`);
   }
 
   function goToAgreementPricing(agreementId) {
-    navigate(`/app/agreements/${agreementId}/wizard?step=2`);
+    goToAdminAgreementDetail(agreementId, "pricing");
   }
 
-  async function viewAgreementAiContext(agreementId) {
-    setAgreementOpsMsg("");
-    try {
-      const res = await api.get(`${ADMIN_BASE}/agreements/${agreementId}/ai-context/`);
-      setAgreementAiContext(res.data);
-    } catch (err) {
-      console.error("Admin AI context error:", err);
-      setAgreementAiContext(null);
-      setAgreementOpsMsg("Failed to load AI context for this agreement.");
-    }
+  function viewAgreementAiContext(agreementId) {
+    goToAdminAgreementDetail(agreementId, "ai");
   }
 
   async function refreshAgreementPricing(agreementId) {
@@ -465,6 +457,7 @@ export default function AdminDashboard() {
     try {
       const res = await api.post(`${ADMIN_BASE}/agreements/${agreementId}/refresh-pricing/`);
       setAgreementOpsMsg(res.data?.detail || "Pricing guidance refreshed.");
+      goToAdminAgreementDetail(agreementId, "pricing");
     } catch (err) {
       console.error("Admin pricing refresh error:", err);
       setAgreementOpsMsg("Failed to refresh pricing guidance.");
@@ -1249,7 +1242,7 @@ export default function AdminDashboard() {
                 </div>
               ) : null}
 
-              {agreementEscrowFilterLabel ? (
+                  {agreementEscrowFilterLabel ? (
                 <div className="mb-3 text-xs text-slate-700">
                   Filter: <span className="font-extrabold">{agreementEscrowFilterLabel}</span>{" "}
                   <button
@@ -1264,71 +1257,6 @@ export default function AdminDashboard() {
               {agreementOpsMsg ? (
                 <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
                   {agreementOpsMsg}
-                </div>
-              ) : null}
-
-              {agreementAiContext ? (
-                <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-extrabold text-slate-900">
-                        AI Context for Agreement #{agreementAiContext.agreement_id}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-600">
-                        {agreementAiContext.source_lead_id
-                          ? `Source lead #${agreementAiContext.source_lead_id}`
-                          : "No linked lead"}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAgreementAiContext(null)}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-3 text-xs text-slate-700">
-                    <div>
-                      <div className="font-extrabold text-slate-900">Suggested title</div>
-                      <div className="mt-1">{agreementAiContext.suggested_title || "Not available"}</div>
-                    </div>
-                    <div>
-                      <div className="font-extrabold text-slate-900">Template</div>
-                      <div className="mt-1">{agreementAiContext.template_name || "Not available"}</div>
-                    </div>
-                    <div>
-                      <div className="font-extrabold text-slate-900">Confidence</div>
-                      <div className="mt-1">{agreementAiContext.confidence || "Not available"}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 text-xs text-slate-700">
-                    <span className="font-extrabold text-slate-900">Reason:</span>{" "}
-                    {agreementAiContext.reason || "No AI recommendation notes were saved for this agreement."}
-                  </div>
-                  {Array.isArray(agreementAiContext.pricing_confidence_levels) &&
-                  agreementAiContext.pricing_confidence_levels.length ? (
-                    <div className="mt-3 text-xs text-slate-700">
-                      <span className="font-extrabold text-slate-900">Pricing confidence:</span>{" "}
-                      {agreementAiContext.pricing_confidence_levels.join(", ")}
-                    </div>
-                  ) : null}
-                  {Array.isArray(agreementAiContext.pricing_sources) &&
-                  agreementAiContext.pricing_sources.length ? (
-                    <div className="mt-3">
-                      <div className="text-xs font-extrabold text-slate-900">Pricing sources</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {agreementAiContext.pricing_sources.slice(0, 4).map((source, index) => (
-                          <span
-                            key={`${source}-${index}`}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700"
-                          >
-                            {source}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -1362,7 +1290,7 @@ export default function AdminDashboard() {
                           <Td>
                             <div className="flex flex-wrap gap-2">
                               <button
-                                onClick={() => goToAgreementFinalize(a.id)}
+                                onClick={() => goToAdminAgreementDetail(a.id)}
                                 className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-slate-800"
                               >
                                 View Agreement

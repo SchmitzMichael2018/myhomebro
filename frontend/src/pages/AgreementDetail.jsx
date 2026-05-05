@@ -11,7 +11,7 @@
 // - Skip funding_preview (escrow fee summary) when Direct Pay
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, {
   approveDrawRequest,
@@ -282,10 +282,13 @@ function openInNewTab(url) {
   window.open(abs, "_blank", "noopener,noreferrer");
 }
 
-export default function AgreementDetail() {
+export default function AgreementDetail({ adminMode = false }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, ready, isAuthed } = useAuth();
+  const isAdminMode = !!adminMode;
+  const activeTab = useMemo(() => new URLSearchParams(location.search).get("tab") || "", [location.search]);
 
   const [agreement, setAgreement] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -314,6 +317,8 @@ export default function AgreementDetail() {
   const [paymentTargetDraw, setPaymentTargetDraw] = useState(null);
   const [externalPayments, setExternalPayments] = useState([]);
   const [externalPaymentsLoading, setExternalPaymentsLoading] = useState(false);
+  const [adminAiContext, setAdminAiContext] = useState(null);
+  const [adminAiLoading, setAdminAiLoading] = useState(false);
   const [drawForm, setDrawForm] = useState({ title: "", notes: "", percents: {} });
   const [paymentForm, setPaymentForm] = useState({
     gross_amount: "",
@@ -367,11 +372,12 @@ export default function AgreementDetail() {
   const isExecuted = Boolean(agreement?.signature_is_satisfied || agreement?.is_fully_signed);
 
   const isContractor =
-    user?.role === "contractor" ||
-    user?.role === "contractor_owner" ||
-    user?.type === "contractor" ||
-    user?.is_contractor ||
-    !!getAccessToken();
+    !isAdminMode &&
+    (user?.role === "contractor" ||
+      user?.role === "contractor_owner" ||
+      user?.type === "contractor" ||
+      user?.is_contractor ||
+      !!getAccessToken());
   const signingRole = isContractor ? "contractor" : "homeowner";
 
   const ratePercent =
@@ -871,6 +877,35 @@ export default function AgreementDetail() {
     }
   };
 
+  useEffect(() => {
+    if (!isAdminMode || activeTab !== "ai" || !id) {
+      setAdminAiContext(null);
+      setAdminAiLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadAdminAiContext = async () => {
+      try {
+        setAdminAiLoading(true);
+        const { data } = await api.get(`/projects/admin/agreements/${id}/ai-context/`);
+        if (!cancelled) setAdminAiContext(data);
+      } catch (error) {
+        console.error("Admin AI context load error:", error);
+        if (!cancelled) setAdminAiContext(null);
+      } finally {
+        if (!cancelled) setAdminAiLoading(false);
+      }
+    };
+
+    loadAdminAiContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, id, isAdminMode]);
+
   if (loading) return <div className="p-6">Loading…</div>;
   if (!norm.id) return <div className="p-6">Agreement not found.</div>;
 
@@ -1257,23 +1292,29 @@ export default function AgreementDetail() {
     norm,
     milestones,
   });
+  const backUrl = isAdminMode ? "/app/admin?view=agreements" : "/agreements";
+  const pageEyebrow = isAdminMode ? "Admin" : "Core";
+  const pageTitle = isAdminMode ? "Admin Agreement Detail" : "Contract Workspace";
+  const pageSubtitle = isAdminMode
+    ? "Review agreement details, pricing signals, and agreement history without contractor workflow actions."
+    : "Manage signatures, funding, assignments, documents, milestones, and invoices after the agreement is sent.";
 
   return (
     <ContractorPageSurface
-      eyebrow="Core"
-      title="Contract Workspace"
-      subtitle="Manage signatures, funding, assignments, documents, milestones, and invoices after the agreement is sent."
+      eyebrow={pageEyebrow}
+      title={pageTitle}
+      subtitle={pageSubtitle}
       actions={
         <button
-          onClick={() => navigate("/agreements")}
+          onClick={() => navigate(backUrl)}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
         >
-          Back to Agreements
+          {isAdminMode ? "Back to Admin Agreements" : "Back to Agreements"}
         </button>
       }
     >
       <button
-        onClick={() => navigate("/agreements")}
+        onClick={() => navigate(backUrl)}
         className="hidden"
       >
         ← Back
@@ -1339,12 +1380,95 @@ export default function AgreementDetail() {
           <button
             type="button"
             data-testid="agreement-detail-back-to-wizard-button"
-            onClick={() => navigate(`/app/agreements/${id}/wizard?step=1`)}
+            onClick={() => navigate(isAdminMode ? backUrl : `/app/agreements/${id}/wizard?step=1`)}
             className="mt-3 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100"
           >
-            Back to Wizard
+            {isAdminMode ? "Back to Admin Agreements" : "Back to Wizard"}
           </button>
         </div>
+      ) : null}
+
+      {isAdminMode && activeTab === "ai" ? (
+        <section
+          id="admin-agreement-ai-context"
+          data-testid="admin-agreement-ai-context"
+          className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-extrabold uppercase tracking-wide text-indigo-700">
+                Admin AI Context
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                Agreement AI notes and pricing signals
+              </div>
+              <div className="mt-1 text-sm text-slate-700">
+                Review the source lead and AI hints without leaving the admin agreement context.
+              </div>
+            </div>
+            <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-extrabold text-indigo-700">
+              {adminAiLoading ? "Loading..." : "Loaded"}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-indigo-200 bg-white p-3">
+              <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                Suggested title
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {adminAiContext?.suggested_title || "Not available"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-indigo-200 bg-white p-3">
+              <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                Template
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {adminAiContext?.template_name || "Not available"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-indigo-200 bg-white p-3">
+              <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                Confidence
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {adminAiContext?.confidence || "Not available"}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-indigo-200 bg-white p-3 text-sm text-slate-700">
+            <div className="font-extrabold text-slate-900">Reason</div>
+            <div className="mt-1">
+              {adminAiContext?.reason || "No AI recommendation notes were saved for this agreement."}
+            </div>
+          </div>
+
+          {Array.isArray(adminAiContext?.pricing_confidence_levels) &&
+          adminAiContext.pricing_confidence_levels.length ? (
+            <div className="mt-4 text-sm text-slate-700">
+              <span className="font-extrabold text-slate-900">Pricing confidence:</span>{" "}
+              {adminAiContext.pricing_confidence_levels.join(", ")}
+            </div>
+          ) : null}
+
+          {Array.isArray(adminAiContext?.pricing_sources) && adminAiContext.pricing_sources.length ? (
+            <div className="mt-3">
+              <div className="text-sm font-extrabold text-slate-900">Pricing sources</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {adminAiContext.pricing_sources.slice(0, 4).map((source, index) => (
+                  <span
+                    key={`${source}-${index}`}
+                    className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-800"
+                  >
+                    {source}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
 
