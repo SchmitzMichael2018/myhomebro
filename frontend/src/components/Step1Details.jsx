@@ -310,6 +310,188 @@ function inferBasementProjectSetup(sourceText = "") {
   };
 }
 
+function countMatchingPatterns(text = "", patterns = []) {
+  const haystack = normalizeAiText(text);
+  if (!haystack) return 0;
+  return (Array.isArray(patterns) ? patterns : []).filter((pattern) => pattern.test(haystack)).length;
+}
+
+function inferWetBarProjectSetup(sourceText = "") {
+  const text = normalizeAiText(sourceText);
+  if (!text) return null;
+
+  const cabinetrySignals = [
+    /\bcabinet(s|ry)?\b/i,
+    /\bcustom cabinets?\b/i,
+    /\bbar cabinet(s)?\b/i,
+    /\bwet bar cabinet(s)?\b/i,
+  ];
+  const countertopSignals = [
+    /\bcountertop(s)?\b/i,
+    /\bquartz\b/i,
+    /\bgranite\b/i,
+    /\bbutcher block\b/i,
+  ];
+  const plumbingSignals = [
+    /\bsink\b/i,
+    /\bfaucet\b/i,
+    /\bplumb(ing|er)?\b/i,
+  ];
+  const lightingSignals = [
+    /\blighting\b/i,
+    /\brecessed light(s)?\b/i,
+    /\bunder-?cabinet light(s)?\b/i,
+    /\blight fixture(s)?\b/i,
+  ];
+  const wetBarSignals = [/\bwet bar\b/i, /\bbar area\b/i, /\bbar installation\b/i];
+
+  const cabinetryHits = countMatchingPatterns(text, cabinetrySignals);
+  const countertopHits = countMatchingPatterns(text, countertopSignals);
+  const plumbingHits = countMatchingPatterns(text, plumbingSignals);
+  const lightingHits = countMatchingPatterns(text, lightingSignals);
+  const wetBarHits = countMatchingPatterns(text, wetBarSignals);
+
+  const dominantSignals = cabinetryHits + countertopHits + plumbingHits + wetBarHits;
+  if (dominantSignals < 2 && lightingHits < 2) {
+    return null;
+  }
+
+  return {
+    project_type: "Remodel",
+    project_subtype:
+      wetBarHits || dominantSignals >= 3 ? "Wet Bar Installation" : "Cabinetry and Countertops",
+    project_title: "Wet Bar Installation",
+    description:
+      "Install or remodel the wet bar area as described, including cabinetry, countertops, sink or plumbing fixture work, related lighting, finish carpentry, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  };
+}
+
+function inferStep1ProjectClassificationConsistency({
+  sourceText = "",
+  scopeText = "",
+  suggestedProjectType = "",
+  suggestedProjectSubtype = "",
+  suggestedProjectTitle = "",
+}) {
+  const combinedText = [sourceText, scopeText, suggestedProjectType, suggestedProjectSubtype, suggestedProjectTitle]
+    .filter(Boolean)
+    .join(" ");
+  const combined = normalizeAiText(combinedText);
+  if (!combined) return null;
+
+  const basementSetup = inferBasementProjectSetup(combinedText);
+  if (basementSetup) return basementSetup;
+
+  const wetBarSetup = inferWetBarProjectSetup(combinedText);
+  if (wetBarSetup) return wetBarSetup;
+
+  if (/\bsiding\b/i.test(combined) && /\breplace|replacement\b/i.test(combined)) {
+    return {
+      project_type: "Siding",
+      project_subtype: "Siding Replacement",
+      project_title: "Siding Replacement",
+      description:
+        "Replace existing siding and related trim as described, complete preparation and installation, and finish with cleanup. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+    };
+  }
+
+  if (/\broof\b/i.test(combined) && /\breplace|replacement|reroof|re-roof\b/i.test(combined)) {
+    return {
+      project_type: "Roofing",
+      project_subtype: "Roof Replacement",
+      project_title: "Roof Replacement",
+      description:
+        "Remove and replace the roofing system as described, complete related flashing and trim, and finish with cleanup and walkthrough. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+    };
+  }
+
+  if (/\bpaint(ing)?\b/i.test(combined)) {
+    return {
+      project_type: "Painting",
+      project_subtype: /\bexterior\b/i.test(combined) ? "Exterior" : "Interior",
+      project_title: /\bbedroom\b/i.test(combined) ? "Bedroom Painting" : "Painting Project",
+      description:
+        "Prepare the surfaces, apply primer and paint as specified, complete detail work and touch-ups, and clean the work area when finished.",
+    };
+  }
+
+  if (/\bfaucet\b/i.test(combined) || /\bplumb(ing|er)?\b/i.test(combined)) {
+    return {
+      project_type: "Plumbing",
+      project_subtype: "Faucet Repair",
+      project_title: "Faucet Repair",
+      description:
+        "Repair or replace the fixture as described, verify water flow and shutoff, and complete cleanup after the work is finished.",
+    };
+  }
+
+  if (/\bfence\b/i.test(combined)) {
+    return {
+      project_type: "Fencing",
+      project_subtype: "Fence Installation",
+      project_title: "Fence Installation",
+      description:
+        "Set the fence layout, install posts and panels or pickets as described, complete finish details, and clean the work area after installation.",
+    };
+  }
+
+  if (/\bdrywall\b/i.test(combined)) {
+    return {
+      project_type: "Drywall",
+      project_subtype: "Drywall Repair",
+      project_title: "Drywall Repair",
+      description:
+        "Repair the damaged drywall areas, complete patching, sanding, finishing, and touch-up work as needed, and leave the work area clean.",
+    };
+  }
+
+  const electricalSignals = countMatchingPatterns(combinedText, [
+    /\belectrical\b/i,
+    /\bwire(ing)?\b/i,
+    /\brecessed light(s)?\b/i,
+    /\blighting\b/i,
+    /\boutlet(s)?\b/i,
+    /\bswitch(es)?\b/i,
+  ]);
+  const cabinetOrCounterSignals = countMatchingPatterns(combinedText, [
+    /\bcabinet(s|ry)?\b/i,
+    /\bcountertop(s)?\b/i,
+    /\bquartz\b/i,
+    /\bgranite\b/i,
+  ]);
+  const plumbingSignals = countMatchingPatterns(combinedText, [
+    /\bplumb(ing|er)?\b/i,
+    /\bsink\b/i,
+    /\bfaucet\b/i,
+  ]);
+  if (electricalSignals >= 2 && cabinetOrCounterSignals === 0 && plumbingSignals === 0) {
+    return {
+      project_type: "Electrical",
+      project_subtype: "Lighting",
+      project_title: "Lighting Installation",
+      description:
+        "Install the electrical and lighting components described, verify circuit requirements and fixture placement, complete installation, and clean the work area when finished.",
+    };
+  }
+
+  if (suggestedProjectType === "Electrical") {
+    const cabinetOrCounterSignals =
+      countMatchingPatterns(combinedText, [/\bcabinet(s|ry)?\b/i, /\bcountertop(s)?\b/i, /\bquartz\b/i, /\bgranite\b/i, /\bwet bar\b/i]) +
+      countMatchingPatterns(combinedText, [/\bplumb(ing|er)?\b/i, /\bsink\b/i]);
+    if (cabinetOrCounterSignals >= 2) {
+      return {
+        project_type: "Remodel",
+        project_subtype: "Wet Bar Installation",
+        project_title: "Wet Bar Installation",
+        description:
+          "Install or remodel the wet bar area as described, including cabinetry, countertops, sink or plumbing fixture work, related lighting, finish carpentry, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+      };
+    }
+  }
+
+  return null;
+}
+
 function scoreOptionAgainstText(option, sourceText) {
   const optionLabel = safeTrim(option?.label || option?.value);
   if (!optionLabel) return 0;
@@ -2799,9 +2981,10 @@ export default function Step1Details({
     return handleApplyTemplate(template, options);
   }
 
-  function requestStep1AiSetup(prompt) {
+  async function requestStep1AiSetup(prompt) {
     const roughDescription = safeTrim(prompt);
     if (!roughDescription) return;
+    if (aiSetupBusy || aiSetupLoadingVisible) return;
     setStep1NoTemplateBuilt(false);
 
     const hasSavedStep1State =
@@ -2818,6 +3001,7 @@ export default function Step1Details({
       return;
     }
 
+    openAiSetupLoading();
     setLastAiSetupPrompt(roughDescription);
     setSelectedTemplateId(null);
     setTemplateSearch("");
@@ -2845,7 +3029,6 @@ export default function Step1Details({
         { silent: true }
       );
     }
-    openAiSetupLoading();
     setDLocal((prev) => ({
       ...prev,
       project_title: "",
@@ -2862,6 +3045,8 @@ export default function Step1Details({
       description: roughDescription,
       scope_of_work: roughDescription,
     }));
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     if (typeof onStep1AiSetupRequest === "function") {
       onStep1AiSetupRequest({ prompt: roughDescription, nonce: Date.now() });
@@ -3079,7 +3264,7 @@ export default function Step1Details({
 
   async function closeAiSetupLoading({ immediate = false } = {}) {
     const startedAt = Number(aiSetupLoadingStartedAtRef.current || 0);
-    const minVisibleMs = 850;
+    const minVisibleMs = 1000;
     const elapsed = startedAt ? Date.now() - startedAt : minVisibleMs;
     if (!immediate && elapsed < minVisibleMs) {
       await new Promise((resolve) => setTimeout(resolve, minVisibleMs - elapsed));
@@ -3093,11 +3278,6 @@ export default function Step1Details({
     const refinedDescription = normalizeStep1FieldValue(
       aiData?.description || aiData?.normalized_description || ""
     );
-    const basementSetup = inferBasementProjectSetup(
-      [refinedDescription, dLocal?.description, aiData?.project_title, aiData?.project_type, aiData?.project_subtype]
-        .filter(Boolean)
-        .join(" ")
-    );
     const rawProjectTitle = safeTrim(
       aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""
     );
@@ -3110,25 +3290,38 @@ export default function Step1Details({
       rawProjectType,
       rawProjectSubtype,
       refinedDescription,
+      dLocal?.description || "",
     ]
       .filter(Boolean)
       .join(" ");
     const classificationText = [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
-    const dominantCategory = basementSetup
-      ? { category: basementSetup.project_type, subtype: basementSetup.project_subtype, reasoning: ["basement override"] }
+    const consistencySetup = inferStep1ProjectClassificationConsistency({
+      sourceText,
+      scopeText: refinedDescription || dLocal?.description || "",
+      suggestedProjectType: rawProjectType,
+      suggestedProjectSubtype: rawProjectSubtype,
+      suggestedProjectTitle: rawProjectTitle,
+    });
+    const dominantCategory = consistencySetup
+      ? {
+          category: consistencySetup.project_type,
+          subtype: consistencySetup.project_subtype,
+          reasoning: ["scope consistency override"],
+        }
       : inferDominantProjectCategory(classificationText);
-    const specificLimitedScopeSubtype = basementSetup
+    const specificLimitedScopeSubtype = consistencySetup
       ? null
       : inferSpecificLimitedScopeSubtype(classificationText, projectSubtypeOptions);
-    const preferredTypeHint = basementSetup?.project_type || dominantCategory.category || rawProjectType;
-    const preferredSubtypeHint = basementSetup?.project_subtype || dominantCategory.subtype || rawProjectSubtype;
-    const dominantTypeOption = basementSetup
-      ? resolveOptionFromRawValue(basementSetup.project_type, projectTypeOptions)
+    const preferredTypeHint = consistencySetup?.project_type || dominantCategory.category || rawProjectType;
+    const preferredSubtypeHint =
+      consistencySetup?.project_subtype || dominantCategory.subtype || rawProjectSubtype;
+    const dominantTypeOption = consistencySetup
+      ? resolveOptionFromRawValue(consistencySetup.project_type, projectTypeOptions)
       : dominantCategory.category
       ? resolveOptionFromRawValue(dominantCategory.category, projectTypeOptions)
       : null;
-    const dominantSubtypeOption = basementSetup
-      ? resolveOptionFromRawValue(basementSetup.project_subtype, projectSubtypeOptions)
+    const dominantSubtypeOption = consistencySetup
+      ? resolveOptionFromRawValue(consistencySetup.project_subtype, projectSubtypeOptions)
       : dominantCategory.subtype
       ? resolveOptionFromRawValue(dominantCategory.subtype, projectSubtypeOptions)
       : null;
@@ -3146,7 +3339,7 @@ export default function Step1Details({
       }) ||
       dominantTypeOption;
     const subtypeTypeConstraint =
-      basementSetup ? null : dominantCategory.subtype && !dominantCategory.category ? null : matchedType;
+      consistencySetup ? null : dominantCategory.subtype && !dominantCategory.category ? null : matchedType;
     const matchedSubtype =
       specificLimitedScopeSubtype ||
       dominantSubtypeOption ||
@@ -3160,13 +3353,13 @@ export default function Step1Details({
     const matchedSubtypeParentType = matchedSubtype?.project_type
       ? resolveOptionFromRawValue(matchedSubtype.project_type, projectTypeOptions)
       : null;
-    const resolvedType = basementSetup
-      ? resolveOptionFromRawValue(basementSetup.project_type, projectTypeOptions) || matchedType || null
+    const resolvedType = consistencySetup
+      ? resolveOptionFromRawValue(consistencySetup.project_type, projectTypeOptions) || matchedType || null
       : matchedSubtypeParentType || matchedType || null;
 
     const generatedType =
       normalizeStep1FieldValue(
-        basementSetup?.project_type ||
+        consistencySetup?.project_type ||
         optionCanonicalValue(resolvedType) ||
           dominantCategory.category ||
           buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
@@ -3175,7 +3368,7 @@ export default function Step1Details({
 
     const generatedSubtype =
       normalizeStep1FieldValue(
-        basementSetup?.project_subtype ||
+        consistencySetup?.project_subtype ||
         optionCanonicalValue(matchedSubtype) ||
           dominantCategory.subtype ||
           (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
@@ -3184,7 +3377,7 @@ export default function Step1Details({
 
     const generatedTitle =
       normalizeStep1FieldValue(
-        basementSetup?.project_title ||
+        consistencySetup?.project_title ||
         buildProjectFriendlyTitle({
           subtype: generatedSubtype,
           category: generatedType,
@@ -3268,13 +3461,35 @@ export default function Step1Details({
     const deterministicFallback = buildDeterministicStep1Setup(
       refinedDescription || dLocal?.description || step1JobDescriptionPrompt || ""
     );
+    const consistencySetup = inferStep1ProjectClassificationConsistency({
+      sourceText: refinedDescription || dLocal?.description || step1JobDescriptionPrompt || "",
+      scopeText: refinedDescription || dLocal?.description || "",
+      suggestedProjectType: suggestedSetupValues?.project_type || dLocal?.project_type || "",
+      suggestedProjectSubtype:
+        suggestedSetupValues?.project_subtype || dLocal?.project_subtype || "",
+      suggestedProjectTitle:
+        suggestedSetupValues?.project_title || dLocal?.project_title || "",
+    });
+    const effectiveProjectType =
+      consistencySetup?.project_type ||
+      suggestedSetupValues?.project_type ||
+      dLocal?.project_type ||
+      deterministicFallback.project_type ||
+      "";
+    const effectiveProjectSubtype =
+      consistencySetup?.project_subtype ||
+      suggestedSetupValues?.project_subtype ||
+      dLocal?.project_subtype ||
+      deterministicFallback.project_subtype ||
+      "";
     const nextTitle = safeTrim(
-      suggestedSetupValues?.project_title ||
+      consistencySetup?.project_title ||
+        suggestedSetupValues?.project_title ||
         dLocal?.project_title ||
         deterministicFallback.project_title ||
         buildProjectFriendlyTitle({
-          subtype: suggestedSetupValues?.project_subtype || dLocal?.project_subtype || "",
-          category: suggestedSetupValues?.project_type || dLocal?.project_type || "",
+          subtype: effectiveProjectSubtype,
+          category: effectiveProjectType,
           rawTitle: dLocal?.project_title || "",
           sourceText: refinedDescription || dLocal?.description || step1JobDescriptionPrompt || "",
         }) ||
@@ -3295,13 +3510,13 @@ export default function Step1Details({
         nextTitle || deterministicFallback.project_title || ""
       ),
       suggestedProjectType: normalizeStep1FieldValue(
-        suggestedSetupValues?.project_type ||
+        effectiveProjectType ||
           dLocal?.project_type ||
           deterministicFallback.project_type ||
           ""
       ),
       suggestedProjectSubtype: normalizeStep1FieldValue(
-        suggestedSetupValues?.project_subtype ||
+        effectiveProjectSubtype ||
           dLocal?.project_subtype ||
           deterministicFallback.project_subtype ||
           ""

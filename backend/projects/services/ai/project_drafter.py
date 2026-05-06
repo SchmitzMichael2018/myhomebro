@@ -18,7 +18,7 @@ from projects.services.proposal_learning import build_proposal_draft
 PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     "Remodel": [
         "remodel", "renovate", "renovation", "convert", "conversion", "update",
-        "kitchen", "bathroom", "basement", "shower", "tub", "vanity", "cabinet", "demo",
+        "kitchen", "bathroom", "basement", "wet bar", "shower", "tub", "vanity", "cabinet", "countertop", "demo",
     ],
     "Repair": [
         "repair", "fix", "replace damaged", "leak", "broken", "patch", "restore",
@@ -26,6 +26,13 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     "Installation": [
         "install", "installation", "mount", "replace", "put in", "hook up",
         "appliance", "fixture",
+    ],
+    "Siding": [
+        "siding", "siding replacement", "replace siding", "siding repair", "new siding",
+    ],
+    "Electrical": [
+        "electrical", "wire", "wiring", "panel", "breaker", "lighting", "light fixture",
+        "recessed light", "outlet", "switch", "fan", "ceiling fan", "ev charger",
     ],
     "Painting": [
         "paint", "painting", "stain", "refinish", "cabinet paint",
@@ -59,6 +66,8 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Kitchen": ["kitchen", "cabinet", "countertop", "backsplash"],
         "Bathroom": ["bathroom", "shower", "tub", "toilet", "vanity"],
         "Basement": ["basement", "finish basement", "basement finishing", "basement remodel"],
+        "Wet Bar Installation": ["wet bar", "bar cabinet", "bar countertop", "bar sink", "wet bar installation"],
+        "Cabinetry and Countertops": ["cabinet", "cabinetry", "countertop", "quartz", "granite"],
         "Flooring": ["floor", "tile", "lvp", "vinyl plank", "hardwood", "laminate"],
         "Drywall": ["drywall", "sheetrock", "texture", "tape and float"],
         "General Remodel": ["remodel", "renovation", "update"],
@@ -75,10 +84,36 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Floor Install": ["floor", "tile", "lvp", "vinyl plank", "hardwood", "laminate"],
         "General Install": ["install", "mount", "replace"],
     },
+    "Electrical": {
+        "Panel": ["panel", "breaker", "subpanel", "service upgrade"],
+        "Rewire": ["rewire", "wiring", "wire", "circuit"],
+        "Lighting": ["lighting", "light fixture", "recessed light", "light install"],
+        "EV Charger": ["ev charger", "charger", "tesla"],
+    },
+    "Siding": {
+        "Siding Replacement": ["siding replacement", "replace siding", "new siding", "siding install"],
+        "Siding Repair": ["siding repair", "repair siding", "patch siding"],
+    },
     "Painting": {
         "Interior": ["interior", "inside", "room", "ceiling", "wall"],
         "Exterior": ["exterior", "outside", "siding", "trim", "fascia"],
         "Cabinets": ["cabinet", "cabinetry"],
+    },
+    "Roofing": {
+        "Repair": [
+            "roof repair", "leak repair", "repair", "patch", "flashing repair",
+            "replace shingles", "wind damage", "storm damage",
+        ],
+        "Replacement": [
+            "roof replacement", "replace roof", "new roof", "full reroof",
+            "tear off", "re-roof", "reroof",
+        ],
+        "Inspection": [
+            "roof inspection", "inspection", "quote", "estimate", "assessment",
+        ],
+        "New Install": [
+            "new install", "new construction", "install roof", "roof install",
+        ],
     },
     "Outdoor": {
         "Shed Build": ["shed", "shed build", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"],
@@ -102,22 +137,6 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
     "DIY Help": {
         "Assist": ["assist", "help", "diy"],
     },
-    "Roofing": {
-        "Repair": [
-            "roof repair", "leak repair", "repair", "patch", "flashing repair",
-            "replace shingles", "wind damage", "storm damage",
-        ],
-        "Replacement": [
-            "roof replacement", "replace roof", "new roof", "full reroof",
-            "tear off", "re-roof", "reroof",
-        ],
-        "Inspection": [
-            "roof inspection", "inspection", "quote", "estimate", "assessment",
-        ],
-        "New Install": [
-            "new install", "new construction", "install roof", "roof install",
-        ],
-    },
     "Custom": {
         "Custom": [],
     },
@@ -138,6 +157,16 @@ FALLBACK_CLARIFICATIONS: dict[str, list[dict[str, Any]]] = {
         {"question": "Approximate basement square footage?", "type": "number", "required": False},
         {"question": "Is framing or layout change included?", "type": "boolean", "required": False},
         {"question": "Are flooring and trim included?", "type": "boolean", "required": False},
+    ],
+    "Wet Bar Installation": [
+        {"question": "Is sink/plumbing included?", "type": "boolean", "required": False},
+        {"question": "Are cabinets or countertop included?", "type": "boolean", "required": False},
+        {"question": "Are lighting or electrical updates included?", "type": "boolean", "required": False},
+    ],
+    "Cabinetry and Countertops": [
+        {"question": "Are cabinets included?", "type": "boolean", "required": False},
+        {"question": "Are countertops included?", "type": "boolean", "required": False},
+        {"question": "Is sink or plumbing included?", "type": "boolean", "required": False},
     ],
     "Kitchen": [
         {"question": "Cabinet replacement or refinishing?", "type": "select", "options": ["Replace", "Refinish", "Partial"], "required": False},
@@ -216,6 +245,20 @@ FALLBACK_MILESTONES: dict[str, list[dict[str, Any]]] = {
         {"title": "Walls / Ceiling / Core Build-Out", "description": "Install drywall, ceiling components, and other core finish elements.", "percent": Decimal("30.00"), "duration_days": 2},
         {"title": "Flooring / Trim / Finishes", "description": "Install flooring, trim, and finish details for the basement area.", "percent": Decimal("25.00"), "duration_days": 2},
         {"title": "Cleanup / Walkthrough", "description": "Complete cleanup, punch list work, and final walkthrough.", "percent": Decimal("10.00"), "duration_days": 1},
+    ],
+    "Wet Bar Installation": [
+        {"title": "Layout & Prep", "description": "Confirm dimensions, access, and installation layout for the wet bar area.", "percent": Decimal("10.00"), "duration_days": 1},
+        {"title": "Cabinetry & Base Build", "description": "Install base cabinetry, framing, and related rough supports.", "percent": Decimal("25.00"), "duration_days": 1},
+        {"title": "Countertop & Sink Install", "description": "Install countertop, sink, and related plumbing fixture components.", "percent": Decimal("30.00"), "duration_days": 1},
+        {"title": "Lighting & Finish Details", "description": "Complete lighting, trim, backsplash, and finishing details.", "percent": Decimal("25.00"), "duration_days": 1},
+        {"title": "Cleanup / Walkthrough", "description": "Finish cleanup, punch list work, and walkthrough.", "percent": Decimal("10.00"), "duration_days": 1},
+    ],
+    "Cabinetry and Countertops": [
+        {"title": "Layout & Prep", "description": "Confirm measurements and prepare the work area for cabinetry and countertop installation.", "percent": Decimal("10.00"), "duration_days": 1},
+        {"title": "Cabinet Installation", "description": "Set and secure cabinetry, verify alignment, and complete fitment.", "percent": Decimal("30.00"), "duration_days": 1},
+        {"title": "Countertop Installation", "description": "Install countertop surfaces and confirm proper fit and finish.", "percent": Decimal("30.00"), "duration_days": 1},
+        {"title": "Plumbing / Finish Details", "description": "Complete sink, faucet, trim, and finishing details as needed.", "percent": Decimal("20.00"), "duration_days": 1},
+        {"title": "Cleanup / Walkthrough", "description": "Complete cleanup and walkthrough.", "percent": Decimal("10.00"), "duration_days": 1},
     ],
     "Fence": [
         {"title": "Layout & Prep", "description": "Mark layout and prep work area.", "percent": Decimal("10.00"), "duration_days": 1},
@@ -579,6 +622,23 @@ def classify_type_subtype(
     hay = f"{project_title}\n{description}"
     hay_norm = _norm_text(hay)
 
+    if any(sig in hay_norm for sig in ["finish basement", "basement finishing", "basement remodel", "basement renovation", "basement"]):
+        return "Remodel", "Basement", "Detected basement-specific scope. Using type 'Remodel' and subtype 'Basement'."
+
+    siding_signals = ["replace siding", "siding replacement", "new siding", "siding repair", "siding"]
+    if any(sig in hay_norm for sig in siding_signals):
+        return "Siding", "Siding Replacement", "Detected siding-specific scope. Using type 'Siding' and subtype 'Siding Replacement'."
+
+    wet_bar_signals = ["wet bar", "bar cabinet", "bar countertop", "bar sink", "wet bar installation"]
+    cabinetry_signals = ["cabinet", "cabinetry", "countertop", "quartz", "granite"]
+    plumbing_signals = ["plumb", "sink", "faucet"]
+    lighting_signals = ["lighting", "light fixture", "recessed light", "light install", "under-cabinet light"]
+    wet_bar_signal_count = sum(1 for sig in wet_bar_signals if sig in hay_norm)
+    wet_bar_support_count = sum(1 for sig in cabinetry_signals + plumbing_signals + lighting_signals if sig in hay_norm)
+    if wet_bar_signal_count or wet_bar_support_count >= 3:
+        if wet_bar_signal_count or wet_bar_support_count >= 4 or sum(1 for sig in cabinetry_signals + plumbing_signals if sig in hay_norm) >= 2:
+            return "Remodel", "Wet Bar Installation", "Detected wet-bar/remodel scope. Using type 'Remodel' and subtype 'Wet Bar Installation'."
+
     best_type = "Custom"
     best_type_score = -1
 
@@ -599,6 +659,34 @@ def best_subtype_for_type(project_type: str, text: str) -> str:
         return "Custom" if project_type == "Custom" else ""
 
     text_norm = _norm_text(text)
+
+    if project_type == "Remodel":
+        if any(sig in text_norm for sig in ["finish basement", "basement finishing", "basement remodel", "basement renovation", "basement"]):
+            return "Basement"
+        wet_bar_terms = ["wet bar", "bar cabinet", "bar countertop", "bar sink", "wet bar installation"]
+        cabinet_terms = ["cabinet", "cabinetry", "countertop", "quartz", "granite"]
+        plumbing_terms = ["plumb", "sink", "faucet"]
+        lighting_terms = ["lighting", "light fixture", "recessed light", "light install", "under-cabinet light"]
+        wet_bar_hits = sum(1 for sig in wet_bar_terms if sig in text_norm)
+        cabinet_hits = sum(1 for sig in cabinet_terms if sig in text_norm)
+        plumbing_hits = sum(1 for sig in plumbing_terms if sig in text_norm)
+        lighting_hits = sum(1 for sig in lighting_terms if sig in text_norm)
+        if wet_bar_hits or (cabinet_hits >= 2 and (plumbing_hits >= 1 or lighting_hits >= 1)):
+            return "Wet Bar Installation"
+        if cabinet_hits >= 1 and plumbing_hits == 0 and lighting_hits == 0 and wet_bar_hits == 0:
+            return "Cabinetry and Countertops"
+    if project_type == "Siding":
+        if any(sig in text_norm for sig in ["siding replacement", "replace siding", "new siding", "siding install", "siding"]):
+            return "Siding Replacement"
+        if any(sig in text_norm for sig in ["siding repair", "repair siding", "patch siding"]):
+            return "Siding Repair"
+    if project_type == "Electrical":
+        if any(sig in text_norm for sig in ["lighting", "light fixture", "recessed light", "light install", "under-cabinet light"]):
+            return "Lighting"
+        if any(sig in text_norm for sig in ["panel", "breaker", "subpanel", "service upgrade"]):
+            return "Panel"
+        if any(sig in text_norm for sig in ["rewire", "wiring", "wire", "circuit"]):
+            return "Rewire"
     best_subtype = ""
     best_score = -1
 

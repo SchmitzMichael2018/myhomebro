@@ -29,6 +29,13 @@ _FALLBACK_HINTS = [
         "summary": "Work includes finishing the basement space described by the customer, including preparation, framing or layout changes, insulation, drywall, flooring, trim, and cleanup as applicable.",
     },
     {
+        "patterns": [r"\bwet bar\b", r"\bbar cabinet\b", r"\bbar countertop\b", r"\bbar sink\b", r"\bcabinetry\b.*\bcountertop\b"],
+        "project_type": "Remodel",
+        "project_subtype": "Wet Bar Installation",
+        "project_title": "Wet Bar Installation",
+        "summary": "Work includes installing or remodeling the wet bar area described by the customer, including cabinetry, countertops, sink or plumbing fixture work, lighting, and finish carpentry as applicable.",
+    },
+    {
         "patterns": [r"\bpaint bedroom\b", r"\bbedroom paint\b", r"\binterior paint\b", r"\bpainting\b"],
         "project_type": "Painting",
         "project_subtype": "Interior Painting",

@@ -1123,6 +1123,8 @@ test('agreement wizard step 1 no-template build with ai does not leave a ghost c
   await expect(page.getByTestId('step1-find-best-starting-point-button')).toHaveText('Finding...');
 
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await page.waitForTimeout(200);
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
   await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
   await expect(page.getByText('New Agreement')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
@@ -1450,6 +1452,8 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
   await expect(page.getByTestId('step1-find-best-starting-point-button')).toBeDisabled();
   await expect(page.getByTestId('step1-find-best-starting-point-button')).toHaveText('Finding...');
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await page.waitForTimeout(200);
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Basement Finishing');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Remodel');

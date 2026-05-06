@@ -25,6 +25,7 @@ from projects.ai.agreement_milestone_writer import (
     _shape_milestone_rows_for_clarifications,
     suggest_scope_and_milestones,
 )
+from projects.services.ai.project_drafter import classify_type_subtype
 from projects.admin import ProjectTemplateAdmin
 from projects.models import (
     Agreement,
@@ -390,6 +391,49 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         rules_path = Path(__file__).resolve().parents[2] / "shared" / "milestone_shaping_rules.json"
         with rules_path.open("r", encoding="utf-8") as fh:
             return json.load(fh)
+
+    def test_classify_type_subtype_prefers_basement_over_bathroom(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Finish basement",
+            description="Finish the basement with framing, drywall, flooring, and trim.",
+        )
+
+        self.assertEqual(project_type, "Remodel")
+        self.assertEqual(project_subtype, "Basement")
+        self.assertIn("basement", reason.lower())
+
+    def test_classify_type_subtype_prefers_siding_replacement(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Replace siding",
+            description="Remove existing siding and install replacement siding with trim repairs.",
+        )
+
+        self.assertEqual(project_type, "Siding")
+        self.assertEqual(project_subtype, "Siding Replacement")
+        self.assertIn("siding", reason.lower())
+
+    def test_classify_type_subtype_prefers_wet_bar_over_electrical_for_mixed_scope(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Wet bar buildout",
+            description=(
+                "Remove existing cabinetry and countertops, install wet bar cabinetry, "
+                "countertop, sink, plumbing fixture, lighting, and painting."
+            ),
+        )
+
+        self.assertEqual(project_type, "Remodel")
+        self.assertEqual(project_subtype, "Wet Bar Installation")
+        self.assertIn("wet bar", reason.lower())
+
+    def test_classify_type_subtype_allows_electrical_when_dominant(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Install recessed lights",
+            description="Install recessed lights, add a new switch, and update wiring for the lighting circuit.",
+        )
+
+        self.assertEqual(project_type, "Electrical")
+        self.assertEqual(project_subtype, "Lighting")
+        self.assertIn("electrical", reason.lower())
 
     def test_service_shapes_kitchen_milestones_from_saved_clarifications(self):
         agreement = self._agreement(

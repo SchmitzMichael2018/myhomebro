@@ -33,7 +33,16 @@ export const PROJECT_TYPES = [
 // don't have a fixed list (e.g., Installation, Outdoor, DIY Help), the UI
 // will fall back to the "custom subtype" text box.
 export const SUBTYPES_BY_TYPE = {
-  Remodel: ["Kitchen", "Bathroom", "Whole Home", "Basement", "Garage", "Patio / Deck"],
+  Remodel: [
+    "Kitchen",
+    "Bathroom",
+    "Whole Home",
+    "Basement",
+    "Wet Bar Installation",
+    "Cabinetry and Countertops",
+    "Garage",
+    "Patio / Deck",
+  ],
   "New Construction": ["Single Family", "ADU", "Garage", "Shed"],
   Repair: ["Water Damage", "Structural", "Cosmetic"],
   HVAC: ["Install", "Repair", "Maintenance", "Ductwork"],
