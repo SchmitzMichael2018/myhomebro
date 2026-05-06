@@ -43,9 +43,7 @@ export default function CustomerSection({
           onChange={locked ? undefined : onLocalChange}
           disabled={locked}
         >
-          <option value="">
-            {empty ? "— No customers yet —" : "— Select Customer —"}
-          </option>
+          <option value="">{empty ? "No customers yet" : "Select Customer"}</option>
           {(homeownerOptions || []).map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
@@ -54,10 +52,10 @@ export default function CustomerSection({
         </select>
 
         {customerAddrLoading ? (
-          <div className="mt-2 text-xs text-gray-500">Checking customer address…</div>
+          <div className="mt-2 text-xs text-gray-500">Checking customer address...</div>
         ) : customerAddrMissing?.length ? (
           <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <div className="font-semibold">{customerLabel} — Address Required</div>
+            <div className="font-semibold">{customerLabel} - Address Required</div>
             <div className="mt-1 text-xs text-amber-900/90">
               Customers can be created with minimal info (invite flow), but a complete agreement requires the
               customer home/business address to be filled in before signing/finalizing.
@@ -118,12 +116,13 @@ export default function CustomerSection({
               disabled={qaBusy || locked}
               className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
             >
-              {qaBusy ? "Adding…" : "Add Customer"}
+              {qaBusy ? "Adding..." : "Add Customer"}
             </button>
             <button
               type="button"
               onClick={() => setShowQuickAdd(false)}
-              className="rounded border px-3 py-2 text-sm"
+              disabled={locked}
+              className="rounded border px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               Cancel
             </button>

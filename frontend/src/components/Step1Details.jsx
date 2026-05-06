@@ -4001,7 +4001,10 @@ export default function Step1Details({
 
     const name = e?.target?.name;
     const rawValue = e?.target?.value;
-    const value = normalizeStep1FieldValue(rawValue);
+    const value =
+      name === "homeowner"
+        ? safeTrim(rawValue)
+        : normalizeStep1FieldValue(rawValue);
     const nextEvent = name ? { target: { name, value }, currentTarget: { name, value } } : e;
 
     if (name === "project_title" || name === "project_type" || name === "project_subtype") {

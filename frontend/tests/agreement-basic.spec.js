@@ -641,6 +641,9 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('agreement-payment-structure-simple')).toBeVisible();
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
 
+  await page.getByTestId('agreement-customer-select').selectOption('1');
+  await expect(page.getByTestId('agreement-customer-select')).toHaveValue('1');
+
   await page.getByTestId('step1-job-description-input').fill(
     'Build backyard 12x14 shed with slab foundation and cleanup'
   );
@@ -656,6 +659,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.locator('select[name="project_type"]')).not.toHaveValue('Concrete');
   await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue('Concrete Slab');
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
+  await expect(page.getByTestId('agreement-customer-select')).toHaveValue('1');
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
