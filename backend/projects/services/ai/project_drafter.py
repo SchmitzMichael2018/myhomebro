@@ -18,7 +18,7 @@ from projects.services.proposal_learning import build_proposal_draft
 PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     "Remodel": [
         "remodel", "renovate", "renovation", "convert", "conversion", "update",
-        "kitchen", "bathroom", "shower", "tub", "vanity", "cabinet", "demo",
+        "kitchen", "bathroom", "basement", "shower", "tub", "vanity", "cabinet", "demo",
     ],
     "Repair": [
         "repair", "fix", "replace damaged", "leak", "broken", "patch", "restore",
@@ -58,6 +58,7 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
     "Remodel": {
         "Kitchen": ["kitchen", "cabinet", "countertop", "backsplash"],
         "Bathroom": ["bathroom", "shower", "tub", "toilet", "vanity"],
+        "Basement": ["basement", "finish basement", "basement finishing", "basement remodel"],
         "Flooring": ["floor", "tile", "lvp", "vinyl plank", "hardwood", "laminate"],
         "Drywall": ["drywall", "sheetrock", "texture", "tape and float"],
         "General Remodel": ["remodel", "renovation", "update"],
@@ -133,6 +134,11 @@ FALLBACK_CLARIFICATIONS: dict[str, list[dict[str, Any]]] = {
         {"question": "Tile area size / square footage?", "type": "number", "required": False},
         {"question": "Glass enclosure included?", "type": "boolean", "required": False},
     ],
+    "Basement": [
+        {"question": "Approximate basement square footage?", "type": "number", "required": False},
+        {"question": "Is framing or layout change included?", "type": "boolean", "required": False},
+        {"question": "Are flooring and trim included?", "type": "boolean", "required": False},
+    ],
     "Kitchen": [
         {"question": "Cabinet replacement or refinishing?", "type": "select", "options": ["Replace", "Refinish", "Partial"], "required": False},
         {"question": "Countertop replacement included?", "type": "boolean", "required": False},
@@ -203,6 +209,13 @@ FALLBACK_MILESTONES: dict[str, list[dict[str, Any]]] = {
         {"title": "Cabinet / Core Install", "description": "Install cabinets and major project components.", "percent": Decimal("35.00"), "duration_days": 2},
         {"title": "Countertops / Backsplash / Finish", "description": "Install finish surfaces and trim items.", "percent": Decimal("25.00"), "duration_days": 2},
         {"title": "Final Punch", "description": "Final adjustments, cleanup, and walkthrough.", "percent": Decimal("10.00"), "duration_days": 1},
+    ],
+    "Basement": [
+        {"title": "Site Prep & Layout", "description": "Confirm basement measurements, access, and layout before work begins.", "percent": Decimal("10.00"), "duration_days": 1},
+        {"title": "Framing / Insulation / Rough Prep", "description": "Complete framing, insulation, and rough prep for the finished basement scope.", "percent": Decimal("25.00"), "duration_days": 2},
+        {"title": "Walls / Ceiling / Core Build-Out", "description": "Install drywall, ceiling components, and other core finish elements.", "percent": Decimal("30.00"), "duration_days": 2},
+        {"title": "Flooring / Trim / Finishes", "description": "Install flooring, trim, and finish details for the basement area.", "percent": Decimal("25.00"), "duration_days": 2},
+        {"title": "Cleanup / Walkthrough", "description": "Complete cleanup, punch list work, and final walkthrough.", "percent": Decimal("10.00"), "duration_days": 1},
     ],
     "Fence": [
         {"title": "Layout & Prep", "description": "Mark layout and prep work area.", "percent": Decimal("10.00"), "duration_days": 1},

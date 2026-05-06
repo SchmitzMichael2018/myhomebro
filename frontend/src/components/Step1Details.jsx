@@ -285,6 +285,31 @@ function buildProjectFriendlyTitle({
   return "";
 }
 
+function inferBasementProjectSetup(sourceText = "") {
+  const text = normalizeAiText(sourceText);
+  if (!text) return null;
+
+  if (
+    ![
+      /\bfinish(?:ing|ed)? basement\b/i,
+      /\bbasement finishing\b/i,
+      /\bbasement remodel\b/i,
+      /\bbasement renovation\b/i,
+      /\bbasement\b/i,
+    ].some((pattern) => pattern.test(text))
+  ) {
+    return null;
+  }
+
+  return {
+    project_type: "Remodel",
+    project_subtype: "Basement",
+    project_title: "Basement Finishing",
+    description:
+      "Finish the basement space as described, including preparation, framing or layout changes, insulation, drywall, flooring, trim, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  };
+}
+
 function scoreOptionAgainstText(option, sourceText) {
   const optionLabel = safeTrim(option?.label || option?.value);
   if (!optionLabel) return 0;
@@ -534,6 +559,14 @@ const LIMITED_SCOPE_SUBTYPE_RULES = [
 ];
 
 const STEP1_LOCAL_FALLBACK_RULES = [
+  {
+    patterns: [/\bfinish(?:ing|ed)?\s+basement\b/i, /\bbasement\s+finishing\b/i, /\bbasement\s+remodel\b/i, /\bbasement\b/i],
+    project_type: "Remodel",
+    project_subtype: "Basement",
+    project_title: "Basement Finishing",
+    scope:
+      "Finish the basement space as described, including preparation, framing or layout changes, insulation, drywall, flooring, trim, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  },
   {
     patterns: [/\breplace\s+siding\b/i, /\bsiding\s+replacement\b/i, /\bsiding\b.*\breplace\b/i],
     project_type: "Siding",
@@ -805,6 +838,11 @@ function buildDeterministicStep1Setup(sourceText = "") {
       project_title: matchedRule.project_title,
       description: matchedRule.scope,
     };
+  }
+
+  const basementSetup = inferBasementProjectSetup(cleaned);
+  if (basementSetup) {
+    return basementSetup;
   }
 
   const dominantCategory = inferDominantProjectCategory(cleaned);
@@ -1098,6 +1136,7 @@ export default function Step1Details({
   const projectTypeFieldRef = useRef(null);
   const projectTitleFieldRef = useRef(null);
   const projectScopeFieldRef = useRef(null);
+  const aiSetupLoadingStartedAtRef = useRef(0);
   const step1JobDescriptionInputRef = useRef(null);
   const projectDetailsRevealMountedRef = useRef(false);
   const projectDetailsRevealSeenRef = useRef(false);
@@ -1374,6 +1413,7 @@ export default function Step1Details({
     useState(false);
   const [step1NoTemplateBuilt, setStep1NoTemplateBuilt] = useState(false);
   const [aiSetupBusy, setAiSetupBusy] = useState(false);
+  const [aiSetupLoadingVisible, setAiSetupLoadingVisible] = useState(false);
   const [aiSetupError, setAiSetupError] = useState("");
   const [aiSetupResult, setAiSetupResult] = useState(null);
   const [lastAiSetupPrompt, setLastAiSetupPrompt] = useState("");
@@ -2770,6 +2810,8 @@ export default function Step1Details({
       Boolean(safeTrim(agreement?.description || agreement?.scope_of_work));
     if (hasSavedStep1State) {
       setAiSetupBusy(false);
+      setAiSetupLoadingVisible(false);
+      aiSetupLoadingStartedAtRef.current = 0;
       setAiSetupError("");
       setAiSetupResult(null);
       setDismissedAiTemplateRecommendation(false);
@@ -2777,22 +2819,49 @@ export default function Step1Details({
     }
 
     setLastAiSetupPrompt(roughDescription);
+    setSelectedTemplateId(null);
+    setTemplateSearch("");
+    setAiPreview("");
+    setAiMilestonePreview(null);
+    setAiErr("");
+    setAiSuggestedFieldMeta({});
     if (agreementId) {
       patchAgreement(
         {
-          project_title: safeTrim(dLocal?.project_title || agreement?.project_title || ""),
-          project_type: safeTrim(dLocal?.project_type || agreement?.project_type || ""),
-          project_subtype: safeTrim(dLocal?.project_subtype || agreement?.project_subtype || ""),
-          scope_of_work: safeTrim(dLocal?.description || agreement?.description || agreement?.scope_of_work || ""),
+          project_title: "",
+          project_type: "",
+          project_type_ref: null,
+          project_subtype: "",
+          project_subtype_ref: null,
+          selected_template: null,
+          selected_template_id: null,
+          selected_template_name_snapshot: "",
+          project_template_id: null,
+          template_id: null,
+          description: roughDescription,
+          scope_of_work: roughDescription,
           step_status: "step1",
         },
         { silent: true }
       );
     }
-    setAiSetupBusy(true);
-    setAiSetupError("");
-    setAiSetupResult(null);
-    setDismissedAiTemplateRecommendation(false);
+    openAiSetupLoading();
+    setDLocal((prev) => ({
+      ...prev,
+      project_title: "",
+      title: "",
+      project_type: "",
+      project_type_ref: null,
+      project_subtype: "",
+      project_subtype_ref: null,
+      selected_template: null,
+      selected_template_id: null,
+      selected_template_name_snapshot: "",
+      project_template_id: null,
+      template_id: null,
+      description: roughDescription,
+      scope_of_work: roughDescription,
+    }));
 
     if (typeof onStep1AiSetupRequest === "function") {
       onStep1AiSetupRequest({ prompt: roughDescription, nonce: Date.now() });
@@ -2937,7 +3006,7 @@ export default function Step1Details({
           safeTrim(dLocal?.project_subtype)
       )) ||
     (isEdit && hasMeaningfulStep1DraftState({ agreement, dLocal }));
-  const isLoadingState = Boolean(aiSetupBusy) && !isAiBuiltState;
+  const isLoadingState = Boolean(aiSetupLoadingVisible);
   const isTemplateFoundState =
     !isLoadingState && aiSetupResult?.kind === "template_match" && !isAiBuiltState;
   const isNoTemplateState =
@@ -2999,9 +3068,35 @@ export default function Step1Details({
     }
   }
 
+  function openAiSetupLoading() {
+    aiSetupLoadingStartedAtRef.current = Date.now();
+    setAiSetupBusy(true);
+    setAiSetupLoadingVisible(true);
+    setAiSetupError("");
+    setAiSetupResult(null);
+    setDismissedAiTemplateRecommendation(false);
+  }
+
+  async function closeAiSetupLoading({ immediate = false } = {}) {
+    const startedAt = Number(aiSetupLoadingStartedAtRef.current || 0);
+    const minVisibleMs = 850;
+    const elapsed = startedAt ? Date.now() - startedAt : minVisibleMs;
+    if (!immediate && elapsed < minVisibleMs) {
+      await new Promise((resolve) => setTimeout(resolve, minVisibleMs - elapsed));
+    }
+    setAiSetupBusy(false);
+    setAiSetupLoadingVisible(false);
+    aiSetupLoadingStartedAtRef.current = 0;
+  }
+
   function applyAiSetupFields(aiData = {}) {
     const refinedDescription = normalizeStep1FieldValue(
       aiData?.description || aiData?.normalized_description || ""
+    );
+    const basementSetup = inferBasementProjectSetup(
+      [refinedDescription, dLocal?.description, aiData?.project_title, aiData?.project_type, aiData?.project_subtype]
+        .filter(Boolean)
+        .join(" ")
     );
     const rawProjectTitle = safeTrim(
       aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""
@@ -3019,17 +3114,22 @@ export default function Step1Details({
       .filter(Boolean)
       .join(" ");
     const classificationText = [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
-    const dominantCategory = inferDominantProjectCategory(classificationText);
-    const specificLimitedScopeSubtype = inferSpecificLimitedScopeSubtype(
-      classificationText,
-      projectSubtypeOptions
-    );
-    const preferredTypeHint = dominantCategory.category || rawProjectType;
-    const preferredSubtypeHint = dominantCategory.subtype || rawProjectSubtype;
-    const dominantTypeOption = dominantCategory.category
+    const dominantCategory = basementSetup
+      ? { category: basementSetup.project_type, subtype: basementSetup.project_subtype, reasoning: ["basement override"] }
+      : inferDominantProjectCategory(classificationText);
+    const specificLimitedScopeSubtype = basementSetup
+      ? null
+      : inferSpecificLimitedScopeSubtype(classificationText, projectSubtypeOptions);
+    const preferredTypeHint = basementSetup?.project_type || dominantCategory.category || rawProjectType;
+    const preferredSubtypeHint = basementSetup?.project_subtype || dominantCategory.subtype || rawProjectSubtype;
+    const dominantTypeOption = basementSetup
+      ? resolveOptionFromRawValue(basementSetup.project_type, projectTypeOptions)
+      : dominantCategory.category
       ? resolveOptionFromRawValue(dominantCategory.category, projectTypeOptions)
       : null;
-    const dominantSubtypeOption = dominantCategory.subtype
+    const dominantSubtypeOption = basementSetup
+      ? resolveOptionFromRawValue(basementSetup.project_subtype, projectSubtypeOptions)
+      : dominantCategory.subtype
       ? resolveOptionFromRawValue(dominantCategory.subtype, projectSubtypeOptions)
       : null;
     const dominantSubtypeParentType = dominantSubtypeOption?.project_type
@@ -3046,7 +3146,7 @@ export default function Step1Details({
       }) ||
       dominantTypeOption;
     const subtypeTypeConstraint =
-      dominantCategory.subtype && !dominantCategory.category ? null : matchedType;
+      basementSetup ? null : dominantCategory.subtype && !dominantCategory.category ? null : matchedType;
     const matchedSubtype =
       specificLimitedScopeSubtype ||
       dominantSubtypeOption ||
@@ -3060,10 +3160,13 @@ export default function Step1Details({
     const matchedSubtypeParentType = matchedSubtype?.project_type
       ? resolveOptionFromRawValue(matchedSubtype.project_type, projectTypeOptions)
       : null;
-    const resolvedType = matchedSubtypeParentType || matchedType || null;
+    const resolvedType = basementSetup
+      ? resolveOptionFromRawValue(basementSetup.project_type, projectTypeOptions) || matchedType || null
+      : matchedSubtypeParentType || matchedType || null;
 
     const generatedType =
       normalizeStep1FieldValue(
+        basementSetup?.project_type ||
         optionCanonicalValue(resolvedType) ||
           dominantCategory.category ||
           buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
@@ -3072,6 +3175,7 @@ export default function Step1Details({
 
     const generatedSubtype =
       normalizeStep1FieldValue(
+        basementSetup?.project_subtype ||
         optionCanonicalValue(matchedSubtype) ||
           dominantCategory.subtype ||
           (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
@@ -3080,6 +3184,7 @@ export default function Step1Details({
 
     const generatedTitle =
       normalizeStep1FieldValue(
+        basementSetup?.project_title ||
         buildProjectFriendlyTitle({
           subtype: generatedSubtype,
           category: generatedType,
@@ -3217,13 +3322,9 @@ export default function Step1Details({
       setStep1ValidationMessage("Please complete the highlighted fields before continuing.");
       focusFirstStep1FieldError(validationErrors);
       setAiSetupError("Please complete the highlighted fields before continuing.");
+      await closeAiSetupLoading({ immediate: true });
       return;
     }
-
-    setAiSetupBusy(true);
-    setAiSetupError("");
-    setAiSetupResult(null);
-    setDismissedAiTemplateRecommendation(false);
 
     let refinedDescription = "";
     let setupFieldKeys = [];
@@ -3409,7 +3510,7 @@ export default function Step1Details({
           "Could not refine and set up this agreement."
       );
     } finally {
-      setAiSetupBusy(false);
+      await closeAiSetupLoading();
     }
   }
 
@@ -3481,6 +3582,7 @@ export default function Step1Details({
       setTemplateSearch("");
       setAiPreview("");
       setAiSetupBusy(false);
+      setAiSetupLoadingVisible(false);
       setAiSetupError("");
       setAiSetupResult(null);
       setDismissedAiTemplateRecommendation(false);
@@ -3748,7 +3850,7 @@ export default function Step1Details({
     projectDetailsAutoScrolledRef.current = false;
     projectDetailsUserScrolledRef.current = false;
   }, [shouldShowProjectDetails]);
-  const isStartingPointLoading = Boolean(aiSetupBusy);
+  const isStartingPointLoading = Boolean(aiSetupBusy || aiSetupLoadingVisible);
   const isStartingPointError = Boolean(aiSetupError);
   const startingPointStatusTitle =
     startMode === "ai"
@@ -4101,7 +4203,7 @@ export default function Step1Details({
                         type="button"
                         data-testid="step1-review-project-details-jump"
                         onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
-                        disabled={locked || aiSetupBusy}
+                        disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                         className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >
                         Review Project Details
@@ -4110,7 +4212,7 @@ export default function Step1Details({
                         type="button"
                         data-testid="step1-build-agreement-ai-button"
                         onClick={() => applyNoTemplateFallbackSetup(step1JobDescriptionPrompt || dLocal?.description || agreement?.description || "")}
-                        disabled={locked || aiSetupBusy}
+                        disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                       >
                         Build with AI
@@ -4119,7 +4221,7 @@ export default function Step1Details({
                         type="button"
                         data-testid="step1-start-over-button"
                         onClick={() => setShowResetStep1Confirm(true)}
-                        disabled={locked || aiSetupBusy}
+                        disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                       >
                         Start over
@@ -4249,11 +4351,11 @@ export default function Step1Details({
                     activateStartMode("template", { committed: true, source: "assistant" });
                     requestStep1AiSetup(prompt);
                   }}
-                  disabled={locked || aiSetupBusy || !safeTrim(step1JobDescriptionPrompt)}
+                  disabled={locked || aiSetupBusy || aiSetupLoadingVisible || !safeTrim(step1JobDescriptionPrompt)}
                   className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                   data-testid="step1-find-best-starting-point-button"
                 >
-                  {aiSetupBusy ? "Finding..." : "Find Best Starting Point"}
+                  {aiSetupBusy || aiSetupLoadingVisible ? "Finding..." : "Find Best Starting Point"}
                 </button>
               </div>
 

@@ -3817,6 +3817,29 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertIn("Recommended from your description", payload["confidence_label"])
         self.assertTrue(payload["description"])
 
+    def test_ai_agreement_description_falls_back_to_basement_for_finish_basement(self):
+        with patch(
+            "projects.api.ai_agreement_views.generate_or_improve_description",
+            side_effect=RuntimeError("OpenAI unavailable"),
+        ):
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": self.agreement.id,
+                    "mode": "generate",
+                    "current_description": "Finish basement with framing, drywall, flooring, and trim.",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["recommendation_source"], "fallback")
+        self.assertEqual(payload["project_type"], "Remodel")
+        self.assertEqual(payload["project_subtype"], "Basement")
+        self.assertEqual(payload["project_title"], "Basement Finishing")
+        self.assertIn("basement", payload["description"].lower())
+
     def test_ai_agreement_description_accepts_unsaved_payload_without_agreement(self):
         with patch(
             "projects.api.ai_agreement_views.generate_or_improve_description",

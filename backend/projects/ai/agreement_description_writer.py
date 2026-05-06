@@ -22,6 +22,13 @@ _FALLBACK_HINTS = [
         "summary": "Work includes removal and replacement of exterior siding on the areas identified in the project description.",
     },
     {
+        "patterns": [r"\bfinish(?:ing|ed)? basement\b", r"\bbasement finishing\b", r"\bbasement remodel\b", r"\bbasement\b"],
+        "project_type": "Remodel",
+        "project_subtype": "Basement",
+        "project_title": "Basement Finishing",
+        "summary": "Work includes finishing the basement space described by the customer, including preparation, framing or layout changes, insulation, drywall, flooring, trim, and cleanup as applicable.",
+    },
+    {
         "patterns": [r"\bpaint bedroom\b", r"\bbedroom paint\b", r"\binterior paint\b", r"\bpainting\b"],
         "project_type": "Painting",
         "project_subtype": "Interior Painting",
