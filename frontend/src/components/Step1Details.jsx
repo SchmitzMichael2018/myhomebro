@@ -2960,7 +2960,9 @@ export default function Step1Details({
   const shouldShowAppliedTemplateSummary =
     startMode !== "template" && Boolean(appliedTemplateId);
   const hasResolvedStep1Content = Boolean(
-    displayedProjectTitle || displayedProjectType || displayedProjectSubtype
+    safeTrim(dLocal?.project_title) ||
+      safeTrim(dLocal?.project_type) ||
+      safeTrim(dLocal?.project_subtype)
   );
   const step1ViewState = isLoadingState
     ? "loading"
