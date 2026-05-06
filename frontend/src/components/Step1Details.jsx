@@ -16,6 +16,7 @@ import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
 import TemplateSearchSection from "./step1/TemplateSearchSection.jsx";
 import CustomerSection from "./step1/CustomerSection.jsx";
 import AddressSection from "./step1/AddressSection.jsx";
+import { Spinner } from "./Spinner.jsx";
 import useStep1Templates from "./step1/useStep1Templates.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
 import {
@@ -1629,6 +1630,7 @@ export default function Step1Details({
   const [step1NoTemplateBuilt, setStep1NoTemplateBuilt] = useState(false);
   const [aiSetupBusy, setAiSetupBusy] = useState(false);
   const [aiSetupLoadingVisible, setAiSetupLoadingVisible] = useState(false);
+  const [step1AiRequestId, setStep1AiRequestId] = useState("");
   const [aiSetupError, setAiSetupError] = useState("");
   const [aiSetupResult, setAiSetupResult] = useState(null);
   const [lastAiSetupPrompt, setLastAiSetupPrompt] = useState("");
@@ -1637,6 +1639,7 @@ export default function Step1Details({
   const [step1ValidationMessage, setStep1ValidationMessage] = useState("");
   const [projectDetailsReviewPulse, setProjectDetailsReviewPulse] = useState(false);
   const [pendingProjectDetailsReview, setPendingProjectDetailsReview] = useState(null);
+  const step1AiRequestIdRef = useRef("");
 
   function writeCache(nextPatch = {}) {
     try {
@@ -2645,14 +2648,15 @@ export default function Step1Details({
 
   useEffect(() => {
     if (!aiSetupRequest?.nonce) return;
+    const requestId = aiSetupRequest.nonce;
     (async () => {
       try {
-        await runAiRefineAndSetup(aiSetupRequest.prompt);
+        await runAiRefineAndSetup(aiSetupRequest.prompt, requestId);
       } finally {
-        onStep1AiSetupRequest?.(null);
+        onStep1AiSetupRequest?.((prev) => (String(prev?.nonce || "") === String(requestId) ? null : prev));
       }
     })();
-  }, [aiSetupRequest?.nonce, onStep1AiSetupRequest]);
+  }, [aiSetupRequest?.nonce, aiSetupRequest?.prompt, onStep1AiSetupRequest]);
 
   async function onSubmitSaveAsTemplate(payload) {
     setSavingTemplate(true);
@@ -3019,6 +3023,12 @@ export default function Step1Details({
     if (!roughDescription) return;
     if (aiSetupBusy || aiSetupLoadingVisible) return;
     setStep1NoTemplateBuilt(false);
+    const requestId =
+      (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    step1AiRequestIdRef.current = requestId;
+    setStep1AiRequestId(requestId);
 
     const hasSavedStep1State =
       Boolean(agreementId) &&
@@ -3065,7 +3075,6 @@ export default function Step1Details({
     setDLocal((prev) => ({
       ...prev,
       project_title: "",
-      title: "",
       project_type: "",
       project_type_ref: null,
       project_subtype: "",
@@ -3082,7 +3091,7 @@ export default function Step1Details({
     await new Promise((resolve) => window.setTimeout(resolve, 0));
 
     if (typeof onStep1AiSetupRequest === "function") {
-      onStep1AiSetupRequest({ prompt: roughDescription, nonce: Date.now() });
+      onStep1AiSetupRequest({ prompt: roughDescription, nonce: requestId });
     }
   }
 
@@ -3307,7 +3316,14 @@ export default function Step1Details({
     aiSetupLoadingStartedAtRef.current = 0;
   }
 
-  function applyAiSetupFields(aiData = {}) {
+  function applyAiSetupFields(aiData = {}, requestId = step1AiRequestIdRef.current) {
+    if (
+      requestId &&
+      step1AiRequestIdRef.current &&
+      String(requestId) !== String(step1AiRequestIdRef.current)
+    ) {
+      return { changedKeys: [], nextValues: null, ignored: true };
+    }
     const refinedDescription = normalizeStep1FieldValue(
       aiData?.description || aiData?.normalized_description || ""
     );
@@ -3318,13 +3334,7 @@ export default function Step1Details({
     const rawProjectSubtype = safeTrim(
       aiData?.project_subtype ?? aiData?.projectSubtype ?? ""
     );
-    const sourceText = [
-      rawProjectTitle,
-      rawProjectType,
-      rawProjectSubtype,
-      refinedDescription,
-      dLocal?.description || "",
-    ]
+    const sourceText = [rawProjectTitle, rawProjectType, rawProjectSubtype, refinedDescription]
       .filter(Boolean)
       .join(" ");
     const classificationText = [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
@@ -3423,6 +3433,8 @@ export default function Step1Details({
       project_title: generatedTitle,
       project_type: generatedType,
       project_subtype: generatedSubtype,
+      description: refinedDescription || dLocal?.description || "",
+      scope_of_work: refinedDescription || dLocal?.description || "",
     };
 
     const changedKeys = Object.entries(nextValues)
@@ -3458,7 +3470,20 @@ export default function Step1Details({
 
     setDLocal((prev) => ({
       ...prev,
+      project_title: "",
+      project_type: "",
+      project_type_ref: null,
+      project_subtype: "",
+      project_subtype_ref: null,
+      selected_template: null,
+      selected_template_id: null,
+      selected_template_name_snapshot: "",
+      project_template_id: null,
+      template_id: null,
+      description: "",
+      scope_of_work: "",
       ...nextValues,
+      title: generatedTitle,
     }));
 
     if (!isNewAgreement) {
@@ -3474,7 +3499,13 @@ export default function Step1Details({
           project_type_ref: projectTypeRef,
           project_subtype: generatedSubtype,
           project_subtype_ref: projectSubtypeRef,
+          description: refinedDescription || dLocal?.description || "",
           scope_of_work: refinedDescription || dLocal?.description || "",
+          selected_template: null,
+          selected_template_id: null,
+          selected_template_name_snapshot: "",
+          project_template_id: null,
+          template_id: null,
           step_status: "step1",
         },
         { silent: true }
@@ -3551,9 +3582,16 @@ export default function Step1Details({
     };
   }
 
-  async function runAiRefineAndSetup(promptText) {
+  async function runAiRefineAndSetup(promptText, requestId) {
     const roughDescription = safeTrim(promptText);
     if (!roughDescription) return;
+    if (
+      requestId &&
+      step1AiRequestIdRef.current &&
+      String(requestId) !== String(step1AiRequestIdRef.current)
+    ) {
+      return;
+    }
 
     const validationErrors = validateStep1ForAi("refine");
     if (Object.keys(validationErrors).length) {
@@ -3593,10 +3631,22 @@ export default function Step1Details({
         throw new Error("AI returned an empty description.");
       }
 
+      if (
+        requestId &&
+        step1AiRequestIdRef.current &&
+        String(requestId) !== String(step1AiRequestIdRef.current)
+      ) {
+        return;
+      }
+
       applyRefinedDescription(refinedDescription);
-      const aiSetupFields = applyAiSetupFields(refineRes?.data || {});
+      const aiSetupFields = applyAiSetupFields(refineRes?.data || {}, requestId);
       setupFieldKeys = aiSetupFields.changedKeys;
       suggestedSetupValues = aiSetupFields.nextValues;
+
+      if (aiSetupFields?.ignored) {
+        return;
+      }
 
       const recommendRes = await api.post("/projects/templates/recommend/", {
         project_title: suggestedSetupValues?.project_title || dLocal.project_title || "",
@@ -3724,7 +3774,10 @@ export default function Step1Details({
           project_title: deterministicFallback.project_title,
           project_type: deterministicFallback.project_type,
           project_subtype: deterministicFallback.project_subtype,
-        });
+        }, requestId);
+        if (deterministicApplied?.ignored) {
+          return;
+        }
         setAiSetupResult(
           buildFallbackAiSetupResult({
             refinedDescription:
@@ -3749,7 +3802,13 @@ export default function Step1Details({
           "Could not refine and set up this agreement."
       );
     } finally {
-      await closeAiSetupLoading();
+      if (
+        !requestId ||
+        !step1AiRequestIdRef.current ||
+        String(requestId) === String(step1AiRequestIdRef.current)
+      ) {
+        await closeAiSetupLoading();
+      }
     }
   }
 
@@ -4591,10 +4650,17 @@ export default function Step1Details({
                     requestStep1AiSetup(prompt);
                   }}
                   disabled={locked || aiSetupBusy || aiSetupLoadingVisible || !safeTrim(step1JobDescriptionPrompt)}
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                   data-testid="step1-find-best-starting-point-button"
                 >
-                  {aiSetupBusy || aiSetupLoadingVisible ? "Finding..." : "Find Best Starting Point"}
+                  {aiSetupBusy || aiSetupLoadingVisible ? (
+                    <>
+                      <Spinner size={4} color="white" />
+                      <span>Finding...</span>
+                    </>
+                  ) : (
+                    "Find Best Starting Point"
+                  )}
                 </button>
               </div>
 
