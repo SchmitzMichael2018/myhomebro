@@ -412,6 +412,19 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(project_subtype, "Siding Replacement")
         self.assertIn("siding", reason.lower())
 
+    def test_classify_type_subtype_prefers_pool_house_over_plumbing(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Inground Pool and Pool House",
+            description=(
+                "Build an inground pool and pool house with excavation, plumbing, "
+                "equipment pad, lighting, and finish details."
+            ),
+        )
+
+        self.assertEqual(project_type, "Pool")
+        self.assertEqual(project_subtype, "Inground Pool and Pool House")
+        self.assertIn("pool", reason.lower())
+
     def test_classify_type_subtype_prefers_wet_bar_over_electrical_for_mixed_scope(self):
         project_type, project_subtype, reason = classify_type_subtype(
             project_title="Wet bar buildout",
@@ -3883,6 +3896,29 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["project_subtype"], "Basement")
         self.assertEqual(payload["project_title"], "Basement Finishing")
         self.assertIn("basement", payload["description"].lower())
+
+    def test_ai_agreement_description_falls_back_to_pool_for_pool_house(self):
+        with patch(
+            "projects.api.ai_agreement_views.generate_or_improve_description",
+            side_effect=RuntimeError("OpenAI unavailable"),
+        ):
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": self.agreement.id,
+                    "mode": "generate",
+                    "current_description": "Inground pool and pool house with excavation, decking, and equipment pad.",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["recommendation_source"], "fallback")
+        self.assertEqual(payload["project_type"], "Pool")
+        self.assertEqual(payload["project_subtype"], "Inground Pool and Pool House")
+        self.assertEqual(payload["project_title"], "Inground Pool and Pool House")
+        self.assertIn("pool", payload["description"].lower())
 
     def test_ai_agreement_description_accepts_unsaved_payload_without_agreement(self):
         with patch(

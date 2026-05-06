@@ -382,6 +382,21 @@ function inferStep1ProjectClassificationConsistency({
   const basementSetup = inferBasementProjectSetup(combinedText);
   if (basementSetup) return basementSetup;
 
+  if (
+    /\binground\s+pool\b/i.test(combined) ||
+    /\bin-?ground\s+pool\b/i.test(combined) ||
+    /\bpool\s+house\b/i.test(combined) ||
+    /\bpool\s+installation\b/i.test(combined)
+  ) {
+    return {
+      project_type: "Pool",
+      project_subtype: "Inground Pool and Pool House",
+      project_title: "Inground Pool and Pool House",
+      description:
+        "Install or build the inground pool and pool house as described, including excavation, structural work, mechanical systems, finishes, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+    };
+  }
+
   const wetBarSetup = inferWetBarProjectSetup(combinedText);
   if (wetBarSetup) return wetBarSetup;
 
@@ -442,6 +457,16 @@ function inferStep1ProjectClassificationConsistency({
       project_title: "Drywall Repair",
       description:
         "Repair the damaged drywall areas, complete patching, sanding, finishing, and touch-up work as needed, and leave the work area clean.",
+    };
+  }
+
+  if (/\bpool\b/i.test(combined)) {
+    return {
+      project_type: "Pool",
+      project_subtype: /\bhouse\b/i.test(combined) ? "Pool House Construction" : "Pool Installation",
+      project_title: /\bhouse\b/i.test(combined) ? "Pool House Construction" : "Inground Pool and Pool House",
+      description:
+        "Install or build the pool-related project as described, including excavation, structure, mechanical systems, finishes, and cleanup. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
     };
   }
 
@@ -756,6 +781,14 @@ const STEP1_LOCAL_FALLBACK_RULES = [
     project_title: "Siding Replacement",
     scope:
       "Remove or prepare existing siding as needed, install replacement siding and related trim, complete finish details, and clean the work area. Contractor will verify measurements, material requirements, and site conditions before final pricing or work begins.",
+  },
+  {
+    patterns: [/\binground\s+pool\b/i, /\bin-?ground\s+pool\b/i, /\bpool\s+house\b/i, /\bpool\s+installation\b/i],
+    project_type: "Pool",
+    project_subtype: "Inground Pool and Pool House",
+    project_title: "Inground Pool and Pool House",
+    scope:
+      "Install or build the inground pool and pool house as described, including excavation, structural work, mechanical systems, finishes, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
   },
   {
     patterns: [/\breplace\s+roof\b/i, /\broof\s+replacement\b/i, /\bnew\s+roof\b/i],
@@ -3473,24 +3506,21 @@ export default function Step1Details({
     const effectiveProjectType =
       consistencySetup?.project_type ||
       suggestedSetupValues?.project_type ||
-      dLocal?.project_type ||
       deterministicFallback.project_type ||
       "";
     const effectiveProjectSubtype =
       consistencySetup?.project_subtype ||
       suggestedSetupValues?.project_subtype ||
-      dLocal?.project_subtype ||
       deterministicFallback.project_subtype ||
       "";
     const nextTitle = safeTrim(
       consistencySetup?.project_title ||
         suggestedSetupValues?.project_title ||
-        dLocal?.project_title ||
         deterministicFallback.project_title ||
         buildProjectFriendlyTitle({
           subtype: effectiveProjectSubtype,
           category: effectiveProjectType,
-          rawTitle: dLocal?.project_title || "",
+          rawTitle: "",
           sourceText: refinedDescription || dLocal?.description || step1JobDescriptionPrompt || "",
         }) ||
         ""
@@ -3510,16 +3540,10 @@ export default function Step1Details({
         nextTitle || deterministicFallback.project_title || ""
       ),
       suggestedProjectType: normalizeStep1FieldValue(
-        effectiveProjectType ||
-          dLocal?.project_type ||
-          deterministicFallback.project_type ||
-          ""
+        effectiveProjectType || deterministicFallback.project_type || ""
       ),
       suggestedProjectSubtype: normalizeStep1FieldValue(
-        effectiveProjectSubtype ||
-          dLocal?.project_subtype ||
-          deterministicFallback.project_subtype ||
-          ""
+        effectiveProjectSubtype || deterministicFallback.project_subtype || ""
       ),
       setupFieldKeys: Array.isArray(setupFieldKeys) ? setupFieldKeys : [],
       recommendationSource: "fallback",

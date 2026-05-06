@@ -22,6 +22,13 @@ _FALLBACK_HINTS = [
         "summary": "Work includes removal and replacement of exterior siding on the areas identified in the project description.",
     },
     {
+        "patterns": [r"\binground pool\b", r"\bin-?ground pool\b", r"\bpool house\b", r"\bpool installation\b"],
+        "project_type": "Pool",
+        "project_subtype": "Inground Pool and Pool House",
+        "project_title": "Inground Pool and Pool House",
+        "summary": "Work includes installing or building the inground pool and pool house described by the customer, including excavation, structural work, mechanical systems, finishes, and cleanup as applicable.",
+    },
+    {
         "patterns": [r"\bfinish(?:ing|ed)? basement\b", r"\bbasement finishing\b", r"\bbasement remodel\b", r"\bbasement\b"],
         "project_type": "Remodel",
         "project_subtype": "Basement",

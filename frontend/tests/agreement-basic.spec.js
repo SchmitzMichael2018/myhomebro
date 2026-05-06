@@ -1332,7 +1332,8 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
         results: [
           { id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' },
           { id: 2, value: 'Siding', label: 'Siding', owner_type: 'system' },
-          { id: 3, value: 'Bathroom', label: 'Bathroom', owner_type: 'system' },
+          { id: 3, value: 'Pool', label: 'Pool', owner_type: 'system' },
+          { id: 4, value: 'Bathroom', label: 'Bathroom', owner_type: 'system' },
         ],
       }),
     });
@@ -1346,7 +1347,8 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
         results: [
           { id: 11, value: 'Basement', label: 'Basement', owner_type: 'system', project_type: 'Remodel' },
           { id: 12, value: 'Siding Replacement', label: 'Siding Replacement', owner_type: 'system', project_type: 'Siding' },
-          { id: 13, value: 'Bathroom Remodel', label: 'Bathroom Remodel', owner_type: 'system', project_type: 'Bathroom' },
+          { id: 13, value: 'Inground Pool and Pool House', label: 'Inground Pool and Pool House', owner_type: 'system', project_type: 'Pool' },
+          { id: 14, value: 'Bathroom Remodel', label: 'Bathroom Remodel', owner_type: 'system', project_type: 'Bathroom' },
         ],
       }),
     });
@@ -1361,6 +1363,7 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
     }
     const prompt = String(body.current_description || body.description || "").toLowerCase();
     const basementMatch = prompt.includes("finish basement") || prompt.includes("basement");
+    const poolMatch = prompt.includes("pool") || prompt.includes("pool house");
 
     await route.fulfill({
       status: 200,
@@ -1373,6 +1376,14 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
               project_title: 'Bathroom Remodel',
               project_type: 'Bathroom',
               project_subtype: 'Bathroom Remodel',
+            }
+          : poolMatch
+          ? {
+              description:
+                'Install or build the inground pool and pool house, including excavation, structural work, mechanical systems, finishes, and cleanup.',
+              project_title: 'Faucet Repair',
+              project_type: 'Plumbing',
+              project_subtype: 'Faucet Repair',
             }
           : {
               description:
@@ -1467,6 +1478,176 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Siding');
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Siding Replacement');
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/siding/i);
+});
+
+test('agreement wizard step 1 replaces plumbing labels with pool classification on rerun', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 1, value: 'Plumbing', label: 'Plumbing', owner_type: 'system' },
+          { id: 2, value: 'Pool', label: 'Pool', owner_type: 'system' },
+          { id: 3, value: 'Remodel', label: 'Remodel', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 21, value: 'Faucet Repair', label: 'Faucet Repair', owner_type: 'system', project_type: 'Plumbing' },
+          { id: 22, value: 'Inground Pool and Pool House', label: 'Inground Pool and Pool House', owner_type: 'system', project_type: 'Pool' },
+          { id: 23, value: 'Pool House Construction', label: 'Pool House Construction', owner_type: 'system', project_type: 'Pool' },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    let body = {};
+    try {
+      body = route.request().postDataJSON?.() || {};
+    } catch {
+      body = {};
+    }
+    const prompt = String(body.current_description || body.description || "").toLowerCase();
+    const poolMatch = prompt.includes("pool") || prompt.includes("pool house");
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        poolMatch
+          ? {
+              description:
+                'Install or build the inground pool and pool house, including excavation, structural work, mechanical systems, finishes, and cleanup.',
+              project_title: 'Faucet Repair',
+              project_type: 'Plumbing',
+              project_subtype: 'Faucet Repair',
+            }
+          : {
+              description:
+                'Repair the leaking faucet and confirm the plumbing connections before closeout.',
+              project_title: 'Faucet Repair',
+              project_type: 'Plumbing',
+              project_subtype: 'Faucet Repair',
+            }
+      ),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        candidates: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    if (route.request().url().includes('/templates/recommend/')) {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET' || request.method() === 'PATCH') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: '',
+          title: '',
+          project_type: '',
+          project_subtype: '',
+          description: '',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByTestId('step1-job-description-input').fill('faucet repair');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Faucet Repair');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Plumbing');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Faucet Repair');
+
+  await page.getByTestId('step1-job-description-input').fill('inground pool and pool house');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-find-best-starting-point-button')).toHaveText('Finding...');
+  await expect(page.getByTestId('step1-starting-point-loading-card')).toBeVisible();
+  await page.waitForTimeout(200);
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Inground Pool and Pool House');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Pool');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Inground Pool and Pool House');
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/pool/i);
 });
 
 test('agreement wizard step 1 shows subtype clarifications, saves answers, and allows skipping', async ({

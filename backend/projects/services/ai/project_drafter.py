@@ -58,6 +58,9 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
         "underlayment", "flashing", "drip edge", "metal roof", "tile roof",
         "clay tile", "concrete tile", "asphalt shingle",
     ],
+    "Pool": [
+        "pool", "pool house", "inground pool", "in-ground pool", "pool installation", "pool remodel",
+    ],
     "Custom": [],
 }
 
@@ -115,6 +118,11 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
             "new install", "new construction", "install roof", "roof install",
         ],
     },
+    "Pool": {
+        "Inground Pool and Pool House": ["inground pool", "in-ground pool", "pool house", "pool installation", "pool remodel"],
+        "Pool House Construction": ["pool house construction", "pool house", "pool pavilion", "pool cabana"],
+        "Pool Installation": ["pool installation", "new pool", "pool build", "pool project"],
+    },
     "Outdoor": {
         "Shed Build": ["shed", "shed build", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"],
         "Fence": ["fence", "gate"],
@@ -162,6 +170,11 @@ FALLBACK_CLARIFICATIONS: dict[str, list[dict[str, Any]]] = {
         {"question": "Is sink/plumbing included?", "type": "boolean", "required": False},
         {"question": "Are cabinets or countertop included?", "type": "boolean", "required": False},
         {"question": "Are lighting or electrical updates included?", "type": "boolean", "required": False},
+    ],
+    "Pool": [
+        {"question": "Is this an inground pool?", "type": "boolean", "required": False},
+        {"question": "Is a pool house included?", "type": "boolean", "required": False},
+        {"question": "Are decking or coping included?", "type": "boolean", "required": False},
     ],
     "Cabinetry and Countertops": [
         {"question": "Are cabinets included?", "type": "boolean", "required": False},
@@ -252,6 +265,13 @@ FALLBACK_MILESTONES: dict[str, list[dict[str, Any]]] = {
         {"title": "Countertop & Sink Install", "description": "Install countertop, sink, and related plumbing fixture components.", "percent": Decimal("30.00"), "duration_days": 1},
         {"title": "Lighting & Finish Details", "description": "Complete lighting, trim, backsplash, and finishing details.", "percent": Decimal("25.00"), "duration_days": 1},
         {"title": "Cleanup / Walkthrough", "description": "Finish cleanup, punch list work, and walkthrough.", "percent": Decimal("10.00"), "duration_days": 1},
+    ],
+    "Pool": [
+        {"title": "Layout & Site Prep", "description": "Confirm layout, access, utility locations, and prepare the site for pool work.", "percent": Decimal("10.00"), "duration_days": 1},
+        {"title": "Excavation & Structure", "description": "Complete excavation, shell, and structural pool installation work.", "percent": Decimal("30.00"), "duration_days": 2},
+        {"title": "Mechanical & Plumbing", "description": "Install pool plumbing, equipment, and related mechanical systems.", "percent": Decimal("25.00"), "duration_days": 2},
+        {"title": "Pool House / Finish Details", "description": "Complete pool house framing or finish work and final pool details.", "percent": Decimal("25.00"), "duration_days": 2},
+        {"title": "Cleanup / Walkthrough", "description": "Complete cleanup, testing, and final walkthrough.", "percent": Decimal("10.00"), "duration_days": 1},
     ],
     "Cabinetry and Countertops": [
         {"title": "Layout & Prep", "description": "Confirm measurements and prepare the work area for cabinetry and countertop installation.", "percent": Decimal("10.00"), "duration_days": 1},
@@ -625,6 +645,10 @@ def classify_type_subtype(
     if any(sig in hay_norm for sig in ["finish basement", "basement finishing", "basement remodel", "basement renovation", "basement"]):
         return "Remodel", "Basement", "Detected basement-specific scope. Using type 'Remodel' and subtype 'Basement'."
 
+    pool_signals = ["inground pool", "in-ground pool", "pool house", "pool installation", "new pool", "pool build", "pool"]
+    if any(sig in hay_norm for sig in pool_signals):
+        return "Pool", "Inground Pool and Pool House", "Detected pool-specific scope. Using type 'Pool' and subtype 'Inground Pool and Pool House'."
+
     siding_signals = ["replace siding", "siding replacement", "new siding", "siding repair", "siding"]
     if any(sig in hay_norm for sig in siding_signals):
         return "Siding", "Siding Replacement", "Detected siding-specific scope. Using type 'Siding' and subtype 'Siding Replacement'."
@@ -675,6 +699,13 @@ def best_subtype_for_type(project_type: str, text: str) -> str:
             return "Wet Bar Installation"
         if cabinet_hits >= 1 and plumbing_hits == 0 and lighting_hits == 0 and wet_bar_hits == 0:
             return "Cabinetry and Countertops"
+    if project_type == "Pool":
+        if any(sig in text_norm for sig in ["inground pool", "in-ground pool", "pool house", "pool installation", "pool build", "new pool"]):
+            return "Inground Pool and Pool House"
+        if any(sig in text_norm for sig in ["pool house construction", "pool cabana", "pool pavilion"]):
+            return "Pool House Construction"
+        if any(sig in text_norm for sig in ["pool installation", "pool project", "pool"]):
+            return "Pool Installation"
     if project_type == "Siding":
         if any(sig in text_norm for sig in ["siding replacement", "replace siding", "new siding", "siding install", "siding"]):
             return "Siding Replacement"
