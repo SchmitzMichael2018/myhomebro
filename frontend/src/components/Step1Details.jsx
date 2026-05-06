@@ -4253,9 +4253,7 @@ export default function Step1Details({
                   className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                   data-testid="step1-find-best-starting-point-button"
                 >
-                  {aiSetupBusy && startMode === "template"
-                    ? "Finding best starting point..."
-                    : "Find Best Starting Point"}
+                  {aiSetupBusy ? "Finding..." : "Find Best Starting Point"}
                 </button>
               </div>
 
