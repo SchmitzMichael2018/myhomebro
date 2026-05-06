@@ -233,7 +233,7 @@ function truncateProjectTitle(value = "", maxLength = 60) {
   const text = safeTrim(value);
   if (!text || text.length <= maxLength) return text;
   const shortened = text.slice(0, maxLength - 1);
-  return `${shortened.replace(/\s+\S*$/, "").trim()}â€¦`;
+  return `${shortened.replace(/\s+\S*$/, "").trim()}...`;
 }
 
 function extractTitleQualifier(text = "", subtype = "") {
@@ -282,7 +282,7 @@ function buildProjectFriendlyTitle({
     return truncateProjectTitle(titleCaseWords(cleanRawTitle));
   }
 
-  return "Custom Project";
+  return "";
 }
 
 function scoreOptionAgainstText(option, sourceText) {
@@ -333,6 +333,23 @@ function normalizePricingStrategy(value) {
   return "fixed";
 }
 
+function normalizeStep1FieldValue(value) {
+  const raw = safeTrim(value);
+  if (!raw) return "";
+  const cleaned = raw
+    .replace(/\s*\(new\)\s*$/i, "")
+    .replace(/^[\-–—•\s]+/, "")
+    .replace(/[\s\-–—•]+$/, "")
+    .trim();
+  if (!cleaned) return "";
+  if (/^\d+$/.test(cleaned)) return "";
+  if (/^\d+\s*\(new\)$/i.test(raw)) return "";
+  if (/^(not available|custom project|draft agreement|my new template|null|undefined)$/i.test(cleaned)) {
+    return "";
+  }
+  return cleaned;
+}
+
 function extractNumericIdCandidate(value) {
   const raw = safeTrim(value);
   if (!raw) return "";
@@ -368,7 +385,7 @@ function LeadContextField({ label, value }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
       <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-medium text-slate-900">{value || "Ã¢â‚¬â€"}</div>
+      <div className="mt-1 text-sm font-medium text-slate-900">{value || "-"}</div>
     </div>
   );
 }
@@ -804,9 +821,9 @@ function buildDeterministicStep1Setup(sourceText = "") {
     : "";
 
   return {
-    project_type: projectType || "Custom Project",
+    project_type: projectType || "",
     project_subtype: projectSubtype || "",
-    project_title: projectTitle || "Custom Project",
+    project_title: projectTitle || "",
     description,
   };
 }
@@ -2643,10 +2660,10 @@ export default function Step1Details({
     const deterministicFallback = buildDeterministicStep1Setup(
       safeTrim(sourceText || dLocal?.description || agreement?.description || step1JobDescriptionPrompt || "")
     );
-    const nextTitle = safeTrim(deterministicFallback.project_title);
-    const nextType = safeTrim(deterministicFallback.project_type);
-    const nextSubtype = safeTrim(deterministicFallback.project_subtype);
-    const nextDescription = safeTrim(
+    const nextTitle = normalizeStep1FieldValue(deterministicFallback.project_title);
+    const nextType = normalizeStep1FieldValue(deterministicFallback.project_type);
+    const nextSubtype = normalizeStep1FieldValue(deterministicFallback.project_subtype);
+    const nextDescription = normalizeStep1FieldValue(
       deterministicFallback.description ||
         sourceText ||
         dLocal?.description ||
@@ -2913,6 +2930,12 @@ export default function Step1Details({
           safeTrim(dLocal?.description)
       )) ||
     Boolean(appliedTemplateId) ||
+    (startMode === "manual" &&
+      Boolean(
+        safeTrim(dLocal?.project_title) ||
+          safeTrim(dLocal?.project_type) ||
+          safeTrim(dLocal?.project_subtype)
+      )) ||
     (isEdit && hasMeaningfulStep1DraftState({ agreement, dLocal }));
   const isLoadingState = Boolean(aiSetupBusy) && !isAiBuiltState;
   const isTemplateFoundState =
@@ -2936,6 +2959,18 @@ export default function Step1Details({
     aiCompactRecommendationConfidence !== "low";
   const shouldShowAppliedTemplateSummary =
     startMode !== "template" && Boolean(appliedTemplateId);
+  const hasResolvedStep1Content = Boolean(
+    displayedProjectTitle || displayedProjectType || displayedProjectSubtype
+  );
+  const step1ViewState = isLoadingState
+    ? "loading"
+    : isAiBuiltState || (startMode === "manual" && hasResolvedStep1Content)
+    ? "ai_built"
+    : isTemplateFoundState
+    ? "template_found"
+    : isNoTemplateState
+    ? "no_template"
+    : "initial_input";
 
   async function handleUseAiRecommendedTemplate() {
     if (!aiRecommendedTemplate) return;
@@ -2943,7 +2978,7 @@ export default function Step1Details({
   }
 
   function applyRefinedDescription(refinedDescription) {
-    const nextDescription = safeTrim(refinedDescription);
+    const nextDescription = normalizeStep1FieldValue(refinedDescription);
     if (!nextDescription) return;
 
     setDLocal((prev) => ({ ...prev, description: nextDescription }));
@@ -2963,7 +2998,9 @@ export default function Step1Details({
   }
 
   function applyAiSetupFields(aiData = {}) {
-    const refinedDescription = safeTrim(aiData?.description || aiData?.normalized_description || "");
+    const refinedDescription = normalizeStep1FieldValue(
+      aiData?.description || aiData?.normalized_description || ""
+    );
     const rawProjectTitle = safeTrim(
       aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""
     );
@@ -3024,24 +3061,30 @@ export default function Step1Details({
     const resolvedType = matchedSubtypeParentType || matchedType || null;
 
     const generatedType =
-      optionCanonicalValue(resolvedType) ||
-      dominantCategory.category ||
-      buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
-      "Custom Project";
+      normalizeStep1FieldValue(
+        optionCanonicalValue(resolvedType) ||
+          dominantCategory.category ||
+          buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
+          ""
+      );
 
     const generatedSubtype =
-      optionCanonicalValue(matchedSubtype) ||
-      dominantCategory.subtype ||
-      (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
-      buildGeneratedProjectTitle(sourceText);
+      normalizeStep1FieldValue(
+        optionCanonicalValue(matchedSubtype) ||
+          dominantCategory.subtype ||
+          (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
+          buildGeneratedProjectTitle(sourceText)
+      );
 
     const generatedTitle =
-      buildProjectFriendlyTitle({
-        subtype: generatedSubtype,
-        category: generatedType,
-        rawTitle: rawProjectTitle,
-        sourceText,
-      }) || "Custom Project";
+      normalizeStep1FieldValue(
+        buildProjectFriendlyTitle({
+          subtype: generatedSubtype,
+          category: generatedType,
+          rawTitle: rawProjectTitle,
+          sourceText,
+        })
+      );
 
     const nextValues = {
       project_title: generatedTitle,
@@ -3141,14 +3184,16 @@ export default function Step1Details({
       recommendationReason:
         recommendationReason || "No template found — let's build this together.",
       recommendedTemplate: null,
-      suggestedTitle: nextTitle || deterministicFallback.project_title || "Custom Project",
-      suggestedProjectType: safeTrim(
+      suggestedTitle: normalizeStep1FieldValue(
+        nextTitle || deterministicFallback.project_title || ""
+      ),
+      suggestedProjectType: normalizeStep1FieldValue(
         suggestedSetupValues?.project_type ||
           dLocal?.project_type ||
           deterministicFallback.project_type ||
           ""
       ),
-      suggestedProjectSubtype: safeTrim(
+      suggestedProjectSubtype: normalizeStep1FieldValue(
         suggestedSetupValues?.project_subtype ||
           dLocal?.project_subtype ||
           deterministicFallback.project_subtype ||
@@ -3390,10 +3435,12 @@ export default function Step1Details({
 
       setDLocal((prev) => ({
         ...prev,
-        project_title: safeTrim(nextAgreement?.project_title ?? nextAgreement?.title ?? ""),
-        project_type: nextAgreement?.project_type ?? "",
-        project_subtype: nextAgreement?.project_subtype ?? "",
-        description: nextAgreement?.description ?? "",
+        project_title: normalizeStep1FieldValue(
+          nextAgreement?.project_title ?? nextAgreement?.title ?? ""
+        ),
+        project_type: normalizeStep1FieldValue(nextAgreement?.project_type ?? ""),
+        project_subtype: normalizeStep1FieldValue(nextAgreement?.project_subtype ?? ""),
+        description: normalizeStep1FieldValue(nextAgreement?.description ?? ""),
         step_status: nextAgreement?.step_status ?? "",
         homeowner:
           nextAgreement?.homeowner != null && nextAgreement?.homeowner !== ""
@@ -3431,6 +3478,10 @@ export default function Step1Details({
       setSelectedTemplateId(null);
       setTemplateSearch("");
       setAiPreview("");
+      setAiSetupBusy(false);
+      setAiSetupError("");
+      setAiSetupResult(null);
+      setDismissedAiTemplateRecommendation(false);
       setAiErr("");
       setAiMilestonePreview("");
       setAddrSearch("");
@@ -3505,7 +3556,7 @@ export default function Step1Details({
       safeTrim(dLocal?.project_title),
     ].filter(Boolean);
 
-    return parts.length ? parts.join(" â€“ ") : "My New Template";
+    return parts.length ? parts.join(" - ") : "My New Template";
   }, [dLocal?.project_type, dLocal?.project_subtype, dLocal?.project_title]);
 
   const handleCreateNewType = () => {
@@ -3547,7 +3598,9 @@ export default function Step1Details({
     if (locked) return;
 
     const name = e?.target?.name;
-    const value = e?.target?.value;
+    const rawValue = e?.target?.value;
+    const value = normalizeStep1FieldValue(rawValue);
+    const nextEvent = name ? { target: { name, value }, currentTarget: { name, value } } : e;
 
     if (name === "project_title" || name === "project_type" || name === "project_subtype") {
       setAiSuggestedFieldMeta((prev) => {
@@ -3560,7 +3613,7 @@ export default function Step1Details({
 
     clearStep1FieldError(name);
 
-    onLocalChange?.(e);
+    onLocalChange?.(nextEvent);
 
     if (!agreementId || !name) return;
 
@@ -3676,14 +3729,18 @@ export default function Step1Details({
       : startMode === "template"
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Review the agreement details below and keep editing.";
-  const shouldShowProjectDetails = isAiBuiltState;
+  const shouldShowProjectDetails = step1ViewState === "ai_built";
   const showStep1Clarifications = false;
-  const shouldShowStartModePanel = !isAiBuiltState && !isLoadingState;
+  const shouldShowStartModePanel = step1ViewState === "initial_input" || step1ViewState === "template_found" || step1ViewState === "no_template";
   const shouldShowTemplateBrowserSection =
-    !isAiBuiltState &&
-    !isLoadingState &&
+    step1ViewState !== "ai_built" &&
+    step1ViewState !== "loading" &&
     startMode === "template" &&
     (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
+  const displayedProjectType = normalizeStep1FieldValue(dLocal?.project_type);
+  const displayedProjectSubtype = normalizeStep1FieldValue(dLocal?.project_subtype);
+  const displayedProjectTitle = normalizeStep1FieldValue(dLocal?.project_title);
+  const displayedScopeOfWork = normalizeStep1FieldValue(dLocal?.description || dLocal?.scope_of_work);
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -3728,7 +3785,7 @@ export default function Step1Details({
   return (
     <>
       <div className="space-y-6">
-        {!isAiBuiltState && !isLoadingState ? (
+        {step1ViewState !== "ai_built" && step1ViewState !== "loading" ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-sm text-gray-600">
               {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
@@ -4833,7 +4890,7 @@ export default function Step1Details({
                         {recurrenceStartDate
                           ? `Starts ${recurrenceStartDate}`
                           : "Pick a start date to generate the first service occurrence."}
-                        {nextOccurrenceDate ? ` â€¢ Next service: ${nextOccurrenceDate}` : ""}
+                        {nextOccurrenceDate ? ` - Next service: ${nextOccurrenceDate}` : ""}
                       </div>
                     </div>
 
@@ -5029,7 +5086,7 @@ export default function Step1Details({
                           : "border border-slate-300"
                       }`}
                       name="project_type"
-                      value={dLocal.project_type || ""}
+                      value={displayedProjectType || ""}
                       onChange={locked ? undefined : handleStep1LocalChange}
                       disabled={locked}
                   >
@@ -5081,7 +5138,7 @@ export default function Step1Details({
                       data-testid="agreement-project-subtype-select"
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
                       name="project_subtype"
-                      value={dLocal.project_subtype || ""}
+                      value={displayedProjectSubtype || ""}
                       onChange={locked ? undefined : handleStep1LocalChange}
                       disabled={locked || !safeTrim(dLocal.project_type)}
                   >
@@ -5129,7 +5186,7 @@ export default function Step1Details({
                         : "border border-slate-300"
                     }`}
                     name="project_title"
-                    value={dLocal.project_title}
+                    value={displayedProjectTitle}
                     onChange={locked ? undefined : handleStep1LocalChange}
                   placeholder="e.g., Master Bedroom Addition"
                   disabled={locked}
@@ -5164,7 +5221,7 @@ export default function Step1Details({
                   }`}
                   rows={8}
                   name="description"
-                  value={dLocal.description || ""}
+                  value={displayedScopeOfWork || ""}
                   onChange={locked ? undefined : handleStep1LocalChange}
                   placeholder="Example: Remove existing materials, prepare surfaces, install new materials, complete finish work, and clean the job site..."
                   disabled={locked}
@@ -5211,7 +5268,7 @@ export default function Step1Details({
                     className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
                     data-testid="agreement-ai-improve-scope-button"
                   >
-                    {aiBusy ? "Workingâ€¦" : "Improve Existing Scope"}
+                    {aiBusy ? "Working..." : "Improve Existing Scope"}
                   </button>
 
                   <button
@@ -5221,7 +5278,7 @@ export default function Step1Details({
                     className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
                     data-testid="agreement-ai-generate-scope-button"
                   >
-                    {aiBusy ? "Workingâ€¦" : "Generate Scope Draft"}
+                    {aiBusy ? "Working..." : "Generate Scope Draft"}
                   </button>
                 </div>
 

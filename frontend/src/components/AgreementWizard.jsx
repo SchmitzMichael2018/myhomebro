@@ -81,6 +81,23 @@ function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function normalizeWizardStep1Value(value) {
+  const raw = safeStr(value);
+  if (!raw) return "";
+  const cleaned = raw
+    .replace(/\s*\(new\)\s*$/i, "")
+    .replace(/^[\-–—•\s]+/, "")
+    .replace(/[\s\-–—•]+$/, "")
+    .trim();
+  if (!cleaned) return "";
+  if (/^\d+$/.test(cleaned)) return "";
+  if (/^\d+\s*\(new\)$/i.test(raw)) return "";
+  if (/^(not available|custom project|draft agreement|my new template|null|undefined)$/i.test(cleaned)) {
+    return "";
+  }
+  return cleaned;
+}
+
 function safeRecurringText(v) {
   return v == null ? "" : String(v).trim();
 }
@@ -1174,11 +1191,15 @@ export default function AgreementWizard() {
     const name = e?.target?.name;
     const value = e?.target?.value;
     if (!name) return;
+    const normalizedValue =
+      ["project_title", "project_type", "project_subtype", "description"].includes(name)
+        ? normalizeWizardStep1Value(value)
+        : value;
 
     setDLocal((prev) => {
-      const next = { ...prev, [name]: value };
+      const next = { ...prev, [name]: normalizedValue };
 
-      if (name === "project_type" && safeStr(prev.project_type) !== safeStr(value)) {
+      if (name === "project_type" && safeStr(prev.project_type) !== safeStr(normalizedValue)) {
         next.project_subtype = "";
       }
 
@@ -1218,13 +1239,13 @@ export default function AgreementWizard() {
 
   function buildStep1Payload({ forDraftCreate = false } = {}) {
     const selectedType =
-      projectTypes.find((row) => safeStr(row.value) === safeStr(dLocal.project_type)) || null;
+      projectTypes.find((row) => safeStr(row.value) === normalizeWizardStep1Value(dLocal.project_type)) || null;
 
     const selectedSubtype =
-      projectSubtypes.find((row) => safeStr(row.value) === safeStr(dLocal.project_subtype)) || null;
+      projectSubtypes.find((row) => safeStr(row.value) === normalizeWizardStep1Value(dLocal.project_subtype)) || null;
 
-    const rawTitle = dLocal.project_title || "";
-    const rawDescription = dLocal.description || "";
+    const rawTitle = normalizeWizardStep1Value(dLocal.project_title || "");
+    const rawDescription = normalizeWizardStep1Value(dLocal.description || "");
 
     const fallbackTitle = "Draft Agreement";
     const fallbackDescription =
@@ -1235,8 +1256,8 @@ export default function AgreementWizard() {
       title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
       project_title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
       project_class: normalizeProjectClass(dLocal.project_class),
-      project_type: dLocal.project_type || "",
-      project_subtype: dLocal.project_subtype || "",
+      project_type: normalizeWizardStep1Value(dLocal.project_type || ""),
+      project_subtype: normalizeWizardStep1Value(dLocal.project_subtype || ""),
       scope_of_work: rawDescription,
       project_type_ref: selectedType?.id || null,
       project_subtype_ref: selectedSubtype?.id || null,

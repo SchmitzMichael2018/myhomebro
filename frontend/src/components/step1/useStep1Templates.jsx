@@ -23,6 +23,23 @@ function sameText(a, b) {
   return safeTrim(a).toLowerCase() === safeTrim(b).toLowerCase();
 }
 
+function normalizeStep1FieldValue(value) {
+  const raw = safeTrim(value);
+  if (!raw) return "";
+  const cleaned = raw
+    .replace(/\s*\(new\)\s*$/i, "")
+    .replace(/^[\-–—•\s]+/, "")
+    .replace(/[\s\-–—•]+$/, "")
+    .trim();
+  if (!cleaned) return "";
+  if (/^\d+$/.test(cleaned)) return "";
+  if (/^\d+\s*\(new\)$/i.test(raw)) return "";
+  if (/^(not available|custom project|draft agreement|my new template|null|undefined)$/i.test(cleaned)) {
+    return "";
+  }
+  return cleaned;
+}
+
 function normalizeRecommendationLevel(value) {
   const normalized = safeTrim(value).toLowerCase();
   if (normalized === "high" || normalized === "recommended") return "high";
@@ -245,21 +262,26 @@ function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTi
     safeTrim(fallbackTemplate?.name);
 
   const nextTitle =
-    safeTrim(agreement?.project_title) ||
-    safeTrim(agreement?.title) ||
-    currentTitle ||
-    safeTrim(template?.name);
+    normalizeStep1FieldValue(
+      agreement?.project_title ||
+        agreement?.title ||
+        currentTitle ||
+        template?.name ||
+        ""
+    );
 
   const nextDescription =
-    agreement?.description ??
-    (safeTrim(template?.description) ? template.description : currentDescription);
+    normalizeStep1FieldValue(
+      agreement?.description ??
+        (safeTrim(template?.description) ? template.description : currentDescription)
+    );
 
   return {
     agreement,
     patch: {
       project_title: nextTitle || "",
-      project_type: agreement?.project_type ?? "",
-      project_subtype: agreement?.project_subtype ?? "",
+      project_type: normalizeStep1FieldValue(agreement?.project_type ?? ""),
+      project_subtype: normalizeStep1FieldValue(agreement?.project_subtype ?? ""),
       description: nextDescription || "",
       selected_template: template,
       selected_template_id: nextTemplateId,
