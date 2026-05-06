@@ -20,6 +20,7 @@ from projects.ai.agreement_milestone_writer import (
 from projects.models import Agreement, Milestone
 from projects.services.ai_orchestrator import orchestrate_user_request
 from projects.services.ai.project_drafter import draft_project_structure
+from projects.services.ai.project_drafter import classify_project_classification
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 
 logger = logging.getLogger(__name__)
@@ -447,6 +448,51 @@ def ai_draft_project(request):
         )
     except Exception as e:
         return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)
+
+    payload = {
+        "detail": "OK",
+        **result,
+        **_ai_access_payload(),
+    }
+    return JsonResponse(payload, status=HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ai_classify_project(request):
+    contractor = _get_contractor_for_user(request.user)
+    if not contractor:
+        return _deny("Contractor only.", "CONTRACTOR_ONLY")
+
+    raw_project_title = (request.data.get("project_title") or "").strip()
+    raw_project_type = (request.data.get("project_type") or "").strip()
+    raw_project_subtype = (request.data.get("project_subtype") or "").strip()
+    raw_description = (request.data.get("description") or request.data.get("current_description") or "").strip()
+    raw_scope = (request.data.get("scope_of_work") or request.data.get("scope") or "").strip()
+
+    if not any([raw_project_title, raw_project_type, raw_project_subtype, raw_description, raw_scope]):
+        return _validation_error(
+            {"current_description": ["Add a description or scope before improving the classification."]},
+            "Add a description or scope before improving the classification.",
+        )
+
+    try:
+        result = classify_project_classification(
+            project_title=raw_project_title,
+            description=raw_description,
+            scope_text=raw_scope or raw_description,
+            requested_type=raw_project_type,
+            requested_subtype=raw_project_subtype,
+        )
+    except Exception as exc:
+        logger.exception("AI classify project failed")
+        return JsonResponse(
+            {
+                "detail": "Couldn't improve the classification. You can edit these fields manually.",
+                "error": str(exc),
+            },
+            status=HTTP_400_BAD_REQUEST,
+        )
 
     payload = {
         "detail": "OK",

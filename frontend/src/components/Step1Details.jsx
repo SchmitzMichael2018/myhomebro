@@ -383,6 +383,9 @@ function inferStep1ProjectClassificationConsistency({
   const mediaRoomSetup = inferMediaRoomProjectSetup(combinedText);
   if (mediaRoomSetup) return mediaRoomSetup;
 
+  const junkRemovalSetup = inferJunkRemovalProjectSetup(combinedText);
+  if (junkRemovalSetup) return junkRemovalSetup;
+
   const basementSetup = inferBasementProjectSetup(combinedText);
   if (basementSetup) return basementSetup;
 
@@ -550,6 +553,40 @@ function inferMediaRoomProjectSetup(text = "") {
     project_title: "Home Theater Installation",
     description:
       "Build the media room or home theater as described, including framing, drywall, electrical, lighting zones, AV equipment, sound system work, finish details, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  };
+}
+
+function inferJunkRemovalProjectSetup(text = "") {
+  const junkSignals = [
+    /\bjunk\s+removal\b/i,
+    /\bdebris\s+removal\b/i,
+    /\bappliance\s+removal\b/i,
+    /\bfurniture\s+removal\b/i,
+    /\bhaul[- ]away\b/i,
+    /\btrash\s+out\b/i,
+    /\bconstruction\s+debris\b/i,
+    /\bdemo\s+debris\b/i,
+  ];
+  const junkHits = countMatchingPatterns(text, junkSignals);
+  if (junkHits < 2 && !/\b(remove|remove\s+and\s+haul|haul\s+away)\b/i.test(text)) return null;
+  const lower = safeTrim(text).toLowerCase();
+  let subtype = "Junk Removal";
+  let title = "Junk Removal";
+  if (/(construction\s+debris|demo\s+debris|demo debris|construction debris)/i.test(lower)) {
+    subtype = "Construction Debris Removal";
+  } else if (/\bappliance\b/i.test(lower)) {
+    subtype = "Appliance Removal";
+  } else if (/\bfurniture\b|\bsofa\b|\bcouch\b|\bmattress\b/i.test(lower)) {
+    subtype = "Furniture Removal";
+  } else if (/\bdebris\b|\btrash\b|\bhaul[- ]away\b/i.test(lower)) {
+    subtype = "Debris Removal";
+  }
+  return {
+    project_type: "Junk Removal",
+    project_subtype: subtype,
+    project_title: title,
+    description:
+      "Remove and haul away the items or debris described, sort and load the material, dispose of it properly, and clean the work area when finished. Contractor will verify access, volume, disposal requirements, and any hazardous materials before final pricing or work begins.",
   };
 }
 
@@ -811,6 +848,14 @@ const STEP1_LOCAL_FALLBACK_RULES = [
       "Finish the basement space as described, including preparation, framing or layout changes, insulation, drywall, flooring, trim, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
   },
   {
+    patterns: [/\bjunk\s+removal\b/i, /\bdebris\s+removal\b/i, /\bappliance\s+removal\b/i, /\bfurniture\s+removal\b/i, /\bhaul[- ]away\b/i, /\btrash\s+out\b/i],
+    project_type: "Junk Removal",
+    project_subtype: "Junk Removal",
+    project_title: "Junk Removal",
+    scope:
+      "Remove and haul away the items or debris described, sort and load the material, dispose of it properly, and clean the work area when finished. Contractor will verify access, volume, disposal requirements, and any hazardous materials before final pricing or work begins.",
+  },
+  {
     patterns: [/\bhome\s+theater\b/i, /\bmedia\s+room\b/i, /\bentertainment\s+room\b/i, /\bprojector\b/i, /\bspeaker\b/i, /\bsound\s+system\b/i],
     project_type: "Remodel",
     project_subtype: "Home Theater / Media Room",
@@ -979,6 +1024,28 @@ function inferDominantProjectCategory(sourceText) {
       category: "Remodel",
       subtype: "Home Theater / Media Room",
       reasoning: ["media room / home theater scope detected"],
+    };
+  }
+
+  const junkRemovalSignals = [
+    /\bjunk\s+removal\b/i,
+    /\bdebris\s+removal\b/i,
+    /\bappliance\s+removal\b/i,
+    /\bfurniture\s+removal\b/i,
+    /\bhaul[- ]away\b/i,
+    /\btrash\s+out\b/i,
+    /\bconstruction\s+debris\b/i,
+    /\bdemo\s+debris\b/i,
+  ];
+  const junkHits = countMatchingPatterns(positiveText, junkRemovalSignals);
+  if (
+    junkHits >= 2 ||
+    (junkHits >= 1 && /\b(remove|remove\s+and\s+haul|haul\s+away)\b/i.test(positiveText))
+  ) {
+    return {
+      category: "Junk Removal",
+      subtype: "Junk Removal",
+      reasoning: ["junk removal scope detected"],
     };
   }
 
@@ -1952,6 +2019,8 @@ export default function Step1Details({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiErr, setAiErr] = useState("");
   const [aiPreview, setAiPreview] = useState("");
+  const [classificationBusy, setClassificationBusy] = useState(false);
+  const [classificationErr, setClassificationErr] = useState("");
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
@@ -2316,6 +2385,108 @@ export default function Step1Details({
 
     await patchAgreement({ description: nextDescription }, { silent: true });
     setAiPreview("");
+  }
+
+  async function runAiClassification() {
+    if (locked || classificationBusy) return;
+
+    const currentScope = safeTrim(dLocal.description || agreement?.description || "");
+    const currentTitle = safeTrim(dLocal.project_title || agreement?.project_title || "");
+    const currentType = safeTrim(dLocal.project_type || agreement?.project_type || "");
+    const currentSubtype = safeTrim(dLocal.project_subtype || agreement?.project_subtype || "");
+    const currentPrompt = safeTrim(step1JobDescriptionPrompt || "");
+
+    if (!currentScope && !currentPrompt && !currentTitle && !currentType && !currentSubtype) {
+      setClassificationErr("Add a description or scope before improving the classification.");
+      setStep1ValidationMessage("Add a description or scope before improving the classification.");
+      return;
+    }
+
+    setClassificationErr("");
+    setClassificationBusy(true);
+
+    try {
+      const payload = {
+        agreement_id: agreementId || null,
+        job_description: currentPrompt,
+        current_description: currentPrompt,
+        description: currentScope || currentPrompt,
+        scope_of_work: currentScope,
+        project_title: currentTitle,
+        project_type: currentType,
+        project_subtype: currentSubtype,
+      };
+
+      const { data } = await api.post("/projects/agreements/ai/classify/", payload);
+
+      const nextType = normalizeStep1FieldValue(data?.project_type || "");
+      const nextSubtype = normalizeStep1FieldValue(data?.project_subtype || "");
+      const nextTitle = normalizeStep1FieldValue(data?.project_title || "");
+
+      if (!nextType && !nextSubtype && !nextTitle) {
+        throw new Error("AI returned no classification changes.");
+      }
+
+      const nextTypeRef =
+        (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
+      const nextSubtypeRef =
+        (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === nextSubtype)?.id ||
+        null;
+
+      setAiSuggestedFieldMeta((prev) => ({
+        ...prev,
+        project_type: { isNew: Boolean(nextType && nextType !== currentType) },
+        project_subtype: { isNew: Boolean(nextSubtype && nextSubtype !== currentSubtype) },
+        project_title: { isNew: Boolean(nextTitle && nextTitle !== currentTitle) },
+      }));
+
+      setDLocal((prev) => ({
+        ...prev,
+        project_type: nextType || prev.project_type || "",
+        project_type_ref: nextTypeRef,
+        project_subtype: nextSubtype || prev.project_subtype || "",
+        project_subtype_ref: nextSubtypeRef,
+        project_title: nextTitle || prev.project_title || "",
+        title: nextTitle || prev.title || "",
+      }));
+
+      if (!isNewAgreement) {
+        writeCache({
+          project_type: nextType || "",
+          project_type_ref: nextTypeRef,
+          project_subtype: nextSubtype || "",
+          project_subtype_ref: nextSubtypeRef,
+          project_title: nextTitle || "",
+          title: nextTitle || "",
+        });
+      }
+
+      if (agreementId) {
+        await patchAgreement(
+          {
+            project_type: nextType || "",
+            project_type_ref: nextTypeRef,
+            project_subtype: nextSubtype || "",
+            project_subtype_ref: nextSubtypeRef,
+            project_title: nextTitle || "",
+            title: nextTitle || "",
+          },
+          { silent: true }
+        );
+      }
+
+      setClassificationErr("");
+      toast.success("Project classification updated.");
+    } catch (error) {
+      const payload = error?.response?.data || {};
+      const message =
+        payload?.detail ||
+        "Couldn't improve the classification. You can edit these fields manually.";
+      setClassificationErr(message);
+      toast.error(message);
+    } finally {
+      setClassificationBusy(false);
+    }
   }
 
   async function handleGenerateLeadProposalDraft() {
@@ -5526,6 +5697,30 @@ export default function Step1Details({
                       />
                     </div>
                   </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Project classification</div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      Use AI to better match the project category, subtype, and title based on the current scope.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="agreement-ai-improve-classification-button"
+                    onClick={runAiClassification}
+                    disabled={locked || classificationBusy}
+                    className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {classificationBusy ? <Spinner size={4} color="indigo-600" /> : null}
+                    {classificationBusy ? "Improving..." : "Improve Project Classification"}
+                  </button>
+                </div>
+                {classificationErr ? (
+                  <div className="mt-2 text-xs text-rose-600">{classificationErr}</div>
                 ) : null}
               </div>
 

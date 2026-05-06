@@ -1450,7 +1450,14 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
           description: '',
           payment_mode: 'escrow',
           payment_structure: 'simple',
+          step_status: 'step1',
+          homeowner: null,
           status: 'draft',
+          ai_scope: { answers: {} },
+          compliance_warning: {
+            warning_level: 'none',
+            message: '',
+          },
         }),
       });
       return;
@@ -1655,6 +1662,159 @@ test('agreement wizard step 1 replaces plumbing labels with pool classification 
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Pool');
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Inground Pool and Pool House');
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/pool/i);
+});
+
+test('agreement wizard step 1 improve project classification updates type subtype and title without changing scope', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 1, value: 'Repair', label: 'Repair', owner_type: 'system' },
+          { id: 2, value: 'Junk Removal', label: 'Junk Removal', owner_type: 'system' },
+          { id: 3, value: 'Remodel', label: 'Remodel', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 11,
+            value: 'Faucet Repair',
+            label: 'Faucet Repair',
+            owner_type: 'system',
+            project_type: 'Repair',
+          },
+          {
+            id: 12,
+            value: 'Junk Removal',
+            label: 'Junk Removal',
+            owner_type: 'system',
+            project_type: 'Junk Removal',
+          },
+          {
+            id: 13,
+            value: 'Debris Removal',
+            label: 'Debris Removal',
+            owner_type: 'system',
+            project_type: 'Junk Removal',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/ai\/description\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Faucet Repair',
+        project_type: 'Repair',
+        project_subtype: 'Faucet Repair',
+        description: 'Remove old furniture and debris from the garage.',
+        recommendation_source: 'fallback',
+        confidence: 'fallback',
+        confidence_label: 'Recommended from your description',
+        next_step_guidance: 'Review the recommended starting point before continuing.',
+        reason: 'Recommended from your description.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/ai\/classify\/?(\?.*)?$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'OK',
+        project_type: 'Junk Removal',
+        project_subtype: 'Debris Removal',
+        project_title: 'Junk Removal',
+        classification_reason: 'Detected junk-removal scope.',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET' || request.method() === 'PATCH') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: '',
+          title: '',
+          project_type: '',
+          project_subtype: '',
+          description: '',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill('Junk Removal');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await page.waitForTimeout(1100);
+
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+
+  await page.getByTestId('proposal-draft-textarea').fill(
+    'Remove old furniture, appliances, and debris from the garage.'
+  );
+  await page.getByTestId('agreement-project-type-select').selectOption('Repair');
+  await page.getByTestId('agreement-project-subtype-select').selectOption('Faucet Repair');
+  await page.getByTestId('agreement-project-title-input').fill('Faucet Repair');
+  const scopeBefore = await page.getByTestId('proposal-draft-textarea').inputValue();
+
+  await page.getByTestId('agreement-ai-improve-classification-button').click({ force: true });
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toHaveText(
+    'Improving...'
+  );
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toBeDisabled();
+  await page.waitForTimeout(1100);
+
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Junk Removal');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Junk Removal');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Debris Removal');
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scopeBefore);
 });
 
 test('agreement wizard step 1 shows subtype clarifications, saves answers, and allows skipping', async ({

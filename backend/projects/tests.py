@@ -440,6 +440,19 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(project_subtype, "Home Theater / Media Room")
         self.assertIn("media room", reason.lower())
 
+    def test_classify_type_subtype_prefers_junk_removal_over_repair(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Junk Removal",
+            description="Remove old furniture, appliances, and debris from the garage.",
+            scope_text="Remove and haul away the items from the garage.",
+            requested_type="Repair",
+            requested_subtype="Faucet Repair",
+        )
+
+        self.assertEqual(project_type, "Junk Removal")
+        self.assertEqual(project_subtype, "Junk Removal")
+        self.assertIn("junk", reason.lower())
+
     def test_classify_type_subtype_prefers_wet_bar_over_electrical_for_mixed_scope(self):
         project_type, project_subtype, reason = classify_type_subtype(
             project_title="Wet bar buildout",
@@ -3934,6 +3947,37 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["project_subtype"], "Inground Pool and Pool House")
         self.assertEqual(payload["project_title"], "Inground Pool and Pool House")
         self.assertIn("pool", payload["description"].lower())
+
+    def test_ai_classify_project_prefers_junk_removal_and_keeps_scope_untouched(self):
+        response = self.client.post(
+            "/api/projects/agreements/ai/classify/",
+            {
+                "agreement_id": self.agreement.id,
+                "project_title": "Faucet Repair",
+                "project_type": "Repair",
+                "project_subtype": "Faucet Repair",
+                "description": "Junk Removal",
+                "scope_of_work": "Remove old furniture, appliances, and debris from the garage.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["project_type"], "Junk Removal")
+        self.assertEqual(payload["project_title"], "Junk Removal")
+        self.assertIn(
+            payload["project_subtype"],
+            {
+                "Junk Removal",
+                "Debris Removal",
+                "Appliance Removal",
+                "Furniture Removal",
+                "Construction Debris Removal",
+            },
+        )
+        self.assertEqual(payload["detail"], "OK")
+        self.assertNotIn("scope_of_work", payload)
 
     def test_ai_agreement_description_accepts_unsaved_payload_without_agreement(self):
         with patch(

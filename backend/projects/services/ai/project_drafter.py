@@ -61,6 +61,9 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     "Pool": [
         "pool", "pool house", "inground pool", "in-ground pool", "pool installation", "pool remodel",
     ],
+    "Junk Removal": [
+        "junk removal", "debris removal", "appliance removal", "furniture removal", "haul away", "haul-away", "trash out", "construction debris",
+    ],
     "Custom": [],
 }
 
@@ -123,6 +126,13 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Inground Pool and Pool House": ["inground pool", "in-ground pool", "pool house", "pool installation", "pool remodel"],
         "Pool House Construction": ["pool house construction", "pool house", "pool pavilion", "pool cabana"],
         "Pool Installation": ["pool installation", "new pool", "pool build", "pool project"],
+    },
+    "Junk Removal": {
+        "Junk Removal": ["junk removal", "debris removal", "haul away", "haul-away", "trash out"],
+        "Debris Removal": ["debris removal", "construction debris", "demo debris", "jobsite debris"],
+        "Appliance Removal": ["appliance removal", "remove appliance", "haul away appliance", "old appliance"],
+        "Furniture Removal": ["furniture removal", "haul away furniture", "old furniture", "sofa removal"],
+        "Construction Debris Removal": ["construction debris", "demo debris", "construction waste", "renovation debris"],
     },
     "Outdoor": {
         "Shed Build": ["shed", "shed build", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"],
@@ -618,6 +628,27 @@ def classify_type_subtype(
             "Detected media-room scope. Using type 'Remodel' and subtype 'Home Theater / Media Room'.",
         )
 
+    junk_removal_signals = [
+        "junk removal",
+        "debris removal",
+        "appliance removal",
+        "furniture removal",
+        "haul away",
+        "haul-away",
+        "trash out",
+        "demo debris",
+        "construction debris",
+    ]
+    junk_hits = sum(1 for sig in junk_removal_signals if sig in hay_norm)
+    if junk_hits >= 2 or (
+        junk_hits >= 1 and any(sig in hay_norm for sig in ["sofa", "couch", "mattress", "appliance", "furniture", "debris", "trash", "remove"])
+    ) or ("junk" in hay_norm and "remove" in hay_norm):
+        return (
+            "Junk Removal",
+            "Junk Removal",
+            "Detected junk-removal scope. Using type 'Junk Removal' and subtype 'Junk Removal'.",
+        )
+
     if not _safe_str(requested_type):
         hay = hay_norm
         shed_signals = [
@@ -688,6 +719,61 @@ def classify_type_subtype(
     project_subtype = best_subtype_for_type(best_type, hay)
     reason = f"Detected type '{best_type}' and subtype '{project_subtype}' from project text."
     return best_type, project_subtype, reason
+
+
+def build_classification_title(project_type: str, project_subtype: str, project_title: str, description: str) -> str:
+    text = _norm_text(f"{project_title}\n{project_subtype}\n{description}")
+    if project_type == "Junk Removal":
+        return "Junk Removal"
+    if project_type == "Remodel" and project_subtype == "Home Theater / Media Room":
+        return "Home Theater Installation"
+    if project_type == "Remodel" and project_subtype == "Basement":
+        return "Basement Finishing"
+    if project_type == "Siding" and project_subtype == "Siding Replacement":
+        return "Siding Replacement"
+    if project_type == "Pool" and project_subtype == "Inground Pool and Pool House":
+        return "Inground Pool and Pool House"
+    if project_type == "Roofing" and project_subtype == "Roof Replacement":
+        return "Roof Replacement"
+    if project_type == "Painting":
+        if "bedroom" in text:
+            return "Bedroom Painting"
+        if "exterior" in text:
+            return "Exterior Painting"
+        return "Painting Project"
+    if project_type == "Plumbing" and project_subtype == "Faucet Repair":
+        return "Faucet Repair"
+    if project_type == "Electrical" and project_subtype == "Lighting":
+        return "Lighting Installation"
+    if project_subtype:
+        return project_subtype
+    if project_type:
+        return f"{project_type} Project"
+    return "Project Starting Point"
+
+
+def classify_project_classification(
+    *,
+    project_title: str = "",
+    description: str = "",
+    scope_text: str = "",
+    requested_type: str = "",
+    requested_subtype: str = "",
+) -> dict[str, str]:
+    project_type, project_subtype, reason = classify_type_subtype(
+        project_title=project_title,
+        description=description,
+        scope_text=scope_text,
+        requested_type=requested_type,
+        requested_subtype=requested_subtype,
+    )
+    title = build_classification_title(project_type, project_subtype, project_title, scope_text or description)
+    return {
+        "project_type": project_type,
+        "project_subtype": project_subtype,
+        "project_title": title,
+        "classification_reason": reason,
+    }
 
 
 def best_subtype_for_type(project_type: str, text: str) -> str:

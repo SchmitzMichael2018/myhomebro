@@ -19,6 +19,7 @@ export const PROJECT_TYPES = [
   { value: "Landscaping", label: "Landscaping" },
   { value: "Painting", label: "Painting" },
   { value: "Flooring", label: "Flooring" },
+  { value: "Junk Removal", label: "Junk Removal" },
 
   // Step1-only labels preserved so existing data still round-trips
   { value: "Installation", label: "Installation" },
@@ -56,6 +57,13 @@ export const SUBTYPES_BY_TYPE = {
   Landscaping: ["Sod", "Irrigation", "Hardscape", "Trees"],
   Painting: ["Interior", "Exterior", "Cabinets"],
   Flooring: ["Tile", "Hardwood", "Laminate", "Vinyl", "Carpet"],
+  "Junk Removal": [
+    "Junk Removal",
+    "Debris Removal",
+    "Appliance Removal",
+    "Furniture Removal",
+    "Construction Debris Removal",
+  ],
 
   // No fixed subtypes on purpose (falls back to custom text input):
   Installation: [],
