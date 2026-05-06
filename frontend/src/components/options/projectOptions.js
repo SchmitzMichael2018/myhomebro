@@ -39,6 +39,7 @@ export const SUBTYPES_BY_TYPE = {
     "Bathroom",
     "Whole Home",
     "Basement",
+    "Home Theater / Media Room",
     "Wet Bar Installation",
     "Cabinetry and Countertops",
     "Garage",

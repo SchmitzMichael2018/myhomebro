@@ -69,6 +69,7 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Kitchen": ["kitchen", "cabinet", "countertop", "backsplash"],
         "Bathroom": ["bathroom", "shower", "tub", "toilet", "vanity"],
         "Basement": ["basement", "finish basement", "basement finishing", "basement remodel"],
+        "Home Theater / Media Room": ["home theater", "media room", "entertainment room", "projector", "speaker", "sound system"],
         "Wet Bar Installation": ["wet bar", "bar cabinet", "bar countertop", "bar sink", "wet bar installation"],
         "Cabinetry and Countertops": ["cabinet", "cabinetry", "countertop", "quartz", "granite"],
         "Flooring": ["floor", "tile", "lvp", "vinyl plank", "hardwood", "laminate"],
@@ -599,11 +600,26 @@ def classify_type_subtype(
     *,
     project_title: str,
     description: str,
+    scope_text: str = "",
     requested_type: str = "",
     requested_subtype: str = "",
 ) -> tuple[str, str, str]:
+    hay = f"{project_title}\n{description}\n{scope_text}"
+    hay_norm = _norm_text(hay)
+
+    media_room_signals = ["home theater", "media room", "entertainment room", "projector", "speaker", "sound system", "av equipment", "media wall", "screen wall"]
+    media_room_support = ["framing", "drywall", "electrical", "lighting", "soundproof", "acoustic", "wired", "audio", "video"]
+    media_room_hits = sum(1 for sig in media_room_signals if sig in hay_norm)
+    media_room_support_hits = sum(1 for sig in media_room_support if sig in hay_norm)
+    if media_room_hits >= 2 or (media_room_hits >= 1 and media_room_support_hits >= 2):
+        return (
+            "Remodel",
+            "Home Theater / Media Room",
+            "Detected media-room scope. Using type 'Remodel' and subtype 'Home Theater / Media Room'.",
+        )
+
     if not _safe_str(requested_type):
-        hay = _norm_text(f"{project_title}\n{description}")
+        hay = hay_norm
         shed_signals = [
             "shed",
             "outbuilding",
@@ -632,16 +648,6 @@ def classify_type_subtype(
         if concrete_type:
             return concrete_type, concrete_subtype or "", concrete_reason or "Concrete detected."
 
-    if _safe_str(requested_type):
-        project_type = _safe_str(requested_type)
-        project_subtype = _safe_str(requested_subtype)
-        if not project_subtype:
-            project_subtype = best_subtype_for_type(project_type, f"{project_title}\n{description}")
-        return project_type, project_subtype, "Using provided type/subtype."
-
-    hay = f"{project_title}\n{description}"
-    hay_norm = _norm_text(hay)
-
     if any(sig in hay_norm for sig in ["finish basement", "basement finishing", "basement remodel", "basement renovation", "basement"]):
         return "Remodel", "Basement", "Detected basement-specific scope. Using type 'Remodel' and subtype 'Basement'."
 
@@ -662,6 +668,13 @@ def classify_type_subtype(
     if wet_bar_signal_count or wet_bar_support_count >= 3:
         if wet_bar_signal_count or wet_bar_support_count >= 4 or sum(1 for sig in cabinetry_signals + plumbing_signals if sig in hay_norm) >= 2:
             return "Remodel", "Wet Bar Installation", "Detected wet-bar/remodel scope. Using type 'Remodel' and subtype 'Wet Bar Installation'."
+
+    if _safe_str(requested_type):
+        project_type = _safe_str(requested_type)
+        project_subtype = _safe_str(requested_subtype)
+        if not project_subtype:
+            project_subtype = best_subtype_for_type(project_type, f"{project_title}\n{description}\n{scope_text}")
+        return project_type, project_subtype, "Using provided type/subtype."
 
     best_type = "Custom"
     best_type_score = -1
@@ -685,6 +698,8 @@ def best_subtype_for_type(project_type: str, text: str) -> str:
     text_norm = _norm_text(text)
 
     if project_type == "Remodel":
+        if any(sig in text_norm for sig in ["home theater", "media room", "entertainment room", "projector", "speaker", "sound system"]):
+            return "Home Theater / Media Room"
         if any(sig in text_norm for sig in ["finish basement", "basement finishing", "basement remodel", "basement renovation", "basement"]):
             return "Basement"
         wet_bar_terms = ["wet bar", "bar cabinet", "bar countertop", "bar sink", "wet bar installation"]
@@ -1026,31 +1041,6 @@ def draft_project_structure(
         requested_subtype=requested_subtype,
     )
 
-    pricing_summary = estimate_project_total(
-        project_type=project_type,
-        project_subtype=project_subtype,
-        project_title=project_title,
-        description=description,
-    )
-    suggested_total = pricing_summary["suggested_total"]
-
-    matched_template, template_score, template_reason, confidence = find_best_template(
-        contractor=contractor,
-        project_type=project_type,
-        project_subtype=project_subtype,
-        project_title=project_title,
-        description=description,
-    )
-
-    proposal_draft = build_proposal_draft(
-        agreement=agreement,
-        contractor=contractor,
-        project_title=project_title,
-        project_type=project_type,
-        project_subtype=project_subtype,
-        description=description,
-    )
-
     openai_data = _openai_refine_scope(
         project_title=project_title,
         description=description,
@@ -1064,11 +1054,48 @@ def draft_project_structure(
         else ""
     )
     if not normalized_description:
-        normalized_description = description or (
-            matched_template.description if matched_template and _safe_str(matched_template.description) else ""
-        )
+        normalized_description = description
     if not normalized_description:
         normalized_description = f"{project_subtype or project_type} project: {project_title}".strip(": ")
+
+    refined_project_type, refined_project_subtype, refined_type_reason = classify_type_subtype(
+        project_title=project_title,
+        description=description,
+        scope_text=normalized_description,
+        requested_type=project_type,
+        requested_subtype=project_subtype,
+    )
+    if refined_project_type:
+        project_type = refined_project_type
+    if refined_project_subtype:
+        project_subtype = refined_project_subtype
+    if refined_type_reason:
+        type_reason = refined_type_reason
+
+    pricing_summary = estimate_project_total(
+        project_type=project_type,
+        project_subtype=project_subtype,
+        project_title=project_title,
+        description=normalized_description or description,
+    )
+    suggested_total = pricing_summary["suggested_total"]
+
+    matched_template, template_score, template_reason, confidence = find_best_template(
+        contractor=contractor,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        project_title=project_title,
+        description=normalized_description or description,
+    )
+
+    proposal_draft = build_proposal_draft(
+        agreement=agreement,
+        contractor=contractor,
+        project_title=project_title,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=normalized_description or description,
+    )
 
     if matched_template:
         milestones = _template_milestones_to_payload(

@@ -36,6 +36,13 @@ _FALLBACK_HINTS = [
         "summary": "Work includes finishing the basement space described by the customer, including preparation, framing or layout changes, insulation, drywall, flooring, trim, and cleanup as applicable.",
     },
     {
+        "patterns": [r"\bhome theater\b", r"\bmedia room\b", r"\bentertainment room\b", r"\bprojector\b", r"\bspeaker\b", r"\bsound system\b"],
+        "project_type": "Remodel",
+        "project_subtype": "Home Theater / Media Room",
+        "project_title": "Home Theater Installation",
+        "summary": "Work includes building the media room or home theater described by the customer, including framing, drywall, electrical, lighting zones, AV equipment, and finish work as applicable.",
+    },
+    {
         "patterns": [r"\bwet bar\b", r"\bbar cabinet\b", r"\bbar countertop\b", r"\bbar sink\b", r"\bcabinetry\b.*\bcountertop\b"],
         "project_type": "Remodel",
         "project_subtype": "Wet Bar Installation",

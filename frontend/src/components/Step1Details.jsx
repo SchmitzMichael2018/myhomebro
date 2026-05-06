@@ -374,11 +374,14 @@ function inferStep1ProjectClassificationConsistency({
   suggestedProjectSubtype = "",
   suggestedProjectTitle = "",
 }) {
-  const combinedText = [sourceText, scopeText, suggestedProjectType, suggestedProjectSubtype, suggestedProjectTitle]
+  const combinedText = [scopeText, sourceText, suggestedProjectType, suggestedProjectSubtype, suggestedProjectTitle]
     .filter(Boolean)
     .join(" ");
   const combined = normalizeAiText(combinedText);
   if (!combined) return null;
+
+  const mediaRoomSetup = inferMediaRoomProjectSetup(combinedText);
+  if (mediaRoomSetup) return mediaRoomSetup;
 
   const basementSetup = inferBasementProjectSetup(combinedText);
   if (basementSetup) return basementSetup;
@@ -516,6 +519,38 @@ function inferStep1ProjectClassificationConsistency({
   }
 
   return null;
+}
+
+function inferMediaRoomProjectSetup(text = "") {
+  const mediaRoomSignals = [
+    /\bhome\s+theater\b/i,
+    /\bmedia\s+room\b/i,
+    /\bentertainment\s+room\b/i,
+    /\bprojector\b/i,
+    /\bspeaker(s)?\b/i,
+    /\bsound\s+system\b/i,
+    /\bav\s+equipment\b/i,
+    /\bmedia\s+wall\b/i,
+    /\bscreen\s+wall\b/i,
+  ];
+  const mediaRoomSupportSignals = [
+    /\bframing\b/i,
+    /\bdrywall\b/i,
+    /\belectrical\b/i,
+    /\blighting\b/i,
+    /\bsoundproof/i,
+    /\bacoustic/i,
+  ];
+  const mediaRoomHits = countMatchingPatterns(text, mediaRoomSignals);
+  const mediaRoomSupportHits = countMatchingPatterns(text, mediaRoomSupportSignals);
+  if (mediaRoomHits < 2 && !(mediaRoomHits >= 1 && mediaRoomSupportHits >= 2)) return null;
+  return {
+    project_type: "Remodel",
+    project_subtype: "Home Theater / Media Room",
+    project_title: "Home Theater Installation",
+    description:
+      "Build the media room or home theater as described, including framing, drywall, electrical, lighting zones, AV equipment, sound system work, finish details, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  };
 }
 
 function scoreOptionAgainstText(option, sourceText) {
@@ -776,6 +811,14 @@ const STEP1_LOCAL_FALLBACK_RULES = [
       "Finish the basement space as described, including preparation, framing or layout changes, insulation, drywall, flooring, trim, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
   },
   {
+    patterns: [/\bhome\s+theater\b/i, /\bmedia\s+room\b/i, /\bentertainment\s+room\b/i, /\bprojector\b/i, /\bspeaker\b/i, /\bsound\s+system\b/i],
+    project_type: "Remodel",
+    project_subtype: "Home Theater / Media Room",
+    project_title: "Home Theater Installation",
+    scope:
+      "Build the media room or home theater as described, including framing, drywall, electrical, lighting zones, AV equipment, sound system work, finish details, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  },
+  {
     patterns: [/\breplace\s+siding\b/i, /\bsiding\s+replacement\b/i, /\bsiding\b.*\breplace\b/i],
     project_type: "Siding",
     project_subtype: "Siding Replacement",
@@ -910,6 +953,34 @@ function inferDominantProjectCategory(sourceText) {
     };
   }
   const positiveText = stripNegativeScopeClaims(text);
+  const mediaRoomSignals = [
+    /\bhome\s+theater\b/i,
+    /\bmedia\s+room\b/i,
+    /\bentertainment\s+room\b/i,
+    /\bprojector\b/i,
+    /\bspeaker(s)?\b/i,
+    /\bsound\s+system\b/i,
+    /\bav\s+equipment\b/i,
+    /\bmedia\s+wall\b/i,
+    /\bscreen\s+wall\b/i,
+  ];
+  const mediaRoomSupportSignals = [
+    /\bframing\b/i,
+    /\bdrywall\b/i,
+    /\belectrical\b/i,
+    /\blighting\b/i,
+    /\bsoundproof/i,
+    /\bacoustic/i,
+  ];
+  const mediaRoomHits = countMatchingPatterns(positiveText, mediaRoomSignals);
+  const mediaRoomSupportHits = countMatchingPatterns(positiveText, mediaRoomSupportSignals);
+  if (mediaRoomHits >= 2 || (mediaRoomHits >= 1 && mediaRoomSupportHits >= 2)) {
+    return {
+      category: "Remodel",
+      subtype: "Home Theater / Media Room",
+      reasoning: ["media room / home theater scope detected"],
+    };
+  }
 
   const reasoning = [];
   let bestRule = null;

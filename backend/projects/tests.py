@@ -425,6 +425,21 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(project_subtype, "Inground Pool and Pool House")
         self.assertIn("pool", reason.lower())
 
+    def test_classify_type_subtype_prefers_media_room_over_painting(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Movie entertainment room",
+            description=(
+                "Build a media room with projector wiring, speakers, framed AV wall, "
+                "drywall, and lighting zones."
+            ),
+            requested_type="Painting",
+            requested_subtype="Interior Painting",
+        )
+
+        self.assertEqual(project_type, "Remodel")
+        self.assertEqual(project_subtype, "Home Theater / Media Room")
+        self.assertIn("media room", reason.lower())
+
     def test_classify_type_subtype_prefers_wet_bar_over_electrical_for_mixed_scope(self):
         project_type, project_subtype, reason = classify_type_subtype(
             project_title="Wet bar buildout",
