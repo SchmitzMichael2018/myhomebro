@@ -4640,6 +4640,8 @@ export default function Step1Details({
     const value =
       name === "homeowner"
         ? safeTrim(rawValue)
+        : name === "project_title"
+        ? rawValue
         : normalizeStep1FieldValue(rawValue);
     const nextEvent = name ? { target: { name, value }, currentTarget: { name, value } } : e;
 
@@ -4666,10 +4668,11 @@ export default function Step1Details({
     if (!agreementId || !name) return;
 
     if (name === "project_title") {
+      const patchTitle = normalizeStep1FieldValue(value) || "";
       schedulePatch(
         {
-          project_title: value || "",
-          title: value || "",
+          project_title: patchTitle,
+          title: patchTitle,
         },
         450
       );
@@ -4786,7 +4789,7 @@ export default function Step1Details({
     (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
   const displayedProjectType = normalizeStep1FieldValue(dLocal?.project_type);
   const displayedProjectSubtype = normalizeStep1FieldValue(dLocal?.project_subtype);
-  const displayedProjectTitle = normalizeStep1FieldValue(dLocal?.project_title);
+  const displayedProjectTitle = dLocal?.project_title ?? "";
   const displayedScopeOfWork = normalizeStep1FieldValue(dLocal?.description || dLocal?.scope_of_work);
   useEffect(() => {
     if (shouldShowProjectDetails) return;
