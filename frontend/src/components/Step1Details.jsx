@@ -1281,6 +1281,9 @@ export default function Step1Details({
     aiHighlightKeys = {},
     isAiAssistantActive = false,
     aiSetupRequest = null,
+    step1ResetToChooser = false,
+    onStep1ResetToChooserChange = null,
+    onResetWizardForNewAgreement = null,
     onStep1AiSetupRequest = null,
     onStep1Continue = null,
     onAiModeActiveChange = null,
@@ -1491,6 +1494,7 @@ export default function Step1Details({
   const projectTitleFieldRef = useRef(null);
   const projectScopeFieldRef = useRef(null);
   const aiSetupLoadingStartedAtRef = useRef(0);
+  const step1ResettingRef = useRef(false);
   const step1JobDescriptionInputRef = useRef(null);
   const projectDetailsRevealMountedRef = useRef(false);
   const projectDetailsRevealSeenRef = useRef(false);
@@ -1772,6 +1776,7 @@ export default function Step1Details({
   const [aiSetupError, setAiSetupError] = useState("");
   const [aiSetupResult, setAiSetupResult] = useState(null);
   const [lastAiSetupPrompt, setLastAiSetupPrompt] = useState("");
+  const [step1ResetChooserPrompt, setStep1ResetChooserPrompt] = useState("");
   const [aiSuggestedFieldMeta, setAiSuggestedFieldMeta] = useState({});
   const [step1FieldErrors, setStep1FieldErrors] = useState({});
   const [step1ValidationMessage, setStep1ValidationMessage] = useState("");
@@ -1797,6 +1802,9 @@ export default function Step1Details({
   }
 
   function reopenStartModeChooser() {
+    if (typeof onStep1ResetToChooserChange === "function") {
+      onStep1ResetToChooserChange(false);
+    }
     setStartModeCommitted(false);
     setStartModeSource((prev) => (prev === "derived" ? "session" : prev));
   }
@@ -2085,6 +2093,7 @@ export default function Step1Details({
     hasMeaningfulSavedProjectDetails,
   });
   useEffect(() => {
+    if (step1ResettingRef.current) return;
     if (isNewAgreement && startModeSource === "derived" && !startModeCommitted) {
       if (startMode !== "manual") {
         setStartMode("manual");
@@ -2123,6 +2132,7 @@ export default function Step1Details({
   ]);
 
   useEffect(() => {
+    if (step1ResettingRef.current) return;
     if (!hasMeaningfulSavedProjectDetails) return;
     const hasAppliedTemplateReference = Boolean(
       agreement?.selected_template?.id ||
@@ -3158,6 +3168,9 @@ export default function Step1Details({
   }
 
   function applyNoTemplateFallbackSetup(sourceText) {
+    if (typeof onStep1ResetToChooserChange === "function") {
+      onStep1ResetToChooserChange(false);
+    }
     const deterministicFallback = buildDeterministicStep1Setup(
       safeTrim(sourceText || dLocal?.description || agreement?.description || step1JobDescriptionPrompt || "")
     );
@@ -3264,6 +3277,9 @@ export default function Step1Details({
     const roughDescription = safeTrim(prompt);
     if (!roughDescription) return;
     if (aiSetupBusy || aiSetupLoadingVisible) return;
+    if (typeof onStep1ResetToChooserChange === "function") {
+      onStep1ResetToChooserChange(false);
+    }
     setStep1NoTemplateBuilt(false);
     const requestId =
       (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -3276,7 +3292,7 @@ export default function Step1Details({
       Boolean(agreementId) &&
       Boolean(safeTrim(agreement?.project_type)) &&
       Boolean(safeTrim(agreement?.description || agreement?.scope_of_work));
-    if (hasSavedStep1State) {
+    if (hasSavedStep1State && !step1ResetToChooser) {
       setAiSetupBusy(false);
       setAiSetupLoadingVisible(false);
       aiSetupLoadingStartedAtRef.current = 0;
@@ -3457,24 +3473,51 @@ export default function Step1Details({
   const aiCompactRecommendationConfidence = normalizeTemplateConfidenceLevel(
     recommendationConfidence || "low"
   );
+  useEffect(() => {
+    if (!step1ResettingRef.current) return;
+    const hasBlankResetState =
+      !agreement &&
+      !safeTrim(dLocal?.project_title) &&
+      !safeTrim(dLocal?.project_type) &&
+      !safeTrim(dLocal?.project_subtype) &&
+      !safeTrim(dLocal?.description) &&
+      !appliedTemplateId &&
+      !aiSetupResult &&
+      !hasMeaningfulSavedProjectDetails &&
+      !startModeCommitted;
+    if (hasBlankResetState) {
+      step1ResettingRef.current = false;
+    }
+  }, [
+    agreement,
+    aiSetupResult,
+    appliedTemplateId,
+    dLocal?.description,
+    dLocal?.project_subtype,
+    dLocal?.project_title,
+    dLocal?.project_type,
+    hasMeaningfulSavedProjectDetails,
+    startModeCommitted,
+  ]);
   const isAiBuiltState =
-    Boolean(step1NoTemplateBuilt) ||
-    aiSetupResult?.kind === "description_only" ||
-    (aiSetupResult?.kind === "fallback_recommendation" &&
-      Boolean(
-        safeTrim(dLocal?.project_title) ||
-          safeTrim(dLocal?.project_type) ||
-          safeTrim(dLocal?.project_subtype) ||
-          safeTrim(dLocal?.description)
-      )) ||
-    Boolean(appliedTemplateId) ||
-    (startMode === "manual" &&
-      Boolean(
-        safeTrim(dLocal?.project_title) ||
-          safeTrim(dLocal?.project_type) ||
-          safeTrim(dLocal?.project_subtype)
-      )) ||
-    (isEdit && hasMeaningfulStep1DraftState({ agreement, dLocal }));
+    !step1ResetToChooser &&
+    (Boolean(step1NoTemplateBuilt) ||
+      aiSetupResult?.kind === "description_only" ||
+      (aiSetupResult?.kind === "fallback_recommendation" &&
+        Boolean(
+          safeTrim(dLocal?.project_title) ||
+            safeTrim(dLocal?.project_type) ||
+            safeTrim(dLocal?.project_subtype) ||
+            safeTrim(dLocal?.description)
+        )) ||
+      Boolean(appliedTemplateId) ||
+      (startMode === "manual" &&
+        Boolean(
+          safeTrim(dLocal?.project_title) ||
+            safeTrim(dLocal?.project_type) ||
+            safeTrim(dLocal?.project_subtype)
+        )) ||
+      (isEdit && hasMeaningfulStep1DraftState({ agreement, dLocal })));
   const isLoadingState = Boolean(aiSetupLoadingVisible);
   const isTemplateFoundState =
     !isLoadingState && aiSetupResult?.kind === "template_match" && !isAiBuiltState;
@@ -3502,8 +3545,12 @@ export default function Step1Details({
       safeTrim(dLocal?.project_type) ||
       safeTrim(dLocal?.project_subtype)
   );
+  const shouldForceStartChooser = Boolean(step1ResetToChooser);
+  const shouldShowResetChooserOnly = shouldForceStartChooser;
   const step1ViewState = isLoadingState
     ? "loading"
+    : shouldForceStartChooser
+    ? "initial_input"
     : isAiBuiltState || (startMode === "manual" && hasResolvedStep1Content)
     ? "ai_built"
     : isTemplateFoundState
@@ -3511,6 +3558,21 @@ export default function Step1Details({
     : isNoTemplateState
     ? "no_template"
     : "initial_input";
+  const effectiveStep1ViewState = shouldForceStartChooser ? "initial_input" : step1ViewState;
+  const shouldShowStartModePanel =
+    effectiveStep1ViewState === "initial_input" ||
+    effectiveStep1ViewState === "template_found" ||
+    effectiveStep1ViewState === "no_template";
+  const shouldShowStartModeSummary =
+    !shouldForceStartChooser &&
+    shouldShowStartModePanel &&
+    startModeCommitted &&
+    (isLoadingState ||
+      isTemplateFoundState ||
+      isNoTemplateState ||
+      isAiBuiltState ||
+      startMode !== "manual" ||
+      hasResolvedStep1Content);
 
   async function handleUseAiRecommendedTemplate() {
     if (!aiRecommendedTemplate) return;
@@ -3576,16 +3638,21 @@ export default function Step1Details({
     const rawProjectSubtype = safeTrim(
       aiData?.project_subtype ?? aiData?.projectSubtype ?? ""
     );
-    const sourceText = [rawProjectTitle, rawProjectType, rawProjectSubtype, refinedDescription]
+    const scopeDrivenText = [
+      refinedDescription,
+      safeTrim(aiData?.scope_of_work || aiData?.scopeOfWork || ""),
+      safeTrim(dLocal?.description || dLocal?.scope_of_work || ""),
+    ]
       .filter(Boolean)
       .join(" ");
-    const classificationText = [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
+    const sourceText = scopeDrivenText || [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
+    const classificationText = scopeDrivenText || [refinedDescription, rawProjectTitle].filter(Boolean).join(" ");
     const consistencySetup = inferStep1ProjectClassificationConsistency({
       sourceText,
-      scopeText: refinedDescription || dLocal?.description || "",
-      suggestedProjectType: rawProjectType,
-      suggestedProjectSubtype: rawProjectSubtype,
-      suggestedProjectTitle: rawProjectTitle,
+      scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
+      suggestedProjectType: "",
+      suggestedProjectSubtype: "",
+      suggestedProjectTitle: "",
     });
     const dominantCategory = consistencySetup
       ? {
@@ -3655,8 +3722,7 @@ export default function Step1Details({
       normalizeStep1FieldValue(
         consistencySetup?.project_subtype ||
         optionCanonicalValue(matchedSubtype) ||
-          dominantCategory.subtype ||
-          (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
+        dominantCategory.subtype ||
           buildGeneratedProjectTitle(sourceText)
       );
 
@@ -3666,7 +3732,7 @@ export default function Step1Details({
         buildProjectFriendlyTitle({
           subtype: generatedSubtype,
           category: generatedType,
-          rawTitle: rawProjectTitle,
+          rawTitle: "",
           sourceText,
         })
       );
@@ -3858,9 +3924,9 @@ export default function Step1Details({
       const refinePayload = {
         mode: "generate",
         agreement_id: agreementId || null,
-        project_title: dLocal.project_title || "",
-        project_type: dLocal.project_type || "",
-        project_subtype: dLocal.project_subtype || "",
+        project_title: shouldShowResetChooserOnly ? "" : dLocal.project_title || "",
+        project_type: shouldShowResetChooserOnly ? "" : dLocal.project_type || "",
+        project_subtype: shouldShowResetChooserOnly ? "" : dLocal.project_subtype || "",
         project_family_key: resolvedProjectFamily.project_family_key || "",
         project_family_label: resolvedProjectFamily.project_family_label || "",
         current_description: clarificationContext,
@@ -3992,6 +4058,9 @@ export default function Step1Details({
         setSelectedTemplateId(null);
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       }
+      if (typeof onStep1ResetToChooserChange === "function") {
+        onStep1ResetToChooserChange(false);
+      }
     } catch (e) {
       const payload = e?.response?.data || {};
       const fieldErrors = normalizeStep1ValidationFieldErrors(payload);
@@ -4070,81 +4139,63 @@ export default function Step1Details({
   }
 
   async function handleResetStep1Setup() {
-    if (locked || !agreementId) return;
+    if (locked) return;
+
+    const resetAgreementId = agreementId || agreement?.id || agreement?.agreement_id || null;
+    step1ResettingRef.current = true;
+    if (typeof onResetWizardForNewAgreement === "function") {
+      onResetWizardForNewAgreement();
+    }
+
+    const blankStep1 = buildEmptyDLocal(resolvedProjectFamily);
+
+    setDLocal((prev) => ({
+      ...blankStep1,
+      project_family_key: prev?.project_family_key || blankStep1.project_family_key,
+      project_family_label: prev?.project_family_label || blankStep1.project_family_label,
+    }));
+    setStep1JobDescriptionPrompt("");
+    setStep1ResetChooserPrompt("");
+    setSelectedTemplateId(null);
+    setTemplateSearch("");
+    setAiPreview("");
+    setAiSetupBusy(false);
+    setAiSetupLoadingVisible(false);
+    setStep1AiRequestId("");
+    step1AiRequestIdRef.current = "";
+    setAiSetupError("");
+    setAiSetupResult(null);
+    setLastAiSetupPrompt("");
+    setAiSuggestedFieldMeta({});
+    setStep1FieldErrors({});
+    setStep1ValidationMessage("");
+    setDismissedAiTemplateRecommendation(false);
+    setAiErr("");
+    setAiMilestonePreview("");
+    setClassificationBusy(false);
+    setClassificationErr("");
+    setAddrSearch("");
+    setSelectedCustomer(null);
+    setCustomerAddrMissing(null);
+    setShowQuickAdd(false);
+    setShowResetStep1Confirm(false);
+    setStep1NoTemplateBuilt(false);
+    setProjectDetailsReviewPulse(false);
+    setPendingProjectDetailsReview(null);
+    setStep1ManualBrowseSignal(0);
+    setStartMode("manual");
+    setStartModeCommitted(false);
+    setStartModeSource("manual");
+    onStep1AiSetupRequest?.(null);
+    onAiModeActiveChange?.(false);
+    clearStep1SessionState();
 
     try {
-      const { data } = await api.post(`/projects/agreements/${agreementId}/reset-step1/`);
-      const nextAgreement = data?.agreement || null;
-
-      setDLocal((prev) => ({
-        ...prev,
-        project_title: normalizeStep1FieldValue(
-          nextAgreement?.project_title ?? nextAgreement?.title ?? ""
-        ),
-        project_type: normalizeStep1FieldValue(nextAgreement?.project_type ?? ""),
-        project_subtype: normalizeStep1FieldValue(nextAgreement?.project_subtype ?? ""),
-        description: normalizeStep1FieldValue(nextAgreement?.description ?? ""),
-        step_status: nextAgreement?.step_status ?? "",
-        homeowner:
-          nextAgreement?.homeowner != null && nextAgreement?.homeowner !== ""
-            ? String(nextAgreement.homeowner)
-            : "",
-        selected_template: null,
-        selected_template_id: null,
-        selected_template_name_snapshot: "",
-        project_template_id: null,
-        template_id: null,
-        agreement_mode: nextAgreement?.agreement_mode ?? "standard",
-        recurring_service_enabled: false,
-        recurrence_pattern: "",
-        recurrence_interval: "1",
-        recurrence_start_date: "",
-        recurrence_end_date: "",
-        next_occurrence_date: "",
-        maintenance_status: "active",
-        auto_generate_next_occurrence: false,
-        service_window_notes: "",
-        recurring_summary_label: "",
-        payment_structure:
-          normalizePaymentStructure(nextAgreement?.payment_structure) || "simple",
-        retainage_percent:
-          nextAgreement?.retainage_percent != null
-            ? String(nextAgreement.retainage_percent)
-            : "0.00",
-        address_line1: "",
-        address_line2: "",
-        address_city: "",
-        address_state: "",
-        address_postal_code: "",
-      }));
-
-      setSelectedTemplateId(null);
-      setTemplateSearch("");
-      setAiPreview("");
-      setAiSetupBusy(false);
-      setAiSetupLoadingVisible(false);
-      setAiSetupError("");
-      setAiSetupResult(null);
-      setDismissedAiTemplateRecommendation(false);
-      setAiErr("");
-      setAiMilestonePreview("");
-      setAddrSearch("");
-      setSelectedCustomer(null);
-      setCustomerAddrMissing(null);
-      setShowQuickAdd(false);
-      setShowResetStep1Confirm(false);
-      setStep1NoTemplateBuilt(false);
-      clearStep1SessionState();
-      setStep1ManualBrowseSignal(0);
-      setStartMode("manual");
-      setStartModeCommitted(false);
-      setStartModeSource("session");
-
-      toast.success("Form reset. Choose how you want to start again.");
-
-      if (typeof refreshAgreement === "function") {
-        await refreshAgreement();
+      if (resetAgreementId) {
+        await api.post(`/projects/agreements/${resetAgreementId}/reset-step1/`);
       }
+      toast.success("Form reset. Choose how you want to start again.");
+      return;
     } catch (e) {
       toast.error(formatApiError(e, "Could not reset this draft."));
     }
@@ -4376,12 +4427,11 @@ export default function Step1Details({
       : startMode === "template"
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Review the agreement details below and keep editing.";
-  const shouldShowProjectDetails = step1ViewState === "ai_built";
+  const shouldShowProjectDetails = effectiveStep1ViewState === "ai_built";
   const showStep1Clarifications = false;
-  const shouldShowStartModePanel = step1ViewState === "initial_input" || step1ViewState === "template_found" || step1ViewState === "no_template";
   const shouldShowTemplateBrowserSection =
-    step1ViewState !== "ai_built" &&
-    step1ViewState !== "loading" &&
+    effectiveStep1ViewState !== "ai_built" &&
+    effectiveStep1ViewState !== "loading" &&
     startMode === "template" &&
     (!isNoTemplateFlow || step1ManualBrowseSignal > 0);
   const displayedProjectType = normalizeStep1FieldValue(dLocal?.project_type);
@@ -4429,10 +4479,107 @@ export default function Step1Details({
     projectDetailsRevealSeenRef.current = false;
   }, [shouldShowProjectDetails, selectedTemplateId, appliedTemplateId, aiSetupResult?.kind]);
 
+  if (shouldShowResetChooserOnly) {
+    return (
+      <>
+        <div className="space-y-6">
+          <div
+            data-testid="step1-start-mode-chooser"
+            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Describe the job</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  AI will recommend a matching template or help build the agreement.
+                </p>
+              </div>
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Step 1 setup
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-900">
+                  Job description <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Required</span>
+                </label>
+                <input
+                  ref={step1JobDescriptionInputRef}
+                  value={step1ResetChooserPrompt}
+                  onChange={(e) => {
+                    setStep1ResetChooserPrompt(e.target.value);
+                    if (safeTrim(e.target.value)) {
+                      clearStep1FieldError("description");
+                    }
+                  }}
+                  placeholder="Example: Replace exterior siding on a single-story home..."
+                  className={`w-full rounded-xl px-3 py-2 text-sm ${
+                    step1FieldErrors.description
+                      ? "border border-rose-300 ring-1 ring-rose-200"
+                      : "border border-slate-200"
+                  }`}
+                  data-testid="step1-job-description-input"
+                  disabled={locked}
+                />
+                {step1FieldErrors.description ? (
+                  <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.description}</div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const prompt = safeTrim(step1ResetChooserPrompt);
+                  if (!prompt) return;
+                  setStep1JobDescriptionPrompt(prompt);
+                  setStep1ResetChooserPrompt(prompt);
+                  activateStartMode("template", { committed: true, source: "assistant" });
+                  if (typeof onStep1ResetToChooserChange === "function") {
+                    onStep1ResetToChooserChange(false);
+                  }
+                  await Promise.resolve();
+                  requestStep1AiSetup(prompt);
+                }}
+                disabled={locked || aiSetupBusy || aiSetupLoadingVisible || !safeTrim(step1ResetChooserPrompt)}
+                className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                data-testid="step1-find-best-starting-point-button"
+              >
+                {aiSetupBusy || aiSetupLoadingVisible ? (
+                  <>
+                    <Spinner size={4} color="white" />
+                    <span>Finding...</span>
+                  </>
+                ) : (
+                  "Find Best Starting Point"
+                )}
+              </button>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof onStep1ResetToChooserChange === "function") {
+                    onStep1ResetToChooserChange(false);
+                  }
+                  setStep1ManualBrowseSignal((prev) => prev + 1);
+                  activateStartMode("template", { committed: true, source: "user" });
+                }}
+                className="text-xs font-semibold text-slate-700 hover:underline"
+              >
+                Browse templates manually
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="space-y-6">
-        {step1ViewState !== "ai_built" && step1ViewState !== "loading" ? (
+        {effectiveStep1ViewState !== "ai_built" && effectiveStep1ViewState !== "loading" ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-sm text-gray-600">
               {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
@@ -4614,9 +4761,9 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        {shouldShowStartModePanel ? (
-          <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            {startModeCommitted ? (
+        {shouldShowStartModeSummary ? (
+            <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              {startModeCommitted ? (
           <div
             data-testid="step1-start-mode-summary"
             className={`rounded-2xl border px-4 py-4 ${
@@ -4721,7 +4868,7 @@ export default function Step1Details({
                       <button
                         type="button"
                         data-testid="step1-reset-form-button"
-                        onClick={() => setShowResetStep1Confirm(true)}
+                        onClick={() => handleResetStep1Setup()}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
                         Reset form
@@ -4763,7 +4910,7 @@ export default function Step1Details({
                       <button
                         type="button"
                         data-testid="step1-start-over-button"
-                        onClick={() => setShowResetStep1Confirm(true)}
+                        onClick={() => handleResetStep1Setup()}
                         disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                       >
@@ -4827,7 +4974,7 @@ export default function Step1Details({
                       <button
                         type="button"
                         data-testid="step1-reset-form-button"
-                        onClick={() => setShowResetStep1Confirm(true)}
+                        onClick={() => handleResetStep1Setup()}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
                         Reset form
@@ -4868,6 +5015,9 @@ export default function Step1Details({
                     ref={step1JobDescriptionInputRef}
                     value={step1JobDescriptionPrompt}
                     onChange={(e) => {
+                      if (typeof onStep1ResetToChooserChange === "function") {
+                        onStep1ResetToChooserChange(false);
+                      }
                       setStep1JobDescriptionPrompt(e.target.value);
                       if (safeTrim(e.target.value)) {
                         clearStep1FieldError("description");
@@ -4891,6 +5041,9 @@ export default function Step1Details({
                   onClick={() => {
                     const prompt = safeTrim(step1JobDescriptionPrompt);
                     if (!prompt) return;
+                    if (typeof onStep1ResetToChooserChange === "function") {
+                      onStep1ResetToChooserChange(false);
+                    }
                     activateStartMode("template", { committed: true, source: "assistant" });
                     requestStep1AiSetup(prompt);
                   }}
@@ -4913,6 +5066,9 @@ export default function Step1Details({
                 <button
                   type="button"
                   onClick={() => {
+                    if (typeof onStep1ResetToChooserChange === "function") {
+                      onStep1ResetToChooserChange(false);
+                    }
                     setStep1ManualBrowseSignal((prev) => prev + 1);
                     activateStartMode("template", { committed: true, source: "user" });
                   }}
@@ -5082,7 +5238,7 @@ export default function Step1Details({
               <button
                 type="button"
                 data-testid="step1-start-over-button"
-                onClick={() => setShowResetStep1Confirm(true)}
+                onClick={() => handleResetStep1Setup()}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Start over
@@ -5177,7 +5333,7 @@ export default function Step1Details({
                 startingPointBusy={aiSetupBusy}
                 onStartFromScratch={handleBuildAgreementWithoutTemplate}
                 onReviewProjectDetails={handleReviewProjectDetails}
-                onResetStep1={() => setShowResetStep1Confirm(true)}
+                onResetStep1={handleResetStep1Setup}
                 onGenerateAiDraft={requestStep1AiSetup}
                 onContinueToStep2={onStep1Continue}
                 spreadEnabled={spreadEnabled}
@@ -5458,7 +5614,7 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        <div className="space-y-6">
+        <div className={shouldShowResetChooserOnly ? "hidden" : "space-y-6"}>
           <StepSection
             title="Project Details"
             description={projectDetailsDescription}
@@ -5466,14 +5622,14 @@ export default function Step1Details({
             testId="step1-project-details-card"
             actions={
               isAiBuiltState ? (
-                <button
-                  type="button"
-                  data-testid="step1-start-over-button"
-                  onClick={() => setShowResetStep1Confirm(true)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Start over
-                </button>
+                  <button
+                    type="button"
+                    data-testid="step1-start-over-button"
+                    onClick={() => handleResetStep1Setup()}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Start over
+                  </button>
               ) : null
             }
             highlighted={hasAiSectionHighlight(
@@ -6284,10 +6440,7 @@ export default function Step1Details({
               </div>
             </StepSection>
 
-          </div>
-
-
-        <div className="flex justify-end gap-2 border-t border-slate-200 pt-5">
+            <div className="flex justify-end gap-2 border-t border-slate-200 pt-5">
           <button
             data-testid="agreement-save-draft-button"
             type="button"
@@ -6315,8 +6468,9 @@ export default function Step1Details({
               Save &amp; Next
             </button>
           )}
+            </div>
+          </div>
         </div>
-      </div>
 
       <SaveTemplateModal
         open={showSaveTemplateModal}

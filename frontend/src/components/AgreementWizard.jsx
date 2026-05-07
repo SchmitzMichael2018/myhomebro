@@ -518,6 +518,7 @@ export default function AgreementWizard() {
   const [assistantAppliedSummary, setAssistantAppliedSummary] = useState("");
   const [step1AiEntryOpen, setStep1AiEntryOpen] = useState(false);
   const [step1AiSetupRequest, setStep1AiSetupRequest] = useState(null);
+  const [step1ResetToChooser, setStep1ResetToChooser] = useState(false);
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
   });
@@ -595,9 +596,34 @@ export default function AgreementWizard() {
   const lastStepFetchRef = useRef({ step: null, at: 0 });
 
   const resetWizardForNewAgreement = useCallback(() => {
-    setAgreementState(null);
+    setAgreementState((prev) => {
+      if (!prev) return prev;
+      return normalizeAgreement(
+        {
+          ...prev,
+          project_title: "",
+          title: "",
+          project_type: "",
+          project_subtype: "",
+          description: "",
+          scope_of_work: "",
+          selected_template: null,
+          selected_template_id: null,
+          selected_template_name_snapshot: "",
+          project_template_id: null,
+          template_id: null,
+        },
+        prev,
+        agreementIdParam
+      );
+    });
     setLoadingAgreement(false);
     didResumeStepRef.current = false;
+    setAssistantAppliedSummary("");
+    setStep1AiEntryOpen(false);
+    setStep1AiSetupRequest(null);
+    setStep1ResetToChooser(true);
+    setAiFeedbackByStep({});
 
     setDLocal(buildEmptyDLocal(resolvedProjectFamily));
     setMilestones([]);
@@ -2035,6 +2061,9 @@ export default function AgreementWizard() {
               aiHighlightKeys={step1AiHighlights}
               isAiAssistantActive={isAssistantDockOpen}
               aiSetupRequest={step1AiSetupRequest}
+              onResetWizardForNewAgreement={resetWizardForNewAgreement}
+              step1ResetToChooser={step1ResetToChooser}
+              onStep1ResetToChooserChange={setStep1ResetToChooser}
               onStep1AiSetupRequest={setStep1AiSetupRequest}
               onStep1Continue={() => goStep(2)}
               onAiModeActiveChange={setStep1AiEntryOpen}

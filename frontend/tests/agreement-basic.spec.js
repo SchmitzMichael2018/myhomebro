@@ -1162,9 +1162,11 @@ test('agreement wizard step 1 no-template build with ai does not leave a ghost c
   await expect(page.getByText('Not available')).toHaveCount(0);
   await expect(page.getByTestId('step1-start-over-button')).toBeVisible();
   await page.getByTestId('step1-start-over-button').click();
-  await page.getByTestId('step1-reset-form-confirm-button').click();
-  await expect(page.getByText('Describe the job')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toHaveValue('');
+  await expect(page.getByTestId('step1-project-details-card')).toHaveCount(0);
+  await expect(page.getByText('Junk Removal')).toHaveCount(0);
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
@@ -1497,6 +1499,7 @@ test('agreement wizard step 1 replaces plumbing labels with pool classification 
   page,
 }) => {
   await page.addInitScript(() => {
+    window.sessionStorage.clear();
     window.localStorage.setItem('access', 'playwright-access-token');
   });
 
@@ -2438,24 +2441,19 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
   let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
-    project_title: 'Template Draft',
-    title: 'Template Draft',
-    project_type: 'Roofing',
-    project_subtype: 'Roof Replacement',
+    project_title: 'Junk Removal',
+    title: 'Junk Removal',
+    project_type: 'Junk Removal',
+    project_subtype: 'Debris Removal',
     step_status: 'step1',
     payment_mode: 'escrow',
     payment_structure: 'simple',
-    description: 'Template-backed draft agreement.',
+    description: 'Remove household junk and construction debris from the property.',
     homeowner: null,
     status: 'draft',
-    selected_template_id: 88,
-    selected_template: {
-      id: 88,
-      name: 'Roof Replacement Template',
-      project_type: 'Roofing',
-      project_subtype: 'Roof Replacement',
-    },
-    selected_template_name_snapshot: 'Roof Replacement Template',
+    selected_template_id: null,
+    selected_template: null,
+    selected_template_name_snapshot: '',
     compliance_warning: {
       warning_level: 'none',
       message: '',
@@ -2495,7 +2493,10 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        results: [{ id: 1, value: 'Roofing', label: 'Roofing', owner_type: 'system' }],
+        results: [
+          { id: 1, value: 'Junk Removal', label: 'Junk Removal', owner_type: 'system' },
+          { id: 2, value: 'Siding', label: 'Siding', owner_type: 'system' },
+        ],
       }),
     });
   });
@@ -2508,10 +2509,17 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
         results: [
           {
             id: 11,
-            value: 'Roof Replacement',
-            label: 'Roof Replacement',
+            value: 'Junk Removal',
+            label: 'Junk Removal',
             owner_type: 'system',
-            project_type: 'Roofing',
+            project_type: 'Junk Removal',
+          },
+          {
+            id: 12,
+            value: 'Siding Replacement',
+            label: 'Siding Replacement',
+            owner_type: 'system',
+            project_type: 'Siding',
           },
         ],
       }),
@@ -2548,16 +2556,36 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        results: [
-          {
-            id: 88,
-            name: 'Roof Replacement Template',
-            project_type: 'Roofing',
-            project_subtype: 'Roof Replacement',
-            owner_type: 'system',
-            milestone_count: 4,
-          },
-        ],
+        results: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    const body = route.request().postDataJSON?.() || {};
+    const description = String(body?.current_description || body?.description || '').toLowerCase();
+    if (description.includes('replace siding')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          project_title: 'Siding Replacement',
+          project_type: 'Siding',
+          project_subtype: 'Siding Replacement',
+          description: 'Replace existing siding and related trim, complete preparation and installation, and finish with cleanup.',
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Junk Removal',
+        project_type: 'Junk Removal',
+        project_subtype: 'Debris Removal',
+        description: 'Remove household junk and construction debris from the property.',
       }),
     });
   });
@@ -2620,15 +2648,29 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByRole('button', { name: 'Step 1 Details' })).toBeVisible();
   await page.getByRole('button', { name: 'Step 1 Details' }).click();
-  await expect(page).toHaveURL(/step=1/);
-  await expect(page.getByTestId('step1-reset-form-button')).toBeVisible();
-  await page.getByTestId('step1-reset-form-button').click({ force: true });
-  await expect(page.getByTestId('step1-reset-form-confirm')).toBeVisible();
-  await page.getByTestId('step1-reset-form-confirm-button').click({ force: true });
-  await expect(page.getByTestId('step1-start-mode-summary')).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/agreements\/123\/wizard\?step=1/);
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toBeVisible();
+
+  const projectDetailsCard = page.getByTestId('step1-project-details-card');
+  await expect(projectDetailsCard.getByRole('button', { name: 'Start over' })).toBeVisible();
+  await projectDetailsCard.getByRole('button', { name: 'Start over' }).click({ force: true });
+  await expect(page).toHaveURL(/\/app\/agreements\/123\/wizard\?step=1/);
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toHaveValue('');
+  await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
+  await expect(page.getByTestId('step1-project-details-card')).toHaveCount(0);
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toHaveCount(0);
+  await expect(page.getByText('Junk Removal')).toHaveCount(0);
+
+  await page.getByTestId('step1-job-description-input').fill('replace siding');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Siding');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Siding Replacement'
+  );
 });
 
 test('agreement wizard step 1 refines a rough description and recommends a template without leaving ai mode', async ({
