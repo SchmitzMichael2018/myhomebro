@@ -5964,6 +5964,35 @@ export default function Step1Details({
           </div>
         ) : null}
 
+        {isLoadingState ? (
+          <div
+            data-testid="step1-starting-point-loading-banner"
+            aria-live="polite"
+            className="rounded-2xl border border-indigo-200 bg-white px-4 py-5 shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <Spinner size={5} color="indigo" />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+                  Just a moment...
+                </div>
+                <div className="mt-0.5 text-base font-semibold text-slate-900">
+                  {startingPointStatusTitle}
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 text-sm text-slate-600">{startingPointStatusMessage}</div>
+            <ul className="mt-3 space-y-1 text-sm text-slate-700">
+              {startingPointChecklist.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="mt-1 inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className={shouldShowResetChooserOnly ? "hidden" : "space-y-6"}>
           <StepSection
             title="Project Details"
