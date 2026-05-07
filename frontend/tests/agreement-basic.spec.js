@@ -661,6 +661,10 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
   await expect(page.getByTestId('agreement-customer-select')).toHaveValue('1');
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await page.getByTestId('agreement-project-title-input').fill('Sprinkler System');
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Sprinkler System'
+  );
   await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
 

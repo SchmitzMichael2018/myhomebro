@@ -1218,7 +1218,7 @@ export default function AgreementWizard() {
     const value = e?.target?.value;
     if (!name) return;
     const normalizedValue =
-      ["project_title", "project_type", "project_subtype", "description"].includes(name)
+      ["project_type", "project_subtype", "description"].includes(name)
         ? normalizeWizardStep1Value(value)
         : value;
 
