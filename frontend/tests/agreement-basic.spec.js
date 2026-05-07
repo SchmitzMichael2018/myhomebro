@@ -2232,6 +2232,130 @@ test('agreement wizard step 1 normalizes raw classification text into garage doo
   await expect(page.getByText(/Work Includes/i)).toHaveCount(0);
 });
 
+test('agreement wizard step 1 allows manual custom types and subtypes to be added inline', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 2, value: 'Repair', label: 'Repair', owner_type: 'system' },
+          { id: 3, value: 'Painting', label: 'Painting', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 12,
+            value: 'Faucet Repair',
+            label: 'Faucet Repair',
+            owner_type: 'system',
+            project_type: 'Repair',
+          },
+          {
+            id: 13,
+            value: 'Interior',
+            label: 'Interior',
+            owner_type: 'system',
+            project_type: 'Painting',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET' || request.method() === 'PATCH') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: '',
+          title: '',
+          project_type: '',
+          project_subtype: '',
+          description: '',
+          step_status: 'step1',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  const projectDetailsCard = page.getByTestId('step1-project-details-card');
+  await expect(projectDetailsCard).toBeVisible();
+
+  await projectDetailsCard.getByRole('button', { name: 'Add Type' }).click();
+  await expect(page.getByTestId('step1-custom-taxonomy-editor')).toBeVisible();
+  await expect(page.getByTestId('step1-custom-taxonomy-input')).toHaveAttribute(
+    'placeholder',
+    'New Project Type'
+  );
+  await page.getByTestId('step1-custom-taxonomy-input').fill('Outdoor Living Plus');
+  await page.getByTestId('step1-custom-taxonomy-save-button').click();
+
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue(
+    'Outdoor Living Plus'
+  );
+  await expect(page.getByTestId('agreement-project-type-select')).toContainText(
+    'Outdoor Living Plus (Custom)'
+  );
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('');
+
+  await projectDetailsCard.getByRole('button', { name: 'Add Subtype' }).click();
+  await expect(page.getByTestId('step1-custom-taxonomy-editor')).toBeVisible();
+  await page.getByTestId('step1-custom-taxonomy-input').fill('Patio Feature Build');
+  await page.getByTestId('step1-custom-taxonomy-save-button').click();
+
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Patio Feature Build'
+  );
+  await expect(page.getByTestId('agreement-project-subtype-select')).toContainText(
+    'Patio Feature Build (Custom)'
+  );
+
+  await projectDetailsCard.getByRole('button', { name: 'Add Subtype' }).click();
+  await page.getByTestId('step1-custom-taxonomy-input').fill('Patio Feature Build');
+  await page.getByTestId('step1-custom-taxonomy-save-button').click();
+  await expect(page.getByTestId('step1-custom-taxonomy-editor').getByText(/already exists/i)).toBeVisible();
+  await page.getByTestId('step1-custom-taxonomy-cancel-button').click();
+
+  await page.getByTestId('agreement-project-title-input').fill('Outdoor Living Plus Patio');
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Outdoor Living Plus Patio'
+  );
+  await page.getByTestId('proposal-draft-textarea').fill('Manual custom taxonomy should survive rerenders.');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue(
+    'Outdoor Living Plus'
+  );
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Patio Feature Build'
+  );
+});
+
 test('agreement wizard step 1 shows subtype clarifications, saves answers, and allows skipping', async ({
   page,
 }) => {

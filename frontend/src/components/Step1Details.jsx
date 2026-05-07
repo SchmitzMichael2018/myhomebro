@@ -1534,58 +1534,67 @@ export default function Step1Details({
     const current = safeTrim(dLocal?.project_type);
     if (!current) return null;
     return (
-      (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === current) ||
+      mergedProjectTypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
       null
     );
-  }, [projectTypeOptions, dLocal?.project_type]);
+  }, [mergedProjectTypeOptions, dLocal?.project_type]);
   const selectedProjectSubtype = useMemo(() => {
     const current = safeTrim(dLocal?.project_subtype);
     if (!current) return null;
     return (
-      (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === current) ||
+      mergedProjectSubtypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
       null
     );
-  }, [projectSubtypeOptions, dLocal?.project_subtype]);
+  }, [mergedProjectSubtypeOptions, dLocal?.project_subtype]);
   const [clarificationAnswers, setClarificationAnswers] = useState({});
   const [clarificationsSkipped, setClarificationsSkipped] = useState(false);
   const [step1JobDescriptionPrompt, setStep1JobDescriptionPrompt] = useState(() =>
     safeTrim(dLocal?.description) || ""
   );
   const [step1ManualBrowseSignal, setStep1ManualBrowseSignal] = useState(0);
+  const [customProjectTypeOptions, setCustomProjectTypeOptions] = useState([]);
+  const [customProjectSubtypeOptionsByType, setCustomProjectSubtypeOptionsByType] = useState({});
+  const [taxonomyEditor, setTaxonomyEditor] = useState(null);
+  const mergedProjectTypeOptions = useMemo(
+    () => [...(projectTypeOptions || []), ...(customProjectTypeOptions || [])],
+    [projectTypeOptions, customProjectTypeOptions]
+  );
   const augmentedProjectTypeOptions = useMemo(() => {
     const current = safeTrim(dLocal?.project_type);
-    if (!current || (projectTypeOptions || []).some((opt) => safeTrim(opt?.value) === current)) {
-      return projectTypeOptions || [];
+    if (!current || mergedProjectTypeOptions.some((opt) => safeTrim(opt?.value) === current)) {
+      return mergedProjectTypeOptions;
     }
     return [
-      ...(projectTypeOptions || []),
+      ...mergedProjectTypeOptions,
       {
         id: `ai-new-type-${current}`,
         value: current,
-        label: `${current} (New)`,
-        owner_type: "ai",
+        label: `${current} (Custom)`,
+        owner_type: "custom",
       },
     ];
-  }, [dLocal?.project_type, projectTypeOptions]);
+  }, [dLocal?.project_type, mergedProjectTypeOptions]);
+  const activeCustomSubtypeOptions = customProjectSubtypeOptionsByType[safeTrim(dLocal?.project_type)] || [];
+  const mergedProjectSubtypeOptions = useMemo(
+    () => [...(projectSubtypeOptions || []), ...activeCustomSubtypeOptions],
+    [projectSubtypeOptions, activeCustomSubtypeOptions]
+  );
   const augmentedProjectSubtypeOptions = useMemo(() => {
     const current = safeTrim(dLocal?.project_subtype);
-    if (
-      !current ||
-      (projectSubtypeOptions || []).some((opt) => safeTrim(opt?.value) === current)
-    ) {
-      return projectSubtypeOptions || [];
+    if (!current || mergedProjectSubtypeOptions.some((opt) => safeTrim(opt?.value) === current)) {
+      return mergedProjectSubtypeOptions;
     }
     return [
-      ...(projectSubtypeOptions || []),
+      ...mergedProjectSubtypeOptions,
       {
         id: `ai-new-subtype-${current}`,
         value: current,
-        label: `${current} (New)`,
-        owner_type: "ai",
+        label: `${current} (Custom)`,
+        owner_type: "custom",
         project_type: safeTrim(dLocal?.project_type),
       },
     ];
-  }, [dLocal?.project_subtype, dLocal?.project_type, projectSubtypeOptions]);
+  }, [dLocal?.project_subtype, dLocal?.project_type, mergedProjectSubtypeOptions]);
 
   const hasAiSectionHighlight = (...keys) =>
     keys.some((key) => Boolean(aiHighlightKeys?.[key]));
@@ -2631,6 +2640,8 @@ export default function Step1Details({
     const currentSubtype = safeTrim(dLocal.project_subtype || agreement?.project_subtype || "");
     const currentTitle = safeTrim(dLocal.project_title || agreement?.project_title || "");
     const currentScope = safeTrim(dLocal.description || dLocal.scope_of_work || agreement?.description || agreement?.scope_of_work || "");
+    const preserveManualClassification =
+      selectedProjectType?.owner_type === "custom" || selectedProjectSubtype?.owner_type === "custom";
     const normalizedClassification = normalizeClassificationResult(nextClassification, {
       sourceText: [currentScope, currentTitle, currentSubtype, currentType].filter(Boolean).join(" "),
       scopeText: currentScope,
@@ -2652,8 +2663,12 @@ export default function Step1Details({
     const currentSubtypeResolved = safeTrim(fallbackClassification?.project_subtype || "");
     const currentTitleResolved = safeTrim(fallbackClassification?.project_title || "");
 
-    const nextType = normalizeStep1FieldValue(currentTypeResolved);
-    const nextSubtype = normalizeStep1FieldValue(currentSubtypeResolved);
+    const nextType = preserveManualClassification
+      ? currentType
+      : normalizeStep1FieldValue(currentTypeResolved);
+    const nextSubtype = preserveManualClassification
+      ? currentSubtype
+      : normalizeStep1FieldValue(currentSubtypeResolved);
     const nextTitle = normalizeStep1FieldValue(currentTitleResolved);
     const nextTypeRef =
       (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
@@ -4021,6 +4036,8 @@ export default function Step1Details({
     const dominantSubtypeParentType = dominantSubtypeOption?.project_type
       ? resolveOptionFromRawValue(dominantSubtypeOption.project_type, projectTypeOptions)
       : null;
+    const preserveManualClassification =
+      selectedProjectType?.owner_type === "custom" || selectedProjectSubtype?.owner_type === "custom";
 
     const matchedType =
       dominantSubtypeParentType ||
@@ -4052,6 +4069,7 @@ export default function Step1Details({
 
     const generatedType =
       normalizeStep1FieldValue(
+        (preserveManualClassification ? safeTrim(dLocal?.project_type) : "") ||
         consistencySetup?.project_type ||
         optionCanonicalValue(resolvedType) ||
           dominantCategory.category ||
@@ -4061,6 +4079,7 @@ export default function Step1Details({
 
     const generatedSubtype =
       normalizeStep1FieldValue(
+        (preserveManualClassification ? safeTrim(dLocal?.project_subtype) : "") ||
         consistencySetup?.project_subtype ||
         optionCanonicalValue(matchedSubtype) ||
         dominantCategory.subtype ||
@@ -4529,6 +4548,9 @@ export default function Step1Details({
     setStartMode("manual");
     setStartModeCommitted(false);
     setStartModeSource("manual");
+    setTaxonomyEditor(null);
+    setCustomProjectTypeOptions([]);
+    setCustomProjectSubtypeOptionsByType({});
     onStep1AiSetupRequest?.(null);
     onAiModeActiveChange?.(false);
     clearStep1SessionState();
@@ -4599,18 +4621,185 @@ export default function Step1Details({
 
   const handleCreateNewType = () => {
     if (locked) return;
-    toast("New Type modal/form is the next step to wire.");
+    setClassificationMessage("");
+    setClassificationErr("");
+    setTaxonomyEditor({
+      kind: "type",
+      value: "",
+      parentType: "",
+      error: "",
+    });
   };
 
   const handleCreateNewSubtype = () => {
     if (locked) return;
     if (!safeTrim(dLocal?.project_type)) {
-      toast("Select a Type first.");
+      setClassificationErr("Select a type first to add a subtype.");
       return;
     }
-    toast(
-      `New Subtype flow for "${safeTrim(dLocal?.project_type)}" is the next step to wire.`
+    setClassificationMessage("");
+    setClassificationErr("");
+    setTaxonomyEditor({
+      kind: "subtype",
+      value: "",
+      parentType: safeTrim(dLocal?.project_type),
+      error: "",
+    });
+  };
+
+  const closeTaxonomyEditor = () => {
+    setTaxonomyEditor(null);
+  };
+
+  const saveTaxonomyEditor = () => {
+    if (locked || !taxonomyEditor?.kind) return;
+
+    const rawValue = safeTrim(taxonomyEditor.value);
+    const nextValue = titleCaseWords(rawValue);
+    if (!nextValue) {
+      setTaxonomyEditor((prev) => ({ ...(prev || {}), error: "Enter a value before saving." }));
+      return;
+    }
+
+    const normalizedNextValue = normalizeTaxonomyText(nextValue);
+    if (taxonomyEditor.kind === "type") {
+      const duplicate = mergedProjectTypeOptions.some(
+        (opt) => normalizeTaxonomyText(opt?.value) === normalizedNextValue
+      );
+      if (duplicate) {
+        setTaxonomyEditor((prev) => ({
+          ...(prev || {}),
+          error: "That project type already exists.",
+        }));
+        return;
+      }
+      const nextTypeOption = {
+        id: `custom-type-${normalizedNextValue}`,
+        value: nextValue,
+        label: `${nextValue} (Custom)`,
+        owner_type: "custom",
+      };
+      setCustomProjectTypeOptions((prev) => {
+        const next = [...prev];
+        if (!next.some((opt) => normalizeTaxonomyText(opt?.value) === normalizedNextValue)) {
+          next.push(nextTypeOption);
+        }
+        return next;
+      });
+      setDLocal((prev) => ({
+        ...prev,
+        project_type: nextValue,
+        project_type_ref: null,
+        project_subtype: "",
+        project_subtype_ref: null,
+      }));
+      if (!isNewAgreement) {
+        writeCache({
+          project_type: nextValue,
+          project_type_ref: null,
+          project_subtype: "",
+          project_subtype_ref: null,
+        });
+      }
+      if (agreementId) {
+        patchAgreement(
+          {
+            project_type: nextValue,
+            project_type_ref: null,
+            project_subtype: "",
+            project_subtype_ref: null,
+          },
+          { silent: true }
+        );
+      }
+      setClassificationMessage("Custom project type added.");
+      toast.success("Custom project type added.");
+      setTaxonomyEditor(null);
+      return;
+    }
+
+    const parentType = safeTrim(taxonomyEditor.parentType || dLocal?.project_type || "");
+    if (!parentType) {
+      setTaxonomyEditor((prev) => ({ ...(prev || {}), error: "Select a type first." }));
+      return;
+    }
+
+    const parentTypeExists = mergedProjectTypeOptions.some(
+      (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
     );
+    if (!parentTypeExists) {
+      setTaxonomyEditor((prev) => ({ ...(prev || {}), error: "Select a valid project type first." }));
+      return;
+    }
+
+    const existingForType = [
+      ...(projectSubtypeOptions || []).filter(
+        (opt) => normalizeTaxonomyText(opt?.project_type) === normalizeTaxonomyText(parentType)
+      ),
+      ...(customProjectSubtypeOptionsByType[parentType] || []),
+    ];
+    const duplicate = existingForType.some((opt) => normalizeTaxonomyText(opt?.value) === normalizedNextValue);
+    if (duplicate) {
+      setTaxonomyEditor((prev) => ({
+        ...(prev || {}),
+        error: "That subtype already exists for this type.",
+      }));
+      return;
+    }
+
+    const nextSubtypeOption = {
+      id: `custom-subtype-${normalizeTaxonomyText(parentType)}-${normalizedNextValue}`,
+      value: nextValue,
+      label: `${nextValue} (Custom)`,
+      owner_type: "custom",
+      project_type: parentType,
+    };
+    setCustomProjectSubtypeOptionsByType((prev) => {
+      const next = { ...prev };
+      const existing = Array.isArray(next[parentType]) ? [...next[parentType]] : [];
+      if (!existing.some((opt) => normalizeTaxonomyText(opt?.value) === normalizedNextValue)) {
+        existing.push(nextSubtypeOption);
+      }
+      next[parentType] = existing;
+      return next;
+    });
+    setDLocal((prev) => ({
+      ...prev,
+      project_type: parentType,
+      project_type_ref: mergedProjectTypeOptions.find(
+        (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
+      )?.id || null,
+      project_subtype: nextValue,
+      project_subtype_ref: null,
+    }));
+    if (!isNewAgreement) {
+      writeCache({
+        project_type: parentType,
+        project_type_ref:
+          mergedProjectTypeOptions.find(
+            (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
+          )?.id || null,
+        project_subtype: nextValue,
+        project_subtype_ref: null,
+      });
+    }
+    if (agreementId) {
+      patchAgreement(
+        {
+          project_type: parentType,
+          project_type_ref:
+            mergedProjectTypeOptions.find(
+              (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
+            )?.id || null,
+          project_subtype: nextValue,
+          project_subtype_ref: null,
+        },
+        { silent: true }
+      );
+    }
+    setClassificationMessage("Custom subtype added.");
+    toast.success("Custom subtype added.");
+    setTaxonomyEditor(null);
   };
 
   const handleClarificationAnswerChange = (questionKey, nextValue) => {
@@ -6342,6 +6531,61 @@ export default function Step1Details({
                       </button>
                     ) : null}
                   </div>
+                  {taxonomyEditor ? (
+                    <div
+                      data-testid="step1-custom-taxonomy-editor"
+                      className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-indigo-800">
+                        {taxonomyEditor.kind === "type" ? "Add Project Type" : "Add Subtype"}
+                      </div>
+                      <div className="mt-1 text-xs text-indigo-900">
+                        {taxonomyEditor.kind === "type"
+                          ? "Create a custom project type and select it right away."
+                          : `Create a custom subtype under ${safeTrim(dLocal?.project_type) || "the selected type"}.`}
+                      </div>
+                      <input
+                        data-testid="step1-custom-taxonomy-input"
+                        value={taxonomyEditor.value}
+                        onChange={(e) =>
+                          setTaxonomyEditor((prev) => ({
+                            ...(prev || {}),
+                            value: e.target.value,
+                            error: "",
+                          }))
+                        }
+                        placeholder={
+                          taxonomyEditor.kind === "type" ? "New Project Type" : "New Subtype"
+                        }
+                        className="mt-3 w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-400"
+                      />
+                      {taxonomyEditor.error ? (
+                        <div className="mt-2 text-xs text-rose-600">{taxonomyEditor.error}</div>
+                      ) : (
+                        <div className="mt-2 text-[11px] text-slate-600">
+                          Custom values are saved locally and remain selectable as you continue.
+                        </div>
+                      )}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={saveTaxonomyEditor}
+                          className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+                          data-testid="step1-custom-taxonomy-save-button"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeTaxonomyEditor}
+                          className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          data-testid="step1-custom-taxonomy-cancel-button"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
                     <select
                       data-testid="agreement-project-type-select"
                       ref={projectTypeFieldRef}
@@ -6920,6 +7164,3 @@ export default function Step1Details({
     </>
   );
 }
-
-
-
