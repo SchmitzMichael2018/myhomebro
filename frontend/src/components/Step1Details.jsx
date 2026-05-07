@@ -198,9 +198,13 @@ function buildGeneratedProjectTitle(text = "") {
   const firstClause = raw.split(/[,.]/)[0] || raw;
   const trimmedClause = firstClause
     .replace(/\b(with|including|plus|for)\b.*$/i, "")
+    .replace(/^\s*(work includes|includes|scope|project includes|project scope)\s*[:\-\u2013\u2014]*/i, "")
     .trim();
   const candidate = safeTrim(trimmedClause || firstClause);
   if (!candidate) return "";
+  if (/^(work includes|includes|scope|project includes|project scope)\b/i.test(candidate)) return "";
+  if (/[.!?]/.test(candidate)) return "";
+  if (candidate.split(/\s+/).length > 8) return "";
   const words = candidate.split(/\s+/).slice(0, 5).join(" ");
   return titleCaseWords(words);
 }
@@ -208,6 +212,10 @@ function buildGeneratedProjectTitle(text = "") {
 const TITLE_BOILERPLATE_PATTERNS = [
   /^\s*scope of work includes\b[:\s-]*/i,
   /^\s*this project includes\b[:\s-]*/i,
+  /^\s*work includes\b[:\s-]*/i,
+  /^\s*includes\b[:\s-]*/i,
+  /^\s*project includes\b[:\s-]*/i,
+  /^\s*project scope\b[:\s-]*/i,
   /^\s*removal of\b[:\s-]*/i,
   /^\s*installation of\b[:\s-]*/i,
 ];
@@ -284,6 +292,105 @@ function buildProjectFriendlyTitle({
   }
 
   return "";
+}
+
+const CLASSIFICATION_PREFIX_PATTERNS = [
+  /^work includes\b/i,
+  /^includes\b/i,
+  /^scope\b/i,
+  /^project includes\b/i,
+  /^project scope\b/i,
+];
+
+function normalizeClassificationLabel(value, { maxWords = 8, maxLength = 60 } = {}) {
+  const raw = safeTrim(value);
+  if (!raw) return "";
+  const cleaned = raw.replace(/\s*\(new\)\s*$/i, "").replace(/^[\-–—•\s]+/, "").replace(/[\s\-–—•]+$/, "").trim();
+  if (!cleaned) return "";
+  const lower = cleaned.toLowerCase();
+  if (CLASSIFICATION_PREFIX_PATTERNS.some((pattern) => pattern.test(cleaned))) return "";
+  if (cleaned.length > maxLength) return "";
+  if (cleaned.split(/\s+/).length > maxWords) return "";
+  if (/[.!?]/.test(cleaned)) return "";
+  if (/^\d+$/.test(cleaned)) return "";
+  return cleaned;
+}
+
+function normalizeClassificationResult(
+  result,
+  {
+    sourceText = "",
+    scopeText = "",
+    projectTypeOptions = [],
+    projectSubtypeOptions = [],
+  } = {}
+) {
+  if (!result || typeof result !== "object") return null;
+
+  const normalizedSource = safeTrim(sourceText || scopeText || "");
+  const normalizedScope = safeTrim(scopeText || sourceText || "");
+  const rawType = normalizeClassificationLabel(result.project_type, { maxWords: 4, maxLength: 40 });
+  const rawSubtype = normalizeClassificationLabel(result.project_subtype, { maxWords: 8, maxLength: 60 });
+  const rawTitle = normalizeClassificationLabel(result.project_title, { maxWords: 8, maxLength: 60 });
+
+  let typeOption =
+    resolveOptionFromRawValue(rawType, projectTypeOptions) ||
+    resolveBestTypeOption({
+      rawType,
+      rawSubtype,
+      sourceText: normalizedSource || normalizedScope,
+      projectTypeOptions,
+    });
+
+  let subtypeOption =
+    resolveOptionFromRawValue(rawSubtype, projectSubtypeOptions) ||
+    resolveBestSubtypeOption({
+      rawSubtype,
+      rawType,
+      sourceText: normalizedSource || normalizedScope,
+      matchedType: typeOption,
+      projectSubtypeOptions,
+    });
+
+  if (!typeOption && subtypeOption?.project_type) {
+    typeOption = resolveOptionFromRawValue(subtypeOption.project_type, projectTypeOptions);
+  }
+
+  if (!typeOption) return null;
+
+  if (subtypeOption?.project_type && typeOption?.value) {
+    const subtypeParent = safeTrim(subtypeOption.project_type);
+    if (normalizeTaxonomyText(subtypeParent) !== normalizeTaxonomyText(typeOption.value)) {
+      subtypeOption = null;
+    }
+  }
+
+  const normalizedType = optionCanonicalValue(typeOption) || rawType || "";
+  const normalizedSubtype = optionCanonicalValue(subtypeOption) || rawSubtype || "";
+  const normalizedTitle =
+    buildProjectFriendlyTitle({
+      subtype: normalizedSubtype,
+      category: normalizedType,
+      rawTitle,
+      sourceText: normalizedScope || normalizedSource || rawTitle,
+    }) ||
+    titleCaseWords(normalizedSubtype || normalizedType || rawTitle || "");
+
+  if (!normalizedType || /^(work includes|includes|scope|project includes|project scope)\b/i.test(normalizedType)) {
+    return null;
+  }
+  if (normalizedSubtype && /^(work includes|includes|scope|project includes|project scope)\b/i.test(normalizedSubtype)) {
+    return null;
+  }
+  if (!normalizedTitle || /^(work includes|includes|scope|project includes|project scope)\b/i.test(normalizedTitle)) {
+    return null;
+  }
+
+  return {
+    project_type: normalizedType,
+    project_subtype: normalizedSubtype,
+    project_title: normalizedTitle,
+  };
 }
 
 function inferBasementProjectSetup(sourceText = "") {
@@ -391,6 +498,9 @@ function inferStep1ProjectClassificationConsistency({
 
   const basementSetup = inferBasementProjectSetup(combinedText);
   if (basementSetup) return basementSetup;
+
+  const garageDoorSetup = inferGarageDoorProjectSetup(combinedText);
+  if (garageDoorSetup) return garageDoorSetup;
 
   if (
     /\binground\s+pool\b/i.test(combined) ||
@@ -638,6 +748,47 @@ function inferJunkRemovalProjectSetup(text = "") {
     project_title: title,
     description:
       "Remove and haul away the items or debris described, sort and load the material, dispose of it properly, and clean the work area when finished. Contractor will verify access, volume, disposal requirements, and any hazardous materials before final pricing or work begins.",
+  };
+}
+
+function inferGarageDoorProjectSetup(text = "") {
+  const garageDoorSignals = [
+    /\bgarage\s+door\b/i,
+    /\bgarage\s+door\s+replacement\b/i,
+    /\bgarage\s+door\s+repair\b/i,
+    /\bgarage\s+door\s+opener\b/i,
+    /\bgarage\s+opener\b/i,
+    /\boverhead\s+door\b/i,
+  ];
+  const garageHits = countMatchingPatterns(text, garageDoorSignals);
+  if (garageHits < 1) return null;
+
+  if (/\bopener\b/i.test(text)) {
+    return {
+      project_type: "Garage Doors",
+      project_subtype: "Garage Door Opener Installation",
+      project_title: "Garage Door Opener Installation",
+      description:
+        "Install or replace the garage door opener as described, including mounting, wiring, setup, testing, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+    };
+  }
+
+  if (/\brepair|fix|broken|service\b/i.test(text)) {
+    return {
+      project_type: "Garage Doors",
+      project_subtype: "Garage Door Repair",
+      project_title: "Garage Door Repair",
+      description:
+        "Repair the garage door system as described, including inspection, component replacement or adjustment, testing, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+    };
+  }
+
+  return {
+    project_type: "Garage Doors",
+    project_subtype: "Garage Door Replacement",
+    project_title: "Garage Door Replacement",
+    description:
+      "Replace the garage door system as described, including removal of existing components, installation of the new door, testing, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
   };
 }
 
@@ -938,6 +1089,14 @@ const STEP1_LOCAL_FALLBACK_RULES = [
     project_title: "Siding Replacement",
     scope:
       "Remove or prepare existing siding as needed, install replacement siding and related trim, complete finish details, and clean the work area. Contractor will verify measurements, material requirements, and site conditions before final pricing or work begins.",
+  },
+  {
+    patterns: [/\bgarage\s+door\b/i, /\bgarage\s+door\s+replacement\b/i, /\bgarage\s+door\s+repair\b/i, /\bgarage\s+door\s+opener\b/i, /\boverhead\s+door\b/i],
+    project_type: "Garage Doors",
+    project_subtype: "Garage Door Replacement",
+    project_title: "Garage Door Replacement",
+    scope:
+      "Remove the existing garage door or opener components as needed, install the new system, complete testing and adjustments, and clean the work area. Contractor will verify measurements, material requirements, and site conditions before final pricing or work begins.",
   },
   {
     patterns: [/\binground\s+pool\b/i, /\bin-?ground\s+pool\b/i, /\bpool\s+house\b/i, /\bpool\s+installation\b/i],
@@ -2471,9 +2630,27 @@ export default function Step1Details({
     const currentType = safeTrim(dLocal.project_type || agreement?.project_type || "");
     const currentSubtype = safeTrim(dLocal.project_subtype || agreement?.project_subtype || "");
     const currentTitle = safeTrim(dLocal.project_title || agreement?.project_title || "");
-    const currentTypeResolved = safeTrim(nextClassification?.project_type || "");
-    const currentSubtypeResolved = safeTrim(nextClassification?.project_subtype || "");
-    const currentTitleResolved = safeTrim(nextClassification?.project_title || "");
+    const currentScope = safeTrim(dLocal.description || dLocal.scope_of_work || agreement?.description || agreement?.scope_of_work || "");
+    const normalizedClassification = normalizeClassificationResult(nextClassification, {
+      sourceText: [currentScope, currentTitle, currentSubtype, currentType].filter(Boolean).join(" "),
+      scopeText: currentScope,
+      projectTypeOptions,
+      projectSubtypeOptions,
+    });
+    const fallbackClassification =
+      normalizedClassification ||
+      inferStep1ProjectClassificationConsistency({
+        sourceText: [currentScope, currentTitle, currentSubtype, currentType].filter(Boolean).join(" "),
+        scopeText: currentScope,
+        suggestedProjectType: safeTrim(nextClassification?.project_type || ""),
+        suggestedProjectSubtype: safeTrim(nextClassification?.project_subtype || ""),
+        suggestedProjectTitle: safeTrim(nextClassification?.project_title || ""),
+      }) ||
+      buildDeterministicStep1Setup(currentScope || currentTitle || currentSubtype || currentType || "");
+
+    const currentTypeResolved = safeTrim(fallbackClassification?.project_type || "");
+    const currentSubtypeResolved = safeTrim(fallbackClassification?.project_subtype || "");
+    const currentTitleResolved = safeTrim(fallbackClassification?.project_title || "");
 
     const nextType = normalizeStep1FieldValue(currentTypeResolved);
     const nextSubtype = normalizeStep1FieldValue(currentSubtypeResolved);
@@ -3805,19 +3982,19 @@ export default function Step1Details({
     const sourceText = scopeDrivenText || [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
     const classificationText = scopeDrivenText || [refinedDescription, rawProjectTitle].filter(Boolean).join(" ");
     const backendClassification = aiData?.classification || aiData?.project_classification || null;
-    const consistencySetup = backendClassification?.project_type
-      ? {
-          project_type: backendClassification.project_type || "",
-          project_subtype: backendClassification.project_subtype || "",
-          project_title: backendClassification.project_title || "",
-        }
-      : inferStep1ProjectClassificationConsistency({
-          sourceText,
-          scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
-          suggestedProjectType: "",
-          suggestedProjectSubtype: "",
-          suggestedProjectTitle: "",
-        });
+    const normalizedBackendClassification = normalizeClassificationResult(backendClassification, {
+      sourceText,
+      scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
+      projectTypeOptions,
+      projectSubtypeOptions,
+    });
+    const consistencySetup = normalizedBackendClassification || inferStep1ProjectClassificationConsistency({
+      sourceText,
+      scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
+      suggestedProjectType: "",
+      suggestedProjectSubtype: "",
+      suggestedProjectTitle: "",
+    });
     const dominantCategory = consistencySetup
       ? {
           category: consistencySetup.project_type,

@@ -69,6 +69,9 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     "Junk Removal": [
         "junk removal", "debris removal", "appliance removal", "furniture removal", "haul away", "haul-away", "trash out", "construction debris",
     ],
+    "Garage Doors": [
+        "garage door", "garage doors", "garage door replacement", "garage door repair", "garage door opener", "garage opener",
+    ],
     "Custom": [],
 }
 
@@ -145,6 +148,11 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Appliance Removal": ["appliance removal", "remove appliance", "haul away appliance", "old appliance"],
         "Furniture Removal": ["furniture removal", "haul away furniture", "old furniture", "sofa removal"],
         "Construction Debris Removal": ["construction debris", "demo debris", "construction waste", "renovation debris"],
+    },
+    "Garage Doors": {
+        "Garage Door Replacement": ["garage door replacement", "replace garage door", "new garage door", "garage door install", "garage door installation"],
+        "Garage Door Repair": ["garage door repair", "repair garage door", "broken garage door", "garage door fix"],
+        "Garage Door Opener Installation": ["garage door opener", "garage opener", "opener install", "opener installation"],
     },
     "Outdoor": {
         "Shed Build": ["shed", "shed build", "outbuilding", "storage shed", "tool shed", "garden shed", "backyard shed"],
@@ -749,6 +757,14 @@ def classify_type_subtype(
     if any(sig in hay_norm for sig in siding_signals):
         return "Siding", "Siding Replacement", "Detected siding-specific scope. Using type 'Siding' and subtype 'Siding Replacement'."
 
+    garage_door_signals = ["garage door replacement", "replace garage door", "garage door install", "garage door installation", "garage door opener", "garage opener"]
+    if any(sig in hay_norm for sig in garage_door_signals):
+        if any(sig in hay_norm for sig in ["opener", "opener install", "opener installation", "garage opener"]):
+            return "Garage Doors", "Garage Door Opener Installation", "Detected garage-door-specific scope. Using type 'Garage Doors' and subtype 'Garage Door Opener Installation'."
+        if any(sig in hay_norm for sig in ["repair", "fix", "broken", "broken garage door"]):
+            return "Garage Doors", "Garage Door Repair", "Detected garage-door-specific scope. Using type 'Garage Doors' and subtype 'Garage Door Repair'."
+        return "Garage Doors", "Garage Door Replacement", "Detected garage-door-specific scope. Using type 'Garage Doors' and subtype 'Garage Door Replacement'."
+
     wet_bar_signals = ["wet bar", "bar cabinet", "bar countertop", "bar sink", "wet bar installation"]
     cabinetry_signals = ["cabinet", "cabinetry", "countertop", "quartz", "granite"]
     plumbing_signals = ["plumb", "sink", "faucet"]
@@ -794,6 +810,14 @@ def build_classification_title(project_type: str, project_subtype: str, project_
         return "Siding Replacement"
     if project_type == "Pool" and project_subtype == "Inground Pool and Pool House":
         return "Inground Pool and Pool House"
+    if project_type == "Garage Doors":
+        if project_subtype == "Garage Door Replacement":
+            return "Garage Door Replacement"
+        if project_subtype == "Garage Door Repair":
+            return "Garage Door Repair"
+        if project_subtype == "Garage Door Opener Installation":
+            return "Garage Door Opener Installation"
+        return "Garage Doors"
     if project_type == "Outdoor Living":
         if project_subtype in {"Outdoor Kitchen", "Patio Kitchen", "Outdoor Bar", "Grill Island", "Patio Extension"}:
             return project_subtype

@@ -21,6 +21,7 @@ export const PROJECT_TYPES = [
   { value: "Flooring", label: "Flooring" },
   { value: "Junk Removal", label: "Junk Removal" },
   { value: "Outdoor Living", label: "Outdoor Living" },
+  { value: "Garage Doors", label: "Garage Doors" },
 
   // Step1-only labels preserved so existing data still round-trips
   { value: "Installation", label: "Installation" },
@@ -79,5 +80,10 @@ export const SUBTYPES_BY_TYPE = {
   Outdoor: [],
   Inspection: [],
   "DIY Help": [],
+  "Garage Doors": [
+    "Garage Door Replacement",
+    "Garage Door Repair",
+    "Garage Door Opener Installation",
+  ],
   Other: [],
 };

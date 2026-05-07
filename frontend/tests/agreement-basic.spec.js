@@ -2086,6 +2086,148 @@ test('agreement wizard step 1 improve classification reports already accurate wh
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Outdoor Kitchen');
 });
 
+test('agreement wizard step 1 normalizes raw classification text into garage door values', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 2, value: 'Repair', label: 'Repair', owner_type: 'system' },
+          { id: 42, value: 'Garage Doors', label: 'Garage Doors', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 12,
+            value: 'Faucet Repair',
+            label: 'Faucet Repair',
+            owner_type: 'system',
+            project_type: 'Repair',
+          },
+          {
+            id: 60,
+            value: 'Garage Door Replacement',
+            label: 'Garage Door Replacement',
+            owner_type: 'system',
+            project_type: 'Garage Doors',
+          },
+          {
+            id: 61,
+            value: 'Garage Door Repair',
+            label: 'Garage Door Repair',
+            owner_type: 'system',
+            project_type: 'Garage Doors',
+          },
+          {
+            id: 62,
+            value: 'Garage Door Opener Installation',
+            label: 'Garage Door Opener Installation',
+            owner_type: 'system',
+            project_type: 'Garage Doors',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/ai\/classify\/?(\?.*)?$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'OK',
+        project_type: 'Work Includes',
+        project_subtype: 'Work Includes Garage Door Replacement',
+        project_title: 'Work Includes Garage Door Replacement',
+        confidence: 'high',
+        confidence_label: 'High confidence',
+        reason: 'Raw scope text leaked into the classification response.',
+        alternatives: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET' || request.method() === 'PATCH') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: 'Faucet Repair',
+          title: 'Faucet Repair',
+          project_type: 'Repair',
+          project_subtype: 'Faucet Repair',
+          description: 'Garage door replacement with opener service.',
+          step_status: 'step1',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.getByTestId('proposal-draft-textarea').evaluate(
+    (el, value) => {
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    'Garage door replacement with new panels and tracks.'
+  );
+  await page.waitForTimeout(250);
+  await page.getByTestId('agreement-ai-improve-classification-button').dispatchEvent('click');
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toHaveText(
+    'Improving...'
+  );
+  await page.waitForTimeout(1100);
+
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Garage Doors');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Garage Door Replacement'
+  );
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Garage Door Replacement'
+  );
+  await expect(page.getByText(/Work Includes/i)).toHaveCount(0);
+});
+
 test('agreement wizard step 1 shows subtype clarifications, saves answers, and allows skipping', async ({
   page,
 }) => {

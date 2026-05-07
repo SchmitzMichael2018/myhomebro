@@ -673,6 +673,39 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(result["project_subtype"], "Junk Removal")
         self.assertEqual(result["project_title"], "Junk Removal")
 
+    def test_classify_project_from_scope_rejects_work_includes_boilerplate_and_prefers_garage_doors(self):
+        self._ensure_taxonomy("Garage Doors", ["Garage Door Replacement", "Garage Door Repair", "Garage Door Opener Installation"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Work Includes",
+                "project_subtype": "Work Includes Garage Door Replacement",
+                "project_title": "Work Includes Garage Door Replacement",
+                "confidence": "high",
+                "reason": "Boilerplate scope text leaked into the response.",
+                "alternatives": [],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="Garage door replacement",
+                scope="Replace the garage door panels and tracks.",
+                taxonomy=taxonomy,
+                current_values={
+                    "project_type": "Work Includes",
+                    "project_subtype": "Work Includes Garage Door Replacement",
+                    "project_title": "Work Includes Garage Door Replacement",
+                },
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Garage Doors")
+        self.assertEqual(result["project_subtype"], "Garage Door Replacement")
+        self.assertEqual(result["project_title"], "Garage Door Replacement")
+        self.assertNotIn("Work Includes", result["project_type"])
+        self.assertNotIn("Work Includes", result["project_subtype"])
+        self.assertNotIn("Work Includes", result["project_title"])
+
     def test_classify_type_subtype_allows_electrical_when_dominant(self):
         project_type, project_subtype, reason = classify_type_subtype(
             project_title="Install recessed lights",

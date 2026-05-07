@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from projects.services.ai.project_drafter import (
     classify_type_subtype,
 )
 
+logger = logging.getLogger(__name__)
+
 
 CONFIDENCE_LEVELS = {"high", "medium", "low"}
 TYPE_ALIASES = {
@@ -28,7 +31,17 @@ TYPE_ALIASES = {
     "junk removal": "Junk Removal",
     "siding": "Siding",
     "pool": "Pool",
+    "garage doors": "Garage Doors",
+    "garage door": "Garage Doors",
 }
+
+CLASSIFICATION_BOILERPLATE_PREFIXES = (
+    "work includes",
+    "includes",
+    "scope",
+    "project includes",
+    "project scope",
+)
 
 
 @dataclass(frozen=True)
@@ -112,8 +125,30 @@ def _normalize_confidence(value: Any, fallback: str = "low") -> str:
     return fallback if fallback in CONFIDENCE_LEVELS else "low"
 
 
+def _normalize_label(value: Any) -> str:
+    return re.sub(r"\s+", " ", _safe_str(value)).strip(" -–—•\t\r\n")
+
+
+def _looks_like_invalid_classification_text(value: Any, *, max_words: int, max_length: int) -> bool:
+    text = _normalize_label(value)
+    if not text:
+        return True
+    lower = text.lower()
+    if any(lower.startswith(prefix) for prefix in CLASSIFICATION_BOILERPLATE_PREFIXES):
+        return True
+    if len(text) > max_length:
+        return True
+    if len(text.split()) > max_words:
+        return True
+    if "\n" in text or "\r" in text or "\t" in text:
+        return True
+    if re.search(r"[.!?]", text):
+        return True
+    return False
+
+
 def _norm_choice(value: Any) -> str:
-    return _safe_str(value)
+    return _normalize_label(value)
 
 
 def _resolve_type(value: Any, lookup: _TaxonomyLookup) -> str:
@@ -153,6 +188,140 @@ def _friendly_title(project_type: str, project_subtype: str, description: str, s
     if project_type:
         return f"{project_type} Project"
     return "Project Starting Point"
+
+
+def _clean_current_classification_values(
+    current_values: dict[str, Any] | None,
+    lookup: _TaxonomyLookup,
+) -> dict[str, str]:
+    current_values = current_values or {}
+    current_type = _resolve_type(current_values.get("project_type"), lookup)
+    current_subtype = ""
+    if current_type:
+        current_subtype = _resolve_subtype(current_type, current_values.get("project_subtype"), lookup)
+    if not current_type:
+        current_type = _resolve_type_from_subtype(current_values.get("project_subtype"), lookup)
+        if current_type:
+            current_subtype = _resolve_subtype(current_type, current_values.get("project_subtype"), lookup)
+    return {
+        "project_title": _safe_str(current_values.get("project_title")),
+        "project_type": current_type,
+        "project_subtype": current_subtype,
+    }
+
+
+def _resolve_type_from_subtype(value: Any, lookup: _TaxonomyLookup) -> str:
+    candidate = _norm_choice(value)
+    if not candidate:
+        return ""
+    candidate_norm = normalized_key(candidate)
+    for type_norm, subtype_map in lookup.subtypes_by_type_norm.items():
+        if candidate_norm in subtype_map:
+            return lookup.type_by_norm.get(type_norm, "")
+    return ""
+
+
+def normalize_classification_result(
+    result: dict[str, Any] | None,
+    lookup: _TaxonomyLookup,
+    *,
+    description: str = "",
+    scope: str = "",
+    current_values: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(result, dict):
+        return None
+
+    current_values = current_values or {}
+    raw_type = _normalize_label(result.get("project_type"))
+    raw_subtype = _normalize_label(result.get("project_subtype"))
+    raw_title = _normalize_label(result.get("project_title"))
+    recommended_custom_subtype = _safe_str(result.get("recommended_custom_subtype"))
+    confidence = _normalize_confidence(result.get("confidence"), fallback="medium")
+    reason = _safe_str(result.get("reason"))
+
+    if _looks_like_invalid_classification_text(raw_type, max_words=4, max_length=40):
+        raw_type = ""
+    if _looks_like_invalid_classification_text(raw_subtype, max_words=8, max_length=60):
+        raw_subtype = ""
+    if _looks_like_invalid_classification_text(raw_title, max_words=8, max_length=60):
+        raw_title = ""
+
+    resolved_type = _resolve_type(raw_type, lookup)
+    resolved_subtype = _resolve_subtype(resolved_type, raw_subtype, lookup)
+    if not resolved_type and raw_subtype:
+        resolved_type = _resolve_type_from_subtype(raw_subtype, lookup)
+        if resolved_type:
+            resolved_subtype = _resolve_subtype(resolved_type, raw_subtype, lookup)
+
+    if not resolved_type:
+        return None
+
+    if raw_subtype and not resolved_subtype:
+        return None
+
+    project_title = _friendly_title(
+        resolved_type,
+        resolved_subtype,
+        description or raw_title,
+        scope or description or raw_title,
+    )
+
+    if _looks_like_invalid_classification_text(project_title, max_words=8, max_length=60):
+        project_title = _friendly_title(resolved_type, resolved_subtype, description, scope)
+    if _looks_like_invalid_classification_text(project_title, max_words=8, max_length=60):
+        project_title = resolved_subtype or resolved_type
+    if _looks_like_invalid_classification_text(project_title, max_words=8, max_length=60):
+        return None
+
+    normalized_alternatives: list[dict[str, Any]] = []
+    for alt in result.get("alternatives") or []:
+        if not isinstance(alt, dict):
+            continue
+        alt_type = _resolve_type(alt.get("project_type"), lookup)
+        if not alt_type:
+            alt_type = _resolve_type_from_subtype(alt.get("project_subtype"), lookup)
+        alt_subtype = _resolve_subtype(alt_type, alt.get("project_subtype"), lookup) if alt_type else ""
+        if not alt_type:
+            continue
+        alt_title = _friendly_title(
+            alt_type,
+            alt_subtype,
+            description or raw_title,
+            scope or description or raw_title,
+        )
+        if _looks_like_invalid_classification_text(alt_title, max_words=8, max_length=60):
+            continue
+        key = (normalized_key(alt_type), normalized_key(alt_subtype))
+        if any(
+            key == (normalized_key(item.get("project_type")), normalized_key(item.get("project_subtype")))
+            for item in normalized_alternatives
+        ):
+            continue
+        normalized_alternatives.append(
+            {
+                "project_type": alt_type,
+                "project_subtype": alt_subtype,
+                "project_title": alt_title,
+            }
+        )
+        if len(normalized_alternatives) >= 3:
+            break
+
+    if not resolved_subtype and recommended_custom_subtype:
+        confidence = "low" if confidence == "high" else confidence
+
+    return {
+        "project_type": resolved_type,
+        "project_subtype": resolved_subtype,
+        "project_title": project_title,
+        "confidence": confidence,
+        "confidence_label": f"{confidence.title()} confidence",
+        "reason": reason,
+        "alternatives": normalized_alternatives,
+        "recommended_custom_subtype": recommended_custom_subtype if recommended_custom_subtype else "",
+        "classification_source": "ai",
+    }
 
 
 def _score_alternative(text: str, project_type: str, project_subtype: str) -> int:
@@ -275,6 +444,8 @@ def _call_openai_classifier(
     system = (
         "You classify contractor jobs into a project taxonomy. "
         "Use the generated scope as the strongest signal, then the original description. "
+        "Return only normalized taxonomy labels. "
+        "Do not return sentences, fragments, or raw scope text in project_type, project_subtype, or project_title. "
         "Choose only from the provided project types and subtypes. "
         "If no exact subtype exists, pick the closest valid project type and return a recommended_custom_subtype separately. "
         "Never reuse stale values from prior requests unless the current text clearly supports them. "
@@ -428,6 +599,7 @@ def classify_project_from_scope(
     current_values = current_values or {}
     taxonomy = taxonomy or build_project_taxonomy_snapshot(contractor=contractor)
     lookup = _taxonomy_lookup(taxonomy)
+    clean_current_values = _clean_current_classification_values(current_values, lookup)
 
     candidate = _call_openai_classifier(
         description=description,
@@ -439,19 +611,36 @@ def classify_project_from_scope(
             "project_title": _safe_str(current_values.get("project_title")),
         },
     )
-    normalized_candidate = _normalize_candidate(candidate, lookup) if candidate else None
+    normalized_candidate = (
+        normalize_classification_result(
+            candidate,
+            lookup,
+            description=description,
+            scope=scope,
+            current_values=clean_current_values,
+        )
+        if candidate
+        else None
+    )
     fallback = _fallback_classification(
         description=description,
         scope=scope,
-        current_values=current_values,
+        current_values=clean_current_values,
     )
 
     if not normalized_candidate:
+        if candidate:
+            logger.warning(
+                "Invalid AI classification response; falling back to deterministic classification. candidate=%s description=%s scope=%s",
+                _json_dump(candidate)[:1000],
+                description[:500],
+                scope[:500],
+            )
         fallback["alternatives"] = _build_alternatives(
             text=f"{scope}\n{description}",
             lookup=lookup,
             primary=fallback,
-            current_values=current_values,
+            current_values=clean_current_values,
         )
         return fallback
 
@@ -462,25 +651,24 @@ def classify_project_from_scope(
             text=f"{scope}\n{description}",
             lookup=lookup,
             primary=fallback,
-            current_values=current_values,
+            current_values=clean_current_values,
         )
         return fallback
 
     if candidate_subtype:
         subtype_map = lookup.subtypes_by_type_norm.get(normalized_key(candidate_type), {})
         if candidate_subtype not in subtype_map.values():
-            fallback["project_type"] = candidate_type
-            fallback["project_subtype"] = ""
-            fallback["project_title"] = _friendly_title(candidate_type, "", description, scope)
-            fallback["confidence"] = "low"
-            fallback["confidence_label"] = "Review recommended category"
-            fallback["reason"] = normalized_candidate.get("reason") or fallback["reason"]
-            fallback["recommended_custom_subtype"] = _safe_str(candidate.get("recommended_custom_subtype") if candidate else "")
+            logger.warning(
+                "Rejected AI classification due to invalid subtype pair; falling back. candidate=%s description=%s scope=%s",
+                _json_dump(candidate)[:1000],
+                description[:500],
+                scope[:500],
+            )
             fallback["alternatives"] = normalized_candidate.get("alternatives") or _build_alternatives(
                 text=f"{scope}\n{description}",
                 lookup=lookup,
                 primary=fallback,
-                current_values=current_values,
+                current_values=clean_current_values,
             )
             return fallback
 
@@ -492,7 +680,7 @@ def classify_project_from_scope(
             text=f"{scope}\n{description}",
             lookup=lookup,
             primary=normalized_candidate,
-            current_values=current_values,
+            current_values=clean_current_values,
         ),
     }
 
@@ -502,4 +690,3 @@ def classify_project_from_scope(
         result["reason"] = fallback.get("reason") or "Matched the dominant project intent from the description and scope."
 
     return result
-
