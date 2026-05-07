@@ -383,6 +383,9 @@ function inferStep1ProjectClassificationConsistency({
   const mediaRoomSetup = inferMediaRoomProjectSetup(combinedText);
   if (mediaRoomSetup) return mediaRoomSetup;
 
+  const outdoorKitchenSetup = inferOutdoorKitchenProjectSetup(combinedText);
+  if (outdoorKitchenSetup) return outdoorKitchenSetup;
+
   const junkRemovalSetup = inferJunkRemovalProjectSetup(combinedText);
   if (junkRemovalSetup) return junkRemovalSetup;
 
@@ -553,6 +556,54 @@ function inferMediaRoomProjectSetup(text = "") {
     project_title: "Home Theater Installation",
     description:
       "Build the media room or home theater as described, including framing, drywall, electrical, lighting zones, AV equipment, sound system work, finish details, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  };
+}
+
+function inferOutdoorKitchenProjectSetup(text = "") {
+  const outdoorKitchenSignals = [
+    /\boutdoor\s+kitchen\b/i,
+    /\bpatio\s+kitchen\b/i,
+    /\bgrill\s+island\b/i,
+    /\boutdoor\s+bar\b/i,
+    /\bpatio\s+extension\b/i,
+    /\bweather[- ]?resistant\s+cabinet(s)?\b/i,
+    /\boutdoor\s+countertop(s)?\b/i,
+    /\boutdoor\s+sink\b/i,
+    /\boutdoor\s+cooking\b/i,
+    /\bgrill\s+station\b/i,
+    /\bbackyard\s+kitchen\b/i,
+  ];
+  const outdoorContextSignals = [
+    /\boutdoor\b/i,
+    /\bpatio\b/i,
+    /\bbackyard\b/i,
+    /\bgrill\b/i,
+    /\bexterior\b/i,
+  ];
+  const kitchenSupportSignals = [/\bkitchen\b/i, /\bcabinet(s|ry)?\b/i, /\bcountertop(s)?\b/i];
+
+  const outdoorHits = countMatchingPatterns(text, outdoorKitchenSignals);
+  const contextHits = countMatchingPatterns(text, outdoorContextSignals);
+  const kitchenHits = countMatchingPatterns(text, kitchenSupportSignals);
+  if (outdoorHits < 1 && !(kitchenHits >= 2 && contextHits >= 1)) return null;
+
+  let projectSubtype = "Outdoor Kitchen";
+  if (/\bpatio\s+extension\b/i.test(text)) {
+    projectSubtype = "Patio Extension";
+  } else if (/\bgrill\s+island\b/i.test(text)) {
+    projectSubtype = "Grill Island";
+  } else if (/\boutdoor\s+bar\b/i.test(text)) {
+    projectSubtype = "Outdoor Bar";
+  } else if (/\bpatio\s+kitchen\b/i.test(text)) {
+    projectSubtype = "Patio Kitchen";
+  }
+
+  return {
+    project_type: "Outdoor Living",
+    project_subtype: projectSubtype,
+    project_title: projectSubtype,
+    description:
+      "Build the outdoor kitchen or outdoor living area as described, including weather-resistant cabinetry, countertops, sink or plumbing fixture work, outdoor electrical updates, finish details, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
   };
 }
 
@@ -862,6 +913,23 @@ const STEP1_LOCAL_FALLBACK_RULES = [
     project_title: "Home Theater Installation",
     scope:
       "Build the media room or home theater as described, including framing, drywall, electrical, lighting zones, AV equipment, sound system work, finish details, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
+  },
+  {
+    patterns: [
+      /\boutdoor\s+kitchen\b/i,
+      /\bpatio\s+kitchen\b/i,
+      /\bgrill\s+island\b/i,
+      /\boutdoor\s+bar\b/i,
+      /\bpatio\s+extension\b/i,
+      /\bweather[- ]?resistant\s+cabinet(s)?\b/i,
+      /\boutdoor\s+countertop(s)?\b/i,
+      /\boutdoor\s+sink\b/i,
+    ],
+    project_type: "Outdoor Living",
+    project_subtype: "Outdoor Kitchen",
+    project_title: "Outdoor Kitchen",
+    scope:
+      "Build the outdoor kitchen or outdoor living area as described, including weather-resistant cabinetry, countertops, sink or plumbing fixture work, outdoor electrical updates, finish details, and cleanup as applicable. Contractor will verify measurements, site conditions, and material requirements before final pricing or work begins.",
   },
   {
     patterns: [/\breplace\s+siding\b/i, /\bsiding\s+replacement\b/i, /\bsiding\b.*\breplace\b/i],
@@ -2029,6 +2097,8 @@ export default function Step1Details({
   const [aiPreview, setAiPreview] = useState("");
   const [classificationBusy, setClassificationBusy] = useState(false);
   const [classificationErr, setClassificationErr] = useState("");
+  const [classificationMessage, setClassificationMessage] = useState("");
+  const [classificationResult, setClassificationResult] = useState(null);
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
@@ -2397,6 +2467,96 @@ export default function Step1Details({
     setAiPreview("");
   }
 
+  function commitClassificationResult(nextClassification, { note = "", silent = false } = {}) {
+    const currentType = safeTrim(dLocal.project_type || agreement?.project_type || "");
+    const currentSubtype = safeTrim(dLocal.project_subtype || agreement?.project_subtype || "");
+    const currentTitle = safeTrim(dLocal.project_title || agreement?.project_title || "");
+    const currentTypeResolved = safeTrim(nextClassification?.project_type || "");
+    const currentSubtypeResolved = safeTrim(nextClassification?.project_subtype || "");
+    const currentTitleResolved = safeTrim(nextClassification?.project_title || "");
+
+    const nextType = normalizeStep1FieldValue(currentTypeResolved);
+    const nextSubtype = normalizeStep1FieldValue(currentSubtypeResolved);
+    const nextTitle = normalizeStep1FieldValue(currentTitleResolved);
+    const nextTypeRef =
+      (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
+    const nextSubtypeRef =
+      (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === nextSubtype)?.id || null;
+    const hasMeaningfulChange =
+      safeTrim(nextType) !== currentType ||
+      safeTrim(nextSubtype) !== currentSubtype ||
+      safeTrim(nextTitle) !== currentTitle;
+
+    setAiSuggestedFieldMeta((prev) => ({
+      ...prev,
+      project_type: { isNew: Boolean(nextType && nextType !== currentType) },
+      project_subtype: { isNew: Boolean(nextSubtype && nextSubtype !== currentSubtype) },
+      project_title: { isNew: Boolean(nextTitle && nextTitle !== currentTitle) },
+    }));
+
+    setClassificationResult({
+      project_type: nextType,
+      project_subtype: nextSubtype,
+      project_title: nextTitle,
+      confidence: safeTrim(nextClassification?.confidence || "low"),
+      confidence_label: safeTrim(
+        nextClassification?.confidence_label ||
+          `${safeTrim(nextClassification?.confidence || "low").replace(/^./, (c) => c.toUpperCase())} confidence`
+      ),
+      reason: safeTrim(nextClassification?.reason || ""),
+      alternatives: Array.isArray(nextClassification?.alternatives)
+        ? nextClassification.alternatives
+        : [],
+      recommended_custom_subtype: safeTrim(nextClassification?.recommended_custom_subtype || ""),
+      note,
+    });
+
+    setDLocal((prev) => ({
+      ...prev,
+      project_type: nextType,
+      project_type_ref: nextTypeRef,
+      project_subtype: nextSubtype,
+      project_subtype_ref: nextSubtypeRef,
+      project_title: nextTitle,
+      title: nextTitle,
+    }));
+
+    if (!isNewAgreement) {
+      writeCache({
+        project_type: nextType,
+        project_type_ref: nextTypeRef,
+        project_subtype: nextSubtype,
+        project_subtype_ref: nextSubtypeRef,
+        project_title: nextTitle,
+        title: nextTitle,
+      });
+    }
+
+    if (agreementId) {
+      patchAgreement(
+        {
+          project_type: nextType,
+          project_type_ref: nextTypeRef,
+          project_subtype: nextSubtype,
+          project_subtype_ref: nextSubtypeRef,
+          project_title: nextTitle,
+          title: nextTitle,
+        },
+        { silent: true }
+      );
+    }
+
+    if (hasMeaningfulChange) {
+      setClassificationMessage("Project classification updated.");
+      if (!silent) toast.success("Project classification updated.");
+    } else {
+      setClassificationMessage("Classification already looks accurate.");
+      if (!silent) toast("Classification already looks accurate.");
+    }
+
+    return { hasMeaningfulChange, nextType, nextSubtype, nextTitle };
+  }
+
   async function runAiClassification() {
     if (locked || classificationBusy) return;
 
@@ -2413,6 +2573,8 @@ export default function Step1Details({
     }
 
     setClassificationErr("");
+    setClassificationMessage("");
+    setClassificationResult(null);
     setClassificationBusy(true);
 
     try {
@@ -2428,71 +2590,65 @@ export default function Step1Details({
       };
 
       const { data } = await api.post("/projects/agreements/ai/classify/", payload);
+      const classification = data?.classification || data || {};
+      const currentScopeText = safeTrim(currentScope || currentPrompt);
+      const localConsistency = inferStep1ProjectClassificationConsistency({
+        sourceText: [currentScopeText, currentPrompt].filter(Boolean).join(" "),
+        scopeText: currentScopeText,
+        suggestedProjectType: classification?.project_type || "",
+        suggestedProjectSubtype: classification?.project_subtype || "",
+        suggestedProjectTitle: classification?.project_title || "",
+      });
 
-      const nextType = normalizeStep1FieldValue(data?.project_type || "");
-      const nextSubtype = normalizeStep1FieldValue(data?.project_subtype || "");
-      const nextTitle = normalizeStep1FieldValue(data?.project_title || "");
+      const backendType = safeTrim(classification?.project_type);
+      const backendSubtype = safeTrim(classification?.project_subtype);
+      const backendTitle = safeTrim(classification?.project_title);
+      const localType = safeTrim(localConsistency?.project_type);
+      const localSubtype = safeTrim(localConsistency?.project_subtype);
+      const localTitle = safeTrim(localConsistency?.project_title);
+      const backendLooksInvalid = !backendType || !backendTitle || !backendSubtype;
+      const localDiffersFromBackend =
+        Boolean(localType || localSubtype || localTitle) &&
+        (localType !== backendType || localSubtype !== backendSubtype || localTitle !== backendTitle);
 
-      if (!nextType && !nextSubtype && !nextTitle) {
+      const resolvedClassification =
+        backendLooksInvalid || localDiffersFromBackend
+          ? {
+              ...classification,
+              project_type: localType || backendType || "",
+              project_subtype: localSubtype || backendSubtype || "",
+              project_title: localTitle || backendTitle || "",
+              reason: localConsistency?.reason || classification?.reason || "",
+              confidence: localConsistency?.confidence || classification?.confidence || "low",
+              confidence_label:
+                localConsistency?.confidence_label || classification?.confidence_label || "",
+              alternatives: Array.isArray(localConsistency?.alternatives)
+                ? localConsistency.alternatives
+                : Array.isArray(classification?.alternatives)
+                ? classification.alternatives
+                : [],
+              recommended_custom_subtype:
+                localConsistency?.recommended_custom_subtype ||
+                classification?.recommended_custom_subtype ||
+                "",
+            }
+          : classification;
+
+      const result = commitClassificationResult(resolvedClassification, { silent: false });
+      if (!result?.hasMeaningfulChange && safeTrim(resolvedClassification?.confidence) === "low") {
+        setClassificationMessage("Classification already looks accurate.");
+      }
+      if (!safeTrim(result?.nextType) && !safeTrim(result?.nextSubtype) && !safeTrim(result?.nextTitle)) {
         throw new Error("AI returned no classification changes.");
       }
-
-      const nextTypeRef =
-        (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
-      const nextSubtypeRef =
-        (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === nextSubtype)?.id ||
-        null;
-
-      setAiSuggestedFieldMeta((prev) => ({
-        ...prev,
-        project_type: { isNew: Boolean(nextType && nextType !== currentType) },
-        project_subtype: { isNew: Boolean(nextSubtype && nextSubtype !== currentSubtype) },
-        project_title: { isNew: Boolean(nextTitle && nextTitle !== currentTitle) },
-      }));
-
-      setDLocal((prev) => ({
-        ...prev,
-        project_type: nextType || prev.project_type || "",
-        project_type_ref: nextTypeRef,
-        project_subtype: nextSubtype || prev.project_subtype || "",
-        project_subtype_ref: nextSubtypeRef,
-        project_title: nextTitle || prev.project_title || "",
-        title: nextTitle || prev.title || "",
-      }));
-
-      if (!isNewAgreement) {
-        writeCache({
-          project_type: nextType || "",
-          project_type_ref: nextTypeRef,
-          project_subtype: nextSubtype || "",
-          project_subtype_ref: nextSubtypeRef,
-          project_title: nextTitle || "",
-          title: nextTitle || "",
-        });
-      }
-
-      if (agreementId) {
-        await patchAgreement(
-          {
-            project_type: nextType || "",
-            project_type_ref: nextTypeRef,
-            project_subtype: nextSubtype || "",
-            project_subtype_ref: nextSubtypeRef,
-            project_title: nextTitle || "",
-            title: nextTitle || "",
-          },
-          { silent: true }
-        );
-      }
-
-      setClassificationErr("");
-      toast.success("Project classification updated.");
     } catch (error) {
       const payload = error?.response?.data || {};
       const message =
         payload?.detail ||
         "Couldn't improve the classification. You can edit these fields manually.";
       setClassificationErr(message);
+      setClassificationMessage("");
+      setClassificationResult(null);
       toast.error(message);
     } finally {
       setClassificationBusy(false);
@@ -3310,6 +3466,7 @@ export default function Step1Details({
     setAiMilestonePreview(null);
     setAiErr("");
     setAiSuggestedFieldMeta({});
+    setClassificationResult(null);
     if (agreementId) {
       patchAgreement(
         {
@@ -3647,13 +3804,20 @@ export default function Step1Details({
       .join(" ");
     const sourceText = scopeDrivenText || [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
     const classificationText = scopeDrivenText || [refinedDescription, rawProjectTitle].filter(Boolean).join(" ");
-    const consistencySetup = inferStep1ProjectClassificationConsistency({
-      sourceText,
-      scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
-      suggestedProjectType: "",
-      suggestedProjectSubtype: "",
-      suggestedProjectTitle: "",
-    });
+    const backendClassification = aiData?.classification || aiData?.project_classification || null;
+    const consistencySetup = backendClassification?.project_type
+      ? {
+          project_type: backendClassification.project_type || "",
+          project_subtype: backendClassification.project_subtype || "",
+          project_title: backendClassification.project_title || "",
+        }
+      : inferStep1ProjectClassificationConsistency({
+          sourceText,
+          scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
+          suggestedProjectType: "",
+          suggestedProjectSubtype: "",
+          suggestedProjectTitle: "",
+        });
     const dominantCategory = consistencySetup
       ? {
           category: consistencySetup.project_type,
@@ -4169,6 +4333,8 @@ export default function Step1Details({
     setAiSuggestedFieldMeta({});
     setStep1FieldErrors({});
     setStep1ValidationMessage("");
+    setClassificationMessage("");
+    setClassificationResult(null);
     setDismissedAiTemplateRecommendation(false);
     setAiErr("");
     setAiMilestonePreview("");
@@ -4300,7 +4466,14 @@ export default function Step1Details({
         : normalizeStep1FieldValue(rawValue);
     const nextEvent = name ? { target: { name, value }, currentTarget: { name, value } } : e;
 
-    if (name === "project_title" || name === "project_type" || name === "project_subtype") {
+    if (
+      name === "project_title" ||
+      name === "project_type" ||
+      name === "project_subtype" ||
+      name === "description"
+    ) {
+      setClassificationMessage("");
+      setClassificationResult(null);
       setAiSuggestedFieldMeta((prev) => {
         if (!prev?.[name]) return prev;
         const next = { ...prev };
@@ -5877,6 +6050,57 @@ export default function Step1Details({
                 </div>
                 {classificationErr ? (
                   <div className="mt-2 text-xs text-rose-600">{classificationErr}</div>
+                ) : classificationMessage ? (
+                  <div className="mt-2 text-xs text-emerald-700">{classificationMessage}</div>
+                ) : null}
+                {classificationResult ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-semibold text-slate-800">
+                        AI matched this as{" "}
+                        {classificationResult.project_type}
+                        {classificationResult.project_subtype
+                          ? ` / ${classificationResult.project_subtype}`
+                          : ""}
+                      </div>
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                        {classificationResult.confidence_label ||
+                          `${safeTrim(classificationResult.confidence || "low").replace(
+                            /^./,
+                            (c) => c.toUpperCase()
+                          )} confidence`}
+                      </span>
+                    </div>
+                    {classificationResult.reason ? (
+                      <div className="mt-2 text-xs text-slate-600">{classificationResult.reason}</div>
+                    ) : null}
+                    {safeTrim(classificationResult.recommended_custom_subtype) ? (
+                      <div className="mt-2 text-xs text-amber-700">
+                        Recommended custom subtype: {classificationResult.recommended_custom_subtype}
+                      </div>
+                    ) : null}
+                    {safeTrim(classificationResult.confidence) === "low" ? (
+                      <div className="mt-2 text-xs font-medium text-amber-700">
+                        Review recommended category.
+                      </div>
+                    ) : null}
+                    {Array.isArray(classificationResult.alternatives) &&
+                    classificationResult.alternatives.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {classificationResult.alternatives.map((alt, idx) => (
+                          <button
+                            key={`${alt?.project_type || "alt"}-${alt?.project_subtype || idx}`}
+                            type="button"
+                            onClick={() => commitClassificationResult(alt, { note: "Alternative selected" })}
+                            className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50"
+                          >
+                            {alt?.project_type}
+                            {alt?.project_subtype ? ` / ${alt.project_subtype}` : ""}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
 

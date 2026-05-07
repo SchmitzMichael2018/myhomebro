@@ -1820,6 +1820,272 @@ test('agreement wizard step 1 improve project classification updates type subtyp
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scopeBefore);
 });
 
+test('agreement wizard step 1 improves outdoor kitchen classification instead of wet bar', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' },
+          { id: 2, value: 'Outdoor Living', label: 'Outdoor Living', owner_type: 'system' },
+          { id: 3, value: 'Junk Removal', label: 'Junk Removal', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 31,
+            value: 'Wet Bar Installation',
+            label: 'Wet Bar Installation',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+          {
+            id: 32,
+            value: 'Outdoor Kitchen',
+            label: 'Outdoor Kitchen',
+            owner_type: 'system',
+            project_type: 'Outdoor Living',
+          },
+          {
+            id: 33,
+            value: 'Patio Extension',
+            label: 'Patio Extension',
+            owner_type: 'system',
+            project_type: 'Outdoor Living',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/ai\/classify\/?(\?.*)?$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'OK',
+          project_type: 'Remodel',
+          project_subtype: 'Wet Bar Installation',
+          project_title: 'Wet Bar Installation',
+          confidence: 'high',
+          confidence_label: 'High confidence',
+          reason: 'Detected wet-bar/remodel scope.',
+          alternatives: [],
+        }),
+      });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET' || request.method() === 'PATCH') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: 'Wet Bar Installation',
+          title: 'Wet Bar Installation',
+          project_type: 'Remodel',
+          project_subtype: 'Wet Bar Installation',
+          description:
+            'Build an outdoor kitchen with weather-resistant cabinets, countertop, sink, grill station, lighting, and patio electrical work.',
+          classification: {
+            project_type: 'Outdoor Living',
+            project_subtype: 'Outdoor Kitchen',
+            project_title: 'Outdoor Kitchen',
+            confidence: 'high',
+            confidence_label: 'High confidence',
+            reason: 'The scope centers on outdoor cabinetry, countertop, sink, and grill work.',
+            alternatives: [],
+          },
+          step_status: 'step1',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.getByTestId('proposal-draft-textarea').evaluate(
+    (el, value) => {
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    'Build an outdoor kitchen with weather-resistant cabinets, countertop, sink, grill station, lighting, and patio electrical work.'
+  );
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/outdoor kitchen/i);
+
+  await page.getByTestId('agreement-ai-improve-classification-button').dispatchEvent('click');
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toHaveText(
+    'Improving...'
+  );
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toBeDisabled();
+  await page.waitForTimeout(1100);
+
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Outdoor Living');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Outdoor Kitchen');
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Outdoor Kitchen');
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(
+    /outdoor kitchen with weather-resistant cabinets/i
+  );
+  await expect(page.getByText(/AI matched this as Outdoor Living \/ Outdoor Kitchen/i)).toBeVisible();
+  await expect(
+    page.getByTestId('step1-project-details-card').getByText('Project classification updated.')
+  ).toBeVisible();
+});
+
+test('agreement wizard step 1 improve classification reports already accurate when no change is needed', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 2, value: 'Outdoor Living', label: 'Outdoor Living', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 32,
+            value: 'Outdoor Kitchen',
+            label: 'Outdoor Kitchen',
+            owner_type: 'system',
+            project_type: 'Outdoor Living',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/ai\/classify\/?(\?.*)?$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'OK',
+        project_type: 'Outdoor Living',
+        project_subtype: 'Outdoor Kitchen',
+        project_title: 'Outdoor Kitchen',
+        classification_reason: 'Detected outdoor-kitchen scope.',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET' || request.method() === 'PATCH') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: 'Outdoor Kitchen',
+          title: 'Outdoor Kitchen',
+          project_type: 'Outdoor Living',
+          project_subtype: 'Outdoor Kitchen',
+          description:
+            'Build an outdoor kitchen with weather-resistant cabinets, countertop, sink, grill station, lighting, and patio electrical work.',
+          step_status: 'step1',
+          payment_mode: 'escrow',
+          payment_structure: 'simple',
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await page.waitForTimeout(250);
+  await page.getByTestId('proposal-draft-textarea').evaluate(
+    (el, value) => {
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+    'Build an outdoor kitchen with weather-resistant cabinets, countertop, sink, grill station, lighting, and patio electrical work.'
+  );
+  await page.waitForTimeout(250);
+  await page.getByTestId('agreement-ai-improve-classification-button').dispatchEvent('click');
+  await expect(page.getByTestId('agreement-ai-improve-classification-button')).toHaveText(
+    'Improving...'
+  );
+  await page.waitForTimeout(1100);
+
+  await expect(
+    page.getByTestId('step1-project-details-card').getByText('Classification already looks accurate.')
+  ).toBeVisible();
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Outdoor Living');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Outdoor Kitchen');
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Outdoor Kitchen');
+});
+
 test('agreement wizard step 1 shows subtype clarifications, saves answers, and allows skipping', async ({
   page,
 }) => {

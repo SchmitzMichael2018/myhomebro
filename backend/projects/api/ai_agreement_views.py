@@ -19,8 +19,8 @@ from projects.ai.agreement_milestone_writer import (
 )
 from projects.models import Agreement, Milestone
 from projects.services.ai_orchestrator import orchestrate_user_request
+from projects.services.ai.project_classifier import build_project_taxonomy_snapshot, classify_project_from_scope
 from projects.services.ai.project_drafter import draft_project_structure
-from projects.services.ai.project_drafter import classify_project_classification
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 
 logger = logging.getLogger(__name__)
@@ -116,19 +116,33 @@ def ai_agreement_description(request):
             "_mode": (request.data.get("mode") or "").strip(),
         }
 
+    taxonomy = build_project_taxonomy_snapshot(contractor=contractor)
+    classification = classify_project_from_scope(
+        description=out.get("description", raw_description),
+        scope=out.get("description", raw_description),
+        taxonomy=taxonomy,
+        current_values={
+            "project_title": raw_project_title,
+            "project_type": raw_project_type,
+            "project_subtype": raw_project_subtype,
+        },
+        contractor=contractor,
+    )
+
     payload = {
         "detail": "OK",
         "description": out["description"],
         "_mode": out.get("_mode"),
         "_model": out.get("_model"),
-        "project_title": out.get("project_title", raw_project_title),
-        "project_type": out.get("project_type", raw_project_type),
-        "project_subtype": out.get("project_subtype", raw_project_subtype),
+        "project_title": classification.get("project_title") or out.get("project_title", raw_project_title),
+        "project_type": classification.get("project_type") or out.get("project_type", raw_project_type),
+        "project_subtype": classification.get("project_subtype") or out.get("project_subtype", raw_project_subtype),
         "recommendation_source": out.get("recommendation_source", "ai"),
-        "confidence": out.get("confidence", "recommended"),
-        "confidence_label": out.get("confidence_label", ""),
+        "confidence": classification.get("confidence") or out.get("confidence", "recommended"),
+        "confidence_label": classification.get("confidence_label") or out.get("confidence_label", ""),
         "next_step_guidance": out.get("next_step_guidance", ""),
-        "reason": out.get("reason", ""),
+        "reason": classification.get("reason") or out.get("reason", ""),
+        "classification": classification,
         **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)
@@ -476,13 +490,19 @@ def ai_classify_project(request):
             "Add a description or scope before improving the classification.",
         )
 
+    taxonomy = build_project_taxonomy_snapshot(contractor=contractor)
+
     try:
-        result = classify_project_classification(
-            project_title=raw_project_title,
+        result = classify_project_from_scope(
             description=raw_description,
-            scope_text=raw_scope or raw_description,
-            requested_type=raw_project_type,
-            requested_subtype=raw_project_subtype,
+            scope=raw_scope or raw_description,
+            taxonomy=taxonomy,
+            current_values={
+                "project_title": raw_project_title,
+                "project_type": raw_project_type,
+                "project_subtype": raw_project_subtype,
+            },
+            contractor=contractor,
         )
     except Exception as exc:
         logger.exception("AI classify project failed")
@@ -497,6 +517,7 @@ def ai_classify_project(request):
     payload = {
         "detail": "OK",
         **result,
+        "classification": result,
         **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)

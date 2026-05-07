@@ -25,7 +25,8 @@ from projects.ai.agreement_milestone_writer import (
     _shape_milestone_rows_for_clarifications,
     suggest_scope_and_milestones,
 )
-from projects.services.ai.project_drafter import classify_type_subtype
+from projects.services.ai.project_classifier import build_project_taxonomy_snapshot, classify_project_from_scope
+from projects.services.ai.project_drafter import classify_project_classification, classify_type_subtype
 from projects.admin import ProjectTemplateAdmin
 from projects.models import (
     Agreement,
@@ -68,6 +69,8 @@ from projects.models import (
     ProjectBenchmarkAggregate,
     RegionalBenchmarkAggregate,
     ProjectEmailReportLog,
+    ProjectSubtype,
+    ProjectType,
     ProjectStatus,
     PublicContractorLead,
     RecurrencePattern,
@@ -374,6 +377,37 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         AgreementAIScope.objects.create(agreement=agreement, answers=answers or {})
         return agreement
 
+    def _ensure_taxonomy(self, type_name, subtype_names):
+        project_type = (
+            ProjectType.objects.filter(
+                normalized_name=type_name.lower().replace(" ", "_"),
+                contractor__isnull=True,
+            )
+            .order_by("id")
+            .first()
+        )
+        if not project_type:
+            project_type = ProjectType.objects.create(name=type_name, is_system=True, sort_order=15)
+        for idx, subtype_name in enumerate(subtype_names, start=1):
+            subtype = (
+                ProjectSubtype.objects.filter(
+                    project_type=project_type,
+                    normalized_name=subtype_name.lower().replace(" ", "_"),
+                    contractor__isnull=True,
+                )
+                .order_by("id")
+                .first()
+            )
+            if subtype:
+                continue
+            ProjectSubtype.objects.create(
+                project_type=project_type,
+                name=subtype_name,
+                is_system=True,
+                sort_order=20 + idx,
+            )
+        return project_type
+
     def _mock_openai_response(self, milestones):
         payload = {
             "scope_text": "AI generated scope text",
@@ -465,6 +499,179 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(project_type, "Remodel")
         self.assertEqual(project_subtype, "Wet Bar Installation")
         self.assertIn("wet bar", reason.lower())
+
+    def test_classify_type_subtype_prefers_outdoor_kitchen_over_wet_bar(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Outdoor Kitchen",
+            description=(
+                "Build an outdoor kitchen with weather-resistant cabinets, countertop, sink, "
+                "lighting, and patio electrical work."
+            ),
+            scope_text=(
+                "Outdoor kitchen scope includes weather-resistant cabinetry, countertop, sink, "
+                "and outdoor electrical/plumbing."
+            ),
+            requested_type="Remodel",
+            requested_subtype="Wet Bar Installation",
+        )
+
+        self.assertEqual(project_type, "Outdoor Living")
+        self.assertEqual(project_subtype, "Outdoor Kitchen")
+        self.assertIn("outdoor-kitchen", reason.lower())
+
+    def test_classify_type_subtype_prefers_patio_extension_over_wet_bar(self):
+        project_type, project_subtype, reason = classify_type_subtype(
+            project_title="Patio extension",
+            description="Extend the patio and add weather-resistant cabinets and an outdoor sink.",
+            scope_text="Patio extension with weather-resistant cabinets and an outdoor sink.",
+            requested_type="Remodel",
+            requested_subtype="Wet Bar Installation",
+        )
+
+        self.assertEqual(project_type, "Outdoor Living")
+        self.assertEqual(project_subtype, "Patio Extension")
+        self.assertIn("outdoor", reason.lower())
+
+    def test_classify_project_classification_labels_outdoor_kitchen(self):
+        result = classify_project_classification(
+            project_title="Outdoor Kitchen",
+            description=(
+                "Build an outdoor kitchen with weather-resistant cabinets, countertop, sink, "
+                "lighting, and patio electrical work."
+            ),
+            scope_text=(
+                "Outdoor kitchen scope includes weather-resistant cabinetry, countertop, sink, "
+                "and outdoor electrical/plumbing."
+            ),
+            requested_type="Wet Bar Installation",
+            requested_subtype="Wet Bar Installation",
+        )
+
+        self.assertEqual(result["project_type"], "Outdoor Living")
+        self.assertEqual(result["project_subtype"], "Outdoor Kitchen")
+        self.assertEqual(result["project_title"], "Outdoor Kitchen")
+        self.assertIn("outdoor", result["classification_reason"].lower())
+
+    def test_classify_project_from_scope_prefers_outdoor_kitchen_and_reports_confidence(self):
+        self._ensure_taxonomy("Outdoor Living", ["Outdoor Kitchen", "Patio Extension", "Grill Island", "Pergola / Patio Cover"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Outdoor Living",
+                "project_subtype": "Outdoor Kitchen",
+                "project_title": "Outdoor Kitchen",
+                "confidence": "high",
+                "reason": "The scope centers on outdoor cabinetry, countertop, sink, and grill work.",
+                "recommended_custom_subtype": None,
+                "alternatives": [
+                    {
+                        "project_type": "Remodel",
+                        "project_subtype": "Wet Bar Installation",
+                        "project_title": "Wet Bar Installation",
+                    }
+                ],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="Outdoor kitchen with grill and sink.",
+                scope="Outdoor kitchen with weather-resistant cabinets, an outdoor sink, and grill island.",
+                taxonomy=taxonomy,
+                current_values={
+                    "project_type": "Remodel",
+                    "project_subtype": "Wet Bar Installation",
+                    "project_title": "Wet Bar Installation",
+                },
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Outdoor Living")
+        self.assertEqual(result["project_subtype"], "Outdoor Kitchen")
+        self.assertEqual(result["project_title"], "Outdoor Kitchen")
+        self.assertEqual(result["confidence"], "high")
+        self.assertIn("outdoor", result["reason"].lower())
+
+    def test_classify_project_from_scope_rejects_invalid_pair_and_falls_back(self):
+        self._ensure_taxonomy("Outdoor Living", ["Outdoor Kitchen", "Patio Extension", "Grill Island", "Pergola / Patio Cover"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Electrical",
+                "project_subtype": "Rewire",
+                "project_title": "Electrical Rewire",
+                "confidence": "high",
+                "reason": "Incorrectly suggested electrical work.",
+                "alternatives": [],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="Outdoor kitchen with weather-resistant cabinetry and sink.",
+                scope="Outdoor kitchen with weather-resistant cabinets, countertop, sink, and grill island.",
+                taxonomy=taxonomy,
+                current_values={},
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Outdoor Living")
+        self.assertIn(
+            result["project_subtype"],
+            {"Outdoor Kitchen", "Patio Extension", "Outdoor Bar", "Grill Island", "Pergola / Patio Cover", ""},
+        )
+        self.assertIn("outdoor", result["reason"].lower())
+        self.assertIn(result["confidence"], {"medium", "low"})
+
+    def test_classify_project_from_scope_prefers_media_room_over_painting(self):
+        self._ensure_taxonomy("Remodel", ["Home Theater / Media Room", "Wet Bar Installation", "Basement"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Painting",
+                "project_subtype": "Interior",
+                "project_title": "Painting Project",
+                "confidence": "medium",
+                "reason": "Scope mentions AV wiring, framing, drywall, and projector/speaker installation.",
+                "alternatives": [],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="Movie entertainment room buildout.",
+                scope="Add AV wiring, projector mount, speaker system, framing, drywall, and lighting zones.",
+                taxonomy=taxonomy,
+                current_values={"project_type": "Painting", "project_subtype": "Interior", "project_title": "Painting Project"},
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Remodel")
+        self.assertEqual(result["project_subtype"], "Home Theater / Media Room")
+        self.assertEqual(result["project_title"], "Home Theater Installation")
+
+    def test_classify_project_from_scope_prefers_junk_removal_over_repair(self):
+        self._ensure_taxonomy("Junk Removal", ["Junk Removal", "Debris Removal", "Appliance Removal", "Furniture Removal", "Construction Debris Removal"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Repair",
+                "project_subtype": "Faucet Repair",
+                "project_title": "Faucet Repair",
+                "confidence": "medium",
+                "reason": "The scope is junk and debris removal.",
+                "alternatives": [],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="Junk Removal",
+                scope="Remove old furniture, appliances, and construction debris from the garage.",
+                taxonomy=taxonomy,
+                current_values={"project_type": "Repair", "project_subtype": "Faucet Repair", "project_title": "Faucet Repair"},
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Junk Removal")
+        self.assertEqual(result["project_subtype"], "Junk Removal")
+        self.assertEqual(result["project_title"], "Junk Removal")
 
     def test_classify_type_subtype_allows_electrical_when_dominant(self):
         project_type, project_subtype, reason = classify_type_subtype(
@@ -3878,6 +4085,7 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["ai_access"], "included")
         self.assertTrue(payload["ai_enabled"])
         self.assertTrue(payload["ai_unlimited"])
+        self.assertIn("classification", payload)
 
     def test_ai_agreement_description_falls_back_when_ai_fails(self):
         with patch(
@@ -3901,6 +4109,7 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["project_subtype"], "Siding Replacement")
         self.assertIn("Recommended from your description", payload["confidence_label"])
         self.assertTrue(payload["description"])
+        self.assertIn("classification", payload)
 
     def test_ai_agreement_description_falls_back_to_basement_for_finish_basement(self):
         with patch(
@@ -3977,6 +4186,8 @@ class AIFreeAccessRegressionTests(TestCase):
             },
         )
         self.assertEqual(payload["detail"], "OK")
+        self.assertIn("classification", payload)
+        self.assertEqual(payload["classification"]["project_type"], "Junk Removal")
         self.assertNotIn("scope_of_work", payload)
 
     def test_ai_agreement_description_accepts_unsaved_payload_without_agreement(self):
@@ -4009,6 +4220,8 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["description"], "AI-generated scope")
         self.assertEqual(payload["project_type"], "Siding")
         self.assertEqual(payload["project_subtype"], "Siding Replacement")
+        self.assertIn("classification", payload)
+        self.assertEqual(payload["classification"]["project_type"], "Siding")
 
     def test_ai_agreement_description_requires_input(self):
         response = self.client.post(

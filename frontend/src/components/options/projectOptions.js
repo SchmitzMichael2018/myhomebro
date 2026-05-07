@@ -20,6 +20,7 @@ export const PROJECT_TYPES = [
   { value: "Painting", label: "Painting" },
   { value: "Flooring", label: "Flooring" },
   { value: "Junk Removal", label: "Junk Removal" },
+  { value: "Outdoor Living", label: "Outdoor Living" },
 
   // Step1-only labels preserved so existing data still round-trips
   { value: "Installation", label: "Installation" },
@@ -52,6 +53,14 @@ export const SUBTYPES_BY_TYPE = {
   Roofing: ["Asphalt Shingle", "Metal", "Flat", "Repair", "Inspection"],
   Siding: ["Siding Replacement", "Siding Repair"],
   Pool: ["Inground Pool and Pool House", "Pool House Construction", "Pool Installation"],
+  "Outdoor Living": [
+    "Outdoor Kitchen",
+    "Patio Kitchen",
+    "Outdoor Bar",
+    "Grill Island",
+    "Patio Extension",
+    "Pergola / Patio Cover",
+  ],
   Electrical: ["Panel", "Rewire", "Lighting", "EV Charger"],
   Plumbing: ["Repipe", "Water Heater", "Leak", "Drain"],
   Landscaping: ["Sod", "Irrigation", "Hardscape", "Trees"],

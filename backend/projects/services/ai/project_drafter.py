@@ -42,6 +42,11 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
         "retaining wall", "outdoor", "fire pit", "shed", "outbuilding",
         "garage", "carport", "storage shed", "tool shed", "garden shed", "backyard shed",
     ],
+    "Outdoor Living": [
+        "outdoor kitchen", "patio kitchen", "grill island", "outdoor bar", "patio extension",
+        "outdoor living", "weather-resistant cabinets", "weather resistant cabinets",
+        "outdoor countertop", "outdoor sink", "outdoor cooking",
+    ],
     "Concrete": [
         "concrete", "slab", "slab pour", "pour slab", "cement",
         "driveway", "sidewalk", "pad", "foundation pour",
@@ -126,6 +131,13 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Inground Pool and Pool House": ["inground pool", "in-ground pool", "pool house", "pool installation", "pool remodel"],
         "Pool House Construction": ["pool house construction", "pool house", "pool pavilion", "pool cabana"],
         "Pool Installation": ["pool installation", "new pool", "pool build", "pool project"],
+    },
+    "Outdoor Living": {
+        "Outdoor Kitchen": ["outdoor kitchen", "patio kitchen", "outdoor cooking", "weather-resistant cabinets", "weather resistant cabinets", "outdoor countertop", "outdoor sink"],
+        "Patio Kitchen": ["patio kitchen", "outdoor kitchen", "patio cooking surface"],
+        "Outdoor Bar": ["outdoor bar", "backyard bar", "patio bar"],
+        "Grill Island": ["grill island", "bbq island", "bbq station"],
+        "Patio Extension": ["patio extension", "patio expansion", "extend patio"],
     },
     "Junk Removal": {
         "Junk Removal": ["junk removal", "debris removal", "haul away", "haul-away", "trash out"],
@@ -628,6 +640,53 @@ def classify_type_subtype(
             "Detected media-room scope. Using type 'Remodel' and subtype 'Home Theater / Media Room'.",
         )
 
+    outdoor_kitchen_signals = [
+        "outdoor kitchen",
+        "patio kitchen",
+        "grill island",
+        "outdoor bar",
+        "patio extension",
+        "weather resistant cabinet",
+        "weather-resistant cabinet",
+        "outdoor countertop",
+        "outdoor sink",
+        "outdoor cooking",
+        "grill station",
+        "backyard kitchen",
+    ]
+    outdoor_kitchen_hits = sum(1 for sig in outdoor_kitchen_signals if sig in hay_norm)
+    outdoor_context_hits = sum(
+        1 for sig in ["outdoor", "patio", "backyard", "outside", "exterior", "grill", "al fresco"] if sig in hay_norm
+    )
+    if "patio extension" in hay_norm or "patio expansion" in hay_norm or "extend patio" in hay_norm:
+        return (
+            "Outdoor Living",
+            "Patio Extension",
+            "Detected outdoor-living scope. Using type 'Outdoor Living' and subtype 'Patio Extension'.",
+        )
+    if "grill island" in hay_norm or "bbq island" in hay_norm or "bbq station" in hay_norm:
+        return (
+            "Outdoor Living",
+            "Grill Island",
+            "Detected outdoor-living scope. Using type 'Outdoor Living' and subtype 'Grill Island'.",
+        )
+    if "outdoor bar" in hay_norm or "backyard bar" in hay_norm or "patio bar" in hay_norm:
+        return (
+            "Outdoor Living",
+            "Outdoor Bar",
+            "Detected outdoor-living scope. Using type 'Outdoor Living' and subtype 'Outdoor Bar'.",
+        )
+    if outdoor_kitchen_hits >= 2 or (
+        outdoor_kitchen_hits >= 1 and outdoor_context_hits >= 1
+    ) or (
+        "kitchen" in hay_norm and outdoor_context_hits >= 2
+    ):
+        return (
+            "Outdoor Living",
+            "Outdoor Kitchen",
+            "Detected outdoor-kitchen scope. Using type 'Outdoor Living' and subtype 'Outdoor Kitchen'.",
+        )
+
     junk_removal_signals = [
         "junk removal",
         "debris removal",
@@ -696,7 +755,9 @@ def classify_type_subtype(
     lighting_signals = ["lighting", "light fixture", "recessed light", "light install", "under-cabinet light"]
     wet_bar_signal_count = sum(1 for sig in wet_bar_signals if sig in hay_norm)
     wet_bar_support_count = sum(1 for sig in cabinetry_signals + plumbing_signals + lighting_signals if sig in hay_norm)
-    if wet_bar_signal_count or wet_bar_support_count >= 3:
+    if (wet_bar_signal_count or wet_bar_support_count >= 3) and not any(
+        sig in hay_norm for sig in ["outdoor", "patio", "backyard", "outside", "exterior", "grill"]
+    ):
         if wet_bar_signal_count or wet_bar_support_count >= 4 or sum(1 for sig in cabinetry_signals + plumbing_signals if sig in hay_norm) >= 2:
             return "Remodel", "Wet Bar Installation", "Detected wet-bar/remodel scope. Using type 'Remodel' and subtype 'Wet Bar Installation'."
 
@@ -733,6 +794,10 @@ def build_classification_title(project_type: str, project_subtype: str, project_
         return "Siding Replacement"
     if project_type == "Pool" and project_subtype == "Inground Pool and Pool House":
         return "Inground Pool and Pool House"
+    if project_type == "Outdoor Living":
+        if project_subtype in {"Outdoor Kitchen", "Patio Kitchen", "Outdoor Bar", "Grill Island", "Patio Extension"}:
+            return project_subtype
+        return "Outdoor Kitchen"
     if project_type == "Roofing" and project_subtype == "Roof Replacement":
         return "Roof Replacement"
     if project_type == "Painting":
@@ -760,19 +825,26 @@ def classify_project_classification(
     requested_type: str = "",
     requested_subtype: str = "",
 ) -> dict[str, str]:
-    project_type, project_subtype, reason = classify_type_subtype(
-        project_title=project_title,
+    from projects.services.ai.project_classifier import classify_project_from_scope
+
+    classification = classify_project_from_scope(
         description=description,
-        scope_text=scope_text,
-        requested_type=requested_type,
-        requested_subtype=requested_subtype,
+        scope=scope_text or description,
+        current_values={
+            "project_title": project_title,
+            "project_type": requested_type,
+            "project_subtype": requested_subtype,
+        },
     )
-    title = build_classification_title(project_type, project_subtype, project_title, scope_text or description)
     return {
-        "project_type": project_type,
-        "project_subtype": project_subtype,
-        "project_title": title,
-        "classification_reason": reason,
+        "project_type": classification.get("project_type", ""),
+        "project_subtype": classification.get("project_subtype", ""),
+        "project_title": classification.get("project_title", ""),
+        "classification_reason": classification.get("reason", ""),
+        "confidence": classification.get("confidence", "low"),
+        "confidence_label": classification.get("confidence_label", ""),
+        "alternatives": classification.get("alternatives", []),
+        "recommended_custom_subtype": classification.get("recommended_custom_subtype", ""),
     }
 
 
@@ -807,6 +879,15 @@ def best_subtype_for_type(project_type: str, text: str) -> str:
             return "Pool House Construction"
         if any(sig in text_norm for sig in ["pool installation", "pool project", "pool"]):
             return "Pool Installation"
+    if project_type == "Outdoor Living":
+        if any(sig in text_norm for sig in ["patio extension", "patio expansion", "extend patio"]):
+            return "Patio Extension"
+        if any(sig in text_norm for sig in ["grill island", "bbq island", "bbq station"]):
+            return "Grill Island"
+        if any(sig in text_norm for sig in ["outdoor bar", "backyard bar", "patio bar"]):
+            return "Outdoor Bar"
+        if any(sig in text_norm for sig in ["patio kitchen", "outdoor kitchen", "outdoor cooking", "weather-resistant cabinets", "weather resistant cabinets", "outdoor countertop", "outdoor sink"]):
+            return "Outdoor Kitchen"
     if project_type == "Siding":
         if any(sig in text_norm for sig in ["siding replacement", "replace siding", "new siding", "siding install", "siding"]):
             return "Siding Replacement"
@@ -1144,19 +1225,29 @@ def draft_project_structure(
     if not normalized_description:
         normalized_description = f"{project_subtype or project_type} project: {project_title}".strip(": ")
 
-    refined_project_type, refined_project_subtype, refined_type_reason = classify_type_subtype(
-        project_title=project_title,
-        description=description,
-        scope_text=normalized_description,
-        requested_type=project_type,
-        requested_subtype=project_subtype,
+    from projects.services.ai.project_classifier import (
+        build_project_taxonomy_snapshot,
+        classify_project_from_scope,
     )
-    if refined_project_type:
-        project_type = refined_project_type
-    if refined_project_subtype:
-        project_subtype = refined_project_subtype
-    if refined_type_reason:
-        type_reason = refined_type_reason
+
+    taxonomy = build_project_taxonomy_snapshot(contractor=contractor)
+    classification = classify_project_from_scope(
+        description=description,
+        scope=normalized_description,
+        taxonomy=taxonomy,
+        current_values={
+            "project_title": project_title,
+            "project_type": requested_type or project_type,
+            "project_subtype": requested_subtype or project_subtype,
+        },
+        contractor=contractor,
+    )
+    if classification.get("project_type"):
+        project_type = classification["project_type"]
+    if classification:
+        project_subtype = classification.get("project_subtype") or ""
+    if classification.get("reason"):
+        type_reason = classification["reason"]
 
     pricing_summary = estimate_project_total(
         project_type=project_type,
@@ -1249,6 +1340,7 @@ def draft_project_structure(
         "project_type": project_type,
         "project_subtype": project_subtype,
         "classification_reason": type_reason,
+        "classification": classification,
         "taxonomy_warning": taxonomy_warning,
         "normalized_description": normalized_description,
         "suggested_template": suggested_template,
