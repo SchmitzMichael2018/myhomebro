@@ -415,7 +415,7 @@ def _call_openai_classifier(
             "project_title": {"type": "string"},
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
             "reason": {"type": "string"},
-            "recommended_custom_subtype": {"type": ["string", "null"]},
+            "recommended_custom_subtype": {"type": "string"},
             "alternatives": {
                 "type": "array",
                 "items": {
@@ -437,6 +437,7 @@ def _call_openai_classifier(
             "confidence",
             "reason",
             "alternatives",
+            "recommended_custom_subtype",
         ],
         "additionalProperties": False,
     }
@@ -462,22 +463,25 @@ def _call_openai_classifier(
     )
 
     client = OpenAI(api_key=api_key)
-    resp = client.responses.create(
-        model=model,
-        input=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "project_classification",
-                "strict": True,
-                "schema": schema,
+    try:
+        resp = client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "project_classification",
+                    "schema": schema,
+                    "strict": True,
+                }
             },
-        },
-        temperature=0.1,
-    )
+        )
+    except Exception as exc:
+        logger.warning("OpenAI classifier API call failed: %s", exc)
+        return None
 
     text = getattr(resp, "output_text", "") or ""
     if not text and isinstance(getattr(resp, "output", None), list):

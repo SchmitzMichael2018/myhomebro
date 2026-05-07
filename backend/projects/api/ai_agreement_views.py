@@ -117,17 +117,21 @@ def ai_agreement_description(request):
         }
 
     taxonomy = build_project_taxonomy_snapshot(contractor=contractor)
-    classification = classify_project_from_scope(
-        description=out.get("description", raw_description),
-        scope=out.get("description", raw_description),
-        taxonomy=taxonomy,
-        current_values={
-            "project_title": raw_project_title,
-            "project_type": raw_project_type,
-            "project_subtype": raw_project_subtype,
-        },
-        contractor=contractor,
-    )
+    try:
+        classification = classify_project_from_scope(
+            description=out.get("description", raw_description),
+            scope=out.get("description", raw_description),
+            taxonomy=taxonomy,
+            current_values={
+                "project_title": raw_project_title,
+                "project_type": raw_project_type,
+                "project_subtype": raw_project_subtype,
+            },
+            contractor=contractor,
+        )
+    except Exception:
+        logger.exception("Classification failed during description generation; continuing without it.")
+        classification = {}
 
     payload = {
         "detail": "OK",

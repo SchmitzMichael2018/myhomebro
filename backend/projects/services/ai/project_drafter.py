@@ -706,10 +706,13 @@ def classify_type_subtype(
         "demo debris",
         "construction debris",
     ]
-    junk_hits = sum(1 for sig in junk_removal_signals if sig in hay_norm)
+    # Check signals only in description+scope — not in project_title, which may be stale and would
+    # cause false positives (e.g. previous "Junk Removal" title poisoning a garage door scope).
+    desc_scope_norm = _norm_text(f"{description}\n{scope_text}")
+    junk_hits = sum(1 for sig in junk_removal_signals if sig in desc_scope_norm)
     if junk_hits >= 2 or (
-        junk_hits >= 1 and any(sig in hay_norm for sig in ["sofa", "couch", "mattress", "appliance", "furniture", "debris", "trash", "remove"])
-    ) or ("junk" in hay_norm and "remove" in hay_norm):
+        junk_hits >= 1 and any(sig in desc_scope_norm for sig in ["sofa", "couch", "mattress", "appliance", "furniture", "debris", "trash", "remove"])
+    ) or ("junk removal" in desc_scope_norm):
         return (
             "Junk Removal",
             "Junk Removal",
