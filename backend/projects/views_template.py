@@ -33,6 +33,7 @@ class TemplateListCreateView(APIView):
         contractor = get_request_contractor(request.user)
         project_type = request.query_params.get("project_type", "").strip()
         project_subtype = request.query_params.get("project_subtype", "").strip()
+        query = request.query_params.get("q", "").strip()
         include_inactive = request.query_params.get("include_inactive", "false").lower() == "true"
 
         qs = ProjectTemplate.objects.annotate(
@@ -55,6 +56,20 @@ class TemplateListCreateView(APIView):
                 qs = subtype_qs
             else:
                 qs = qs.filter(Q(project_subtype__isnull=True) | Q(project_subtype=""))
+
+        if query:
+            query_qs = qs.filter(
+                Q(name__icontains=query)
+                | Q(project_type__icontains=query)
+                | Q(project_subtype__icontains=query)
+                | Q(description__icontains=query)
+                | Q(default_scope__icontains=query)
+                | Q(exclusions_text__icontains=query)
+                | Q(assumptions_text__icontains=query)
+                | Q(project_materials_hint__icontains=query)
+            )
+            if query_qs.exists():
+                qs = query_qs
 
         qs = qs.order_by("-is_system_template", "name")
 

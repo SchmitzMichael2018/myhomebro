@@ -19,6 +19,39 @@ function normalizeList(data) {
   return [];
 }
 
+function normalizeSearchText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const HVAC_ALIAS_PATTERNS = [
+  /\bcentral\s+ac\s+install(?:ation)?\b/g,
+  /\bcentral\s+air\s+install(?:ation)?\b/g,
+  /\bair\s+conditioner\s+install(?:ation)?\b/g,
+  /\bhvac\s+install(?:ation)?\b/g,
+  /\bcooling\s+system\s+install(?:ation)?\b/g,
+  /\bac\s+install(?:ation)?\b/g,
+  /\binstall\s+air\s+conditioner\b/g,
+  /\binstall\s+central\s+ac\b/g,
+  /\binstall\s+central\s+air\b/g,
+  /\binstall\s+hvac\b/g,
+  /\binstall\s+cooling\s+system\b/g,
+];
+
+function canonicalizeHvacText(text) {
+  let normalized = normalizeSearchText(text);
+  if (!normalized) return "";
+
+  for (const pattern of HVAC_ALIAS_PATTERNS) {
+    normalized = normalized.replace(pattern, " central air installation ");
+  }
+
+  return normalizeSearchText(normalized);
+}
+
 function sameText(a, b) {
   return safeTrim(a).toLowerCase() === safeTrim(b).toLowerCase();
 }
@@ -48,8 +81,25 @@ function normalizeRecommendationLevel(value) {
 }
 
 function templateText(template) {
-  return [template?.name, template?.description, template?.default_scope, template?.project_type, template?.project_subtype]
-    .map((value) => safeTrim(value).toLowerCase())
+  const clarificationText = Array.isArray(template?.default_clarifications)
+    ? template.default_clarifications
+        .map((item) => normalizeSearchText(typeof item === "string" ? item : JSON.stringify(item || "")))
+        .filter(Boolean)
+        .join(" ")
+    : "";
+
+  return [
+    template?.name,
+    template?.description,
+    template?.default_scope,
+    template?.exclusions_text,
+    template?.assumptions_text,
+    template?.project_materials_hint,
+    template?.project_type,
+    template?.project_subtype,
+    clarificationText,
+  ]
+    .map((value) => canonicalizeHvacText(value))
     .filter(Boolean)
     .join(" ");
 }
@@ -173,9 +223,9 @@ function attachMatchMeta(templates, projectType, projectSubtype, projectFamilyCo
 
 function filterTemplatesForVisibleList(templates, projectType, projectSubtype, search, projectFamilyContext = {}) {
   const list = Array.isArray(templates) ? templates : [];
-  const q = safeTrim(search).toLowerCase();
-  const typeVal = safeTrim(projectType).toLowerCase();
-  const subtypeVal = safeTrim(projectSubtype).toLowerCase();
+  const q = canonicalizeHvacText(search);
+  const typeVal = canonicalizeHvacText(projectType);
+  const subtypeVal = canonicalizeHvacText(projectSubtype);
   const familyProfile = getProjectFamilyProfile(projectFamilyContext?.project_family_key || "");
   const familyMatch = familyProfile.isGeneric ? [] : list.filter((tpl) => scoreFamilyMatch(tpl, familyProfile).matched);
 
@@ -211,17 +261,7 @@ function filterTemplatesForVisibleList(templates, projectType, projectSubtype, s
   if (!q) return narrowed;
 
   return narrowed.filter((tpl) => {
-    const name = safeTrim(tpl?.name).toLowerCase();
-    const type = safeTrim(tpl?.project_type).toLowerCase();
-    const subtype = safeTrim(tpl?.project_subtype).toLowerCase();
-    const desc = safeTrim(tpl?.description).toLowerCase();
-
-    return (
-      name.includes(q) ||
-      type.includes(q) ||
-      subtype.includes(q) ||
-      desc.includes(q)
-    );
+    return templateText(tpl).includes(q);
   });
 }
 
@@ -329,6 +369,10 @@ export default function useStep1Templates({
   const currentProjectSubtype = safeTrim(dLocal?.project_subtype);
   const currentTitle = safeTrim(dLocal?.project_title);
   const currentDescription = safeTrim(dLocal?.description);
+  const debugTemplateMatch =
+    typeof import.meta !== "undefined" &&
+    !!import.meta?.env &&
+    (import.meta.env.DEV || import.meta.env.MODE === "test");
   const resolvedProjectFamily = useMemo(
     () => {
       const base = getProjectFamilyProfile(projectFamilyContext?.project_family_key || "");
@@ -496,10 +540,24 @@ export default function useStep1Templates({
         params.project_type = currentProjectType;
       }
 
+      const searchQuery = safeTrim(templateSearch) || currentTitle || currentDescription;
+      if (searchQuery) {
+        params.q = searchQuery;
+      }
+
       const { data } = await api.get("/projects/templates/", { params });
       const rows = sortTemplates(normalizeList(data));
 
       setTemplates(rows);
+
+      if (debugTemplateMatch) {
+        console.debug("[Step1 templates] loaded", {
+          count: rows.length,
+          query: searchQuery || "",
+          projectType: currentProjectType,
+          projectSubtype: currentProjectSubtype,
+        });
+      }
 
       setSelectedTemplateId((prev) => {
         if (prev && rows.some((t) => String(t.id) === String(prev))) return prev;
@@ -519,6 +577,9 @@ export default function useStep1Templates({
     locked,
     currentProjectType,
     currentProjectSubtype,
+    currentTitle,
+    currentDescription,
+    templateSearch,
     resetRecommendationState,
     resolvedProjectFamily.project_family_key,
     resolvedProjectFamily.project_family_label,
@@ -546,6 +607,11 @@ export default function useStep1Templates({
           params.project_subtype = currentProjectSubtype;
         } else if (currentProjectType) {
           params.project_type = currentProjectType;
+        }
+
+        const searchQuery = safeTrim(templateSearch) || currentTitle || currentDescription;
+        if (searchQuery) {
+          params.q = searchQuery;
         }
 
         const { data } = await api.get("/projects/templates/", { params });
@@ -585,6 +651,9 @@ export default function useStep1Templates({
     currentProjectType,
     currentProjectSubtype,
     recommendedCandidates,
+    currentTitle,
+    currentDescription,
+    templateSearch,
     resetRecommendationState,
     resolvedProjectFamily.project_family_key,
     resolvedProjectFamily.project_family_label,
@@ -702,6 +771,17 @@ export default function useStep1Templates({
               "No strong template match yet. You can continue with a blank agreement or generate milestones from the project scope."
             );
           }
+        }
+
+        if (debugTemplateMatch) {
+          console.debug("[Step1 templates] recommendation", {
+            count: classifiedCandidates.length,
+            selectedId: chosenId,
+            selectedName: chosen?.name || "",
+            score: backendScore,
+            confidence: backendConfidence,
+            reason: chosen?._matchReason || data?.reason || "",
+          });
         }
       } catch {
         if (cancelled) return;

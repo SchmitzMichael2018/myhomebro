@@ -20,6 +20,36 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip().lower())
 
 
+def _search_norm(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", (text or "").strip().lower())).strip()
+
+
+_HVAC_ALIAS_PATTERNS = [
+    r"\bcentral\s+ac\s+install(?:ation)?\b",
+    r"\bcentral\s+air\s+install(?:ation)?\b",
+    r"\bair\s+conditioner\s+install(?:ation)?\b",
+    r"\bhvac\s+install(?:ation)?\b",
+    r"\bcooling\s+system\s+install(?:ation)?\b",
+    r"\bac\s+install(?:ation)?\b",
+    r"\binstall\s+air\s+conditioner\b",
+    r"\binstall\s+central\s+ac\b",
+    r"\binstall\s+central\s+air\b",
+    r"\binstall\s+hvac\b",
+    r"\binstall\s+cooling\s+system\b",
+]
+
+
+def _canonical_hvac_text(text: str) -> str:
+    normalized = _search_norm(text)
+    if not normalized:
+        return ""
+
+    for pattern in _HVAC_ALIAS_PATTERNS:
+        normalized = re.sub(pattern, " central air installation ", normalized)
+
+    return _search_norm(normalized)
+
+
 def _tokens(text: str) -> set[str]:
     text = _norm(text)
     if not text:
@@ -316,10 +346,31 @@ def _project_signals(text: str) -> dict[str, bool]:
     }
 
 
-def _template_signals(template: ProjectTemplate) -> dict[str, bool]:
-    signature = _norm(
-        f"{template.name or ''} {template.project_type or ''} {template.project_subtype or ''} {template.description or ''}"
+def _template_signature_text(template: ProjectTemplate) -> str:
+    clarification_text = " ".join(
+        _search_norm(str(item))
+        for item in (getattr(template, "default_clarifications", None) or [])
+        if _search_norm(str(item))
     )
+    return _canonical_hvac_text(
+        " ".join(
+            [
+                template.name or "",
+                template.project_type or "",
+                template.project_subtype or "",
+                template.description or "",
+                getattr(template, "default_scope", "") or "",
+                getattr(template, "exclusions_text", "") or "",
+                getattr(template, "assumptions_text", "") or "",
+                getattr(template, "project_materials_hint", "") or "",
+                clarification_text,
+            ]
+        )
+    )
+
+
+def _template_signals(template: ProjectTemplate) -> dict[str, bool]:
+    signature = _template_signature_text(template)
     return _project_signals(signature)
 
 
@@ -372,18 +423,47 @@ def _type_bonus(template: ProjectTemplate, project_type: str, project_subtype: s
     return score, reasons
 
 
+def _title_bonus(template: ProjectTemplate, project_title: str, description: str) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
+
+    template_name = _canonical_hvac_text(template.name or "")
+    request_title = _canonical_hvac_text(project_title or "")
+    request_body = _canonical_hvac_text(" ".join(x for x in [project_title or "", description or ""] if x))
+
+    if template_name and request_title and template_name == request_title:
+        score += 240
+        reasons.append(f'exact title match: "{template.name}"')
+        return score, reasons
+
+    if template_name and request_body and template_name in request_body:
+        score += 200
+        reasons.append(f'title phrase match: "{template.name}"')
+        return score, reasons
+
+    if request_title and template_name and request_title in template_name:
+        score += 170
+        reasons.append(f'request phrase match: "{template.name}"')
+
+    return score, reasons
+
+
 def _keyword_bonus(template: ProjectTemplate, corpus: str) -> tuple[int, list[str]]:
-    text = _norm(corpus)
+    text = _canonical_hvac_text(corpus)
     reasons: list[str] = []
     score = 0
 
-    template_name = _norm(template.name)
-    subtype = _norm(template.project_subtype or "")
-    ptype = _norm(template.project_type or "")
-    desc = _norm(template.description or "")
+    template_name = _canonical_hvac_text(template.name)
+    subtype = _canonical_hvac_text(template.project_subtype or "")
+    ptype = _canonical_hvac_text(template.project_type or "")
+    desc = _canonical_hvac_text(template.description or "")
+    default_scope = _canonical_hvac_text(getattr(template, "default_scope", "") or "")
+    exclusions = _canonical_hvac_text(getattr(template, "exclusions_text", "") or "")
+    assumptions = _canonical_hvac_text(getattr(template, "assumptions_text", "") or "")
+    materials_hint = _canonical_hvac_text(getattr(template, "project_materials_hint", "") or "")
 
     if template_name and template_name in text:
-        score += 28
+        score += 42
         reasons.append(f'name phrase match: "{template.name}"')
 
     if subtype and subtype in text:
@@ -394,8 +474,36 @@ def _keyword_bonus(template: ProjectTemplate, corpus: str) -> tuple[int, list[st
         score += 12
         reasons.append(f'type phrase match: "{template.project_type}"')
 
+    if default_scope and default_scope in text:
+        score += 18
+        reasons.append("default scope phrase match")
+
+    if exclusions and exclusions in text:
+        score += 6
+        reasons.append("exclusions phrase match")
+
+    if assumptions and assumptions in text:
+        score += 6
+        reasons.append("assumptions phrase match")
+
+    if materials_hint and materials_hint in text:
+        score += 12
+        reasons.append("materials hint phrase match")
+
     corpus_tokens = _tokens(text)
-    template_tokens = _tokens(f"{template.name} {template.project_subtype} {template.description}")
+    template_tokens = _tokens(
+        " ".join(
+            [
+                template.name or "",
+                template.project_subtype or "",
+                template.description or "",
+                getattr(template, "default_scope", "") or "",
+                getattr(template, "exclusions_text", "") or "",
+                getattr(template, "assumptions_text", "") or "",
+                getattr(template, "project_materials_hint", "") or "",
+            ]
+        )
+    )
     overlap = _meaningful_overlap(corpus_tokens, template_tokens)
 
     if overlap:
@@ -589,6 +697,10 @@ def score_template(
 ) -> tuple[int, str]:
     total_score = 0
     reasons: list[str] = []
+
+    s0, r0 = _title_bonus(template, project_title, description)
+    total_score += s0
+    reasons.extend(r0)
 
     s1, r1 = _type_bonus(template, project_type, project_subtype)
     total_score += s1

@@ -44,6 +44,79 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function normalizeSearchText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const HVAC_ALIAS_PATTERNS = [
+  /\bcentral\s+ac\s+install(?:ation)?\b/g,
+  /\bcentral\s+air\s+install(?:ation)?\b/g,
+  /\bair\s+conditioner\s+install(?:ation)?\b/g,
+  /\bhvac\s+install(?:ation)?\b/g,
+  /\bcooling\s+system\s+install(?:ation)?\b/g,
+  /\bac\s+install(?:ation)?\b/g,
+  /\binstall\s+air\s+conditioner\b/g,
+  /\binstall\s+central\s+ac\b/g,
+  /\binstall\s+central\s+air\b/g,
+  /\binstall\s+hvac\b/g,
+  /\binstall\s+cooling\s+system\b/g,
+];
+
+function canonicalizeHvacText(text) {
+  let normalized = normalizeSearchText(text);
+  if (!normalized) return "";
+  for (const pattern of HVAC_ALIAS_PATTERNS) {
+    normalized = normalized.replace(pattern, " central air installation ");
+  }
+  return normalizeSearchText(normalized);
+}
+
+function templateMatchBlob(row) {
+  return canonicalizeHvacText(
+    [
+      row?.name,
+      row?.project_type,
+      row?.project_subtype,
+      row?.description,
+      row?.default_scope,
+      row?.exclusions_text,
+      row?.assumptions_text,
+      row?.project_materials_hint,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function scoreTemplateMatch(row, payload) {
+  const requestTitle = canonicalizeHvacText(payload?.project_title || "");
+  const requestBody = canonicalizeHvacText(
+    [payload?.project_title, payload?.project_type, payload?.project_subtype, payload?.description]
+      .filter(Boolean)
+      .join(" ")
+  );
+  const templateName = canonicalizeHvacText(row?.name || "");
+  const templateType = canonicalizeHvacText(row?.project_type || "");
+  const templateSubtype = canonicalizeHvacText(row?.project_subtype || "");
+  const haystack = templateMatchBlob(row);
+
+  let score = 0;
+
+  if (requestTitle && templateName && requestTitle === templateName) score += 240;
+  else if (templateName && requestBody && requestBody.includes(templateName)) score += 200;
+  else if (requestBody && templateName && templateName.includes(requestBody)) score += 170;
+
+  if (templateName && haystack.includes(templateName)) score += 10;
+  if (templateType && requestBody.includes(templateType)) score += 12;
+  if (templateSubtype && requestBody.includes(templateSubtype)) score += 18;
+
+  return score;
+}
+
 function buildMilestone(id, title, description, sort_order = 1) {
   return {
     id,
@@ -466,12 +539,11 @@ async function installTemplateRoutes(page, store) {
 
   await page.route('**/api/projects/templates/recommend/', async (route) => {
     const payload = route.request().postDataJSON();
-    const subtype = String(payload?.project_subtype || '').toLowerCase();
-    const description = String(payload?.description || '').toLowerCase();
-    const match = store.templates.find((row) => {
-      const rowSubtype = String(row.project_subtype || '').toLowerCase();
-      return rowSubtype && (rowSubtype === subtype || description.includes(rowSubtype));
-    });
+    const ranked = store.templates
+      .map((row) => ({ row, score: scoreTemplateMatch(row, payload) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || String(a.row.name).localeCompare(String(b.row.name)));
+    const match = ranked[0]?.row || null;
 
     await route.fulfill({
       status: 200,
@@ -479,15 +551,23 @@ async function installTemplateRoutes(page, store) {
       body: JSON.stringify(
         match
           ? {
-              confidence: 'strong',
+              confidence: ranked[0].score >= 90 ? 'recommended' : 'possible',
+              confidence_level: ranked[0].score >= 90 ? 'high' : 'medium',
               recommended_template: clone(match),
-              candidates: [clone(match)],
-              reason: `${match.name} matches the resolved project subtype and scope.`,
-              detail: 'Strong template recommendation found.',
+              possible_match: ranked[0].score >= 90 ? null : clone(match),
+              candidates: ranked.slice(0, 5).map((item) => ({
+                ...clone(item.row),
+                score: item.score,
+                reason: `${item.row.name} matched the current request.`,
+              })),
+              reason: `${match.name} matches the current request.`,
+              detail: ranked[0].score >= 90 ? 'Strong template recommendation found.' : 'Possible template match found.',
             }
           : {
               confidence: 'none',
+              confidence_level: 'low',
               recommended_template: null,
+              possible_match: null,
               candidates: [],
               reason: 'No strong template match.',
               detail: 'No strong template recommendation.',
@@ -499,10 +579,15 @@ async function installTemplateRoutes(page, store) {
   await page.route(/\/api\/projects\/templates\/?(\?.*)?$/, async (route) => {
     const request = route.request();
     if (request.method() === 'GET') {
+      const url = new URL(request.url());
+      const query = canonicalizeHvacText(url.searchParams.get('q') || '');
+      const results = !query
+        ? store.templates.map((row) => clone(row))
+        : store.templates.filter((row) => templateMatchBlob(row).includes(query)).map((row) => clone(row));
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ results: store.templates.map((row) => clone(row)) }),
+        body: JSON.stringify({ results }),
       });
       return;
     }
@@ -1762,4 +1847,155 @@ test('wizard save as template stores the current setup and supports reuse in a l
   await expect(page.getByText('Demo & prep')).toBeVisible();
   await expect(page.getByText('Waterproof & tile')).toBeVisible();
   await expect(page.getByText('Fixtures & walkthrough')).toBeVisible();
+});
+
+async function exerciseCentralAirTemplateMatch(page, agreement, milestoneState, template, prompt) {
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const body = await page.evaluate(async (payload) => {
+    const response = await fetch('/api/projects/templates/recommend/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      json: await response.json(),
+    };
+  }, {
+    project_title: '',
+    project_type: '',
+    project_subtype: '',
+    description: prompt,
+    project_family_key: '',
+    project_family_label: '',
+  });
+
+  expect(body.ok).toBeTruthy();
+  const recommendation = body.json;
+  expect(recommendation?.confidence_level).toBe('high');
+  expect(recommendation?.recommended_template?.id).toBe(template.id);
+  expect(recommendation?.recommended_template?.name).toBe(template.name);
+  expect(recommendation?.reason || '').toContain(template.name);
+
+  agreement.selected_template_id = template.id;
+  agreement.selected_template = clone(template);
+  agreement.selected_template_name_snapshot = template.name;
+  agreement.project_template_id = template.id;
+  agreement.template_id = template.id;
+  agreement.project_type = template.project_type;
+  agreement.project_subtype = template.project_subtype;
+  agreement.description = template.description;
+  milestoneState.items = Array.isArray(template.milestones)
+    ? template.milestones.map((row, idx) => ({
+        id: row.id,
+        agreement: agreement.id,
+        order: idx + 1,
+        title: row.title,
+        description: row.description,
+        amount: row.suggested_amount_fixed || "0.00",
+        normalized_milestone_type: row.normalized_milestone_type || "",
+      }))
+    : [];
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await expect(page.getByText('Site prep')).toBeVisible();
+  await expect(page.getByText('Install system')).toBeVisible();
+}
+
+test('step 1 recommends a saved central air template for an exact match', async ({
+  page,
+}) => {
+  const { store, agreement: draftAgreement, milestoneState } = await installWorkflowMocks(page, {
+    agreement: {
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      project_title: '',
+      title: '',
+      project_type: '',
+      project_subtype: '',
+      payment_mode: 'escrow',
+      payment_structure: 'simple',
+      description: '',
+      homeowner: null,
+      status: 'draft',
+      compliance_warning: { warning_level: 'none', message: '' },
+      selected_template_id: null,
+      selected_template: null,
+      selected_template_name_snapshot: '',
+    },
+  });
+
+  const centralAirTemplate = buildTemplate({
+    id: 222,
+    name: 'Central Air Installation',
+    project_type: 'HVAC',
+    project_subtype: 'HVAC Installation',
+    description:
+      'Central air installation with condenser, line set, thermostat, startup, and cleanup.',
+    milestones: [
+      buildMilestone(2221, 'Site prep', 'Confirm access, protect the area, and verify equipment placement.', 1),
+      buildMilestone(2222, 'Install system', 'Set the condenser, line set, and thermostat connection.', 2),
+    ],
+  });
+  store.templates.unshift(centralAirTemplate);
+
+  await exerciseCentralAirTemplateMatch(
+    page,
+    draftAgreement,
+    milestoneState,
+    centralAirTemplate,
+    'central air installation'
+  );
+});
+
+test('step 1 recommends a saved central air template for an HVAC alias match', async ({
+  page,
+}) => {
+  const { store, agreement: draftAgreement, milestoneState } = await installWorkflowMocks(page, {
+    agreement: {
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      project_title: '',
+      title: '',
+      project_type: '',
+      project_subtype: '',
+      payment_mode: 'escrow',
+      payment_structure: 'simple',
+      description: '',
+      homeowner: null,
+      status: 'draft',
+      compliance_warning: { warning_level: 'none', message: '' },
+      selected_template_id: null,
+      selected_template: null,
+      selected_template_name_snapshot: '',
+    },
+  });
+
+  const centralAirTemplate = buildTemplate({
+    id: 222,
+    name: 'Central Air Installation',
+    project_type: 'HVAC',
+    project_subtype: 'HVAC Installation',
+    description:
+      'Central air installation with condenser, line set, thermostat, startup, and cleanup.',
+    milestones: [
+      buildMilestone(2221, 'Site prep', 'Confirm access, protect the area, and verify equipment placement.', 1),
+      buildMilestone(2222, 'Install system', 'Set the condenser, line set, and thermostat connection.', 2),
+    ],
+  });
+  store.templates.unshift(centralAirTemplate);
+
+  await exerciseCentralAirTemplateMatch(
+    page,
+    draftAgreement,
+    milestoneState,
+    centralAirTemplate,
+    'central AC install'
+  );
 });

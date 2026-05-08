@@ -14221,6 +14221,106 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(body["confidence_level"], "high")
         self.assertEqual(body["recommended_template"]["project_subtype"], "Kitchen Remodel")
 
+    def test_recommend_endpoint_prioritizes_saved_central_air_template_exact_and_alias_matches(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Central Air Installation",
+            project_city="San Antonio",
+            project_state="TX",
+            project_zip_code="78205",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="HVAC",
+            project_subtype="HVAC Installation",
+            description="Install a central air system with condenser, thermostat, and startup.",
+            total_cost=Decimal("14500.00"),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Site prep",
+            description="Protect the work area and verify equipment placement.",
+            amount=Decimal("4500.00"),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Install system",
+            description="Install the condenser, line set, and thermostat wiring.",
+            amount=Decimal("10000.00"),
+        )
+
+        saved_template = save_agreement_as_template(
+            agreement=agreement,
+            contractor=self.contractor,
+            name="Central Air Installation",
+            description="HVAC installation template for central air systems.",
+            scope_description="Central air installation with condenser, line set, thermostat, startup, and cleanup.",
+        )
+
+        self.assertEqual(saved_template.name, "Central Air Installation")
+        self.assertEqual(saved_template.project_type, "HVAC")
+        self.assertEqual(saved_template.project_subtype, "HVAC Installation")
+        self.assertEqual(saved_template.contractor_id, self.contractor.id)
+        self.assertTrue(saved_template.is_active)
+        self.assertIn("air", saved_template.default_scope.lower())
+        self.assertEqual(saved_template.description, "HVAC installation template for central air systems.")
+
+        exact_response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "project_title": "",
+                "project_type": "Remodel",
+                "project_subtype": "Bathroom Remodel",
+                "description": "central air installation",
+            },
+            format="json",
+        )
+        self.assertEqual(exact_response.status_code, 200)
+        exact_body = exact_response.json()
+        self.assertEqual(exact_body["confidence_level"], "high")
+        self.assertEqual(exact_body["confidence"], "recommended")
+        self.assertEqual(exact_body["recommended_template"]["id"], saved_template.id)
+        self.assertEqual(exact_body["recommended_template"]["name"], saved_template.name)
+
+        alias_response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "project_title": "",
+                "project_type": "Remodel",
+                "project_subtype": "Bathroom Remodel",
+                "description": "central AC install",
+            },
+            format="json",
+        )
+        self.assertEqual(alias_response.status_code, 200)
+        alias_body = alias_response.json()
+        self.assertEqual(alias_body["confidence_level"], "high")
+        self.assertEqual(alias_body["confidence"], "recommended")
+        self.assertEqual(alias_body["recommended_template"]["id"], saved_template.id)
+
+        unrelated_response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "project_title": "",
+                "project_type": "Remodel",
+                "project_subtype": "Bathroom Remodel",
+                "description": "replace siding and trim on the front elevation",
+            },
+            format="json",
+        )
+        self.assertEqual(unrelated_response.status_code, 200)
+        unrelated_body = unrelated_response.json()
+        self.assertNotEqual(unrelated_body["recommended_template"]["id"], saved_template.id)
+        self.assertTrue(
+            unrelated_body["possible_match"] is None
+            or unrelated_body["possible_match"]["id"] != saved_template.id
+        )
+
     def test_recommend_endpoint_prefers_cabinet_installation_for_task_specific_scope(self):
         response = self.client.post(
             "/api/projects/templates/recommend/",
