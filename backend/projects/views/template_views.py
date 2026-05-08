@@ -15,7 +15,7 @@ from projects.ai.template_builder import (
     improve_template_description,
     suggest_template_type_subtype,
 )
-from projects.models import Agreement
+from projects.models import Agreement, Project
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.serializers.agreement import AgreementSerializer
 from projects.serializers_template import (
@@ -25,6 +25,8 @@ from projects.serializers_template import (
     ProjectTemplateListSerializer,
     SaveAgreementAsTemplateSerializer,
 )
+from projects.services.agreements.create import create_agreement_from_validated
+from projects.services.agreements.project_create import ensure_project_for_agreement_payload
 from projects.services.template_apply import (
     agreement_belongs_to_contractor,
     apply_template_to_agreement,
@@ -200,53 +202,8 @@ class TemplateDetailView(APIView):
 class ApplyTemplateToAgreementView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def post(self, request, agreement_id: int):
-        contractor = get_request_contractor(request.user)
-        if contractor is None:
-            raise PermissionDenied("Only contractors can apply templates.")
-
-        try:
-            agreement = Agreement.objects.get(pk=agreement_id)
-        except Agreement.DoesNotExist:
-            raise ValidationError("Agreement not found.")
-
-        if not agreement_belongs_to_contractor(agreement, contractor):
-            raise PermissionDenied("You do not have access to this agreement.")
-
-        serializer = ApplyTemplateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        template_id = serializer.validated_data["template_id"]
-
-        # Force full template application so agreement fields and milestones
-        # stay in sync with the selected template.
-        overwrite_existing = True
-        copy_text_fields = True
-
-        try:
-            template = ProjectTemplate.objects.get(pk=template_id)
-        except ProjectTemplate.DoesNotExist:
-            raise ValidationError("Template not found.")
-
-        if not can_access_template(template, contractor):
-            raise PermissionDenied("You do not have access to this template.")
-
-        try:
-            result = apply_template_to_agreement(
-                agreement=agreement,
-                template=template,
-                overwrite_existing=overwrite_existing,
-                copy_text_fields=copy_text_fields,
-                estimated_days=serializer.validated_data.get("estimated_days"),
-                auto_schedule=serializer.validated_data.get("auto_schedule", False),
-                spread_enabled=serializer.validated_data.get("spread_enabled", False),
-                spread_total=serializer.validated_data.get("spread_total"),
-            )
-        except ValueError as exc:
-            raise ValidationError(str(exc))
-
+    def _serialize_apply_response(self, *, agreement: Agreement, request, result: dict, template: ProjectTemplate):
         agreement.refresh_from_db()
-
         agreement = (
             Agreement.objects.select_related(
                 "project",
@@ -276,8 +233,155 @@ class ApplyTemplateToAgreementView(APIView):
                     agreement,
                     context={"request": request},
                 ).data,
+                "template": ProjectTemplateDetailSerializer(template).data,
             },
             status=status.HTTP_200_OK,
+        )
+
+    def _apply_template(self, *, request, contractor, agreement: Agreement, template: ProjectTemplate):
+        serializer = ApplyTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        overwrite_existing = serializer.validated_data["overwrite_existing"]
+        copy_text_fields = serializer.validated_data["copy_text_fields"]
+
+        try:
+            result = apply_template_to_agreement(
+                agreement=agreement,
+                template=template,
+                overwrite_existing=overwrite_existing,
+                copy_text_fields=copy_text_fields,
+                estimated_days=serializer.validated_data.get("estimated_days"),
+                auto_schedule=serializer.validated_data.get("auto_schedule", False),
+                spread_enabled=serializer.validated_data.get("spread_enabled", False),
+                spread_total=serializer.validated_data.get("spread_total"),
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+
+        return self._serialize_apply_response(
+            agreement=agreement,
+            request=request,
+            result=result,
+            template=template,
+        )
+
+    def post(self, request, agreement_id: int):
+        contractor = get_request_contractor(request.user)
+        if contractor is None:
+            raise PermissionDenied("Only contractors can apply templates.")
+
+        try:
+            agreement = Agreement.objects.get(pk=agreement_id)
+        except Agreement.DoesNotExist:
+            raise ValidationError("Agreement not found.")
+
+        if not agreement_belongs_to_contractor(agreement, contractor):
+            raise PermissionDenied("You do not have access to this agreement.")
+
+        serializer = ApplyTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        template_id = serializer.validated_data["template_id"]
+
+        try:
+            template = ProjectTemplate.objects.get(pk=template_id)
+        except ProjectTemplate.DoesNotExist:
+            raise ValidationError("Template not found.")
+
+        if not can_access_template(template, contractor):
+            raise PermissionDenied("You do not have access to this template.")
+
+        return self._apply_template(
+            request=request,
+            contractor=contractor,
+            agreement=agreement,
+            template=template,
+        )
+
+
+class ApplyTemplateToNewAgreementView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _create_draft_agreement(self, request, contractor) -> Agreement:
+        raw_payload = request.data.copy() if hasattr(request.data, "copy") else dict(request.data or {})
+        payload = dict(raw_payload)
+        project = None
+
+        try:
+            normalized_payload, _project = ensure_project_for_agreement_payload(
+                payload=payload,
+                contractor=contractor,
+            )
+            project = _project or None
+            if project is None and normalized_payload.get("project"):
+                try:
+                    project = Project.objects.get(pk=normalized_payload["project"])
+                except Project.DoesNotExist:
+                    project = None
+        except ValueError:
+            normalized_payload = dict(payload)
+            draft_title = "Draft Agreement"
+            draft_description = str(
+                normalized_payload.get("description")
+                or normalized_payload.get("scope_of_work")
+                or ""
+            ).strip()
+            project = Project.objects.create(
+                contractor=contractor,
+                homeowner=None,
+                title=draft_title,
+                description=draft_description,
+            )
+            normalized_payload["project"] = project
+        else:
+            draft_title = "Draft Agreement"
+            draft_description = str(
+                normalized_payload.get("description")
+                or normalized_payload.get("scope_of_work")
+                or ""
+            ).strip()
+
+        normalized_payload["contractor"] = contractor
+        normalized_payload["homeowner"] = normalized_payload.get("homeowner", None)
+        normalized_payload["title"] = draft_title
+        normalized_payload["project_title"] = draft_title
+        normalized_payload["description"] = draft_description
+        normalized_payload["scope_of_work"] = draft_description
+        normalized_payload["step_status"] = "step1"
+        if project is not None:
+            normalized_payload["project"] = project
+        normalized_payload.pop("is_draft", None)
+        normalized_payload.pop("wizard_step", None)
+
+        agreement = create_agreement_from_validated(normalized_payload)
+        return agreement
+
+    @transaction.atomic
+    def post(self, request):
+        contractor = get_request_contractor(request.user)
+        if contractor is None:
+            raise PermissionDenied("Only contractors can apply templates.")
+
+        agreement = self._create_draft_agreement(request, contractor)
+        agreement = Agreement.objects.get(pk=agreement.pk)
+        serializer = ApplyTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        template_id = serializer.validated_data["template_id"]
+        try:
+            template = ProjectTemplate.objects.get(pk=template_id)
+        except ProjectTemplate.DoesNotExist:
+            raise ValidationError("Template not found.")
+
+        if not can_access_template(template, contractor):
+            raise PermissionDenied("You do not have access to this template.")
+
+        return ApplyTemplateToAgreementView()._apply_template(
+            request=request,
+            contractor=contractor,
+            agreement=agreement,
+            template=template,
         )
 
 

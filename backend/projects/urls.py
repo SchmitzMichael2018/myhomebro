@@ -97,6 +97,7 @@ from .views_template import (
 
 from .views.template_views import (
     ApplyTemplateToAgreementView,
+    ApplyTemplateToNewAgreementView,
     ResetAgreementStep1View,
     SaveAgreementAsTemplateView,
     TemplateDetailView,
@@ -384,6 +385,11 @@ urlpatterns = [
         "agreements/<int:agreement_id>/apply-template/",
         ApplyTemplateToAgreementView.as_view(),
         name="agreement-apply-template",
+    ),
+    path(
+        "agreements/new/apply-template/",
+        ApplyTemplateToNewAgreementView.as_view(),
+        name="agreement-apply-template-new",
     ),
     path(
         "agreements/<int:agreement_id>/save-as-template/",

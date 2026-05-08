@@ -14321,6 +14321,123 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
             or unrelated_body["possible_match"]["id"] != saved_template.id
         )
 
+    def test_fresh_agreement_apply_template_creates_draft_and_applies_saved_template(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Central Air Installation",
+            project_city="San Antonio",
+            project_state="TX",
+            project_zip_code="78205",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="HVAC",
+            project_subtype="HVAC Installation",
+            description="Install a central air system with condenser, thermostat, and startup.",
+            total_cost=Decimal("14500.00"),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Site prep",
+            description="Protect the work area and verify equipment placement.",
+            amount=Decimal("4500.00"),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Install system",
+            description="Install the condenser, line set, and thermostat wiring.",
+            amount=Decimal("10000.00"),
+        )
+
+        saved_template = save_agreement_as_template(
+            agreement=agreement,
+            contractor=self.contractor,
+            name="Central Air Installation",
+            description="HVAC installation template for central air systems.",
+            scope_description="Central air installation with condenser, line set, thermostat, startup, and cleanup.",
+        )
+
+        response = self.client.post(
+            "/api/projects/agreements/new/apply-template/",
+            {
+                "template_id": saved_template.id,
+                "project_title": "central air installation",
+                "description": "central air installation",
+                "project_type": "",
+                "project_subtype": "",
+                "payment_mode": "escrow",
+                "payment_structure": "simple",
+                "agreement_mode": "standard",
+                "step_status": "step1",
+                "is_draft": True,
+                "wizard_step": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        body = response.json()
+        self.assertEqual(body["detail"], "Template applied successfully.")
+        self.assertEqual(body["agreement"]["selected_template_id"], saved_template.id)
+        self.assertEqual(body["agreement"]["selected_template"]["name"], saved_template.name)
+        self.assertEqual(body["agreement"]["project_title"], saved_template.name)
+        self.assertGreaterEqual(body["result"]["created_count"], 2)
+
+        fresh_agreement = Agreement.objects.get(pk=body["agreement"]["id"])
+        self.assertEqual(fresh_agreement.selected_template_id, saved_template.id)
+        self.assertEqual(fresh_agreement.project.title, saved_template.name)
+        self.assertEqual(fresh_agreement.milestone_count, saved_template.milestones.count())
+        self.assertEqual(Milestone.objects.filter(agreement=fresh_agreement).count(), saved_template.milestones.count())
+
+    def test_fresh_agreement_apply_template_supports_system_templates(self):
+        system_template = ProjectTemplate.objects.filter(
+            is_system_template=True,
+            is_published=True,
+        ).order_by("id").first()
+        self.assertIsNotNone(system_template)
+
+        response = self.client.post(
+            "/api/projects/agreements/new/apply-template/",
+            {
+                "template_id": system_template.id,
+                "project_title": "Kitchen remodel",
+                "description": "kitchen remodel",
+                "is_draft": True,
+                "wizard_step": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        body = response.json()
+        self.assertEqual(body["agreement"]["selected_template_id"], system_template.id)
+        self.assertGreater(body["result"]["created_count"], 0)
+        self.assertEqual(
+            Milestone.objects.filter(agreement_id=body["agreement"]["id"]).count(),
+            system_template.milestones.count(),
+        )
+
+    def test_fresh_agreement_apply_template_rejects_inaccessible_template(self):
+        response = self.client.post(
+            "/api/projects/agreements/new/apply-template/",
+            {
+                "template_id": self.private_template.id,
+                "project_title": "Private template attempt",
+                "description": "private template attempt",
+                "is_draft": True,
+                "wizard_step": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("detail", response.json())
+
     def test_recommend_endpoint_prefers_cabinet_installation_for_task_specific_scope(self):
         response = self.client.post(
             "/api/projects/templates/recommend/",

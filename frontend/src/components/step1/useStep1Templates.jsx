@@ -885,6 +885,18 @@ export default function useStep1Templates({
         auto_schedule: applyOptions.auto_schedule,
         spread_enabled: applyOptions.spread_enabled,
         spread_total: applyOptions.spread_total,
+        project_title: currentTitle || template.name || "Draft Agreement",
+        title: currentTitle || template.name || "Draft Agreement",
+        project_type: currentProjectType || "",
+        project_subtype: currentProjectSubtype || "",
+        description: currentDescription || "",
+        project_class: dLocal?.project_class || "residential",
+        payment_mode: dLocal?.payment_mode || "escrow",
+        payment_structure: dLocal?.payment_structure || "simple",
+        agreement_mode: dLocal?.agreement_mode || "standard",
+        step_status: dLocal?.step_status || "step1",
+        is_draft: !agreementId,
+        wizard_step: 1,
       });
 
       const data = response?.data || {};

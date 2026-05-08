@@ -31,6 +31,12 @@ NON_MODEL_FIELDS = {
     "custom_warranty_text",
     "project_title",
     "title",
+    "scope_of_work",
+    "template_id",
+    "is_draft",
+    "wizard_step",
+    "project_family_key",
+    "project_family_label",
 
     # AI scope / serializer-only fields
     "ai_scope",
