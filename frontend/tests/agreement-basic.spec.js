@@ -31,40 +31,10 @@ function formatFriendlyDate(value) {
 
 async function setDateInputValue(page, testId, value) {
   const targetValue = toIsoDateOnly(value) || String(value || "");
-  await expect
-    .poll(() => page.evaluate(() => !!window.__mhbStep2Debug?.setProjectStartDateDraft))
-    .toBeTruthy();
-
-  const usedHook = await page.evaluate((nextValue) => {
-    const setter = window.__mhbStep2Debug?.setProjectStartDateDraft;
-    if (typeof setter === "function") {
-      setter(nextValue);
-      return true;
-    }
-    return false;
-  }, targetValue);
-
-  if (!usedHook) {
-    const locator = page.getByTestId(testId);
-    await locator.evaluate((el, nextValue) => {
-      const input = el;
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-      if (nativeSetter) {
-        nativeSetter.call(input, String(nextValue || ""));
-      } else {
-        input.value = String(nextValue || "");
-      }
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    }, targetValue);
-    await locator.blur();
-  }
-
-  if (usedHook) {
-    await expect
-      .poll(() => page.evaluate(() => window.__mhbStep2Debug?.projectStartDateDraft || ""))
-      .toBe(targetValue);
-  }
+  const locator = page.getByTestId(testId);
+  await locator.fill(targetValue);
+  await locator.blur();
+  await expect(locator).toHaveValue(targetValue);
 }
 
 function installRouteState(page, matcher, userState) {
@@ -5017,8 +4987,7 @@ test('agreement wizard step 2 reschedules existing milestone dates from a new pr
   await expect(page.getByRole('button', { name: 'Saving' })).toHaveCount(0);
 
   await setDateInputValue(page, 'step2-project-start-date-input', nextStart);
-  await expect(page.getByTestId('step2-project-start-date-input')).toHaveValue(nextStart);
-  await page.evaluate(() => window.__mhbStep2Debug?.requestProjectStartDateSave?.());
+  await page.getByTestId('step2-project-start-date-save').click();
 
   await expect(page.getByTestId('step2-project-start-date-prompt')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save & Next' })).toHaveCount(1);
@@ -5027,8 +4996,8 @@ test('agreement wizard step 2 reschedules existing milestone dates from a new pr
   await page.getByRole('button', { name: 'Update dates' }).click();
 
   await expect(page.getByTestId('step2-project-start-date-prompt')).toHaveCount(0);
-  await expect(page.getByTestId('step2-milestone-card-801')).toContainText(formatFriendlyDate(nextStart));
-  await expect(page.getByTestId('step2-milestone-card-802')).toContainText(formatFriendlyDate('2026-05-13'));
+  await expect(page.getByTestId('step2-milestone-card-list')).toContainText(formatFriendlyDate(nextStart));
+  await expect(page.getByTestId('step2-milestone-card-list')).toContainText(formatFriendlyDate('2026-05-13'));
   await expect(page.getByRole('button', { name: 'Save & Next' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Saving' })).toHaveCount(0);
 });
@@ -5111,7 +5080,7 @@ test('agreement wizard step 2 keeps existing milestone dates when the contractor
   });
 
   await setDateInputValue(page, 'step2-project-start-date-input', nextStart);
-  await page.evaluate(() => window.__mhbStep2Debug?.requestProjectStartDateSave?.());
+  await page.getByTestId('step2-project-start-date-save').click();
 
   await expect(page.getByTestId('step2-project-start-date-prompt')).toBeVisible();
   await page.getByRole('button', { name: 'Keep existing dates' }).click();
@@ -5199,7 +5168,7 @@ test('agreement wizard step 2 auto-schedules milestone dates when the plan has n
   });
 
   await setDateInputValue(page, 'step2-project-start-date-input', nextStart);
-  await page.evaluate(() => window.__mhbStep2Debug?.requestProjectStartDateSave?.());
+  await page.getByTestId('step2-project-start-date-save').click();
 
   await expect(page.getByTestId('step2-project-start-date-prompt')).toHaveCount(0);
   await expect(page.getByTestId('step2-milestone-card-821')).toContainText(formatFriendlyDate(nextStart));

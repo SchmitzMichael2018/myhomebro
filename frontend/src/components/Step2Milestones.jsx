@@ -49,6 +49,10 @@ import {
 } from "../lib/assistantHandoff.js";
 import { normalizeProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import { getMeasurementFieldConfigForProjectType, getMeasurementFieldKeysForProjectType } from "../lib/measurementFields.js";
+import {
+  rescheduleMilestonesFromStartDate,
+  shouldPromptForDateReschedule,
+} from "./step2/projectStartDateScheduling.js";
 
 function toDateOnly(v) {
   if (!v) return "";
@@ -446,6 +450,18 @@ function getDurationDaysForRow(row) {
   return 1;
 }
 
+function sortFallbackMilestones(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => {
+    const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+    const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+
+    const idA = Number.isFinite(Number(a?.id)) ? Number(a.id) : Number.MAX_SAFE_INTEGER;
+    const idB = Number.isFinite(Number(b?.id)) ? Number(b.id) : Number.MAX_SAFE_INTEGER;
+    return idA - idB;
+  });
+}
+
 function shiftTimelineRowsToToday(rows, { manualDateIds = [] } = {}) {
   const normalizedRows = sortFallbackMilestones(normalizeCardRows(rows).filter(Boolean));
   if (!normalizedRows.length) return [];
@@ -499,28 +515,6 @@ function shiftTimelineRowsToToday(rows, { manualDateIds = [] } = {}) {
       ...row,
       start_date: startDate,
       completion_date: completionDate,
-    };
-  });
-}
-
-function shiftTimelineRowsFromStartDate(rows, startDate) {
-  const normalizedRows = sortFallbackMilestones(normalizeCardRows(rows).filter(Boolean));
-  const baseStart = toDateOnly(startDate);
-  if (!normalizedRows.length || !baseStart) return normalizedRows;
-
-  let cursor = baseStart;
-  return normalizedRows.map((row, idx) => {
-    const durationDays = Math.max(Number(row?.recommended_duration_days || getDurationDaysForRow(row) || 1), 1);
-    const start = cursor;
-    const completion = addDays(start, durationDays - 1);
-    cursor = addDays(completion, 1);
-    return {
-      ...row,
-      order: row?.order != null ? row.order : idx + 1,
-      start_date: start,
-      completion_date: completion,
-      due_date: completion,
-      recommended_duration_days: durationDays,
     };
   });
 }
@@ -2285,37 +2279,6 @@ export default function Step2Milestones({
     setProjectStartDateDraft(agreementProjectStartDate || "");
   }, [agreementProjectStartDate]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    if (typeof import.meta !== "undefined" && import.meta?.env?.MODE === "production") return undefined;
-
-    const target = (window.__mhbStep2Debug = window.__mhbStep2Debug || {});
-    const setter = (value) => setProjectStartDateDraft(toDateOnly(value) || "");
-    target.setProjectStartDateDraft = setter;
-    target.requestProjectStartDateSave = requestProjectStartDateSave;
-    target.persistProjectStartDate = persistProjectStartDate;
-    target.projectStartDateDraft = projectStartDateDraft || "";
-
-    return () => {
-      if (window.__mhbStep2Debug?.setProjectStartDateDraft === setter) {
-        delete window.__mhbStep2Debug.setProjectStartDateDraft;
-      }
-      if (window.__mhbStep2Debug?.requestProjectStartDateSave === requestProjectStartDateSave) {
-        delete window.__mhbStep2Debug.requestProjectStartDateSave;
-      }
-      if (window.__mhbStep2Debug?.persistProjectStartDate === persistProjectStartDate) {
-        delete window.__mhbStep2Debug.persistProjectStartDate;
-      }
-    };
-  }, [persistProjectStartDate, requestProjectStartDateSave, projectStartDateDraft]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (typeof import.meta !== "undefined" && import.meta?.env?.MODE === "production") return;
-    const target = (window.__mhbStep2Debug = window.__mhbStep2Debug || {});
-    target.projectStartDateDraft = projectStartDateDraft || "";
-  }, [projectStartDateDraft]);
-
   const projectClass = normalizeProjectClass(agreementMeta?.project_class);
   const isCommercialProject = projectClass === "commercial";
   const isResidentialProject = !isCommercialProject;
@@ -3313,7 +3276,7 @@ export default function Step2Milestones({
           { existingRows: mode === "add_missing" ? effectiveMilestones : [] }
         );
         const adjustedRows = anchorStart
-          ? shiftTimelineRowsFromStartDate(previewRows, anchorStart)
+          ? rescheduleMilestonesFromStartDate(previewRows, anchorStart)
           : previewRows;
         const analysis = analyzeMilestonePlan(adjustedRows, {
           existingRows: mode === "add_missing" ? effectiveMilestones : [],
@@ -3504,7 +3467,7 @@ export default function Step2Milestones({
       });
 
       if (updateTimeline && normalizedStart) {
-        const nextRows = shiftTimelineRowsFromStartDate(effectiveMilestones, normalizedStart);
+        const nextRows = rescheduleMilestonesFromStartDate(effectiveMilestones, normalizedStart);
         if (nextRows.length) {
           const normalizedRows = sortFallbackMilestones(nextRows);
           setFallbackMilestones((prev) => (milestoneRowsEqual(prev, normalizedRows) ? prev : normalizedRows));
@@ -3544,16 +3507,6 @@ export default function Step2Milestones({
 
   function requestProjectStartDateSave() {
     const nextStart = toDateOnly(projectStartDateDraft);
-    if (typeof import.meta !== "undefined" && import.meta?.env?.MODE !== "production") {
-      console.log("Step2 project start save requested", {
-        nextStart,
-        agreementProjectStartDate,
-        milestoneCount: effectiveMilestones.length,
-        hasMilestoneDates: effectiveMilestones.some((row) =>
-          Boolean(toDateOnly(row?.start_date || row?.start || row?.completion_date || row?.end_date || row?.end))
-        ),
-      });
-    }
     if (nextStart === agreementProjectStartDate) {
       toast("Project start date is unchanged.");
       return;
@@ -3564,11 +3517,7 @@ export default function Step2Milestones({
       return;
     }
 
-    const hasMilestoneDates = effectiveMilestones.some((row) =>
-      Boolean(toDateOnly(row?.start_date || row?.start || row?.completion_date || row?.end_date || row?.end))
-    );
-
-    if (effectiveMilestones.length && hasMilestoneDates) {
+    if (shouldPromptForDateReschedule(agreementProjectStartDate, nextStart, effectiveMilestones)) {
       setProjectStartDatePrompt({
         nextStart,
         milestoneCount: effectiveMilestones.length,
