@@ -2,6 +2,71 @@ import { expect, test } from '@playwright/test';
 
 const AGREEMENT_ID = 123;
 
+function toIsoDateOnly(value) {
+  if (!value) return "";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatFriendlyDate(value) {
+  const iso = toIsoDateOnly(value);
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+async function setDateInputValue(page, testId, value) {
+  const targetValue = toIsoDateOnly(value) || String(value || "");
+  await expect
+    .poll(() => page.evaluate(() => !!window.__mhbStep2Debug?.setProjectStartDateDraft))
+    .toBeTruthy();
+
+  const usedHook = await page.evaluate((nextValue) => {
+    const setter = window.__mhbStep2Debug?.setProjectStartDateDraft;
+    if (typeof setter === "function") {
+      setter(nextValue);
+      return true;
+    }
+    return false;
+  }, targetValue);
+
+  if (!usedHook) {
+    const locator = page.getByTestId(testId);
+    await locator.evaluate((el, nextValue) => {
+      const input = el;
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      if (nativeSetter) {
+        nativeSetter.call(input, String(nextValue || ""));
+      } else {
+        input.value = String(nextValue || "");
+      }
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }, targetValue);
+    await locator.blur();
+  }
+
+  if (usedHook) {
+    await expect
+      .poll(() => page.evaluate(() => window.__mhbStep2Debug?.projectStartDateDraft || ""))
+      .toBe(targetValue);
+  }
+}
+
 function installRouteState(page, matcher, userState) {
   return page.addInitScript(
     ({ pathname, search, state }) => {
@@ -123,6 +188,13 @@ async function installStep2AutoDraftRoutes(
     async (route) => {
       const request = route.request();
       if (request.method() === 'GET' || request.method() === 'PATCH') {
+        if (request.method() === 'PATCH') {
+          const payload = request.postDataJSON();
+          agreement = {
+            ...agreement,
+            ...payload,
+          };
+        }
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -4861,6 +4933,277 @@ test('agreement wizard step 2 does not overwrite milestones after the user edits
   await expect(page.getByText('Custom planning milestone')).toBeVisible();
   await expect(page.getByTestId('step2-ai-autodraft-banner')).toHaveCount(0);
   await expect.poll(() => milestoneState.createCount).toBe(5);
+});
+
+test('agreement wizard step 2 reschedules existing milestone dates from a new project start date', async ({
+  page,
+}) => {
+  const originalStart = '2026-04-01';
+  const nextStart = '2026-05-10';
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel',
+    title: 'Kitchen Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    project_start_date: originalStart,
+    start: originalStart,
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Full kitchen remodel with demolition, cabinet replacement, countertop installation, appliance reconnects, plumbing, electrical, and finish work.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {
+        clarifications_reviewed_step2: true,
+      },
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [
+      {
+        id: 801,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Planning & protection',
+        description: 'Review scope and protect the home.',
+        amount: '1200.00',
+        start_date: originalStart,
+        completion_date: '2026-04-03',
+      },
+      {
+        id: 802,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Cabinets & surfaces',
+        description: 'Install cabinets and counters.',
+        amount: '2600.00',
+        start_date: '2026-04-04',
+        completion_date: '2026-04-06',
+      },
+    ],
+    nextId: 900,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 18,
+        value: 'Kitchen Remodel',
+        label: 'Kitchen Remodel',
+        owner_type: 'system',
+        project_type: 'Remodel',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-project-start-date-input')).toHaveValue(originalStart);
+  await expect(page.getByRole('button', { name: 'Save & Next' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Saving' })).toHaveCount(0);
+
+  await setDateInputValue(page, 'step2-project-start-date-input', nextStart);
+  await expect(page.getByTestId('step2-project-start-date-input')).toHaveValue(nextStart);
+  await page.evaluate(() => window.__mhbStep2Debug?.requestProjectStartDateSave?.());
+
+  await expect(page.getByTestId('step2-project-start-date-prompt')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save & Next' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Saving' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Update dates' }).click();
+
+  await expect(page.getByTestId('step2-project-start-date-prompt')).toHaveCount(0);
+  await expect(page.getByTestId('step2-milestone-card-801')).toContainText(formatFriendlyDate(nextStart));
+  await expect(page.getByTestId('step2-milestone-card-802')).toContainText(formatFriendlyDate('2026-05-13'));
+  await expect(page.getByRole('button', { name: 'Save & Next' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Saving' })).toHaveCount(0);
+});
+
+test('agreement wizard step 2 keeps existing milestone dates when the contractor chooses to preserve them', async ({
+  page,
+}) => {
+  const originalStart = '2026-04-01';
+  const nextStart = '2026-05-10';
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel',
+    title: 'Kitchen Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    project_start_date: originalStart,
+    start: originalStart,
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Full kitchen remodel with demolition, cabinet replacement, countertop installation, appliance reconnects, plumbing, electrical, and finish work.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {
+        clarifications_reviewed_step2: true,
+      },
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [
+      {
+        id: 811,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Planning & protection',
+        description: 'Review scope and protect the home.',
+        amount: '1200.00',
+        start_date: originalStart,
+        completion_date: '2026-04-03',
+      },
+      {
+        id: 812,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Cabinets & surfaces',
+        description: 'Install cabinets and counters.',
+        amount: '2600.00',
+        start_date: '2026-04-04',
+        completion_date: '2026-04-06',
+      },
+    ],
+    nextId: 910,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 18,
+        value: 'Kitchen Remodel',
+        label: 'Kitchen Remodel',
+        owner_type: 'system',
+        project_type: 'Remodel',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await setDateInputValue(page, 'step2-project-start-date-input', nextStart);
+  await page.evaluate(() => window.__mhbStep2Debug?.requestProjectStartDateSave?.());
+
+  await expect(page.getByTestId('step2-project-start-date-prompt')).toBeVisible();
+  await page.getByRole('button', { name: 'Keep existing dates' }).click();
+
+  await expect(page.getByTestId('step2-project-start-date-prompt')).toHaveCount(0);
+  await expect(page.getByTestId('step2-milestone-card-811')).toContainText(formatFriendlyDate(originalStart));
+  await expect(page.getByTestId('step2-milestone-card-812')).toContainText(formatFriendlyDate('2026-04-04'));
+});
+
+test('agreement wizard step 2 auto-schedules milestone dates when the plan has no dates yet', async ({
+  page,
+}) => {
+  const originalStart = '';
+  const nextStart = '2026-05-10';
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel',
+    title: 'Kitchen Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    project_start_date: originalStart,
+    start: originalStart,
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Full kitchen remodel with demolition, cabinet replacement, countertop installation, appliance reconnects, plumbing, electrical, and finish work.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {
+        clarifications_reviewed_step2: true,
+      },
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [
+      {
+        id: 821,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Planning & protection',
+        description: 'Review scope and protect the home.',
+        amount: '1200.00',
+        start_date: '',
+        completion_date: '',
+      },
+      {
+        id: 822,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Cabinets & surfaces',
+        description: 'Install cabinets and counters.',
+        amount: '2600.00',
+        start_date: '',
+        completion_date: '',
+      },
+    ],
+    nextId: 920,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 18,
+        value: 'Kitchen Remodel',
+        label: 'Kitchen Remodel',
+        owner_type: 'system',
+        project_type: 'Remodel',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await setDateInputValue(page, 'step2-project-start-date-input', nextStart);
+  await page.evaluate(() => window.__mhbStep2Debug?.requestProjectStartDateSave?.());
+
+  await expect(page.getByTestId('step2-project-start-date-prompt')).toHaveCount(0);
+  await expect(page.getByTestId('step2-milestone-card-821')).toContainText(formatFriendlyDate(nextStart));
+  await expect(page.getByTestId('step2-milestone-card-822')).toContainText(formatFriendlyDate('2026-05-11'));
 });
 
 test('maintenance agreement fields render in step 1 and recurring summary appears in step 2', async ({

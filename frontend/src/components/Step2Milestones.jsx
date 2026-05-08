@@ -157,6 +157,17 @@ function safeStr(v) {
   return (v == null ? "" : String(v)).trim();
 }
 
+function stableSerialize(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function pricingStrategyLabel(value) {
   const normalized = safeStr(value).toLowerCase();
   if (normalized === "estimate") return "Estimated pricing";
@@ -1093,6 +1104,38 @@ function normalizeCardRows(rows = []) {
     });
 }
 
+function comparableMilestoneRow(row) {
+  return {
+    id: row?.id != null ? String(row.id) : null,
+    order: Number.isFinite(Number(row?.order)) ? Number(row.order) : null,
+    title: safeStr(row?.title),
+    description: safeStr(row?.description),
+    amount: safeStr(row?.amount),
+    start_date: toDateOnly(row?.start_date || row?.start),
+    completion_date: toDateOnly(row?.completion_date || row?.end_date || row?.end),
+    due_date: toDateOnly(row?.due_date || row?.completion_date || row?.end_date || row?.end),
+    recommended_duration_days:
+      Number.isFinite(Number(row?.recommended_duration_days)) && Number(row.recommended_duration_days) > 0
+        ? Number(row.recommended_duration_days)
+        : null,
+    normalized_milestone_type: safeStr(row?.normalized_milestone_type),
+    pricing_confidence: safeStr(row?.pricing_confidence),
+    pricing_source_note: safeStr(row?.pricing_source_note),
+    pricing_mode: safeStr(row?.pricing_mode),
+    materials_hint: safeStr(row?.materials_hint),
+  };
+}
+
+function milestoneRowsSignature(rows) {
+  return stableSerialize(
+    sortFallbackMilestones(normalizeCardRows(rows).filter(Boolean)).map((row) => comparableMilestoneRow(row))
+  );
+}
+
+function milestoneRowsEqual(leftRows, rightRows) {
+  return milestoneRowsSignature(leftRows) === milestoneRowsSignature(rightRows);
+}
+
 
 export default function Step2Milestones({
   agreementId,
@@ -1128,10 +1171,12 @@ export default function Step2Milestones({
   const [permitNotes, setPermitNotes] = useState("");
 
   const [clarOpen, setClarOpen] = useState(false);
-  const [savingAiScope, setSavingAiScope] = useState(false);
+  const [userSaveInProgress, setUserSaveInProgress] = useState(false);
+  const [autosaveInProgress, setAutosaveInProgress] = useState(false);
 
   const didInitFromServerRef = useRef(false);
   const debounceRef = useRef(null);
+  const lastPersistedStep2AnswersSignatureRef = useRef("");
 
   const [spreadEnabled, setSpreadEnabled] = useState(true);
   const [spreadTotal, setSpreadTotal] = useState("");
@@ -2162,9 +2207,11 @@ export default function Step2Milestones({
         else if (typeof answers.permits_inspections === "string") setPermitNotes(answers.permits_inspections);
         else if (typeof answers.permit_acquisition === "string") setPermitNotes(answers.permit_acquisition);
 
+        lastPersistedStep2AnswersSignatureRef.current = stableSerialize(answers || {});
         didInitFromServerRef.current = true;
       } catch (e) {
         console.warn("Step2Milestones: could not load agreement ai_scope.answers", e);
+        lastPersistedStep2AnswersSignatureRef.current = stableSerialize({});
         didInitFromServerRef.current = true;
       }
     })();
@@ -2237,6 +2284,37 @@ export default function Step2Milestones({
   useEffect(() => {
     setProjectStartDateDraft(agreementProjectStartDate || "");
   }, [agreementProjectStartDate]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (typeof import.meta !== "undefined" && import.meta?.env?.MODE === "production") return undefined;
+
+    const target = (window.__mhbStep2Debug = window.__mhbStep2Debug || {});
+    const setter = (value) => setProjectStartDateDraft(toDateOnly(value) || "");
+    target.setProjectStartDateDraft = setter;
+    target.requestProjectStartDateSave = requestProjectStartDateSave;
+    target.persistProjectStartDate = persistProjectStartDate;
+    target.projectStartDateDraft = projectStartDateDraft || "";
+
+    return () => {
+      if (window.__mhbStep2Debug?.setProjectStartDateDraft === setter) {
+        delete window.__mhbStep2Debug.setProjectStartDateDraft;
+      }
+      if (window.__mhbStep2Debug?.requestProjectStartDateSave === requestProjectStartDateSave) {
+        delete window.__mhbStep2Debug.requestProjectStartDateSave;
+      }
+      if (window.__mhbStep2Debug?.persistProjectStartDate === persistProjectStartDate) {
+        delete window.__mhbStep2Debug.persistProjectStartDate;
+      }
+    };
+  }, [persistProjectStartDate, requestProjectStartDateSave, projectStartDateDraft]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (typeof import.meta !== "undefined" && import.meta?.env?.MODE === "production") return;
+    const target = (window.__mhbStep2Debug = window.__mhbStep2Debug || {});
+    target.projectStartDateDraft = projectStartDateDraft || "";
+  }, [projectStartDateDraft]);
 
   const projectClass = normalizeProjectClass(agreementMeta?.project_class);
   const isCommercialProject = projectClass === "commercial";
@@ -2493,17 +2571,26 @@ export default function Step2Milestones({
     if (!agreementId) return;
 
     const includeStep2Answers = options?.includeStep2Answers !== false;
+    const source = options?.source === "autosave" ? "autosave" : "user";
     const step2Answers = includeStep2Answers ? buildStep2Answers() : {};
     const mergedLocal = { ...(step2Answers || {}), ...(extraAnswers || {}) };
     if (!mergedLocal || Object.keys(mergedLocal).length === 0) return;
 
-    setSavingAiScope(true);
+    if (source === "autosave" && (userSaveInProgress || autosaveInProgress)) return;
     try {
       const current = await api.get(`/projects/agreements/${agreementId}/`);
       const data = current?.data || {};
       const ai_scope = data.ai_scope || {};
       const previousAnswers = ai_scope.answers || {};
       const mergedAnswers = { ...(ai_scope.answers || {}), ...mergedLocal };
+      const mergedSignature = stableSerialize(mergedAnswers);
+
+      if (mergedSignature === lastPersistedStep2AnswersSignatureRef.current) {
+        return;
+      }
+
+      if (source === "autosave") setAutosaveInProgress(true);
+      else setUserSaveInProgress(true);
 
       const patchPayload = { ai_scope: { ...ai_scope, answers: mergedAnswers } };
 
@@ -2516,6 +2603,7 @@ export default function Step2Milestones({
       if (pricingImpactAnswersChanged(previousAnswers, mergedAnswers)) {
         setPricingEstimateStale(true);
       }
+      lastPersistedStep2AnswersSignatureRef.current = mergedSignature;
       setAgreementMeta((prev) => {
         const next = { ...(prev || data || {}) };
         next.ai_scope = {
@@ -2527,25 +2615,38 @@ export default function Step2Milestones({
     } catch (err) {
       console.error("Step2Milestones: failed to persist answers", err);
     } finally {
-      setSavingAiScope(false);
+      if (source === "autosave") setAutosaveInProgress(false);
+      else setUserSaveInProgress(false);
     }
   }
 
   useEffect(() => {
     if (!agreementId) return;
     if (!didInitFromServerRef.current) return;
+    if (userSaveInProgress || autosaveInProgress) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(() => {
-      persistAnswersToAgreement();
+      persistAnswersToAgreement(null, { source: "autosave" });
     }, 650);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agreementId, materialsWho, measurementStatus, measurementNotes, allowanceNotes, permitNotes, agreementMeta, measurementFieldKeys]);
+  }, [
+    agreementId,
+    materialsWho,
+    measurementStatus,
+    measurementNotes,
+    allowanceNotes,
+    permitNotes,
+    agreementMeta,
+    measurementFieldKeys,
+    userSaveInProgress,
+    autosaveInProgress,
+  ]);
 
   const {
     aiLoading,
@@ -3159,7 +3260,7 @@ export default function Step2Milestones({
     const nextRows = materializeAiSuggestedMilestones(mode);
 
     const nextIds = nextRows.map((row) => row?.id).filter(Boolean);
-    setFallbackMilestones(nextRows);
+    setFallbackMilestones((prev) => (milestoneRowsEqual(prev, nextRows) ? prev : nextRows));
     setExpandedMilestoneId(nextRows[0]?.id || null);
     setNewMilestoneOpen(false);
     setAiChangeSummary("AI suggested milestones are ready for review.");
@@ -3360,7 +3461,7 @@ export default function Step2Milestones({
     clearManualIds = [],
   } = {}) {
     const normalizedRows = sortFallbackMilestones(normalizeCardRows(nextRows).filter(Boolean));
-    setFallbackMilestones(normalizedRows);
+    setFallbackMilestones((prev) => (milestoneRowsEqual(prev, normalizedRows) ? prev : normalizedRows));
     if (Array.isArray(clearManualIds) && clearManualIds.length) {
       const clearSet = new Set(clearManualIds.map((id) => String(id)));
       setManualAmountMilestoneIds((prev) =>
@@ -3389,6 +3490,13 @@ export default function Step2Milestones({
     }
 
     const normalizedStart = toDateOnly(nextStart);
+    if (typeof import.meta !== "undefined" && import.meta?.env?.MODE !== "production") {
+      console.log("Step2 project start persist", {
+        normalizedStart,
+        updateTimeline,
+        milestoneCount: effectiveMilestones.length,
+      });
+    }
     setProjectStartDateBusy(true);
     try {
       const { data } = await api.patch(`/projects/agreements/${agreementId}/`, {
@@ -3398,7 +3506,8 @@ export default function Step2Milestones({
       if (updateTimeline && normalizedStart) {
         const nextRows = shiftTimelineRowsFromStartDate(effectiveMilestones, normalizedStart);
         if (nextRows.length) {
-          setFallbackMilestones(sortFallbackMilestones(nextRows));
+          const normalizedRows = sortFallbackMilestones(nextRows);
+          setFallbackMilestones((prev) => (milestoneRowsEqual(prev, normalizedRows) ? prev : normalizedRows));
           setStagedSuggestedTimelineIds((prev) => [
             ...new Set([...(Array.isArray(prev) ? prev : []), ...nextRows.map((row) => row?.id).filter(Boolean)]),
           ]);
@@ -3435,6 +3544,16 @@ export default function Step2Milestones({
 
   function requestProjectStartDateSave() {
     const nextStart = toDateOnly(projectStartDateDraft);
+    if (typeof import.meta !== "undefined" && import.meta?.env?.MODE !== "production") {
+      console.log("Step2 project start save requested", {
+        nextStart,
+        agreementProjectStartDate,
+        milestoneCount: effectiveMilestones.length,
+        hasMilestoneDates: effectiveMilestones.some((row) =>
+          Boolean(toDateOnly(row?.start_date || row?.start || row?.completion_date || row?.end_date || row?.end))
+        ),
+      });
+    }
     if (nextStart === agreementProjectStartDate) {
       toast("Project start date is unchanged.");
       return;
@@ -3445,7 +3564,11 @@ export default function Step2Milestones({
       return;
     }
 
-    if (effectiveMilestones.length) {
+    const hasMilestoneDates = effectiveMilestones.some((row) =>
+      Boolean(toDateOnly(row?.start_date || row?.start || row?.completion_date || row?.end_date || row?.end))
+    );
+
+    if (effectiveMilestones.length && hasMilestoneDates) {
       setProjectStartDatePrompt({
         nextStart,
         milestoneCount: effectiveMilestones.length,
@@ -3453,7 +3576,7 @@ export default function Step2Milestones({
       return;
     }
 
-    void persistProjectStartDate(nextStart, { updateTimeline: false });
+    void persistProjectStartDate(nextStart, { updateTimeline: effectiveMilestones.length > 0 });
   }
 
   function applyEstimateSuggestedAmounts() {
@@ -3702,7 +3825,8 @@ export default function Step2Milestones({
       }
     });
 
-    setFallbackMilestones(sortFallbackMilestones(nextRows));
+    const normalizedRows = sortFallbackMilestones(nextRows);
+    setFallbackMilestones((prev) => (milestoneRowsEqual(prev, normalizedRows) ? prev : normalizedRows));
     setStagedSuggestedTimelineIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
     const timelineAdjusted = hasExistingTimeline && currentStarts[0] < today;
     setEstimateBanner(
@@ -3759,7 +3883,8 @@ export default function Step2Milestones({
       return;
     }
 
-    setFallbackMilestones(sortFallbackMilestones(nextRows));
+    const normalizedRows = sortFallbackMilestones(nextRows);
+    setFallbackMilestones((prev) => (milestoneRowsEqual(prev, normalizedRows) ? prev : normalizedRows));
     setStagedSuggestedMilestoneIds(stagedIds);
     markAiUpdated(stagedIds.filter(Boolean).map((id) => `milestone:${id}`));
     {
@@ -4277,7 +4402,8 @@ export default function Step2Milestones({
       );
     }
 
-    await persistAnswersToAgreement();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    await persistAnswersToAgreement(null, { source: "user" });
 
     if (!clarReviewed) {
       pendingNextRef.current = true;
@@ -7644,9 +7770,9 @@ export default function Step2Milestones({
           type="button"
           onClick={handleNext}
           className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
-          disabled={savingAiScope}
+          disabled={userSaveInProgress}
         >
-          {savingAiScope ? "Saving" : "Save & Next"}
+          {userSaveInProgress ? "Saving" : "Save & Next"}
         </button>
       </div>
 
