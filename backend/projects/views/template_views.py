@@ -303,9 +303,34 @@ class ApplyTemplateToAgreementView(APIView):
 class ApplyTemplateToNewAgreementView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def _create_draft_agreement(self, request, contractor) -> Agreement:
+    def _split_fresh_apply_payload(self, request):
         raw_payload = request.data.copy() if hasattr(request.data, "copy") else dict(request.data or {})
         payload = dict(raw_payload)
+        apply_serializer = ApplyTemplateSerializer(data=payload)
+        apply_serializer.is_valid(raise_exception=True)
+        apply_options = dict(apply_serializer.validated_data)
+
+        create_payload = dict(payload)
+        for key in (
+            "template_id",
+            "overwrite_existing",
+            "copy_text_fields",
+            "estimated_days",
+            "auto_schedule",
+            "spread_enabled",
+            "spread_total",
+            "wizard_step",
+            "is_draft",
+            "scope_of_work",
+            "project_family_key",
+            "project_family_label",
+        ):
+            create_payload.pop(key, None)
+
+        return create_payload, apply_options
+
+    def _create_draft_agreement(self, create_payload, contractor) -> Agreement:
+        payload = dict(create_payload)
         project = None
 
         try:
@@ -363,26 +388,36 @@ class ApplyTemplateToNewAgreementView(APIView):
         if contractor is None:
             raise PermissionDenied("Only contractors can apply templates.")
 
-        agreement = self._create_draft_agreement(request, contractor)
-        agreement = Agreement.objects.get(pk=agreement.pk)
-        serializer = ApplyTemplateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        template_id = serializer.validated_data["template_id"]
         try:
-            template = ProjectTemplate.objects.get(pk=template_id)
-        except ProjectTemplate.DoesNotExist:
-            raise ValidationError("Template not found.")
+            create_payload, apply_options = self._split_fresh_apply_payload(request)
+            agreement = self._create_draft_agreement(create_payload, contractor)
+            agreement = Agreement.objects.get(pk=agreement.pk)
 
-        if not can_access_template(template, contractor):
-            raise PermissionDenied("You do not have access to this template.")
+            template_id = apply_options["template_id"]
+            try:
+                template = ProjectTemplate.objects.get(pk=template_id)
+            except ProjectTemplate.DoesNotExist:
+                raise ValidationError("Template not found.")
 
-        return ApplyTemplateToAgreementView()._apply_template(
-            request=request,
-            contractor=contractor,
-            agreement=agreement,
-            template=template,
-        )
+            if not can_access_template(template, contractor):
+                raise PermissionDenied("You do not have access to this template.")
+
+            return ApplyTemplateToAgreementView()._apply_template(
+                request=request,
+                contractor=contractor,
+                agreement=agreement,
+                template=template,
+            )
+        except (ValidationError, PermissionDenied):
+            raise
+        except Exception as exc:
+            return Response(
+                {
+                    "detail": "Could not create draft agreement.",
+                    "error": str(exc),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class ResetAgreementStep1View(APIView):

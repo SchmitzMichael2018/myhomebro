@@ -33,6 +33,12 @@ NON_MODEL_FIELDS = {
     "title",
     "scope_of_work",
     "template_id",
+    "overwrite_existing",
+    "copy_text_fields",
+    "estimated_days",
+    "auto_schedule",
+    "spread_enabled",
+    "spread_total",
     "is_draft",
     "wizard_step",
     "project_family_key",
@@ -99,6 +105,8 @@ def create_agreement_from_validated(validated: Dict[str, Any]) -> Agreement:
     """
     original = dict(validated)
     data = strip_non_model_fields(validated)
+    allowed_fields = {field.name for field in Agreement._meta.fields}
+    data = {key: value for key, value in data.items() if key in allowed_fields}
 
     # Draft-friendly safety: allow empty description during early Step 1 flow.
     if data.get("description", None) is None:

@@ -585,7 +585,7 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
         reasons.append("appliance installation intent")
 
     if project_sig["roofing"] and template_sig["roofing"]:
-        score += 54
+        score += 62
         reasons.append("roof replacement intent")
 
     if project_sig["flooring"] and template_sig["flooring"]:
