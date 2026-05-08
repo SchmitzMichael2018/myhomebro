@@ -1529,23 +1529,6 @@ export default function Step1Details({
   }, [location.pathname]);
 
   const locked = useMemo(() => isAgreementLocked(agreement), [agreement]);
-
-  const selectedProjectType = useMemo(() => {
-    const current = safeTrim(dLocal?.project_type);
-    if (!current) return null;
-    return (
-      mergedProjectTypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
-      null
-    );
-  }, [mergedProjectTypeOptions, dLocal?.project_type]);
-  const selectedProjectSubtype = useMemo(() => {
-    const current = safeTrim(dLocal?.project_subtype);
-    if (!current) return null;
-    return (
-      mergedProjectSubtypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
-      null
-    );
-  }, [mergedProjectSubtypeOptions, dLocal?.project_subtype]);
   const [clarificationAnswers, setClarificationAnswers] = useState({});
   const [clarificationsSkipped, setClarificationsSkipped] = useState(false);
   const [step1JobDescriptionPrompt, setStep1JobDescriptionPrompt] = useState(() =>
@@ -1595,6 +1578,23 @@ export default function Step1Details({
       },
     ];
   }, [dLocal?.project_subtype, dLocal?.project_type, mergedProjectSubtypeOptions]);
+
+  const selectedProjectType = useMemo(() => {
+    const current = safeTrim(dLocal?.project_type);
+    if (!current) return null;
+    return (
+      mergedProjectTypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
+      null
+    );
+  }, [mergedProjectTypeOptions, dLocal?.project_type]);
+  const selectedProjectSubtype = useMemo(() => {
+    const current = safeTrim(dLocal?.project_subtype);
+    if (!current) return null;
+    return (
+      mergedProjectSubtypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
+      null
+    );
+  }, [mergedProjectSubtypeOptions, dLocal?.project_subtype]);
 
   const hasAiSectionHighlight = (...keys) =>
     keys.some((key) => Boolean(aiHighlightKeys?.[key]));
