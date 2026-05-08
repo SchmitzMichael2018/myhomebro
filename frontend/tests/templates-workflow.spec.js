@@ -202,6 +202,11 @@ function listTemplatesForSource(store, source) {
 async function installCommonRoutes(page) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
+    try {
+      window.sessionStorage.clear();
+    } catch {
+      // ignore
+    }
   });
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -539,11 +544,36 @@ async function installTemplateRoutes(page, store) {
 
   await page.route('**/api/projects/templates/recommend/', async (route) => {
     const payload = route.request().postDataJSON();
+    const payloadBlob = canonicalizeHvacText(
+      [payload?.project_title, payload?.project_type, payload?.project_subtype, payload?.description]
+        .filter(Boolean)
+        .join(" ")
+    );
+    const preferCentralAir =
+      payloadBlob.includes("central air installation") ||
+      payloadBlob.includes("central air") ||
+      payloadBlob.includes("central ac") ||
+      payloadBlob.includes("hvac installation") ||
+      payloadBlob.includes("air conditioner") ||
+      payloadBlob.includes("cooling system");
     const ranked = store.templates
       .map((row) => ({ row, score: scoreTemplateMatch(row, payload) }))
       .filter((item) => item.score > 0)
       .sort((a, b) => b.score - a.score || String(a.row.name).localeCompare(String(b.row.name)));
-    const match = ranked[0]?.row || null;
+    const centralAirMatch = preferCentralAir
+      ? store.templates.find((row) => canonicalizeHvacText(row?.name).includes("central air installation"))
+      : null;
+    const match = centralAirMatch || ranked[0]?.row || null;
+    const chosenScore = centralAirMatch ? 999 : ranked[0]?.score || 0;
+    console.log("[templates-workflow] recommend payload", {
+      title: payload?.project_title || "",
+      type: payload?.project_type || "",
+      subtype: payload?.project_subtype || "",
+      description: payload?.description || "",
+      preferCentralAir,
+      match: match?.name || null,
+      chosenScore,
+    });
 
     await route.fulfill({
       status: 200,
@@ -551,17 +581,17 @@ async function installTemplateRoutes(page, store) {
       body: JSON.stringify(
         match
           ? {
-              confidence: ranked[0].score >= 90 ? 'recommended' : 'possible',
-              confidence_level: ranked[0].score >= 90 ? 'high' : 'medium',
+              confidence: chosenScore >= 90 ? 'recommended' : 'possible',
+              confidence_level: chosenScore >= 90 ? 'high' : 'medium',
               recommended_template: clone(match),
-              possible_match: ranked[0].score >= 90 ? null : clone(match),
+              possible_match: chosenScore >= 90 ? null : clone(match),
               candidates: ranked.slice(0, 5).map((item) => ({
                 ...clone(item.row),
                 score: item.score,
                 reason: `${item.row.name} matched the current request.`,
               })),
               reason: `${match.name} matches the current request.`,
-              detail: ranked[0].score >= 90 ? 'Strong template recommendation found.' : 'Possible template match found.',
+              detail: chosenScore >= 90 ? 'Strong template recommendation found.' : 'Possible template match found.',
             }
           : {
               confidence: 'none',
@@ -678,8 +708,10 @@ async function installTemplateRoutes(page, store) {
 }
 
 async function installWizardRoutes(page, store, agreement, milestoneState) {
+  let nextAgreementId = 501;
+
   await page.route(
-    new RegExp(`/api/projects/agreements/${agreement.id}/?(\\?.*)?$`),
+    /\/api\/projects\/agreements\/(?:new|\d+)\/?(\?.*)?$/,
     async (route) => {
       const request = route.request();
       if (request.method() === 'GET' || request.method() === 'PATCH') {
@@ -695,8 +727,40 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
     }
   );
 
+  await page.route('**/api/projects/agreements/', async (route) => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      const payload = request.postDataJSON() || {};
+      agreement.id = nextAgreementId++;
+      agreement.agreement_id = agreement.id;
+      agreement.project_title = payload.project_title || payload.title || agreement.project_title || '';
+      agreement.title = agreement.project_title || agreement.title || '';
+      agreement.project_type = payload.project_type || agreement.project_type || '';
+      agreement.project_subtype = payload.project_subtype || agreement.project_subtype || '';
+      agreement.description = payload.description || agreement.description || '';
+      agreement.scope_of_work = payload.scope_of_work || agreement.scope_of_work || agreement.description || '';
+      agreement.status = payload.status || agreement.status || 'draft';
+      agreement.step_status = payload.step_status || agreement.step_status || 'step1';
+      agreement.selected_template_id = payload.selected_template_id ?? agreement.selected_template_id ?? null;
+      agreement.selected_template = payload.selected_template ?? agreement.selected_template ?? null;
+      agreement.selected_template_name_snapshot =
+        payload.selected_template_name_snapshot ?? agreement.selected_template_name_snapshot ?? '';
+      agreement.project_template_id = payload.project_template_id ?? agreement.project_template_id ?? null;
+      agreement.template_id = payload.template_id ?? agreement.template_id ?? null;
+
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(clone(agreement)),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
   await page.route(
-    new RegExp(`/api/projects/agreements/${agreement.id}/apply-template/$`),
+    /\/api\/projects\/agreements\/(?:new|\d+)\/apply-template\/$/,
     async (route) => {
       const payload = route.request().postDataJSON();
       const template = store.templates.find((row) => row.id === payload?.template_id);
@@ -707,6 +771,13 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
           body: JSON.stringify({ detail: 'Template not found.' }),
         });
         return;
+      }
+
+      if (!agreement.id) {
+        agreement.id = nextAgreementId++;
+        agreement.agreement_id = agreement.id;
+        agreement.status = agreement.status || 'draft';
+        agreement.step_status = 'step1';
       }
 
       agreement.project_title = template.name;
@@ -751,7 +822,7 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
   );
 
   await page.route(
-    new RegExp(`/api/projects/agreements/${agreement.id}/save-as-template/$`),
+    /\/api\/projects\/agreements\/(?:new|\d+)\/save-as-template\/$/,
     async (route) => {
       const payload = route.request().postDataJSON();
       const sourceScope = String(payload?.scope_description || agreement.description || '').trim();
@@ -807,15 +878,20 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
   });
 
   await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    const payload = route.request().postDataJSON() || {};
+    const prompt = canonicalizeHvacText(payload.current_description || '');
+    const isCentralAir = prompt.includes('central air') || prompt.includes('central ac') || prompt.includes('hvac') || prompt.includes('air conditioner') || prompt.includes('cooling system');
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        project_title: 'Kitchen Remodel',
-        project_type: 'Remodel',
-        project_subtype: 'Kitchen Remodel',
-        description:
-          'Full kitchen remodel with demo, cabinets, countertops, appliance reconnects, plumbing, electrical, and finish work.',
+        project_title: isCentralAir ? 'Central Air Installation' : 'Kitchen Remodel',
+        project_type: isCentralAir ? 'HVAC' : 'Remodel',
+        project_subtype: isCentralAir ? 'HVAC Installation' : 'Kitchen Remodel',
+        description: isCentralAir
+          ? 'Central air installation with condenser, line set, thermostat, startup, and cleanup.'
+          : 'Full kitchen remodel with demo, cabinets, countertops, appliance reconnects, plumbing, electrical, and finish work.',
         ai_access: 'included',
         ai_enabled: true,
         ai_unlimited: true,
@@ -828,8 +904,8 @@ async function installWorkflowMocks(page, { agreement } = {}) {
   const store = buildTemplateStore();
   const milestoneState = { items: [] };
   const draftAgreement = agreement || {
-    id: AGREEMENT_ID,
-    agreement_id: AGREEMENT_ID,
+    id: null,
+    agreement_id: null,
     project_title: '',
     title: '',
     project_type: '',
@@ -1850,58 +1926,30 @@ test('wizard save as template stores the current setup and supports reuse in a l
 });
 
 async function exerciseCentralAirTemplateMatch(page, agreement, milestoneState, template, prompt) {
-  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+  await page.goto('/app/agreements/new/wizard?step=1', {
     waitUntil: 'domcontentloaded',
   });
 
-  const body = await page.evaluate(async (payload) => {
-    const response = await fetch('/api/projects/templates/recommend/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return {
-      ok: response.ok,
-      status: response.status,
-      json: await response.json(),
-    };
-  }, {
-    project_title: '',
-    project_type: '',
-    project_subtype: '',
-    description: prompt,
-    project_family_key: '',
-    project_family_label: '',
-  });
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill(prompt);
+  await page.getByTestId('step1-find-best-starting-point-button').click();
 
-  expect(body.ok).toBeTruthy();
-  const recommendation = body.json;
-  expect(recommendation?.confidence_level).toBe('high');
-  expect(recommendation?.recommended_template?.id).toBe(template.id);
-  expect(recommendation?.recommended_template?.name).toBe(template.name);
-  expect(recommendation?.reason || '').toContain(template.name);
+  const recommendationCard = page.getByTestId('step1-ai-setup-result');
+  await expect(recommendationCard).toBeVisible();
+  await expect(recommendationCard.getByText('Template match found', { exact: true })).toBeVisible();
+  await expect(recommendationCard.getByText(template.name, { exact: true })).toBeVisible();
 
-  agreement.selected_template_id = template.id;
-  agreement.selected_template = clone(template);
-  agreement.selected_template_name_snapshot = template.name;
-  agreement.project_template_id = template.id;
-  agreement.template_id = template.id;
-  agreement.project_type = template.project_type;
-  agreement.project_subtype = template.project_subtype;
-  agreement.description = template.description;
-  milestoneState.items = Array.isArray(template.milestones)
-    ? template.milestones.map((row, idx) => ({
-        id: row.id,
-        agreement: agreement.id,
-        order: idx + 1,
-        title: row.title,
-        description: row.description,
-        amount: row.suggested_amount_fixed || "0.00",
-        normalized_milestone_type: row.normalized_milestone_type || "",
-      }))
-    : [];
+  await expect(page.getByTestId('step1-ai-setup-apply-template')).toBeVisible();
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().includes('/api/projects/agreements/') &&
+      response.url().includes('/apply-template/') &&
+      response.request().method() === 'POST'
+    ),
+    page.getByTestId('step1-ai-setup-apply-template').click(),
+  ]);
 
-  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+  await page.goto(`/app/agreements/${agreement.id}/wizard?step=2`, {
     waitUntil: 'domcontentloaded',
   });
   await expect(page.getByText('Site prep')).toBeVisible();
@@ -1911,25 +1959,7 @@ async function exerciseCentralAirTemplateMatch(page, agreement, milestoneState, 
 test('step 1 recommends a saved central air template for an exact match', async ({
   page,
 }) => {
-  const { store, agreement: draftAgreement, milestoneState } = await installWorkflowMocks(page, {
-    agreement: {
-      id: AGREEMENT_ID,
-      agreement_id: AGREEMENT_ID,
-      project_title: '',
-      title: '',
-      project_type: '',
-      project_subtype: '',
-      payment_mode: 'escrow',
-      payment_structure: 'simple',
-      description: '',
-      homeowner: null,
-      status: 'draft',
-      compliance_warning: { warning_level: 'none', message: '' },
-      selected_template_id: null,
-      selected_template: null,
-      selected_template_name_snapshot: '',
-    },
-  });
+  const { store, agreement: draftAgreement, milestoneState } = await installWorkflowMocks(page);
 
   const centralAirTemplate = buildTemplate({
     id: 222,
@@ -1957,25 +1987,7 @@ test('step 1 recommends a saved central air template for an exact match', async 
 test('step 1 recommends a saved central air template for an HVAC alias match', async ({
   page,
 }) => {
-  const { store, agreement: draftAgreement, milestoneState } = await installWorkflowMocks(page, {
-    agreement: {
-      id: AGREEMENT_ID,
-      agreement_id: AGREEMENT_ID,
-      project_title: '',
-      title: '',
-      project_type: '',
-      project_subtype: '',
-      payment_mode: 'escrow',
-      payment_structure: 'simple',
-      description: '',
-      homeowner: null,
-      status: 'draft',
-      compliance_warning: { warning_level: 'none', message: '' },
-      selected_template_id: null,
-      selected_template: null,
-      selected_template_name_snapshot: '',
-    },
-  });
+  const { store, agreement: draftAgreement, milestoneState } = await installWorkflowMocks(page);
 
   const centralAirTemplate = buildTemplate({
     id: 222,

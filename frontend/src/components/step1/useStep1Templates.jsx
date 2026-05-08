@@ -823,14 +823,10 @@ export default function useStep1Templates({
       return null;
     }
 
-    if (!agreementId) {
-      toast.error("Save Draft first so the agreement can receive template milestones.");
-      return null;
-    }
-
     setApplyingTemplateId(template.id);
 
     try {
+      const targetAgreementId = agreementId || "new";
       const detail =
         templateDetail && String(templateDetail?.id) === String(template.id)
           ? templateDetail
@@ -838,7 +834,7 @@ export default function useStep1Templates({
 
       const applyOptions = normalizeApplyOptions(options, detail || template);
 
-      const response = await api.post(`/projects/agreements/${agreementId}/apply-template/`, {
+      const response = await api.post(`/projects/agreements/${targetAgreementId}/apply-template/`, {
         template_id: template.id,
         overwrite_existing: true,
         copy_text_fields: true,

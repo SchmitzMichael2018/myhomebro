@@ -5656,7 +5656,7 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        {startMode === "ai" && aiSetupResult?.kind === "template_match" ? (
+        {aiSetupResult?.kind === "template_match" ? (
           <section
             data-testid="step1-ai-setup-result"
             className={`rounded-2xl border p-5 shadow-sm ${
@@ -5674,7 +5674,7 @@ export default function Step1Details({
             >
               {aiSetupResult?.confidenceLevel === "medium"
                 ? "Optional template match"
-                : "Template recommendation"}
+                : "Template match found"}
             </div>
             <div className="mt-2 text-base font-semibold text-slate-900">
               {aiSetupResult.recommendedTemplate?.name ||
@@ -5708,11 +5708,7 @@ export default function Step1Details({
                 type="button"
                 data-testid="step1-ai-setup-apply-template"
                 onClick={() => handleTemplateApplyWithOptions(aiSetupResult.recommendedTemplate)}
-                disabled={
-                  locked ||
-                  !agreementId ||
-                  applyingTemplateId === aiSetupResult.recommendedTemplate?.id
-                }
+                disabled={locked || applyingTemplateId === aiSetupResult.recommendedTemplate?.id}
                 className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
               >
                 {applyingTemplateId === aiSetupResult.recommendedTemplate?.id
