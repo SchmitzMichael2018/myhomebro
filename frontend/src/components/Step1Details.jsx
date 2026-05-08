@@ -3192,6 +3192,8 @@ export default function Step1Details({
     templateRecommendationScore,
     recommendationLoading,
     recommendationConfidence,
+    recommendedTemplate,
+    recommendedTemplateMatch,
     templateSearch,
     setTemplateSearch,
     selectedTemplate,
@@ -4275,6 +4277,112 @@ export default function Step1Details({
     let setupFieldKeys = [];
     let suggestedSetupValues = null;
     let recommendationData = null;
+    const debugStep1TemplateFlow =
+      typeof import.meta !== "undefined" &&
+      !!import.meta?.env &&
+      (import.meta.env.DEV || import.meta.env.MODE === "test");
+
+    const normalizeRecommendationText = (value) =>
+      safeTrim(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    try {
+      const templateProbeRes = await api.post("/projects/templates/recommend/", {
+        project_title: "",
+        project_type: "",
+        project_subtype: "",
+        project_family_key: resolvedProjectFamily.project_family_key || "",
+        project_family_label: resolvedProjectFamily.project_family_label || "",
+        description: roughDescription,
+      });
+
+      const templateProbeData = templateProbeRes?.data || {};
+      const probeCandidates = Array.isArray(templateProbeData?.candidates)
+        ? templateProbeData.candidates
+        : Array.isArray(templateProbeData?.results)
+        ? templateProbeData.results
+        : [];
+      const probeRecommendedTemplate =
+        templateProbeData?.recommended_template ||
+        templateProbeData?.possible_match ||
+        probeCandidates[0] ||
+        null;
+      const probeConfidence = normalizeTemplateConfidenceLevel(
+        templateProbeData?.confidence_level || templateProbeData?.confidence || "low"
+      );
+      const probeScore = Number(
+        templateProbeData?.score ??
+          probeRecommendedTemplate?.score ??
+          probeRecommendedTemplate?.rank_score ??
+          0
+      );
+      const exactTitleMatch =
+        normalizeRecommendationText(roughDescription) &&
+        normalizeRecommendationText(roughDescription) ===
+          normalizeRecommendationText(probeRecommendedTemplate?.name || "");
+      const probeStrongMatch =
+        Boolean(probeRecommendedTemplate?.id) &&
+        (probeConfidence === "high" || probeScore >= 70 || exactTitleMatch);
+
+      if (probeStrongMatch) {
+        recommendationData = templateProbeData;
+        setAiSetupResult({
+          kind: "template_match",
+          confidenceLevel: "high",
+          refinedDescription: roughDescription,
+          recommendedTemplate: probeRecommendedTemplate,
+          reason:
+            safeTrim(templateProbeData?.reason) ||
+            (exactTitleMatch
+              ? "Matches the template name exactly."
+              : "This template closely matches the job details you provided."),
+          setupFieldKeys: [],
+        });
+        if (probeRecommendedTemplate?.id) {
+          setSelectedTemplateId(String(probeRecommendedTemplate.id));
+          setTemplateSearch(probeRecommendedTemplate.name || "");
+        }
+        if (debugStep1TemplateFlow) {
+          console.debug("[Step1 Find Best Starting Point] template short-circuit", {
+            searchedDescription: roughDescription,
+            loadedTemplatesCount: Array.isArray(filteredTemplates) ? filteredTemplates.length : 0,
+            bestMatchTitle: probeRecommendedTemplate?.name || "",
+            bestMatchScore: probeScore,
+            matchSource:
+              probeRecommendedTemplate?.is_system || probeRecommendedTemplate?.owner_type === "system"
+                ? "system_template"
+                : "my_template",
+            aiSkipped: true,
+            recommendationReason: templateProbeData?.reason || "",
+          });
+        }
+        if (typeof onStep1ResetToChooserChange === "function") {
+          onStep1ResetToChooserChange(false);
+        }
+        return;
+      }
+    } catch (probeErr) {
+      if (debugStep1TemplateFlow) {
+        console.debug("[Step1 Find Best Starting Point] template precheck failed", {
+          searchedDescription: roughDescription,
+          error: probeErr?.message || String(probeErr || ""),
+        });
+      }
+    }
+
+    if (debugStep1TemplateFlow) {
+      console.debug("[Step1 Find Best Starting Point] template precheck result", {
+        searchedDescription: roughDescription,
+        loadedTemplatesCount: Array.isArray(filteredTemplates) ? filteredTemplates.length : 0,
+        bestMatchTitle: recommendedTemplateMatch?.name || "",
+        bestMatchScore: recommendedTemplateMatch?.score ?? null,
+        matchSource: recommendedTemplateMatch?.source || "",
+        aiSkipped: false,
+      });
+    }
 
     try {
       const clarificationContext = buildDescriptionRequestContext(
@@ -5685,7 +5793,7 @@ export default function Step1Details({
             <div className="mt-1 text-sm text-slate-700">
               {aiSetupResult?.confidenceLevel === "medium"
                 ? "We refined the description and found a template that could fit this project. Review it before you decide."
-                : "We refined the description first and found a strong template match for this setup."}
+                : "We found a saved template that matches this job."}
             </div>
             <div className="mt-2 rounded-xl border border-white/80 bg-white/80 px-4 py-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5713,7 +5821,7 @@ export default function Step1Details({
               >
                 {applyingTemplateId === aiSetupResult.recommendedTemplate?.id
                   ? "Applying..."
-                  : "Apply Template"}
+                  : "Use Template"}
               </button>
               <button
                 type="button"
@@ -5721,7 +5829,7 @@ export default function Step1Details({
                 onClick={handleUseAiDescriptionOnly}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
-                Use Description Only
+                Build with AI instead
               </button>
             </div>
           </section>

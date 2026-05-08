@@ -472,6 +472,46 @@ export default function useStep1Templates({
     );
   }, [mergedTemplates, currentProjectType, currentProjectSubtype, templateSearch, resolvedProjectFamily]);
 
+  const recommendedTemplate = useMemo(() => {
+    const byRecommendationId = recommendedTemplateId
+      ? (Array.isArray(recommendedCandidates) ? recommendedCandidates : []).find(
+          (tpl) => String(tpl?.id || "") === String(recommendedTemplateId || "")
+        )
+      : null;
+
+    return (
+      byRecommendationId ||
+      selectedTemplate ||
+      (Array.isArray(mergedTemplates)
+        ? mergedTemplates.find((tpl) => String(tpl?.id || "") === String(recommendedTemplateId || ""))
+        : null) ||
+      null
+    );
+  }, [mergedTemplates, recommendedCandidates, recommendedTemplateId, selectedTemplate]);
+
+  const recommendedTemplateMatch = useMemo(() => {
+    if (!recommendedTemplate?.id) return null;
+
+    const source =
+      recommendedTemplate?.is_system || recommendedTemplate?.owner_type === "system"
+        ? "system_template"
+        : "my_template";
+
+    return {
+      id: recommendedTemplate.id,
+      name: recommendedTemplate.name || "",
+      score:
+        templateRecommendationScore ??
+        recommendedTemplate?._matchRank ??
+        recommendedTemplate?.score ??
+        recommendedTemplate?.rank_score ??
+        null,
+      confidence: recommendationConfidence,
+      source,
+      isStrong: recommendationConfidence === "high",
+    };
+  }, [recommendedTemplate, templateRecommendationScore, recommendationConfidence]);
+
   const resetRecommendationState = useCallback(() => {
     setRecommendedTemplateId(null);
     setTemplateRecommendationReason("");
@@ -776,10 +816,13 @@ export default function useStep1Templates({
         if (debugTemplateMatch) {
           console.debug("[Step1 templates] recommendation", {
             count: classifiedCandidates.length,
+            loadedCount: mergedTemplates.length,
             selectedId: chosenId,
             selectedName: chosen?.name || "",
             score: backendScore,
             confidence: backendConfidence,
+            matchSource:
+              chosen?.is_system || chosen?.owner_type === "system" ? "system_template" : "my_template",
             reason: chosen?._matchReason || data?.reason || "",
           });
         }
@@ -1021,6 +1064,8 @@ export default function useStep1Templates({
     setTemplateSearch,
 
     selectedTemplate,
+    recommendedTemplate,
+    recommendedTemplateMatch,
     filteredTemplates,
 
     noTemplateMatch,
