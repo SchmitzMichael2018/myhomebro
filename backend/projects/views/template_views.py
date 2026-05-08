@@ -9,6 +9,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from projects.ai.template_builder import (
     create_template_from_scope,
@@ -392,6 +393,13 @@ class ApplyTemplateToNewAgreementView(APIView):
             create_payload, apply_options = self._split_fresh_apply_payload(request)
             agreement = self._create_draft_agreement(create_payload, contractor)
             agreement = Agreement.objects.get(pk=agreement.pk)
+
+            requested_start = create_payload.get("project_start_date") or create_payload.get("start")
+            parsed_start = parse_date(str(requested_start)) if requested_start else None
+            if parsed_start and getattr(agreement, "start", None) != parsed_start:
+                agreement.start = parsed_start
+                agreement.save(update_fields=["start"])
+                agreement.refresh_from_db()
 
             template_id = apply_options["template_id"]
             try:

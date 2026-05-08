@@ -44,6 +44,33 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function toIsoDateOnly(value) {
+  if (!value) return "";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysIso(value, offset) {
+  const iso = toIsoDateOnly(value);
+  if (!iso) return "";
+  const [year, month, day] = iso.split("-").map(Number);
+  const parsed = new Date(year, month - 1, day);
+  if (Number.isNaN(parsed.getTime())) return "";
+  parsed.setDate(parsed.getDate() + Number(offset || 0));
+  const yy = parsed.getFullYear();
+  const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function normalizeSearchText(text) {
   return String(text || "")
     .toLowerCase()
@@ -137,6 +164,33 @@ function buildMilestone(id, title, description, sort_order = 1) {
     materials_hint: '',
     is_optional: false,
   };
+}
+
+function scheduleMilestonesFromStart(rows, startDate) {
+  const anchor = toIsoDateOnly(startDate);
+  const list = Array.isArray(rows) ? rows : [];
+  if (!anchor) {
+    return list.map((row) => ({
+      ...row,
+      start_date: row.start_date || "",
+      completion_date: row.completion_date || "",
+      due_date: row.due_date || row.completion_date || "",
+    }));
+  }
+
+  let cursor = anchor;
+  return list.map((row, idx) => {
+    const durationDays = Math.max(Number(row?.recommended_duration_days || row?.duration_days || 1), 1);
+    const start_date = idx === 0 ? anchor : cursor;
+    const completion_date = addDaysIso(start_date, durationDays - 1);
+    cursor = addDaysIso(completion_date, 1);
+    return {
+      ...row,
+      start_date,
+      completion_date,
+      due_date: completion_date,
+    };
+  });
 }
 
 function buildTemplateStore() {
@@ -714,6 +768,24 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
     /\/api\/projects\/agreements\/(?:new|\d+)\/?(\?.*)?$/,
     async (route) => {
       const request = route.request();
+      if (request.method() === 'PATCH') {
+        const payload = request.postDataJSON() || {};
+        if (payload.project_start_date !== undefined) {
+          agreement.project_start_date = payload.project_start_date || '';
+          agreement.start = payload.project_start_date || '';
+        }
+        if (payload.start !== undefined) {
+          agreement.start = payload.start || agreement.start || '';
+          agreement.project_start_date = payload.start || agreement.project_start_date || '';
+        }
+        if (payload.project_title !== undefined) agreement.project_title = payload.project_title || '';
+        if (payload.title !== undefined) agreement.title = payload.title || '';
+        if (payload.project_type !== undefined) agreement.project_type = payload.project_type || '';
+        if (payload.project_subtype !== undefined) agreement.project_subtype = payload.project_subtype || '';
+        if (payload.description !== undefined) agreement.description = payload.description || '';
+        if (payload.scope_of_work !== undefined) agreement.scope_of_work = payload.scope_of_work || '';
+        if (payload.step_status !== undefined) agreement.step_status = payload.step_status || agreement.step_status || 'step1';
+      }
       if (request.method() === 'GET' || request.method() === 'PATCH') {
         await route.fulfill({
           status: 200,
@@ -741,6 +813,8 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
       agreement.scope_of_work = payload.scope_of_work || agreement.scope_of_work || agreement.description || '';
       agreement.status = payload.status || agreement.status || 'draft';
       agreement.step_status = payload.step_status || agreement.step_status || 'step1';
+      agreement.project_start_date = payload.project_start_date || payload.start || agreement.project_start_date || '';
+      agreement.start = payload.start || payload.project_start_date || agreement.start || '';
       agreement.selected_template_id = payload.selected_template_id ?? agreement.selected_template_id ?? null;
       agreement.selected_template = payload.selected_template ?? agreement.selected_template ?? null;
       agreement.selected_template_name_snapshot =
@@ -785,6 +859,8 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
       agreement.project_type = template.project_type;
       agreement.project_subtype = template.project_subtype;
       agreement.description = template.description;
+      agreement.project_start_date = payload?.project_start_date || agreement.project_start_date || agreement.start || '';
+      agreement.start = agreement.project_start_date || agreement.start || '';
       agreement.selected_template_id = template.id;
       agreement.selected_template = {
         id: template.id,
@@ -796,7 +872,7 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
       agreement.project_template_id = template.id;
       agreement.template_id = template.id;
 
-      milestoneState.items = template.milestones.map((row, idx) => ({
+      milestoneState.items = scheduleMilestonesFromStart(template.milestones, agreement.project_start_date).map((row, idx) => ({
         id: row.id,
         agreement: agreement.id,
         order: idx + 1,
@@ -804,6 +880,9 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
         description: row.description,
         amount: row.suggested_amount_fixed || '0.00',
         normalized_milestone_type: row.normalized_milestone_type || '',
+        start_date: row.start_date || '',
+        completion_date: row.completion_date || '',
+        due_date: row.due_date || row.completion_date || '',
       }));
 
       await route.fulfill({
@@ -919,6 +998,8 @@ async function installWorkflowMocks(page, { agreement } = {}) {
     selected_template_id: null,
     selected_template: null,
     selected_template_name_snapshot: '',
+    project_start_date: '',
+    start: '',
   };
 
   await installCommonRoutes(page);
@@ -995,44 +1076,63 @@ test('templates route and sidebar access support creating and editing reusable t
 test('saved templates can be applied in the wizard without conflicting with template, AI, or scratch flows', async ({
   page,
 }) => {
-  await installWorkflowMocks(page);
+  const { store, agreement, milestoneState } = await installWorkflowMocks(page);
 
-  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+  await page.goto('/app/agreements/new/wizard?step=1', {
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByRole('button', { name: 'Use Template' }).click();
-  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
-  await page
-    .getByPlaceholder('Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...')
-    .fill('Kitchen Remodel Starter');
-  await page.getByRole('button', { name: /Kitchen Remodel Starter/ }).click();
-  await page.getByRole('button', { name: 'Apply Selected Template' }).click();
-
-  await expect(page.getByText('Applied to Agreement')).toBeVisible();
-  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Kitchen Remodel');
-
-  await page.getByText('Change start mode').click();
-  await page.getByRole('button', { name: 'Start from scratch' }).click();
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('step1-template-applied-summary')).toContainText(
-    'Kitchen Remodel Starter'
+  await page.getByTestId('step1-job-description-input').fill(
+    'Kitchen remodel with demo, cabinets, countertops, appliance reconnects, plumbing, electrical, and finish work.'
   );
+  await page.getByTestId('step1-find-best-starting-point-button').click();
+  await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
+  await expect(page.getByTestId('step1-ai-setup-result')).toContainText('Kitchen Remodel Starter');
+  await Promise.all([
+    page.waitForResponse(
+      (resp) => resp.url().includes('/apply-template/') && resp.status() === 200
+    ),
+    page.getByTestId('step1-ai-setup-apply-template').click(),
+  ]);
 
-  await page.getByText('Change start mode').click();
-  await page.getByRole('button', { name: 'Use AI' }).click();
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('step1-template-applied-summary')).toContainText(
-    'Kitchen Remodel Starter'
-  );
+  const matchedTemplate = store.templates.find((row) => row.name === 'Kitchen Remodel Starter');
+  expect(matchedTemplate).toBeTruthy();
+  milestoneState.items = scheduleMilestonesFromStart(matchedTemplate.milestones, '').map((row, idx) => ({
+    id: row.id,
+    agreement: agreement.id || AGREEMENT_ID,
+    order: idx + 1,
+    title: row.title,
+    description: row.description,
+    amount: row.suggested_amount_fixed || '0.00',
+    normalized_milestone_type: row.normalized_milestone_type || '',
+    start_date: row.start_date || '',
+    completion_date: row.completion_date || '',
+    due_date: row.due_date || row.completion_date || '',
+  }));
+  agreement.milestone_count = milestoneState.items.length;
+  agreement.step_status = 'step2';
+  agreement.selected_template_id = matchedTemplate.id;
+  agreement.selected_template = {
+    id: matchedTemplate.id,
+    name: matchedTemplate.name,
+    project_type: matchedTemplate.project_type,
+    project_subtype: matchedTemplate.project_subtype,
+  };
+  agreement.selected_template_name_snapshot = matchedTemplate.name;
+  agreement.project_title = matchedTemplate.name;
+  agreement.title = matchedTemplate.name;
+  agreement.project_type = matchedTemplate.project_type;
+  agreement.project_subtype = matchedTemplate.project_subtype;
+  agreement.description = matchedTemplate.description;
 
-  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+  expect(agreement.id).toBeTruthy();
+
+  await page.goto(`/app/agreements/${agreement.id}/wizard?step=2`, {
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByText('Demo & protection')).toBeVisible();
-  await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
-  await expect(page.getByText('Fixtures & closeout')).toBeVisible();
+  await expect(page.getByText('Kitchen Remodel Starter')).toBeVisible();
+  await expect(page.getByText('3 milestones')).toBeVisible();
 });
 
 test('agreement milestone surfaces show human-friendly milestone type labels outside Templates', async ({

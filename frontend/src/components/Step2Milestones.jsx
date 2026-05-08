@@ -492,6 +492,28 @@ function shiftTimelineRowsToToday(rows, { manualDateIds = [] } = {}) {
   });
 }
 
+function shiftTimelineRowsFromStartDate(rows, startDate) {
+  const normalizedRows = sortFallbackMilestones(normalizeCardRows(rows).filter(Boolean));
+  const baseStart = toDateOnly(startDate);
+  if (!normalizedRows.length || !baseStart) return normalizedRows;
+
+  let cursor = baseStart;
+  return normalizedRows.map((row, idx) => {
+    const durationDays = Math.max(Number(row?.recommended_duration_days || getDurationDaysForRow(row) || 1), 1);
+    const start = cursor;
+    const completion = addDays(start, durationDays - 1);
+    cursor = addDays(completion, 1);
+    return {
+      ...row,
+      order: row?.order != null ? row.order : idx + 1,
+      start_date: start,
+      completion_date: completion,
+      due_date: completion,
+      recommended_duration_days: durationDays,
+    };
+  });
+}
+
 function estimateAmountDiffers(currentAmount, suggestedAmount) {
   const current = parseAmountStrict(currentAmount);
   const next = parseAmountStrict(suggestedAmount);
@@ -1203,6 +1225,9 @@ export default function Step2Milestones({
   const [saveTemplateBusy, setSaveTemplateBusy] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
+  const [projectStartDateDraft, setProjectStartDateDraft] = useState("");
+  const [projectStartDateBusy, setProjectStartDateBusy] = useState(false);
+  const [projectStartDatePrompt, setProjectStartDatePrompt] = useState(null);
   const [fallbackMilestones, setFallbackMilestones] = useState(null);
   const [stagedSuggestedMilestoneIds, setStagedSuggestedMilestoneIds] = useState([]);
   const [stagedSuggestedTimelineIds, setStagedSuggestedTimelineIds] = useState([]);
@@ -2204,6 +2229,15 @@ export default function Step2Milestones({
 
   const selectedTemplateMeta = useMemo(() => deriveSelectedTemplateMeta(agreementMeta), [agreementMeta]);
   const templateApplied = !!selectedTemplateMeta;
+  const agreementProjectStartDate = useMemo(
+    () => toDateOnly(agreementMeta?.project_start_date || agreementMeta?.start || ""),
+    [agreementMeta?.project_start_date, agreementMeta?.start]
+  );
+
+  useEffect(() => {
+    setProjectStartDateDraft(agreementProjectStartDate || "");
+  }, [agreementProjectStartDate]);
+
   const projectClass = normalizeProjectClass(agreementMeta?.project_class);
   const isCommercialProject = projectClass === "commercial";
   const isResidentialProject = !isCommercialProject;
@@ -2534,6 +2568,7 @@ export default function Step2Milestones({
       project_family_key: safeStr(projectContextSummary?.projectFamilyKey),
       project_family_label: safeStr(projectContextSummary?.projectFamilyLabel) || safeStr(projectContextSummary?.projectType),
     },
+    projectStartDate: projectStartDateDraft || agreementProjectStartDate || "",
   });
   const aiMilestonePreview = useMemo(
     () => (Array.isArray(aiPreview?.milestones) ? aiPreview.milestones : []),
@@ -3160,6 +3195,7 @@ export default function Step2Milestones({
     setAiMilestoneGenerationBusy(true);
     setTimeout(() => {
       try {
+        const anchorStart = agreementProjectStartDate || getTodayIsoDate();
         const previewRows = dedupeMilestoneRows(
           normalizeCardRows(
             buildLocalMilestoneSuggestions().map((row, idx) =>
@@ -3175,11 +3211,14 @@ export default function Step2Milestones({
           ).filter(Boolean),
           { existingRows: mode === "add_missing" ? effectiveMilestones : [] }
         );
-        const analysis = analyzeMilestonePlan(previewRows, {
+        const adjustedRows = anchorStart
+          ? shiftTimelineRowsFromStartDate(previewRows, anchorStart)
+          : previewRows;
+        const analysis = analyzeMilestonePlan(adjustedRows, {
           existingRows: mode === "add_missing" ? effectiveMilestones : [],
         });
 
-        if (!previewRows.length) {
+        if (!adjustedRows.length) {
           setAiPreview(null);
           setAiMilestonePlanAnalysis(analysis);
           setAiMilestoneGenerationError(
@@ -3198,7 +3237,7 @@ export default function Step2Milestones({
             ) ||
             safeStr(agreementMeta?.project_title || agreementMeta?.title) ||
             safeStr(projectContextSummary?.projectFamilyLabel),
-          milestones: previewRows,
+          milestones: adjustedRows,
           questions: aiMilestonePreviewQuestions.length
             ? aiMilestonePreviewQuestions
             : mergedClarificationQuestions,
@@ -3213,7 +3252,7 @@ export default function Step2Milestones({
         onAiUpdateFeedback("AI suggested milestones are ready for review.");
         setNewMilestoneOpen(false);
         toast.success(
-          `Generated ${previewRows.length} suggested milestone${previewRows.length === 1 ? "" : "s"}.`
+          `Generated ${adjustedRows.length} suggested milestone${adjustedRows.length === 1 ? "" : "s"}.`
         );
       } catch (err) {
         console.error("Step2 suggested milestone generation failed:", err);
@@ -3341,6 +3380,80 @@ export default function Step2Milestones({
       : normalizedRows.map((row) => row?.id).filter(Boolean)
     ).filter(Boolean);
     flashPricingHighlights(highlightIds);
+  }
+
+  async function persistProjectStartDate(nextStart, { updateTimeline = false } = {}) {
+    if (!agreementId) {
+      toast.error("Save the agreement first.");
+      return false;
+    }
+
+    const normalizedStart = toDateOnly(nextStart);
+    setProjectStartDateBusy(true);
+    try {
+      const { data } = await api.patch(`/projects/agreements/${agreementId}/`, {
+        project_start_date: normalizedStart || null,
+      });
+
+      if (updateTimeline && normalizedStart) {
+        const nextRows = shiftTimelineRowsFromStartDate(effectiveMilestones, normalizedStart);
+        if (nextRows.length) {
+          setFallbackMilestones(sortFallbackMilestones(nextRows));
+          setStagedSuggestedTimelineIds((prev) => [
+            ...new Set([...(Array.isArray(prev) ? prev : []), ...nextRows.map((row) => row?.id).filter(Boolean)]),
+          ]);
+          markMilestonesUserModified();
+          const feedback = "Milestone dates updated from the new project start date.";
+          setAiChangeSummary(feedback);
+          onAiUpdateFeedback(feedback);
+        }
+      }
+
+      setAgreementMeta((prev) => ({
+        ...(prev || {}),
+        ...(data || {}),
+        project_start_date: data?.project_start_date || data?.start || normalizedStart || "",
+      }));
+
+      if (typeof refreshAgreement === "function") {
+        await refreshAgreement();
+      }
+      await refreshAgreementMeta();
+
+      toast.success(
+        normalizedStart ? "Project start date saved." : "Project start date cleared."
+      );
+      return true;
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || err?.message || "Unable to save project start date.");
+      return false;
+    } finally {
+      setProjectStartDateBusy(false);
+      setProjectStartDatePrompt(null);
+    }
+  }
+
+  function requestProjectStartDateSave() {
+    const nextStart = toDateOnly(projectStartDateDraft);
+    if (nextStart === agreementProjectStartDate) {
+      toast("Project start date is unchanged.");
+      return;
+    }
+
+    if (!nextStart) {
+      void persistProjectStartDate("", { updateTimeline: false });
+      return;
+    }
+
+    if (effectiveMilestones.length) {
+      setProjectStartDatePrompt({
+        nextStart,
+        milestoneCount: effectiveMilestones.length,
+      });
+      return;
+    }
+
+    void persistProjectStartDate(nextStart, { updateTimeline: false });
   }
 
   function applyEstimateSuggestedAmounts() {
@@ -3517,7 +3630,8 @@ export default function Step2Milestones({
     const shiftDays = firstExistingStart && today && firstExistingStart < today ? diffDays(firstExistingStart, today) : 0;
     const hasExistingTimeline = !!firstExistingStart;
 
-    let cursor = hasExistingTimeline ? firstExistingStart : today || "";
+    const projectStartAnchor = agreementProjectStartDate || today || "";
+    let cursor = hasExistingTimeline ? firstExistingStart : projectStartAnchor;
     const nextRows = currentRows.map((row, idx) => {
       const match =
         suggestionById.get(row?.id) ||
@@ -3565,7 +3679,7 @@ export default function Step2Milestones({
         };
       }
 
-      const startDate = cursor || today || "";
+      const startDate = cursor || projectStartAnchor || today || "";
       const completionDate = addDays(startDate, durationDays - 1);
       cursor = addDays(completionDate, 1);
       return {
@@ -5238,6 +5352,48 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
+      {projectStartDatePrompt ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          data-testid="step2-project-start-date-prompt"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="text-lg font-semibold text-slate-900">Update milestone dates from new start date?</div>
+            <div className="mt-2 text-sm text-slate-700">
+              The agreement already has {projectStartDatePrompt.milestoneCount || 0} milestone
+              {projectStartDatePrompt.milestoneCount === 1 ? "" : "s"} on it.
+              Choose whether to shift the current milestone dates or keep them as they are.
+            </div>
+            <div className="mt-2 text-sm text-slate-700">
+              New start date: <span className="font-semibold">{friendly(projectStartDatePrompt.nextStart)}</span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => persistProjectStartDate(projectStartDatePrompt.nextStart, { updateTimeline: true })}
+                className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
+              >
+                Update dates
+              </button>
+              <button
+                type="button"
+                onClick={() => persistProjectStartDate(projectStartDatePrompt.nextStart, { updateTimeline: false })}
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-medium text-sky-700 hover:bg-sky-50"
+              >
+                Keep existing dates
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectStartDatePrompt(null)}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {false && estimatePreview ? (
         <details
           className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm"
@@ -6056,6 +6212,61 @@ export default function Step2Milestones({
 
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600">
           AI milestone generation coming next.
+        </div>
+
+        <div
+          className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4 shadow-sm"
+          data-testid="step2-project-start-date-card"
+        >
+          <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-950">Project Start Date</div>
+              <div className="mt-1 text-xs text-slate-600">
+                Used to schedule milestone dates. You can adjust dates later.
+              </div>
+            </div>
+            <div className="text-xs font-medium text-sky-700">
+              {agreementProjectStartDate
+                ? `Current saved date: ${friendly(agreementProjectStartDate)}`
+                : "No saved start date yet"}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Project Start Date
+              </label>
+              <input
+                type="date"
+                value={projectStartDateDraft || ""}
+                onChange={(e) => setProjectStartDateDraft(e.target.value)}
+                disabled={projectStartDateBusy || milestonesLocked}
+                className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+                data-testid="step2-project-start-date-input"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={requestProjectStartDateSave}
+                disabled={projectStartDateBusy || milestonesLocked}
+                className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                data-testid="step2-project-start-date-save"
+              >
+                {projectStartDateBusy ? "Saving..." : "Save Start Date"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setProjectStartDateDraft(agreementProjectStartDate || "")}
+                disabled={projectStartDateBusy || milestonesLocked}
+                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-60"
+                data-testid="step2-project-start-date-reset"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
         </div>
 
         {newMilestoneOpen ? (

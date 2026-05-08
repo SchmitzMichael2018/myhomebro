@@ -31,6 +31,7 @@ NON_MODEL_FIELDS = {
     "custom_warranty_text",
     "project_title",
     "title",
+    "project_start_date",
     "scope_of_work",
     "template_id",
     "overwrite_existing",
@@ -104,7 +105,11 @@ def create_agreement_from_validated(validated: Dict[str, Any]) -> Agreement:
     - Preserves early draft title flow by hydrating related Project.title
     """
     original = dict(validated)
-    data = strip_non_model_fields(validated)
+    normalized = dict(validated)
+    if normalized.get("project_start_date") not in (None, "") and normalized.get("start") in (None, ""):
+        normalized["start"] = normalized.get("project_start_date")
+
+    data = strip_non_model_fields(normalized)
     allowed_fields = {field.name for field in Agreement._meta.fields}
     data = {key: value for key, value in data.items() if key in allowed_fields}
 

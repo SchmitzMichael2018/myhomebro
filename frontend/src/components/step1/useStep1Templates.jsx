@@ -310,6 +310,13 @@ function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTi
         ""
     );
 
+  const nextStartDate =
+    normalizeStep1FieldValue(
+      agreement?.project_start_date ||
+        agreement?.start ||
+        ""
+    );
+
   const nextDescription =
     normalizeStep1FieldValue(
       agreement?.description ??
@@ -322,6 +329,7 @@ function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTi
       project_title: nextTitle || "",
       project_type: normalizeStep1FieldValue(agreement?.project_type ?? ""),
       project_subtype: normalizeStep1FieldValue(agreement?.project_subtype ?? ""),
+      project_start_date: nextStartDate || "",
       description: nextDescription || "",
       selected_template: template,
       selected_template_id: nextTemplateId,
@@ -895,6 +903,7 @@ export default function useStep1Templates({
         payment_structure: dLocal?.payment_structure || "simple",
         agreement_mode: dLocal?.agreement_mode || "standard",
         step_status: dLocal?.step_status || "step1",
+        project_start_date: dLocal?.project_start_date || dLocal?.start || "",
         is_draft: !agreementId,
         wizard_step: 1,
       });

@@ -93,7 +93,7 @@ function getTodayIsoDate() {
   return `${y}-${m}-${d}`;
 }
 
-function shiftMilestoneDatesToToday(list) {
+function shiftMilestoneDatesToToday(list, anchorStart = "") {
   const rows = Array.isArray(list) ? list : [];
   if (!rows.length) return [];
 
@@ -105,8 +105,10 @@ function shiftMilestoneDatesToToday(list) {
   });
   const today = getTodayIsoDate();
   const firstExistingStart = normalized.map((row) => toDateOnly(row?.start_date || row?.start)).find(Boolean) || "";
+  const requestedStart = toDateOnly(anchorStart);
   const baseStart =
-    firstExistingStart && today && firstExistingStart > today ? firstExistingStart : today || firstExistingStart;
+    requestedStart ||
+    (firstExistingStart && today && firstExistingStart > today ? firstExistingStart : today || firstExistingStart);
   const shiftDays = firstExistingStart && baseStart ? diffDays(firstExistingStart, baseStart) : 0;
 
   if (!baseStart) return normalized;
@@ -140,7 +142,7 @@ function shiftMilestoneDatesToToday(list) {
   });
 }
 
-function normalizeCreatedMilestones(list) {
+function normalizeCreatedMilestones(list, anchorStart = "") {
   if (!Array.isArray(list)) return [];
   return shiftMilestoneDatesToToday(
     dedupeMilestoneRows(
@@ -168,12 +170,13 @@ function normalizeCreatedMilestones(list) {
       recommended_duration_days: m?.recommended_duration_days ?? "",
       materials_hint: safeStr(m?.materials_hint),
       })),
-      {}
+      {},
+      anchorStart
     )
   );
 }
 
-function normalizeAiMilestones(list) {
+function normalizeAiMilestones(list, anchorStart = "") {
   if (!Array.isArray(list)) return [];
   return shiftMilestoneDatesToToday(
     dedupeMilestoneRows(
@@ -199,7 +202,8 @@ function normalizeAiMilestones(list) {
         note: safeStr(m?.note),
       };
       }),
-      {}
+      {},
+      anchorStart
     )
   );
 }
@@ -611,6 +615,7 @@ export default function useAgreementMilestoneAI({
   onCreditsUpdate,
   onMilestonesReplaced,
   projectFamilyContext = {},
+  projectStartDate = "",
 }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
@@ -692,11 +697,12 @@ export default function useAgreementMilestoneAI({
           notes: safeStr(notes),
           project_family_key: resolvedProjectFamily.project_family_key,
           project_family_label: resolvedProjectFamily.project_family_label,
+          project_start_date: safeStr(projectStartDate),
         });
 
         const nextPreview = {
           scope_text: safeStr(res?.data?.scope_text),
-          milestones: normalizeAiMilestones(res?.data?.milestones || []),
+          milestones: normalizeAiMilestones(res?.data?.milestones || [], projectStartDate),
           questions: normalizeAiQuestions(res?.data?.questions || []),
           raw: res?.data || {},
         };
@@ -733,6 +739,7 @@ export default function useAgreementMilestoneAI({
       ensureNoTemplateApplied,
       resolvedProjectFamily.project_family_key,
       resolvedProjectFamily.project_family_label,
+      projectStartDate,
     ]
   );
 
@@ -778,10 +785,10 @@ export default function useAgreementMilestoneAI({
           await replaceAiQuestionsOnAgreement(aiPreview.questions);
         }
 
-        const created = normalizeCreatedMilestones(res?.data?.created || []);
+        const createdWithTimeline = normalizeCreatedMilestones(res?.data?.created || [], projectStartDate);
 
-        if (typeof onMilestonesReplaced === "function" && created.length) {
-          onMilestonesReplaced(created, mode);
+        if (typeof onMilestonesReplaced === "function" && createdWithTimeline.length) {
+          onMilestonesReplaced(createdWithTimeline, mode);
         }
 
         if (typeof refreshMilestones === "function") {
@@ -792,13 +799,13 @@ export default function useAgreementMilestoneAI({
           await refreshAgreement();
         }
 
-        const count = Number(res?.data?.count || created.length || 0);
+        const count = Number(res?.data?.count || createdWithTimeline.length || 0);
 
         setAiPreview(null);
 
         return {
           count,
-          created,
+          created: createdWithTimeline,
           raw: res?.data || {},
         };
       } catch (e) {
@@ -824,6 +831,7 @@ export default function useAgreementMilestoneAI({
       ensureNoTemplateApplied,
       resolvedProjectFamily.project_family_key,
       resolvedProjectFamily.project_family_label,
+      projectStartDate,
     ]
   );
 

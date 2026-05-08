@@ -3402,6 +3402,11 @@ export default function Step1Details({
     setDLocal((prev) => ({
       ...prev,
       project_title: nextProjectTitle,
+      project_start_date:
+        nextAgreement.project_start_date ??
+        nextAgreement.start ??
+        prev.project_start_date ??
+        "",
       project_class: normalizeProjectClass(nextAgreement.project_class ?? prev.project_class),
       project_type:
         nextAgreement.project_type ?? nextAgreement.projectType ?? prev.project_type ?? "",
@@ -3475,6 +3480,11 @@ export default function Step1Details({
         address_city: nextAddressCity,
         address_state: nextAddressState,
         address_postal_code: nextAddressPostalCode,
+        project_start_date:
+          nextAgreement.project_start_date ??
+          nextAgreement.start ??
+          dLocal?.project_start_date ??
+          "",
         address_search: nextAddressLine1 || "",
       });
     }
@@ -6810,6 +6820,24 @@ export default function Step1Details({
                 {step1FieldErrors.project_title ? (
                   <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.project_title}</div>
                 ) : null}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-900">
+                  Project Start Date
+                </label>
+                <input
+                  data-testid="agreement-project-start-date-input"
+                  type="date"
+                  name="project_start_date"
+                  value={safeTrim(dLocal?.project_start_date || "")}
+                  onChange={locked ? undefined : handleStep1LocalChange}
+                  disabled={locked}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                />
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Used to schedule milestone dates. You can adjust dates later.
+                </div>
               </div>
 
               <div>

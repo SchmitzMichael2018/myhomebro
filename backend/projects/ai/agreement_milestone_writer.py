@@ -1784,6 +1784,7 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         "notes": notes or "",
         "total_budget": total_cost,
         "milestone_count_target": milestone_count,
+        "project_start_date": start_date,
         "start_date": start_date,
         "end_date": end_date,
     }

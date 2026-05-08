@@ -376,6 +376,7 @@ function buildEmptyDLocal(projectFamilyContext = {}) {
     recurrence_interval: "1",
     recurrence_start_date: "",
     recurrence_end_date: "",
+    project_start_date: "",
     maintenance_status: "active",
     auto_generate_next_occurrence: true,
     service_window_notes: "",
@@ -917,6 +918,7 @@ export default function AgreementWizard() {
               : prev.recurrence_interval || "1",
           recurrence_start_date: data?.recurrence_start_date || prev.recurrence_start_date || "",
           recurrence_end_date: data?.recurrence_end_date || prev.recurrence_end_date || "",
+          project_start_date: data?.project_start_date || data?.start || prev.project_start_date || "",
           maintenance_status: data?.maintenance_status || prev.maintenance_status || "active",
           auto_generate_next_occurrence:
             data?.auto_generate_next_occurrence ?? prev.auto_generate_next_occurrence ?? true,
@@ -1098,6 +1100,8 @@ export default function AgreementWizard() {
         draftPayload.recurrence_start_date || prefill.recurrence_start_date || "",
       recurrence_end_date:
         draftPayload.recurrence_end_date || prefill.recurrence_end_date || "",
+      project_start_date:
+        draftPayload.project_start_date || draftPayload.start || prefill.project_start_date || "",
       maintenance_status: draftPayload.maintenance_status || prefill.maintenance_status || "",
       auto_generate_next_occurrence:
         draftPayload.auto_generate_next_occurrence ?? prefill.auto_generate_next_occurrence ?? "",
@@ -1303,6 +1307,8 @@ export default function AgreementWizard() {
         dLocal.agreement_mode === "maintenance" ? dLocal.recurrence_start_date || null : null,
       recurrence_end_date:
         dLocal.agreement_mode === "maintenance" ? dLocal.recurrence_end_date || null : null,
+      project_start_date: dLocal.project_start_date || null,
+      start: dLocal.project_start_date || null,
       maintenance_status:
         dLocal.agreement_mode === "maintenance" ? dLocal.maintenance_status || "active" : "active",
       auto_generate_next_occurrence:

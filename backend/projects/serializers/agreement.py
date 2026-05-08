@@ -515,6 +515,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     total = serializers.SerializerMethodField()
     amount = serializers.SerializerMethodField()
     start = serializers.SerializerMethodField()
+    project_start_date = serializers.DateField(required=False, allow_null=True, source="start")
     end = serializers.SerializerMethodField()
 
     invoices_count = serializers.SerializerMethodField()

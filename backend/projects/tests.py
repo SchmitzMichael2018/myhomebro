@@ -843,6 +843,7 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         )
 
     def test_service_prompt_includes_scope_of_work_and_original_description(self):
+        project_start = timezone.localdate() + timedelta(days=7)
         agreement = self._agreement(
             project_subtype="Siding Replacement",
             description="Replace siding on a single-story home with trim repairs and cleanup.",
@@ -852,6 +853,8 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
                 "measurement_notes": "Approximate measurements only.",
             },
         )
+        agreement.start = project_start
+        agreement.save(update_fields=["start"])
         captured = {}
 
         class FakeResponses:
@@ -907,6 +910,8 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         )
         self.assertEqual(user_json["project_type"], "Remodel")
         self.assertEqual(user_json["project_subtype"], "Siding Replacement")
+        self.assertEqual(user_json["project_start_date"], project_start.isoformat())
+        self.assertEqual(user_json["start_date"], project_start.isoformat())
 
     def test_service_falls_back_to_contractordriven_rows_for_siding_roofing_and_painting(self):
         def make_agreement(*, project_title, **agreement_kwargs):
@@ -14361,6 +14366,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
             description="HVAC installation template for central air systems.",
             scope_description="Central air installation with condenser, line set, thermostat, startup, and cleanup.",
         )
+        project_start = timezone.localdate() + timedelta(days=7)
 
         response = self.client.post(
             "/api/projects/agreements/new/apply-template/",
@@ -14372,6 +14378,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
                 "auto_schedule": True,
                 "spread_enabled": False,
                 "spread_total": "0.00",
+                "project_start_date": project_start.isoformat(),
                 "project_title": "central air installation",
                 "description": "central air installation",
                 "project_type": "",
@@ -14392,13 +14399,19 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(body["agreement"]["selected_template_id"], saved_template.id)
         self.assertEqual(body["agreement"]["selected_template"]["name"], saved_template.name)
         self.assertEqual(body["agreement"]["project_title"], saved_template.name)
+        self.assertEqual(body["agreement"]["project_start_date"], project_start.isoformat())
+        self.assertEqual(body["result"]["start_date"], project_start.isoformat())
         self.assertGreaterEqual(body["result"]["created_count"], 2)
 
         fresh_agreement = Agreement.objects.get(pk=body["agreement"]["id"])
         self.assertEqual(fresh_agreement.selected_template_id, saved_template.id)
         self.assertEqual(fresh_agreement.project.title, saved_template.name)
+        self.assertEqual(fresh_agreement.start.isoformat(), project_start.isoformat())
         self.assertEqual(fresh_agreement.milestone_count, saved_template.milestones.count())
         self.assertEqual(Milestone.objects.filter(agreement=fresh_agreement).count(), saved_template.milestones.count())
+        first_milestone = Milestone.objects.filter(agreement=fresh_agreement).order_by("order", "id").first()
+        self.assertIsNotNone(first_milestone)
+        self.assertEqual(first_milestone.start_date.isoformat(), project_start.isoformat())
 
     def test_fresh_agreement_apply_template_supports_system_templates(self):
         system_template = ProjectTemplate.objects.filter(
@@ -14406,6 +14419,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
             is_published=True,
         ).order_by("id").first()
         self.assertIsNotNone(system_template)
+        project_start = timezone.localdate() + timedelta(days=7)
 
         response = self.client.post(
             "/api/projects/agreements/new/apply-template/",
@@ -14417,6 +14431,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
                 "auto_schedule": False,
                 "spread_enabled": False,
                 "spread_total": "0.00",
+                "project_start_date": project_start.isoformat(),
                 "project_title": "Kitchen remodel",
                 "description": "kitchen remodel",
                 "is_draft": True,
@@ -14428,6 +14443,8 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         body = response.json()
         self.assertEqual(body["agreement"]["selected_template_id"], system_template.id)
+        self.assertEqual(body["agreement"]["project_start_date"], project_start.isoformat())
+        self.assertEqual(body["result"]["start_date"], project_start.isoformat())
         self.assertGreater(body["result"]["created_count"], 0)
         self.assertEqual(
             Milestone.objects.filter(agreement_id=body["agreement"]["id"]).count(),
