@@ -1,7 +1,7 @@
 from __future__ import annotations
 import base64
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -40,6 +40,7 @@ from projects.models import (
     Contractor,
     ContractorActivityEvent,
     ContractorActivationEvent,
+    ContractorOnboardingSetup,
     ContractorGalleryItem,
     ContractorPublicProfile,
     ContractorReview,
@@ -15267,6 +15268,89 @@ class ContractorActivationOnboardingTests(TestCase):
         self.assertIn("contractor_onboarding", data["selected_routines"])
         self.assertEqual(data["navigation_target"], "/app/onboarding")
         self.assertIn("onboarding", data["preview_payload"])
+
+    @patch("projects.services.contractor_onboarding_setup.track_activation_event")
+    @patch("projects.services.contractor_onboarding_setup.update_workspace_context")
+    @patch("projects.services.contractor_onboarding_setup.build_project_intelligence")
+    def test_onboarding_setup_patch_normalizes_decimal_json_fields(self, mock_build, mock_update, mock_track):
+        mock_build.return_value = {
+            "analysis": {
+                "project_family_key": "roofing",
+                "project_family_label": "Roofing",
+                "project_type": "Roof Repair",
+                "project_subtype": "Repair",
+                "template_id": Decimal("101.00"),
+                "template_name": "Roof Repair Template",
+                "project_scope_summary": "Roof leak and repair work",
+            },
+            "recommended_setup": {
+                "recommended_project_type": "Roof Repair",
+                "recommended_project_subtype": "Repair",
+                "suggested_workflow": "Repair + inspection",
+                "suggested_template_label": "Roof Repair Template",
+                "recommended_template_name": "Roof Repair Template",
+                "observed_on": datetime(2026, 5, 9, 14, 30),
+                "counts": (Decimal("1.25"), Decimal("2.50")),
+                "tags": {"alpha", "beta"},
+            },
+            "suggested_plan": {
+                "suggested_budget_low": Decimal("2500.00"),
+                "suggested_budget_high": Decimal("8000.00"),
+                "suggested_budget_center": Decimal("5000.00"),
+                "suggested_duration_low_days": 1,
+                "suggested_duration_high_days": 4,
+                "suggested_duration_days": 3,
+                "suggested_milestone_count": 4,
+                "confidence_level": "medium",
+                "confidence_reasoning": "Roofing work often depends on leak location and roof age.",
+                "milestones": [
+                    {
+                        "order": 1,
+                        "title": "Inspection and protection",
+                        "allocation_percent": Decimal("0.25"),
+                        "suggested_duration_days": Decimal("1"),
+                        "note": "Confirm the leak location and protect the work area.",
+                        "created_on": date(2026, 5, 9),
+                    },
+                    {
+                        "order": 2,
+                        "title": "Repair work",
+                        "allocation_percent": Decimal("0.75"),
+                        "suggested_duration_days": Decimal("3"),
+                        "note": "Complete the main roof repair scope.",
+                    },
+                ],
+                "pricing_examples": {
+                    "low": Decimal("2500.00"),
+                    "high": Decimal("8000.00"),
+                    "center": Decimal("5000.00"),
+                },
+            },
+        }
+
+        response = self.client.patch(
+            "/api/projects/contractors/onboarding/setup/",
+            {
+                "work_description": "Roof leak repair",
+                "clarification_answers": {"urgency": "high"},
+                "completed": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["suggested_plan"]["pricing_examples"]["low"], 2500.0)
+        self.assertEqual(payload["suggested_plan"]["milestones"][0]["allocation_percent"], 0.25)
+        self.assertEqual(payload["recommended_setup"]["observed_on"], "2026-05-09T14:30:00")
+        self.assertEqual(payload["recommended_setup"]["counts"], [1.25, 2.5])
+
+        setup = ContractorOnboardingSetup.objects.get(contractor=self.contractor)
+        self.assertEqual(setup.generated_setup["suggested_plan"]["pricing_examples"]["low"], 2500.0)
+        self.assertEqual(setup.generated_setup["suggested_plan"]["pricing_examples"]["high"], 8000.0)
+        self.assertEqual(setup.generated_setup["suggested_plan"]["milestones"][0]["created_on"], "2026-05-09")
+        self.assertEqual(setup.generated_setup["recommended_setup"]["tags"], ["alpha", "beta"])
+        self.assertIsNotNone(setup.completed_at)
 
 
 class ContractorActivityFeedTests(TestCase):

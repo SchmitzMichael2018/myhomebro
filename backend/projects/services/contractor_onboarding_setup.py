@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal
+from collections.abc import Mapping
 from typing import Any
 
 from django.db import transaction
@@ -30,6 +33,24 @@ def _safe_dict(value: Any) -> dict[str, Any]:
 
 def _safe_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
+
+
+def _normalize_json_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): _normalize_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_json_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_json_value(item) for item in value]
+    if isinstance(value, set):
+        return [_normalize_json_value(item) for item in sorted(value, key=repr)]
+    return value
 
 
 def _seed_description(contractor: Contractor | None, work_description: str) -> str:
@@ -173,6 +194,7 @@ def _build_snapshot(
         or "Your setup is ready.",
         "completed_at": timezone.now().isoformat() if completed else None,
     }
+    setup_snapshot = _normalize_json_value(setup_snapshot)
 
     setup_fields = {
         "work_description": description,
@@ -189,6 +211,10 @@ def _build_snapshot(
     }
     if completed:
         setup_fields["completed_at"] = timezone.now()
+    setup_fields = {
+        field: (_normalize_json_value(value) if field != "completed_at" else value)
+        for field, value in setup_fields.items()
+    }
     return {
         "snapshot": setup_snapshot,
         "fields": setup_fields,
@@ -246,6 +272,7 @@ def get_contractor_onboarding_setup(contractor: Contractor | None) -> dict[str, 
         clarification_answers=_safe_dict(setup.clarification_answers),
         completed=bool(setup.completed_at),
     )["snapshot"]
+    snapshot = _normalize_json_value(snapshot)
     snapshot.setdefault("work_description", setup.work_description or "")
     snapshot.setdefault("clarification_answers", _safe_dict(setup.clarification_answers))
     snapshot.setdefault("completed_at", setup.completed_at.isoformat() if setup.completed_at else None)
@@ -276,7 +303,10 @@ def save_contractor_onboarding_setup(
     for field, value in result["fields"].items():
         if field == "completed_at" and not completed:
             continue
-        setattr(setup, field, value)
+        if field == "completed_at":
+            setattr(setup, field, value)
+        else:
+            setattr(setup, field, _normalize_json_value(value))
     if quick_adjustment_notes:
         setup.quick_adjustment_notes = _safe_text(quick_adjustment_notes)
     if completed and not setup.completed_at:
