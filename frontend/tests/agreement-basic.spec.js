@@ -5000,6 +5000,11 @@ test('agreement wizard step 2 reschedules existing milestone dates from a new pr
   await expect(page.getByTestId('step2-milestone-card-list')).toContainText(formatFriendlyDate('2026-05-13'));
   await expect(page.getByRole('button', { name: 'Save & Next' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Saving' })).toHaveCount(0);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('step2-project-start-date-input')).toHaveValue(nextStart);
+  await expect(page.getByTestId('step2-milestone-card-list')).toContainText(formatFriendlyDate(nextStart));
+  await expect(page.getByTestId('step2-milestone-card-list')).toContainText(formatFriendlyDate('2026-05-13'));
 });
 
 test('agreement wizard step 2 keeps existing milestone dates when the contractor chooses to preserve them', async ({

@@ -3467,9 +3467,25 @@ export default function Step2Milestones({
       });
 
       if (updateTimeline && normalizedStart) {
-        const nextRows = rescheduleMilestonesFromStartDate(effectiveMilestones, normalizedStart);
+        const previousRows = sortFallbackMilestones(normalizeCardRows(effectiveMilestones).filter(Boolean));
+        const nextRows = rescheduleMilestonesFromStartDate(previousRows, normalizedStart);
         if (nextRows.length) {
           const normalizedRows = sortFallbackMilestones(nextRows);
+          if (typeof import.meta !== "undefined" && import.meta?.env?.MODE !== "production") {
+            console.log("Step2 project start reschedule", {
+              agreementId,
+              previousRows: previousRows.map((row) => ({
+                id: row?.id,
+                start_date: toDateOnly(row?.start_date || row?.start),
+                completion_date: toDateOnly(row?.completion_date || row?.end_date || row?.end),
+              })),
+              nextRows: normalizedRows.map((row) => ({
+                id: row?.id,
+                start_date: toDateOnly(row?.start_date || row?.start),
+                completion_date: toDateOnly(row?.completion_date || row?.end_date || row?.end),
+              })),
+            });
+          }
           setFallbackMilestones((prev) => (milestoneRowsEqual(prev, normalizedRows) ? prev : normalizedRows));
           setStagedSuggestedTimelineIds((prev) => [
             ...new Set([...(Array.isArray(prev) ? prev : []), ...nextRows.map((row) => row?.id).filter(Boolean)]),
@@ -3478,6 +3494,11 @@ export default function Step2Milestones({
           const feedback = "Milestone dates updated from the new project start date.";
           setAiChangeSummary(feedback);
           onAiUpdateFeedback(feedback);
+          for (const row of normalizedRows) {
+            if (!isPersistedMilestoneId(row?.id)) continue;
+            const payload = buildStep2MilestoneWritePayload(row, row.order);
+            await api.patch(`/projects/milestones/${row.id}/`, payload);
+          }
         }
       }
 
