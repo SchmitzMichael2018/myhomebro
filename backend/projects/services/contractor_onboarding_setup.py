@@ -88,6 +88,10 @@ def _business_details(contractor: Contractor | None, payload: dict[str, Any]) ->
     service_radius = payload.get("service_radius_miles")
     if service_radius in (None, "", []):
         service_radius = getattr(contractor, "service_radius_miles", 25) if contractor is not None else 25
+
+    def _contractor_bool(field: str) -> bool:
+        return bool(getattr(contractor, field, False)) if contractor is not None else False
+
     return _normalize_json_value(
         {
             "service_area_type": _safe_text(
@@ -97,6 +101,11 @@ def _business_details(contractor: Contractor | None, payload: dict[str, Any]) ->
             "emergency_services": bool(raw.get("emergency_services", False)),
             "licensed": bool(raw.get("licensed", False)),
             "insured": bool(raw.get("insured", False)),
+            "accepts_diy_assistance": bool(raw.get("accepts_diy_assistance", _contractor_bool("accepts_diy_assistance"))),
+            "accepts_consultation_only": bool(raw.get("accepts_consultation_only", _contractor_bool("accepts_consultation_only"))),
+            "accepts_hourly_help": bool(raw.get("accepts_hourly_help", _contractor_bool("accepts_hourly_help"))),
+            "accepts_inspection_only": bool(raw.get("accepts_inspection_only", _contractor_bool("accepts_inspection_only"))),
+            "accepts_homeowner_participation": bool(raw.get("accepts_homeowner_participation", _contractor_bool("accepts_homeowner_participation"))),
         }
     )
 
@@ -274,6 +283,11 @@ def get_contractor_onboarding_setup(contractor: Contractor | None) -> dict[str, 
                 "emergency_services": False,
                 "licensed": False,
                 "insured": False,
+                "accepts_diy_assistance": False,
+                "accepts_consultation_only": False,
+                "accepts_hourly_help": False,
+                "accepts_inspection_only": False,
+                "accepts_homeowner_participation": False,
             },
             "source": "server",
             "summary": "Tell us what kind of work you do and we’ll build your default setup.",
@@ -281,6 +295,7 @@ def get_contractor_onboarding_setup(contractor: Contractor | None) -> dict[str, 
 
     setup = ContractorOnboardingSetup.objects.filter(contractor=contractor).first()
     if setup is None:
+        business_details = _business_details(contractor, {"business_details": {}})
         return {
             "work_description": "",
             "project_family": {"key": "", "label": ""},
@@ -303,13 +318,7 @@ def get_contractor_onboarding_setup(contractor: Contractor | None) -> dict[str, 
                 "confidence_reasoning": "",
             },
             "agreement_defaults": {},
-            "business_details": {
-                "service_area_type": "both",
-                "service_radius_miles": 25,
-                "emergency_services": False,
-                "licensed": False,
-                "insured": False,
-            },
+            "business_details": business_details,
             "recommended_setup": {},
             "suggested_plan": {},
             "source": "server",

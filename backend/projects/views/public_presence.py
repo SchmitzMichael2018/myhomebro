@@ -324,6 +324,27 @@ class ContractorPublicProfileManageView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
+    def _apply_diy_flags(self, contractor, payload):
+        if contractor is None or not isinstance(payload, dict):
+            return
+        flag_fields = (
+            "accepts_diy_assistance",
+            "accepts_consultation_only",
+            "accepts_hourly_help",
+            "accepts_inspection_only",
+            "accepts_homeowner_participation",
+        )
+        update_fields = []
+        for field in flag_fields:
+            if field not in payload:
+                continue
+            next_value = str(payload.get(field) or "").strip().lower() in {"1", "true", "yes", "on"}
+            if getattr(contractor, field, False) != next_value:
+                setattr(contractor, field, next_value)
+                update_fields.append(field)
+        if update_fields:
+            contractor.save(update_fields=update_fields)
+
     def get(self, request):
         contractor = _resolve_contractor(request.user)
         profile = _get_or_create_profile(contractor)
@@ -336,6 +357,7 @@ class ContractorPublicProfileManageView(APIView):
             serializer = ContractorPublicProfileSerializer(profile, data=request.data, partial=True, context={"request": request})
             serializer.is_valid(raise_exception=True)
             serializer.save()
+            self._apply_diy_flags(contractor, request.data)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         serializer = ContractorPublicProfileSerializer(data=request.data, context={"request": request})
@@ -344,6 +366,7 @@ class ContractorPublicProfileManageView(APIView):
         for key, value in _profile_defaults(contractor).items():
             create_data.setdefault(key, value)
         profile = ContractorPublicProfile.objects.create(contractor=contractor, **create_data)
+        self._apply_diy_flags(contractor, request.data)
         return Response(
             ContractorPublicProfileSerializer(profile, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -355,6 +378,7 @@ class ContractorPublicProfileManageView(APIView):
         serializer = ContractorPublicProfileSerializer(profile, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        self._apply_diy_flags(contractor, request.data)
         return Response(serializer.data)
 
 

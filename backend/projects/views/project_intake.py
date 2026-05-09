@@ -70,6 +70,17 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
         intake.ai_clarification_questions = result.get("clarification_questions", [])
         intake.ai_clarification_answers = result.get("clarification_answers", intake.ai_clarification_answers)
         intake.ai_analysis_payload = result
+        if result.get("project_mode"):
+            intake.project_mode = result.get("project_mode")
+        intake.homeowner_participation_notes = (
+            result.get("homeowner_participation_notes")
+            or intake.homeowner_participation_notes
+            or ""
+        )
+        intake.homeowner_task_summary = result.get("homeowner_task_summary") or intake.homeowner_task_summary
+        intake.homeowner_assistance_summary = (
+            result.get("contractor_task_summary") or intake.homeowner_assistance_summary or ""
+        )
         intake.status = "analyzed"
         intake.analyzed_at = timezone.now()
         intake.save(
@@ -88,6 +99,10 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
                 "ai_clarification_questions",
                 "ai_clarification_answers",
                 "ai_analysis_payload",
+                "project_mode",
+                "homeowner_participation_notes",
+                "homeowner_task_summary",
+                "homeowner_assistance_summary",
                 "status",
                 "analyzed_at",
                 "updated_at",

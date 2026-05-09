@@ -118,6 +118,8 @@ def create_agreement_from_validated(validated: Dict[str, Any]) -> Agreement:
         data["description"] = ""
     if not _safe_str(data.get("project_class")):
         data["project_class"] = "residential"
+    if not _safe_str(data.get("project_mode")):
+        data["project_mode"] = "full_service"
 
     ag = Agreement.objects.create(**data)
 

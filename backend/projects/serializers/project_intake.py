@@ -33,9 +33,14 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
 
             "same_as_customer_address",
             "project_class",
+            "project_mode",
             "property_type",
             "budget_range_text",
             "desired_timing_text",
+            "homeowner_participation_notes",
+            "homeowner_started_work",
+            "homeowner_task_summary",
+            "homeowner_assistance_summary",
 
             "project_address_line1",
             "project_address_line2",

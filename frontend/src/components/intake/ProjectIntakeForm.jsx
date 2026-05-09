@@ -22,6 +22,11 @@ const blankForm = {
   same_as_customer_address: true,
 
   project_class: "residential",
+  project_mode: "full_service",
+  homeowner_participation_notes: "",
+  homeowner_started_work: false,
+  homeowner_task_summary: "",
+  homeowner_assistance_summary: "",
 
   project_address_line1: "",
   project_address_line2: "",
@@ -130,6 +135,12 @@ export default function ProjectIntakeForm() {
               ? Boolean(data.same_as_customer_address)
               : prev.same_as_customer_address,
           project_class: data?.project_class || prev.project_class,
+          project_mode: data?.project_mode || prev.project_mode,
+          homeowner_participation_notes: data?.homeowner_participation_notes || "",
+          homeowner_started_work:
+            data?.homeowner_started_work !== undefined ? Boolean(data.homeowner_started_work) : prev.homeowner_started_work,
+          homeowner_task_summary: data?.homeowner_task_summary || "",
+          homeowner_assistance_summary: data?.homeowner_assistance_summary || "",
           project_address_line1: data?.project_address_line1 || "",
           project_address_line2: data?.project_address_line2 || "",
           project_city: data?.project_city || "",
@@ -641,6 +652,57 @@ export default function ProjectIntakeForm() {
               ))}
             </div>
           </div>
+
+          <div className="mt-4">
+            <div className="mb-2 text-sm font-medium text-gray-900">Project Mode</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                { value: "full_service", label: "Full Service", help: "Contractor performs the work." },
+                { value: "assisted_diy", label: "DIY Assistance", help: "Homeowner participates with guidance." },
+                { value: "consultation", label: "Consultation", help: "Advice, planning, and guidance only." },
+                { value: "inspection_only", label: "Inspection Only", help: "Inspection and reporting only." },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setField("project_mode", opt.value)}
+                  className={`rounded-xl border px-3 py-3 text-left text-sm ${
+                    form.project_mode === opt.value
+                      ? "border-blue-600 bg-blue-50 text-blue-900"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="font-semibold">{opt.label}</div>
+                  <div className="mt-1 text-xs text-slate-600">{opt.help}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {form.project_mode !== "full_service" ? (
+            <div className="mt-4 rounded-lg border bg-blue-50 p-4">
+              <label className="mb-1 block text-sm font-medium text-gray-900">
+                Homeowner participation notes
+              </label>
+              <textarea
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={form.homeowner_participation_notes}
+                onChange={(e) => setField("homeowner_participation_notes", e.target.value)}
+                rows={3}
+                placeholder="Describe what the homeowner will do, what you will handle, and any exclusions."
+              />
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={form.homeowner_started_work}
+                    onChange={(e) => setField("homeowner_started_work", e.target.checked)}
+                  />
+                  Homeowner already started
+                </label>
+              </div>
+            </div>
+          ) : null}
 
           <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
               <input

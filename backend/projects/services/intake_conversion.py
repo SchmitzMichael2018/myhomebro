@@ -211,6 +211,11 @@ def convert_intake_to_agreement(
         payment_mode="escrow",
         status="draft",
         project_class=project_class,
+        project_mode=_safe_str(getattr(intake, "project_mode", "")) or "full_service",
+        homeowner_participation_notes=_safe_str(getattr(intake, "homeowner_participation_notes", "")),
+        homeowner_responsibilities=_safe_str(getattr(intake, "homeowner_task_summary", "")),
+        contractor_responsibilities=_safe_str(getattr(intake, "homeowner_assistance_summary", "")),
+        excluded_work="",
         total_cost=_to_decimal(getattr(intake, "ai_project_budget", None) or 0),
         total_time_estimate=timedelta(days=_to_int(getattr(intake, "ai_project_timeline_days", None)) or 0)
         if _to_int(getattr(intake, "ai_project_timeline_days", None))

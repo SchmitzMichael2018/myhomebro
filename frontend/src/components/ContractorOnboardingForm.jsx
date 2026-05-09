@@ -36,6 +36,11 @@ const EMPTY_SETUP = {
     emergency_services: false,
     licensed: false,
     insured: false,
+    accepts_diy_assistance: false,
+    accepts_consultation_only: false,
+    accepts_hourly_help: false,
+    accepts_inspection_only: false,
+    accepts_homeowner_participation: false,
   },
   recommended_setup: {},
   suggested_plan: {},
@@ -698,6 +703,60 @@ export default function ContractorOnboardingForm() {
                       key: "insured",
                       label: "Insured",
                       description: "You carry active insurance coverage.",
+                    },
+                  ].map((item) => {
+                    const checked = Boolean(businessDetails[item.key]);
+                    return (
+                      <button
+                        type="button"
+                        key={item.key}
+                        onClick={() =>
+                          setBusinessDetails((current) => ({
+                            ...current,
+                            [item.key]: !Boolean(current[item.key]),
+                          }))
+                        }
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          checked
+                            ? "border-blue-600 bg-blue-50 text-blue-900"
+                            : "border-blue-100 bg-white text-slate-700 hover:bg-blue-50"
+                        }`}
+                        data-testid={`contractor-onboarding-${item.key}`}
+                      >
+                        <div className="text-sm font-semibold">{item.label}</div>
+                        <div className="mt-1 text-sm text-slate-600">{item.description}</div>
+                        <div className="mt-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                          {checked ? "Enabled" : "Off"}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {[
+                    {
+                      key: "accepts_diy_assistance",
+                      label: "DIY assistance",
+                      description: "Offer guided homeowner participation.",
+                    },
+                    {
+                      key: "accepts_consultation_only",
+                      label: "Consultation only",
+                      description: "Offer advice and planning without full execution.",
+                    },
+                    {
+                      key: "accepts_hourly_help",
+                      label: "Hourly help",
+                      description: "Offer flexible labor help on an hourly basis.",
+                    },
+                    {
+                      key: "accepts_inspection_only",
+                      label: "Inspection only",
+                      description: "Offer inspection visits without full-service work.",
+                    },
+                    {
+                      key: "accepts_homeowner_participation",
+                      label: "Homeowner participation",
+                      description: "Open to working alongside the homeowner.",
                     },
                   ].map((item) => {
                     const checked = Boolean(businessDetails[item.key]);

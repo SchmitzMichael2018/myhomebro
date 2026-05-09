@@ -93,6 +93,21 @@ def _normalize_project_class(value: Optional[str]) -> Optional[str]:
     return value
 
 
+def _normalize_project_mode(value: Optional[str]) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    s = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if s in ("full_service", "fullservice", "full"):
+        return "full_service"
+    if s in ("assisted_diy", "diy_assistance", "diy", "diy_help", "diyhelp"):
+        return "assisted_diy"
+    if s in ("consultation", "consultation_only", "consult", "guidance"):
+        return "consultation"
+    if s in ("inspection_only", "inspection", "inspectiononly"):
+        return "inspection_only"
+    return value
+
+
 def _normalize_signature_policy(value: Optional[str]) -> Optional[str]:
     if value in (None, ""):
         return None
@@ -906,6 +921,9 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         if "project_class" in data and data["project_class"] is not None:
             data["project_class"] = _normalize_project_class(data["project_class"])
+
+        if "project_mode" in data and data["project_mode"] is not None:
+            data["project_mode"] = _normalize_project_mode(data["project_mode"])
 
         if "project_category" in data and "project_class" not in data:
             data["project_class"] = _normalize_project_class(data.pop("project_category"))

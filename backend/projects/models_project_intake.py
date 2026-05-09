@@ -15,6 +15,13 @@ class ProjectIntake(models.Model):
         ("commercial", "Commercial"),
     ]
 
+    PROJECT_MODE_CHOICES = [
+        ("full_service", "Full Service"),
+        ("assisted_diy", "DIY Assistance"),
+        ("consultation", "Consultation / Guidance"),
+        ("inspection_only", "Inspection Only"),
+    ]
+
     LEAD_SOURCE_CHOICES = [
         ("landing_page", "Landing Page"),
         ("public_profile", "Public Profile"),
@@ -131,9 +138,18 @@ class ProjectIntake(models.Model):
         choices=PROJECT_CLASS_CHOICES,
         default="residential",
     )
+    project_mode = models.CharField(
+        max_length=24,
+        choices=PROJECT_MODE_CHOICES,
+        default="full_service",
+    )
     property_type = models.CharField(max_length=120, blank=True, default="")
     budget_range_text = models.CharField(max_length=120, blank=True, default="")
     desired_timing_text = models.CharField(max_length=120, blank=True, default="")
+    homeowner_participation_notes = models.TextField(blank=True, default="")
+    homeowner_started_work = models.BooleanField(default=False)
+    homeowner_task_summary = models.TextField(blank=True, default="")
+    homeowner_assistance_summary = models.TextField(blank=True, default="")
 
     project_address_line1 = models.CharField(max_length=255, blank=True, default="")
     project_address_line2 = models.CharField(max_length=255, blank=True, default="")

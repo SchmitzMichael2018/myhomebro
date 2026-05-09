@@ -259,6 +259,10 @@ def apply_conversion_prefill(*, agreement: Agreement, payload: Any, source=None)
     if project_class:
         agreement.project_class = project_class
         agreement_updates.append("project_class")
+    project_mode = _safe_text(data.get("project_mode"))
+    if project_mode:
+        agreement.project_mode = project_mode
+        agreement_updates.append("project_mode")
     payment_mode = _safe_text(data.get("payment_mode"))
     if not payment_mode and data.get("escrow_enabled") is not None:
         payment_mode = "escrow" if _safe_bool(data.get("escrow_enabled")) else "direct"
@@ -277,6 +281,22 @@ def apply_conversion_prefill(*, agreement: Agreement, payload: Any, source=None)
     if project_subtype:
         agreement.project_subtype = project_subtype
         agreement_updates.append("project_subtype")
+    homeowner_participation_notes = _safe_text(data.get("homeowner_participation_notes"))
+    if homeowner_participation_notes:
+        agreement.homeowner_participation_notes = homeowner_participation_notes
+        agreement_updates.append("homeowner_participation_notes")
+    homeowner_responsibilities = _safe_text(data.get("homeowner_responsibilities"))
+    if homeowner_responsibilities:
+        agreement.homeowner_responsibilities = homeowner_responsibilities
+        agreement_updates.append("homeowner_responsibilities")
+    contractor_responsibilities = _safe_text(data.get("contractor_responsibilities"))
+    if contractor_responsibilities:
+        agreement.contractor_responsibilities = contractor_responsibilities
+        agreement_updates.append("contractor_responsibilities")
+    excluded_work = _safe_text(data.get("excluded_work"))
+    if excluded_work:
+        agreement.excluded_work = excluded_work
+        agreement_updates.append("excluded_work")
     description = _safe_text(data.get("project_description") or data.get("description") or data.get("project_summary"))
     if description:
         agreement.description = description

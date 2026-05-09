@@ -82,6 +82,13 @@ class AgreementProjectClass(models.TextChoices):
     COMMERCIAL = "commercial", "Commercial"
 
 
+class AgreementProjectMode(models.TextChoices):
+    FULL_SERVICE = "full_service", "Full Service"
+    ASSISTED_DIY = "assisted_diy", "DIY Assistance"
+    CONSULTATION = "consultation", "Consultation / Guidance"
+    INSPECTION_ONLY = "inspection_only", "Inspection Only"
+
+
 class RecurrencePattern(models.TextChoices):
     WEEKLY = "weekly", "Weekly"
     MONTHLY = "monthly", "Monthly"
@@ -219,6 +226,11 @@ class Contractor(models.Model):
     service_radius_miles = models.PositiveIntegerField(choices=SERVICE_RADIUS_CHOICES, default=25)
 
     skills = models.ManyToManyField(Skill, blank=True)
+    accepts_diy_assistance = models.BooleanField(default=False)
+    accepts_consultation_only = models.BooleanField(default=False)
+    accepts_hourly_help = models.BooleanField(default=False)
+    accepts_inspection_only = models.BooleanField(default=False)
+    accepts_homeowner_participation = models.BooleanField(default=False)
     license_number = models.CharField(max_length=50, blank=True)
     license_expiration = models.DateField(null=True, blank=True)
     logo = models.ImageField(upload_to="logos/", null=True, blank=True)
@@ -916,6 +928,13 @@ class Agreement(models.Model):
         db_index=True,
         help_text="Standard keeps one-time project behavior. Maintenance enables recurring-service support.",
     )
+    project_mode = models.CharField(
+        max_length=24,
+        choices=AgreementProjectMode.choices,
+        default=AgreementProjectMode.FULL_SERVICE,
+        db_index=True,
+        help_text="Defines whether the project is full-service, DIY assistance, consultation, or inspection-only.",
+    )
     step_status = models.CharField(
         max_length=32,
         blank=True,
@@ -1112,6 +1131,10 @@ class Agreement(models.Model):
         null=True,
         default="",
     )
+    homeowner_participation_notes = models.TextField(blank=True, default="")
+    homeowner_responsibilities = models.TextField(blank=True, default="")
+    contractor_responsibilities = models.TextField(blank=True, default="")
+    excluded_work = models.TextField(blank=True, default="")
 
     standardized_category = models.CharField(
         max_length=100, blank=True, db_index=True

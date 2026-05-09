@@ -115,6 +115,11 @@ const blankForm = {
   customer_email: "",
   customer_phone: "",
   project_class: "residential",
+  project_mode: "full_service",
+  homeowner_participation_notes: "",
+  homeowner_started_work: false,
+  homeowner_task_summary: "",
+  homeowner_assistance_summary: "",
   customer_address_line1: "",
   customer_address_line2: "",
   customer_city: "",
@@ -230,6 +235,12 @@ export default function PublicIntakeWizard() {
           customer_email: data?.customer_email || "",
           customer_phone: data?.customer_phone || "",
           project_class: data?.project_class || "residential",
+          project_mode: data?.project_mode || "full_service",
+          homeowner_participation_notes: data?.homeowner_participation_notes || "",
+          homeowner_started_work:
+            data?.homeowner_started_work !== undefined ? !!data.homeowner_started_work : false,
+          homeowner_task_summary: data?.homeowner_task_summary || "",
+          homeowner_assistance_summary: data?.homeowner_assistance_summary || "",
           customer_address_line1: data?.customer_address_line1 || "",
           customer_address_line2: data?.customer_address_line2 || "",
           customer_city: data?.customer_city || "",
@@ -1535,6 +1546,48 @@ export default function PublicIntakeWizard() {
                   </label>
                 ))}
               </div>
+              <div className="mt-5">
+                <div className="text-sm font-semibold text-gray-900">Project Mode</div>
+                <p className="mt-1 text-sm text-slate-600">
+                  Choose the relationship between the contractor and homeowner for this request.
+                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {[
+                    { value: "full_service", label: "Full Service", help: "Contractor performs the work." },
+                    { value: "assisted_diy", label: "DIY Assistance", help: "Homeowner participates with guidance." },
+                    { value: "consultation", label: "Consultation", help: "Advice and planning only." },
+                    { value: "inspection_only", label: "Inspection Only", help: "Inspection and reporting only." },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setField("project_mode", opt.value)}
+                      className={`rounded-2xl border px-4 py-3 text-left text-sm shadow-sm transition ${
+                        form.project_mode === opt.value
+                          ? "border-indigo-500 bg-indigo-50 text-indigo-900"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="font-semibold">{opt.label}</div>
+                      <div className="mt-1 text-xs text-slate-600">{opt.help}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {form.project_mode !== "full_service" ? (
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <label className="mb-1 block text-sm font-medium text-gray-900">
+                    Homeowner participation notes
+                  </label>
+                  <textarea
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    rows={3}
+                    value={form.homeowner_participation_notes}
+                    onChange={(e) => setField("homeowner_participation_notes", e.target.value)}
+                    placeholder="Describe what the homeowner will do, what the contractor will do, and any exclusions."
+                  />
+                </div>
+              ) : null}
               <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
                 <input
                   type="checkbox"

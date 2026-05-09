@@ -34,6 +34,11 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
     public_url = serializers.SerializerMethodField()
     public_trust_indicators = serializers.SerializerMethodField()
     contractor_profile_insights = serializers.SerializerMethodField()
+    accepts_diy_assistance = serializers.BooleanField(source="contractor.accepts_diy_assistance", read_only=True)
+    accepts_consultation_only = serializers.BooleanField(source="contractor.accepts_consultation_only", read_only=True)
+    accepts_hourly_help = serializers.BooleanField(source="contractor.accepts_hourly_help", read_only=True)
+    accepts_inspection_only = serializers.BooleanField(source="contractor.accepts_inspection_only", read_only=True)
+    accepts_homeowner_participation = serializers.BooleanField(source="contractor.accepts_homeowner_participation", read_only=True)
 
     class Meta:
         model = ContractorPublicProfile
@@ -75,6 +80,11 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
             "is_public",
             "public_trust_indicators",
             "contractor_profile_insights",
+            "accepts_diy_assistance",
+            "accepts_consultation_only",
+            "accepts_hourly_help",
+            "accepts_inspection_only",
+            "accepts_homeowner_participation",
             "seo_title",
             "seo_description",
             "public_url",
@@ -280,6 +290,7 @@ class PublicContractorQuoteRequestSerializer(serializers.Serializer):
     preferred_contact_method = serializers.CharField(max_length=32, required=False, allow_blank=True)
     contact_consent = serializers.BooleanField(required=False, default=False)
     project_class = serializers.ChoiceField(choices=ProjectIntake.PROJECT_CLASS_CHOICES, required=False)
+    project_mode = serializers.ChoiceField(choices=ProjectIntake.PROJECT_MODE_CHOICES, required=False)
     property_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
     desired_timing_text = serializers.CharField(max_length=120, required=False, allow_blank=True)
     project_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -289,6 +300,8 @@ class PublicContractorQuoteRequestSerializer(serializers.Serializer):
     ai_project_timeline_days = serializers.IntegerField(required=False, allow_null=True)
     budget_range_text = serializers.CharField(max_length=120, required=False, allow_blank=True)
     ai_project_budget = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    homeowner_participation_notes = serializers.CharField(required=False, allow_blank=True)
+    homeowner_started_work = serializers.BooleanField(required=False, default=False)
     project_address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
     project_address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
     project_city = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -453,6 +466,11 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
     review_count = serializers.SerializerMethodField()
     public_trust_indicators = serializers.SerializerMethodField()
     contractor_profile_insights = serializers.SerializerMethodField()
+    accepts_diy_assistance = serializers.BooleanField(source="contractor.accepts_diy_assistance", read_only=True)
+    accepts_consultation_only = serializers.BooleanField(source="contractor.accepts_consultation_only", read_only=True)
+    accepts_hourly_help = serializers.BooleanField(source="contractor.accepts_hourly_help", read_only=True)
+    accepts_inspection_only = serializers.BooleanField(source="contractor.accepts_inspection_only", read_only=True)
+    accepts_homeowner_participation = serializers.BooleanField(source="contractor.accepts_homeowner_participation", read_only=True)
 
     class Meta:
         model = ContractorPublicProfile
@@ -495,6 +513,11 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
             "review_count",
             "public_trust_indicators",
             "contractor_profile_insights",
+            "accepts_diy_assistance",
+            "accepts_consultation_only",
+            "accepts_hourly_help",
+            "accepts_inspection_only",
+            "accepts_homeowner_participation",
         ]
 
     def get_logo_url(self, obj):
