@@ -85,8 +85,13 @@ async function installOnboardingRoutes(page) {
       confidence_reasoning: "",
     },
     agreement_defaults: {},
-    clarification_questions: [],
-    clarification_answers: {},
+    business_details: {
+      service_area_type: "both",
+      service_radius_miles: 25,
+      emergency_services: false,
+      licensed: false,
+      insured: false,
+    },
     source: "server",
     summary: "Tell us what kind of work you do and we will build your default setup.",
     completed_at: null,
@@ -115,7 +120,7 @@ async function installOnboardingRoutes(page) {
       setupState.project_families = familyKey ? [setupState.project_family] : [];
       setupState.project_style = {
         workflow_style: familyKey === "roofing" ? "Repair + inspection" : "General project review",
-        materials_behavior: familyKey === "roofing" ? "Inspection and materials confirmation first." : "Materials should be confirmed during clarification.",
+        materials_behavior: familyKey === "roofing" ? "Inspection and materials confirmation first." : "Materials should be confirmed during setup.",
         project_family_cue: familyKey === "roofing" ? "Roofing-focused review" : "",
       };
       setupState.milestone_tendencies = familyKey
@@ -172,18 +177,21 @@ async function installOnboardingRoutes(page) {
             payment_structure: "progress",
           }
         : {};
-      setupState.clarification_questions = familyKey
-        ? [
-            {
-              key: "inspection_before_pricing",
-              label: "Would you like the contractor to inspect before final pricing?",
-              options: ["Yes", "No", "Not sure"],
-              type: "select",
-              input_type: "radio",
-              help_text: "A roof inspection can help confirm the scope before final pricing.",
-            },
-          ]
-        : [];
+      setupState.business_details = familyKey
+        ? {
+            service_area_type: "residential",
+            service_radius_miles: 25,
+            emergency_services: false,
+            licensed: true,
+            insured: true,
+          }
+        : {
+            service_area_type: "both",
+            service_radius_miles: 25,
+            emergency_services: false,
+            licensed: false,
+            insured: false,
+          };
       setupState.summary = familyKey
         ? "Roofing repairs are clearer when the leak location and inspection needs are confirmed."
         : "Tell us what kind of work you do and we will build your default setup.";
@@ -213,8 +221,9 @@ test("intelligent onboarding builds and saves a contractor setup", async ({ page
   await page.getByPlaceholder("What kind of work do you usually do?").fill("Roofing and repairs");
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByTestId("contractor-onboarding-clarifications")).toBeVisible();
-  await page.getByRole("button", { name: "Yes" }).click();
+  await expect(page.getByTestId("contractor-onboarding-business-details")).toBeVisible();
+  await page.getByTestId("contractor-onboarding-business-type").selectOption("residential");
+  await page.getByTestId("contractor-onboarding-licensed").click();
   await page.getByRole("button", { name: "Build my setup" }).click();
 
   await expect(page.getByTestId("contractor-onboarding-generated-setup")).toBeVisible();

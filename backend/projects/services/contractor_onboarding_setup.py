@@ -16,7 +16,6 @@ from projects.services.contractor_activation_analytics import (
     FUNNEL_EVENT_ONBOARDING_STARTED,
     track_activation_event,
 )
-from projects.services.intake_analysis import _clarification_questions
 from projects.services.project_intelligence import build_project_intelligence_context
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.workspace_context import normalize_project_family
@@ -67,7 +66,7 @@ def _seed_description(contractor: Contractor | None, work_description: str) -> s
     return "General contractor work"
 
 
-def _build_materials_behavior(work_description: str, plan: dict[str, Any], questions: list[dict[str, Any]]) -> str:
+def _build_materials_behavior(work_description: str, plan: dict[str, Any], business_details: dict[str, Any]) -> str:
     text = _safe_text(work_description).lower()
     if any(token in text for token in ["roof", "repair", "leak"]):
         return "Inspection and materials confirmation first."
@@ -75,11 +74,31 @@ def _build_materials_behavior(work_description: str, plan: dict[str, Any], quest
         return "Selections and finish materials should be confirmed early."
     if any(token in text for token in ["paint", "floor", "plumb", "electrical"]):
         return "Materials are usually confirmed with the work order."
-    if questions:
-        return "Materials should be confirmed during clarification."
+    if _safe_text(business_details.get("service_area_type")):
+        return "Materials and access should match the selected business setup."
+    if _safe_text(business_details.get("emergency_services")):
+        return "Emergency work should keep materials and response timing flexible."
     if _safe_text(plan.get("suggested_template_label")):
         return "Use the suggested plan as the baseline for materials decisions."
     return "Materials are optional until you refine the scope."
+
+
+def _business_details(contractor: Contractor | None, payload: dict[str, Any]) -> dict[str, Any]:
+    raw = _safe_dict(payload.get("business_details"))
+    service_radius = payload.get("service_radius_miles")
+    if service_radius in (None, "", []):
+        service_radius = getattr(contractor, "service_radius_miles", 25) if contractor is not None else 25
+    return _normalize_json_value(
+        {
+            "service_area_type": _safe_text(
+                raw.get("service_area_type") or raw.get("service_type") or "both"
+            ),
+            "service_radius_miles": int(service_radius or 25),
+            "emergency_services": bool(raw.get("emergency_services", False)),
+            "licensed": bool(raw.get("licensed", False)),
+            "insured": bool(raw.get("insured", False)),
+        }
+    )
 
 
 def _milestone_tendencies(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -132,7 +151,7 @@ def _build_snapshot(
     *,
     contractor: Contractor,
     work_description: str,
-    clarification_answers: dict[str, Any],
+    business_details: dict[str, Any],
     completed: bool = False,
 ) -> dict[str, Any]:
     description = _seed_description(contractor, work_description)
@@ -142,7 +161,7 @@ def _build_snapshot(
             "project_title": description,
             "description": description,
             "project_scope_summary": description,
-            "clarification_answers": clarification_answers,
+            "business_details": business_details,
         }
     )
     analysis = _safe_dict(intelligence.get("analysis"))
@@ -161,15 +180,11 @@ def _build_snapshot(
         project_subtype=_safe_text(recommended_setup.get("recommended_project_subtype")),
         description=description,
     )
-    clarification_questions = _clarification_questions(
-        _safe_text(recommended_setup.get("recommended_project_type")),
-        _safe_text(recommended_setup.get("recommended_project_subtype")),
-        description,
-    )[:4]
+    business_details = _business_details(contractor, {"business_details": business_details})
 
     project_style = {
         "workflow_style": _safe_text(recommended_setup.get("suggested_workflow")) or "General project review",
-        "materials_behavior": _build_materials_behavior(description, suggested_plan, clarification_questions),
+        "materials_behavior": _build_materials_behavior(description, suggested_plan, business_details),
         "project_family_cue": _safe_text(family_context.get("family_cue_label")),
     }
     pricing_baseline = _pricing_baseline(suggested_plan)
@@ -184,8 +199,7 @@ def _build_snapshot(
         "milestone_tendencies": milestone_tendencies,
         "pricing_baseline": pricing_baseline,
         "agreement_defaults": agreement_defaults,
-        "clarification_questions": clarification_questions,
-        "clarification_answers": clarification_answers,
+        "business_details": business_details,
         "recommended_setup": recommended_setup,
         "suggested_plan": suggested_plan,
         "source": "server",
@@ -204,8 +218,6 @@ def _build_snapshot(
         "milestone_tendencies": milestone_tendencies,
         "pricing_baseline": pricing_baseline,
         "agreement_defaults": agreement_defaults,
-        "clarification_questions": clarification_questions,
-        "clarification_answers": clarification_answers,
         "generated_setup": setup_snapshot,
         "quick_adjustment_notes": _safe_text(agreement_defaults.get("suggested_workflow")) or "",
     }
@@ -222,7 +234,7 @@ def _build_snapshot(
         "analysis": analysis,
         "recommended_setup": recommended_setup,
         "suggested_plan": suggested_plan,
-        "clarification_questions": clarification_questions,
+        "business_details": business_details,
     }
 
 
@@ -256,25 +268,63 @@ def get_contractor_onboarding_setup(contractor: Contractor | None) -> dict[str, 
                 "confidence_reasoning": "",
             },
             "agreement_defaults": {},
-            "clarification_questions": [],
-            "clarification_answers": {},
+            "business_details": {
+                "service_area_type": "both",
+                "service_radius_miles": 25,
+                "emergency_services": False,
+                "licensed": False,
+                "insured": False,
+            },
             "source": "server",
             "summary": "Tell us what kind of work you do and we’ll build your default setup.",
         }
 
     setup = ContractorOnboardingSetup.objects.filter(contractor=contractor).first()
     if setup is None:
-        result = _build_snapshot(contractor=contractor, work_description="", clarification_answers={}, completed=False)
-        return result["snapshot"]
+        return {
+            "work_description": "",
+            "project_family": {"key": "", "label": ""},
+            "project_families": [],
+            "project_style": {
+                "workflow_style": "",
+                "materials_behavior": "",
+                "project_family_cue": "",
+            },
+            "milestone_tendencies": [],
+            "pricing_baseline": {
+                "low": "",
+                "high": "",
+                "center": "",
+                "duration_low_days": 0,
+                "duration_high_days": 0,
+                "duration_days": 0,
+                "milestone_count": 0,
+                "confidence_level": "",
+                "confidence_reasoning": "",
+            },
+            "agreement_defaults": {},
+            "business_details": {
+                "service_area_type": "both",
+                "service_radius_miles": 25,
+                "emergency_services": False,
+                "licensed": False,
+                "insured": False,
+            },
+            "recommended_setup": {},
+            "suggested_plan": {},
+            "source": "server",
+            "summary": "Tell us what kind of work you do and we will build your setup for you.",
+            "completed_at": None,
+        }
     snapshot = _safe_dict(setup.generated_setup) or _build_snapshot(
         contractor=contractor,
         work_description=setup.work_description,
-        clarification_answers=_safe_dict(setup.clarification_answers),
+        business_details=_safe_dict(getattr(setup, "business_details", {})),
         completed=bool(setup.completed_at),
     )["snapshot"]
     snapshot = _normalize_json_value(snapshot)
     snapshot.setdefault("work_description", setup.work_description or "")
-    snapshot.setdefault("clarification_answers", _safe_dict(setup.clarification_answers))
+    snapshot.setdefault("business_details", _safe_dict(getattr(setup, "business_details", {})))
     snapshot.setdefault("completed_at", setup.completed_at.isoformat() if setup.completed_at else None)
     snapshot.setdefault("source", "server")
     return snapshot
@@ -285,18 +335,18 @@ def save_contractor_onboarding_setup(
     contractor: Contractor | None,
     *,
     work_description: str = "",
-    clarification_answers: dict[str, Any] | None = None,
+    business_details: dict[str, Any] | None = None,
     completed: bool = False,
     quick_adjustment_notes: str = "",
 ) -> OnboardingSetupResult | None:
     if contractor is None:
         return None
 
-    clarification_answers = _safe_dict(clarification_answers)
+    business_details = _business_details(contractor, {"business_details": business_details or {}})
     result = _build_snapshot(
         contractor=contractor,
         work_description=work_description,
-        clarification_answers=clarification_answers,
+        business_details=business_details,
         completed=completed,
     )
     setup, _created = ContractorOnboardingSetup.objects.get_or_create(contractor=contractor)

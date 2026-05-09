@@ -45,13 +45,13 @@ class ContractorOnboardingSetupView(APIView):
         work_description = payload.get("work_description")
         if work_description is None:
             work_description = getattr(existing_setup, "work_description", "") or ""
-        clarification_answers = payload.get("clarification_answers")
-        if clarification_answers is None:
-            clarification_answers = getattr(existing_setup, "clarification_answers", {}) or {}
+        business_details = payload.get("business_details")
+        if business_details is None:
+            business_details = getattr(existing_setup, "business_details", {}) or {}
         result = save_contractor_onboarding_setup(
             contractor,
             work_description=str(work_description or "").strip(),
-            clarification_answers=clarification_answers if isinstance(clarification_answers, dict) else {},
+            business_details=business_details if isinstance(business_details, dict) else {},
             completed=bool(payload.get("completed")),
             quick_adjustment_notes=str(payload.get("quick_adjustment_notes") or "").strip(),
         )

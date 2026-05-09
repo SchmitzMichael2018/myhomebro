@@ -30,8 +30,13 @@ const EMPTY_SETUP = {
     confidence_reasoning: "",
   },
   agreement_defaults: {},
-  clarification_questions: [],
-  clarification_answers: {},
+  business_details: {
+    service_area_type: "both",
+    service_radius_miles: 25,
+    emergency_services: false,
+    licensed: false,
+    insured: false,
+  },
   recommended_setup: {},
   suggested_plan: {},
   source: "server",
@@ -42,7 +47,7 @@ const EMPTY_SETUP = {
 const ONBOARDING_STEP_LABELS = [
   "Welcome",
   "Work description",
-  "Clarifications",
+  "Business details",
   "Generated setup",
   "Finish",
   "First project",
@@ -72,7 +77,7 @@ function extractProjectFamily(value) {
   return normalizeProjectFamilyContext(firstFamily || {});
 }
 
-function buildFirstProjectAssistState(setup = {}, workDescription = "", clarificationAnswers = {}) {
+function buildFirstProjectAssistState(setup = {}, workDescription = "", businessDetails = {}) {
   const family = extractProjectFamily(setup);
   const agreementDefaults = setup?.agreement_defaults || {};
   const pricing = setup?.pricing_baseline || {};
@@ -97,16 +102,18 @@ function buildFirstProjectAssistState(setup = {}, workDescription = "", clarific
       milestone_count: Number(pricing?.milestone_count || milestones.length || 0),
       pricing_baseline: pricing,
       summary,
+      business_details: businessDetails,
     },
     assistantPrefill: {
       project_title: projectTitle,
       project_summary: projectSummary,
-      project_class: "residential",
+      project_class: safeText(businessDetails?.service_area_type) || "residential",
       project_type: safeText(agreementDefaults?.project_type),
       project_subtype: safeText(agreementDefaults?.project_subtype),
       agreement_mode: safeText(agreementDefaults?.agreement_mode) || "standard",
       payment_mode: safeText(agreementDefaults?.payment_mode) || "escrow",
       payment_structure: safeText(agreementDefaults?.payment_structure) || "progress",
+      business_details: businessDetails,
     },
     assistantDraftPayload: {
       project_family_key: family.project_family_key,
@@ -114,12 +121,13 @@ function buildFirstProjectAssistState(setup = {}, workDescription = "", clarific
       project_title: projectTitle,
       project_summary: projectSummary,
       description: projectSummary,
-      project_class: "residential",
+      project_class: safeText(businessDetails?.service_area_type) || "residential",
       project_type: safeText(agreementDefaults?.project_type),
       project_subtype: safeText(agreementDefaults?.project_subtype),
       agreement_mode: safeText(agreementDefaults?.agreement_mode) || "standard",
       payment_mode: safeText(agreementDefaults?.payment_mode) || "escrow",
       payment_structure: safeText(agreementDefaults?.payment_structure) || "progress",
+      business_details: businessDetails,
       selected_template_id: agreementDefaults?.template_id || null,
       selected_template_name_snapshot: safeText(
         agreementDefaults?.suggested_template_label || agreementDefaults?.template_name
@@ -168,7 +176,7 @@ function buildFirstProjectAssistState(setup = {}, workDescription = "", clarific
       current_step: "first_project",
       project_family_key: family.project_family_key,
       project_family_label: family.project_family_label,
-      clarification_answers: clarificationAnswers,
+      business_details: businessDetails,
     },
   };
 }
@@ -195,8 +203,10 @@ function normalizeSetup(value) {
     },
     agreement_defaults: next.agreement_defaults || {},
     milestone_tendencies: safeArray(next.milestone_tendencies),
-    clarification_questions: safeArray(next.clarification_questions),
-    clarification_answers: next.clarification_answers || {},
+    business_details: {
+      ...EMPTY_SETUP.business_details,
+      ...(next.business_details || next.generated_setup?.business_details || {}),
+    },
     recommended_setup: next.recommended_setup || {},
     suggested_plan: next.suggested_plan || {},
     work_description: safeText(next.work_description),
@@ -255,73 +265,6 @@ function Pill({ children, tone = "slate" }) {
   );
 }
 
-function QuestionField({ question, value, onChange }) {
-  const label = safeText(question?.label || question?.question || question?.title);
-  const helpText = safeText(question?.help_text || question?.description);
-  const options = safeArray(question?.options);
-  const isTextarea = question?.input_type === "textarea" || question?.type === "text";
-  const key = safeText(question?.key || question?.name || label);
-
-  if (options.length) {
-    return (
-      <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
-        <div className="text-sm font-semibold text-slate-900">{label}</div>
-        {helpText ? <div className="mt-1 text-sm text-slate-600">{helpText}</div> : null}
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {options.map((option, index) => {
-            const optionLabel =
-              typeof option === "string"
-                ? option
-                : safeText(option?.label || option?.value || option?.text || `Option ${index + 1}`);
-            const optionValue =
-              typeof option === "string"
-                ? option
-                : safeText(option?.value || option?.label || option?.text || optionLabel);
-            const selected = safeText(value) === optionValue;
-            return (
-              <button
-                type="button"
-                key={`${key}-${optionValue || index}`}
-                onClick={() => onChange(key, optionValue)}
-                className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${
-                  selected
-                    ? "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-100"
-                    : "border-blue-100 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50"
-                }`}
-              >
-                {optionLabel}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <label className="block rounded-2xl border border-blue-100 bg-white p-4">
-      <div className="text-sm font-semibold text-slate-900">{label}</div>
-      {helpText ? <div className="mt-1 text-sm text-slate-600">{helpText}</div> : null}
-      {isTextarea ? (
-        <textarea
-          value={safeText(value)}
-          onChange={(e) => onChange(key, e.target.value)}
-          rows={4}
-          className="mt-3 w-full rounded-2xl border border-blue-100 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-          placeholder="Add a quick note..."
-        />
-      ) : (
-        <input
-          value={safeText(value)}
-          onChange={(e) => onChange(key, e.target.value)}
-          className="mt-3 w-full rounded-2xl border border-blue-100 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-          placeholder="Type your answer"
-        />
-      )}
-    </label>
-  );
-}
-
 export default function ContractorOnboardingForm() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -332,7 +275,7 @@ export default function ContractorOnboardingForm() {
   const [error, setError] = useState("");
   const [setup, setSetup] = useState(EMPTY_SETUP);
   const [workDescription, setWorkDescription] = useState("");
-  const [clarificationAnswers, setClarificationAnswers] = useState({});
+  const [businessDetails, setBusinessDetails] = useState(EMPTY_SETUP.business_details);
   const [showAdjust, setShowAdjust] = useState(false);
   const [quickAdjustmentNotes, setQuickAdjustmentNotes] = useState("");
   const [finished, setFinished] = useState(false);
@@ -343,7 +286,7 @@ export default function ContractorOnboardingForm() {
       case 2:
         return "Tell us what kind of work you do";
       case 3:
-        return "A few quick clarifications";
+        return "Business details";
       case 4:
         return "Your Project Setup";
       case 5:
@@ -363,12 +306,21 @@ export default function ContractorOnboardingForm() {
       const normalized = normalizeSetup(data);
       setSetup(normalized);
       setWorkDescription(normalized.work_description || "");
-      setClarificationAnswers(normalized.clarification_answers || {});
+      setBusinessDetails({
+        ...EMPTY_SETUP.business_details,
+        ...(normalized.business_details || normalized.generated_setup?.business_details || {}),
+      });
       setFinished(Boolean(normalized.completed_at));
       if (normalized.completed_at) {
         setStep(6);
       } else if (normalized.work_description) {
-        setStep(normalized.clarification_questions.length ? 3 : 4);
+        setStep(
+          normalized.generated_setup?.summary ||
+            safeArray(normalized.milestone_tendencies).length ||
+            normalized.agreement_defaults?.project_type
+            ? 4
+            : 3
+        );
       } else {
         setStep(1);
       }
@@ -389,20 +341,28 @@ export default function ContractorOnboardingForm() {
     loadSetup();
   }, [location.key, loadSetup]);
 
-  const persistSetup = async ({ nextWorkDescription, nextAnswers, completed = false, notes = "" }) => {
+  const persistSetup = async ({
+    nextWorkDescription,
+    nextBusinessDetails,
+    completed = false,
+    notes = "",
+  }) => {
     setSaving(true);
     setError("");
     try {
       const { data } = await api.patch("/projects/contractors/onboarding/setup/", {
         work_description: nextWorkDescription ?? workDescription,
-        clarification_answers: nextAnswers ?? clarificationAnswers,
+        business_details: nextBusinessDetails ?? businessDetails,
         completed,
         quick_adjustment_notes: notes,
       });
       const normalized = normalizeSetup(data);
       setSetup(normalized);
       setWorkDescription(normalized.work_description || "");
-      setClarificationAnswers(normalized.clarification_answers || {});
+      setBusinessDetails({
+        ...EMPTY_SETUP.business_details,
+        ...(normalized.business_details || normalized.generated_setup?.business_details || {}),
+      });
       setFinished(Boolean(completed || normalized.completed_at));
       const familyToStore = extractProjectFamily(normalized);
       if (familyToStore.project_family_key) {
@@ -432,13 +392,13 @@ export default function ContractorOnboardingForm() {
   const continueFromDescription = async () => {
     const normalized = await persistSetup({ nextWorkDescription: workDescription });
     if (!normalized) return;
-    setStep(normalized.clarification_questions.length ? 3 : 4);
+    setStep(3);
   };
 
-  const continueFromClarifications = async () => {
+  const continueFromBusinessDetails = async () => {
     const normalized = await persistSetup({
       nextWorkDescription: workDescription,
-      nextAnswers: clarificationAnswers,
+      nextBusinessDetails: businessDetails,
     });
     if (!normalized) return;
     setStep(4);
@@ -447,7 +407,7 @@ export default function ContractorOnboardingForm() {
   const completeSetup = async () => {
     const normalized = await persistSetup({
       nextWorkDescription: workDescription,
-      nextAnswers: clarificationAnswers,
+      nextBusinessDetails: businessDetails,
       completed: true,
       notes: quickAdjustmentNotes,
     });
@@ -456,17 +416,13 @@ export default function ContractorOnboardingForm() {
     setStep(6);
   };
 
-  const updateAnswer = (key, value) => {
-    setClarificationAnswers((prev) => ({ ...prev, [key]: value }));
-  };
-
   const applyExample = (text) => {
     setWorkDescription(text);
     setStep(2);
   };
 
   const startFirstProject = () => {
-    const handoff = buildFirstProjectAssistState(setup, workDescription, clarificationAnswers);
+    const handoff = buildFirstProjectAssistState(setup, workDescription, businessDetails);
     writeFirstProjectAssistHandoff(handoff);
     navigate("/app/agreements/new/wizard?step=1", {
       state: handoff,
@@ -479,7 +435,6 @@ export default function ContractorOnboardingForm() {
 
   const projectFamilyPills = safeArray(setup.project_families);
   const milestoneRows = safeArray(setup.milestone_tendencies);
-  const questions = safeArray(setup.clarification_questions);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50 px-4 py-8 text-slate-900">
@@ -546,7 +501,7 @@ export default function ContractorOnboardingForm() {
                         : index + 1 === 2
                         ? "Describe your work"
                         : index + 1 === 3
-                        ? "Answer a few quick questions"
+                        ? "Set business details"
                         : index + 1 === 4
                         ? "Review the generated setup"
                         : index + 1 === 5
@@ -677,25 +632,100 @@ export default function ContractorOnboardingForm() {
             {!loading && step === 3 ? (
               <SectionCard
                 eyebrow="Step 3 of 6"
-                title="A few quick clarifications"
-                description="These are optional, short, and based on your work type."
-                testId="contractor-onboarding-clarifications"
+                title="Business details"
+                description="A few light settings help tailor the generated setup without slowing you down."
+                testId="contractor-onboarding-business-details"
               >
-                <div className="space-y-4">
-                  {questions.length ? (
-                    questions.map((question, index) => (
-                      <QuestionField
-                        key={`${question?.key || index}`}
-                        question={question}
-                        value={clarificationAnswers[question?.key || question?.name || `q-${index}`]}
-                        onChange={updateAnswer}
-                      />
-                    ))
-                  ) : (
-                    <div className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-600">
-                      We did not need extra questions for this setup. You can continue to the generated plan.
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block rounded-2xl border border-blue-100 bg-white p-4">
+                    <div className="text-sm font-semibold text-slate-900">Service type</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      Who do you typically work for?
                     </div>
-                  )}
+                    <select
+                      value={safeText(businessDetails.service_area_type || "both")}
+                      onChange={(e) =>
+                        setBusinessDetails((current) => ({
+                          ...current,
+                          service_area_type: e.target.value,
+                        }))
+                      }
+                      className="mt-3 w-full rounded-2xl border border-blue-100 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                      data-testid="contractor-onboarding-business-type"
+                    >
+                      <option value="residential">Residential</option>
+                      <option value="commercial">Commercial</option>
+                      <option value="both">Both</option>
+                    </select>
+                  </label>
+
+                  <label className="block rounded-2xl border border-blue-100 bg-white p-4">
+                    <div className="text-sm font-semibold text-slate-900">Service radius</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      How far do you normally travel for work?
+                    </div>
+                    <select
+                      value={String(businessDetails.service_radius_miles || 25)}
+                      onChange={(e) =>
+                        setBusinessDetails((current) => ({
+                          ...current,
+                          service_radius_miles: Number(e.target.value || 25),
+                        }))
+                      }
+                      className="mt-3 w-full rounded-2xl border border-blue-100 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+                      data-testid="contractor-onboarding-service-radius"
+                    >
+                      {[10, 25, 50, 100].map((miles) => (
+                        <option key={miles} value={miles}>
+                          {miles} miles
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {[
+                    {
+                      key: "emergency_services",
+                      label: "Emergency services",
+                      description: "Open to urgent calls and same-day response?",
+                    },
+                    {
+                      key: "licensed",
+                      label: "Licensed",
+                      description: "You currently operate with a trade license.",
+                    },
+                    {
+                      key: "insured",
+                      label: "Insured",
+                      description: "You carry active insurance coverage.",
+                    },
+                  ].map((item) => {
+                    const checked = Boolean(businessDetails[item.key]);
+                    return (
+                      <button
+                        type="button"
+                        key={item.key}
+                        onClick={() =>
+                          setBusinessDetails((current) => ({
+                            ...current,
+                            [item.key]: !Boolean(current[item.key]),
+                          }))
+                        }
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          checked
+                            ? "border-blue-600 bg-blue-50 text-blue-900"
+                            : "border-blue-100 bg-white text-slate-700 hover:bg-blue-50"
+                        }`}
+                        data-testid={`contractor-onboarding-${item.key}`}
+                      >
+                        <div className="text-sm font-semibold">{item.label}</div>
+                        <div className="mt-1 text-sm text-slate-600">{item.description}</div>
+                        <div className="mt-3 text-xs font-semibold uppercase tracking-[0.16em]">
+                          {checked ? "Enabled" : "Off"}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="mt-5 flex flex-wrap gap-3">
                   <button
@@ -707,7 +737,7 @@ export default function ContractorOnboardingForm() {
                   </button>
                   <button
                     type="button"
-                    onClick={continueFromClarifications}
+                    onClick={continueFromBusinessDetails}
                     disabled={saving}
                     className="min-h-12 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
                   >
@@ -888,7 +918,7 @@ export default function ContractorOnboardingForm() {
                         onClick={async () => {
                           const normalized = await persistSetup({
                             nextWorkDescription: workDescription,
-                            nextAnswers: clarificationAnswers,
+                            nextBusinessDetails: businessDetails,
                             notes: quickAdjustmentNotes,
                           });
                           if (!normalized) return;

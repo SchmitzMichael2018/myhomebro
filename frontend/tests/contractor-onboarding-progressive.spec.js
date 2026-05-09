@@ -23,8 +23,13 @@ function installBaseAuth(page) {
       confidence_reasoning: '',
     },
     agreement_defaults: {},
-    clarification_questions: [],
-    clarification_answers: {},
+    business_details: {
+      service_area_type: 'both',
+      service_radius_miles: 25,
+      emergency_services: false,
+      licensed: false,
+      insured: false,
+    },
     recommended_setup: {},
     suggested_plan: {},
     source: 'server',
@@ -154,7 +159,7 @@ function installBaseAuth(page) {
           ...setupState,
           ...inferred,
           work_description: workDescription,
-          clarification_answers: payload.clarification_answers || setupState.clarification_answers,
+          business_details: payload.business_details || setupState.business_details,
           completed_at: payload.completed ? '2026-04-20T00:00:00Z' : setupState.completed_at,
         };
       }
@@ -305,6 +310,12 @@ test('contractor onboarding supports activation-first progression and embedded S
   await expect(page.getByTestId('contractor-onboarding-description')).toBeVisible();
   await page.getByPlaceholder('What kind of work do you usually do?').fill('Roofing and repairs');
   await page.getByRole('button', { name: 'Continue' }).click();
+
+  await expect(page.getByTestId('contractor-onboarding-business-details')).toBeVisible();
+  await expect(page.getByTestId('contractor-onboarding-business-type')).toBeVisible();
+  await page.getByTestId('contractor-onboarding-business-type').selectOption('commercial');
+  await page.getByTestId('contractor-onboarding-emergency_services').click();
+  await page.getByRole('button', { name: 'Build my setup' }).click();
 
   await expect(page.getByTestId('contractor-onboarding-generated-setup')).toBeVisible();
   await expect(page.getByTestId('contractor-onboarding-generated-setup')).toContainText('Roofing');
