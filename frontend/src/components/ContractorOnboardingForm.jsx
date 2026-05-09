@@ -209,10 +209,15 @@ function normalizeSetup(value) {
 
 function StepBadge({ step, current }) {
   const active = step === current;
+  const completed = step < current;
   return (
     <div
-      className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-        active ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"
+      className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition ${
+        active
+          ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+          : completed
+          ? "bg-emerald-100 text-emerald-700"
+          : "bg-slate-100 text-slate-500"
       }`}
     >
       {step}
@@ -224,9 +229,9 @@ function SectionCard({ eyebrow, title, description, children, testId = "" }) {
   return (
     <section
       data-testid={testId || undefined}
-      className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+      className="rounded-3xl border border-blue-100 bg-white p-5 shadow-sm shadow-blue-50"
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
         {eyebrow}
       </div>
       <h2 className="mt-2 text-2xl font-bold text-slate-900">{title}</h2>
@@ -259,7 +264,7 @@ function QuestionField({ question, value, onChange }) {
 
   if (options.length) {
     return (
-      <div className="rounded-2xl border border-slate-200 p-4">
+      <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
         <div className="text-sm font-semibold text-slate-900">{label}</div>
         {helpText ? <div className="mt-1 text-sm text-slate-600">{helpText}</div> : null}
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -280,8 +285,8 @@ function QuestionField({ question, value, onChange }) {
                 onClick={() => onChange(key, optionValue)}
                 className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition ${
                   selected
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-100"
+                    : "border-blue-100 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50"
                 }`}
               >
                 {optionLabel}
@@ -294,7 +299,7 @@ function QuestionField({ question, value, onChange }) {
   }
 
   return (
-    <label className="block rounded-2xl border border-slate-200 p-4">
+    <label className="block rounded-2xl border border-blue-100 bg-white p-4">
       <div className="text-sm font-semibold text-slate-900">{label}</div>
       {helpText ? <div className="mt-1 text-sm text-slate-600">{helpText}</div> : null}
       {isTextarea ? (
@@ -302,14 +307,14 @@ function QuestionField({ question, value, onChange }) {
           value={safeText(value)}
           onChange={(e) => onChange(key, e.target.value)}
           rows={4}
-          className="mt-3 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          className="mt-3 w-full rounded-2xl border border-blue-100 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
           placeholder="Add a quick note..."
         />
       ) : (
         <input
           value={safeText(value)}
           onChange={(e) => onChange(key, e.target.value)}
-          className="mt-3 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+          className="mt-3 w-full rounded-2xl border border-blue-100 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
           placeholder="Type your answer"
         />
       )}
@@ -477,22 +482,23 @@ export default function ContractorOnboardingForm() {
   const questions = safeArray(setup.clarification_questions);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-sky-50 px-4 py-8 text-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50 px-4 py-8 text-slate-900">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <div className="rounded-3xl border border-slate-200 bg-slate-950 px-6 py-6 text-white shadow-xl">
+        <div className="relative overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-br from-blue-800 via-sky-600 to-amber-300 px-6 py-6 text-white shadow-xl">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.14),transparent_24%)]" />
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
-                Intelligent onboarding
+            <div className="relative">
+              <div className="text-xs font-semibold uppercase tracking-[0.25em] text-blue-100/90">
+                SMART PROJECT SETUP
               </div>
               <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
                 Let&apos;s set up how you run your projects
               </h1>
-              <p className="mt-3 max-w-3xl text-sm text-slate-300 sm:text-base">
+              <p className="mt-3 max-w-3xl text-sm text-blue-50/90 sm:text-base">
                 Tell us a bit about your work and we&apos;ll build your project setup for you.
               </p>
             </div>
-            <div className="flex flex-col items-start gap-2 text-xs text-slate-300">
+            <div className="relative flex flex-col items-start gap-2 text-xs text-blue-50">
               <Pill tone="sky">3 to 5 minute setup</Pill>
               <Pill tone="emerald">Uses project intelligence</Pill>
             </div>
@@ -515,8 +521,26 @@ export default function ContractorOnboardingForm() {
                 <div key={label} className="flex items-center gap-3">
                   <StepBadge step={index + 1} current={step} />
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">{label}</div>
-                    <div className="text-xs text-slate-500">
+                    <div
+                      className={`text-sm font-semibold ${
+                        index + 1 === step
+                          ? "text-blue-900"
+                          : index + 1 < step
+                          ? "text-emerald-800"
+                          : "text-slate-900"
+                      }`}
+                    >
+                      {label}
+                    </div>
+                    <div
+                      className={`text-xs ${
+                        index + 1 === step
+                          ? "text-blue-600"
+                          : index + 1 < step
+                          ? "text-emerald-700"
+                          : "text-slate-500"
+                      }`}
+                    >
                       {index + 1 === 1
                         ? "Start here"
                         : index + 1 === 2
@@ -533,8 +557,8 @@ export default function ContractorOnboardingForm() {
                 </div>
               ))}
             </div>
-            <div className="mt-6 rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            <div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                 Current family
               </div>
               <div className="mt-2 text-lg font-bold text-slate-900">
@@ -554,7 +578,7 @@ export default function ContractorOnboardingForm() {
                 description="We are checking your existing setup and preparing the first pass."
                 testId="contractor-onboarding-loading"
               >
-                <div className="animate-pulse rounded-2xl bg-slate-100 px-4 py-6 text-sm text-slate-500">
+                <div className="animate-pulse rounded-2xl bg-blue-50 px-4 py-6 text-sm text-slate-500">
                   Loading your contractor setup...
                 </div>
               </SectionCard>
@@ -571,21 +595,21 @@ export default function ContractorOnboardingForm() {
                   <button
                     type="button"
                     onClick={() => beginFlow()}
-                    className="rounded-2xl bg-slate-950 px-5 py-4 text-left text-sm font-semibold text-white hover:bg-slate-800"
+                    className="rounded-2xl bg-blue-600 px-5 py-4 text-left text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
                   >
                     Get started
                   </button>
                   <button
                     type="button"
                     onClick={() => applyExample("Kitchen remodels and cabinet installs")}
-                    className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="rounded-2xl border border-blue-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
                   >
                     Example: Kitchen remodels and cabinet installs
                   </button>
                   <button
                     type="button"
                     onClick={() => applyExample("Roofing and repairs")}
-                    className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="rounded-2xl border border-blue-200 bg-white px-5 py-4 text-left text-sm font-semibold text-slate-700 hover:bg-blue-50"
                   >
                     Example: Roofing and repairs
                   </button>
@@ -604,28 +628,28 @@ export default function ContractorOnboardingForm() {
                   value={workDescription}
                   onChange={(e) => setWorkDescription(e.target.value)}
                   rows={5}
-                  className="w-full rounded-3xl border border-slate-200 px-4 py-3 text-base focus:border-slate-400 focus:outline-none"
+                  className="w-full rounded-3xl border border-blue-100 px-4 py-3 text-base focus:border-blue-400 focus:outline-none"
                   placeholder="What kind of work do you usually do?"
                 />
                 <div className="mt-4 flex flex-wrap gap-2 text-sm">
                   <button
                     type="button"
                     onClick={() => setWorkDescription("Kitchen remodels and cabinet installs")}
-                    className="rounded-full border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50"
+                    className="rounded-full border border-blue-200 px-3 py-1.5 text-slate-700 hover:bg-blue-50"
                   >
                     Kitchen remodels and cabinet installs
                   </button>
                   <button
                     type="button"
                     onClick={() => setWorkDescription("Roofing and repairs")}
-                    className="rounded-full border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50"
+                    className="rounded-full border border-blue-200 px-3 py-1.5 text-slate-700 hover:bg-blue-50"
                   >
                     Roofing and repairs
                   </button>
                   <button
                     type="button"
                     onClick={() => setWorkDescription("General handyman work")}
-                    className="rounded-full border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50"
+                    className="rounded-full border border-blue-200 px-3 py-1.5 text-slate-700 hover:bg-blue-50"
                   >
                     General handyman work
                   </button>
@@ -634,7 +658,7 @@ export default function ContractorOnboardingForm() {
                   <button
                     type="button"
                     onClick={() => goToStep(1)}
-                    className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="min-h-12 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
                   >
                     Back
                   </button>
@@ -642,7 +666,7 @@ export default function ContractorOnboardingForm() {
                     type="button"
                     onClick={continueFromDescription}
                     disabled={saving}
-                    className="min-h-12 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="min-h-12 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
                   >
                     {saving ? "Building setup..." : "Continue"}
                   </button>
@@ -677,7 +701,7 @@ export default function ContractorOnboardingForm() {
                   <button
                     type="button"
                     onClick={() => goToStep(2)}
-                    className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="min-h-12 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
                   >
                     Back
                   </button>
@@ -685,7 +709,7 @@ export default function ContractorOnboardingForm() {
                     type="button"
                     onClick={continueFromClarifications}
                     disabled={saving}
-                    className="min-h-12 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="min-h-12 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
                   >
                     {saving ? "Updating..." : "Build my setup"}
                   </button>
@@ -701,8 +725,8 @@ export default function ContractorOnboardingForm() {
                 testId="contractor-onboarding-generated-setup"
               >
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                       Work Profile
                     </div>
                     <div className="mt-2 text-lg font-bold text-slate-900">
@@ -725,8 +749,8 @@ export default function ContractorOnboardingForm() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                       Project Style
                     </div>
                     <div className="mt-2 text-lg font-bold text-slate-900">
@@ -738,8 +762,8 @@ export default function ContractorOnboardingForm() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                       Suggested Plan Structure
                     </div>
                     <div className="mt-2 text-lg font-bold text-slate-900">
@@ -748,21 +772,21 @@ export default function ContractorOnboardingForm() {
                     <div className="mt-3 space-y-2">
                       {milestoneRows.length ? (
                         milestoneRows.map((row, index) => (
-                          <div key={`${row.title || index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                        <div key={`${row.title || index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">
                             <span className="font-semibold text-slate-900">{row.title || `Milestone ${index + 1}`}</span>
                             {row.note ? <span className="text-slate-500"> - {row.note}</span> : null}
                           </div>
                         ))
                       ) : (
-                        <div className="rounded-xl bg-white px-3 py-2 text-sm text-slate-600">
+                        <div className="rounded-xl bg-white px-3 py-2 text-sm text-slate-600 shadow-sm">
                           We will use a safe default milestone plan if the system cannot narrow it further.
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                       Pricing + Duration Baseline
                     </div>
                     <div className="mt-2 text-lg font-bold text-slate-900">
@@ -790,8 +814,8 @@ export default function ContractorOnboardingForm() {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                <div className="mt-5 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                     Agreement Defaults
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -803,8 +827,8 @@ export default function ContractorOnboardingForm() {
                       ["Payment mode", setup.agreement_defaults?.payment_mode || "escrow"],
                       ["Payment structure", setup.agreement_defaults?.payment_structure || "progress"],
                     ].map(([label, value]) => (
-                      <div key={label} className="rounded-2xl bg-slate-50 px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      <div key={label} className="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-500">
                           {label}
                         </div>
                         <div className="mt-1 text-sm font-semibold text-slate-900">{value}</div>
@@ -818,7 +842,7 @@ export default function ContractorOnboardingForm() {
                     <button
                       type="button"
                       onClick={() => setShowAdjust(true)}
-                      className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      className="min-h-12 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
                     >
                       Adjust
                     </button>
@@ -827,14 +851,14 @@ export default function ContractorOnboardingForm() {
                     type="button"
                     onClick={completeSetup}
                     disabled={saving}
-                    className="min-h-12 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="min-h-12 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60"
                   >
                     {saving ? "Saving setup..." : "Looks good"}
                   </button>
                 </div>
 
                 {showAdjust ? (
-                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
                     <div className="text-sm font-semibold text-slate-900">Quick adjustment</div>
                     <p className="mt-1 text-sm text-slate-600">
                       Make a small wording change and rebuild the setup.
@@ -846,7 +870,7 @@ export default function ContractorOnboardingForm() {
                         setWorkDescription(e.target.value);
                       }}
                       rows={3}
-                      className="mt-3 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+                      className="mt-3 w-full rounded-2xl border border-blue-100 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
                     />
                     <div className="mt-3 flex flex-wrap gap-3">
                       <button
@@ -855,7 +879,7 @@ export default function ContractorOnboardingForm() {
                           setShowAdjust(false);
                           setQuickAdjustmentNotes("");
                         }}
-                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        className="rounded-2xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
                       >
                         Close
                       </button>
@@ -870,7 +894,7 @@ export default function ContractorOnboardingForm() {
                           if (!normalized) return;
                           setShowAdjust(false);
                         }}
-                        className="rounded-2xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                        className="rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
                       >
                         Regenerate
                       </button>
@@ -892,19 +916,19 @@ export default function ContractorOnboardingForm() {
                     type="button"
                     onClick={completeSetup}
                     disabled={saving}
-                    className="min-h-12 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                    className="min-h-12 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
                   >
                     {saving ? "Saving setup..." : "Looks good"}
                   </button>
                   <button
                     type="button"
                     onClick={goToDashboard}
-                    className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="min-h-12 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
                   >
                     Go to Dashboard
                   </button>
                 </div>
-                <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                   {finished
                     ? "Your setup is saved and ready to use across dashboard, agreement builder, templates, and AI context."
                     : "Your setup is ready. Confirm it to launch your first project."}
@@ -920,8 +944,8 @@ export default function ContractorOnboardingForm() {
                 testId="contractor-onboarding-first-project"
               >
                 <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                       Ready to launch
                     </div>
                     <div className="mt-2 text-lg font-bold text-slate-900">
@@ -932,8 +956,8 @@ export default function ContractorOnboardingForm() {
                         "We will use your onboarding setup as the starting point."}
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-500">
                       What is prefilled
                     </div>
                     <div className="mt-2 text-sm text-slate-700">
@@ -946,26 +970,26 @@ export default function ContractorOnboardingForm() {
                   <button
                     type="button"
                     onClick={startFirstProject}
-                    className="min-h-12 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                    className="min-h-12 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
                   >
                     Start project
                   </button>
                   <button
                     type="button"
                     onClick={goToDashboard}
-                    className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="min-h-12 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
                   >
                     Go to Dashboard
                   </button>
                   <button
                     type="button"
                     onClick={() => navigate("/app/onboarding/stripe")}
-                    className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="min-h-12 rounded-2xl border border-blue-200 bg-white px-5 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
                   >
                     Set up payments
                   </button>
                 </div>
-                <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
                   You can jump straight into the first agreement with your onboarding setup already loaded.
                 </div>
               </SectionCard>

@@ -296,6 +296,7 @@ test('contractor onboarding supports activation-first progression and embedded S
   await page.goto('/app/onboarding', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('contractor-onboarding-welcome')).toBeVisible();
+  await expect(page.getByText('SMART PROJECT SETUP')).toBeVisible();
   await expect(page.getByTestId('contractor-onboarding-welcome')).toContainText(
     /Let.?s set up how you run your projects/
   );
@@ -326,7 +327,7 @@ test('contractor onboarding supports activation-first progression and embedded S
   await expect(page.getByTestId('contractor-onboarding-first-project')).toBeVisible();
   await page.getByRole('button', { name: 'Start project' }).click();
   await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
-  await expect(page.getByTestId('agreement-stripe-guidance')).toBeVisible();
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
 
   const handoffAfter = await page.evaluate(() => {
     try {
