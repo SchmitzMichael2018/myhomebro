@@ -53,7 +53,7 @@ test('contractor profile shows state and trade compliance guidance', async ({ pa
         zip: '78701',
         license_number: '',
         license_expiration_date: '',
-        skills: [],
+        skills: ['Electrical'],
         compliance_records: [],
         compliance_trade_requirements: [],
         insurance_status: {
@@ -101,11 +101,11 @@ test('contractor profile shows state and trade compliance guidance', async ({ pa
 
   await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
 
-  await page.getByLabel('Electrical').check();
+  await expect(page.getByTestId('contractor-profile-trade-chip-electrical')).toBeVisible();
+  await page.getByTestId('contractor-profile-trade-search').fill('roof');
+  await page.getByTestId('contractor-profile-trade-option-roofing').click();
 
-  await expect(page.getByTestId('contractor-compliance-preview')).toContainText(
-    'Electrical in TX'
-  );
+  await expect(page.getByTestId('contractor-compliance-preview')).toContainText('Electrical in TX');
   await expect(page.getByTestId('contractor-compliance-preview')).toContainText(
     'typically requires a state license'
   );

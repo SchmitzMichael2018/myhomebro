@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Contractor, Skill
+from projects.models import Contractor
 from projects.services.contractor_activation_analytics import (
     FUNNEL_EVENT_AI_USED_FOR_PROJECT,
     FUNNEL_EVENT_ESTIMATE_PREVIEW_VIEWED,
@@ -15,6 +15,7 @@ from projects.services.contractor_activation_analytics import (
     FUNNEL_EVENT_TRADE_SELECTED,
     track_activation_event,
 )
+from projects.services.contractor_skills import set_contractor_skills
 from projects.services.contractor_onboarding import (
     apply_onboarding_patch,
     build_onboarding_snapshot,
@@ -56,17 +57,7 @@ class ContractorOnboardingView(APIView):
             apply_onboarding_patch(contractor, request.data or {})
 
             if "skills" in request.data:
-                values = request.data.get("skills") or []
-                if isinstance(values, str):
-                    values = [item.strip() for item in values.split(",") if item.strip()]
-                objs = []
-                for name in values:
-                    obj, _ = Skill.objects.get_or_create(
-                        name=name,
-                        defaults={"slug": str(name).lower().replace(" ", "-")},
-                    )
-                    objs.append(obj)
-                contractor.skills.set(objs)
+                objs = set_contractor_skills(contractor, request.data.get("skills"))
                 if objs:
                     track_activation_event(
                         contractor,

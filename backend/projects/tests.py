@@ -15205,6 +15205,24 @@ class ContractorActivationOnboardingTests(TestCase):
             ).exists()
         )
 
+    def test_onboarding_patch_normalizes_legacy_skill_values(self):
+        response = self.client.patch(
+            "/api/projects/contractors/onboarding/",
+            {
+                "business_name": "Activation Contractor",
+                "skills": ["HVAC", "HVAC", "Electrical", None, ""],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["trade_count"], 2)
+        self.assertEqual(
+            list(self.contractor.skills.order_by("name").values_list("name", flat=True)),
+            ["Electrical", "HVAC"],
+        )
+
     def test_direct_pay_link_returns_structured_stripe_requirement(self):
         response = self.client.post(f"/api/projects/invoices/{self.invoice.id}/direct_pay_link/")
 
@@ -15231,6 +15249,21 @@ class ContractorActivationOnboardingTests(TestCase):
         self.assertEqual(payload["service_radius_miles"], 100)
         self.assertEqual(payload["onboarding"]["service_radius_miles"], 100)
         self.assertEqual(payload["onboarding"]["step"], "welcome")
+
+    def test_contractor_me_patch_normalizes_legacy_skill_values(self):
+        response = self.client.patch(
+            "/api/projects/contractors/me/",
+            {
+                "skills": "HVAC, HVAC, Electrical, , Plumbing",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(self.contractor.skills.order_by("name").values_list("name", flat=True)),
+            ["Electrical", "HVAC", "Plumbing"],
+        )
 
     def test_onboarding_event_endpoint_tracks_activation_event(self):
         response = self.client.post(

@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import AccountSettings from "./AccountSettings";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
+import TradeMultiSelect from "./trades/TradeMultiSelect.jsx";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -14,10 +15,6 @@ const US_STATES = [
   "VA","WA","WV","WI","WY","DC","PR"
 ];
 
-const SKILL_OPTIONS = [
-  "Masonry","Roofing","Windows","Drywall","Tile","Plumbing","Electrical",
-  "Painting","Landscaping","Flooring","HVAC","Carpentry","Concrete","Siding","Insulation",
-];
 const SERVICE_RADIUS_OPTIONS = [10, 25, 50, 100];
 
 function isAiProActive() {
@@ -253,14 +250,6 @@ export default function ContractorProfile() {
   const onChange = (key) => (e) => {
     const val = e?.target?.value ?? e;
     setForm((f) => ({ ...f, [key]: val }));
-  };
-
-  const toggleSkill = (name) => {
-    setForm((f) => {
-      const has = f.skills.includes(name);
-      const next = has ? f.skills.filter((s) => s !== name) : [...f.skills, name];
-      return { ...f, skills: next };
-    });
   };
 
   const onLogo = (e) => {
@@ -746,20 +735,18 @@ export default function ContractorProfile() {
           Your ZIP is used as the center of your service area.
         </div>
 
-        {/* Skills */}
-        <div className="mt-5">
-          <div className="text-sm font-semibold mb-2">Skills</div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            {SKILL_OPTIONS.map((name) => {
-              const checked = form.skills.includes(name);
-              return (
-                <label key={name} className="inline-flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={checked} onChange={() => toggleSkill(name)} />
-                  {name}
-                </label>
-              );
-            })}
-          </div>
+        <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
+          <TradeMultiSelect
+            value={form.skills}
+            onChange={(nextSkills) => setForm((current) => ({ ...current, skills: nextSkills }))}
+            label="Search all trades"
+            helpText="Select one or more trades you offer. These trades power compliance guidance and profile settings."
+            popularLabel="Popular trades"
+            selectedLabel="Selected trades"
+            searchPlaceholder="Start typing to search for your trade..."
+            testIdPrefix="contractor-profile-trade"
+            className="rounded-2xl bg-white p-4"
+          />
         </div>
 
         <div

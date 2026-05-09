@@ -17,6 +17,7 @@ from projects.services.contractor_onboarding import (
     update_onboarding_progress,
     _coerce_service_radius_miles,
 )
+from projects.services.contractor_skills import set_contractor_skills
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
 from payments.fees import (
@@ -326,30 +327,17 @@ class ContractorMeView(APIView):
                 c.license_expiration = lic_date
 
             # skills (M2M)
-            import json
-
-            skills_values = None
             if "skills_json" in data:
                 try:
+                    import json
+
                     skills_values = json.loads(data.get("skills_json") or "[]")
                 except Exception:
-                    pass
-            if skills_values is None and "skills" in data:
-                val = data.getlist("skills") if hasattr(data, "getlist") else data.get("skills")
-                if isinstance(val, str):
-                    skills_values = [v.strip() for v in val.split(",") if v.strip()]
-                elif isinstance(val, (list, tuple)):
-                    skills_values = list(val)
-
-            if skills_values is not None:
-                objs = []
-                for name in skills_values:
-                    obj, _ = Skill.objects.get_or_create(
-                        name=name,
-                        slug=name.lower().replace(" ", "-"),
-                    )
-                    objs.append(obj)
-                c.skills.set(objs)
+                    skills_values = None
+                if skills_values is not None:
+                    set_contractor_skills(c, skills_values)
+            elif "skills" in data:
+                set_contractor_skills(c, data.get("skills"))
 
             # files
             if "logo" in request.FILES:
