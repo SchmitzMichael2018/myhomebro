@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../../api";
 import { trackOnboardingEvent } from "../../lib/onboardingAnalytics.js";
 import StripeOnboardingButton from "../StripeOnboardingButton.jsx";
@@ -102,6 +102,7 @@ function OnboardingStripeStep({
 
 export default function StripeOnboarding() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -119,7 +120,7 @@ export default function StripeOnboarding() {
     skills: [],
   });
 
-  async function loadAll() {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError("");
     setStatusError("");
@@ -159,11 +160,11 @@ export default function StripeOnboarding() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     loadAll();
-  }, []);
+  }, [location.key, loadAll]);
 
   const currentStep = localStep || onboarding?.step || "welcome";
   const stepNumberMap = {

@@ -245,6 +245,10 @@ test("profile uses the shared trade multiselect and saves canonical trades", asy
 
   await expect.poll(() => state.profilePatchPayloads.length).toBe(1);
   expect(state.profilePatchPayloads[0].skills).toEqual(["Electrical", "Roofing"]);
+
+  await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("contractor-onboarding-trade-chip-roofing")).toBeVisible();
+  await expect(page.getByTestId("contractor-onboarding-trade-chip-electrical")).toBeVisible();
 });
 
 test("stripe onboarding preloads saved trades and preserves them on save", async ({ page }) => {

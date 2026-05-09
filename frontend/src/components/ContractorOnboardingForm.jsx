@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 import {
@@ -324,6 +324,7 @@ function QuestionField({ question, value, onChange }) {
 
 export default function ContractorOnboardingForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { setProjectFamilyContext } = useWorkspaceProjectFamilyContext();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -354,7 +355,7 @@ export default function ContractorOnboardingForm() {
     }
   }, [step]);
 
-  const loadSetup = async () => {
+  const loadSetup = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -382,12 +383,11 @@ export default function ContractorOnboardingForm() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setProjectFamilyContext]);
 
   useEffect(() => {
     loadSetup();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [location.key, loadSetup]);
 
   const persistSetup = async ({ nextWorkDescription, nextAnswers, completed = false, notes = "" }) => {
     setSaving(true);
