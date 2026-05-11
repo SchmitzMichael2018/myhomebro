@@ -26,6 +26,7 @@ export default function IntakeAiRecommendationPanel({
   const matchQuality = String(result?.match_quality || "").trim().toLowerCase();
   const safetyWarnings = Array.isArray(result?.safety_warnings) ? result.safety_warnings : [];
   const paymentProtection = result?.payment_protection || null;
+  const contractorMatch = result?.contractor_match || null;
 
   function confidenceLabel(value) {
     const normalized = String(value || "").trim().toLowerCase();
@@ -177,6 +178,49 @@ export default function IntakeAiRecommendationPanel({
                   ) : null}
                 </div>
                 <div className="mt-1 text-sm text-slate-700">{paymentProtection.reason}</div>
+              </div>
+            ) : null}
+
+            {contractorMatch?.tier ? (
+              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3" data-testid="intake-contractor-match">
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Contractor Compatibility
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-emerald-200 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-800">
+                    {contractorMatch.tier}
+                  </span>
+                  {Number.isFinite(Number(contractorMatch.score)) ? (
+                    <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700">
+                      Score {Number(contractorMatch.score).toLocaleString()}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-900">
+                  Why this project matches you
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  {contractorMatch.summary || "This contractor looks like a reasonable fit for the intake."}
+                </div>
+                {Array.isArray(contractorMatch.badges) && contractorMatch.badges.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {contractorMatch.badges.slice(0, 4).map((badge) => (
+                      <span
+                        key={badge}
+                        className="rounded-full border border-emerald-200 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-800"
+                      >
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {Array.isArray(contractorMatch.reasons) && contractorMatch.reasons.length ? (
+                  <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                    {contractorMatch.reasons.slice(0, 3).map((reason, index) => (
+                      <li key={`${reason}-${index}`}>• {reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ) : null}
 

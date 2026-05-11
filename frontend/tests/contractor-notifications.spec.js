@@ -242,6 +242,64 @@ test('contractor dashboard shows money-first summary row and prioritized next ac
   await expect(page).toHaveURL(/\/app\/agreements\/321\/wizard\?step=1/);
 });
 
+test('contractor dashboard surfaces recommended project matches with compatibility reasons', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    publicLeads: [
+      {
+        id: 11,
+        source: 'public_profile',
+        full_name: 'Casey Prospect',
+        project_type: 'Kitchen Remodel',
+        project_description: 'Need help finishing a kitchen project with homeowner participation.',
+        ai_analysis: {
+          project_mode: 'assisted_diy',
+          project_scope_summary: 'Collaborative kitchen remodel with milestone payments.',
+          payment_preference: 'escrow',
+        },
+        matching: {
+          tier: 'Strong Match',
+          score: 91,
+          summary: 'Strong fit for this project and working style.',
+          badges: ['DIY Assistance Available', 'Escrow Friendly'],
+          reasons: ['Offers Assisted DIY support.', 'Accepts escrow milestone payments.'],
+        },
+      },
+      {
+        id: 12,
+        source: 'public_profile',
+        full_name: 'Jordan Rescue',
+        project_type: 'Bathroom Rescue',
+        project_description: 'Need help finishing a project already started.',
+        ai_analysis: {
+          project_mode: 'consultation',
+          project_scope_summary: 'Partial-completion rescue project.',
+          payment_preference: 'escrow',
+        },
+        matching: {
+          tier: 'Good Match',
+          score: 68,
+          summary: 'Good fit with a few considerations to confirm.',
+          badges: ['Rescue Project Assistance'],
+          reasons: ['Supports rescue or finish-my-project work.'],
+        },
+      },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toBeVisible();
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Strong Matches');
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Assisted DIY');
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Rescue Projects');
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Escrow Compatible');
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Why this project matches you');
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Offers Assisted DIY support.');
+  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Accepts escrow milestone payments.');
+});
+
 test('contractor dashboard keeps the review queue next action visible while submitted work remains', async ({
   page,
 }) => {

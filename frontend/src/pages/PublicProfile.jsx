@@ -7,6 +7,7 @@ import Modal from '../components/Modal.jsx';
 import RatingDisplay from '../components/RatingDisplay.jsx';
 import PublicQuoteRequestWizard from '../components/PublicQuoteRequestWizard.jsx';
 import { buildPublicProfileThemeStyle, getPublicProfileBranding } from '../lib/publicProfileBranding.js';
+import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 
 const buildEmptyReviewForm = (context = {}) => ({
   customer_name: '',
@@ -140,6 +141,9 @@ export default function PublicProfile() {
   const contractorProfileInsights = Array.isArray(profile.contractor_profile_insights)
     ? profile.contractor_profile_insights
     : [];
+  const compatibilityProfile = profile.compatibility_profile || {};
+  const compatibilityBadges = Array.isArray(profile.compatibility_badges) ? profile.compatibility_badges : [];
+  const waysIWork = Array.isArray(profile.ways_i_work) ? profile.ways_i_work : [];
   const branding = getPublicProfileBranding(profile);
   const brandingStyle = buildPublicProfileThemeStyle(profile);
   const showReviews = Boolean(profile.show_reviews !== false && profile.allow_public_reviews !== false);
@@ -270,6 +274,59 @@ export default function PublicProfile() {
                 </li>
               ))}
             </ul>
+          </section>
+        ) : null}
+
+        {(compatibilityBadges.length || waysIWork.length || compatibilityProfile.summary) ? (
+          <section data-testid="public-profile-compatibility" className="rounded-3xl border border-sky-200 bg-sky-50/80 p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">
+                  Ways I Work
+                </div>
+                <h2 className="mt-2 text-2xl font-bold text-slate-900">Good fit for collaborative projects</h2>
+              </div>
+              {compatibilityProfile.tier ? (
+                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${contractorMatchTierClass(compatibilityProfile.tier)}`}>
+                  {contractorMatchTierLabel(compatibilityProfile.tier)}
+                </span>
+              ) : null}
+            </div>
+            {compatibilityProfile.summary ? (
+              <p className="mt-3 text-sm leading-6 text-slate-700">{compatibilityProfile.summary}</p>
+            ) : null}
+            {compatibilityBadges.length ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {compatibilityBadges.map((badge) => (
+                  <span key={badge} className="rounded-full border border-sky-200 bg-white px-3 py-1 text-sm font-semibold text-sky-700">
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {waysIWork.length ? (
+              <ul className="mt-5 space-y-3 text-sm leading-7 text-slate-700">
+                {waysIWork.slice(0, 5).map((item, index) => (
+                  <li key={`${item?.key || item?.label || index}`} className="flex gap-3">
+                    <span className="mt-3 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400" aria-hidden="true" />
+                    <span>
+                      <span className="font-semibold text-slate-900">{item?.label || 'Project support'}</span>
+                      {item?.description ? ` — ${item.description}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {Array.isArray(compatibilityProfile.reasons) && compatibilityProfile.reasons.length ? (
+              <div className="mt-4 rounded-2xl border border-white bg-white p-4 text-sm text-slate-700 shadow-sm">
+                <div className="font-semibold text-slate-900">Why this contractor fits collaborative work</div>
+                <ul className="mt-2 space-y-2">
+                  {compatibilityProfile.reasons.slice(0, 4).map((reason, index) => (
+                    <li key={`${reason}-${index}`}>• {reason}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </section>
         ) : null}
 

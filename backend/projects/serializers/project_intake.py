@@ -115,6 +115,7 @@ class ProjectIntakeAnalyzeResponseSerializer(serializers.Serializer):
     safety_warnings = serializers.ListField(child=serializers.CharField(), required=False)
     restricted_trade_categories = serializers.ListField(child=serializers.CharField(), required=False)
     payment_protection = serializers.DictField(required=False)
+    contractor_match = serializers.DictField(required=False)
     measurement_handling = serializers.ChoiceField(
         choices=[
             ("provided", "Provided"),

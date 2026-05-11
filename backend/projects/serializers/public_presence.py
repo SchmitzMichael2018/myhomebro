@@ -16,6 +16,10 @@ from projects.models import (
 )
 from projects.models_project_intake import ProjectIntake
 from projects.services.compliance import get_public_trust_indicators
+from projects.services.contractor_matching import (
+    build_contractor_compatibility_profile,
+    score_contractor_project_match,
+)
 from projects.services.contractor_profile_insights import get_contractor_profile_insights
 
 
@@ -25,6 +29,14 @@ def _abs_media_url(request, file_field) -> str:
     except Exception:
         url = ""
     return request.build_absolute_uri(url) if request and url else url
+
+
+def _safe_text(value):
+    return "" if value is None else str(value).strip()
+
+
+def _safe_dict(value):
+    return value if isinstance(value, dict) else {}
 
 
 class ContractorPublicProfileSerializer(serializers.ModelSerializer):
@@ -400,6 +412,7 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
     )
     converted_homeowner_name = serializers.SerializerMethodField()
     source_intake_id = serializers.SerializerMethodField()
+    matching = serializers.SerializerMethodField()
 
     class Meta:
         model = PublicContractorLead
@@ -424,6 +437,7 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
             "rejected_at",
             "rejected_email_sent_at",
             "ai_analysis",
+            "matching",
             "source_intake_id",
             "converted_homeowner_id",
             "converted_homeowner_name",
@@ -455,6 +469,33 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
         source_intake = getattr(obj, "source_intake", None)
         return getattr(source_intake, "id", None)
 
+    def get_matching(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        if contractor is None:
+            return {}
+        analysis = _safe_dict(getattr(obj, "ai_analysis", {}))
+        project_payload = {
+            "project_title": _safe_text(analysis.get("project_title") or obj.project_type),
+            "project_type": _safe_text(analysis.get("project_type") or obj.project_type),
+            "project_subtype": _safe_text(analysis.get("project_subtype", "")),
+            "description": _safe_text(analysis.get("project_scope_summary") or obj.project_description),
+            "project_scope_summary": _safe_text(analysis.get("project_scope_summary") or obj.project_description),
+            "project_mode": _safe_text(analysis.get("project_mode") or getattr(obj, "project_mode", "")),
+            "payment_preference": _safe_text(analysis.get("payment_preference") or "escrow"),
+            "project_city": _safe_text(getattr(obj, "city", "")),
+            "project_state": _safe_text(getattr(obj, "state", "")),
+            "homeowner_participation_notes": _safe_text(analysis.get("homeowner_participation_notes")),
+            "homeowner_started_work": bool(analysis.get("homeowner_started_work", False)),
+            "homeowner_task_summary": _safe_text(analysis.get("homeowner_task_summary")),
+            "homeowner_assistance_summary": _safe_text(analysis.get("homeowner_assistance_summary")),
+            "milestones": analysis.get("milestones") if isinstance(analysis.get("milestones"), list) else [],
+        }
+        return score_contractor_project_match(
+            contractor,
+            project_payload,
+            profile=getattr(contractor, "public_profile", None),
+        )
+
 
 class PublicContractorProfileSerializer(serializers.ModelSerializer):
     logo_url = serializers.SerializerMethodField()
@@ -466,6 +507,10 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
     review_count = serializers.SerializerMethodField()
     public_trust_indicators = serializers.SerializerMethodField()
     contractor_profile_insights = serializers.SerializerMethodField()
+    compatibility_profile = serializers.SerializerMethodField()
+    compatibility_badges = serializers.SerializerMethodField()
+    ways_i_work = serializers.SerializerMethodField()
+    compatibility_summary = serializers.SerializerMethodField()
     accepts_diy_assistance = serializers.BooleanField(source="contractor.accepts_diy_assistance", read_only=True)
     accepts_consultation_only = serializers.BooleanField(source="contractor.accepts_consultation_only", read_only=True)
     accepts_hourly_help = serializers.BooleanField(source="contractor.accepts_hourly_help", read_only=True)
@@ -513,6 +558,10 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
             "review_count",
             "public_trust_indicators",
             "contractor_profile_insights",
+            "compatibility_profile",
+            "compatibility_badges",
+            "ways_i_work",
+            "compatibility_summary",
             "accepts_diy_assistance",
             "accepts_consultation_only",
             "accepts_hourly_help",
@@ -572,6 +621,24 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
         if not contractor_id:
             return []
         return get_contractor_profile_insights(contractor_id)
+
+    def get_compatibility_profile(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        if contractor is None:
+            return {}
+        return build_contractor_compatibility_profile(contractor, profile=obj)
+
+    def get_compatibility_badges(self, obj):
+        profile = self.get_compatibility_profile(obj)
+        return list(profile.get("badges") or [])
+
+    def get_ways_i_work(self, obj):
+        profile = self.get_compatibility_profile(obj)
+        return list(profile.get("ways_i_work") or [])
+
+    def get_compatibility_summary(self, obj):
+        profile = self.get_compatibility_profile(obj)
+        return _safe_text(profile.get("summary"))
 
 
 def make_qr_svg_data(url: str) -> str:

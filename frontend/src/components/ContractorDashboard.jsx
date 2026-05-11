@@ -11,6 +11,7 @@ import DashboardCard from "./dashboard/DashboardCard.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
 import { ProjectModeBadge, normalizeProjectMode } from "./projectMode.jsx";
 import { deriveMilestoneRoleLabel, normalizeMilestoneRole } from "./milestoneRole.jsx";
+import { contractorMatchTierClass, contractorMatchTierLabel } from "../lib/contractorMatching.js";
 import {
   Target,
   ListTodo,
@@ -2107,6 +2108,42 @@ export default function ContractorDashboard() {
     }
     return counts;
   }, [milestones]);
+  const contractorMatchOpportunities = useMemo(() => {
+    const rows = Array.isArray(publicLeads) ? publicLeads : [];
+    const normalizedRows = rows
+      .map((lead) => {
+        const matching = lead?.matching || lead?.ai_analysis?.contractor_match || {};
+        return {
+          ...lead,
+          matching,
+          score: Number(matching?.score || 0),
+          tier: String(matching?.tier || "").trim(),
+          requirements: matching?.project_requirements || {},
+        };
+      })
+      .filter((row) => row.score >= 45)
+      .sort((left, right) => right.score - left.score || String(left.full_name || "").localeCompare(String(right.full_name || "")));
+
+    const counts = {
+      strong: 0,
+      good: 0,
+      assisted_diy: 0,
+      rescue: 0,
+      escrow: 0,
+    };
+    for (const row of normalizedRows) {
+      if (String(row.tier).toLowerCase() === "strong match") counts.strong += 1;
+      else counts.good += 1;
+      if (normalizeProjectMode(row.requirements?.project_mode || row.project_mode) === "assisted_diy") counts.assisted_diy += 1;
+      if (row.requirements?.rescue_project) counts.rescue += 1;
+      if (String(row.requirements?.payment_preference || "").toLowerCase() !== "direct") counts.escrow += 1;
+    }
+
+    return {
+      rows: normalizedRows.slice(0, 4),
+      counts,
+    };
+  }, [publicLeads]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
   const workPipelineRows = [
     {
@@ -3227,6 +3264,116 @@ export default function ContractorDashboard() {
                   </table>
                 </div>
               ) : null}
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Recommended Project Matches"
+            subtitle="Projects that fit your collaboration style, payment preferences, and service capabilities."
+          >
+            <DashboardCard
+              testId="dashboard-recommended-project-matches"
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+            >
+              <div className="grid gap-3 md:grid-cols-4">
+                {[
+                  {
+                    label: "Strong Matches",
+                    value: contractorMatchOpportunities.counts.strong,
+                    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+                    description: "Top-fit leads for your current profile.",
+                  },
+                  {
+                    label: "Assisted DIY",
+                    value: contractorMatchOpportunities.counts.assisted_diy,
+                    tone: "border-amber-200 bg-amber-50 text-amber-800",
+                    description: "Collaborative projects that welcome homeowner participation.",
+                  },
+                  {
+                    label: "Rescue Projects",
+                    value: contractorMatchOpportunities.counts.rescue,
+                    tone: "border-violet-200 bg-violet-50 text-violet-700",
+                    description: "Partial-completion and finish-my-project opportunities.",
+                  },
+                  {
+                    label: "Escrow Compatible",
+                    value: contractorMatchOpportunities.counts.escrow,
+                    tone: "border-sky-200 bg-sky-50 text-sky-700",
+                    description: "Projects aligned with milestone payment protection.",
+                  },
+                ].map((item) => (
+                  <div key={item.label} className={`rounded-xl border p-4 ${item.tone}`}>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
+                      {item.label}
+                    </div>
+                    <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                      {Number(item.value || 0).toLocaleString()}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">{item.description}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Why this project matches you</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    These leads look like a fit for your service modes, payment preferences, and project style.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate("/app/public-presence?tab=leads")}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Open lead inbox
+                </button>
+              </div>
+
+              {contractorMatchOpportunities.rows.length ? (
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {contractorMatchOpportunities.rows.map((row) => (
+                    <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">{row.full_name || row.project_type || "Untitled Lead"}</div>
+                          <div className="mt-1 text-xs text-slate-500">{row.project_type || "Project request"}</div>
+                        </div>
+                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${contractorMatchTierClass(row.tier)}`}>
+                          {contractorMatchTierLabel(row.tier)}
+                        </span>
+                      </div>
+                      <div className="mt-2">
+                        <ProjectModeBadge mode={row.requirements?.project_mode || row.project_mode} dataTestId={`dashboard-match-project-mode-${row.id}`} />
+                      </div>
+                      <div className="mt-3 text-sm font-semibold text-slate-900">
+                        {row.matching?.summary || "This opportunity appears aligned with your service profile."}
+                      </div>
+                      {Array.isArray(row.matching?.badges) && row.matching.badges.length ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {row.matching.badges.slice(0, 3).map((badge) => (
+                            <span key={badge} className="rounded-full border border-white bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+                              {badge}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {Array.isArray(row.matching?.reasons) && row.matching.reasons.length ? (
+                        <ul className="mt-3 space-y-1 text-xs text-slate-600">
+                          {row.matching.reasons.slice(0, 3).map((reason, index) => (
+                            <li key={`${row.id}-${index}`}>• {reason}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  No strong project matches yet. Add more profile details or review more leads to sharpen this section.
+                </div>
+              )}
             </DashboardCard>
           </DashboardSection>
 

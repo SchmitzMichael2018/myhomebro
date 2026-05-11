@@ -14,7 +14,7 @@ except Exception:  # pragma: no cover
     except Exception:  # pragma: no cover
         PdfReader = None  # type: ignore
 
-from projects.models import Agreement, Contractor, Homeowner, Milestone, Project
+from projects.models import Agreement, Contractor, ContractorPublicProfile, Homeowner, Milestone, Project, PublicContractorLead
 from projects.models import InspectionStatus
 from projects.models_project_intake import ProjectIntake
 from projects.services.legal_clauses import build_legal_notices
@@ -22,8 +22,10 @@ from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.milestone_roles import annotate_milestone_roles
 from projects.services.payment_protection import build_payment_protection_summary
+from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.pdf import build_agreement_pdf_bytes
 from projects.serializers.agreement import AgreementSerializer
+from projects.serializers.public_presence import ContractorPublicLeadSerializer, PublicContractorProfileSerializer
 
 
 class DIYAssistanceTests(TestCase):
@@ -182,6 +184,161 @@ class DIYAssistanceTests(TestCase):
         self.assertEqual(result["payment_preference"], "discuss")
         self.assertEqual(result["payment_protection"]["label"], "Escrow Recommended")
         self.assertEqual(result["payment_protection"]["level"], "recommended")
+
+    def test_intake_analysis_returns_contractor_match_snapshot(self):
+        self.contractor.accepts_diy_assistance = True
+        self.contractor.accepts_consultation_only = True
+        self.contractor.accepts_hourly_help = True
+        self.contractor.accepts_inspection_only = True
+        self.contractor.accepts_homeowner_participation = True
+        self.contractor.save(update_fields=[
+            "accepts_diy_assistance",
+            "accepts_consultation_only",
+            "accepts_hourly_help",
+            "accepts_inspection_only",
+            "accepts_homeowner_participation",
+        ])
+        self.contractor.skills.create(name="Flooring", slug="flooring")
+        profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="DIY Pro",
+            tagline="Guided DIY assistance and finish work",
+            bio="We help finish started projects, support homeowner participation, and keep escrow milestone payments clear.",
+            city="Austin",
+            state="TX",
+            service_area_text="Austin metro",
+            specialties=["Flooring", "Finish Work"],
+            work_types=["Guided DIY", "Repair"],
+            allow_public_intake=True,
+            is_public=True,
+        )
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Customer Two D",
+            email="customer2d@example.com",
+        )
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=profile,
+            homeowner=homeowner,
+            customer_name="Customer Two D",
+            customer_email="customer2d@example.com",
+            project_class="residential",
+            project_mode="assisted_diy",
+            accomplishment_text="Need help finishing a started flooring project.",
+            project_address_line1="123 Main St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            homeowner_participation_notes="Homeowner will prep and cleanup.",
+            homeowner_started_work=True,
+            homeowner_task_summary="Prep and cleanup",
+            homeowner_assistance_summary="Need supervision and finish assistance.",
+            payment_preference="escrow",
+        )
+
+        result = analyze_project_intake(intake=intake)
+
+        self.assertIn("contractor_match", result)
+        self.assertEqual(result["contractor_match"]["tier"], "Strong Match")
+        self.assertIn("DIY Assistance Available", result["contractor_match"]["badges"])
+        self.assertTrue(result["contractor_match"]["project_requirements"]["rescue_project"])
+        self.assertIn("Offers Assisted DIY support.", result["contractor_match"]["reasons"])
+        self.assertIn("Supports rescue or finish-my-project work.", result["contractor_match"]["reasons"])
+
+    def test_public_profile_serializer_exposes_compatibility_badges(self):
+        self.contractor.accepts_diy_assistance = True
+        self.contractor.accepts_consultation_only = True
+        self.contractor.accepts_inspection_only = True
+        self.contractor.accepts_homeowner_participation = True
+        self.contractor.save(update_fields=[
+            "accepts_diy_assistance",
+            "accepts_consultation_only",
+            "accepts_inspection_only",
+            "accepts_homeowner_participation",
+        ])
+        self.contractor.skills.create(name="Electrical", slug="electrical")
+        profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="DIY Pro Profile",
+            tagline="Homeowner participation welcome",
+            bio="Good fit for collaborative projects and phased milestone work.",
+            city="Austin",
+            state="TX",
+            service_area_text="Austin metro",
+            specialties=["Electrical", "Consultation"],
+            work_types=["Assisted DIY", "Inspection"],
+            allow_public_intake=True,
+            is_public=True,
+        )
+
+        payload = PublicContractorProfileSerializer(profile).data
+
+        self.assertIn("DIY Assistance Available", payload["compatibility_badges"])
+        self.assertIn("Consultation Available", payload["compatibility_badges"])
+        self.assertIn("Inspection Services", payload["compatibility_badges"])
+        self.assertTrue(payload["compatibility_profile"]["summary"])
+        self.assertTrue(payload["ways_i_work"])
+        self.assertIn("Good fit", payload["compatibility_summary"])
+
+    def test_public_lead_serializer_exposes_matching_snapshot(self):
+        self.contractor.accepts_diy_assistance = True
+        self.contractor.accepts_homeowner_participation = True
+        self.contractor.accepts_inspection_only = True
+        self.contractor.save(update_fields=[
+            "accepts_diy_assistance",
+            "accepts_homeowner_participation",
+            "accepts_inspection_only",
+        ])
+        self.contractor.skills.create(name="Flooring", slug="flooring-compatibility")
+        profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Lead Match Profile",
+            tagline="Collaborative project support",
+            bio="We support rescue projects, homeowner participation, and inspection checkpoints.",
+            city="Austin",
+            state="TX",
+            service_area_text="Austin metro",
+            specialties=["Flooring", "Finish Work"],
+            work_types=["Assisted DIY", "Inspection"],
+            allow_public_intake=True,
+            is_public=True,
+        )
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=profile,
+            source=PublicContractorLead.SOURCE_DIRECT,
+            full_name="Match Prospect",
+            email="match@example.com",
+            phone="555-123-4567",
+            project_address="123 Main St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            project_type="Flooring",
+            project_description="Need help finishing a started flooring project.",
+            preferred_timeline="Soon",
+            budget_text="$8,000",
+            status=PublicContractorLead.STATUS_READY_FOR_REVIEW,
+        )
+        lead.ai_analysis = {
+            "project_mode": "assisted_diy",
+            "payment_preference": "escrow",
+            "project_scope_summary": "Need help finishing a started flooring project.",
+            "homeowner_started_work": True,
+            "homeowner_participation_notes": "Homeowner will prep and cleanup.",
+            "homeowner_task_summary": "Prep and cleanup",
+            "homeowner_assistance_summary": "Need supervision and finish assistance.",
+        }
+        lead.save(update_fields=["ai_analysis", "updated_at"])
+
+        payload = ContractorPublicLeadSerializer(lead).data
+
+        self.assertIn("matching", payload)
+        self.assertEqual(payload["matching"]["tier"], "Strong Match")
+        self.assertIn("Offers Assisted DIY support.", payload["matching"]["reasons"])
+        self.assertTrue(payload["matching"]["project_requirements"]["rescue_project"])
+        self.assertIn("DIY Assistance Available", payload["matching"]["badges"])
 
     def test_payment_protection_requires_escrow_for_inspection_only_work(self):
         summary = build_payment_protection_summary(

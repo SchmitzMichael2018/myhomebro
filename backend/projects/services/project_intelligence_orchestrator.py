@@ -325,6 +325,7 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
             "template_name": normalized["template_name"],
         },
         "analysis": analysis,
+        "contractor_match": analysis.get("contractor_match") or {},
         "classification": intelligence_context,
         "recommended_setup": analysis.get("recommended_setup") or {},
         "suggested_plan": plan,

@@ -29,6 +29,21 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
       allow_public_intake: true,
       allow_public_reviews: true,
       is_public: true,
+      compatibility_profile: {
+        tier: 'Strong Match',
+        summary: 'Good fit for collaborative projects and homeowner participation.',
+        badges: ['DIY Assistance Available', 'Escrow Friendly'],
+        ways_i_work: [
+          { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
+          { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
+        ],
+        reasons: ['Comfortable working alongside homeowners.', 'Accepts escrow milestone payments.'],
+      },
+      compatibility_badges: ['DIY Assistance Available', 'Escrow Friendly'],
+      ways_i_work: [
+        { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
+        { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
+      ],
       seo_title: '',
       seo_description: '',
       public_url: 'http://localhost:4173/contractors/bright-build-co',
@@ -83,6 +98,13 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
         internal_notes: '',
         accepted_at: null,
         ai_analysis: {},
+        matching: {
+          tier: 'Strong Match',
+          score: 86,
+          summary: 'Strong fit for this project and working style.',
+          badges: ['DIY Assistance Available', 'Escrow Friendly'],
+          reasons: ['Offers Assisted DIY support.', 'Accepts escrow milestone payments.'],
+        },
         created_at: '2026-03-25T11:00:00Z',
         converted_homeowner_id: null,
         converted_homeowner_name: '',
@@ -389,6 +411,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Prospect');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Strong Match');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
   await expect(page.getByTestId('public-lead-funnel')).toContainText('Review');
   await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
@@ -402,6 +425,9 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Kitchen Remodel - Casey Prospect'
   );
+  await expect(page.getByTestId('public-lead-compatibility')).toBeVisible();
+  await expect(page.getByTestId('public-lead-compatibility')).toContainText('Strong Match');
+  await expect(page.getByTestId('public-lead-compatibility')).toContainText('Offers Assisted DIY support.');
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
     'Review the AI suggestions and create the draft agreement'
   );
@@ -415,6 +441,79 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Converted to customer: Casey Prospect'
   );
+});
+
+test('public contractor profile surfaces compatibility badges and ways I work', async ({ page }) => {
+  await page.route('**/api/projects/public/contractors/bright-build-co/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        business_name_public: 'Bright Build Co',
+        tagline: 'Trusted renovations and repairs',
+        bio: 'We help homeowners with clean, reliable project delivery.',
+        city: 'Austin',
+        state: 'TX',
+        service_area_text: 'Austin metro',
+        years_in_business: 12,
+        website_url: 'https://bright.example.com',
+        phone_public: '555-111-2222',
+        email_public: 'hello@bright.example.com',
+        specialties: ['Roofing'],
+        work_types: ['Repairs'],
+        show_license_public: true,
+        show_phone_public: true,
+        show_email_public: false,
+        allow_public_intake: true,
+        allow_public_reviews: true,
+        is_public: true,
+        compatibility_profile: {
+          tier: 'Strong Match',
+          summary: 'Good fit for collaborative projects and homeowner participation.',
+          badges: ['DIY Assistance Available', 'Escrow Friendly'],
+          ways_i_work: [
+            { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
+            { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
+          ],
+          reasons: ['Comfortable working alongside homeowners.', 'Accepts escrow milestone payments.'],
+        },
+        compatibility_badges: ['DIY Assistance Available', 'Escrow Friendly'],
+        ways_i_work: [
+          { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
+          { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
+        ],
+        seo_title: '',
+        seo_description: '',
+        public_url: 'http://localhost:4173/contractors/bright-build-co',
+        logo_url: '',
+        cover_image_url: '',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/rating/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        preview: false,
+        average_rating: null,
+        review_count: 0,
+        new_on_myhomebro: true,
+        display_label: 'New on MyHomeBro',
+      }),
+    });
+  });
+
+  await page.goto('/contractors/bright-build-co', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('public-profile-compatibility')).toBeVisible();
+  await expect(page.getByTestId('public-profile-compatibility')).toContainText('Ways I Work');
+  await expect(page.getByTestId('public-profile-compatibility')).toContainText('DIY Assistance Available');
+  await expect(page.getByTestId('public-profile-compatibility')).toContainText('Escrow Friendly');
+  await expect(page.getByTestId('public-profile-compatibility')).toContainText('Good fit for collaborative projects');
 });
 
 test('landing-source intake and public-profile intake land in the same contractor leads flow', async ({
@@ -445,6 +544,21 @@ test('landing-source intake and public-profile intake land in the same contracto
       allow_public_intake: true,
       allow_public_reviews: true,
       is_public: true,
+      compatibility_profile: {
+        tier: 'Strong Match',
+        summary: 'Good fit for collaborative projects and homeowner participation.',
+        badges: ['DIY Assistance Available', 'Escrow Friendly'],
+        ways_i_work: [
+          { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
+          { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
+        ],
+        reasons: ['Comfortable working alongside homeowners.', 'Accepts escrow milestone payments.'],
+      },
+      compatibility_badges: ['DIY Assistance Available', 'Escrow Friendly'],
+      ways_i_work: [
+        { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
+        { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
+      ],
       seo_title: '',
       seo_description: '',
       public_url: 'http://localhost:4173/contractors/bright-build-co',

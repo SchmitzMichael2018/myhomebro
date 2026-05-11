@@ -12,6 +12,7 @@ from projects.services.project_intelligence import (
     build_project_intelligence_context,
     build_project_setup_recommendation,
 )
+from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.project_quantity import build_quantity_context
 from projects.services.milestone_roles import annotate_milestone_roles, detect_restricted_trade_categories
 from projects.services.payment_protection import build_payment_protection_summary
@@ -1134,6 +1135,8 @@ def _refine_milestones(milestones: list[dict[str, Any]], answers: dict[str, Any]
 def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     accomplishment = _safe_str(intake.accomplishment_text)
     payment_preference = _safe_str(getattr(intake, "payment_preference", "")) or "escrow"
+    contractor = getattr(intake, "contractor", None)
+    contractor_match = {}
     clarification_answers = _clarification_answers_map(intake)
     photo_count = 0
     try:
@@ -1179,6 +1182,27 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     if measurement_handling:
         clarification_answers = dict(clarification_answers)
         clarification_answers.setdefault("measurement_handling", measurement_handling)
+
+    if contractor is not None:
+        contractor_match = score_contractor_project_match(
+            contractor,
+            {
+                "project_title": _safe_str(getattr(intake, "ai_project_title", "")),
+                "project_type": _safe_str(getattr(intake, "ai_project_type", "")),
+                "project_subtype": _safe_str(getattr(intake, "ai_project_subtype", "")),
+                "description": accomplishment,
+                "project_scope_summary": _safe_str(getattr(intake, "ai_description", "")) or accomplishment,
+                "project_mode": _safe_str(getattr(intake, "project_mode", "")) or "full_service",
+                "payment_preference": payment_preference,
+                "project_city": _safe_str(getattr(intake, "project_city", "")),
+                "project_state": _safe_str(getattr(intake, "project_state", "")),
+                "homeowner_participation_notes": _safe_str(getattr(intake, "homeowner_participation_notes", "")),
+                "homeowner_started_work": bool(getattr(intake, "homeowner_started_work", False)),
+                "homeowner_task_summary": _safe_str(getattr(intake, "homeowner_task_summary", "")),
+                "homeowner_assistance_summary": _safe_str(getattr(intake, "homeowner_assistance_summary", "")),
+            },
+            profile=getattr(contractor, "public_profile", None),
+        )
 
     template, confidence, reason, score, template_matches = _recommend_template(intake, search_text=combined_text)
     match_quality = _match_quality(score)
@@ -1257,6 +1281,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
                 payment_preference=payment_preference,
                 milestones=milestones,
             ),
+            "contractor_match": contractor_match,
             "safety_warnings": (
                 [
                     "Certain portions of this project are typically handled by licensed professionals.",
@@ -1333,6 +1358,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             payment_preference=payment_preference,
             milestones=milestones,
         ),
+        "contractor_match": contractor_match,
         "safety_warnings": (
             [
                 "Certain portions of this project are typically handled by licensed professionals.",

@@ -19,6 +19,7 @@ import { FONT_THEME_OPTIONS, THEME_OPTIONS, getPublicProfileBranding } from '../
 import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
 import { generateContractorPublicProfile } from '../api.js';
 import { ProjectModeBadge } from '../components/projectMode.jsx';
+import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
@@ -445,6 +446,10 @@ export default function ContractorPublicPresencePage() {
   const selectedLeadHint = useMemo(() => getPublicLeadHint(selectedLead), [selectedLead]);
   const primaryLeadAction = useMemo(() => getLeadPrimaryAction(selectedLead), [selectedLead]);
   const leadFunnelCurrentStep = useMemo(() => getLeadFunnelCurrentStep(selectedLead), [selectedLead]);
+  const selectedLeadMatching = useMemo(
+    () => selectedLead?.matching || selectedLead?.ai_analysis?.contractor_match || null,
+    [selectedLead]
+  );
   const leadAssistantContext = useMemo(
     () => ({
       current_route: '/app/public-presence',
@@ -1494,6 +1499,13 @@ export default function ContractorPublicPresencePage() {
                         dataTestId={`public-lead-project-mode-${lead.id}`}
                       />
                     </div>
+                    {lead.matching?.tier ? (
+                      <div className="mt-2">
+                        <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${contractorMatchTierClass(lead.matching.tier)}`}>
+                          {contractorMatchTierLabel(lead.matching.tier)}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className="mt-2 inline-flex rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-semibold opacity-90">
                       {sourceLabel(lead.source)}
                     </div>
@@ -1590,11 +1602,50 @@ export default function ContractorPublicPresencePage() {
                       </div>
                     ) : null}
                     <div className="mt-4 text-sm text-slate-700">
-                      {selectedLead.ai_analysis?.project_scope_summary ||
+                    {selectedLead.ai_analysis?.project_scope_summary ||
                         selectedLead.ai_analysis?.suggested_description ||
                         selectedLead.project_description ||
                         'No project description provided.'}
                     </div>
+                    {selectedLeadMatching?.tier ? (
+                      <div
+                        data-testid="public-lead-compatibility"
+                        className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                            Why this project matches you
+                          </div>
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${contractorMatchTierClass(selectedLeadMatching.tier)}`}>
+                            {contractorMatchTierLabel(selectedLeadMatching.tier)}
+                          </span>
+                          {Number.isFinite(Number(selectedLeadMatching.score)) ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                              Score {Number(selectedLeadMatching.score).toLocaleString()}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-2 text-sm text-slate-700">
+                          {selectedLeadMatching.summary || 'This lead looks like a reasonable fit for your contractor profile.'}
+                        </div>
+                        {Array.isArray(selectedLeadMatching.badges) && selectedLeadMatching.badges.length ? (
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            {selectedLeadMatching.badges.slice(0, 4).map((badge) => (
+                              <span key={badge} className="rounded-full border border-emerald-200 bg-white px-2 py-1 font-semibold text-emerald-800">
+                                {badge}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {Array.isArray(selectedLeadMatching.reasons) && selectedLeadMatching.reasons.length ? (
+                          <ul className="mt-3 space-y-1 text-xs text-slate-600">
+                            {selectedLeadMatching.reasons.slice(0, 4).map((reason, index) => (
+                              <li key={`${reason}-${index}`}>• {reason}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {selectedLead.ai_analysis?.suggested_title ? (
                       <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4">
                         <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
