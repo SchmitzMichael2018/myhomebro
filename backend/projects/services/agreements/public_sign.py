@@ -13,6 +13,7 @@ from django.utils.timezone import now
 from projects.models import Agreement
 from projects.services.agreements.final_link import send_final_link_for_agreement
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.assisted_diy import build_assisted_diy_snapshot
 
 # ✅ NEW: PDF auto-finalize hook (same behavior as contractor sign)
 from projects.services.agreements.pdf_loader import load_pdf_services
@@ -150,6 +151,10 @@ def apply_homeowner_signature(
     ag.signed_by_homeowner = True
     ag.signed_at_homeowner = now()
     ag.homeowner_signed_ip = signed_ip or None
+    try:
+        ag.collaboration_summary_snapshot = build_assisted_diy_snapshot(ag)
+    except Exception:
+        pass
 
     # Save
     ag.save()

@@ -1,15 +1,28 @@
 from __future__ import annotations
 
+import io
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from projects.models import Contractor, Homeowner
+try:  # pragma: no cover - optional test dependency
+    from PyPDF2 import PdfReader  # type: ignore
+except Exception:  # pragma: no cover
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except Exception:  # pragma: no cover
+        PdfReader = None  # type: ignore
+
+from projects.models import Agreement, Contractor, Homeowner, Milestone, Project
+from projects.models import InspectionStatus
 from projects.models_project_intake import ProjectIntake
 from projects.services.legal_clauses import build_legal_notices
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.milestone_roles import annotate_milestone_roles
+from projects.services.pdf import build_agreement_pdf_bytes
+from projects.serializers.agreement import AgreementSerializer
 
 
 class DIYAssistanceTests(TestCase):
@@ -184,3 +197,174 @@ class DIYAssistanceTests(TestCase):
         self.assertIn("homeowner_task", roles)
         self.assertIn("contractor_task", roles)
         self.assertIn("inspection_checkpoint", roles)
+
+    def test_assisted_diy_serializer_exposes_collaboration_snapshot(self):
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Customer Four",
+            email="customer4@example.com",
+        )
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=homeowner,
+            title="Assisted DIY Project",
+            description="Need help finishing a started project.",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=homeowner,
+            project_mode="assisted_diy",
+            project_class="residential",
+            payment_mode="escrow",
+            status="draft",
+            description="Need help finishing a started project.",
+            homeowner_participation_notes="Homeowner will handle prep and cleanup.",
+            homeowner_responsibilities="Prep and cleanup",
+            contractor_responsibilities="Electrical and inspection work",
+            excluded_work="Electrical panel service",
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Homeowner Prep",
+            description="Prep the area and clear materials.",
+            amount=0,
+            milestone_role="homeowner_task",
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Electrical Panel Tie-In",
+            description="Licensed electrical panel and service work.",
+            amount=0,
+            milestone_role="contractor_task",
+            inspection_status=InspectionStatus.REQUESTED,
+            inspection_notes="Inspection requested before electrical tie-in.",
+        )
+
+        payload = AgreementSerializer(agreement).data
+
+        self.assertIn("responsibility_matrix", payload)
+        self.assertIn("homeowner_acknowledgements", payload)
+        self.assertIn("inspection_summary", payload)
+        self.assertIn("rescue_project_summary", payload)
+        self.assertTrue(payload["collaboration_summary"])
+        self.assertGreaterEqual(payload["responsibility_matrix"]["homeowner_responsibilities"]["count"], 1)
+
+    def test_inspection_workflow_status_transitions(self):
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Customer Five",
+            email="customer5@example.com",
+        )
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=homeowner,
+            title="Inspection Project",
+            description="Inspection workflow test",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=homeowner,
+            project_mode="inspection_only",
+            project_class="residential",
+            payment_mode="escrow",
+            status="draft",
+            description="Inspection workflow test",
+        )
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Inspection Checkpoint",
+            description="Final inspection checkpoint.",
+            amount=0,
+        )
+
+        request_inspection = self.client.post(
+            f"/api/projects/milestones/{milestone.id}/request-inspection/",
+            {"inspection_notes": "Please inspect the work."},
+            format="json",
+        )
+        self.assertEqual(request_inspection.status_code, 200)
+        milestone.refresh_from_db()
+        self.assertEqual(milestone.inspection_status, InspectionStatus.REQUESTED)
+        self.assertEqual(milestone.inspection_notes, "Please inspect the work.")
+
+        passed = self.client.post(
+            f"/api/projects/milestones/{milestone.id}/inspection-passed/",
+            {"inspection_notes": "Passed inspection."},
+            format="json",
+        )
+        self.assertEqual(passed.status_code, 200)
+        milestone.refresh_from_db()
+        self.assertEqual(milestone.inspection_status, InspectionStatus.PASSED)
+        self.assertEqual(milestone.inspection_notes, "Passed inspection.")
+
+        revision = self.client.post(
+            f"/api/projects/milestones/{milestone.id}/inspection-revision-required/",
+            {"inspection_notes": "Punch list required."},
+            format="json",
+        )
+        self.assertEqual(revision.status_code, 200)
+        milestone.refresh_from_db()
+        self.assertEqual(milestone.inspection_status, InspectionStatus.REVISION_REQUIRED)
+        self.assertEqual(milestone.inspection_notes, "Punch list required.")
+
+    def test_assisted_diy_pdf_includes_collaboration_sections(self):
+        if PdfReader is None:
+            self.skipTest("PDF parser dependency not available in this environment.")
+
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Customer Six",
+            email="customer6@example.com",
+        )
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=homeowner,
+            title="PDF Collaboration Project",
+            description="Need help finishing a started project.",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=homeowner,
+            project_mode="assisted_diy",
+            project_class="residential",
+            payment_mode="escrow",
+            status="draft",
+            description="Need help finishing a started project.",
+            homeowner_participation_notes="Homeowner will help with prep and cleanup.",
+            homeowner_responsibilities="Prep and cleanup",
+            contractor_responsibilities="Electrical and inspection work",
+            excluded_work="Electrical panel service",
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Homeowner Prep",
+            description="Prep the area and clear materials.",
+            amount=0,
+            milestone_role="homeowner_task",
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Electrical Panel Tie-In",
+            description="Licensed electrical panel and service work.",
+            amount=0,
+            milestone_role="contractor_task",
+            inspection_status=InspectionStatus.REQUESTED,
+            inspection_notes="Inspection requested before electrical tie-in.",
+        )
+
+        pdf_bytes = build_agreement_pdf_bytes(agreement, is_preview=True)
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+        self.assertIn("Responsibility Matrix", extracted)
+        self.assertIn("Homeowner Acknowledgements", extracted)
+        self.assertIn("Inspection Checkpoints", extracted)
+        self.assertIn("Rescue / Partial Completion Notes", extracted)

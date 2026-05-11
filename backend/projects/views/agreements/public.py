@@ -203,16 +203,18 @@ def agreement_public_sign(request):
 
         review_payload = AgreementDetailPublicSerializer(ag, context={"request": request}).data
         milestone_rows = [
-            {
-                "id": m.id,
-                "order": m.order,
-                "title": getattr(m, "title", "") or f"Milestone {m.order}",
-                "description": getattr(m, "description", "") or "",
-                "amount": str(getattr(m, "amount", "") or "0.00"),
-                "start_date": getattr(m, "start_date", None),
-                "completion_date": getattr(m, "completion_date", None),
-            }
-            for m in Milestone.objects.filter(agreement=ag).order_by("order", "id")
+        {
+            "id": m.id,
+            "order": m.order,
+            "title": getattr(m, "title", "") or f"Milestone {m.order}",
+            "description": getattr(m, "description", "") or "",
+            "amount": str(getattr(m, "amount", "") or "0.00"),
+            "start_date": getattr(m, "start_date", None),
+            "completion_date": getattr(m, "completion_date", None),
+            "completion_notes": getattr(m, "completion_notes", "") or "",
+            "inspection_status": getattr(m, "inspection_status", "") or "not_requested",
+        }
+        for m in Milestone.objects.filter(agreement=ag).order_by("order", "id")
         ]
         customer_email = (
             getattr(homeowner, "email", None)

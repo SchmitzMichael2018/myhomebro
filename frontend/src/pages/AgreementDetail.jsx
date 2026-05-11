@@ -43,7 +43,7 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { getAgreementDetailHint } from "../lib/workflowHints.js";
 import { ProjectModeBadge, projectModeLabel } from "../components/projectMode.jsx";
-import { MilestoneRoleBadge, MilestoneSafetyBadges, deriveMilestoneRoleLabel } from "../components/milestoneRole.jsx";
+import { MilestoneRoleBadge, MilestoneSafetyBadges, InspectionStatusBadge, deriveMilestoneRoleLabel } from "../components/milestoneRole.jsx";
 import {
   assignAgreementToSubaccount,
   unassignAgreementFromSubaccount,
@@ -263,6 +263,15 @@ function normalizeAgreement(raw) {
     contractor_responsibilities:
       raw.contractor_responsibilities || raw.raw?.contractor_responsibilities || "",
     excluded_work: raw.excluded_work || raw.raw?.excluded_work || "",
+    collaboration_summary: raw.collaboration_summary || raw.raw?.collaboration_summary || "",
+    responsibility_matrix:
+      raw.responsibility_matrix || raw.raw?.responsibility_matrix || {},
+    homeowner_acknowledgements:
+      raw.homeowner_acknowledgements || raw.raw?.homeowner_acknowledgements || [],
+    inspection_summary:
+      raw.inspection_summary || raw.raw?.inspection_summary || {},
+    rescue_project_summary:
+      raw.rescue_project_summary || raw.raw?.rescue_project_summary || {},
     totalCost: toMoney(raw.total_cost ?? raw.project?.total_cost ?? 0),
     status: raw.status || raw.workflow_status || raw.state || "draft",
     isSigned:
@@ -1943,6 +1952,137 @@ export default function AgreementDetail({ adminMode = false }) {
         </div>
       </section>
 
+      {["assisted_diy", "consultation", "inspection_only"].includes(String(norm.project_mode || "").toLowerCase().replaceAll(" ", "_")) ? (
+        <section data-testid="agreement-detail-responsibility-matrix" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Responsibility Matrix
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                How responsibilities are split across this project
+              </div>
+            </div>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+              {norm.collaboration_summary || "Collaborative project"}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {[
+              ["homeowner_responsibilities", "Homeowner Responsibilities", "amber"],
+              ["contractor_responsibilities", "Contractor Responsibilities", "blue"],
+              ["shared_responsibilities", "Shared Responsibilities", "violet"],
+              ["excluded_work", "Excluded Work", "slate"],
+            ].map(([key, title, tone]) => {
+              const section = norm.responsibility_matrix?.[key] || {};
+              const milestones = Array.isArray(section?.milestones) ? section.milestones : [];
+              return (
+                <div key={key} data-testid={`agreement-detail-responsibility-${key}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="text-sm font-semibold text-slate-900">{title}</div>
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                        tone === "amber"
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : tone === "blue"
+                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                          : tone === "violet"
+                          ? "border-violet-200 bg-violet-50 text-violet-700"
+                          : "border-slate-200 bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      {Number(section?.count || milestones.length || 0).toLocaleString()} milestone{Number(section?.count || milestones.length || 0) === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">
+                    {section?.summary || "Not specified"}
+                  </div>
+                  {milestones.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {milestones.slice(0, 6).map((m) => (
+                        <span key={m.id || m.title} className="rounded-full border border-white bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
+                          {m.title}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          {Array.isArray(norm.homeowner_acknowledgements) && norm.homeowner_acknowledgements.length ? (
+            <div data-testid="agreement-detail-homeowner-acknowledgements" className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-4">
+              <div className="text-sm font-semibold text-slate-900">Homeowner Acknowledgements</div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {norm.homeowner_acknowledgements.map((item) => (
+                  <div key={item.key || item.label} className="rounded-lg border border-white bg-white p-3 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-slate-900">{item.label}</div>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                          item.acknowledged
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-slate-200 bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {item.acknowledged ? "Acknowledged" : "Pending"}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600 whitespace-pre-wrap">{item.detail || "No details available."}</div>
+                    {item.acknowledged_at ? (
+                      <div className="mt-2 text-xs text-slate-500">Acknowledged at {fmtDateTime(item.acknowledged_at)}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {Array.isArray(norm.inspection_summary?.items) && norm.inspection_summary.items.length ? (
+            <div data-testid="agreement-detail-inspection-checkpoints" className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">Inspection Checkpoints</div>
+              <div className="mt-1 text-xs text-slate-600">
+                Requested: {Number(norm.inspection_summary.requested_count || 0).toLocaleString()} · Passed: {Number(norm.inspection_summary.passed_count || 0).toLocaleString()} · Revision required: {Number(norm.inspection_summary.revision_required_count || 0).toLocaleString()}
+              </div>
+              <div className="mt-3 space-y-2">
+                {norm.inspection_summary.items.slice(0, 6).map((item) => (
+                  <div key={item.id || item.title} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                      <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                        {item.status_label || item.status}
+                      </span>
+                    </div>
+                    {item.notes ? <div className="mt-1 text-xs text-slate-600 whitespace-pre-wrap">{item.notes}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {norm.rescue_project_summary?.is_rescue_project || norm.rescue_project_summary?.summary ? (
+            <div data-testid="agreement-detail-rescue-project-summary" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="text-sm font-semibold text-amber-900">Rescue / Partial Completion Notes</div>
+              <div className="mt-2 text-sm text-amber-900 whitespace-pre-wrap">
+                {norm.rescue_project_summary?.summary || "Project already started context applies."}
+              </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                {norm.rescue_project_summary?.takeover_notes ? (
+                  <div className="rounded-lg border border-white bg-white p-3 text-sm text-slate-700 shadow-sm">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Homeowner provided work</div>
+                    <div className="mt-1 whitespace-pre-wrap">{norm.rescue_project_summary.takeover_notes}</div>
+                  </div>
+                ) : null}
+                {norm.rescue_project_summary?.contractor_takeover_notes ? (
+                  <div className="rounded-lg border border-white bg-white p-3 text-sm text-slate-700 shadow-sm">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contractor takeover</div>
+                    <div className="mt-1 whitespace-pre-wrap">{norm.rescue_project_summary.contractor_takeover_notes}</div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {isDraftWorkspace ? (
         <div
           data-testid="agreement-detail-draft-notice"
@@ -2872,6 +3012,11 @@ export default function AgreementDetail({ adminMode = false }) {
                       milestone={m}
                       className="ml-2"
                       dataTestId={`agreement-milestone-safety-${m.id}`}
+                    />
+                    <InspectionStatusBadge
+                      status={m.inspection_status}
+                      className="ml-2"
+                      dataTestId={`agreement-milestone-inspection-${m.id}`}
                     />
                   </div>
 

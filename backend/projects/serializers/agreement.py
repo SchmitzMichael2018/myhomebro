@@ -17,6 +17,7 @@ except Exception:  # pragma: no cover
     AgreementPDFVersion = None  # type: ignore
 
 from projects.models_ai_scope import AgreementAIScope
+from projects.services.assisted_diy import build_assisted_diy_snapshot
 
 try:
     from projects.models import DrawRequest, ExternalPaymentRecord, Milestone, Invoice  # type: ignore
@@ -592,6 +593,11 @@ class AgreementSerializer(serializers.ModelSerializer):
     selected_template_id = serializers.SerializerMethodField()
     selected_template_name_snapshot = serializers.CharField(read_only=True)
     compliance_warning = serializers.SerializerMethodField()
+    collaboration_summary = serializers.SerializerMethodField()
+    responsibility_matrix = serializers.SerializerMethodField()
+    homeowner_acknowledgements = serializers.SerializerMethodField()
+    inspection_summary = serializers.SerializerMethodField()
+    rescue_project_summary = serializers.SerializerMethodField()
     recurring_preview = serializers.SerializerMethodField()
     next_billable_stage = serializers.SerializerMethodField()
     sms_status = serializers.SerializerMethodField()
@@ -642,6 +648,33 @@ class AgreementSerializer(serializers.ModelSerializer):
             return get_agreement_compliance_warning(obj)
         except Exception:
             return {"warning_level": "none", "message": ""}
+
+    def _assisted_diy_snapshot(self, obj):
+        try:
+            return build_assisted_diy_snapshot(obj)
+        except Exception:
+            return {
+                "summary": "",
+                "responsibility_matrix": {},
+                "homeowner_acknowledgements": [],
+                "inspection_summary": {},
+                "rescue_project_summary": {},
+            }
+
+    def get_collaboration_summary(self, obj):
+        return self._assisted_diy_snapshot(obj).get("summary", "")
+
+    def get_responsibility_matrix(self, obj):
+        return self._assisted_diy_snapshot(obj).get("responsibility_matrix", {})
+
+    def get_homeowner_acknowledgements(self, obj):
+        return self._assisted_diy_snapshot(obj).get("homeowner_acknowledgements", [])
+
+    def get_inspection_summary(self, obj):
+        return self._assisted_diy_snapshot(obj).get("inspection_summary", {})
+
+    def get_rescue_project_summary(self, obj):
+        return self._assisted_diy_snapshot(obj).get("rescue_project_summary", {})
 
     def get_recurring_preview(self, obj):
         try:
@@ -1449,6 +1482,11 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         agreement = Agreement.objects.create(**validated_data)
         try:
+            agreement.collaboration_summary_snapshot = build_assisted_diy_snapshot(agreement)
+            agreement.save(update_fields=["collaboration_summary_snapshot"])
+        except Exception:
+            pass
+        try:
             ensure_recurring_milestones(agreement, horizon=1)
         except Exception:
             pass
@@ -1471,6 +1509,11 @@ class AgreementSerializer(serializers.ModelSerializer):
             validated_data["description"] = ""
 
         instance = super().update(instance, validated_data)
+        try:
+            instance.collaboration_summary_snapshot = build_assisted_diy_snapshot(instance)
+            instance.save(update_fields=["collaboration_summary_snapshot"])
+        except Exception:
+            pass
         self._sync_project_title_from_input(instance)
         try:
             ensure_recurring_milestones(instance, horizon=1)

@@ -11,6 +11,7 @@ from projects.models import Agreement, Homeowner, Milestone, Project
 from projects.models_ai_scope import AgreementAIScope
 from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
+from projects.services.assisted_diy import build_assisted_diy_snapshot
 from projects.services.milestone_roles import annotate_milestone_roles
 from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
 from projects.services.sms_service import ensure_sms_consent
@@ -249,6 +250,12 @@ def convert_intake_to_agreement(
             _apply_ai_milestones(agreement=agreement, milestones_payload=intake.ai_milestones or [])
     else:
         _apply_ai_milestones(agreement=agreement, milestones_payload=intake.ai_milestones or [])
+
+    try:
+        agreement.collaboration_summary_snapshot = build_assisted_diy_snapshot(agreement, milestones=agreement.milestones.all())
+        agreement.save(update_fields=["collaboration_summary_snapshot", "updated_at"])
+    except Exception:
+        pass
 
     intake.homeowner = homeowner
     intake.agreement = agreement

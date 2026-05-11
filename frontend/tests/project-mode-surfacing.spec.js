@@ -12,6 +12,62 @@ const SHARED_AGREEMENT = {
   homeowner_responsibilities: "Prep materials and assist with cleanup.",
   contractor_responsibilities: "Install equipment and supervise the work.",
   excluded_work: "No unsafe electrical work by homeowner.",
+  collaboration_summary: "Assisted DIY collaboration is active.",
+  responsibility_matrix: {
+    homeowner_responsibilities: {
+      title: "Homeowner Responsibilities",
+      count: 1,
+      summary: "Prep materials and assist with cleanup.",
+      milestones: [{ id: 1, title: "Homeowner Prep" }],
+    },
+    contractor_responsibilities: {
+      title: "Contractor Responsibilities",
+      count: 1,
+      summary: "Install equipment and supervise the work.",
+      milestones: [{ id: 2, title: "Electrical Panel Tie-In" }],
+    },
+    shared_responsibilities: {
+      title: "Shared Responsibilities",
+      count: 0,
+      summary: "Collaborative planning and coordination.",
+      milestones: [],
+    },
+    excluded_work: {
+      title: "Excluded Work",
+      count: 1,
+      summary: "No unsafe electrical work by homeowner.",
+      milestones: [{ id: 2, title: "Electrical Panel Tie-In" }],
+    },
+  },
+  homeowner_acknowledgements: [
+    {
+      key: "homeowner_participation",
+      label: "Homeowner Participation",
+      detail: "Homeowner participation is limited to the agreed non-restricted activities.",
+      acknowledged: true,
+      acknowledged_at: "2026-05-01T12:00:00Z",
+    },
+  ],
+  inspection_summary: {
+    requested_count: 1,
+    passed_count: 0,
+    revision_required_count: 0,
+    items: [
+      {
+        id: 2,
+        title: "Electrical Panel Tie-In",
+        status: "inspection_requested",
+        status_label: "Inspection Requested",
+        notes: "Inspection requested before electrical tie-in.",
+      },
+    ],
+  },
+  rescue_project_summary: {
+    is_rescue_project: true,
+    summary: "Project already started; contractor-assisted completion and takeover notes apply.",
+    takeover_notes: "Homeowner will help with prep and cleanup.",
+    contractor_takeover_notes: "Install equipment and supervise the work.",
+  },
   payment_mode: "escrow",
   status: "draft",
   total_cost: 8400,
@@ -263,6 +319,11 @@ test("project mode badges and assisted DIY surfaces render across the app", asyn
 
   await page.goto("/app/agreements/123", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("agreement-detail-project-mode-badge")).toHaveText("Assisted DIY");
+  await expect(page.getByTestId("agreement-detail-responsibility-matrix")).toBeVisible();
+  await expect(page.getByTestId("agreement-detail-responsibility-homeowner_responsibilities")).toBeVisible();
+  await expect(page.getByTestId("agreement-detail-homeowner-acknowledgements")).toBeVisible();
+  await expect(page.getByTestId("agreement-detail-inspection-checkpoints")).toBeVisible();
+  await expect(page.getByTestId("agreement-detail-rescue-project-summary")).toBeVisible();
   await expect(page.getByText("Homeowner participation", { exact: true })).toBeVisible();
   await expect(page.getByTestId("agreement-milestone-role-1")).toHaveText("Homeowner Task");
   await expect(page.getByTestId("agreement-milestone-role-2")).toHaveText("Contractor Task");

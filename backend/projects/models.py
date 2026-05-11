@@ -181,6 +181,13 @@ class MilestonePayoutExecutionMode(models.TextChoices):
     AUTOMATIC = "automatic", "Automatic"
 
 
+class InspectionStatus(models.TextChoices):
+    NOT_REQUESTED = "not_requested", "Not Requested"
+    REQUESTED = "inspection_requested", "Inspection Requested"
+    PASSED = "inspection_passed", "Inspection Passed"
+    REVISION_REQUIRED = "inspection_revision_required", "Inspection Revision Required"
+
+
 class DrawRequestStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     SUBMITTED = "submitted", "Submitted"
@@ -1142,6 +1149,7 @@ class Agreement(models.Model):
     homeowner_responsibilities = models.TextField(blank=True, default="")
     contractor_responsibilities = models.TextField(blank=True, default="")
     excluded_work = models.TextField(blank=True, default="")
+    collaboration_summary_snapshot = models.JSONField(default=dict, blank=True)
 
     standardized_category = models.CharField(
         max_length=100, blank=True, db_index=True
@@ -1672,6 +1680,25 @@ class Milestone(models.Model):
         blank=True,
         default="",
         help_text="Suggested materials or takeoff hint copied from template/AI guidance.",
+    )
+
+    completion_notes = models.TextField(blank=True, default="")
+    inspection_status = models.CharField(
+        max_length=40,
+        choices=InspectionStatus.choices,
+        blank=True,
+        default=InspectionStatus.NOT_REQUESTED,
+        db_index=True,
+    )
+    inspection_notes = models.TextField(blank=True, default="")
+    inspection_requested_at = models.DateTimeField(null=True, blank=True)
+    inspection_reviewed_at = models.DateTimeField(null=True, blank=True)
+    inspection_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="inspection_reviewed_milestones",
     )
 
     is_invoiced = models.BooleanField(default=False)

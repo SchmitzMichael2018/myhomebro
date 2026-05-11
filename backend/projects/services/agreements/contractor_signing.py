@@ -13,6 +13,7 @@ from projects.services.mailer import email_signing_invite
 from projects.services.sms import sms_link_to_parties
 from projects.services.agreements.public_sign import build_public_sign_url
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.assisted_diy import build_assisted_diy_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,10 @@ def apply_contractor_signature(
     ag.signed_at_contractor = now()
     ag.contractor_signed_ip = signed_ip or None
     ag.status = "draft"
+    try:
+        ag.collaboration_summary_snapshot = build_assisted_diy_snapshot(ag)
+    except Exception:
+        pass
     ag.save()
     return ag
 

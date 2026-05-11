@@ -39,6 +39,7 @@ from projects.models import (
     Invoice,
     InvoiceStatus,
     Agreement,
+    InspectionStatus,
     MilestonePayout,
     SubcontractorComplianceStatus,
     SubcontractorCompletionStatus,
@@ -730,6 +731,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         "subcontractor_review_requested_by",
         "subcontractor_marked_complete_by",
         "subcontractor_reviewed_by",
+        "inspection_reviewed_by",
         "payout_record",
     ).all()
 
@@ -775,11 +777,12 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "subaccount_assignment__subaccount__user",
                     "delegated_reviewer_subaccount",
                     "delegated_reviewer_subaccount__user",
-                    "subcontractor_review_requested_by",
-                    "subcontractor_marked_complete_by",
-                    "subcontractor_reviewed_by",
-                    "payout_record",
-                )
+                "subcontractor_review_requested_by",
+                "subcontractor_marked_complete_by",
+                "subcontractor_reviewed_by",
+                "inspection_reviewed_by",
+                "payout_record",
+            )
                 .filter(agreement__project__contractor=contractor)
                 .order_by("order", "id")
             )
@@ -1370,6 +1373,73 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             MilestoneSerializer(milestone, context={"request": request}).data,
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["post"], url_path="request-inspection")
+    def request_inspection(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        note = ((request.data or {}).get("inspection_notes") or request.data.get("note") or "").strip()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            milestone.inspection_status = InspectionStatus.REQUESTED
+            milestone.inspection_requested_at = timezone.now()
+            if note:
+                milestone.inspection_notes = note
+            milestone.save(
+                update_fields=[
+                    "inspection_status",
+                    "inspection_requested_at",
+                    "inspection_notes",
+                ]
+            )
+        milestone.refresh_from_db()
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="inspection-passed")
+    def inspection_passed(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        note = ((request.data or {}).get("inspection_notes") or request.data.get("note") or "").strip()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            milestone.inspection_status = InspectionStatus.PASSED
+            milestone.inspection_reviewed_at = timezone.now()
+            milestone.inspection_reviewed_by = request.user
+            if note:
+                milestone.inspection_notes = note
+            milestone.save(
+                update_fields=[
+                    "inspection_status",
+                    "inspection_reviewed_at",
+                    "inspection_reviewed_by",
+                    "inspection_notes",
+                ]
+            )
+        milestone.refresh_from_db()
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="inspection-revision-required")
+    def inspection_revision_required(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        note = ((request.data or {}).get("inspection_notes") or request.data.get("note") or "").strip()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            milestone.inspection_status = InspectionStatus.REVISION_REQUIRED
+            milestone.inspection_reviewed_at = timezone.now()
+            milestone.inspection_reviewed_by = request.user
+            if note:
+                milestone.inspection_notes = note
+            milestone.save(
+                update_fields=[
+                    "inspection_status",
+                    "inspection_reviewed_at",
+                    "inspection_reviewed_by",
+                    "inspection_notes",
+                ]
+            )
+        milestone.refresh_from_db()
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="assign-subcontractor")
     def assign_subcontractor(self, request, pk=None):

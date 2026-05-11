@@ -53,6 +53,12 @@ except Exception:  # pragma: no cover
       ),
     ]
 
+try:
+  from projects.services.assisted_diy import build_assisted_diy_snapshot
+except Exception:  # pragma: no cover
+  def build_assisted_diy_snapshot(*args, **kwargs):  # type: ignore
+    return {}
+
 
 def _s(v) -> str:
   return "" if v is None else str(v)
@@ -1056,6 +1062,124 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   else:
     story.append(Paragraph(wtext.replace("\n", "<br/>"), s_just))
   story.append(Spacer(1, 12))
+
+  project_mode = _s(getattr(ag, "project_mode", "")).strip().lower().replace("-", "_").replace(" ", "_")
+  if project_mode in {"assisted_diy", "consultation", "inspection_only"}:
+    snapshot = {}
+    try:
+      snapshot = build_assisted_diy_snapshot(ag) or {}
+    except Exception:
+      snapshot = {}
+
+    matrix = snapshot.get("responsibility_matrix", {}) or {}
+    acknowledgements = snapshot.get("homeowner_acknowledgements", []) or []
+    inspections = snapshot.get("inspection_summary", {}) or {}
+    rescue = snapshot.get("rescue_project_summary", {}) or {}
+    summary = _s(snapshot.get("summary", "")).strip()
+
+    story.append(Paragraph("Collaboration Summary", s_h2))
+    if summary:
+      story.append(Paragraph(summary, s_just))
+      story.append(Spacer(1, 8))
+
+    from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer
+
+    def _matrix_cell(section: dict, accent: str = "#E5E7EB"):
+      title = _escape_html(_s(section.get("title", "")) or "Section")
+      count = int(section.get("count", 0) or 0)
+      summary_text = _escape_html(_s(section.get("summary", "")) or "Not specified")
+      milestones = section.get("milestones", []) or []
+      parts = [
+        Paragraph(f"<b>{title}</b>", s_h3),
+        Paragraph(f"<b>Milestones:</b> {count}", s_small),
+        Paragraph(summary_text, s_just),
+      ]
+      if milestones:
+        chip_lines = ", ".join(
+          _escape_html(_s(m.get("title", "")) or "Milestone") for m in milestones[:4]
+        )
+        parts.append(Paragraph(f"<b>Examples:</b> {chip_lines}", s_small))
+      return parts
+
+    matrix_tbl = RLTable(
+      [[
+        _matrix_cell(matrix.get("homeowner_responsibilities", {})),
+        _matrix_cell(matrix.get("contractor_responsibilities", {})),
+      ], [
+        _matrix_cell(matrix.get("shared_responsibilities", {})),
+        _matrix_cell(matrix.get("excluded_work", {})),
+      ]],
+      colWidths=[doc.width / 2.0 - 4, doc.width / 2.0 - 4],
+      hAlign="LEFT",
+    )
+    matrix_tbl.setStyle(RLTableStyle([
+      ("VALIGN", (0, 0), (-1, -1), "TOP"),
+      ("BOX", (0, 0), (-1, -1), 0.5, "#E5E7EB"),
+      ("INNERGRID", (0, 0), (-1, -1), 0.35, "#E5E7EB"),
+      ("BACKGROUND", (0, 0), (0, 0), "#FFF7ED"),
+      ("BACKGROUND", (1, 0), (1, 0), "#EFF6FF"),
+      ("BACKGROUND", (0, 1), (0, 1), "#EEF2FF"),
+      ("BACKGROUND", (1, 1), (1, 1), "#F8FAFC"),
+    ]))
+    story.append(matrix_tbl)
+    story.append(RLSpacer(1, 10))
+
+    if acknowledgements:
+      story.append(Paragraph("Homeowner Acknowledgements", s_h2))
+      ack_rows = []
+      for ack in acknowledgements:
+        label = _escape_html(_s(ack.get("label", "")) or "Acknowledgement")
+        detail = _escape_html(_s(ack.get("detail", "")) or "")
+        status = "Acknowledged" if ack.get("acknowledged") else "Pending"
+        when = _escape_html(_s(ack.get("acknowledged_at", "")) or "—")
+        ack_rows.append([Paragraph(f"<b>{label}</b><br/>{detail}", s_small), Paragraph(f"{status}<br/>{when}", s_small)])
+      ack_tbl = RLTable(ack_rows, colWidths=[doc.width * 0.72, doc.width * 0.28], hAlign="LEFT")
+      ack_tbl.setStyle(RLTableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOX", (0, 0), (-1, -1), 0.35, "#E5E7EB"),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
+      ]))
+      story.append(ack_tbl)
+      story.append(RLSpacer(1, 10))
+
+    if inspections.get("items"):
+      story.append(Paragraph("Inspection Checkpoints", s_h2))
+      story.append(Paragraph(
+        f"Requested: {inspections.get('requested_count', 0)}  |  Passed: {inspections.get('passed_count', 0)}  |  Revision required: {inspections.get('revision_required_count', 0)}",
+        s_small,
+      ))
+      items = inspections.get("items", []) or []
+      rows = []
+      for item in items[:8]:
+        rows.append([
+          Paragraph(_escape_html(_s(item.get("title", "")) or "Milestone"), s_small),
+          Paragraph(_escape_html(_s(item.get("status_label", "")) or ""), s_small),
+          Paragraph(_escape_html(_s(item.get("notes", "")) or "—"), s_small),
+        ])
+      insp_tbl = RLTable(rows, colWidths=[doc.width * 0.32, doc.width * 0.25, doc.width * 0.43], hAlign="LEFT")
+      insp_tbl.setStyle(RLTableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOX", (0, 0), (-1, -1), 0.35, "#E5E7EB"),
+        ("INNERGRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
+      ]))
+      story.append(insp_tbl)
+      story.append(RLSpacer(1, 10))
+
+    if rescue.get("is_rescue_project") or rescue.get("summary"):
+      story.append(Paragraph("Rescue / Partial Completion Notes", s_h2))
+      rescue_summary = _escape_html(_s(rescue.get("summary", "")) or "Project already started context applies.")
+      story.append(Paragraph(rescue_summary, s_just))
+      story.append(Spacer(1, 6))
+      extra_bits = []
+      takeover = _escape_html(_s(rescue.get("takeover_notes", "")) or "")
+      contractor_notes = _escape_html(_s(rescue.get("contractor_takeover_notes", "")) or "")
+      if takeover:
+        extra_bits.append(f"<b>Homeowner provided work:</b> {takeover}")
+      if contractor_notes:
+        extra_bits.append(f"<b>Contractor takeover:</b> {contractor_notes}")
+      if extra_bits:
+        story.append(Paragraph("<br/><br/>".join(extra_bits), s_just))
+      story.append(Spacer(1, 10))
 
   story.append(CondPageBreak(2.6 * inch))
   story.append(Paragraph("Legal Terms & Conditions", s_h2))

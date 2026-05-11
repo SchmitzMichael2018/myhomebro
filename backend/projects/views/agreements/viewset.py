@@ -49,6 +49,7 @@ from projects.services.agreements.pdf_actions import (
     mark_agreement_previewed,
     finalize_agreement_pdf,
 )
+from projects.services.assisted_diy import build_assisted_diy_snapshot
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 
 from projects.services.agreement_completion import (
@@ -639,6 +640,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag.contractor_ack_reviewed = reviewed
         ag.contractor_ack_tos = tos
         ag.contractor_ack_esign = esign
+        try:
+            ag.collaboration_summary_snapshot = build_assisted_diy_snapshot(ag)
+        except Exception:
+            pass
 
         if reviewed and tos and esign:
             ag.contractor_ack_at = timezone.now()
@@ -651,6 +656,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 "contractor_ack_tos",
                 "contractor_ack_esign",
                 "contractor_ack_at",
+                "collaboration_summary_snapshot",
             ]
         )
 
@@ -901,6 +907,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 signature_data_url=data_url,
                 signed_ip=ip or None,
             )
+            try:
+                ag.collaboration_summary_snapshot = build_assisted_diy_snapshot(ag)
+                ag.save(update_fields=["collaboration_summary_snapshot"])
+            except Exception:
+                pass
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

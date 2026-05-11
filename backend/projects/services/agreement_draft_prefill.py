@@ -8,6 +8,7 @@ from django.db import transaction
 
 from projects.models import Agreement, Milestone, PublicContractorLead
 from projects.models_project_intake import ProjectIntake
+from projects.services.assisted_diy import build_assisted_diy_snapshot
 from projects.services.milestone_roles import annotate_milestone_roles
 
 
@@ -298,6 +299,11 @@ def apply_conversion_prefill(*, agreement: Agreement, payload: Any, source=None)
     if excluded_work:
         agreement.excluded_work = excluded_work
         agreement_updates.append("excluded_work")
+    try:
+        agreement.collaboration_summary_snapshot = build_assisted_diy_snapshot(agreement, milestones=agreement.milestones.all())
+        agreement_updates.append("collaboration_summary_snapshot")
+    except Exception:
+        pass
     description = _safe_text(data.get("project_description") or data.get("description") or data.get("project_summary"))
     if description:
         agreement.description = description

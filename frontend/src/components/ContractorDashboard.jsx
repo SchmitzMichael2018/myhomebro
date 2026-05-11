@@ -2054,6 +2054,8 @@ export default function ContractorDashboard() {
       homeowner_task_active: 0,
       contractor_review_needed: 0,
       inspection_requested: 0,
+      punch_list_issued: 0,
+      ready_for_contractor_takeover: 0,
       shared_task_in_progress: 0,
     };
     for (const item of list) {
@@ -2065,6 +2067,7 @@ export default function ContractorDashboard() {
       const mode = normalizeProjectMode(item?._ag?.project_mode || item?.project_mode);
       const completed = item?.completed === true || String(item?.status || item?.state || "").toLowerCase() === "completed";
       const reviewRequested = item?.subcontractor_review_requested === true || !!item?.subcontractor_review_requested_at;
+      const inspectionStatus = String(item?.inspection_status || "").toLowerCase();
       if (mode === "assisted_diy" && role === "homeowner_task" && !completed) {
         counts.waiting_on_homeowner += 1;
       }
@@ -2074,8 +2077,14 @@ export default function ContractorDashboard() {
       if (role === "contractor_task" && reviewRequested) {
         counts.contractor_review_needed += 1;
       }
-      if (role === "inspection_checkpoint" && !completed) {
+      if (inspectionStatus === "inspection_requested" || (role === "inspection_checkpoint" && !completed)) {
         counts.inspection_requested += 1;
+      }
+      if (inspectionStatus === "inspection_revision_required") {
+        counts.punch_list_issued += 1;
+      }
+      if (inspectionStatus === "inspection_passed") {
+        counts.ready_for_contractor_takeover += 1;
       }
       if (role === "shared_task" && !completed) {
         counts.shared_task_in_progress += 1;
@@ -2372,7 +2381,7 @@ export default function ContractorDashboard() {
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {[
                   {
-                    title: "Waiting on Homeowner",
+                    title: "Awaiting Homeowner Completion",
                     value: collaborativeWorkflowStats.waiting_on_homeowner,
                     description: "Assisted DIY tasks waiting on homeowner progress.",
                     tone: "border-amber-200 bg-amber-50 text-amber-800",
@@ -2380,17 +2389,9 @@ export default function ContractorDashboard() {
                     onClick: () => navigate(`/app/milestones?project_mode=assisted_diy&filter=incomplete`),
                   },
                   {
-                    title: "Homeowner Task Active",
-                    value: collaborativeWorkflowStats.homeowner_task_active,
-                    description: "Shared DIY work items currently underway.",
-                    tone: "border-blue-200 bg-blue-50 text-blue-700",
-                    dataTestId: "dashboard-collab-homeowner-active",
-                    onClick: () => navigate(`/app/milestones?project_mode=assisted_diy&filter=incomplete`),
-                  },
-                  {
-                    title: "Contractor Review Needed",
+                    title: "Awaiting Contractor Verification",
                     value: collaborativeWorkflowStats.contractor_review_needed,
-                    description: "Contractor checkpoints or review requests pending.",
+                    description: "Work ready for contractor review or verification.",
                     tone: "border-violet-200 bg-violet-50 text-violet-700",
                     dataTestId: "dashboard-collab-contractor-review",
                     onClick: () => navigate(`/app/reviewer/queue`),
@@ -2404,12 +2405,36 @@ export default function ContractorDashboard() {
                     onClick: () => navigate(`/app/milestones?project_mode=inspection_only&filter=incomplete`),
                   },
                   {
+                    title: "Punch List Issued",
+                    value: collaborativeWorkflowStats.punch_list_issued,
+                    description: "Inspection notes or punch-list follow-up has been issued.",
+                    tone: "border-rose-200 bg-rose-50 text-rose-800",
+                    dataTestId: "dashboard-collab-punch-list-issued",
+                    onClick: () => navigate(`/app/milestones?filter=incomplete`),
+                  },
+                  {
+                    title: "Ready for Contractor Takeover",
+                    value: collaborativeWorkflowStats.ready_for_contractor_takeover,
+                    description: "Inspection pass or handoff is ready for contractor-led wrap-up.",
+                    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+                    dataTestId: "dashboard-collab-contractor-takeover",
+                    onClick: () => navigate(`/app/milestones?filter=incomplete`),
+                  },
+                  {
                     title: "Shared Task In Progress",
                     value: collaborativeWorkflowStats.shared_task_in_progress,
                     description: "Collaborative tasks being handled jointly.",
-                    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+                    tone: "border-blue-200 bg-blue-50 text-blue-700",
                     dataTestId: "dashboard-collab-shared-task",
                     onClick: () => navigate(`/app/milestones?filter=incomplete`),
+                  },
+                  {
+                    title: "Homeowner Task Active",
+                    value: collaborativeWorkflowStats.homeowner_task_active,
+                    description: "Shared DIY work items currently underway.",
+                    tone: "border-blue-200 bg-blue-50 text-blue-700",
+                    dataTestId: "dashboard-collab-homeowner-active",
+                    onClick: () => navigate(`/app/milestones?project_mode=assisted_diy&filter=incomplete`),
                   },
                 ].map((item) => (
                   <button

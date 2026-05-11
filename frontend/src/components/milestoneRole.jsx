@@ -38,6 +38,25 @@ const SAFETY_META = {
   },
 };
 
+const INSPECTION_STATUS_META = {
+  inspection_requested: {
+    label: "Inspection Requested",
+    className: "border-amber-200 bg-amber-50 text-amber-800",
+  },
+  inspection_passed: {
+    label: "Inspection Passed",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  },
+  inspection_revision_required: {
+    label: "Inspection Revision Required",
+    className: "border-rose-200 bg-rose-50 text-rose-800",
+  },
+  not_requested: {
+    label: "Inspection Not Requested",
+    className: "border-slate-200 bg-slate-100 text-slate-700",
+  },
+};
+
 const ROLE_SYNONYMS = {
   homeowner_task: "homeowner_task",
   "homeowner task": "homeowner_task",
@@ -206,6 +225,21 @@ export function deriveMilestoneSafetyLabels({ projectMode, milestone }) {
   return deriveSafetyKeys({ projectMode, milestone }).map((key) => SAFETY_META[key]?.label).filter(Boolean);
 }
 
+export function normalizeInspectionStatus(value) {
+  const normalized = normalizeText(value).replace(/\s+/g, "_");
+  if (normalized in INSPECTION_STATUS_META) return normalized;
+  if (normalized === "inspection_requested" || normalized === "requested") return "inspection_requested";
+  if (normalized === "inspection_passed" || normalized === "passed") return "inspection_passed";
+  if (normalized === "inspection_revision_required" || normalized === "revision_required" || normalized === "needs_revision") {
+    return "inspection_revision_required";
+  }
+  return "not_requested";
+}
+
+export function inspectionStatusLabel(value) {
+  return INSPECTION_STATUS_META[normalizeInspectionStatus(value)]?.label || "Inspection Not Requested";
+}
+
 export function MilestoneRoleBadge({ role, projectMode = "", milestone, className = "", dataTestId, title }) {
   const roleLabel = milestoneRoleLabel(role) || deriveMilestoneRoleLabel({ projectMode, milestone }) || ROLE_META.contractor_task.label;
   const roleKey = normalizeMilestoneRole(role) || normalizeMilestoneRole(
@@ -243,5 +277,19 @@ export function MilestoneSafetyBadges({ projectMode = "", milestone, className =
         );
       })}
     </div>
+  );
+}
+
+export function InspectionStatusBadge({ status, className = "", dataTestId, title }) {
+  const key = normalizeInspectionStatus(status);
+  const meta = INSPECTION_STATUS_META[key] || INSPECTION_STATUS_META.not_requested;
+  return (
+    <span
+      data-testid={dataTestId}
+      title={title || meta.label}
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${meta.className} ${className}`.trim()}
+    >
+      {meta.label}
+    </span>
   );
 }
