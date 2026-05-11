@@ -9,6 +9,7 @@ import api from "../api";
 import toast from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import { ProjectModeBadge, PROJECT_MODE_OPTIONS, normalizeProjectModeFilter, normalizeProjectMode } from "./projectMode.jsx";
 
 import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
@@ -218,6 +219,7 @@ export default function MilestoneList() {
   const query = useQuery();
   const urlFilter = String(query.get("filter") || "").toLowerCase();
   const projectClassFilter = normalizeProjectClassFilter(query.get("project_class"));
+  const projectModeFilter = normalizeProjectModeFilter(query.get("project_mode"));
   const focusIdRaw = query.get("focus");
   const focusId = focusIdRaw ? String(focusIdRaw) : null;
 
@@ -397,6 +399,10 @@ export default function MilestoneList() {
       r = r.filter((m) => m._projectClass === projectClassFilter);
     }
 
+    if (projectModeFilter !== "all") {
+      r = r.filter((m) => normalizeProjectMode(m?._ag?.project_mode || m?.project_mode) === projectModeFilter);
+    }
+
     const s = q.trim().toLowerCase();
     if (s) {
       r = r.filter((m) =>
@@ -409,7 +415,7 @@ export default function MilestoneList() {
     }
 
     return r;
-  }, [enriched, tab, q, projectClassFilter]);
+  }, [enriched, tab, q, projectClassFilter, projectModeFilter]);
 
   /* ---------------- All milestones by agreement ---------------- */
   const allMilestonesByAgreement = useMemo(() => {
@@ -749,6 +755,19 @@ export default function MilestoneList() {
             <option value="residential">Residential</option>
             <option value="commercial">Commercial</option>
           </select>
+          <select
+            value={projectModeFilter}
+            onChange={(e) => updateQueryParam("project_mode", e.target.value)}
+            className="rounded border border-white/30 bg-white/90 px-3 py-2 text-sm text-gray-900"
+            data-testid="milestone-list-project-mode-filter"
+          >
+            <option value="all">All Modes</option>
+            {PROJECT_MODE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => reload()}
@@ -893,6 +912,10 @@ export default function MilestoneList() {
                                             <td className={tdBase}>
                                               <div className="flex items-center gap-2 flex-wrap">
                                                   <span className="font-semibold text-slate-900">{m.title}</span>
+                                                  <ProjectModeBadge
+                                                    mode={m._ag?.project_mode || m.project_mode}
+                                                    dataTestId={`milestone-project-mode-${m.id}`}
+                                                  />
                                                   <span
                                                     className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700"
                                                     data-testid={`milestone-project-class-${m.id}`}

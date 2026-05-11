@@ -9,6 +9,7 @@ import StatCard from "./StatCard.jsx";
 import Modal from "react-modal";
 import DashboardCard from "./dashboard/DashboardCard.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
+import { ProjectModeBadge, normalizeProjectMode } from "./projectMode.jsx";
 import {
   Target,
   ListTodo,
@@ -2027,6 +2028,24 @@ export default function ContractorDashboard() {
     needsAttentionItems.length,
   ]);
   const nextActionCards = useMemo(() => contractorNextActions.slice(1, 11), [contractorNextActions]);
+  const projectModeStats = useMemo(() => {
+    const list = Array.isArray(agreements) ? agreements : [];
+    const counts = {
+      full_service: 0,
+      assisted_diy: 0,
+      consultation: 0,
+      inspection_only: 0,
+      waiting_homeowner_tasks: 0,
+    };
+    for (const item of list) {
+      const mode = normalizeProjectMode(item?.project_mode);
+      counts[mode] = (counts[mode] || 0) + 1;
+      if (mode === "assisted_diy" && item?.homeowner_started_work !== true) {
+        counts.waiting_homeowner_tasks += 1;
+      }
+    }
+    return counts;
+  }, [agreements]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
   const workPipelineRows = [
     {
@@ -2240,6 +2259,70 @@ export default function ContractorDashboard() {
               </div>
             )}
           </DashboardCard>
+
+          <DashboardSection
+            title="Project Modes"
+            subtitle="Quick visibility into assisted DIY, consultation, and inspection work."
+          >
+            <DashboardCard
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+            >
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    label: "Full Service",
+                    value: "full_service",
+                    count: projectModeStats.full_service,
+                    tone: "border-blue-200 bg-blue-50 text-blue-700",
+                    dataTestId: "dashboard-project-mode-full-service",
+                  },
+                  {
+                    label: "Assisted DIY",
+                    value: "assisted_diy",
+                    count: projectModeStats.assisted_diy,
+                    tone: "border-amber-200 bg-amber-50 text-amber-800",
+                    dataTestId: "dashboard-project-mode-assisted-diy",
+                  },
+                  {
+                    label: "Consultation",
+                    value: "consultation",
+                    count: projectModeStats.consultation,
+                    tone: "border-violet-200 bg-violet-50 text-violet-700",
+                    dataTestId: "dashboard-project-mode-consultation",
+                  },
+                  {
+                    label: "Inspection Only",
+                    value: "inspection_only",
+                    count: projectModeStats.inspection_only,
+                    tone: "border-slate-200 bg-slate-100 text-slate-700",
+                    dataTestId: "dashboard-project-mode-inspection",
+                  },
+                ].map((item) => (
+                  <div key={item.label} className={`rounded-xl border p-4 ${item.tone}`}>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
+                      {item.label}
+                    </div>
+                    <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid={item.dataTestId}>
+                      {Number(item.count || 0).toLocaleString()}
+                    </div>
+                    <ProjectModeBadge mode={item.value} className="mt-2" />
+                  </div>
+                ))}
+                <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 md:col-span-2 xl:col-span-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
+                    Waiting on Homeowner Tasks
+                  </div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid="dashboard-project-mode-waiting-homeowner">
+                    {Number(projectModeStats.waiting_homeowner_tasks || 0).toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Assisted DIY projects that still need homeowner progress or participation.
+                  </div>
+                </div>
+              </div>
+            </DashboardCard>
+          </DashboardSection>
 
           <DashboardSection
             title="Quick Actions"
@@ -2938,6 +3021,12 @@ export default function ContractorDashboard() {
                           <td className="py-3 pr-3">
                             <div className="font-semibold text-slate-900">{row.project_title || row.project_name || "Untitled Bid"}</div>
                             <div className="mt-1 text-xs text-slate-500">{row.customer_name || "Unknown Customer"}</div>
+                            <div className="mt-2">
+                              <ProjectModeBadge
+                                mode={row.project_mode}
+                                dataTestId={`dashboard-bid-project-mode-${row.bid_id || row.id}`}
+                              />
+                            </div>
                           </td>
                           <td className="py-3 pr-3 text-slate-700">{row.project_class_label || row.project_class || "Residential"}</td>
                           <td className="py-3 pr-3 text-slate-700">{row.status_label || row.status || "Submitted"}</td>

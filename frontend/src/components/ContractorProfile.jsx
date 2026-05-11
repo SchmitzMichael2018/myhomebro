@@ -754,6 +754,10 @@ export default function ContractorProfile() {
         </div>
 
         <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
+          <div className="text-sm font-semibold text-slate-900">Ways I Work</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Surface how you prefer to work with homeowners, including guided DIY, consultation, and inspections.
+          </div>
           <div className="mb-3 flex flex-wrap gap-2">
             {[
               ["accepts_diy_assistance", "DIY Assistance Available"],

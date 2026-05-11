@@ -10,6 +10,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import api from "../api";
 import SignatureModal from "./SignatureModal";
 import { getStripePublishableKey } from "../lib/runtimeConfig";
+import { ProjectModeBadge } from "./projectMode.jsx";
 
 const STRIPE_PUBLISHABLE_KEY = getStripePublishableKey();
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
@@ -444,8 +445,12 @@ export default function PublicSign() {
                       </span>
                     )}
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1">
-                      {agreement.payment_mode === "escrow" ? "Escrow protected" : "Direct pay"}
-                    </span>
+                    {agreement.payment_mode === "escrow" ? "Escrow protected" : "Direct pay"}
+                  </span>
+                  <ProjectModeBadge
+                    mode={agreement.project_mode}
+                    dataTestId="public-agreement-project-mode-badge"
+                  />
                     {agreement.status ? (
                       <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 capitalize">
                         {String(agreement.status).replaceAll("_", " ")}

@@ -25,6 +25,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import { ProjectModeBadge, normalizeProjectModeFilter, normalizeProjectMode, PROJECT_MODE_OPTIONS } from "../components/projectMode.jsx";
 import {
   CheckCircle2,
   XCircle,
@@ -459,6 +460,7 @@ export default function AgreementList() {
   const routeRange = params.get("range") || "";
   const statusParam = params.get("status") || "";
   const projectClassFilter = normalizeProjectClassFilter(params.get("project_class"));
+  const projectModeFilter = normalizeProjectModeFilter(params.get("project_mode"));
   const activeRouteFilter = useMemo(() => {
     if (routeFocus === "needs_attention") {
       if (routeFilter === "awaiting_signature") {
@@ -883,6 +885,10 @@ export default function AgreementList() {
           return false;
         }
 
+        if (projectModeFilter !== "all" && normalizeProjectMode(r.project_mode) !== projectModeFilter) {
+          return false;
+        }
+
         const status = safeLower(r.status);
         if (statusParam === "awaiting_signature") return rowIsAwaitingSignature(r);
         if (statusParam === "funding_needed") return rowIsAwaitingFunding(r);
@@ -906,6 +912,7 @@ export default function AgreementList() {
           r?.homeowner?.name,
           r?.homeowner?.email,
           r?.payment_mode,
+          r?.project_mode,
           r?.pdf_version,
         ]
           .filter(Boolean)
@@ -914,7 +921,16 @@ export default function AgreementList() {
 
         return hay.includes(search);
       });
-  }, [activeRouteFilter, homeownerDisplay, q, rows, statusFilter, statusParam, projectClassFilter]);
+  }, [
+    activeRouteFilter,
+    homeownerDisplay,
+    q,
+    rows,
+    statusFilter,
+    statusParam,
+    projectClassFilter,
+    projectModeFilter,
+  ]);
 
   const page = filtered.slice(0, pageSize);
 
@@ -1565,6 +1581,20 @@ export default function AgreementList() {
           <option value="commercial">Commercial</option>
         </select>
 
+        <select
+          value={projectModeFilter}
+          onChange={(e) => updateFilters({ project_mode: e.target.value })}
+          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
+          data-testid="agreement-list-project-mode-filter"
+        >
+          <option value="all">All Modes</option>
+          {PROJECT_MODE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
         <label className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
           <input
             type="checkbox"
@@ -1843,6 +1873,10 @@ export default function AgreementList() {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="truncate text-[15px] font-semibold text-slate-950">{renderProject(r)}</div>
+                            <ProjectModeBadge
+                              mode={r.project_mode}
+                              dataTestId={`agreement-project-mode-${r.id}`}
+                            />
                             <span
                               className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700"
                               data-testid={`agreement-project-class-${r.id}`}

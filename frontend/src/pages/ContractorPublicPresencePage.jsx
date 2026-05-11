@@ -18,6 +18,7 @@ import {
 import { FONT_THEME_OPTIONS, THEME_OPTIONS, getPublicProfileBranding } from '../lib/publicProfileBranding.js';
 import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
 import { generateContractorPublicProfile } from '../api.js';
+import { ProjectModeBadge } from '../components/projectMode.jsx';
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
@@ -261,6 +262,34 @@ function PublicPresenceBrandPreview({ profile, galleryRows, reviewsRows }) {
               <div data-testid="public-presence-preview-font"><span className="font-semibold text-slate-900">Font:</span> {profile.brand_font_theme || 'clean_sans'}</div>
               <div data-testid="public-presence-preview-primary"><span className="font-semibold text-slate-900">Primary:</span> {profile.brand_primary_color || branding.primary}</div>
               <div data-testid="public-presence-preview-accent"><span className="font-semibold text-slate-900">Accent:</span> {profile.brand_accent_color || branding.accent}</div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-sky-200 bg-white p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ways I Work</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {profile.accepts_diy_assistance ? (
+                  <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                    DIY Assistance Available
+                  </span>
+                ) : null}
+                {profile.accepts_consultation_only ? (
+                  <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                    Consultation Available
+                  </span>
+                ) : null}
+                {profile.accepts_inspection_only ? (
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    Inspection Services
+                  </span>
+                ) : null}
+                {profile.accepts_homeowner_participation ? (
+                  <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                    Homeowner participation welcome
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-2 text-sm text-slate-600">
+                Guided project assistance, homeowner participation, and inspection-friendly support are highlighted when enabled.
+              </div>
             </div>
           </div>
 
@@ -1459,6 +1488,12 @@ export default function ContractorPublicPresencePage() {
                   >
                     <div className="text-sm font-semibold">{lead.full_name}</div>
                     <div className="mt-1 text-xs opacity-80">{lead.project_type || 'New project request'}</div>
+                    <div className="mt-2">
+                      <ProjectModeBadge
+                        mode={lead.project_mode}
+                        dataTestId={`public-lead-project-mode-${lead.id}`}
+                      />
+                    </div>
                     <div className="mt-2 inline-flex rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-semibold opacity-90">
                       {sourceLabel(lead.source)}
                     </div>
@@ -1538,6 +1573,10 @@ export default function ContractorPublicPresencePage() {
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusChipClass(selectedLead.status)}`}>
                         {statusLabel(selectedLead.status)}
                       </span>
+                      <ProjectModeBadge
+                        mode={selectedLead.project_mode}
+                        dataTestId="public-lead-selected-project-mode"
+                      />
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
                       <div><span className="font-semibold text-slate-900">Source:</span> {sourceLabel(selectedLead.source)}</div>

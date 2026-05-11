@@ -63,6 +63,11 @@ async function installTradeRoutes(page, { meSkills = ["HVAC", "Electrical"], onb
         has_insurance: false,
         status: "missing",
       },
+      accepts_diy_assistance: true,
+      accepts_consultation_only: true,
+      accepts_hourly_help: true,
+      accepts_inspection_only: true,
+      accepts_homeowner_participation: true,
       ai: {
         access: "included",
         enabled: true,
@@ -233,6 +238,10 @@ test("profile uses the shared trade multiselect and saves canonical trades", asy
 
   await expect(page.getByTestId("contractor-profile-trade-chip-hvac")).toBeVisible();
   await expect(page.getByTestId("contractor-profile-trade-chip-electrical")).toBeVisible();
+  await expect(page.getByText("Ways I Work")).toBeVisible();
+  await expect(page.locator("span", { hasText: "DIY Assistance Available" }).first()).toBeVisible();
+  await expect(page.locator("span", { hasText: "Consultation Available" }).first()).toBeVisible();
+  await expect(page.locator("span", { hasText: "Inspection Only" }).first()).toBeVisible();
 
   await page.getByTestId("contractor-profile-trade-search").fill("roof");
   await page.getByTestId("contractor-profile-trade-option-roofing").click();

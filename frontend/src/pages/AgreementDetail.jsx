@@ -42,6 +42,7 @@ import { WorkflowHint } from "../components/WorkflowHint.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { getAgreementDetailHint } from "../lib/workflowHints.js";
+import { ProjectModeBadge, deriveMilestoneModeLabel, projectModeLabel } from "../components/projectMode.jsx";
 import {
   assignAgreementToSubaccount,
   unassignAgreementFromSubaccount,
@@ -253,6 +254,14 @@ function normalizeAgreement(raw) {
     title: raw.title || raw.project_title || raw.project?.title || "—",
     homeownerName: raw.homeowner_name || raw.homeowner?.full_name || "—",
     homeownerEmail: raw.homeowner_email || raw.homeowner?.email || "—",
+    project_mode: raw.project_mode || raw.raw?.project_mode || "full_service",
+    homeowner_participation_notes:
+      raw.homeowner_participation_notes || raw.raw?.homeowner_participation_notes || "",
+    homeowner_responsibilities:
+      raw.homeowner_responsibilities || raw.raw?.homeowner_responsibilities || "",
+    contractor_responsibilities:
+      raw.contractor_responsibilities || raw.raw?.contractor_responsibilities || "",
+    excluded_work: raw.excluded_work || raw.raw?.excluded_work || "",
     totalCost: toMoney(raw.total_cost ?? raw.project?.total_cost ?? 0),
     status: raw.status || raw.workflow_status || raw.state || "draft",
     isSigned:
@@ -1836,6 +1845,10 @@ export default function AgreementDetail({ adminMode = false }) {
                 {norm.title}
               </h2>
               <PaymentModeBadge mode={norm.payment_mode} />
+              <ProjectModeBadge
+                mode={norm.project_mode}
+                dataTestId="agreement-detail-project-mode-badge"
+              />
             </div>
             <div className="text-sm text-slate-600">
               <span className="font-semibold text-slate-900">{norm.homeownerName}</span>
@@ -1858,8 +1871,8 @@ export default function AgreementDetail({ adminMode = false }) {
               className="border-sky-200 bg-white"
             />
             <SummaryCard
-              label="Project Path"
-              value={projectClassLabel(agreement?.project_class)}
+              label="Project Mode"
+              value={<ProjectModeBadge mode={norm.project_mode} />}
               className="border-sky-200 bg-white"
             />
             <SummaryCard
@@ -1872,6 +1885,46 @@ export default function AgreementDetail({ adminMode = false }) {
               value={formatMoney(norm.totalCost)}
               className="border-sky-200 bg-white"
             />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Project Mode
+            </div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {projectModeLabel(norm.project_mode)}
+            </div>
+          </div>
+          <ProjectModeBadge mode={norm.project_mode} />
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Homeowner participation</div>
+            <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+              {norm.homeowner_participation_notes || "Not specified"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Homeowner responsibilities</div>
+            <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+              {norm.homeowner_responsibilities || "Not specified"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contractor responsibilities</div>
+            <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+              {norm.contractor_responsibilities || "Not specified"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Excluded work</div>
+            <div className="mt-1 text-sm text-slate-700 whitespace-pre-wrap">
+              {norm.excluded_work || "Not specified"}
+            </div>
           </div>
         </div>
       </section>
@@ -2760,6 +2813,7 @@ export default function AgreementDetail({ adminMode = false }) {
             {norm.milestones.map((m) => {
               const refunded = isRefundedMilestone(m);
               const label = milestoneStatusLabel(m);
+              const modeLabel = deriveMilestoneModeLabel({ projectMode: norm.project_mode, milestone: m });
               const payoutOrchestration =
                 m.subcontractor_payout_orchestration ||
                 m.subcontractor_milestone_agreement?.payout_orchestration ||
@@ -2791,6 +2845,9 @@ export default function AgreementDetail({ adminMode = false }) {
                     {toMoney(m.amount).toFixed(2)}
                     {refunded ? <RefundedBadge /> : null}
                     <span className="text-gray-500"> ({label})</span>
+                    <span className="ml-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                      {modeLabel}
+                    </span>
                   </div>
 
                   <div className="mt-2 text-sm text-gray-600">

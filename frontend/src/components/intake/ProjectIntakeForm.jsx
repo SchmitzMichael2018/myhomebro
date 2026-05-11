@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../../api";
 import IntakeAiRecommendationPanel from "./IntakeAiRecommendationPanel.jsx";
+import { PROJECT_MODE_OPTIONS, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
 
 const blankForm = {
   initiated_by: "contractor",
@@ -656,20 +657,16 @@ export default function ProjectIntakeForm() {
           <div className="mt-4">
             <div className="mb-2 text-sm font-medium text-gray-900">Project Mode</div>
             <div className="grid gap-2 sm:grid-cols-2">
-              {[
-                { value: "full_service", label: "Full Service", help: "Contractor performs the work." },
-                { value: "assisted_diy", label: "DIY Assistance", help: "Homeowner participates with guidance." },
-                { value: "consultation", label: "Consultation", help: "Advice, planning, and guidance only." },
-                { value: "inspection_only", label: "Inspection Only", help: "Inspection and reporting only." },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setField("project_mode", opt.value)}
-                  className={`rounded-xl border px-3 py-3 text-left text-sm ${
-                    form.project_mode === opt.value
-                      ? "border-blue-600 bg-blue-50 text-blue-900"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  {PROJECT_MODE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setField("project_mode", opt.value)}
+                      data-testid={`project-mode-option-${opt.value}`}
+                      className={`rounded-xl border px-3 py-3 text-left text-sm ${
+                        form.project_mode === opt.value
+                          ? "border-blue-600 bg-blue-50 text-blue-900"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
                   <div className="font-semibold">{opt.label}</div>
@@ -681,7 +678,11 @@ export default function ProjectIntakeForm() {
 
           {form.project_mode !== "full_service" ? (
             <div className="mt-4 rounded-lg border bg-blue-50 p-4">
-              <label className="mb-1 block text-sm font-medium text-gray-900">
+              <div className="text-sm font-semibold text-slate-900">{projectModeLabel(form.project_mode)} details</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Many homeowners choose Assisted DIY to save money while still working with a professional.
+              </div>
+              <label className="mt-3 mb-1 block text-sm font-medium text-gray-900">
                 Homeowner participation notes
               </label>
               <textarea
@@ -700,6 +701,34 @@ export default function ProjectIntakeForm() {
                   />
                   Homeowner already started
                 </label>
+                {normalizeProjectMode(form.project_mode) === "assisted_diy" ? (
+                  <div className="sm:col-span-2 grid gap-3 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium text-gray-900">
+                        Which parts will the homeowner handle?
+                      </span>
+                      <textarea
+                        className="w-full rounded border px-3 py-2 text-sm"
+                        value={form.homeowner_task_summary}
+                        onChange={(e) => setField("homeowner_task_summary", e.target.value)}
+                        rows={3}
+                        placeholder="Example: demolition, cleanup, basic prep, materials pickup"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium text-gray-900">
+                        Need help finishing?
+                      </span>
+                      <textarea
+                        className="w-full rounded border px-3 py-2 text-sm"
+                        value={form.homeowner_assistance_summary}
+                        onChange={(e) => setField("homeowner_assistance_summary", e.target.value)}
+                        rows={3}
+                        placeholder="Example: supervision, labor support, inspection, or finishing assistance"
+                      />
+                    </label>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}

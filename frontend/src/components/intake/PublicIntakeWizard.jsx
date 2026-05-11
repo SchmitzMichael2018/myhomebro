@@ -2,6 +2,7 @@
 import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../../api";
+import { PROJECT_MODE_OPTIONS, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
 
 function copyCustomerAddressToProject(form) {
   return {
@@ -1552,16 +1553,12 @@ export default function PublicIntakeWizard() {
                   Choose the relationship between the contractor and homeowner for this request.
                 </p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {[
-                    { value: "full_service", label: "Full Service", help: "Contractor performs the work." },
-                    { value: "assisted_diy", label: "DIY Assistance", help: "Homeowner participates with guidance." },
-                    { value: "consultation", label: "Consultation", help: "Advice and planning only." },
-                    { value: "inspection_only", label: "Inspection Only", help: "Inspection and reporting only." },
-                  ].map((opt) => (
+                  {PROJECT_MODE_OPTIONS.map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => setField("project_mode", opt.value)}
+                      data-testid={`project-mode-option-${opt.value}`}
                       className={`rounded-2xl border px-4 py-3 text-left text-sm shadow-sm transition ${
                         form.project_mode === opt.value
                           ? "border-indigo-500 bg-indigo-50 text-indigo-900"
@@ -1576,6 +1573,10 @@ export default function PublicIntakeWizard() {
               </div>
               {form.project_mode !== "full_service" ? (
                 <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm font-semibold text-gray-900">{projectModeLabel(form.project_mode)} details</div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Many homeowners choose Assisted DIY to save money while still working with a professional.
+                  </p>
                   <label className="mb-1 block text-sm font-medium text-gray-900">
                     Homeowner participation notes
                   </label>
@@ -1586,6 +1587,34 @@ export default function PublicIntakeWizard() {
                     onChange={(e) => setField("homeowner_participation_notes", e.target.value)}
                     placeholder="Describe what the homeowner will do, what the contractor will do, and any exclusions."
                   />
+                  {normalizeProjectMode(form.project_mode) === "assisted_diy" ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium text-gray-900">
+                          Which parts will the homeowner handle?
+                        </span>
+                        <textarea
+                          className="w-full rounded border px-3 py-2 text-sm"
+                          rows={3}
+                          value={form.homeowner_task_summary}
+                          onChange={(e) => setField("homeowner_task_summary", e.target.value)}
+                          placeholder="Example: demolition, cleanup, basic prep, materials pickup"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-sm font-medium text-gray-900">
+                          Need help finishing?
+                        </span>
+                        <textarea
+                          className="w-full rounded border px-3 py-2 text-sm"
+                          rows={3}
+                          value={form.homeowner_assistance_summary}
+                          onChange={(e) => setField("homeowner_assistance_summary", e.target.value)}
+                          placeholder="Example: supervision, labor support, inspection, or finishing assistance"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
