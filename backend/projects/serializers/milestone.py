@@ -41,6 +41,7 @@ from projects.services.subcontractor_quotes import (
     serialize_subcontractor_quote_request,
 )
 from projects.services.milestone_payouts import payout_amount_cents_for_milestone, serialize_payout_for_milestone
+from projects.services.milestone_roles import infer_milestone_role, milestone_role_label, normalize_milestone_role
 from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
 
 
@@ -151,6 +152,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
     agreement_escrow_funded = serializers.SerializerMethodField()
     agreement_signature_is_satisfied = serializers.SerializerMethodField()
     pricing_mode = serializers.SerializerMethodField()
+    milestone_role = serializers.SerializerMethodField()
+    milestone_role_label = serializers.SerializerMethodField()
 
     is_rework = serializers.SerializerMethodField()
     origin_milestone = serializers.SerializerMethodField()
@@ -221,6 +224,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "agreement_escrow_funded",
             "agreement_signature_is_satisfied",
             "pricing_mode",
+            "milestone_role",
+            "milestone_role_label",
             "assigned_subcontractor",
             "assigned_subcontractor_display",
             "assigned_worker",
@@ -442,6 +447,21 @@ class MilestoneSerializer(serializers.ModelSerializer):
         if isinstance(answers, dict):
             return _normalize_pricing_mode(answers.get("materials_responsibility"))
         return "full_service"
+
+    def get_milestone_role(self, obj: Milestone) -> str:
+        raw = normalize_milestone_role(getattr(obj, "milestone_role", ""))
+        if raw:
+            return raw
+        ag = self._get_agreement(obj)
+        return infer_milestone_role(
+            project_mode=getattr(ag, "project_mode", "") if ag else "",
+            title=getattr(obj, "title", ""),
+            description=getattr(obj, "description", ""),
+            normalized_milestone_type=getattr(obj, "normalized_milestone_type", ""),
+        )
+
+    def get_milestone_role_label(self, obj: Milestone) -> str:
+        return milestone_role_label(self.get_milestone_role(obj))
 
     # ------------------------ rework/origin helpers (read) ------------------------ #
     def get_is_rework(self, obj: Milestone) -> bool:
@@ -1053,6 +1073,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["agreement_escrow_funded"] = self.get_agreement_escrow_funded(instance)
         data["agreement_signature_is_satisfied"] = self.get_agreement_signature_is_satisfied(instance)
         data["pricing_mode"] = self.get_pricing_mode(instance)
+        data["milestone_role"] = self.get_milestone_role(instance)
+        data["milestone_role_label"] = self.get_milestone_role_label(instance)
         data["assigned_subcontractor"] = self.get_assigned_subcontractor(instance)
         data["assigned_subcontractor_display"] = self.get_assigned_subcontractor_display(instance)
         data["assigned_worker"] = self.get_assigned_worker(instance)

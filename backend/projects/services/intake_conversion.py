@@ -11,6 +11,7 @@ from projects.models import Agreement, Homeowner, Milestone, Project
 from projects.models_ai_scope import AgreementAIScope
 from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
+from projects.services.milestone_roles import annotate_milestone_roles
 from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
 from projects.services.sms_service import ensure_sms_consent
 
@@ -137,7 +138,19 @@ def _create_project_for_agreement(*, intake: ProjectIntake, homeowner: Homeowner
 
 
 def _apply_template_milestones(*, agreement: Agreement, template: ProjectTemplate):
-    for idx, tpl_ms in enumerate(template.milestones.all().order_by("sort_order", "id"), start=1):
+    template_rows = list(template.milestones.all().order_by("sort_order", "id"))
+    rows = [
+        {
+            "title": _safe_str(getattr(tpl_ms, "title", "")),
+            "description": _safe_str(getattr(tpl_ms, "description", "")),
+            "sort_order": getattr(tpl_ms, "sort_order", idx) or idx,
+            "milestone_role": getattr(tpl_ms, "milestone_role", ""),
+            "normalized_milestone_type": getattr(tpl_ms, "normalized_milestone_type", ""),
+        }
+        for idx, tpl_ms in enumerate(template_rows, start=1)
+    ]
+    annotated_rows = annotate_milestone_roles(rows, project_mode=getattr(agreement, "project_mode", ""))
+    for idx, (tpl_ms, annotated) in enumerate(zip(template_rows, annotated_rows), start=1):
         amount = Decimal("0.00")
 
         fixed = getattr(tpl_ms, "suggested_amount_fixed", None)
@@ -154,11 +167,13 @@ def _apply_template_milestones(*, agreement: Agreement, template: ProjectTemplat
             completion_date=None,
             completed=False,
             is_invoiced=False,
+            milestone_role=annotated.get("milestone_role", ""),
         )
 
 
 def _apply_ai_milestones(*, agreement: Agreement, milestones_payload: list[dict[str, Any]]):
-    for idx, row in enumerate(milestones_payload or [], start=1):
+    annotated_rows = annotate_milestone_roles(milestones_payload or [], project_mode=getattr(agreement, "project_mode", ""))
+    for idx, row in enumerate(annotated_rows, start=1):
         Milestone.objects.create(
             agreement=agreement,
             order=int(row.get("sort_order") or row.get("order") or idx),
@@ -169,6 +184,7 @@ def _apply_ai_milestones(*, agreement: Agreement, milestones_payload: list[dict[
             completion_date=None,
             completed=False,
             is_invoiced=False,
+            milestone_role=_safe_str(row.get("milestone_role")),
         )
 
 

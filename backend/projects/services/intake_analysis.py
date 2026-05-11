@@ -13,6 +13,7 @@ from projects.services.project_intelligence import (
     build_project_setup_recommendation,
 )
 from projects.services.project_quantity import build_quantity_context
+from projects.services.milestone_roles import annotate_milestone_roles
 
 
 def _safe_str(value: Any) -> str:
@@ -1202,6 +1203,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         assumptions = _clarification_assumptions_from_answers(clarification_answers)
         milestones = _template_milestones_payload(template)
         milestones = _refine_milestones(milestones, clarification_answers)
+        milestones = annotate_milestone_roles(milestones, project_mode=_safe_str(getattr(intake, "project_mode", "")))
         recommended_setup = build_project_setup_recommendation(
             project_title=project_title,
             project_type=classification["project_type"],
@@ -1213,6 +1215,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
 
         return {
             "project_title": project_title,
+            "project_mode": _safe_str(getattr(intake, "project_mode", "")) or "full_service",
             "template_id": template.id,
             "template_name": _safe_str(template.name),
             "confidence": confidence,
@@ -1259,6 +1262,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     assumptions = _clarification_assumptions_from_answers(clarification_answers)
     milestones = _generate_default_milestones(project_type, project_subtype, accomplishment)
     milestones = _refine_milestones(milestones, clarification_answers)
+    milestones = annotate_milestone_roles(milestones, project_mode=_safe_str(getattr(intake, "project_mode", "")))
     recommended_setup = build_project_setup_recommendation(
         project_title=project_title,
         project_type=project_type,
@@ -1268,6 +1272,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
 
     return {
         "project_title": project_title,
+        "project_mode": _safe_str(getattr(intake, "project_mode", "")) or "full_service",
         "template_id": None,
         "template_name": "",
         "confidence": "none",

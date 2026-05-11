@@ -1024,6 +1024,7 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         template_name=_template_label(agreement),
         selected_template_id=getattr(agreement, "selected_template_id", None),
         contractor_id=getattr(getattr(agreement, "contractor", None), "id", None),
+        project_mode=getattr(agreement, "project_mode", "") or "",
     )
     contractor_insights = build_contractor_insights(
         contractor_id=getattr(getattr(agreement, "contractor", None), "id", None),

@@ -5,6 +5,7 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from ..utils import categorize_project, load_legal_text
+from ..services.milestone_roles import infer_milestone_role, milestone_role_label, normalize_milestone_role
 from ..models import (
     Project,
     Agreement,
@@ -245,6 +246,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
     customer_name = serializers.SerializerMethodField()
     due_date = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
+    milestone_role = serializers.SerializerMethodField()
+    milestone_role_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Milestone
@@ -255,11 +258,13 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "file_count", "comment_count", "invoice_id",
             "files", "comments",
             "agreement_id", "agreement_number", "customer_name", "due_date", "status",
+            "milestone_role", "milestone_role_label",
         ]
         read_only_fields = [
             "id", "completed", "file_count", "comment_count", "invoice_id",
             "files", "comments",
             "agreement_id", "agreement_number", "customer_name", "due_date", "status",
+            "milestone_role", "milestone_role_label",
         ]
 
     def get_agreement_id(self, obj):
@@ -339,6 +344,21 @@ class MilestoneSerializer(serializers.ModelSerializer):
         if isinstance(status, str) and status.strip():
             return status
         return "completed" if getattr(obj, "completed", False) else "incomplete"
+
+    def get_milestone_role(self, obj):
+        raw = normalize_milestone_role(getattr(obj, "milestone_role", ""))
+        if raw:
+            return raw
+        agreement = getattr(obj, "agreement", None)
+        return infer_milestone_role(
+            project_mode=getattr(agreement, "project_mode", "") if agreement is not None else "",
+            title=getattr(obj, "title", ""),
+            description=getattr(obj, "description", ""),
+            normalized_milestone_type=getattr(obj, "normalized_milestone_type", ""),
+        )
+
+    def get_milestone_role_label(self, obj):
+        return milestone_role_label(self.get_milestone_role(obj))
 
 
 # ---------------- Invoices ----------------

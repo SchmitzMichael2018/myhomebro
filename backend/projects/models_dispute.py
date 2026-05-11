@@ -9,6 +9,8 @@ from django.db import models, transaction
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 
+from projects.services.milestone_roles import infer_milestone_role
+
 
 def _dec(value) -> Decimal:
     try:
@@ -558,6 +560,14 @@ class Dispute(models.Model):
 
         # ✅ Fill additional required fields if your Milestone model requires them
         m_kwargs = self._fill_required_milestone_fields(Milestone, m_kwargs)
+        if "milestone_role" in field_names and not m_kwargs.get("milestone_role"):
+            agreement_mode_value = getattr(getattr(getattr(self, "milestone", None), "agreement", None), "project_mode", "")
+            m_kwargs["milestone_role"] = infer_milestone_role(
+                project_mode=agreement_mode_value,
+                title=m_kwargs.get("title", ""),
+                description=m_kwargs.get("description", ""),
+                normalized_milestone_type="rework",
+            )
 
         try:
             new_m = Milestone.objects.create(**m_kwargs)

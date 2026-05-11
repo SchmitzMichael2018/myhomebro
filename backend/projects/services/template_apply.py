@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from projects.models import Agreement, Contractor, Milestone
 from projects.models_templates import ProjectTemplate
+from projects.services.milestone_roles import infer_milestone_role, normalize_milestone_role
 from projects.services.regions import build_normalized_region_key
 
 try:
@@ -961,6 +962,12 @@ def apply_template_to_agreement(
             completion_date=due_date,
             duration=duration_delta,
             normalized_milestone_type=(row.normalized_milestone_type or "").strip(),
+            milestone_role=normalize_milestone_role(getattr(row, "milestone_role", "")) or infer_milestone_role(
+                project_mode=getattr(agreement, "project_mode", ""),
+                title=row.title,
+                description=row.description or "",
+                normalized_milestone_type=(row.normalized_milestone_type or "").strip(),
+            ),
             template_suggested_amount=template_suggested_amount if template_suggested_amount > 0 else None,
             ai_suggested_amount=amounts[idx - 1] if amounts[idx - 1] > 0 else None,
             suggested_amount_low=row.suggested_amount_low,

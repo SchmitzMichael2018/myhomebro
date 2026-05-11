@@ -42,7 +42,8 @@ import { WorkflowHint } from "../components/WorkflowHint.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { getAgreementDetailHint } from "../lib/workflowHints.js";
-import { ProjectModeBadge, deriveMilestoneModeLabel, projectModeLabel } from "../components/projectMode.jsx";
+import { ProjectModeBadge, projectModeLabel } from "../components/projectMode.jsx";
+import { MilestoneRoleBadge, deriveMilestoneRoleLabel } from "../components/milestoneRole.jsx";
 import {
   assignAgreementToSubaccount,
   unassignAgreementFromSubaccount,
@@ -2813,7 +2814,7 @@ export default function AgreementDetail({ adminMode = false }) {
             {norm.milestones.map((m) => {
               const refunded = isRefundedMilestone(m);
               const label = milestoneStatusLabel(m);
-              const modeLabel = deriveMilestoneModeLabel({ projectMode: norm.project_mode, milestone: m });
+              const roleLabel = deriveMilestoneRoleLabel({ projectMode: norm.project_mode, milestone: m });
               const payoutOrchestration =
                 m.subcontractor_payout_orchestration ||
                 m.subcontractor_milestone_agreement?.payout_orchestration ||
@@ -2845,9 +2846,14 @@ export default function AgreementDetail({ adminMode = false }) {
                     {toMoney(m.amount).toFixed(2)}
                     {refunded ? <RefundedBadge /> : null}
                     <span className="text-gray-500"> ({label})</span>
-                    <span className="ml-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                      {modeLabel}
-                    </span>
+                    <MilestoneRoleBadge
+                      role={m.milestone_role}
+                      projectMode={norm.project_mode}
+                      milestone={m}
+                      className="ml-2"
+                      dataTestId={`agreement-milestone-role-${m.id}`}
+                      title={roleLabel}
+                    />
                   </div>
 
                   <div className="mt-2 text-sm text-gray-600">

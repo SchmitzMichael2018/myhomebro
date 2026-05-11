@@ -11,6 +11,7 @@ from projects.services.project_intelligence import (
 from projects.services.contractor_benchmarks import get_blended_benchmark
 from projects.services.project_quantity import build_quantity_adjustment, build_quantity_context
 from projects.services.regions import build_region_context
+from projects.services.milestone_roles import annotate_milestone_roles
 
 
 def _safe_text(value: Any) -> str:
@@ -624,6 +625,7 @@ def build_project_plan_suggestion(
     recommended_template_name: str = "",
     selected_template_id: Any = None,
     contractor_id: Any = None,
+    project_mode: str = "",
     region_state: str = "",
     region_city: str = "",
     region_country: str = "US",
@@ -819,6 +821,8 @@ def build_project_plan_suggestion(
         quantity_reason = _safe_text(quantity_adjustment.get("reason"))
         if quantity_reason:
             reason_bits.append(quantity_reason)
+    if _safe_text(project_mode).lower() == "assisted_diy" and family_key in {"electrical", "plumbing", "roofing"}:
+        reason_bits.append("Professional contractor completion is strongly recommended for safety-critical work.")
 
     base_rows = _scaled_milestones(
         _milestone_rows_for_plan(family_key=family_key, scope_mode=scope_mode),
@@ -850,6 +854,7 @@ def build_project_plan_suggestion(
                 "note": _safe_text(row.get("note")),
             }
         )
+    milestone_rows = annotate_milestone_roles(milestone_rows, project_mode=project_mode)
 
     learning_key = ":".join(
         [
@@ -871,6 +876,22 @@ def build_project_plan_suggestion(
         recommended_project_type=setup_project_type,
         suggested_workflow=setup_workflow,
     )
+    mode = _safe_text(project_mode).lower().replace(" ", "_")
+    if mode == "assisted_diy":
+        explanation_points = [
+            "Homeowner-safe prep and cleanup tasks were separated from contractor technical work.",
+            *explanation_points,
+        ][:4]
+    elif mode == "consultation":
+        explanation_points = [
+            "Shared planning and guidance steps were prioritized for the consultation workflow.",
+            *explanation_points,
+        ][:4]
+    elif mode == "inspection_only":
+        explanation_points = [
+            "Inspection checkpoints were prioritized instead of a full-service work plan.",
+            *explanation_points,
+        ][:4]
     if quantity_adjustment.get("applied"):
         quantity_reason = _safe_text(quantity_adjustment.get("reason"))
         if quantity_reason and quantity_reason not in explanation_points:
@@ -924,6 +945,7 @@ def build_project_plan_suggestion(
         "source_metadata": {
             "family_key": family_key,
             "scope_mode": scope_mode,
+            "project_mode": _safe_text(project_mode),
             "project_type": _safe_text(project_type),
             "project_subtype": _safe_text(project_subtype),
             "region_context": region_context,

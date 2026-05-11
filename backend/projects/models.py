@@ -89,6 +89,13 @@ class AgreementProjectMode(models.TextChoices):
     INSPECTION_ONLY = "inspection_only", "Inspection Only"
 
 
+class MilestoneRole(models.TextChoices):
+    HOMEOWNER_TASK = "homeowner_task", "Homeowner Task"
+    CONTRACTOR_TASK = "contractor_task", "Contractor Task"
+    SHARED_TASK = "shared_task", "Shared Task"
+    INSPECTION_CHECKPOINT = "inspection_checkpoint", "Inspection Checkpoint"
+
+
 class RecurrencePattern(models.TextChoices):
     WEEKLY = "weekly", "Weekly"
     MONTHLY = "monthly", "Monthly"
@@ -1572,6 +1579,14 @@ class Milestone(models.Model):
         default="",
         db_index=True,
         help_text="Stable milestone category copied from template/AI guidance.",
+    )
+    milestone_role = models.CharField(
+        max_length=32,
+        choices=MilestoneRole.choices,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Human-readable milestone role used for homeowner/contractor/shared/inspection workflow visibility.",
     )
     template_suggested_amount = models.DecimalField(
         max_digits=10,

@@ -188,6 +188,12 @@ def _normalize_project_payload(input_payload: Any) -> dict[str, Any]:
         "agreement": agreement,
         "lead": lead,
         "template": template,
+        "project_mode": _safe_text(
+            payload.get("project_mode")
+            or getattr(agreement, "project_mode", "")
+            or getattr(intake, "project_mode", "")
+            or _safe_dict(source_analysis).get("project_mode")
+        ),
         "project_title": project_title,
         "project_type": project_type,
         "project_subtype": project_subtype,
@@ -271,6 +277,7 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
         recommended_template_name=_safe_text(analysis.get("template_name")),
         selected_template_id=analysis.get("template_id"),
         contractor_id=getattr(normalized.get("contractor"), "id", None),
+        project_mode=_safe_text(normalized.get("project_mode")),
         region_state=normalized["region_state"],
         region_city=normalized["region_city"],
         region_country=normalized["region_country"],

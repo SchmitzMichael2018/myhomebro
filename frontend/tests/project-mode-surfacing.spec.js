@@ -188,6 +188,70 @@ async function installProjectModeRoutes(page) {
     });
   });
 
+  await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: SHARED_AGREEMENT.milestones.map((row) => ({ ...row, project_mode: SHARED_AGREEMENT.project_mode })) }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/invoices\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor\/public-leads\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor\/bids\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/activity-feed\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor\/payout-history\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/expense-requests\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/expenses\/?(\?.*)?$/i, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
 }
 
 test("project mode badges and assisted DIY surfaces render across the app", async ({ page }) => {
@@ -200,11 +264,16 @@ test("project mode badges and assisted DIY surfaces render across the app", asyn
   await page.goto("/app/agreements/123", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("agreement-detail-project-mode-badge")).toHaveText("Assisted DIY");
   await expect(page.getByText("Homeowner participation")).toBeVisible();
-  await expect(page.getByText("Homeowner Task")).toBeVisible();
-  await expect(page.getByText("Contractor Task")).toBeVisible();
+  await expect(page.getByTestId("agreement-milestone-role-1")).toHaveText("Homeowner Task");
+  await expect(page.getByTestId("agreement-milestone-role-2")).toHaveText("Contractor Task");
 
   await page.goto("/public-sign/test-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("public-agreement-project-mode-badge")).toHaveText("Assisted DIY");
+
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("dashboard-project-mode-assisted-diy")).toBeVisible();
+  await expect(page.getByTestId("dashboard-collab-waiting-homeowner")).toBeVisible();
+  await expect(page.getByTestId("dashboard-collab-shared-task")).toBeVisible();
 });
 
 test("assisted diy intake reveals the homeowner participation guidance fields", async ({ page }) => {

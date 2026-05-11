@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 from projects.models import Contractor, Homeowner
 from projects.models_project_intake import ProjectIntake
 from projects.services.intake_conversion import convert_intake_to_agreement
+from projects.services.milestone_roles import annotate_milestone_roles
 
 
 class DIYAssistanceTests(TestCase):
@@ -75,3 +76,51 @@ class DIYAssistanceTests(TestCase):
         self.assertEqual(agreement.homeowner_participation_notes, "Homeowner will demo and paint.")
         self.assertIn("Demo", agreement.homeowner_responsibilities)
         self.assertIn("inspection", agreement.contractor_responsibilities.lower())
+
+    def test_assisted_diy_milestone_roles_are_annotated(self):
+        rows = annotate_milestone_roles(
+            [
+                {"title": "Homeowner Prep", "description": "Prep the room and clear materials."},
+                {"title": "Install Unit", "description": "Contractor handles the technical install work."},
+                {"title": "Final Walkthrough", "description": "Review completed work together."},
+            ],
+            project_mode="assisted_diy",
+        )
+        roles = [row.get("milestone_role") for row in rows]
+
+        self.assertEqual(roles[0], "homeowner_task")
+        self.assertEqual(roles[1], "contractor_task")
+        self.assertEqual(roles[2], "inspection_checkpoint")
+
+    def test_convert_intake_to_agreement_persists_ai_milestone_roles(self):
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Customer Three",
+            email="customer3@example.com",
+        )
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            homeowner=homeowner,
+            customer_name="Customer Three",
+            customer_email="customer3@example.com",
+            project_class="residential",
+            project_mode="assisted_diy",
+            accomplishment_text="Need help finishing a bathroom project.",
+            project_address_line1="123 Main St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            ai_milestones=[
+                {"title": "Homeowner Prep", "description": "Prep the bathroom and clear materials."},
+                {"title": "Install and finish", "description": "Contractor handles technical install work."},
+                {"title": "Final walkthrough", "description": "Review completed work together."},
+            ],
+        )
+
+        agreement = convert_intake_to_agreement(intake=intake, use_recommended_template=False)
+        roles = list(agreement.milestones.order_by("order").values_list("milestone_role", flat=True))
+
+        self.assertEqual(agreement.project_mode, "assisted_diy")
+        self.assertIn("homeowner_task", roles)
+        self.assertIn("contractor_task", roles)
+        self.assertIn("inspection_checkpoint", roles)

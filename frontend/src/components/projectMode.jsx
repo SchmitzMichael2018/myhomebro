@@ -1,4 +1,5 @@
 import React from "react";
+import { deriveMilestoneRoleLabel } from "./milestoneRole.jsx";
 
 const MODE_META = {
   full_service: {
@@ -119,47 +120,6 @@ export function ProjectModeBadge({
   );
 }
 
-function normalizeText(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function includesAny(text, needles) {
-  if (!text) return false;
-  return needles.some((needle) => text.includes(needle));
-}
-
 export function deriveMilestoneModeLabel({ projectMode, milestone }) {
-  const mode = normalizeProjectMode(projectMode);
-  const text = normalizeText(
-    [milestone?.title, milestone?.description, milestone?.normalized_milestone_type, milestone?.type]
-      .filter(Boolean)
-      .join(" ")
-  );
-
-  if (mode === "inspection_only") return "Inspection Checkpoint";
-  if (mode === "consultation") return "Shared Task";
-
-  if (mode === "assisted_diy") {
-    if (includesAny(text, ["inspect", "inspection", "review", "walkthrough", "final check"])) {
-      return "Inspection Checkpoint";
-    }
-    if (includesAny(text, ["homeowner", "prep", "prep work", "materials", "shopping", "cleanup", "demo", "demolition"])) {
-      return "Homeowner Task";
-    }
-    if (includesAny(text, ["shared", "coordination", "planning", "approval", "consult", "review"])) {
-      return "Shared Task";
-    }
-    if (includesAny(text, ["install", "replace", "rough", "finish", "repair", "service"])) {
-      return "Contractor Task";
-    }
-    return "Shared Task";
-  }
-
-  if (includesAny(text, ["inspection", "review", "walkthrough"])) {
-    return "Inspection Checkpoint";
-  }
-  return "Contractor Task";
+  return deriveMilestoneRoleLabel({ projectMode, milestone });
 }

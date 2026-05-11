@@ -8,6 +8,7 @@ from django.db import transaction
 
 from projects.models import Agreement, Milestone, PublicContractorLead
 from projects.models_project_intake import ProjectIntake
+from projects.services.milestone_roles import annotate_milestone_roles
 
 
 def _safe_text(value: Any) -> str:
@@ -316,7 +317,7 @@ def apply_conversion_prefill(*, agreement: Agreement, payload: Any, source=None)
     if normalized_milestones:
         agreement.milestones.all().delete()
         created = []
-        for row in normalized_milestones:
+        for row in annotate_milestone_roles(normalized_milestones, project_mode=getattr(agreement, "project_mode", "")):
             created.append(
                 Milestone.objects.create(
                     agreement=agreement,
@@ -328,6 +329,7 @@ def apply_conversion_prefill(*, agreement: Agreement, payload: Any, source=None)
                     completion_date=row["completion_date"] or None,
                     completed=False,
                     is_invoiced=False,
+                    milestone_role=_safe_text(row.get("milestone_role")),
                 )
             )
         agreement.milestone_count = len(created)

@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { ProjectModeBadge, PROJECT_MODE_OPTIONS, normalizeProjectModeFilter, normalizeProjectMode } from "./projectMode.jsx";
+import { MilestoneRoleBadge, deriveMilestoneRoleLabel } from "./milestoneRole.jsx";
 
 import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
@@ -915,6 +916,16 @@ export default function MilestoneList() {
                                                   <ProjectModeBadge
                                                     mode={m._ag?.project_mode || m.project_mode}
                                                     dataTestId={`milestone-project-mode-${m.id}`}
+                                                  />
+                                                  <MilestoneRoleBadge
+                                                    role={m.milestone_role}
+                                                    projectMode={m._ag?.project_mode || m.project_mode}
+                                                    milestone={m}
+                                                    dataTestId={`milestone-role-${m.id}`}
+                                                    title={deriveMilestoneRoleLabel({
+                                                      projectMode: m._ag?.project_mode || m.project_mode,
+                                                      milestone: m,
+                                                    })}
                                                   />
                                                   <span
                                                     className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700"

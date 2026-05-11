@@ -10,6 +10,7 @@ import Modal from "react-modal";
 import DashboardCard from "./dashboard/DashboardCard.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
 import { ProjectModeBadge, normalizeProjectMode } from "./projectMode.jsx";
+import { deriveMilestoneRoleLabel, normalizeMilestoneRole } from "./milestoneRole.jsx";
 import {
   Target,
   ListTodo,
@@ -2046,6 +2047,42 @@ export default function ContractorDashboard() {
     }
     return counts;
   }, [agreements]);
+  const collaborativeWorkflowStats = useMemo(() => {
+    const list = Array.isArray(milestones) ? milestones : [];
+    const counts = {
+      waiting_on_homeowner: 0,
+      homeowner_task_active: 0,
+      contractor_review_needed: 0,
+      inspection_requested: 0,
+      shared_task_in_progress: 0,
+    };
+    for (const item of list) {
+      const roleLabel = deriveMilestoneRoleLabel({
+        projectMode: item?._ag?.project_mode || item?.project_mode,
+        milestone: item,
+      });
+      const role = normalizeMilestoneRole(item?.milestone_role || item?.milestoneRole || roleLabel);
+      const mode = normalizeProjectMode(item?._ag?.project_mode || item?.project_mode);
+      const completed = item?.completed === true || String(item?.status || item?.state || "").toLowerCase() === "completed";
+      const reviewRequested = item?.subcontractor_review_requested === true || !!item?.subcontractor_review_requested_at;
+      if (mode === "assisted_diy" && role === "homeowner_task" && !completed) {
+        counts.waiting_on_homeowner += 1;
+      }
+      if (role === "homeowner_task" && !completed) {
+        counts.homeowner_task_active += 1;
+      }
+      if (role === "contractor_task" && reviewRequested) {
+        counts.contractor_review_needed += 1;
+      }
+      if (role === "inspection_checkpoint" && !completed) {
+        counts.inspection_requested += 1;
+      }
+      if (role === "shared_task" && !completed) {
+        counts.shared_task_in_progress += 1;
+      }
+    }
+    return counts;
+  }, [milestones]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
   const workPipelineRows = [
     {
@@ -2268,7 +2305,7 @@ export default function ContractorDashboard() {
               tone="subtle"
               className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
             >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 {[
                   {
                     label: "Full Service",
@@ -2320,6 +2357,76 @@ export default function ContractorDashboard() {
                     Assisted DIY projects that still need homeowner progress or participation.
                   </div>
                 </div>
+              </div>
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Collaborative Workflow"
+            subtitle="Live visibility into homeowner participation, review, and inspection states."
+          >
+            <DashboardCard
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+            >
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    title: "Waiting on Homeowner",
+                    value: collaborativeWorkflowStats.waiting_on_homeowner,
+                    description: "Assisted DIY tasks waiting on homeowner progress.",
+                    tone: "border-amber-200 bg-amber-50 text-amber-800",
+                    dataTestId: "dashboard-collab-waiting-homeowner",
+                    onClick: () => navigate(`/app/milestones?project_mode=assisted_diy&filter=incomplete`),
+                  },
+                  {
+                    title: "Homeowner Task Active",
+                    value: collaborativeWorkflowStats.homeowner_task_active,
+                    description: "Shared DIY work items currently underway.",
+                    tone: "border-blue-200 bg-blue-50 text-blue-700",
+                    dataTestId: "dashboard-collab-homeowner-active",
+                    onClick: () => navigate(`/app/milestones?project_mode=assisted_diy&filter=incomplete`),
+                  },
+                  {
+                    title: "Contractor Review Needed",
+                    value: collaborativeWorkflowStats.contractor_review_needed,
+                    description: "Contractor checkpoints or review requests pending.",
+                    tone: "border-violet-200 bg-violet-50 text-violet-700",
+                    dataTestId: "dashboard-collab-contractor-review",
+                    onClick: () => navigate(`/app/reviewer/queue`),
+                  },
+                  {
+                    title: "Inspection Requested",
+                    value: collaborativeWorkflowStats.inspection_requested,
+                    description: "Inspection checkpoints waiting to be scheduled or cleared.",
+                    tone: "border-slate-200 bg-slate-100 text-slate-700",
+                    dataTestId: "dashboard-collab-inspection-requested",
+                    onClick: () => navigate(`/app/milestones?project_mode=inspection_only&filter=incomplete`),
+                  },
+                  {
+                    title: "Shared Task In Progress",
+                    value: collaborativeWorkflowStats.shared_task_in_progress,
+                    description: "Collaborative tasks being handled jointly.",
+                    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+                    dataTestId: "dashboard-collab-shared-task",
+                    onClick: () => navigate(`/app/milestones?filter=incomplete`),
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.title}
+                    type="button"
+                    onClick={item.onClick}
+                    className={`rounded-xl border p-4 text-left transition hover:-translate-y-px hover:shadow-sm ${item.tone}`}
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
+                      {item.title}
+                    </div>
+                    <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid={item.dataTestId}>
+                      {Number(item.value || 0).toLocaleString()}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">{item.description}</div>
+                  </button>
+                ))}
               </div>
             </DashboardCard>
           </DashboardSection>
