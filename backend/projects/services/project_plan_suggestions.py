@@ -11,7 +11,7 @@ from projects.services.project_intelligence import (
 from projects.services.contractor_benchmarks import get_blended_benchmark
 from projects.services.project_quantity import build_quantity_adjustment, build_quantity_context
 from projects.services.regions import build_region_context
-from projects.services.milestone_roles import annotate_milestone_roles
+from projects.services.milestone_roles import annotate_milestone_roles, detect_restricted_trade_categories
 
 
 def _safe_text(value: Any) -> str:
@@ -646,6 +646,7 @@ def build_project_plan_suggestion(
         project_scope_summary,
         clarification_answers=clarification_answers,
     )
+    restricted_trade_categories = detect_restricted_trade_categories(scope_text, project_mode=project_mode)
     scope_mode = infer_project_scope_mode(text=scope_text, family_key=family_key)
     quantity_context = _safe_dict(quantity_context)
     if not quantity_context:
@@ -823,6 +824,8 @@ def build_project_plan_suggestion(
             reason_bits.append(quantity_reason)
     if _safe_text(project_mode).lower() == "assisted_diy" and family_key in {"electrical", "plumbing", "roofing"}:
         reason_bits.append("Professional contractor completion is strongly recommended for safety-critical work.")
+    if restricted_trade_categories:
+        reason_bits.append("Restricted trade phases stay contractor-led or inspection-led for safety.")
 
     base_rows = _scaled_milestones(
         _milestone_rows_for_plan(family_key=family_key, scope_mode=scope_mode),
@@ -921,6 +924,19 @@ def build_project_plan_suggestion(
         "confidence_level": confidence_level,
         "confidence_reasoning": " ".join(reason_bits).strip(),
         "explanation_points": explanation_points,
+        "safety_warnings": (
+            [
+                "Certain portions of this project are typically handled by licensed professionals.",
+                "Homeowner participation should stay limited to non-restricted activities unless local law and scope allow otherwise.",
+            ]
+            if restricted_trade_categories and _safe_text(project_mode).lower() == "assisted_diy"
+            else (
+                ["Certain portions of this project are typically handled by licensed professionals."]
+                if restricted_trade_categories
+                else []
+            )
+        ),
+        "restricted_trade_categories": restricted_trade_categories,
         "milestones": milestone_rows,
         "flags": {
             "materials_ready": flags.get("materials_ready", False),

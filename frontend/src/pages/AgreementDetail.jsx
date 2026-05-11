@@ -43,7 +43,7 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { getAgreementDetailHint } from "../lib/workflowHints.js";
 import { ProjectModeBadge, projectModeLabel } from "../components/projectMode.jsx";
-import { MilestoneRoleBadge, deriveMilestoneRoleLabel } from "../components/milestoneRole.jsx";
+import { MilestoneRoleBadge, MilestoneSafetyBadges, deriveMilestoneRoleLabel } from "../components/milestoneRole.jsx";
 import {
   assignAgreementToSubaccount,
   unassignAgreementFromSubaccount,
@@ -1902,6 +1902,19 @@ export default function AgreementDetail({ adminMode = false }) {
           </div>
           <ProjectModeBadge mode={norm.project_mode} />
         </div>
+        {["assisted_diy", "consultation", "inspection_only"].includes(String(norm.project_mode || "").toLowerCase().replaceAll(" ", "_")) ? (
+          <div
+            className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            data-testid="agreement-project-mode-safety-notice"
+          >
+            <div className="font-semibold">Assisted DIY / Collaboration</div>
+            <div className="mt-1">
+              Some project phases may require licensed professionals depending on local law, project scope, or safety requirements.
+              Customer participation is limited to non-restricted activities unless otherwise agreed and allowed by law.
+              Contractor may refuse unsafe or non-compliant homeowner participation.
+            </div>
+          </div>
+        ) : null}
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Homeowner participation</div>
@@ -2853,6 +2866,12 @@ export default function AgreementDetail({ adminMode = false }) {
                       className="ml-2"
                       dataTestId={`agreement-milestone-role-${m.id}`}
                       title={roleLabel}
+                    />
+                    <MilestoneSafetyBadges
+                      projectMode={norm.project_mode}
+                      milestone={m}
+                      className="ml-2"
+                      dataTestId={`agreement-milestone-safety-${m.id}`}
                     />
                   </div>
 

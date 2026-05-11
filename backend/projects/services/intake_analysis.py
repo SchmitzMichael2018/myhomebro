@@ -13,7 +13,7 @@ from projects.services.project_intelligence import (
     build_project_setup_recommendation,
 )
 from projects.services.project_quantity import build_quantity_context
-from projects.services.milestone_roles import annotate_milestone_roles
+from projects.services.milestone_roles import annotate_milestone_roles, detect_restricted_trade_categories
 
 
 def _safe_str(value: Any) -> str:
@@ -1144,6 +1144,14 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         _safe_str(getattr(intake, "ai_project_type", "")),
         _safe_str(getattr(intake, "ai_project_subtype", "")),
     )
+    restricted_trade_categories = detect_restricted_trade_categories(
+        accomplishment,
+        _safe_str(getattr(intake, "ai_description", "")),
+        _safe_str(getattr(intake, "homeowner_participation_notes", "")),
+        _safe_str(getattr(intake, "homeowner_task_summary", "")),
+        _safe_str(getattr(intake, "homeowner_assistance_summary", "")),
+        project_mode=_safe_str(getattr(intake, "project_mode", "")),
+    )
     classification = _build_project_classification(
         accomplishment=accomplishment,
         answers=clarification_answers,
@@ -1241,6 +1249,19 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "measurement_handling": measurement_handling,
             "photo_count": photo_count,
             "quantity_context": quantity_context,
+            "safety_warnings": (
+                [
+                    "Certain portions of this project are typically handled by licensed professionals.",
+                    "Homeowner participation should stay limited to non-restricted activities unless local law and scope allow otherwise.",
+                ]
+                if restricted_trade_categories and _safe_str(getattr(intake, "project_mode", "")).lower().replace(" ", "_") == "assisted_diy"
+                else (
+                    ["Certain portions of this project are typically handled by licensed professionals."]
+                    if restricted_trade_categories
+                    else []
+                )
+            ),
+            "restricted_trade_categories": restricted_trade_categories,
         }
 
     project_type = classification["project_type"]
@@ -1298,4 +1319,17 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "measurement_handling": measurement_handling,
         "photo_count": photo_count,
         "quantity_context": quantity_context,
+        "safety_warnings": (
+            [
+                "Certain portions of this project are typically handled by licensed professionals.",
+                "Homeowner participation should stay limited to non-restricted activities unless local law and scope allow otherwise.",
+            ]
+            if restricted_trade_categories and _safe_str(getattr(intake, "project_mode", "")).lower().replace(" ", "_") == "assisted_diy"
+            else (
+                ["Certain portions of this project are typically handled by licensed professionals."]
+                if restricted_trade_categories
+                else []
+            )
+        ),
+        "restricted_trade_categories": restricted_trade_categories,
     }

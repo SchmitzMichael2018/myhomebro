@@ -24,6 +24,7 @@ export default function IntakeAiRecommendationPanel({
   const templateMatches = Array.isArray(result?.template_matches) ? result.template_matches : [];
   const hasStrongMatch = result?.has_strong_template_match === true;
   const matchQuality = String(result?.match_quality || "").trim().toLowerCase();
+  const safetyWarnings = Array.isArray(result?.safety_warnings) ? result.safety_warnings : [];
 
   function confidenceLabel(value) {
     const normalized = String(value || "").trim().toLowerCase();
@@ -145,6 +146,19 @@ export default function IntakeAiRecommendationPanel({
               ) : null}
               <div className="mt-2 text-xs font-medium text-indigo-800">{nextStepText()}</div>
             </div>
+            {safetyWarnings.length ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3" data-testid="intake-safety-warning">
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                  Safety Guidance
+                </div>
+                <div className="mt-1 text-sm font-medium text-amber-900">{safetyWarnings[0]}</div>
+                {safetyWarnings.length > 1 ? (
+                  <div className="mt-1 text-xs text-amber-800">
+                    {safetyWarnings.slice(1).join(" ")}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="mt-4 space-y-3 rounded-md border bg-white p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">

@@ -17,7 +17,7 @@ const SHARED_AGREEMENT = {
   total_cost: 8400,
   milestones: [
     { id: 1, title: "Homeowner Prep", amount: 500, due_date: "2026-05-12", normalized_milestone_type: "prep" },
-    { id: 2, title: "Install Unit", amount: 2500, due_date: "2026-05-14", normalized_milestone_type: "install" },
+    { id: 2, title: "Electrical Panel Tie-In", amount: 2500, due_date: "2026-05-14", normalized_milestone_type: "install" },
   ],
   invoices: [],
 };
@@ -263,9 +263,11 @@ test("project mode badges and assisted DIY surfaces render across the app", asyn
 
   await page.goto("/app/agreements/123", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("agreement-detail-project-mode-badge")).toHaveText("Assisted DIY");
-  await expect(page.getByText("Homeowner participation")).toBeVisible();
+  await expect(page.getByText("Homeowner participation", { exact: true })).toBeVisible();
   await expect(page.getByTestId("agreement-milestone-role-1")).toHaveText("Homeowner Task");
   await expect(page.getByTestId("agreement-milestone-role-2")).toHaveText("Contractor Task");
+  await expect(page.getByTestId("agreement-milestone-safety-2")).toHaveText(/Licensed Trade Work|Contractor Required/);
+  await expect(page.getByTestId("agreement-project-mode-safety-notice")).toBeVisible();
 
   await page.goto("/public-sign/test-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("public-agreement-project-mode-badge")).toHaveText("Assisted DIY");
@@ -282,6 +284,8 @@ test("assisted diy intake reveals the homeowner participation guidance fields", 
   await page.goto("/app/intake/new", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("project-mode-option-assisted_diy")).toBeVisible({ timeout: 15000 });
   await page.getByTestId("project-mode-option-assisted_diy").click();
+  await page.getByPlaceholder("e.g., Replace leaking roof over garage and inspect flashing.").fill("Replace electrical panel with permit coordination.");
+  await expect(page.getByTestId("assisted-diy-safety-banner")).toBeVisible();
   await expect(page.getByText("Many homeowners choose Assisted DIY")).toBeVisible();
   await expect(page.getByText("Which parts will the homeowner handle?")).toBeVisible();
   await expect(page.getByText("Need help finishing?")).toBeVisible();

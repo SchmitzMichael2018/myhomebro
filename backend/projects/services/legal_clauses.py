@@ -69,6 +69,7 @@ def _payment_clause(payment_mode: Optional[str]) -> Clause:
 def build_legal_notices(
     project_state: Optional[str] = None,
     payment_mode: Optional[str] = None,
+    project_mode: Optional[str] = None,
 ) -> List[Clause]:
     """
     Returns ordered (title, body) pairs to render in both preview and final PDFs.
@@ -132,6 +133,17 @@ def build_legal_notices(
         "work environment during normal working hours. It is the Customer’s responsibility to verify with the Contractor "
         "— in writing — who is responsible for securing specific permits and inspections for this project."
     ))
+
+    mode = (project_mode or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if mode in {"assisted_diy", "consultation", "inspection_only"}:
+        clauses.append((
+            "Assisted DIY / Collaboration",
+            "Some project phases may require licensed professionals depending on local law, project scope, or safety "
+            "requirements. Customer participation is limited to non-restricted activities unless the parties expressly agree "
+            "otherwise and the applicable law allows it. Contractor may refuse unsafe, code-incompatible, or non-compliant "
+            "homeowner participation. Warranties apply only to Contractor-performed work unless the Agreement expressly states "
+            "otherwise."
+        ))
 
     # 6) Unforeseen Conditions
     clauses.append((

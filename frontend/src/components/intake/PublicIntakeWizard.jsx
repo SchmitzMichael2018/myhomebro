@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../../api";
 import { PROJECT_MODE_OPTIONS, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
+import { buildAssistedDiySafetyWarning } from "./projectSafety.js";
 
 function copyCustomerAddressToProject(form) {
   return {
@@ -194,6 +195,24 @@ export default function PublicIntakeWizard() {
     source: "",
   });
   const [form, setForm] = useState(blankForm);
+  const [assistedDiyAcknowledged, setAssistedDiyAcknowledged] = useState(false);
+  const safetyWarning = useMemo(() => {
+    if (normalizeProjectMode(form.project_mode) !== "assisted_diy") {
+      return null;
+    }
+    return buildAssistedDiySafetyWarning(
+      form.accomplishment_text,
+      form.homeowner_participation_notes,
+      form.homeowner_task_summary,
+      form.homeowner_assistance_summary
+    );
+  }, [
+    form.accomplishment_text,
+    form.homeowner_participation_notes,
+    form.homeowner_task_summary,
+    form.homeowner_assistance_summary,
+    form.project_mode,
+  ]);
 
   const stepLabels = [
     "Project Idea",
@@ -1577,6 +1596,33 @@ export default function PublicIntakeWizard() {
                   <p className="mt-1 text-sm text-slate-600">
                     Many homeowners choose Assisted DIY to save money while still working with a professional.
                   </p>
+                  {normalizeProjectMode(form.project_mode) === "assisted_diy" && safetyWarning ? (
+                    <div
+                      className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                      data-testid="public-assisted-diy-safety-banner"
+                    >
+                      <div className="font-semibold">{safetyWarning.banner}</div>
+                      {Array.isArray(safetyWarning.categories) && safetyWarning.categories.length ? (
+                        <div className="mt-1 text-xs text-amber-800">
+                          Restricted phases detected: {safetyWarning.categories.join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {normalizeProjectMode(form.project_mode) === "assisted_diy" ? (
+                    <label className="mt-3 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={assistedDiyAcknowledged}
+                        onChange={(e) => setAssistedDiyAcknowledged(e.target.checked)}
+                        className="mt-0.5"
+                        data-testid="public-assisted-diy-acknowledgment"
+                      />
+                      <span>
+                        I understand that restricted trade phases stay contractor-led unless local law and the scope allow otherwise.
+                      </span>
+                    </label>
+                  ) : null}
                   <label className="mb-1 block text-sm font-medium text-gray-900">
                     Homeowner participation notes
                   </label>

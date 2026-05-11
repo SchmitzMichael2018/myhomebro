@@ -102,6 +102,8 @@ class ProjectIntakeAnalyzeResponseSerializer(serializers.Serializer):
     clarification_questions = serializers.ListField(child=serializers.DictField(), required=False)
     clarification_answers = serializers.DictField(required=False)
     clarification_assumptions = serializers.ListField(child=serializers.CharField(), required=False)
+    safety_warnings = serializers.ListField(child=serializers.CharField(), required=False)
+    restricted_trade_categories = serializers.ListField(child=serializers.CharField(), required=False)
     measurement_handling = serializers.ChoiceField(
         choices=[
             ("provided", "Provided"),

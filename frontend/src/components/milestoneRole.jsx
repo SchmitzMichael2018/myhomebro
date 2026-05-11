@@ -23,6 +23,21 @@ const ROLE_META = {
   },
 };
 
+const SAFETY_META = {
+  licensed_trade: {
+    label: "Licensed Trade Work",
+    className: "border-amber-300 bg-amber-50 text-amber-900",
+  },
+  contractor_required: {
+    label: "Contractor Required",
+    className: "border-rose-200 bg-rose-50 text-rose-800",
+  },
+  inspection_recommended: {
+    label: "Inspection Recommended",
+    className: "border-slate-200 bg-slate-100 text-slate-700",
+  },
+};
+
 const ROLE_SYNONYMS = {
   homeowner_task: "homeowner_task",
   "homeowner task": "homeowner_task",
@@ -35,6 +50,37 @@ const ROLE_SYNONYMS = {
   inspection: "inspection_checkpoint",
   review: "inspection_checkpoint",
 };
+
+const SAFETY_PATTERNS = [
+  {
+    key: "licensed_trade",
+    terms: [
+      "electrical panel",
+      "service panel",
+      "breaker panel",
+      "main panel",
+      "service upgrade",
+      "gas line",
+      "gas pipe",
+      "refrigerant",
+      "freon",
+      "sewer main",
+      "sewer lateral",
+      "structural",
+      "load-bearing",
+      "foundation",
+      "steep roof",
+      "roof pitch",
+      "sprinkler",
+      "fire suppression",
+      "code-critical",
+    ],
+  },
+  {
+    key: "inspection_recommended",
+    terms: ["inspection", "inspect", "review", "walkthrough", "final check", "final inspection"],
+  },
+];
 
 function normalizeText(value) {
   return String(value || "")
@@ -57,6 +103,47 @@ function normalizeMode(value) {
 function includesAny(text, needles) {
   if (!text) return false;
   return needles.some((needle) => text.includes(needle));
+}
+
+function deriveSafetyKeys({ projectMode, milestone }) {
+  const explicitLabels = Array.isArray(milestone?.milestone_safety_labels)
+    ? milestone.milestone_safety_labels.map((label) => String(label || "").trim()).filter(Boolean)
+    : [];
+  if (explicitLabels.length) {
+    return Array.from(
+      new Set(
+        explicitLabels
+          .map((label) => {
+            if (label === SAFETY_META.licensed_trade.label) return "licensed_trade";
+            if (label === SAFETY_META.contractor_required.label) return "contractor_required";
+            if (label === SAFETY_META.inspection_recommended.label) return "inspection_recommended";
+            return "";
+          })
+          .filter(Boolean)
+      )
+    );
+  }
+  const mode = normalizeMode(projectMode);
+  const text = normalizeText(
+    [milestone?.title, milestone?.description, milestone?.normalized_milestone_type, milestone?.type]
+      .filter(Boolean)
+      .join(" ")
+  );
+  const keys = [];
+  const hasRestricted = SAFETY_PATTERNS[0].terms.some((needle) => text.includes(needle));
+  const hasInspection = SAFETY_PATTERNS[1].terms.some((needle) => text.includes(needle));
+  const role = normalizeMilestoneRole(milestone?.milestone_role || milestone?.milestoneRole);
+
+  if (mode === "inspection_only" || hasInspection || role === "inspection_checkpoint") {
+    keys.push("inspection_recommended");
+  }
+  if (hasRestricted) {
+    keys.push("licensed_trade");
+    keys.push("contractor_required");
+  } else if (mode === "assisted_diy" && role === "contractor_task") {
+    keys.push("contractor_required");
+  }
+  return Array.from(new Set(keys));
 }
 
 export function normalizeMilestoneRole(value) {
@@ -115,6 +202,10 @@ export function deriveMilestoneRoleLabel({ projectMode, milestone }) {
   return ROLE_META.contractor_task.label;
 }
 
+export function deriveMilestoneSafetyLabels({ projectMode, milestone }) {
+  return deriveSafetyKeys({ projectMode, milestone }).map((key) => SAFETY_META[key]?.label).filter(Boolean);
+}
+
 export function MilestoneRoleBadge({ role, projectMode = "", milestone, className = "", dataTestId, title }) {
   const roleLabel = milestoneRoleLabel(role) || deriveMilestoneRoleLabel({ projectMode, milestone }) || ROLE_META.contractor_task.label;
   const roleKey = normalizeMilestoneRole(role) || normalizeMilestoneRole(
@@ -131,5 +222,26 @@ export function MilestoneRoleBadge({ role, projectMode = "", milestone, classNam
     >
       {roleLabel}
     </span>
+  );
+}
+
+export function MilestoneSafetyBadges({ projectMode = "", milestone, className = "", dataTestId }) {
+  const labels = deriveMilestoneSafetyLabels({ projectMode, milestone });
+  if (!labels.length) return null;
+  return (
+    <div data-testid={dataTestId} className={`flex flex-wrap gap-1.5 ${className}`.trim()}>
+      {labels.map((label) => {
+        const key = Object.keys(SAFETY_META).find((metaKey) => SAFETY_META[metaKey].label === label) || "inspection_recommended";
+        return (
+          <span
+            key={label}
+            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${SAFETY_META[key]?.className || SAFETY_META.inspection_recommended.className}`}
+            title={label}
+          >
+            {label}
+          </span>
+        );
+      })}
+    </div>
   );
 }

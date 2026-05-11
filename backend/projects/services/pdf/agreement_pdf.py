@@ -39,7 +39,7 @@ except Exception:
 try:
   from projects.services.legal_clauses import build_legal_notices
 except Exception:  # pragma: no cover
-  def build_legal_notices(project_state: Optional[str] = None, payment_mode: Optional[str] = None) -> List[tuple[str, str]]:
+  def build_legal_notices(project_state: Optional[str] = None, payment_mode: Optional[str] = None, project_mode: Optional[str] = None) -> List[tuple[str, str]]:
     return [
       (
         "Terms Incorporated",
@@ -1062,7 +1062,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   story.append(Spacer(1, 6))
 
   project_state = _detect_project_state(ag)
-  clauses = build_legal_notices(project_state=project_state, payment_mode=payment_mode)
+  clauses = build_legal_notices(project_state=project_state, payment_mode=payment_mode, project_mode=_s(getattr(ag, "project_mode", "")))
 
   def _clause_block(title: str, text: str):
     parts = [Paragraph(title, s_h3)]
