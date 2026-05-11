@@ -266,6 +266,12 @@ def apply_conversion_prefill(*, agreement: Agreement, payload: Any, source=None)
         agreement.project_mode = project_mode
         agreement_updates.append("project_mode")
     payment_mode = _safe_text(data.get("payment_mode"))
+    if not payment_mode:
+        payment_preference = _safe_text(data.get("payment_preference"))
+        if payment_preference == "direct":
+            payment_mode = "direct"
+        elif payment_preference == "escrow":
+            payment_mode = "escrow"
     if not payment_mode and data.get("escrow_enabled") is not None:
         payment_mode = "escrow" if _safe_bool(data.get("escrow_enabled")) else "direct"
     if payment_mode:

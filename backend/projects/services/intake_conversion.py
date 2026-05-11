@@ -212,6 +212,8 @@ def convert_intake_to_agreement(
         intake.accomplishment_text,
         intake.customer_name,
     )
+    payment_preference = _safe_str(getattr(intake, "payment_preference", "")) or "escrow"
+    payment_mode = "direct" if payment_preference == "direct" else "escrow"
 
     agreement = Agreement.objects.create(
         project=project,
@@ -225,7 +227,7 @@ def convert_intake_to_agreement(
         project_address_city=_safe_str(intake.project_city),
         project_address_state=_safe_str(intake.project_state),
         project_postal_code=_safe_str(intake.project_postal_code),
-        payment_mode="escrow",
+        payment_mode=payment_mode,
         status="draft",
         project_class=project_class,
         project_mode=_safe_str(getattr(intake, "project_mode", "")) or "full_service",

@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from ..utils import categorize_project, load_legal_text
 from ..services.milestone_roles import infer_milestone_role, milestone_role_label, milestone_safety_labels, normalize_milestone_role
+from ..services.payment_protection import build_payment_protection_summary
 from ..models import (
     Project,
     Agreement,
@@ -623,6 +624,7 @@ class AgreementListPublicSerializer(serializers.ModelSerializer):
     project_title = serializers.SerializerMethodField()
     homeowner_name = serializers.SerializerMethodField()
     invoices_count = serializers.SerializerMethodField()
+    payment_protection = serializers.SerializerMethodField()
     signed_by_contractor = serializers.BooleanField(read_only=True)
     signed_by_homeowner = serializers.BooleanField(read_only=True)
     parent_agreement_id = serializers.SerializerMethodField()
@@ -639,6 +641,7 @@ class AgreementListPublicSerializer(serializers.ModelSerializer):
             "contractor_responsibilities",
             "excluded_work",
             "collaboration_summary_snapshot",
+            "payment_protection",
             "project_title", "homeowner_name",
             "invoices_count",
             "signed_by_contractor", "signed_by_homeowner",
@@ -660,6 +663,18 @@ class AgreementListPublicSerializer(serializers.ModelSerializer):
                     return v
             return getattr(h, "email", "") or f"#{getattr(h, 'id', '')}".strip()
         return ""
+
+    def get_payment_protection(self, obj):
+        try:
+            source_intake = getattr(obj, "source_intakes", None)
+            intake = source_intake.first() if source_intake is not None else None
+            return build_payment_protection_summary(
+                project_mode=getattr(obj, "project_mode", ""),
+                payment_preference=getattr(intake, "payment_preference", "") if intake is not None else getattr(obj, "payment_mode", ""),
+                milestones=getattr(obj, "milestones", []).all() if hasattr(getattr(obj, "milestones", None), "all") else [],
+            )
+        except Exception:
+            return {}
 
     def get_invoices_count(self, obj):
         invs = getattr(obj, "invoices", None)

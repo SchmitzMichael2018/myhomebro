@@ -21,6 +21,7 @@ from projects.services.legal_clauses import build_legal_notices
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.milestone_roles import annotate_milestone_roles
+from projects.services.payment_protection import build_payment_protection_summary
 from projects.services.pdf import build_agreement_pdf_bytes
 from projects.serializers.agreement import AgreementSerializer
 
@@ -154,6 +155,70 @@ class DIYAssistanceTests(TestCase):
         self.assertGreaterEqual(len(result["safety_warnings"]), 1)
         self.assertIn("licensed professionals", result["safety_warnings"][0].lower())
         self.assertEqual(result["project_mode"], "assisted_diy")
+
+    def test_intake_payment_preference_persists_and_guides_analysis(self):
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Customer Two B",
+            email="customer2b@example.com",
+        )
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            homeowner=homeowner,
+            customer_name="Customer Two B",
+            customer_email="customer2b@example.com",
+            project_class="residential",
+            project_mode="consultation",
+            accomplishment_text="Need guidance and payment flexibility for a kitchen update.",
+            project_address_line1="123 Main St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            payment_preference="discuss",
+        )
+
+        result = analyze_project_intake(intake=intake)
+
+        self.assertEqual(result["payment_preference"], "discuss")
+        self.assertEqual(result["payment_protection"]["label"], "Escrow Recommended")
+        self.assertEqual(result["payment_protection"]["level"], "recommended")
+
+    def test_payment_protection_requires_escrow_for_inspection_only_work(self):
+        summary = build_payment_protection_summary(
+            project_mode="inspection_only",
+            payment_preference="direct",
+            milestones=[],
+        )
+
+        self.assertEqual(summary["label"], "Escrow Required")
+        self.assertTrue(summary["requires_escrow"])
+        self.assertEqual(summary["recommended_payment_mode"], "escrow")
+
+    def test_convert_intake_to_agreement_maps_direct_payment_preference(self):
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Customer Two C",
+            email="customer2c@example.com",
+        )
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            homeowner=homeowner,
+            customer_name="Customer Two C",
+            customer_email="customer2c@example.com",
+            project_class="residential",
+            project_mode="full_service",
+            accomplishment_text="Need a standard remodel with direct payment preference.",
+            project_address_line1="123 Main St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            payment_preference="direct",
+        )
+
+        agreement = convert_intake_to_agreement(intake=intake, use_recommended_template=False)
+
+        self.assertEqual(agreement.payment_mode, "direct")
+        self.assertEqual(agreement.project_mode, "full_service")
 
     def test_legal_clauses_include_assisted_diy_collaboration_language(self):
         clauses = build_legal_notices(project_state="TX", payment_mode="escrow", project_mode="assisted_diy")
@@ -368,3 +433,4 @@ class DIYAssistanceTests(TestCase):
         self.assertIn("Homeowner Acknowledgements", extracted)
         self.assertIn("Inspection Checkpoints", extracted)
         self.assertIn("Rescue / Partial Completion Notes", extracted)
+        self.assertIn("Payment Protection", extracted)

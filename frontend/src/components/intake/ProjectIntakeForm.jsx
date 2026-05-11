@@ -25,6 +25,7 @@ const blankForm = {
 
   project_class: "residential",
   project_mode: "full_service",
+  payment_preference: "escrow",
   homeowner_participation_notes: "",
   homeowner_started_work: false,
   homeowner_task_summary: "",
@@ -139,6 +140,7 @@ export default function ProjectIntakeForm() {
               : prev.same_as_customer_address,
           project_class: data?.project_class || prev.project_class,
           project_mode: data?.project_mode || prev.project_mode,
+          payment_preference: data?.payment_preference || prev.payment_preference,
           homeowner_participation_notes: data?.homeowner_participation_notes || "",
           homeowner_started_work:
             data?.homeowner_started_work !== undefined ? Boolean(data.homeowner_started_work) : prev.homeowner_started_work,
@@ -784,6 +786,41 @@ export default function ProjectIntakeForm() {
               </div>
             </div>
           ) : null}
+
+          <div className="mt-4 rounded-lg border border-blue-100 bg-white p-4 shadow-sm" data-testid="payment-protection-preferences">
+            <div className="text-sm font-semibold text-slate-900">Payment &amp; Protection Preferences</div>
+            <p className="mt-1 text-sm text-slate-600">
+              Escrow milestone payments help protect both homeowners and contractors by releasing funds as work is completed and approved.
+            </p>
+            <div className="mt-3 grid gap-2">
+              {[
+                { value: "escrow", label: "Escrow milestone payments", help: "Recommended for most projects." },
+                { value: "direct", label: "Direct payment to contractor", help: "Pay directly through invoice or contractor arrangements." },
+                { value: "discuss", label: "Discuss payment options with contractor", help: "Keep payment structure flexible while you compare options." },
+              ].map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-sm ${
+                    form.payment_preference === opt.value
+                      ? "border-blue-500 bg-blue-50 text-blue-900"
+                      : "border-slate-200 bg-slate-50 text-slate-700"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="payment_preference"
+                    checked={form.payment_preference === opt.value}
+                    onChange={() => setField("payment_preference", opt.value)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="font-semibold">{opt.label}</span>
+                    <span className="mt-0.5 block text-xs text-slate-600">{opt.help}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
 
           <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
               <input

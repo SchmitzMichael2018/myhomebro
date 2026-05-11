@@ -9,6 +9,7 @@ from projects.services.project_plan_suggestions import build_project_plan_sugges
 from projects.services.estimation_engine import build_project_estimate
 from projects.services.project_quantity import build_quantity_context
 from projects.services.regions import build_region_context, build_region_context_from_key
+from projects.services.payment_protection import build_payment_protection_summary
 
 
 def _safe_text(value: Any) -> str:
@@ -128,6 +129,11 @@ def _normalize_project_payload(input_payload: Any) -> dict[str, Any]:
     project_timeline_days = payload.get("project_timeline_days")
     if project_timeline_days in (None, "", []):
         project_timeline_days = getattr(intake, "ai_project_timeline_days", None)
+    payment_preference = _safe_text(
+        payload.get("payment_preference")
+        or getattr(intake, "payment_preference", "")
+        or getattr(agreement, "payment_mode", "")
+    )
 
     photo_count = _safe_int(payload.get("photo_count"), 0)
     if photo_count <= 0 and intake is not None:
@@ -203,6 +209,7 @@ def _normalize_project_payload(input_payload: Any) -> dict[str, Any]:
         "measurement_handling": measurement_handling,
         "project_budget": project_budget,
         "project_timeline_days": project_timeline_days,
+        "payment_preference": payment_preference,
         "photo_count": photo_count,
         "quantity_context": quantity_context,
         "region_country": region_country,
@@ -241,6 +248,17 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
     intake_like = _build_intake_like(normalized)
 
     analysis = analyze_project_intake(intake=intake_like)
+    payment_preference = _safe_text(
+        normalized.get("payment_preference")
+        or getattr(normalized.get("intake"), "payment_preference", "")
+        or getattr(normalized.get("agreement"), "payment_mode", "")
+    ) or "escrow"
+    analysis["payment_preference"] = payment_preference
+    analysis["payment_protection"] = build_payment_protection_summary(
+        project_mode=analysis.get("project_mode") or normalized.get("project_mode"),
+        payment_preference=payment_preference,
+        milestones=analysis.get("milestones") or [],
+    )
     intelligence_context = build_project_intelligence_context(
         project_title=normalized["project_title"],
         project_type=normalized["project_type"],
@@ -296,6 +314,7 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
             "project_scope_summary": normalized["project_scope_summary"],
             "description": normalized["description"],
             "measurement_handling": normalized["measurement_handling"],
+            "payment_preference": payment_preference,
             "photo_count": normalized["photo_count"],
             "quantity_context": normalized["quantity_context"],
             "region_country": normalized["region_country"],

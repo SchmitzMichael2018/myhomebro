@@ -2047,6 +2047,21 @@ export default function ContractorDashboard() {
     }
     return counts;
   }, [agreements]);
+  const paymentProtectionStats = useMemo(() => {
+    const list = Array.isArray(agreements) ? agreements : [];
+    const counts = {
+      preferred: 0,
+      recommended: 0,
+      required: 0,
+    };
+    for (const item of list) {
+      const level = norm(item?.payment_protection?.level || item?.payment_protection?.label || "");
+      if (level.includes("required")) counts.required += 1;
+      else if (level.includes("recommended")) counts.recommended += 1;
+      else counts.preferred += 1;
+    }
+    return counts;
+  }, [agreements]);
   const collaborativeWorkflowStats = useMemo(() => {
     const list = Array.isArray(milestones) ? milestones : [];
     const counts = {
@@ -2364,6 +2379,49 @@ export default function ContractorDashboard() {
                   </div>
                   <div className="mt-1 text-sm text-slate-600">
                     Assisted DIY projects that still need homeowner progress or participation.
+                  </div>
+                </div>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2 xl:col-span-5">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                    Payment Protection
+                  </div>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                    {[
+                      {
+                        label: "Escrow Preferred",
+                        value: paymentProtectionStats.preferred,
+                        tone: "border-emerald-200 bg-white text-emerald-800",
+                        testId: "dashboard-payment-protection-preferred",
+                      },
+                      {
+                        label: "Escrow Recommended",
+                        value: paymentProtectionStats.recommended,
+                        tone: "border-amber-200 bg-white text-amber-800",
+                        testId: "dashboard-payment-protection-recommended",
+                      },
+                      {
+                        label: "Escrow Required",
+                        value: paymentProtectionStats.required,
+                        tone: "border-rose-200 bg-white text-rose-800",
+                        testId: "dashboard-payment-protection-required",
+                      },
+                    ].map((item) => (
+                      <div key={item.label} className={`rounded-xl border p-3 ${item.tone}`}>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80">
+                          {item.label}
+                        </div>
+                        <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid={item.testId}>
+                          {Number(item.value || 0).toLocaleString()}
+                        </div>
+                        <div className="mt-2 text-xs text-slate-600">
+                          {item.label === "Escrow Required"
+                            ? "Projects with restricted or inspection-led work."
+                            : item.label === "Escrow Recommended"
+                              ? "Collaborative projects and assisted DIY work."
+                              : "Standard milestone payment protection."}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

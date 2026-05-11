@@ -37,6 +37,7 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "property_type",
             "budget_range_text",
             "desired_timing_text",
+            "payment_preference",
             "homeowner_participation_notes",
             "homeowner_started_work",
             "homeowner_task_summary",
@@ -98,12 +99,22 @@ class ProjectIntakeAnalyzeResponseSerializer(serializers.Serializer):
     description = serializers.CharField(required=False, allow_blank=True)
     project_timeline_days = serializers.IntegerField(required=False, allow_null=True)
     project_budget = serializers.DecimalField(required=False, max_digits=12, decimal_places=2, allow_null=True)
+    payment_preference = serializers.ChoiceField(
+        choices=[
+            ("escrow", "Escrow milestone payments"),
+            ("direct", "Direct payment to contractor"),
+            ("discuss", "Discuss payment options"),
+        ],
+        required=False,
+        allow_blank=True,
+    )
     milestones = serializers.ListField(child=serializers.DictField(), required=False)
     clarification_questions = serializers.ListField(child=serializers.DictField(), required=False)
     clarification_answers = serializers.DictField(required=False)
     clarification_assumptions = serializers.ListField(child=serializers.CharField(), required=False)
     safety_warnings = serializers.ListField(child=serializers.CharField(), required=False)
     restricted_trade_categories = serializers.ListField(child=serializers.CharField(), required=False)
+    payment_protection = serializers.DictField(required=False)
     measurement_handling = serializers.ChoiceField(
         choices=[
             ("provided", "Provided"),

@@ -14,6 +14,7 @@ from projects.services.project_intelligence import (
 )
 from projects.services.project_quantity import build_quantity_context
 from projects.services.milestone_roles import annotate_milestone_roles, detect_restricted_trade_categories
+from projects.services.payment_protection import build_payment_protection_summary
 
 
 def _safe_str(value: Any) -> str:
@@ -1132,6 +1133,7 @@ def _refine_milestones(milestones: list[dict[str, Any]], answers: dict[str, Any]
 
 def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     accomplishment = _safe_str(intake.accomplishment_text)
+    payment_preference = _safe_str(getattr(intake, "payment_preference", "")) or "escrow"
     clarification_answers = _clarification_answers_map(intake)
     photo_count = 0
     try:
@@ -1224,6 +1226,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         return {
             "project_title": project_title,
             "project_mode": _safe_str(getattr(intake, "project_mode", "")) or "full_service",
+            "payment_preference": payment_preference,
             "template_id": template.id,
             "template_name": _safe_str(template.name),
             "confidence": confidence,
@@ -1249,6 +1252,11 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "measurement_handling": measurement_handling,
             "photo_count": photo_count,
             "quantity_context": quantity_context,
+            "payment_protection": build_payment_protection_summary(
+                project_mode=_safe_str(getattr(intake, "project_mode", "")) or "full_service",
+                payment_preference=payment_preference,
+                milestones=milestones,
+            ),
             "safety_warnings": (
                 [
                     "Certain portions of this project are typically handled by licensed professionals.",
@@ -1294,6 +1302,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     return {
         "project_title": project_title,
         "project_mode": _safe_str(getattr(intake, "project_mode", "")) or "full_service",
+        "payment_preference": payment_preference,
         "template_id": None,
         "template_name": "",
         "confidence": "none",
@@ -1319,6 +1328,11 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "measurement_handling": measurement_handling,
         "photo_count": photo_count,
         "quantity_context": quantity_context,
+        "payment_protection": build_payment_protection_summary(
+            project_mode=_safe_str(getattr(intake, "project_mode", "")) or "full_service",
+            payment_preference=payment_preference,
+            milestones=milestones,
+        ),
         "safety_warnings": (
             [
                 "Certain portions of this project are typically handled by licensed professionals.",

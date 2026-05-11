@@ -22,6 +22,12 @@ class ProjectIntake(models.Model):
         ("inspection_only", "Inspection Only"),
     ]
 
+    PAYMENT_PREFERENCE_CHOICES = [
+        ("escrow", "Escrow milestone payments"),
+        ("direct", "Direct payment to contractor"),
+        ("discuss", "Discuss payment options"),
+    ]
+
     LEAD_SOURCE_CHOICES = [
         ("landing_page", "Landing Page"),
         ("public_profile", "Public Profile"),
@@ -146,6 +152,11 @@ class ProjectIntake(models.Model):
     property_type = models.CharField(max_length=120, blank=True, default="")
     budget_range_text = models.CharField(max_length=120, blank=True, default="")
     desired_timing_text = models.CharField(max_length=120, blank=True, default="")
+    payment_preference = models.CharField(
+        max_length=20,
+        choices=PAYMENT_PREFERENCE_CHOICES,
+        default="escrow",
+    )
     homeowner_participation_notes = models.TextField(blank=True, default="")
     homeowner_started_work = models.BooleanField(default=False)
     homeowner_task_summary = models.TextField(blank=True, default="")

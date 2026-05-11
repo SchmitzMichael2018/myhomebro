@@ -25,6 +25,7 @@ export default function IntakeAiRecommendationPanel({
   const hasStrongMatch = result?.has_strong_template_match === true;
   const matchQuality = String(result?.match_quality || "").trim().toLowerCase();
   const safetyWarnings = Array.isArray(result?.safety_warnings) ? result.safety_warnings : [];
+  const paymentProtection = result?.payment_protection || null;
 
   function confidenceLabel(value) {
     const normalized = String(value || "").trim().toLowerCase();
@@ -157,6 +158,25 @@ export default function IntakeAiRecommendationPanel({
                     {safetyWarnings.slice(1).join(" ")}
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+
+            {paymentProtection?.label ? (
+              <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3" data-testid="intake-payment-protection">
+                <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                  Payment &amp; Protection
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-blue-200 bg-white px-2 py-1 text-[11px] font-semibold text-blue-800">
+                    {paymentProtection.label}
+                  </span>
+                  {paymentProtection.level ? (
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800">
+                      {String(paymentProtection.level).replace(/_/g, " ")}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">{paymentProtection.reason}</div>
               </div>
             ) : null}
 

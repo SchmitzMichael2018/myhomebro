@@ -102,6 +102,19 @@ function paymentModeLabel(mode) {
   return m === "direct" ? "Direct Pay" : "Escrow (Protected)";
 }
 
+function paymentProtectionLabel(value) {
+  const s = String(value || "").trim();
+  if (!s) return "Escrow Preferred";
+  return s;
+}
+
+function paymentProtectionTone(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized.includes("required")) return "border-rose-200 bg-rose-50 text-rose-800";
+  if (normalized.includes("recommended")) return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-emerald-200 bg-emerald-50 text-emerald-800";
+}
+
 function drawWorkflowStatus(draw) {
   return String(draw?.workflow_status || draw?.status || "").trim().toLowerCase();
 }
@@ -279,6 +292,7 @@ function normalizeAgreement(raw) {
       (!!raw.signed_by_contractor && !!raw.signed_by_homeowner),
 
     payment_mode,
+    payment_protection: raw.payment_protection || raw.raw?.payment_protection || {},
     isDirectPay,
 
     // Escrow-only
@@ -1881,6 +1895,17 @@ export default function AgreementDetail({ adminMode = false }) {
               className="border-sky-200 bg-white"
             />
             <SummaryCard
+              label="Payment Protection"
+              value={
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${paymentProtectionTone(norm.payment_protection?.label)}`}
+                >
+                  {paymentProtectionLabel(norm.payment_protection?.label)}
+                </span>
+              }
+              className="border-sky-200 bg-white"
+            />
+            <SummaryCard
               label="Project Mode"
               value={<ProjectModeBadge mode={norm.project_mode} />}
               className="border-sky-200 bg-white"
@@ -1924,6 +1949,24 @@ export default function AgreementDetail({ adminMode = false }) {
             </div>
           </div>
         ) : null}
+        <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-800" data-testid="agreement-payment-protection-summary">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                Payment Protection
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {paymentProtectionLabel(norm.payment_protection?.label)}
+              </div>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${paymentProtectionTone(norm.payment_protection?.label)}`}>
+              {paymentProtectionLabel(norm.payment_protection?.label)}
+            </span>
+          </div>
+          <div className="mt-2 text-sm text-slate-700">
+            {norm.payment_protection?.reason || "Escrow milestone payments help protect both homeowners and contractors."}
+          </div>
+        </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Homeowner participation</div>

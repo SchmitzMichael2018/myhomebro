@@ -18,6 +18,7 @@ except Exception:  # pragma: no cover
 
 from projects.models_ai_scope import AgreementAIScope
 from projects.services.assisted_diy import build_assisted_diy_snapshot
+from projects.services.payment_protection import build_payment_protection_summary
 
 try:
     from projects.models import DrawRequest, ExternalPaymentRecord, Milestone, Invoice  # type: ignore
@@ -594,6 +595,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     selected_template_name_snapshot = serializers.CharField(read_only=True)
     compliance_warning = serializers.SerializerMethodField()
     collaboration_summary = serializers.SerializerMethodField()
+    payment_protection = serializers.SerializerMethodField()
     responsibility_matrix = serializers.SerializerMethodField()
     homeowner_acknowledgements = serializers.SerializerMethodField()
     inspection_summary = serializers.SerializerMethodField()
@@ -655,6 +657,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         except Exception:
             return {
                 "summary": "",
+                "payment_protection": {},
                 "responsibility_matrix": {},
                 "homeowner_acknowledgements": [],
                 "inspection_summary": {},
@@ -663,6 +666,17 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def get_collaboration_summary(self, obj):
         return self._assisted_diy_snapshot(obj).get("summary", "")
+
+    def get_payment_protection(self, obj):
+        try:
+            return build_payment_protection_summary(
+                project_mode=getattr(obj, "project_mode", ""),
+                payment_preference=getattr(getattr(obj, "source_intake", None), "payment_preference", "")
+                or getattr(obj, "payment_mode", ""),
+                milestones=getattr(obj, "milestones", []).all() if hasattr(getattr(obj, "milestones", None), "all") else [],
+            )
+        except Exception:
+            return {}
 
     def get_responsibility_matrix(self, obj):
         return self._assisted_diy_snapshot(obj).get("responsibility_matrix", {})

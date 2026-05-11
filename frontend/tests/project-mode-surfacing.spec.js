@@ -68,6 +68,15 @@ const SHARED_AGREEMENT = {
     takeover_notes: "Homeowner will help with prep and cleanup.",
     contractor_takeover_notes: "Install equipment and supervise the work.",
   },
+  payment_protection: {
+    payment_preference: "escrow",
+    label: "Escrow Recommended",
+    level: "recommended",
+    reason: "Collaborative projects are usually best protected with milestone-based escrow.",
+    requires_escrow: false,
+    recommended_payment_mode: "escrow",
+    inspection_checkpoints: true,
+  },
   payment_mode: "escrow",
   status: "draft",
   total_cost: 8400,
@@ -324,6 +333,8 @@ test("project mode badges and assisted DIY surfaces render across the app", asyn
   await expect(page.getByTestId("agreement-detail-homeowner-acknowledgements")).toBeVisible();
   await expect(page.getByTestId("agreement-detail-inspection-checkpoints")).toBeVisible();
   await expect(page.getByTestId("agreement-detail-rescue-project-summary")).toBeVisible();
+  await expect(page.getByTestId("agreement-payment-protection-summary")).toBeVisible();
+  await expect(page.getByTestId("agreement-payment-protection-summary").locator("span").filter({ hasText: "Escrow Recommended" })).toBeVisible();
   await expect(page.getByText("Homeowner participation", { exact: true })).toBeVisible();
   await expect(page.getByTestId("agreement-milestone-role-1")).toHaveText("Homeowner Task");
   await expect(page.getByTestId("agreement-milestone-role-2")).toHaveText("Contractor Task");
@@ -337,6 +348,7 @@ test("project mode badges and assisted DIY surfaces render across the app", asyn
   await expect(page.getByTestId("dashboard-project-mode-assisted-diy")).toBeVisible();
   await expect(page.getByTestId("dashboard-collab-waiting-homeowner")).toBeVisible();
   await expect(page.getByTestId("dashboard-collab-shared-task")).toBeVisible();
+  await expect(page.getByTestId("dashboard-payment-protection-recommended")).toBeVisible();
 });
 
 test("assisted diy intake reveals the homeowner participation guidance fields", async ({ page }) => {
@@ -345,6 +357,7 @@ test("assisted diy intake reveals the homeowner participation guidance fields", 
   await page.goto("/app/intake/new", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("project-mode-option-assisted_diy")).toBeVisible({ timeout: 15000 });
   await page.getByTestId("project-mode-option-assisted_diy").click();
+  await expect(page.getByTestId("payment-protection-preferences")).toBeVisible();
   await page.getByPlaceholder("e.g., Replace leaking roof over garage and inspect flashing.").fill("Replace electrical panel with permit coordination.");
   await expect(page.getByTestId("assisted-diy-safety-banner")).toBeVisible();
   await expect(page.getByText("Many homeowners choose Assisted DIY")).toBeVisible();
