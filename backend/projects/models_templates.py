@@ -52,6 +52,11 @@ class ProjectTemplate(models.Model):
     exclusions_text = models.TextField(blank=True, default="")
     assumptions_text = models.TextField(blank=True, default="")
     default_clarifications = models.JSONField(blank=True, default=list)
+    workflow_profile = models.JSONField(
+        blank=True,
+        default=dict,
+        help_text="Flexible assisted-DIY workflow metadata such as assistance format, scheduling mode, and participation structure.",
+    )
     benchmark_match_key = models.CharField(
         max_length=120,
         blank=True,

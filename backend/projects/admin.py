@@ -679,6 +679,7 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
                         "description",
                         "default_scope",
                         "default_clarifications",
+                        "workflow_profile",
                         "visibility",
                         "allow_discovery",
                         "normalized_region_key",

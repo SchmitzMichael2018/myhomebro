@@ -173,6 +173,118 @@ def _materials_hint_from_materials(materials: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+WORKFLOW_ASSISTANCE_FORMATS = [
+    "hourly",
+    "half_day",
+    "full_day",
+    "milestone_based",
+    "consultation_only",
+]
+
+WORKFLOW_SCHEDULING_MODES = [
+    "hourly",
+    "session_based",
+    "daily",
+    "milestone_driven",
+]
+
+WORKFLOW_PARTICIPATION_PATTERNS = [
+    "homeowner_prep",
+    "shared_tasks",
+    "contractor_led_technical_work",
+    "inspection_review_checkpoints",
+]
+
+
+def _normalize_workflow_choice(value: Any, choices: List[str], fallback: str) -> str:
+    text = _safe_str(value).lower().replace("-", "_").replace(" ", "_")
+    if text in choices:
+        return text
+    return fallback
+
+
+def _workflow_structure_defaults(project_type: str, project_subtype: str, description: str) -> Dict[str, Any]:
+    seed = f"{project_type} {project_subtype} {description}".lower()
+    if any(term in seed for term in ("consult", "inspection")):
+        return {
+            "assistance_format": "consultation_only",
+            "scheduling_mode": "session_based",
+            "billing_style": "consultation",
+            "participation_structure": [
+                "shared_tasks",
+                "inspection_review_checkpoints",
+            ],
+            "workflow_notes": "Focused guidance and review with contractor-led technical decisions.",
+        }
+    if any(term in seed for term in ("hour", "small repair", "handyman", "service call")):
+        return {
+            "assistance_format": "hourly",
+            "scheduling_mode": "hourly",
+            "billing_style": "hourly",
+            "participation_structure": [
+                "homeowner_prep",
+                "shared_tasks",
+                "contractor_led_technical_work",
+            ],
+            "workflow_notes": "Best used for short collaborative sessions and scoped troubleshooting.",
+        }
+    if any(term in seed for term in ("paint", "floor", "finish", "trim")):
+        return {
+            "assistance_format": "half_day",
+            "scheduling_mode": "session_based",
+            "billing_style": "session",
+            "participation_structure": [
+                "homeowner_prep",
+                "shared_tasks",
+                "contractor_led_technical_work",
+                "inspection_review_checkpoints",
+            ],
+            "workflow_notes": "Works well for prep, install, and review phases with homeowner participation.",
+        }
+    return {
+        "assistance_format": "milestone_based",
+        "scheduling_mode": "milestone_driven",
+        "billing_style": "milestone",
+        "participation_structure": [
+            "homeowner_prep",
+            "shared_tasks",
+            "contractor_led_technical_work",
+            "inspection_review_checkpoints",
+        ],
+        "workflow_notes": "Reusable collaboration workflow with flexible timing and milestone checkpoints.",
+    }
+
+
+def _normalize_workflow_profile(raw: Any, project_type: str, project_subtype: str, description: str) -> Dict[str, Any]:
+    defaults = _workflow_structure_defaults(project_type, project_subtype, description)
+    if not isinstance(raw, dict):
+        return defaults
+
+    participation = raw.get("participation_structure")
+    if not isinstance(participation, list):
+        participation = []
+    participation_values = [
+        _normalize_workflow_choice(item, WORKFLOW_PARTICIPATION_PATTERNS, "") for item in participation
+    ]
+    participation_values = [item for item in participation_values if item]
+
+    return {
+        "assistance_format": _normalize_workflow_choice(
+            raw.get("assistance_format"),
+            WORKFLOW_ASSISTANCE_FORMATS,
+            defaults["assistance_format"],
+        ),
+        "scheduling_mode": _normalize_workflow_choice(
+            raw.get("scheduling_mode"),
+            WORKFLOW_SCHEDULING_MODES,
+            defaults["scheduling_mode"],
+        ),
+        "billing_style": _safe_str(raw.get("billing_style")) or defaults["billing_style"],
+        "participation_structure": participation_values or list(defaults["participation_structure"]),
+        "workflow_notes": _safe_str(raw.get("workflow_notes")) or defaults["workflow_notes"],
+    }
+
+
 def _clarification_question_objects(questions: List[str]) -> List[Dict[str, Any]]:
     normalized = []
     for idx, question in enumerate(questions, start=1):
@@ -575,6 +687,7 @@ def _build_fallback_template_bundle(
     milestones = _fallback_template_milestones(project_type, project_subtype, description)
     pricing = _fallback_template_pricing(milestones)
     materials = _fallback_template_materials(project_type, project_subtype, description)
+    workflow_profile = _normalize_workflow_profile(None, project_type, project_subtype, description)
     clarification_questions = _fallback_template_clarifications(project_type, project_subtype, description)
     default_clarifications = _clarification_question_objects(clarification_questions)
     project_materials_hint = _materials_hint_from_materials(materials)
@@ -604,6 +717,7 @@ def _build_fallback_template_bundle(
         "assumptions_text": "",
         "exclusions_text": "",
         "default_clarifications": default_clarifications,
+        "workflow_profile": workflow_profile,
         "milestones": milestones,
         "pricing": pricing,
         "materials": materials,
@@ -617,6 +731,7 @@ def _build_fallback_template_bundle(
             "pricing": "fallback",
             "materials": "fallback",
             "clarifications": "fallback",
+            "workflow": "fallback",
         },
     }
 
@@ -992,18 +1107,23 @@ def create_template_from_scope(
     system = (
         "You are an AI contractor assistant building reusable construction project templates.\n"
         "Create a reusable template draft from a rough scope.\n"
+        "Treat the result as a flexible collaboration workflow template rather than a rigid daily project schedule.\n"
         f"{_template_scope_description_prompt()}"
         "Additional template rules:\n"
         "- Put missing specifics into clarification questions.\n"
         "- Milestone descriptions must be generic and repeatable.\n"
-        "- Include milestone pricing guidance, schedule hints, and materials hints.\n"
+        "- Include milestone pricing guidance, workflow hints, and materials hints.\n"
+        "- Include a workflow_profile that describes assistance format, scheduling mode, billing style, and participation structure.\n"
+        "- Prefer assistance formats such as hourly, half-day, full-day, milestone-based, or consultation-only instead of assuming a fixed daily schedule.\n"
+        "- Prefer scheduling modes such as hourly, session-based, daily, or milestone-driven depending on the trade and project style.\n"
+        "- participation_structure should reflect homeowner prep, shared tasks, contractor-led technical work, and inspection/review checkpoints as appropriate.\n"
         "- Suggest project-level materials guidance as a broad list, not exact takeoff quantities.\n"
         "- project_materials_hint must contain useful project-level material categories, not vague filler text.\n"
         "- materials_hint for each milestone must list realistic materials, tools, or consumables commonly associated with that milestone.\n"
+        "- For Assisted DIY templates, keep homeowner-safe work flexible and let technical or licensed work stay contractor-led.\n"
         "- For roofing, include realistic items like shingles, underlayment, drip edge, flashing, fasteners, sealants, vents, disposal materials, and safety gear where appropriate.\n"
         "- Avoid generic phrases like 'materials as needed', 'tools required', or other vague filler language.\n"
-        "- The first milestone must start on day 0.\n"
-        "- Milestone start days must be sequential and realistic.\n"
+        "- Milestone start days may be flexible; use offsets only when the workflow benefits from sequencing.\n"
         "- recommended_duration_days must be at least 1 when provided.\n"
         "- Every milestone MUST include pricing guidance.\n"
         "- Do NOT leave pricing fields blank.\n"
@@ -1108,6 +1228,39 @@ def create_template_from_scope(
                         ],
                     },
                 },
+                "workflow_profile": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "assistance_format": {
+                            "type": "string",
+                            "enum": WORKFLOW_ASSISTANCE_FORMATS,
+                        },
+                        "scheduling_mode": {
+                            "type": "string",
+                            "enum": WORKFLOW_SCHEDULING_MODES,
+                        },
+                        "billing_style": {
+                            "type": "string",
+                            "enum": ["hourly", "session", "daily", "milestone", "consultation"],
+                        },
+                        "participation_structure": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": WORKFLOW_PARTICIPATION_PATTERNS,
+                            },
+                        },
+                        "workflow_notes": {"type": "string"},
+                    },
+                    "required": [
+                        "assistance_format",
+                        "scheduling_mode",
+                        "billing_style",
+                        "participation_structure",
+                        "workflow_notes",
+                    ],
+                },
                 "milestones": {
                     "type": "array",
                     "items": {
@@ -1160,6 +1313,7 @@ def create_template_from_scope(
                 "timeline",
                 "clarification_questions",
                 "default_clarifications",
+                "workflow_profile",
                 "milestones",
             ],
         },
@@ -1203,12 +1357,19 @@ def create_template_from_scope(
     timeline = _normalize_timeline_text(payload.get("timeline"), estimated_days)
     clarification_questions = _normalize_clarification_strings(payload.get("clarification_questions"))
     questions = _canonicalize_questions(payload.get("default_clarifications"))
+    workflow_profile = _normalize_workflow_profile(
+        payload.get("workflow_profile"),
+        project_type,
+        project_subtype,
+        _safe_str(payload.get("description")) or _safe_str(description),
+    )
     sections_status = {
         "description": "generated" if _safe_str(payload.get("description")) else "fallback",
         "milestones": "generated" if milestones else "fallback",
         "pricing": "generated" if pricing.get("milestone_percentages") else "fallback",
         "materials": "generated" if materials else "fallback",
         "clarifications": "generated" if questions or clarification_questions else "fallback",
+        "workflow": "generated" if isinstance(payload.get("workflow_profile"), dict) else "fallback",
     }
 
     if not milestones:
@@ -1266,6 +1427,7 @@ def create_template_from_scope(
         "assumptions_text": assumptions_text,
         "exclusions_text": exclusions_text,
         "default_clarifications": questions,
+        "workflow_profile": workflow_profile,
         "milestones": milestones,
         "pricing": pricing,
         "materials": materials,

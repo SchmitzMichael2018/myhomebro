@@ -17332,6 +17332,18 @@ class TemplateAIGenerationTests(TestCase):
             "description": "Scope of Work\nWork includes a reusable kitchen remodel scope.\n\nIncluded Work Phases\n- Planning\n- Demo\n- Install\n\nOptional Components\n- May include appliance upgrades when specified.",
             "estimated_days": 14,
             "project_materials_hint": "Cabinetry, trim, fasteners, sealant, cleanup materials.",
+            "workflow_profile": {
+                "assistance_format": "milestone_based",
+                "scheduling_mode": "milestone_driven",
+                "billing_style": "milestone",
+                "participation_structure": [
+                    "homeowner_prep",
+                    "shared_tasks",
+                    "contractor_led_technical_work",
+                    "inspection_review_checkpoints",
+                ],
+                "workflow_notes": "Flexible collaboration workflow with homeowner participation.",
+            },
             "pricing": {
                 "total_range": "$18,000-$28,000",
                 "milestone_percentages": [
@@ -17418,6 +17430,9 @@ class TemplateAIGenerationTests(TestCase):
         self.assertEqual(result["pricing"]["total_range"], "$18,000-$28,000")
         self.assertEqual(result["pricing"]["milestone_percentages"][0]["milestone"], "Planning & site protection")
         self.assertEqual(result["materials"][0]["category"], "Project Materials")
+        self.assertEqual(result["workflow_profile"]["assistance_format"], "milestone_based")
+        self.assertEqual(result["workflow_profile"]["scheduling_mode"], "milestone_driven")
+        self.assertIn("homeowner_prep", result["workflow_profile"]["participation_structure"])
         self.assertEqual(result["clarification_questions"], fake_payload["clarification_questions"])
         self.assertTrue(result["default_clarifications"])
         self.assertIn("insights", result)
@@ -17428,6 +17443,8 @@ class TemplateAIGenerationTests(TestCase):
         self.assertTrue(result["insights"]["completeness"]["has_pricing"])
         self.assertTrue(result["insights"]["completeness"]["has_materials"])
         self.assertTrue(result["insights"]["completeness"]["has_clarifications"])
+        self.assertIn("workflow", result["sections_status"])
+        self.assertEqual(result["sections_status"]["workflow"], "generated")
         self.assertEqual(result["milestones"][0]["payment_guidance"], "Use an initial deposit to cover setup and mobilization.")
         self.assertEqual(result["milestones"][0]["notes"], "Do not start demolition until selections are confirmed.")
 
@@ -17448,6 +17465,13 @@ class TemplateAIGenerationTests(TestCase):
             ),
             "estimated_days": 10,
             "project_materials_hint": "Framing lumber, sheathing, roofing, fasteners.",
+            "workflow_profile": {
+                "assistance_format": "half_day",
+                "scheduling_mode": "session_based",
+                "billing_style": "session",
+                "participation_structure": ["homeowner_prep", "shared_tasks"],
+                "workflow_notes": "Short collaborative sessions.",
+            },
             "pricing": {"total_range": "Consult contractor for pricing", "milestone_percentages": []},
             "materials": [],
             "timeline": "About 10 working days",
@@ -17520,6 +17544,34 @@ class TemplateAIGenerationTests(TestCase):
         self.assertIn("timeline", result["insights"])
         self.assertIn("pricing", result["insights"])
         self.assertIn("completeness", result["insights"])
+        self.assertIn("workflow_profile", result)
+        self.assertEqual(result["workflow_profile"]["assistance_format"], "milestone_based")
+        self.assertEqual(result["workflow_profile"]["scheduling_mode"], "milestone_driven")
+        self.assertEqual(result["_generation_status"]["workflow"], "fallback")
+
+    def test_project_template_serializers_expose_workflow_profile(self):
+        from projects.serializers_template import ProjectTemplateDetailSerializer, ProjectTemplateListSerializer
+
+        template = ProjectTemplate.objects.create(
+            name="Assisted DIY Workflow",
+            project_type="Repair",
+            project_subtype="Assisted DIY",
+            description="Flexible collaboration workflow for homeowner-assisted projects.",
+            workflow_profile={
+                "assistance_format": "hourly",
+                "scheduling_mode": "session_based",
+                "billing_style": "hourly",
+                "participation_structure": ["homeowner_prep", "shared_tasks"],
+                "workflow_notes": "Short guided sessions.",
+            },
+        )
+
+        list_payload = ProjectTemplateListSerializer(template).data
+        detail_payload = ProjectTemplateDetailSerializer(template).data
+
+        self.assertEqual(list_payload["workflow_profile"]["assistance_format"], "hourly")
+        self.assertEqual(detail_payload["workflow_profile"]["scheduling_mode"], "session_based")
+        self.assertIn("shared_tasks", detail_payload["workflow_profile"]["participation_structure"])
 
 
 class TemplateAIPermissionGateTests(TestCase):

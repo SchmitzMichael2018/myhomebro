@@ -69,6 +69,17 @@ def _safe_decimal(value, default=Decimal("0.00")) -> Decimal:
         return default
 
 
+def _normalize_project_mode(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"assisted_diy", "diy_assistance", "diy", "diy_help", "diyhelp"}:
+        return "assisted_diy"
+    if text in {"consultation", "consultation_only", "consult"}:
+        return "consultation"
+    if text in {"inspection", "inspection_only", "inspection_only_work"}:
+        return "inspection_only"
+    return "full_service"
+
+
 def _resolve_agreement_total_amount(agreement: Agreement) -> Decimal:
     return _safe_decimal(getattr(agreement, "total_cost", None), Decimal("0.00"))
 
@@ -639,6 +650,9 @@ def duplicate_template_for_contractor(
         default_clarifications=template_data.get("default_clarifications")
         if isinstance(template_data.get("default_clarifications"), list)
         else list(source_template.default_clarifications or []),
+        workflow_profile=template_data.get("workflow_profile")
+        if isinstance(template_data.get("workflow_profile"), dict)
+        else dict(getattr(source_template, "workflow_profile", {}) or {}),
         project_materials_hint=str(
             template_data.get("project_materials_hint") or source_template.project_materials_hint or ""
         ).strip(),
@@ -723,6 +737,51 @@ def _extract_agreement_clarification_questions(agreement: Agreement) -> list[dic
     except Exception:
         pass
     return []
+
+
+def _workflow_profile_for_agreement(agreement: Agreement) -> dict[str, Any]:
+    selected_template = getattr(agreement, "selected_template", None)
+    workflow_profile = getattr(selected_template, "workflow_profile", None) if selected_template else None
+    if isinstance(workflow_profile, dict) and workflow_profile:
+        return dict(workflow_profile)
+
+    mode = normalize_project_mode(getattr(agreement, "project_mode", ""))
+    if mode == "consultation":
+        return {
+            "assistance_format": "consultation_only",
+            "scheduling_mode": "session_based",
+            "billing_style": "consultation",
+            "participation_structure": ["shared_tasks", "inspection_review_checkpoints"],
+            "workflow_notes": "Consultation-only workflows should stay review focused and contractor-led.",
+        }
+    if mode == "inspection_only":
+        return {
+            "assistance_format": "consultation_only",
+            "scheduling_mode": "session_based",
+            "billing_style": "consultation",
+            "participation_structure": ["inspection_review_checkpoints"],
+            "workflow_notes": "Inspection-only workflows should focus on review, signoff, and follow-up.",
+        }
+    if mode == "assisted_diy":
+        return {
+            "assistance_format": "milestone_based",
+            "scheduling_mode": "milestone_driven",
+            "billing_style": "milestone",
+            "participation_structure": [
+                "homeowner_prep",
+                "shared_tasks",
+                "contractor_led_technical_work",
+                "inspection_review_checkpoints",
+            ],
+            "workflow_notes": "Flexible assisted DIY workflow with homeowner participation and contractor-led technical work.",
+        }
+    return {
+        "assistance_format": "full_day",
+        "scheduling_mode": "daily",
+        "billing_style": "daily",
+        "participation_structure": ["contractor_led_technical_work", "inspection_review_checkpoints"],
+        "workflow_notes": "Standard full-service workflow with contractor-led phases and review checkpoints.",
+    }
 
 
 def _template_row_suggested_amount(row, agreement_total: Decimal) -> Decimal:
@@ -1040,6 +1099,7 @@ def save_agreement_as_template(
         retainage_percent=_safe_decimal(getattr(agreement, "retainage_percent", None), Decimal("0.00")),
         default_scope=template_scope_text,
         default_clarifications=template_questions,
+        workflow_profile=_workflow_profile_for_agreement(agreement),
         is_system=False,
         is_active=is_active,
         visibility=ProjectTemplate.Visibility.PRIVATE,

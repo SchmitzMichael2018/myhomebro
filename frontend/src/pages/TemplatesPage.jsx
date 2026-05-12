@@ -127,6 +127,83 @@ function standardizeTemplateMilestoneType(value = "", fallbackText = "") {
   return canonicalizeTemplateMilestoneType(value, fallbackText) || "";
 }
 
+const WORKFLOW_ASSISTANCE_OPTIONS = [
+  { value: "hourly", label: "Hourly Help" },
+  { value: "half_day", label: "Half-Day Assistance" },
+  { value: "full_day", label: "Full-Day Assistance" },
+  { value: "milestone_based", label: "Milestone-Based Assistance" },
+  { value: "consultation_only", label: "Consultation Only" },
+];
+
+const WORKFLOW_SCHEDULING_OPTIONS = [
+  { value: "hourly", label: "Hourly" },
+  { value: "session_based", label: "Session-Based" },
+  { value: "daily", label: "Daily" },
+  { value: "milestone_driven", label: "Milestone-Driven" },
+];
+
+const WORKFLOW_PARTICIPATION_OPTIONS = [
+  { value: "homeowner_prep", label: "Homeowner prep" },
+  { value: "shared_tasks", label: "Shared tasks" },
+  { value: "contractor_led_technical_work", label: "Contractor-led technical work" },
+  { value: "inspection_review_checkpoints", label: "Inspection / review checkpoints" },
+];
+
+function normalizeWorkflowValue(value, fallback) {
+  const normalized = safeTrim(value).toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  return normalized || fallback;
+}
+
+function normalizeWorkflowProfile(profile) {
+  const defaultProfile = {
+    assistance_format: "milestone_based",
+    scheduling_mode: "milestone_driven",
+    billing_style: "milestone",
+    participation_structure: [
+      "homeowner_prep",
+      "shared_tasks",
+      "contractor_led_technical_work",
+      "inspection_review_checkpoints",
+    ],
+    workflow_notes: "Flexible collaboration workflow with trade-specific milestones.",
+  };
+
+  if (!profile || typeof profile !== "object") {
+    return defaultProfile;
+  }
+
+  const assistance_format = normalizeWorkflowValue(profile.assistance_format, defaultProfile.assistance_format);
+  const scheduling_mode = normalizeWorkflowValue(profile.scheduling_mode, defaultProfile.scheduling_mode);
+  const billing_style = safeTrim(profile.billing_style) || defaultProfile.billing_style;
+  const participation_structure = Array.isArray(profile.participation_structure)
+    ? profile.participation_structure.map((item) => normalizeWorkflowValue(item, "")).filter(Boolean)
+    : [];
+
+  return {
+    assistance_format,
+    scheduling_mode,
+    billing_style,
+    participation_structure: participation_structure.length
+      ? Array.from(new Set(participation_structure))
+      : defaultProfile.participation_structure,
+    workflow_notes: safeTrim(profile.workflow_notes) || defaultProfile.workflow_notes,
+  };
+}
+
+function workflowAssistanceLabel(value) {
+  return (
+    WORKFLOW_ASSISTANCE_OPTIONS.find((item) => item.value === normalizeWorkflowValue(value, ""))?.label ||
+    "Milestone-Based Assistance"
+  );
+}
+
+function workflowSchedulingLabel(value) {
+  return (
+    WORKFLOW_SCHEDULING_OPTIONS.find((item) => item.value === normalizeWorkflowValue(value, ""))?.label ||
+    "Milestone-Driven"
+  );
+}
+
 function OptionBadge({ ownerType }) {
   const text = ownerType === "system" ? "System / Built-in" : "Custom";
   return (
@@ -239,6 +316,7 @@ function buildBlankHeader() {
     estimated_days: 1,
     default_scope: "",
     default_clarifications: [],
+    workflow_profile: normalizeWorkflowProfile(null),
     project_materials_hint: "",
     is_active: true,
   };
@@ -333,6 +411,7 @@ function normalizeHeaderForEdit(detail) {
     default_clarifications: Array.isArray(detail?.default_clarifications)
       ? detail.default_clarifications
       : [],
+    workflow_profile: normalizeWorkflowProfile(detail?.workflow_profile),
     project_materials_hint: detail?.project_materials_hint ?? "",
     is_active: detail?.is_active ?? true,
   };
@@ -352,6 +431,7 @@ function buildTemplatePayload(header, milestones, extras = {}) {
     default_clarifications: Array.isArray(header?.default_clarifications)
       ? header.default_clarifications
       : [],
+    workflow_profile: normalizeWorkflowProfile(header?.workflow_profile),
     project_materials_hint: header?.project_materials_hint ?? "",
     is_active: header?.is_active ?? true,
     source_template_id: extras?.source_template_id,
@@ -698,6 +778,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       description: seed?.description ?? "",
       default_scope: seed?.description ?? "",
       default_clarifications: [],
+      workflow_profile: normalizeWorkflowProfile(seed?.workflow_profile),
       project_materials_hint: seed?.project_materials_hint ?? "",
     });
     setEditMilestones([buildBlankMilestone(1)]);
@@ -817,6 +898,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       default_clarifications: Array.isArray(header?.default_clarifications)
         ? header.default_clarifications
         : [],
+      workflow_profile: normalizeWorkflowProfile(header?.workflow_profile),
       project_materials_hint: header?.project_materials_hint ?? "",
       is_active: header?.is_active !== false,
     });
@@ -847,7 +929,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         options: Array.isArray(item.options) ? item.options : [],
       }));
 
-    const headerPatch = {
+      const headerPatch = {
       name:
         safeTrim(assistantHandoff.prefillFields.template_name) ||
         safeTrim(assistantHandoff.prefillFields.template_query) ||
@@ -875,6 +957,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         assistantHandoff.draftPayload.description ||
         "",
       default_clarifications: assistantQuestions,
+      workflow_profile: normalizeWorkflowProfile(assistantHandoff.draftPayload.workflow_profile),
     };
 
     if (
@@ -903,9 +986,13 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           Array.isArray(prev.default_clarifications) && prev.default_clarifications.length
             ? prev.default_clarifications
             : assistantQuestions,
+        workflow_profile:
+          prev.workflow_profile && Object.keys(prev.workflow_profile || {}).length
+            ? prev.workflow_profile
+            : headerPatch.workflow_profile,
       }));
       setAssistantPrefillBanner(
-        "AI prefilled this template draft from your request. Review the structure and clarifications before saving."
+        "AI prefilled this template draft from your request. Review the workflow, structure, and clarifications before saving."
       );
     } else {
       setAssistantPrefillBanner("");
@@ -1220,6 +1307,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         prompt,
       });
       const sections = normalizeTemplateScopeSections(data);
+      const workflowProfile = normalizeWorkflowProfile(data?.workflow_profile);
       const nextMilestones = Array.isArray(data?.milestones) && data.milestones.length
         ? data.milestones.map((m, idx) =>
             normalizeMilestoneForEdit(
@@ -1246,6 +1334,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         default_clarifications: Array.isArray(data?.default_clarifications)
           ? data.default_clarifications
           : [],
+        workflow_profile: workflowProfile,
         project_materials_hint: data?.project_materials_hint || "",
       });
       setGeneratedAiDraft(data || null);
@@ -2129,7 +2218,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                   active={activeTab === "schedule"}
                   onClick={() => setActiveTab("schedule")}
                 >
-                  Schedule
+                  Workflow Timing
                 </TabButton>
                 <TabButton
                   data-testid="templates-tab-materials"
@@ -2245,7 +2334,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       />
                       <div className="mt-2 text-xs text-slate-500">
                         This description should be generic and reusable across projects.
-                        Avoid exact measurements or quantities — those will be collected later via clarifications.
+                        Avoid exact measurements or quantities — flexible workflow details can be tuned later.
                       </div>
                     </div>
 
@@ -2280,6 +2369,125 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       />
                       <div className="mt-2 text-xs text-slate-500">
                         Assumptions clarify expected access, site conditions, selections, and responsibilities for similar jobs.
+                      </div>
+                    </div>
+
+                    <div
+                      data-testid="templates-workflow-profile"
+                      className="md:col-span-2 rounded-xl border border-slate-200 bg-white p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">Workflow Profile</div>
+                          <div className="text-xs text-slate-500">
+                            Shape the template as hourly help, session-based support, or milestone-driven collaboration.
+                          </div>
+                        </div>
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          Assisted DIY Workflow
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-700">Assistance Format</label>
+                          <select
+                            data-testid="templates-workflow-assistance-format"
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            value={currentHeader?.workflow_profile?.assistance_format || "milestone_based"}
+                            onChange={(e) =>
+                              updateHeader("workflow_profile", {
+                                ...normalizeWorkflowProfile(currentHeader?.workflow_profile),
+                                assistance_format: e.target.value,
+                              })
+                            }
+                            disabled={!editMode && !creatingNew}
+                          >
+                            {WORKFLOW_ASSISTANCE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-700">Scheduling Mode</label>
+                          <select
+                            data-testid="templates-workflow-scheduling-mode"
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            value={currentHeader?.workflow_profile?.scheduling_mode || "milestone_driven"}
+                            onChange={(e) =>
+                              updateHeader("workflow_profile", {
+                                ...normalizeWorkflowProfile(currentHeader?.workflow_profile),
+                                scheduling_mode: e.target.value,
+                              })
+                            }
+                            disabled={!editMode && !creatingNew}
+                          >
+                            {WORKFLOW_SCHEDULING_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold text-slate-700">Billing Style</label>
+                          <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                            {safeTrim(currentHeader?.workflow_profile?.billing_style) || "milestone"}
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500">
+                            Used as guidance for hourly, session, milestone, or consultation-based workflows.
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                          Participation Structure
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {WORKFLOW_PARTICIPATION_OPTIONS.map((option) => {
+                            const selected =
+                              Array.isArray(currentHeader?.workflow_profile?.participation_structure) &&
+                              currentHeader.workflow_profile.participation_structure.includes(option.value);
+                            return (
+                              <label
+                                key={option.value}
+                                className={`inline-flex cursor-pointer items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                  selected
+                                    ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={selected}
+                                  onChange={(e) => {
+                                    const current = Array.isArray(currentHeader?.workflow_profile?.participation_structure)
+                                      ? currentHeader.workflow_profile.participation_structure
+                                      : [];
+                                    const next = e.target.checked
+                                      ? Array.from(new Set([...current, option.value]))
+                                      : current.filter((item) => item !== option.value);
+                                    updateHeader("workflow_profile", {
+                                      ...normalizeWorkflowProfile(currentHeader?.workflow_profile),
+                                      participation_structure: next,
+                                    });
+                                  }}
+                                  disabled={!editMode && !creatingNew}
+                                />
+                                {option.label}
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          Keep homeowner-safe prep, shared tasks, and contractor-led technical work flexible per trade.
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2330,12 +2538,18 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         </div>
                         <div className="rounded-md bg-white/80 px-3 py-2">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-                            Clarifications
+                            Workflow
                           </div>
                           <div className="mt-1">
-                            {generatedClarificationQuestions.length
-                              ? `${generatedClarificationQuestions.length} follow-up question${generatedClarificationQuestions.length === 1 ? "" : "s"} prepared.`
-                              : "Clarification questions are ready to edit."}
+                            {safeTrim(generatedAiDraft?.workflow_profile?.assistance_format) || safeTrim(currentHeader?.workflow_profile?.assistance_format)
+                              ? `${workflowAssistanceLabel(
+                                  generatedAiDraft?.workflow_profile?.assistance_format ||
+                                    currentHeader?.workflow_profile?.assistance_format
+                                )} / ${workflowSchedulingLabel(
+                                  generatedAiDraft?.workflow_profile?.scheduling_mode ||
+                                    currentHeader?.workflow_profile?.scheduling_mode
+                                )}`
+                              : "Flexible workflow settings are ready to edit."}
                           </div>
                         </div>
                       </div>
@@ -2696,9 +2910,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
               ) : null}
 
               {activeTab === "schedule" ? (
-                <SectionCard title="Schedule">
+                <SectionCard title="Workflow Timing">
                   <div className="mb-2 text-xs text-slate-500">
-                    These are estimated offsets and durations. Actual scheduling will be calculated when the agreement is created.
+                    These are optional timing hints. Flexible workflows can stay light here and let the agreement calculate the live schedule later.
                   </div>
                   {(editMode || creatingNew) ? (
                     <div className="mb-3">
@@ -2889,7 +3103,7 @@ const AI_GENERATION_STEP_ITEMS = [
   { key: "milestones", label: "Building milestones" },
   { key: "pricing", label: "Adding pricing guidance" },
   { key: "materials", label: "Suggesting materials" },
-  { key: "clarifications", label: "Preparing clarifying questions" },
+  { key: "workflow", label: "Designing workflow profile" },
 ];
 
 const AI_GENERATION_SECTION_LABELS = {
@@ -2898,6 +3112,7 @@ const AI_GENERATION_SECTION_LABELS = {
   pricing: "pricing guidance",
   materials: "materials",
   clarifications: "clarifying questions",
+  workflow: "workflow profile",
 };
 
 function getAiGenerationStepLabel(index) {
