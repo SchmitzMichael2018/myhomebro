@@ -43,6 +43,7 @@ const NAV_HINTS = {
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
   "/app/templates": "Build reusable project templates and milestone structures",
+  "/app/admin/marketplace": "Discover, import, and manage contractor listings",
   "/app/milestones": "Track active work and what's ready to invoice",
   "/app/subcontractors": "Manage your team, subcontractors, and assignments",
   "/app/public-presence": "Showcase your work and build trust with customers",
@@ -314,6 +315,7 @@ export default function Sidebar({ variant = "desktop" }) {
           {isOnAdminRoute && (
             <div className="mt-2 space-y-1">
               <SubItem to="/app/admin" label="Overview" />
+              <SubItem to="/app/admin/marketplace" label="Marketplace" />
               <SubItem to="/app/admin/templates" label="Templates" />
               <SubItem to="/app/admin?view=goals" label="Goals (CEO)" />
               <SubItem to="/app/admin?view=contractors" label="Contractors" />

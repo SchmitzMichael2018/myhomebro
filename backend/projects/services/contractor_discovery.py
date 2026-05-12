@@ -727,6 +727,7 @@ def claim_discovery_invite(invite: ContractorDiscoveryInvite, *, contractor: Con
     listing.claimed_contractor = contractor
     listing.save(update_fields=["claimed_profile", "claimed_contractor", "updated_at"])
     invite.contractor = contractor
+    invite.response_at = timezone.now()
     invite.touch_claimed()
 
     intake = invite.public_intake

@@ -9,6 +9,7 @@ import ContractorDashboard from "../components/ContractorDashboard.jsx";
 
 /* ✅ Admin */
 import AdminDashboard from "../pages/AdminDashboard.jsx";
+import AdminMarketplacePage from "../pages/admin/AdminMarketplacePage.jsx";
 
 /* Employee pages */
 import EmployeeDashboard from "../pages/EmployeeDashboard.jsx";
@@ -132,6 +133,10 @@ export function protectedRoutes() {
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>
           <Route path="admin" element={<AdminDashboard />} />
+          <Route path="admin/marketplace" element={<AdminMarketplacePage />} />
+          <Route path="admin/marketplace/contractors" element={<AdminMarketplacePage />} />
+          <Route path="admin/marketplace/import" element={<AdminMarketplacePage />} />
+          <Route path="admin/marketplace/listings/:id" element={<AdminMarketplacePage />} />
           <Route path="admin/agreements/:id" element={<AgreementDetail adminMode />} />
           <Route path="admin/templates" element={<AdminTemplatesPage />} />
           <Route path="admin/disputes" element={<Disputes />} />

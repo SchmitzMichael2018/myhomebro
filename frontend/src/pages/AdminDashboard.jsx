@@ -768,6 +768,12 @@ export default function AdminDashboard() {
                       <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goToDisputes("active")} />
                       <ActionItem icon="🛟" title="View Support" desc="Check support requests and tickets." onClick={() => goTo("support")} />
                       <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
+                      <ActionItem
+                        icon="🗺️"
+                        title="Marketplace"
+                        desc="Discover contractors, seed regions, and review claim conversion."
+                        onClick={() => navigate("/app/admin/marketplace")}
+                      />
                       <ActionItem icon="📋" title="View Agreements" desc="Jump to agreement operations." onClick={() => goTo("agreements")} />
                     </div>
                   </div>

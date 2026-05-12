@@ -15,6 +15,13 @@ from .views import (
     AdminGeo,
 )
 from .views_goals import AdminGoals
+from .views_marketplace import (
+    AdminMarketplaceContractors,
+    AdminMarketplaceImport,
+    AdminMarketplaceListingDetail,
+    AdminMarketplaceListingInvite,
+    AdminMarketplaceOverview,
+)
 
 urlpatterns = [
     path("overview/", AdminOverview.as_view(), name="admin-overview"),
@@ -35,4 +42,9 @@ urlpatterns = [
     path("agreements/<int:agreement_id>/pdf/", AdminDownloadAgreementPDF.as_view(), name="admin-agreement-pdf"),
     path("users/password-reset/", AdminTriggerPasswordReset.as_view(), name="admin-trigger-password-reset"),
     path("fees/ledger/", AdminFeeLedger.as_view(), name="admin-fee-ledger"),
+    path("marketplace/", AdminMarketplaceOverview.as_view(), name="admin-marketplace-overview"),
+    path("marketplace/contractors/", AdminMarketplaceContractors.as_view(), name="admin-marketplace-contractors"),
+    path("marketplace/import/", AdminMarketplaceImport.as_view(), name="admin-marketplace-import"),
+    path("marketplace/listings/<int:listing_id>/", AdminMarketplaceListingDetail.as_view(), name="admin-marketplace-listing-detail"),
+    path("marketplace/listings/<int:listing_id>/invite/", AdminMarketplaceListingInvite.as_view(), name="admin-marketplace-listing-invite"),
 ]

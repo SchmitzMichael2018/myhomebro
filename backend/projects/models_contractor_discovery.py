@@ -62,6 +62,15 @@ class ContractorDirectoryListing(models.Model):
     )
     sms_opt_out = models.BooleanField(default=False)
     email_opt_out = models.BooleanField(default=False)
+    manually_reviewed = models.BooleanField(default=False, db_index=True)
+    manually_enriched = models.BooleanField(default=False, db_index=True)
+    admin_notes = models.TextField(blank=True, default="")
+    assisted_diy_friendly = models.BooleanField(default=False, db_index=True)
+    escrow_friendly = models.BooleanField(default=False, db_index=True)
+    inspection_capable = models.BooleanField(default=False, db_index=True)
+    rescue_project_friendly = models.BooleanField(default=False, db_index=True)
+    collaboration_score = models.FloatField(null=True, blank=True)
+    compatibility_tags = models.JSONField(default=list, blank=True)
     last_synced_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -159,6 +168,7 @@ class ContractorDiscoveryInvite(models.Model):
     sent_at = models.DateTimeField(null=True, blank=True)
     clicked_at = models.DateTimeField(null=True, blank=True)
     claimed_at = models.DateTimeField(null=True, blank=True)
+    response_at = models.DateTimeField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -193,9 +203,11 @@ class ContractorDiscoveryInvite(models.Model):
 
     def touch_claimed(self, *, save: bool = True):
         self.claimed_at = timezone.now()
+        if self.response_at is None:
+            self.response_at = self.claimed_at
         self.status = self.STATUS_CLAIMED
         if save:
-            self.save(update_fields=["claimed_at", "status", "updated_at"])
+            self.save(update_fields=["claimed_at", "response_at", "status", "updated_at"])
 
     def touch_sent(self, *, status_value: str | None = None, save: bool = True):
         self.sent_at = timezone.now()
