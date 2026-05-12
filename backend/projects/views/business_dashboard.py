@@ -34,6 +34,7 @@ from projects.models import (
 from projects.models_project_intake import ProjectIntake
 from projects.services.business_insights import build_business_insights
 from projects.services.business_dashboard_insights import build_business_dashboard_contractor_insights
+from projects.services.milestone_lifecycle import milestone_is_overdue
 from payments.fees import MAX_PLATFORM_FEE, get_collected_platform_fees_for_agreement
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
 
@@ -356,7 +357,7 @@ def _build_chart_series(contractor, request, start_dt, end_dt):
             row["failed_amount"] += amount
             row["failed_count"] += 1
 
-    overdue_qs = Milestone.objects.filter(
+    overdue_qs = Milestone.objects.select_related("agreement").filter(
         agreement__contractor=contractor,
         completed=False,
         completion_date__isnull=False,
@@ -365,6 +366,8 @@ def _build_chart_series(contractor, request, start_dt, end_dt):
         completion_date__lt=timezone.localdate(),
     )
     for milestone in overdue_qs:
+        if not milestone_is_overdue(milestone):
+            continue
         bucket_start = _bucket_start_for_dt(
             timezone.make_aware(datetime.combine(milestone.completion_date, datetime.min.time())),
             bucket_kind,

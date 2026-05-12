@@ -13,7 +13,9 @@ import "../styles/fullcalendar-daygrid.css";
 import "../styles/fullcalendar-timegrid.css";
 
 const STATUS_COLORS = {
+  planned: "#94A3B8",
   scheduled: "#1A73E8",
+  active: "#0F766E",
   overdue: "#EA4335",
   invoiced: "#F9AB00",
   pending_approval: "#F9AB00",
@@ -72,7 +74,7 @@ function stripAgreementPrefix(text, agreementNo) {
 
 function isLateFromDates(statusKey, startISO, endISO) {
   const s = String(statusKey || "").toLowerCase();
-  if (s === "paid" || s === "complete") return false;
+  if (s === "paid" || s === "complete" || s === "planned") return false;
   if (s === "overdue") return true;
 
   try {

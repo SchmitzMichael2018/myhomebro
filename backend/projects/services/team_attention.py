@@ -15,6 +15,7 @@ from projects.models import (
 )
 from projects.models_subcontractor import SubcontractorInvitation, SubcontractorInvitationStatus
 from projects.services.milestone_workflow import is_effective_reviewer_user
+from projects.services.milestone_lifecycle import milestone_is_overdue, milestone_lifecycle_state
 
 
 def _max_dt(*values):
@@ -52,46 +53,54 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
         Q(agreement__project__contractor=contractor) | Q(agreement__contractor=contractor)
     )
     today = timezone.localdate()
-    submitted_qs = milestone_qs.filter(
-        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
-    )
+    active_milestones = [milestone for milestone in milestone_qs if milestone_is_overdue(milestone) or milestone_lifecycle_state(milestone) != "planned"]
+    submitted_milestones = [
+        milestone
+        for milestone in active_milestones
+        if getattr(milestone, "subcontractor_completion_status", None)
+        == SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    ]
 
     if user is not None:
         awaiting_review_count = 0
-        for milestone in submitted_qs.order_by("agreement_id", "order", "id"):
+        for milestone in sorted(submitted_milestones, key=lambda m: (getattr(m, "agreement_id", 0), getattr(m, "order", 0), getattr(m, "id", 0))):
             if is_effective_reviewer_user(milestone, user):
                 awaiting_review_count += 1
     else:
-        awaiting_review_count = submitted_qs.count()
+        awaiting_review_count = len(submitted_milestones)
 
-    unassigned_assignment_count = milestone_qs.filter(
-        completed=False,
-        assigned_subcontractor_invitation__isnull=True,
-    ).count()
-    assigned_work_count = milestone_qs.filter(
-        completed=False,
-        assigned_subcontractor_invitation__isnull=False,
-    ).count()
-    overdue_milestone_count = milestone_qs.filter(
-        completed=False,
-        completion_date__lt=today,
-    ).count()
+    unassigned_assignment_count = sum(
+        1
+        for milestone in active_milestones
+        if not getattr(milestone, "completed", False)
+        and getattr(milestone, "assigned_subcontractor_invitation_id", None) is None
+    )
+    assigned_work_count = sum(
+        1
+        for milestone in active_milestones
+        if not getattr(milestone, "completed", False)
+        and getattr(milestone, "assigned_subcontractor_invitation_id", None) is not None
+    )
+    overdue_milestone_count = sum(1 for milestone in active_milestones if milestone_is_overdue(milestone))
 
-    active_assigned_count = milestone_qs.filter(
-        completed=False,
-        assigned_subcontractor_invitation__isnull=False,
-    ).exclude(
-        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
-    ).exclude(
-        completion_date__lt=today
-    ).count()
-    overdue_assigned_count = milestone_qs.filter(
-        completed=False,
-        assigned_subcontractor_invitation__isnull=False,
-        completion_date__lt=today,
-    ).exclude(
-        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
-    ).count()
+    active_assigned_count = sum(
+        1
+        for milestone in active_milestones
+        if not getattr(milestone, "completed", False)
+        and getattr(milestone, "assigned_subcontractor_invitation_id", None) is not None
+        and getattr(milestone, "subcontractor_completion_status", None)
+        != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        and not milestone_is_overdue(milestone)
+    )
+    overdue_assigned_count = sum(
+        1
+        for milestone in active_milestones
+        if not getattr(milestone, "completed", False)
+        and getattr(milestone, "assigned_subcontractor_invitation_id", None) is not None
+        and getattr(milestone, "subcontractor_completion_status", None)
+        != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        and milestone_is_overdue(milestone)
+    )
     assigned_action_count = active_assigned_count + awaiting_review_count + overdue_assigned_count
     pending_invites_count = SubcontractorInvitation.objects.filter(
         contractor=contractor,
@@ -135,14 +144,16 @@ def build_subaccount_work_summary(subaccount: ContractorSubAccount) -> dict:
         | Q(assigned_subcontractor_invitation__accepted_by_user=user)
     )
 
-    assigned_milestones = milestone_qs.count()
-    pending_review_count = milestone_qs.filter(
-        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
-    ).count()
-    overdue_milestone_count = milestone_qs.filter(
-        completed=False,
-        completion_date__lt=timezone.localdate(),
-    ).count()
+    active_milestones = [milestone for milestone in milestone_qs if milestone_lifecycle_state(milestone) != "planned"]
+
+    assigned_milestones = len(active_milestones)
+    pending_review_count = sum(
+        1
+        for milestone in active_milestones
+        if getattr(milestone, "subcontractor_completion_status", None)
+        == SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    )
+    overdue_milestone_count = sum(1 for milestone in active_milestones if milestone_is_overdue(milestone))
 
     agreement_assignment_count = AgreementAssignment.objects.filter(subaccount=subaccount).count()
     milestone_assignment_count = MilestoneAssignment.objects.filter(subaccount=subaccount).count()

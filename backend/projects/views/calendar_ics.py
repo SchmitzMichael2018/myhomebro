@@ -23,6 +23,7 @@ from rest_framework.permissions import IsAuthenticated
 
 # Reuse your resilient serializer logic to pick start/end/title/customer
 from ..serializers_calendar import MilestoneCalendarSerializer
+from projects.services.milestone_lifecycle import should_show_active_calendar_entry
 
 try:
     from ..models import Milestone
@@ -95,7 +96,7 @@ def _iter_milestones_for_user(user) -> Iterable[Any]:
             qs = qs.filter(agreement__contractor=contractor)
         except Exception:
             pass
-    return qs
+    return [milestone for milestone in qs if should_show_active_calendar_entry(milestone)]
 
 
 # --------------------------- views ---------------------------

@@ -121,6 +121,7 @@ from projects.services.project_intelligence import (
 )
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
+from projects.services.team_attention import build_contractor_attention_counts
 from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreements.public_sign import build_public_sign_url
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
@@ -172,6 +173,7 @@ from projects.services.recurring_maintenance import (
     ensure_recurring_milestones,
     handle_milestone_recurring_state_change,
 )
+from projects.services.milestone_lifecycle import agreement_milestones_are_active, milestone_lifecycle_state
 from projects.views.customer_portal import PORTAL_TOKEN_SALT
 from projects.services.subcontractor_compliance import (
     apply_assignment_compliance_decision,
@@ -196,6 +198,8 @@ from payments.webhooks import (
     _handle_payment_intent_processing,
 )
 from payments.models import ConnectedAccount, Payment
+from projects.serializers.milestone import MilestoneSerializer
+from projects.serializers_calendar import CalendarMilestoneSerializer
 
 
 class AgreementMilestoneAIRouteTests(TestCase):
@@ -10333,6 +10337,112 @@ class BusinessDashboardChartTests(TestCase):
         self.assertEqual(payload["chart_type"], "workflow")
         self.assertEqual(payload["record_count"], 0)
         self.assertEqual(payload["records"], [])
+
+
+class MilestoneLifecycleGateTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="lifecycle-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Lifecycle Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Lifecycle Homeowner",
+            email="lifecycle-homeowner@example.com",
+        )
+        self.client = APIClient()
+
+    def _make_agreement(self, *, status, payment_mode="escrow", signed=False, funded=False, days_offset=0):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title=f"Lifecycle Project {status} {payment_mode}",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Lifecycle agreement",
+            status=status,
+            payment_mode=payment_mode,
+            signed_by_contractor=signed,
+            signed_by_homeowner=signed,
+            escrow_funded=funded,
+            escrow_funded_amount=Decimal("1000.00") if funded else Decimal("0.00"),
+            total_cost=Decimal("1000.00"),
+        )
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Lifecycle Milestone",
+            amount=Decimal("1000.00"),
+            start_date=timezone.localdate() + timedelta(days=days_offset),
+            completion_date=timezone.localdate() + timedelta(days=days_offset),
+        )
+        return agreement, milestone
+
+    def test_unsigned_agreement_milestones_are_planned_and_not_overdue(self):
+        _, milestone = self._make_agreement(status=ProjectStatus.DRAFT, payment_mode="escrow", signed=False, funded=False, days_offset=-3)
+
+        serialized = CalendarMilestoneSerializer(milestone).data
+        detail = MilestoneSerializer(milestone).data
+
+        self.assertEqual(serialized["calendar_status"], "planned")
+        self.assertEqual(detail["milestone_lifecycle_state"], "planned")
+        self.assertFalse(detail["is_overdue"])
+
+    def test_signed_agreement_milestones_show_active_schedule_or_scheduled_and_not_overdue(self):
+        _, milestone = self._make_agreement(status=ProjectStatus.SIGNED, payment_mode="direct", signed=True, funded=False, days_offset=2)
+
+        serialized = CalendarMilestoneSerializer(milestone).data
+        detail = MilestoneSerializer(milestone).data
+
+        self.assertIn(serialized["calendar_status"], {"scheduled", "active"})
+        self.assertIn(detail["milestone_lifecycle_state"], {"scheduled", "active"})
+        self.assertFalse(detail["is_overdue"])
+
+    def test_escrow_required_agreement_stays_planned_until_funded(self):
+        agreement, milestone = self._make_agreement(status=ProjectStatus.SIGNED, payment_mode="escrow", signed=True, funded=False, days_offset=-2)
+
+        planned = CalendarMilestoneSerializer(milestone).data
+        self.assertEqual(planned["calendar_status"], "planned")
+        self.assertFalse(MilestoneSerializer(milestone).data["is_overdue"])
+
+        agreement.escrow_funded = True
+        agreement.escrow_funded_amount = Decimal("1000.00")
+        agreement.status = ProjectStatus.FUNDED
+        agreement.save(update_fields=["escrow_funded", "escrow_funded_amount", "status"])
+
+        refreshed = Milestone.objects.get(pk=milestone.pk)
+        active = CalendarMilestoneSerializer(refreshed).data
+        detail = MilestoneSerializer(refreshed).data
+        self.assertEqual(active["calendar_status"], "overdue")
+        self.assertEqual(detail["milestone_lifecycle_state"], "overdue")
+        self.assertTrue(detail["is_overdue"])
+
+    def test_active_calendar_excludes_planned_milestones(self):
+        _, planned_milestone = self._make_agreement(status=ProjectStatus.DRAFT, payment_mode="escrow", signed=False, funded=False, days_offset=4)
+        _, active_milestone = self._make_agreement(status=ProjectStatus.SIGNED, payment_mode="direct", signed=True, funded=False, days_offset=4)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/milestones/calendar/")
+
+        self.assertEqual(response.status_code, 200)
+        ids = {row["id"] for row in response.json()}
+        self.assertNotIn(planned_milestone.id, ids)
+        self.assertIn(active_milestone.id, ids)
+
+    def test_dashboard_overdue_counts_ignore_planned_milestones(self):
+        self._make_agreement(status=ProjectStatus.DRAFT, payment_mode="escrow", signed=False, funded=False, days_offset=-2)
+        self._make_agreement(status=ProjectStatus.SIGNED, payment_mode="direct", signed=True, funded=False, days_offset=-2)
+
+        counts = build_contractor_attention_counts(self.contractor)
+        self.assertEqual(counts["overdue_milestone_count"], 1)
 
 
 class ProgressPaymentWorkflowTests(TestCase):

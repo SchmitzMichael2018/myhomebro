@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from projects.models import Milestone, Agreement
 from ..serializers_calendar import CalendarMilestoneSerializer
+from projects.services.milestone_lifecycle import should_show_active_calendar_entry
 
 
 def _get_contractor_from_user(user):
@@ -40,8 +41,8 @@ class MilestoneCalendarView(APIView):
             .select_related("agreement", "agreement__homeowner", "invoice")
             .order_by("start_date", "order", "id")
         )
-
-        return Response(CalendarMilestoneSerializer(qs, many=True).data)
+        milestones = [milestone for milestone in qs if should_show_active_calendar_entry(milestone)]
+        return Response(CalendarMilestoneSerializer(milestones, many=True).data)
 
 
 class AgreementCalendarView(APIView):

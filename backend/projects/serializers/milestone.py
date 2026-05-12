@@ -42,6 +42,7 @@ from projects.services.subcontractor_quotes import (
 )
 from projects.services.milestone_payouts import payout_amount_cents_for_milestone, serialize_payout_for_milestone
 from projects.services.milestone_roles import infer_milestone_role, milestone_role_label, milestone_safety_labels, normalize_milestone_role
+from projects.services.milestone_lifecycle import milestone_is_overdue, milestone_lifecycle_state
 from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
 
 
@@ -143,6 +144,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     due_date = serializers.SerializerMethodField()
     is_overdue = serializers.SerializerMethodField()
+    milestone_lifecycle_state = serializers.SerializerMethodField()
 
     agreement_status = serializers.SerializerMethodField()
     agreement_is_locked = serializers.SerializerMethodField()
@@ -216,6 +218,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "customer_name",
             "customer_email",
             "is_overdue",
+            "milestone_lifecycle_state",
             "is_rework",
             "origin_milestone",
             "agreement_status",
@@ -378,24 +381,15 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     def get_is_overdue(self, obj: Milestone) -> bool:
         try:
-            due = self.get_due_date(obj)
-            if not due:
-                return False
-
-            from django.utils.timezone import now
-            today = now().date()
-            completed = bool(getattr(obj, "completed", False))
-
-            if isinstance(due, datetime):
-                due_date = due.date()
-            elif isinstance(due, date):
-                due_date = due
-            else:
-                return False
-
-            return (not completed) and (due_date < today)
+            return bool(milestone_is_overdue(obj))
         except Exception:
             return False
+
+    def get_milestone_lifecycle_state(self, obj: Milestone) -> str:
+        try:
+            return milestone_lifecycle_state(obj)
+        except Exception:
+            return "planned"
 
     def get_agreement_status(self, obj: Milestone) -> str:
         ag = self._get_agreement(obj)
@@ -1071,6 +1065,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
         data["due_date"] = self.get_due_date(instance)
         data["is_overdue"] = self.get_is_overdue(instance)
+        data["milestone_lifecycle_state"] = self.get_milestone_lifecycle_state(instance)
 
         data["is_rework"] = self.get_is_rework(instance)
         data["origin_milestone"] = self.get_origin_milestone(instance)

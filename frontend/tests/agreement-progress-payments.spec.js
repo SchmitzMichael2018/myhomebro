@@ -127,6 +127,26 @@ function progressAgreement(overrides = {}) {
   };
 }
 
+function lifecycleAgreement(overrides = {}) {
+  return progressAgreement({
+    milestones: [
+      {
+        id: 11,
+        order: 1,
+        title: "Site Prep",
+        amount: "500.00",
+        start_date: "2026-05-12",
+        completion_date: "2026-05-14",
+        calendar_status: "planned",
+        milestone_lifecycle_state: "planned",
+        milestone_role: "contractor_task",
+        inspection_status: "not_requested",
+      },
+    ],
+    ...overrides,
+  });
+}
+
 test('unsigned progress agreement hides invoices and locks draw tools', async ({ page }) => {
   await mockAgreementDetailApi(page, {
     agreement: progressAgreement(),
@@ -153,7 +173,7 @@ test('signed progress agreement only offers external payment recording for appro
         id: 1,
         draw_number: 1,
         title: 'Approved Draw',
-        status: 'approved',
+        status: 'payment_pending',
         gross_amount: '2500.00',
         retainage_amount: '250.00',
         net_amount: '2250.00',
@@ -175,6 +195,50 @@ test('signed progress agreement only offers external payment recording for appro
   await page.goto(`/app/agreements/${AGREEMENT_ID}`, { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('button', { name: 'Create Draw' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Record External Payment' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Record Offline Payment' })).toHaveCount(1);
   await expect(page.getByRole('heading', { name: 'Invoices' })).toHaveCount(0);
+});
+
+test('draft agreement shows planned timeline', async ({ page }) => {
+  await mockAgreementDetailApi(page, {
+    agreement: lifecycleAgreement(),
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}`, { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('agreement-timeline-state')).toContainText('Planned Timeline');
+  await expect(page.getByTestId('milestone-lifecycle-11')).toContainText('Planned Timeline');
+});
+
+test('signed agreement shows active schedule', async ({ page }) => {
+  await mockAgreementDetailApi(page, {
+    agreement: lifecycleAgreement({
+      status: 'signed',
+      signature_is_satisfied: true,
+      is_fully_signed: true,
+      signed_by_contractor: true,
+      signed_by_homeowner: true,
+      escrow_funded: true,
+      payment_mode: 'escrow',
+      milestones: [
+        {
+          id: 12,
+          order: 1,
+          title: 'Site Prep',
+          amount: '500.00',
+          start_date: '2026-05-12',
+          completion_date: '2026-05-14',
+          calendar_status: 'active',
+          milestone_lifecycle_state: 'active',
+          milestone_role: 'contractor_task',
+          inspection_status: 'not_requested',
+        },
+      ],
+    }),
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}`, { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('agreement-timeline-state')).toContainText('Active Schedule');
+  await expect(page.getByTestId('milestone-lifecycle-12')).toContainText('Active Schedule');
 });

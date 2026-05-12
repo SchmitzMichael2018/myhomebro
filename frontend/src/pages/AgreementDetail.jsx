@@ -115,6 +115,35 @@ function paymentProtectionTone(value) {
   return "border-emerald-200 bg-emerald-50 text-emerald-800";
 }
 
+function agreementTimelineState(norm) {
+  const status = String(norm?.status || "").trim().toLowerCase();
+  const signed = !!norm?.isSigned || ["signed", "funded", "in_progress", "active"].includes(status);
+  const escrowRequired = String(norm?.payment_mode || "").trim().toLowerCase() !== "direct";
+  const escrowFunded = !!norm?.escrowFunded;
+  return signed && (!escrowRequired || escrowFunded) ? "active" : "planned";
+}
+
+function agreementTimelineLabel(norm) {
+  return agreementTimelineState(norm) === "active" ? "Active Schedule" : "Planned Timeline";
+}
+
+function milestoneLifecycleLabel(state) {
+  const normalized = String(state || "").trim().toLowerCase();
+  if (normalized === "planned") return "Planned Timeline";
+  if (normalized === "active") return "Active Schedule";
+  if (normalized === "overdue") return "Overdue";
+  if (normalized === "scheduled") return "Scheduled";
+  return "Planned Timeline";
+}
+
+function milestoneLifecycleTone(state) {
+  const normalized = String(state || "").trim().toLowerCase();
+  if (normalized === "overdue") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (normalized === "active") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (normalized === "scheduled") return "border-sky-200 bg-sky-50 text-sky-800";
+  return "border-slate-200 bg-slate-100 text-slate-700";
+}
+
 function drawWorkflowStatus(draw) {
   return String(draw?.workflow_status || draw?.status || "").trim().toLowerCase();
 }
@@ -1828,6 +1857,7 @@ export default function AgreementDetail({ adminMode = false }) {
     .toLowerCase();
   const isDraftWorkspace = workspaceStatus === "draft" || !workspaceStatus;
   const milestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
+  const timelineState = agreementTimelineState(norm);
   const agreementHint = getAgreementDetailHint({
     agreement,
     norm,
@@ -1892,6 +1922,22 @@ export default function AgreementDetail({ adminMode = false }) {
             <SummaryCard
               label="Payment Mode"
               value={paymentModeLabel(norm.payment_mode)}
+              className="border-sky-200 bg-white"
+            />
+            <SummaryCard
+              label="Timeline"
+              value={
+                <span
+                  data-testid="agreement-timeline-state"
+                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${
+                    timelineState === "active"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-slate-200 bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {agreementTimelineLabel(norm)}
+                </span>
+              }
               className="border-sky-200 bg-white"
             />
             <SummaryCard
@@ -3010,6 +3056,11 @@ export default function AgreementDetail({ adminMode = false }) {
             {norm.milestones.map((m) => {
               const refunded = isRefundedMilestone(m);
               const label = milestoneStatusLabel(m);
+              const lifecycleState = String(
+                m.milestone_lifecycle_state || m.lifecycle_state || "planned"
+              )
+                .trim()
+                .toLowerCase();
               const roleLabel = deriveMilestoneRoleLabel({ projectMode: norm.project_mode, milestone: m });
               const payoutOrchestration =
                 m.subcontractor_payout_orchestration ||
@@ -3042,6 +3093,15 @@ export default function AgreementDetail({ adminMode = false }) {
                     {toMoney(m.amount).toFixed(2)}
                     {refunded ? <RefundedBadge /> : null}
                     <span className="text-gray-500"> ({label})</span>
+                    <span
+                      data-testid={`milestone-lifecycle-${m.id}`}
+                      className={`ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-extrabold ${milestoneLifecycleTone(
+                        lifecycleState
+                      )}`}
+                      title={`Timeline state: ${milestoneLifecycleLabel(lifecycleState)}`}
+                    >
+                      {milestoneLifecycleLabel(lifecycleState)}
+                    </span>
                     <MilestoneRoleBadge
                       role={m.milestone_role}
                       projectMode={norm.project_mode}

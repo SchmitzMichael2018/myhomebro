@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from projects.models import Milestone
+from projects.services.milestone_lifecycle import milestone_is_overdue, milestone_lifecycle_state
 
 
 class CalendarMilestoneSerializer(serializers.ModelSerializer):
@@ -129,17 +130,13 @@ class CalendarMilestoneSerializer(serializers.ModelSerializer):
         if getattr(obj, "completed_at", None):
             return "completed_not_invoiced"
 
-        # Overdue check
-        due = getattr(obj, "due_date", None) or getattr(obj, "scheduled_date", None)
-        if due:
-            from django.utils import timezone
-
-            today = timezone.localdate()
-            try:
-                if due < today:
-                    return "overdue"
-            except Exception:
-                pass
+        lifecycle = milestone_lifecycle_state(obj)
+        if lifecycle == "planned":
+            return "planned"
+        if lifecycle == "overdue" or milestone_is_overdue(obj):
+            return "overdue"
+        if lifecycle == "active":
+            return "active"
 
         return getattr(obj, "status", None) or "scheduled"
 
