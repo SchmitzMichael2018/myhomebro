@@ -400,6 +400,47 @@ test('contractor dashboard keeps project modes compact while preserving guardrai
   await expect(page).toHaveURL(/\/app\/milestones\?project_mode=assisted_diy&filter=incomplete/);
 });
 
+test('contractor dashboard project context remains readable on smaller screens', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 777,
+        title: 'Compact Project',
+        project_title: 'Compact Project',
+        status: 'draft',
+        signature_is_satisfied: true,
+        is_fully_signed: true,
+        project_mode: 'assisted_diy',
+        payment_preference: 'escrow_recommended',
+      },
+    ],
+    milestones: [
+      {
+        id: 411,
+        title: 'Homeowner Prep',
+        agreement_id: 777,
+        agreement: { id: 777, title: 'Compact Project', project_class: 'residential' },
+        status: 'planned',
+        project_mode: 'assisted_diy',
+        milestone_role: 'homeowner_task',
+        milestone_safety_labels: [],
+      },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const context = page.getByTestId('dashboard-project-context');
+  await expect(context).toBeVisible();
+  await expect(context).toContainText('Mode Filters');
+  await expect(context).toContainText('Payment Protection');
+  await expect(page.getByTestId('dashboard-project-mode-assisted-diy')).toBeVisible();
+  await page.getByTestId('dashboard-project-mode-assisted-diy').click();
+  await expect(page).toHaveURL(/\/app\/milestones\?project_mode=assisted_diy&filter=incomplete/);
+});
+
 test('contractor dashboard keeps the review queue next action visible while submitted work remains', async ({
   page,
 }) => {

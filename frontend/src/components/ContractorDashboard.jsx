@@ -2330,15 +2330,15 @@ export default function ContractorDashboard() {
           >
             <DashboardCard
               tone="subtle"
-              className="border-slate-200/90 bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
               testId="dashboard-project-context"
             >
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
                     Mode Filters
                   </div>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {[
                       {
                         label: "Full Service",
@@ -2374,9 +2374,9 @@ export default function ContractorDashboard() {
                         type="button"
                         data-testid={item.dataTestId}
                         onClick={() => navigate(`/app/milestones?project_mode=${item.value}&filter=incomplete`)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition hover:-translate-y-px hover:shadow-sm ${item.tone}`}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold leading-none transition hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${item.tone}`}
                       >
-                        <ProjectModeBadge mode={item.value} className="scale-[0.82]" />
+                        <ProjectModeBadge mode={item.value} className="scale-90" />
                         <span>{item.label}</span>
                         <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">
                           {Number(item.count || 0).toLocaleString()}
@@ -2386,10 +2386,10 @@ export default function ContractorDashboard() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
                     Payment Protection
                   </div>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {[
                       {
                         label: "Escrow Preferred",
@@ -2415,10 +2415,10 @@ export default function ContractorDashboard() {
                         <span
                           key={item.label}
                           data-testid={item.dataTestId}
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${item.tone}`}
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold leading-none ${item.tone}`}
                         >
                           <span>{item.label}</span>
-                          <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">
+                          <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-extrabold text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.08)]">
                             {Number(item.count || 0).toLocaleString()}
                           </span>
                         </span>
