@@ -30,6 +30,7 @@ import PublicDisputeView from "../pages/PublicDisputeView.jsx"; // /disputes/:id
 import PublicDisputeDecision from "../pages/PublicDisputeDecision.jsx"; // /disputes/:id/decision?token=...
 import SubcontractorInvitationAcceptPage from "../pages/SubcontractorInvitationAcceptPage.jsx";
 import CustomerPortalPage from "../pages/CustomerPortalPage.jsx"; // /portal
+import ContractorClaimPage from "../pages/ContractorClaimPage.jsx";
 
 export default function PublicRoutes() {
   return (
@@ -82,6 +83,7 @@ export default function PublicRoutes() {
       <Route path="/disputes/:id/decision" element={<PublicDisputeDecision />} />
 
       {/* Public contractor profile */}
+      <Route path="/contractors/claim/:token" element={<ContractorClaimPage />} />
       <Route path="/contractors/:slug" element={<PublicProfile />} />
 
       {/* Legal docs */}

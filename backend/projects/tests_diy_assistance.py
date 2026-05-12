@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -16,6 +17,7 @@ except Exception:  # pragma: no cover
 
 from projects.models import Agreement, Contractor, ContractorPublicProfile, Homeowner, Milestone, Project, PublicContractorLead
 from projects.models import InspectionStatus
+from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite
 from projects.models_project_intake import ProjectIntake
 from projects.services.legal_clauses import build_legal_notices
 from projects.services.intake_conversion import convert_intake_to_agreement
@@ -591,3 +593,126 @@ class DIYAssistanceTests(TestCase):
         self.assertIn("Inspection Checkpoints", extracted)
         self.assertIn("Rescue / Partial Completion Notes", extracted)
         self.assertIn("Payment Protection", extracted)
+
+    def test_contractor_search_prioritizes_claimed_contractor_before_cached_listing(self):
+        ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="DIY Pro",
+            is_public=True,
+            allow_public_intake=True,
+            show_phone_public=False,
+            show_email_public=False,
+        )
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            customer_name="Customer Seven",
+            customer_email="customer7@example.com",
+            project_class="residential",
+            project_mode="assisted_diy",
+            accomplishment_text="Need help with a bathroom remodel.",
+            project_city="Austin",
+            project_state="TX",
+        )
+        intake.ensure_share_token()
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_CACHED_DIRECTORY,
+            business_name="Cached Plumbing Co",
+            city="Austin",
+            state="TX",
+            phone_number="(555) 111-2222",
+            primary_trade="plumbing",
+            trade_categories=["plumbing"],
+        )
+
+        response = self.client.get(
+            "/api/projects/public-intake/contractor-search/",
+            {"token": intake.share_token, "query": "bathroom remodel"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        results = response.data["results"]
+        self.assertGreaterEqual(len(results), 1)
+        self.assertEqual(results[0]["source"], ContractorDirectoryListing.SOURCE_MYHOMEBRO)
+        self.assertTrue(results[0]["claimed"])
+
+    @patch("projects.services.contractor_discovery.send_twilio_sms", return_value=(True, "sent"))
+    @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(True, "sent"))
+    def test_send_contractor_invites_creates_discovery_invite_for_listing(self, _mock_email, _mock_sms):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            customer_name="Customer Eight",
+            customer_email="customer8@example.com",
+            project_class="residential",
+            project_mode="consultation",
+            accomplishment_text="Need a consultation for a roof repair.",
+            project_city="Austin",
+            project_state="TX",
+        )
+        intake.ensure_share_token()
+        listing = ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_CACHED_DIRECTORY,
+            business_name="Roof Consult Co",
+            city="Austin",
+            state="TX",
+            phone_number="(555) 222-3333",
+            primary_trade="roofing",
+            trade_categories=["roofing"],
+        )
+
+        response = self.client.post(
+            "/api/projects/public-intake/send-contractor-invites/",
+            {
+                "token": intake.share_token,
+                "selected_contractors": [
+                    {"id": f"listing:{listing.id}", "source": listing.source, "channel": "sms"},
+                ],
+                "preferred_channel": "sms",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["invite_count"], 1)
+        invite = ContractorDiscoveryInvite.objects.get(directory_listing=listing)
+        self.assertEqual(invite.status, ContractorDiscoveryInvite.STATUS_SENT)
+        self.assertEqual(invite.channel, ContractorDiscoveryInvite.CHANNEL_SMS)
+
+    def test_contractor_claim_flow_claims_listing_and_links_contract(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            customer_name="Customer Nine",
+            customer_email="customer9@example.com",
+            project_class="residential",
+            project_mode="inspection_only",
+            accomplishment_text="Need an inspection for a plumbing repair.",
+            project_city="Austin",
+            project_state="TX",
+        )
+        intake.ensure_share_token()
+        listing = ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+            business_name="Claimable Plumbing LLC",
+            city="Austin",
+            state="TX",
+            phone_number="(555) 333-4444",
+            primary_trade="plumbing",
+            trade_categories=["plumbing"],
+        )
+        invite = ContractorDiscoveryInvite.objects.create(
+            public_intake=intake,
+            directory_listing=listing,
+            channel=ContractorDiscoveryInvite.CHANNEL_SMS,
+            destination_phone=listing.phone_number,
+        )
+
+        get_response = self.client.get(f"/api/projects/contractors/claim/{invite.invite_token}/")
+        self.assertEqual(get_response.status_code, 200)
+        self.assertTrue(get_response.data["claim_url"].endswith(str(invite.invite_token)))
+
+        post_response = self.client.post(f"/api/projects/contractors/claim/{invite.invite_token}/", {}, format="json")
+        self.assertEqual(post_response.status_code, 200)
+        listing.refresh_from_db()
+        invite.refresh_from_db()
+        self.assertTrue(listing.claimed_profile)
+        self.assertEqual(listing.claimed_contractor_id, self.contractor.id)
+        self.assertEqual(invite.status, ContractorDiscoveryInvite.STATUS_CLAIMED)

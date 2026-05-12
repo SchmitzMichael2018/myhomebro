@@ -59,6 +59,11 @@ from .views.public_intake import (
     PublicIntakeDescriptionImproveView,
     PublicIntakeView,
 )
+from .views.contractor_discovery import (
+    ContractorDiscoveryClaimView,
+    PublicIntakeContractorSearchView,
+    PublicIntakeSendContractorInvitesView,
+)
 from .views.public_intake_start import PublicIntakeStartView
 from .views.project_intake import ProjectIntakeViewSet
 
@@ -557,6 +562,8 @@ urlpatterns = [
     path("public-intake/improve-description/", PublicIntakeDescriptionImproveView.as_view()),
     path("public-intake/photos/", PublicIntakeClarificationPhotoUploadView.as_view()),
     path("public-intake/start/", PublicIntakeStartView.as_view()),
+    path("public-intake/contractor-search/", PublicIntakeContractorSearchView.as_view()),
+    path("public-intake/send-contractor-invites/", PublicIntakeSendContractorInvitesView.as_view()),
 
     # -------------------------------------------------
     # Owner → employee assignment
@@ -736,6 +743,7 @@ urlpatterns = [
     path("projects/workspace-context/", WorkspaceContextView.as_view()),
     path("contractors/onboarding/", ContractorOnboardingView.as_view()),
     path("contractors/onboarding/events/", ContractorOnboardingEventView.as_view()),
+    path("contractors/claim/<uuid:token>/", ContractorDiscoveryClaimView.as_view()),
     path(
         "contractors/onboarding/dismiss-stripe-prompt/",
         ContractorOnboardingDismissStripePromptView.as_view(),

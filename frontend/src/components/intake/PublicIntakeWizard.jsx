@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import api from "../../api";
 import { PROJECT_MODE_OPTIONS, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
 import { buildAssistedDiySafetyWarning } from "./projectSafety.js";
+import ContractorDiscoveryStep from "./ContractorDiscoveryStep.jsx";
 
 function copyCustomerAddressToProject(form) {
   return {
@@ -180,6 +181,7 @@ export default function PublicIntakeWizard() {
   const [branchMode, setBranchMode] = useState("single_contractor");
   const [branchSubmitting, setBranchSubmitting] = useState(false);
   const [branchResult, setBranchResult] = useState(null);
+  const [discoveryTargets, setDiscoveryTargets] = useState([]);
   const [clarificationUploading, setClarificationUploading] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [clarificationSnapshotMode, setClarificationSnapshotMode] = useState(false);
@@ -221,6 +223,7 @@ export default function PublicIntakeWizard() {
     "AI Structured Output",
     "Project Details",
     "Contact Info",
+    "Choose Local Contractors",
     "Choose Path",
     "Review + Confirm",
   ];
@@ -619,7 +622,15 @@ export default function PublicIntakeWizard() {
       return;
     }
     if (currentStep === 6) {
+      await handleBranchSubmit();
+      return;
+    }
+    if (currentStep === 7) {
       await handleConfirm();
+      return;
+    }
+    if (currentStep === 5) {
+      setCurrentStep(6);
       return;
     }
     if (currentStep < stepLabels.length - 1) {
@@ -716,7 +727,7 @@ export default function PublicIntakeWizard() {
             ? `Created ${data.branch_invites.length} contractor invite${data.branch_invites.length === 1 ? "" : "s"}.`
             : "Saved your next-step choice."
         );
-        setCurrentStep(6);
+        setCurrentStep(7);
       }
       return data;
     } catch (e) {
@@ -820,8 +831,9 @@ export default function PublicIntakeWizard() {
     return rows;
   }, [form.clarification_photos, projectSummaryRows]);
   const confidenceMessage = useMemo(() => {
-    if (currentStep >= 6) return "Almost ready to send to contractors.";
-    if (currentStep === 5) return "You are choosing the path that feels right.";
+    if (currentStep >= 7) return "Almost ready to send to contractors.";
+    if (currentStep === 6) return "You are choosing the path that feels right.";
+    if (currentStep === 5) return "Review a few good contractor matches before you decide the next step.";
     if (currentStep === 4) return "A few details now will help the next step feel easy.";
     if (currentStep === 3) return "You are refining the details that shape the plan.";
     if (currentStep === 2) return "Your project is taking shape.";
@@ -1859,6 +1871,26 @@ export default function PublicIntakeWizard() {
 
     if (currentStep === 5) {
       return (
+        <ContractorDiscoveryStep
+          token={token}
+          form={form}
+          active
+          selectedTargets={discoveryTargets}
+          setSelectedTargets={setDiscoveryTargets}
+          onInvitesCreated={(data) => {
+            setBranchResult((prev) => ({
+              ...(prev || {}),
+              post_submit_flow: prev?.post_submit_flow || branchMode,
+              branch_invites: Array.isArray(data?.created) ? data.created : [],
+            }));
+            setCurrentStep(6);
+          }}
+        />
+      );
+    }
+
+    if (currentStep === 6) {
+      return (
         <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-branching-section">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
@@ -1971,7 +2003,9 @@ export default function PublicIntakeWizard() {
         </div>
       );
     }
-    return (
+
+    if (currentStep === 7) {
+      return (
         <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-review-step">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
@@ -2103,7 +2137,10 @@ export default function PublicIntakeWizard() {
           </section>
         </div>
       </div>
-    );
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -2150,10 +2187,20 @@ export default function PublicIntakeWizard() {
             Back
           </button>
 
-        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {currentStep === 5 ? (
-              <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save and Review"}</button>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(6)}
+                disabled={saving || branchSubmitting}
+                data-testid="public-intake-discovery-continue"
+                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                Continue to Choose Path
+              </button>
             ) : currentStep === 6 ? (
+              <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save and Review"}</button>
+            ) : currentStep === 7 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Project Plan"}</button>
             ) : currentStep === 2 ? (
               <button
@@ -2173,7 +2220,7 @@ export default function PublicIntakeWizard() {
                 data-testid="public-intake-contact-continue"
                 className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                Continue to Choose Path
+                Continue to Local Contractors
               </button>
             ) : currentStep === 1 ? (
               <div className="text-xs text-gray-500">Use the question card above to continue your clarification.</div>
