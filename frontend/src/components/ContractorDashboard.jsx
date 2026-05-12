@@ -2037,14 +2037,10 @@ export default function ContractorDashboard() {
       assisted_diy: 0,
       consultation: 0,
       inspection_only: 0,
-      waiting_homeowner_tasks: 0,
     };
     for (const item of list) {
       const mode = normalizeProjectMode(item?.project_mode);
       counts[mode] = (counts[mode] || 0) + 1;
-      if (mode === "assisted_diy" && item?.homeowner_started_work !== true) {
-        counts.waiting_homeowner_tasks += 1;
-      }
     }
     return counts;
   }, [agreements]);
@@ -2063,48 +2059,18 @@ export default function ContractorDashboard() {
     }
     return counts;
   }, [agreements]);
-  const collaborativeWorkflowStats = useMemo(() => {
+  const safetySignalStats = useMemo(() => {
     const list = Array.isArray(milestones) ? milestones : [];
     const counts = {
-      waiting_on_homeowner: 0,
-      homeowner_task_active: 0,
-      contractor_review_needed: 0,
-      inspection_requested: 0,
-      punch_list_issued: 0,
-      ready_for_contractor_takeover: 0,
-      shared_task_in_progress: 0,
+      licensed_trade_work: 0,
+      contractor_required: 0,
+      inspection_recommended: 0,
     };
     for (const item of list) {
-      const roleLabel = deriveMilestoneRoleLabel({
-        projectMode: item?._ag?.project_mode || item?.project_mode,
-        milestone: item,
-      });
-      const role = normalizeMilestoneRole(item?.milestone_role || item?.milestoneRole || roleLabel);
-      const mode = normalizeProjectMode(item?._ag?.project_mode || item?.project_mode);
-      const completed = item?.completed === true || String(item?.status || item?.state || "").toLowerCase() === "completed";
-      const reviewRequested = item?.subcontractor_review_requested === true || !!item?.subcontractor_review_requested_at;
-      const inspectionStatus = String(item?.inspection_status || "").toLowerCase();
-      if (mode === "assisted_diy" && role === "homeowner_task" && !completed) {
-        counts.waiting_on_homeowner += 1;
-      }
-      if (role === "homeowner_task" && !completed) {
-        counts.homeowner_task_active += 1;
-      }
-      if (role === "contractor_task" && reviewRequested) {
-        counts.contractor_review_needed += 1;
-      }
-      if (inspectionStatus === "inspection_requested" || (role === "inspection_checkpoint" && !completed)) {
-        counts.inspection_requested += 1;
-      }
-      if (inspectionStatus === "inspection_revision_required") {
-        counts.punch_list_issued += 1;
-      }
-      if (inspectionStatus === "inspection_passed") {
-        counts.ready_for_contractor_takeover += 1;
-      }
-      if (role === "shared_task" && !completed) {
-        counts.shared_task_in_progress += 1;
-      }
+      const labels = Array.isArray(item?.milestone_safety_labels) ? item.milestone_safety_labels : [];
+      if (labels.includes("Licensed Trade Work")) counts.licensed_trade_work += 1;
+      if (labels.includes("Contractor Required")) counts.contractor_required += 1;
+      if (labels.includes("Inspection Recommended")) counts.inspection_recommended += 1;
     }
     return counts;
   }, [milestones]);
@@ -2359,194 +2325,106 @@ export default function ContractorDashboard() {
           </DashboardCard>
 
           <DashboardSection
-            title="Project Modes"
-            subtitle="Quick visibility into assisted DIY, consultation, and inspection work."
+            title="Project Context"
+            subtitle="Compact mode, payment, and workflow filters for the jobs you are already managing."
           >
             <DashboardCard
               tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              className="border-slate-200/90 bg-white p-3 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              testId="dashboard-project-context"
             >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                {[
-                  {
-                    label: "Full Service",
-                    value: "full_service",
-                    count: projectModeStats.full_service,
-                    tone: "border-blue-200 bg-blue-50 text-blue-700",
-                    dataTestId: "dashboard-project-mode-full-service",
-                  },
-                  {
-                    label: "Assisted DIY",
-                    value: "assisted_diy",
-                    count: projectModeStats.assisted_diy,
-                    tone: "border-amber-200 bg-amber-50 text-amber-800",
-                    dataTestId: "dashboard-project-mode-assisted-diy",
-                  },
-                  {
-                    label: "Consultation",
-                    value: "consultation",
-                    count: projectModeStats.consultation,
-                    tone: "border-violet-200 bg-violet-50 text-violet-700",
-                    dataTestId: "dashboard-project-mode-consultation",
-                  },
-                  {
-                    label: "Inspection Only",
-                    value: "inspection_only",
-                    count: projectModeStats.inspection_only,
-                    tone: "border-slate-200 bg-slate-100 text-slate-700",
-                    dataTestId: "dashboard-project-mode-inspection",
-                  },
-                ].map((item) => (
-                  <div key={item.label} className={`rounded-xl border p-4 ${item.tone}`}>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
-                      {item.label}
-                    </div>
-                    <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid={item.dataTestId}>
-                      {Number(item.count || 0).toLocaleString()}
-                    </div>
-                    <ProjectModeBadge mode={item.value} className="mt-2" />
+              <div className="space-y-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
+                    Mode Filters
                   </div>
-                ))}
-                <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 md:col-span-2 xl:col-span-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
-                    Waiting on Homeowner Tasks
-                  </div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid="dashboard-project-mode-waiting-homeowner">
-                    {Number(projectModeStats.waiting_homeowner_tasks || 0).toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Assisted DIY projects that still need homeowner progress or participation.
-                  </div>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 md:col-span-2 xl:col-span-5">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                    Payment Protection
-                  </div>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {[
                       {
-                        label: "Escrow Preferred",
-                        value: paymentProtectionStats.preferred,
-                        tone: "border-emerald-200 bg-white text-emerald-800",
-                        testId: "dashboard-payment-protection-preferred",
+                        label: "Full Service",
+                        value: "full_service",
+                        count: projectModeStats.full_service,
+                        tone: "border-blue-200 bg-blue-50 text-blue-700",
+                        dataTestId: "dashboard-project-mode-full-service",
                       },
                       {
-                        label: "Escrow Recommended",
-                        value: paymentProtectionStats.recommended,
-                        tone: "border-amber-200 bg-white text-amber-800",
-                        testId: "dashboard-payment-protection-recommended",
+                        label: "Assisted DIY",
+                        value: "assisted_diy",
+                        count: projectModeStats.assisted_diy,
+                        tone: "border-amber-200 bg-amber-50 text-amber-800",
+                        dataTestId: "dashboard-project-mode-assisted-diy",
                       },
                       {
-                        label: "Escrow Required",
-                        value: paymentProtectionStats.required,
-                        tone: "border-rose-200 bg-white text-rose-800",
-                        testId: "dashboard-payment-protection-required",
+                        label: "Consultation",
+                        value: "consultation",
+                        count: projectModeStats.consultation,
+                        tone: "border-violet-200 bg-violet-50 text-violet-700",
+                        dataTestId: "dashboard-project-mode-consultation",
+                      },
+                      {
+                        label: "Inspection Only",
+                        value: "inspection_only",
+                        count: projectModeStats.inspection_only,
+                        tone: "border-slate-200 bg-slate-100 text-slate-700",
+                        dataTestId: "dashboard-project-mode-inspection",
                       },
                     ].map((item) => (
-                      <div key={item.label} className={`rounded-xl border p-3 ${item.tone}`}>
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80">
-                          {item.label}
-                        </div>
-                        <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid={item.testId}>
-                          {Number(item.value || 0).toLocaleString()}
-                        </div>
-                        <div className="mt-2 text-xs text-slate-600">
-                          {item.label === "Escrow Required"
-                            ? "Projects with restricted or inspection-led work."
-                            : item.label === "Escrow Recommended"
-                              ? "Collaborative projects and assisted DIY work."
-                              : "Standard milestone payment protection."}
-                        </div>
-                      </div>
+                      <button
+                        key={item.label}
+                        type="button"
+                        data-testid={item.dataTestId}
+                        onClick={() => navigate(`/app/milestones?project_mode=${item.value}&filter=incomplete`)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold transition hover:-translate-y-px hover:shadow-sm ${item.tone}`}
+                      >
+                        <ProjectModeBadge mode={item.value} className="scale-[0.82]" />
+                        <span>{item.label}</span>
+                        <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">
+                          {Number(item.count || 0).toLocaleString()}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 </div>
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-
-          <DashboardSection
-            title="Collaborative Workflow"
-            subtitle="Live visibility into homeowner participation, review, and inspection states."
-          >
-            <DashboardCard
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-            >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {[
-                  {
-                    title: "Awaiting Homeowner Completion",
-                    value: collaborativeWorkflowStats.waiting_on_homeowner,
-                    description: "Assisted DIY tasks waiting on homeowner progress.",
-                    tone: "border-amber-200 bg-amber-50 text-amber-800",
-                    dataTestId: "dashboard-collab-waiting-homeowner",
-                    onClick: () => navigate(`/app/milestones?project_mode=assisted_diy&filter=incomplete`),
-                  },
-                  {
-                    title: "Awaiting Contractor Verification",
-                    value: collaborativeWorkflowStats.contractor_review_needed,
-                    description: "Work ready for contractor review or verification.",
-                    tone: "border-violet-200 bg-violet-50 text-violet-700",
-                    dataTestId: "dashboard-collab-contractor-review",
-                    onClick: () => navigate(`/app/reviewer/queue`),
-                  },
-                  {
-                    title: "Inspection Requested",
-                    value: collaborativeWorkflowStats.inspection_requested,
-                    description: "Inspection checkpoints waiting to be scheduled or cleared.",
-                    tone: "border-slate-200 bg-slate-100 text-slate-700",
-                    dataTestId: "dashboard-collab-inspection-requested",
-                    onClick: () => navigate(`/app/milestones?project_mode=inspection_only&filter=incomplete`),
-                  },
-                  {
-                    title: "Punch List Issued",
-                    value: collaborativeWorkflowStats.punch_list_issued,
-                    description: "Inspection notes or punch-list follow-up has been issued.",
-                    tone: "border-rose-200 bg-rose-50 text-rose-800",
-                    dataTestId: "dashboard-collab-punch-list-issued",
-                    onClick: () => navigate(`/app/milestones?filter=incomplete`),
-                  },
-                  {
-                    title: "Ready for Contractor Takeover",
-                    value: collaborativeWorkflowStats.ready_for_contractor_takeover,
-                    description: "Inspection pass or handoff is ready for contractor-led wrap-up.",
-                    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-                    dataTestId: "dashboard-collab-contractor-takeover",
-                    onClick: () => navigate(`/app/milestones?filter=incomplete`),
-                  },
-                  {
-                    title: "Shared Task In Progress",
-                    value: collaborativeWorkflowStats.shared_task_in_progress,
-                    description: "Collaborative tasks being handled jointly.",
-                    tone: "border-blue-200 bg-blue-50 text-blue-700",
-                    dataTestId: "dashboard-collab-shared-task",
-                    onClick: () => navigate(`/app/milestones?filter=incomplete`),
-                  },
-                  {
-                    title: "Homeowner Task Active",
-                    value: collaborativeWorkflowStats.homeowner_task_active,
-                    description: "Shared DIY work items currently underway.",
-                    tone: "border-blue-200 bg-blue-50 text-blue-700",
-                    dataTestId: "dashboard-collab-homeowner-active",
-                    onClick: () => navigate(`/app/milestones?project_mode=assisted_diy&filter=incomplete`),
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.title}
-                    type="button"
-                    onClick={item.onClick}
-                    className={`rounded-xl border p-4 text-left transition hover:-translate-y-px hover:shadow-sm ${item.tone}`}
-                  >
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
-                      {item.title}
-                    </div>
-                    <div className="mt-2 text-2xl font-extrabold text-slate-900" data-testid={item.dataTestId}>
-                      {Number(item.value || 0).toLocaleString()}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-600">{item.description}</div>
-                  </button>
-                ))}
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
+                    Payment Protection
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {[
+                      {
+                        label: "Escrow Preferred",
+                        count: paymentProtectionStats.preferred,
+                        tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+                        dataTestId: "dashboard-guardrail-escrow-preferred",
+                      },
+                      {
+                        label: "Escrow Recommended",
+                        count: paymentProtectionStats.recommended,
+                        tone: "border-amber-200 bg-amber-50 text-amber-800",
+                        dataTestId: "dashboard-guardrail-escrow-recommended",
+                      },
+                      {
+                        label: "Escrow Required",
+                        count: paymentProtectionStats.required,
+                        tone: "border-rose-200 bg-rose-50 text-rose-800",
+                        dataTestId: "dashboard-guardrail-escrow-required",
+                      },
+                    ]
+                      .filter((item) => Number(item.count || 0) > 0)
+                      .map((item) => (
+                        <span
+                          key={item.label}
+                          data-testid={item.dataTestId}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold ${item.tone}`}
+                        >
+                          <span>{item.label}</span>
+                          <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">
+                            {Number(item.count || 0).toLocaleString()}
+                          </span>
+                        </span>
+                      ))}
+                  </div>
+                </div>
               </div>
             </DashboardCard>
           </DashboardSection>

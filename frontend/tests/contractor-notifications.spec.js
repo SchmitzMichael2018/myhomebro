@@ -300,6 +300,106 @@ test('contractor dashboard surfaces recommended project matches with compatibili
   await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Accepts escrow milestone payments.');
 });
 
+test('contractor dashboard keeps project modes compact while preserving guardrail chips and drilldowns', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 201,
+        title: 'Full Service Kitchen',
+        project_title: 'Full Service Kitchen',
+        status: 'signed',
+        project_mode: 'full_service',
+        payment_protection: { level: 'preferred' },
+      },
+      {
+        id: 202,
+        title: 'Assisted DIY Deck',
+        project_title: 'Assisted DIY Deck',
+        status: 'signed',
+        project_mode: 'assisted_diy',
+        homeowner_started_work: false,
+        payment_protection: { level: 'recommended' },
+      },
+      {
+        id: 203,
+        title: 'Consultation Visit',
+        project_title: 'Consultation Visit',
+        status: 'draft',
+        project_mode: 'consultation',
+        payment_protection: { level: 'preferred' },
+      },
+      {
+        id: 204,
+        title: 'Inspection Only Review',
+        project_title: 'Inspection Only Review',
+        status: 'draft',
+        project_mode: 'inspection_only',
+        payment_protection: { level: 'required' },
+      },
+    ],
+    milestones: [
+      {
+        id: 301,
+        title: 'Licensed Panel Tie-In',
+        milestone_role: 'contractor_task',
+        project_mode: 'assisted_diy',
+        milestone_safety_labels: ['Licensed Trade Work', 'Contractor Required'],
+        subcontractor_review_requested: true,
+      },
+      {
+        id: 302,
+        title: 'Inspection Checkpoint',
+        milestone_role: 'inspection_checkpoint',
+        project_mode: 'inspection_only',
+        milestone_safety_labels: ['Inspection Recommended'],
+        inspection_status: 'inspection_requested',
+      },
+      {
+        id: 303,
+        title: 'Punch List',
+        milestone_role: 'inspection_checkpoint',
+        project_mode: 'inspection_only',
+        milestone_safety_labels: ['Inspection Recommended'],
+        inspection_status: 'inspection_revision_required',
+      },
+      {
+        id: 304,
+        title: 'Shared Cleanup',
+        milestone_role: 'shared_task',
+        project_mode: 'assisted_diy',
+        milestone_safety_labels: [],
+      },
+      {
+        id: 305,
+        title: 'Homeowner Prep',
+        milestone_role: 'homeowner_task',
+        project_mode: 'assisted_diy',
+        milestone_safety_labels: [],
+      },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const context = page.getByTestId('dashboard-project-context');
+  await expect(context).toBeVisible();
+  await expect(context).toContainText('Full Service');
+  await expect(context).toContainText('Assisted DIY');
+  await expect(context).toContainText('Consultation');
+  await expect(context).toContainText('Inspection Only');
+  await expect(page.getByTestId('dashboard-guardrail-escrow-preferred')).toBeVisible();
+  await expect(page.getByTestId('dashboard-guardrail-escrow-recommended')).toBeVisible();
+  await expect(page.getByTestId('dashboard-guardrail-escrow-required')).toBeVisible();
+  await expect(page.getByText('Collaborative Workflow')).toHaveCount(0);
+  await expect(page.getByText('Project Modes')).toHaveCount(0);
+  await expect(page.getByText('Waiting on Homeowner')).toHaveCount(0);
+
+  await page.getByTestId('dashboard-project-mode-assisted-diy').click();
+  await expect(page).toHaveURL(/\/app\/milestones\?project_mode=assisted_diy&filter=incomplete/);
+});
+
 test('contractor dashboard keeps the review queue next action visible while submitted work remains', async ({
   page,
 }) => {
