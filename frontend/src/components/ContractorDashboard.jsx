@@ -53,6 +53,34 @@ function parseDateAny(v) {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
 }
+function getMilestoneLifecycleState(m) {
+  return norm(m?.milestone_lifecycle_state || m?.lifecycle_state || m?.calendar_status || m?.status || "");
+}
+function isPlannedMilestoneEntry(m) {
+  const state = getMilestoneLifecycleState(m);
+  return [
+    "planned",
+    "draft",
+    "pending_signature",
+    "signature_pending",
+    "awaiting_signature",
+    "sent",
+    "review",
+  ].includes(state);
+}
+function normalizeProjectClassMaybe(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return null;
+  if (raw.includes("commercial")) return "commercial";
+  if (raw.includes("residential")) return "residential";
+  return null;
+}
+function normalizePaymentProtectionLevel(value) {
+  const raw = norm(value);
+  if (raw.includes("required")) return "required";
+  if (raw.includes("recommended")) return "recommended";
+  return "preferred";
+}
 function startOfMonth(d) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
@@ -1103,6 +1131,7 @@ export default function ContractorDashboard() {
   const [bidsSnapshotRecent, setBidsSnapshotRecent] = useState([]);
 
   const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [showAllNextActions, setShowAllNextActions] = useState(false);
 
   // Earned modal + paid expenses cache
   const [showEarnedModal, setShowEarnedModal] = useState(false);
@@ -1483,10 +1512,14 @@ export default function ContractorDashboard() {
     }
     return map;
   }, [invoices]);
+  const activeMilestonesForDashboard = useMemo(
+    () => (Array.isArray(milestones) ? milestones : []).filter((m) => !isPlannedMilestoneEntry(m)),
+    [milestones]
+  );
 
   /* ----- milestone stats (aligned with MilestoneList filters) ----- */
   const mStats = useMemo(() => {
-    const all = Array.isArray(milestones) ? milestones : [];
+    const all = activeMilestonesForDashboard;
     const allAmt = sum(all);
 
     const rework = all.filter(isReworkMilestone);
@@ -1527,7 +1560,7 @@ export default function ContractorDashboard() {
       reworkCount: rework.length,
       reworkAmount: reworkAmt,
     };
-  }, [milestones, invoicesById]);
+  }, [activeMilestonesForDashboard, invoicesById]);
 
   /* ----- invoice stats ----- */
   const iStats = useMemo(() => {
@@ -1618,7 +1651,7 @@ export default function ContractorDashboard() {
     const tomorrowEnd = endOfTomorrow();
     const weekEnd = endOfWeek();
 
-    const milestoneItems = (milestones || [])
+    const milestoneItems = activeMilestonesForDashboard
       .filter((m) => !isMilestonePaid(m, invoicesById))
       .map((m) => ({
         type: "milestone",
@@ -1651,7 +1684,7 @@ export default function ContractorDashboard() {
       tomorrow: summarize(items.filter((item) => inRange(item.date, tomorrowStart, tomorrowEnd))),
       week: summarize(items.filter((item) => inRange(item.date, todayStart, weekEnd))),
     };
-  }, [invoices, invoicesById, milestones]);
+  }, [activeMilestonesForDashboard, invoices, invoicesById]);
   const failedPaymentItems = useMemo(
     () =>
       (Array.isArray(activityFeed) ? activityFeed : []).filter((item) => {
@@ -1914,10 +1947,6 @@ export default function ContractorDashboard() {
       sanitizedNextBestAction,
     ]
   );
-  const needsAttentionItems = useMemo(
-    () => contractorNextActions.filter((item) => item.category === "attention").slice(0, 3),
-    [contractorNextActions]
-  );
   const heroAction = useMemo(() => {
     const topAction = contractorNextActions[0];
     if (topAction) {
@@ -1979,7 +2008,7 @@ export default function ContractorDashboard() {
       : "Completed work flows into payment requests and payout";
   const heroBand = useMemo(() => {
     const hasOperationalPressure =
-      needsAttentionItems.length > 0 ||
+      contractorNextActions.some((item) => item.category === "attention") ||
       dueSchedule.late.count > 0 ||
       dueSchedule.today.count > 0 ||
       mStats.reviewedCount > 0 ||
@@ -2027,9 +2056,13 @@ export default function ContractorDashboard() {
     isOnboardingComplete,
     mStats.reviewedCount,
     mStats.completedCount,
-    needsAttentionItems.length,
+    contractorNextActions,
   ]);
   const nextActionCards = useMemo(() => contractorNextActions.slice(1, 11), [contractorNextActions]);
+  const visibleNextActionCards = useMemo(
+    () => nextActionCards.slice(0, showAllNextActions ? 10 : 5),
+    [nextActionCards, showAllNextActions]
+  );
   const projectModeStats = useMemo(() => {
     const list = Array.isArray(agreements) ? agreements : [];
     const counts = {
@@ -2044,17 +2077,35 @@ export default function ContractorDashboard() {
     }
     return counts;
   }, [agreements]);
+  const projectClassStats = useMemo(() => {
+    const list = Array.isArray(agreements) ? agreements : [];
+    const counts = {
+      residential: 0,
+      commercial: 0,
+    };
+    for (const item of list) {
+      const classValue = normalizeProjectClassMaybe(item?.project_class || item?.project_class_label || item?.project?.project_class);
+      if (classValue) counts[classValue] += 1;
+    }
+    return counts;
+  }, [agreements]);
   const paymentProtectionStats = useMemo(() => {
     const list = Array.isArray(agreements) ? agreements : [];
     const counts = {
+      direct: 0,
       preferred: 0,
       recommended: 0,
       required: 0,
     };
     for (const item of list) {
-      const level = norm(item?.payment_protection?.level || item?.payment_protection?.label || "");
-      if (level.includes("required")) counts.required += 1;
-      else if (level.includes("recommended")) counts.recommended += 1;
+      const mode = norm(item?.payment_mode || item?.paymentMode || item?.payment_mode_label || "");
+      if (mode === "direct") {
+        counts.direct += 1;
+        continue;
+      }
+      const level = normalizePaymentProtectionLevel(item?.payment_protection?.level || item?.payment_protection?.label || "");
+      if (level === "required") counts.required += 1;
+      else if (level === "recommended") counts.recommended += 1;
       else counts.preferred += 1;
     }
     return counts;
@@ -2287,16 +2338,30 @@ export default function ContractorDashboard() {
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#3f6d9e]">
-                  More Next Actions
+                  Next Actions
                 </div>
                 <div className="mt-1 text-sm text-slate-600">
                   Top priorities from agreements, milestones, quotes, approvals, and payouts.
                 </div>
               </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                  {contractorNextActions.length} total
+                </span>
+                {nextActionCards.length > 5 ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllNextActions((current) => !current)}
+                    className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+                  >
+                    {showAllNextActions ? "Show fewer" : "View all actions"}
+                  </button>
+                ) : null}
+              </div>
             </div>
-            {nextActionCards.length ? (
+            {visibleNextActionCards.length ? (
               <div className="space-y-2.5">
-                {nextActionCards.map((item) => (
+                {visibleNextActionCards.map((item) => (
                   <button
                     key={item.key}
                     data-testid={`dashboard-next-action-item-${item.key}`}
@@ -2334,6 +2399,44 @@ export default function ContractorDashboard() {
               testId="dashboard-project-context"
             >
               <div className="space-y-3.5">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+                    Project Type
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {[
+                      {
+                        label: "Residential",
+                        value: "residential",
+                        count: projectClassStats.residential,
+                        tone: "border-sky-200 bg-sky-50 text-sky-700",
+                        dataTestId: "dashboard-project-class-residential",
+                      },
+                      {
+                        label: "Commercial",
+                        value: "commercial",
+                        count: projectClassStats.commercial,
+                        tone: "border-indigo-200 bg-indigo-50 text-indigo-700",
+                        dataTestId: "dashboard-project-class-commercial",
+                      },
+                    ]
+                      .filter((item) => Number(item.count || 0) > 0)
+                      .map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          data-testid={item.dataTestId}
+                          onClick={() => navigate(`/app/agreements?project_class=${item.value}`)}
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold leading-none transition hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${item.tone}`}
+                        >
+                          <span>{item.label}</span>
+                          <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">
+                            {Number(item.count || 0).toLocaleString()}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                </div>
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
                     Mode Filters
@@ -2387,41 +2490,53 @@ export default function ContractorDashboard() {
                 </div>
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-                    Payment Protection
+                    Payment Method / Protection
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {[
+                      {
+                        label: "Direct Payment",
+                        count: paymentProtectionStats.direct,
+                        tone: "border-slate-200 bg-slate-100 text-slate-700",
+                        dataTestId: "dashboard-payment-direct",
+                        navigationTarget: "/app/agreements?payment_mode=direct",
+                      },
                       {
                         label: "Escrow Preferred",
                         count: paymentProtectionStats.preferred,
                         tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
                         dataTestId: "dashboard-guardrail-escrow-preferred",
+                        navigationTarget: "/app/agreements?payment_mode=escrow&payment_protection=preferred",
                       },
                       {
                         label: "Escrow Recommended",
                         count: paymentProtectionStats.recommended,
                         tone: "border-amber-200 bg-amber-50 text-amber-800",
                         dataTestId: "dashboard-guardrail-escrow-recommended",
+                        navigationTarget: "/app/agreements?payment_mode=escrow&payment_protection=recommended",
                       },
                       {
                         label: "Escrow Required",
                         count: paymentProtectionStats.required,
                         tone: "border-rose-200 bg-rose-50 text-rose-800",
                         dataTestId: "dashboard-guardrail-escrow-required",
+                        navigationTarget: "/app/agreements?payment_mode=escrow&payment_protection=required",
                       },
                     ]
                       .filter((item) => Number(item.count || 0) > 0)
                       .map((item) => (
-                        <span
+                        <button
+                          type="button"
                           key={item.label}
                           data-testid={item.dataTestId}
+                          onClick={() => navigate(item.navigationTarget || "/app/agreements")}
                           className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold leading-none ${item.tone}`}
                         >
                           <span>{item.label}</span>
                           <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-extrabold text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.08)]">
                             {Number(item.count || 0).toLocaleString()}
                           </span>
-                        </span>
+                        </button>
                       ))}
                   </div>
                 </div>
@@ -2475,57 +2590,9 @@ export default function ContractorDashboard() {
             </DashboardCard>
           </DashboardSection>
 
-          {needsAttentionItems.length ? (
-            <DashboardSection
-              title="Needs Attention"
-              subtitle="Urgent approvals, signatures, disputes, or funding issues."
-            >
-              <DashboardCard
-                testId="dashboard-needs-attention"
-                tone="subtle"
-                className="border-amber-200/90 bg-amber-50/75 p-4 shadow-[0_10px_26px_rgba(245,158,11,0.08)]"
-              >
-                <div className="space-y-2">
-                  {needsAttentionItems.map((item) => (
-                    <button
-                      key={item.key}
-                      data-testid={item.dataTestId || (item.filterType ? `dashboard-needs-attention-item-${item.filterType}` : undefined)}
-                      type="button"
-                      onClick={() => navigate(item.navigationTarget || item.href || "/app/dashboard")}
-                      className="flex w-full items-start justify-between gap-4 rounded-xl border border-amber-200/80 bg-white px-4 py-3 text-left transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-900">{item.title || item.label}</div>
-                        <div className="mt-1 text-sm text-slate-600">{item.description || item.label}</div>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
-                        {item.buttonLabel || item.ctaText || "Open"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </DashboardCard>
-            </DashboardSection>
-          ) : (
-            <DashboardSection
-              title="Needs Attention"
-              subtitle="Urgent approvals, signatures, disputes, or funding issues."
-            >
-              <DashboardCard
-                testId="dashboard-needs-attention"
-                tone="subtle"
-                className="border-amber-200/90 bg-amber-50/75 p-4 shadow-[0_10px_26px_rgba(245,158,11,0.08)]"
-              >
-                <div className="rounded-xl border border-dashed border-amber-200 bg-white/80 px-4 py-3 text-sm text-slate-700">
-                  No urgent items right now.
-                </div>
-              </DashboardCard>
-            </DashboardSection>
-          )}
-
           <DashboardSection
             title="Schedule"
-            subtitle="Keep an eye on what needs attention first."
+            subtitle="Active due work only. Planned timelines stay in agreement previews until activated."
           >
             <DashboardCard
               tone="subtle"
@@ -2537,23 +2604,23 @@ export default function ContractorDashboard() {
                 <div className="space-y-4">
                   <div className="grid gap-3 md:grid-cols-2">
                     <div data-testid="dashboard-schedule-late">
-                      <StatCard
-                        icon={AlertTriangle}
-                        title="Past Due / Late"
-                        subtitle="Overdue milestones, invoices, or agreements needing follow-up."
-                        count={dueSchedule.late.count}
-                        amount={dueSchedule.late.amount}
-                        onClick={goAgreementScheduleLate}
+                    <StatCard
+                      icon={AlertTriangle}
+                      title="Past Due / Late"
+                      subtitle="Overdue active milestones, invoices, or agreements needing follow-up."
+                      count={dueSchedule.late.count}
+                      amount={dueSchedule.late.amount}
+                      onClick={goAgreementScheduleLate}
                       />
                     </div>
                     <div data-testid="dashboard-schedule-today">
-                      <StatCard
-                        icon={CalendarDays}
-                        title="Due Today"
-                        subtitle="Immediate actions and scheduled work."
-                        count={dueSchedule.today.count}
-                        amount={dueSchedule.today.amount}
-                        onClick={goAgreementScheduleToday}
+                    <StatCard
+                      icon={CalendarDays}
+                      title="Due Today"
+                      subtitle="Immediate actions and active scheduled work."
+                      count={dueSchedule.today.count}
+                      amount={dueSchedule.today.amount}
+                      onClick={goAgreementScheduleToday}
                       />
                     </div>
                   </div>

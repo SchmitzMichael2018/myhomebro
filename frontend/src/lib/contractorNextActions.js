@@ -97,6 +97,7 @@ function getMilestonePricingStrategy(milestone) {
 
 function buildAction({
   key,
+  dedupeKey,
   title,
   description,
   buttonLabel,
@@ -108,6 +109,7 @@ function buildAction({
 }) {
   return {
     key,
+    dedupeKey: safeText(dedupeKey),
     title: safeText(title),
     description: safeText(description),
     buttonLabel: safeText(buttonLabel) || "Open",
@@ -131,8 +133,10 @@ function dedupeActions(actions) {
   const seen = new Set();
   const result = [];
   for (const action of actions) {
-    if (!action || !action.key || seen.has(action.key)) continue;
-    seen.add(action.key);
+    if (!action || !action.key) continue;
+    const dedupeKey = safeText(action.dedupeKey || action.navigationTarget || action.key);
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     result.push(action);
   }
   return result;
@@ -154,6 +158,7 @@ function mapNextBestAction(nextBestAction) {
   if (!nextBestAction?.title) return null;
   return buildAction({
     key: `next-best:${safeText(nextBestAction.action_type) || safeText(nextBestAction.title)}`,
+    dedupeKey: safeText(nextBestAction.navigation_target) || safeText(nextBestAction.action_type) || safeText(nextBestAction.title),
     title: nextBestAction.title,
     description: nextBestAction.message,
     buttonLabel: nextBestAction.cta_label || "Open",
@@ -193,6 +198,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: `agreement-draft:${latestDraft.id}`,
+        dedupeKey: `agreement:${latestDraft.id}`,
         title: "Send your next agreement",
         description: "A draft agreement is ready for review and sending.",
         buttonLabel: "Open draft",
@@ -214,6 +220,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: "agreements-awaiting-signature",
+        dedupeKey: "agreements-awaiting-signature",
         title: "Review agreement signatures",
         description: `${countLabel(awaitingSignature.length, "agreement")} ${isAre(awaitingSignature.length)} waiting on signature.`,
         buttonLabel: "Open agreements",
@@ -239,6 +246,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: "agreements-awaiting-funding",
+        dedupeKey: "agreements-awaiting-funding",
         title: "Fund agreement escrow",
         description: `${countLabel(awaitingFunding.length, "agreement")} ${isAre(awaitingFunding.length)} waiting on funding.`,
         buttonLabel: "Open agreements",
@@ -256,6 +264,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: "invoices-pending-approval",
+        dedupeKey: "invoices-pending-approval",
         title: "Review payment requests",
         description: `${countLabel(invoicePending.length, "payment request")} ${isAre(invoicePending.length)} waiting on approval.`,
         buttonLabel: "Open invoices",
@@ -274,6 +283,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: `invoice-approved:${latestApprovedInvoice.id}`,
+        dedupeKey: `invoice:${latestApprovedInvoice.id}`,
         title: "Release approved payment",
         description: "An approved invoice is ready for payout handling.",
         buttonLabel: "Open invoice",
@@ -290,6 +300,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: "invoices-disputed",
+        dedupeKey: "invoices-disputed",
         title: "Resolve payment issues",
         description: `${countLabel(invoiceDisputed.length, "invoice")} ${isAre(invoiceDisputed.length)} disputed and need follow-up.`,
         buttonLabel: "Open issues",
@@ -313,6 +324,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: "milestone-submitted-review",
+        dedupeKey: `milestone-review:${latestSubmittedMilestone.id}`,
         title: "Review submitted work",
         description: `${countLabel(submittedMilestones.length, "milestone")} ${isAre(submittedMilestones.length)} waiting for review.`,
         buttonLabel: "Open review queue",
@@ -349,6 +361,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: `milestone-quote:${latestQuoteMilestone.id}`,
+        dedupeKey: `milestone:${latestQuoteMilestone.id}`,
         title,
         description,
         buttonLabel: "Open milestone",
@@ -376,6 +389,7 @@ export function getContractorNextActions({
     actions.push(
       buildAction({
         key: `milestone-quote-required:${latestQuoteRequiredMilestone.id}`,
+        dedupeKey: `milestone:${latestQuoteRequiredMilestone.id}`,
         title: "Request subcontractor quote",
         description: `Pricing for ${safeText(latestQuoteRequiredMilestone?.title) || "this milestone"} still needs subcontractor pricing.`,
         buttonLabel: "Open agreement",
@@ -395,6 +409,7 @@ export function getContractorNextActions({
       .map((item, index) =>
         buildAction({
           key: `activity:${item?.id ?? index}`,
+          dedupeKey: `activity:${item?.id ?? index}`,
           title: item?.title || "Open activity item",
           description: item?.summary || "Review the latest activity item.",
           buttonLabel: item?.severity === "warning" || item?.severity === "critical" ? "Review" : "Open",

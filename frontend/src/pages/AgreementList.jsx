@@ -111,6 +111,14 @@ const getPaymentMode = (r) => {
   return "escrow";
 };
 
+const getPaymentProtectionLevel = (r) => {
+  const raw = safeLower(r?.payment_protection?.level || r?.payment_protection?.label || r?.paymentProtection?.level || r?.paymentProtection?.label || "");
+  if (raw.includes("required")) return "required";
+  if (raw.includes("recommended")) return "recommended";
+  if (raw.includes("preferred")) return "preferred";
+  return getPaymentMode(r) === "direct" ? "direct" : "preferred";
+};
+
 const parseDateAny = (value) => {
   if (!value) return null;
   const parsed = new Date(value);
@@ -461,6 +469,8 @@ export default function AgreementList() {
   const statusParam = params.get("status") || "";
   const projectClassFilter = normalizeProjectClassFilter(params.get("project_class"));
   const projectModeFilter = normalizeProjectModeFilter(params.get("project_mode"));
+  const paymentModeFilter = safeLower(params.get("payment_mode")) || "all";
+  const paymentProtectionFilter = safeLower(params.get("payment_protection")) || "all";
   const activeRouteFilter = useMemo(() => {
     if (routeFocus === "needs_attention") {
       if (routeFilter === "awaiting_signature") {
@@ -889,6 +899,14 @@ export default function AgreementList() {
           return false;
         }
 
+        if (paymentModeFilter !== "all" && getPaymentMode(r) !== paymentModeFilter) {
+          return false;
+        }
+
+        if (paymentProtectionFilter !== "all" && getPaymentProtectionLevel(r) !== paymentProtectionFilter) {
+          return false;
+        }
+
         const status = safeLower(r.status);
         if (statusParam === "awaiting_signature") return rowIsAwaitingSignature(r);
         if (statusParam === "funding_needed") return rowIsAwaitingFunding(r);
@@ -930,6 +948,8 @@ export default function AgreementList() {
     statusParam,
     projectClassFilter,
     projectModeFilter,
+    paymentModeFilter,
+    paymentProtectionFilter,
   ]);
 
   const page = filtered.slice(0, pageSize);

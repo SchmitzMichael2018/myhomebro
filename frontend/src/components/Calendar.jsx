@@ -142,6 +142,15 @@ function buildAssignmentChipLines({ viewType, xp, fallbackTitle }) {
   return [`Agreement #${agreementNo}`, String(proj), emp || null].filter(Boolean);
 }
 
+function isPlannedCalendarMilestone(milestone) {
+  const lifecycle = String(
+    milestone?.milestone_lifecycle_state || milestone?.lifecycle_state || milestone?.calendar_status || milestone?.status || ""
+  )
+    .trim()
+    .toLowerCase();
+  return lifecycle === "planned";
+}
+
 export default function Calendar() {
   const [events, setEvents] = useState([]);
   const [activeMilestone, setActiveMilestone] = useState(null);
@@ -199,7 +208,9 @@ export default function Calendar() {
         assigneeByMilestoneId = map;
       } catch {}
 
-      const milestoneEvents = milestones.map((m) => {
+      const visibleMilestones = milestones.filter((m) => !isPlannedCalendarMilestone(m));
+
+      const milestoneEvents = visibleMilestones.map((m) => {
         const statusKey = String(m.calendar_status || "scheduled").toLowerCase();
         const color = STATUS_COLORS[statusKey] || STATUS_COLORS.scheduled;
 
