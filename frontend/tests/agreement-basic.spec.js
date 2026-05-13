@@ -674,17 +674,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.getByRole('heading', { name: 'Describe the job' })).toBeVisible();
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
   await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
-  await expect(page.locator('input[name="address_line1"]')).toBeVisible();
-  await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-class-residential')).toBeVisible();
-  await expect(page.getByTestId('agreement-payment-structure-simple')).toBeVisible();
-  await expect(page.getByTestId('agreement-pricing-strategy-fixed')).toBeVisible();
-
-  await page.getByTestId('agreement-customer-select').selectOption('1');
-  await expect(page.getByTestId('agreement-customer-select')).toHaveValue('1');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
 
   await page.getByTestId('step1-job-description-input').fill(
     'Build backyard 12x14 shed with slab foundation and cleanup'
@@ -701,8 +691,19 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.locator('select[name="project_type"]')).not.toHaveValue('Concrete');
   await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue('Concrete Slab');
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
-  await expect(page.getByTestId('agreement-customer-select')).toHaveValue('1');
+  await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
+  await expect(page.locator('input[name="address_line1"]')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-class-residential')).toBeVisible();
+  await expect(page.getByTestId('agreement-payment-structure-simple')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-start-date-field')).toBeVisible();
+  const titleBox = await page.getByTestId('agreement-project-title-input').boundingBox();
+  const startDateBox = await page.getByTestId('agreement-project-start-date-input').boundingBox();
+  expect(startDateBox?.width || 999).toBeLessThan(titleBox?.width || 0);
+  expect(startDateBox?.width || 999).toBeLessThanOrEqual(220);
+
+  await page.getByTestId('agreement-customer-select').selectOption('1');
+  await expect(page.getByTestId('agreement-customer-select')).toHaveValue('1');
   await page.getByTestId('agreement-project-title-input').fill('Sprinkler System');
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
     'Sprinkler System'
@@ -713,7 +714,25 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await page.getByTestId('agreement-project-title-input').fill(
     'Playwright Agreement Smoke'
   );
+  await page.getByTestId('agreement-project-title-input').fill('');
   await page.getByTestId('agreement-save-draft-button').click();
+  await expect(page.getByText('Project title is required.')).toBeVisible();
+
+  await page.getByTestId('agreement-project-title-input').fill(
+    'Playwright Agreement Smoke'
+  );
+  await page.getByTestId('agreement-save-draft-button').click();
+
+  await expect(page).toHaveURL(
+    new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=[12]$`)
+  );
+  await expect(page.getByTestId('agreement-wizard-subtitle')).toContainText(
+    `Agreement #${AGREEMENT_ID}`
+  );
+
+  if (new URL(page.url()).searchParams.get('step') === '1') {
+    await page.getByRole('button', { name: 'Save & Next' }).click();
+  }
 
   await expect(page).toHaveURL(
     new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=2$`)

@@ -59,16 +59,30 @@ function PrettyJson({ data }) {
 
 const STEP1_FIELD_LABELS = {
   project_type: "Project Type",
+  project_type_ref: "Project Type",
   project_subtype: "Subtype",
+  project_subtype_ref: "Subtype",
   project_title: "Project Title",
+  title: "Project Title",
   description: "Scope of Work",
+  scope_of_work: "Scope of Work",
   homeowner: "Customer",
   address_line1: "Address",
   address_city: "City",
   address_state: "State",
   address_postal_code: "ZIP code",
+  project_start_date: "Project Start Date",
+  start: "Project Start Date",
   recurrence_pattern: "Frequency",
   recurrence_start_date: "Start date",
+};
+
+const STEP1_FIELD_ERROR_ALIASES = {
+  title: "project_title",
+  scope_of_work: "description",
+  project_type_ref: "project_type",
+  project_subtype_ref: "project_subtype",
+  start: "project_start_date",
 };
 
 function normalizeStep1ValidationFieldErrors(payload) {
@@ -93,7 +107,8 @@ function normalizeStep1ValidationFieldErrors(payload) {
     }
 
     if (safeTrim(message)) {
-      errors[key] = safeTrim(message);
+      const normalizedKey = STEP1_FIELD_ERROR_ALIASES[key] || key;
+      errors[normalizedKey] = safeTrim(message);
     }
   }
 
@@ -6822,7 +6837,7 @@ export default function Step1Details({
                 ) : null}
               </div>
 
-              <div>
+              <div data-testid="agreement-project-start-date-field" className="md:max-w-xs">
                 <label className="mb-1 block text-sm font-medium text-slate-900">
                   Project Start Date
                 </label>
@@ -6833,7 +6848,7 @@ export default function Step1Details({
                   value={safeTrim(dLocal?.project_start_date || "")}
                   onChange={locked ? undefined : handleStep1LocalChange}
                   disabled={locked}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 md:w-48"
                 />
                 <div className="mt-1 text-[11px] text-slate-500">
                   Used to schedule milestone dates. You can adjust dates later.

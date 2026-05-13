@@ -73,6 +73,24 @@ function normalizeStep1FieldValue(value) {
   return cleaned;
 }
 
+function normalizeStep1Id(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function toDateOnly(value) {
+  const raw = normalizeStep1FieldValue(value);
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 function normalizeRecommendationLevel(value) {
   const normalized = safeTrim(value).toLowerCase();
   if (normalized === "high" || normalized === "recommended") return "high";
@@ -288,13 +306,14 @@ function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTi
   const agreement = data?.agreement || null;
   const template = agreement?.selected_template || fallbackTemplate || null;
 
-  const nextTemplateId =
+  const nextTemplateId = normalizeStep1Id(
     agreement?.selected_template_id ??
     agreement?.selected_template?.id ??
     agreement?.project_template_id ??
     agreement?.template_id ??
     fallbackTemplate?.id ??
-    null;
+    null
+  );
 
   const nextTemplateName =
     safeTrim(agreement?.selected_template_name_snapshot) ||
@@ -304,22 +323,25 @@ function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTi
   const nextTitle =
     normalizeStep1FieldValue(
       agreement?.project_title ||
-        agreement?.title ||
-        currentTitle ||
         template?.name ||
+        currentTitle ||
         ""
     );
 
-  const nextStartDate =
-    normalizeStep1FieldValue(
-      agreement?.project_start_date ||
-        agreement?.start ||
-        ""
-    );
+  const nextType = normalizeStep1FieldValue(
+    agreement?.project_type || template?.project_type || ""
+  );
+  const nextSubtype = normalizeStep1FieldValue(
+    agreement?.project_subtype || template?.project_subtype || ""
+  );
+
+  const nextStartDate = toDateOnly(agreement?.project_start_date || agreement?.start || "");
 
   const nextDescription =
     normalizeStep1FieldValue(
       agreement?.description ??
+        agreement?.scope_of_work ??
+        template?.default_scope ??
         (safeTrim(template?.description) ? template.description : currentDescription)
     );
 
@@ -327,8 +349,8 @@ function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTi
     agreement,
     patch: {
       project_title: nextTitle || "",
-      project_type: normalizeStep1FieldValue(agreement?.project_type ?? ""),
-      project_subtype: normalizeStep1FieldValue(agreement?.project_subtype ?? ""),
+      project_type: nextType,
+      project_subtype: nextSubtype,
       project_start_date: nextStartDate || "",
       description: nextDescription || "",
       selected_template: template,
@@ -884,6 +906,20 @@ export default function useStep1Templates({
           : await fetchTemplateDetail(template.id);
 
       const applyOptions = normalizeApplyOptions(options, detail || template);
+      const payloadProjectTitle =
+        normalizeStep1FieldValue(currentTitle) ||
+        normalizeStep1FieldValue(template.name) ||
+        "Draft Agreement";
+      const payloadProjectType =
+        normalizeStep1FieldValue(currentProjectType) ||
+        normalizeStep1FieldValue(detail?.project_type || template?.project_type);
+      const payloadProjectSubtype =
+        normalizeStep1FieldValue(currentProjectSubtype) ||
+        normalizeStep1FieldValue(detail?.project_subtype || template?.project_subtype);
+      const payloadDescription =
+        normalizeStep1FieldValue(currentDescription) ||
+        normalizeStep1FieldValue(detail?.default_scope || detail?.description || template?.description);
+      const payloadStartDate = toDateOnly(dLocal?.project_start_date || dLocal?.start || "");
 
       const response = await api.post(`/projects/agreements/${targetAgreementId}/apply-template/`, {
         template_id: template.id,
@@ -893,17 +929,17 @@ export default function useStep1Templates({
         auto_schedule: applyOptions.auto_schedule,
         spread_enabled: applyOptions.spread_enabled,
         spread_total: applyOptions.spread_total,
-        project_title: currentTitle || template.name || "Draft Agreement",
-        title: currentTitle || template.name || "Draft Agreement",
-        project_type: currentProjectType || "",
-        project_subtype: currentProjectSubtype || "",
-        description: currentDescription || "",
+        project_title: payloadProjectTitle,
+        title: payloadProjectTitle,
+        project_type: payloadProjectType,
+        project_subtype: payloadProjectSubtype,
+        description: payloadDescription,
         project_class: dLocal?.project_class || "residential",
         payment_mode: dLocal?.payment_mode || "escrow",
         payment_structure: dLocal?.payment_structure || "simple",
         agreement_mode: dLocal?.agreement_mode || "standard",
         step_status: dLocal?.step_status || "step1",
-        project_start_date: dLocal?.project_start_date || dLocal?.start || "",
+        project_start_date: payloadStartDate || null,
         is_draft: !agreementId,
         wizard_step: 1,
       });

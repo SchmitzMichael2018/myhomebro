@@ -98,6 +98,11 @@ function normalizeWizardStep1Value(value) {
   return cleaned;
 }
 
+function normalizeWizardStep1Id(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function safeRecurringText(v) {
   return v == null ? "" : String(v).trim();
 }
@@ -1276,6 +1281,9 @@ export default function AgreementWizard() {
 
     const rawTitle = normalizeWizardStep1Value(dLocal.project_title || "");
     const rawDescription = normalizeWizardStep1Value(dLocal.description || "");
+    const projectStartDate = toDateOnly(dLocal.project_start_date || dLocal.start || "");
+    const selectedTypeId = normalizeWizardStep1Id(selectedType?.id);
+    const selectedSubtypeId = normalizeWizardStep1Id(selectedSubtype?.id);
 
     const fallbackTitle = "Draft Agreement";
     const fallbackDescription =
@@ -1289,8 +1297,8 @@ export default function AgreementWizard() {
       project_type: normalizeWizardStep1Value(dLocal.project_type || ""),
       project_subtype: normalizeWizardStep1Value(dLocal.project_subtype || ""),
       scope_of_work: rawDescription,
-      project_type_ref: selectedType?.id || null,
-      project_subtype_ref: selectedSubtype?.id || null,
+      project_type_ref: selectedTypeId,
+      project_subtype_ref: selectedSubtypeId,
       agreement_mode: dLocal.agreement_mode || "standard",
       step_status: dLocal.step_status || "step1",
       recurring_service_enabled:
@@ -1307,8 +1315,8 @@ export default function AgreementWizard() {
         dLocal.agreement_mode === "maintenance" ? dLocal.recurrence_start_date || null : null,
       recurrence_end_date:
         dLocal.agreement_mode === "maintenance" ? dLocal.recurrence_end_date || null : null,
-      project_start_date: dLocal.project_start_date || null,
-      start: dLocal.project_start_date || null,
+      project_start_date: projectStartDate || null,
+      start: projectStartDate || null,
       maintenance_status:
         dLocal.agreement_mode === "maintenance" ? dLocal.maintenance_status || "active" : "active",
       auto_generate_next_occurrence:
@@ -1363,7 +1371,11 @@ export default function AgreementWizard() {
     } catch (err) {
       const data = err?.response?.data;
       const status = Number(err?.response?.status || 0);
-      setLast400(data || { detail: "Create failed." });
+      setLast400(
+        data && typeof data === "object"
+          ? { ...data, status }
+          : { detail: safeStr(data) || "Create failed.", status }
+      );
       toast.error(
         status === 401
           ? "Your session expired. Please sign in again."
@@ -1390,7 +1402,11 @@ export default function AgreementWizard() {
     } catch (err) {
       const data = err?.response?.data;
       const status = Number(err?.response?.status || 0);
-      setLast400(data || { detail: "Save failed." });
+      setLast400(
+        data && typeof data === "object"
+          ? { ...data, status }
+          : { detail: safeStr(data) || "Save failed.", status }
+      );
       toast.error(
         status === 401
           ? "Your session expired. Please sign in again."
@@ -1593,83 +1609,102 @@ export default function AgreementWizard() {
       if (hydratedAgreement) {
         setAgreement(hydratedAgreement);
 
-        setDLocal((prev) => ({
-          ...prev,
-          homeowner:
-            hydratedAgreement?.homeowner != null
-              ? String(hydratedAgreement.homeowner)
-              : prev.homeowner,
-          project_title:
-            hydratedAgreement?.project_title ||
-            hydratedAgreement?.title ||
-            hydratedAgreement?.project?.title ||
-            prev.project_title,
-          project_class:
-            normalizeProjectClass(hydratedAgreement?.project_class ?? prev.project_class),
-          project_type: hydratedAgreement?.project_type ?? prev.project_type,
-          project_subtype: hydratedAgreement?.project_subtype ?? prev.project_subtype,
-          agreement_mode:
-            hydratedAgreement?.agreement_mode ?? prev.agreement_mode ?? "standard",
-          recurring_service_enabled:
-            hydratedAgreement?.recurring_service_enabled ?? prev.recurring_service_enabled ?? false,
-          recurrence_pattern:
-            hydratedAgreement?.recurrence_pattern ?? prev.recurrence_pattern ?? "monthly",
-          recurrence_interval:
-            hydratedAgreement?.recurrence_interval != null
-              ? String(hydratedAgreement.recurrence_interval)
-              : prev.recurrence_interval ?? "1",
-          recurrence_start_date:
-            hydratedAgreement?.recurrence_start_date ?? prev.recurrence_start_date ?? "",
-          recurrence_end_date:
-            hydratedAgreement?.recurrence_end_date ?? prev.recurrence_end_date ?? "",
-          maintenance_status:
-            hydratedAgreement?.maintenance_status ?? prev.maintenance_status ?? "active",
-          auto_generate_next_occurrence:
-            hydratedAgreement?.auto_generate_next_occurrence ??
-            prev.auto_generate_next_occurrence ??
-            true,
-          service_window_notes:
-            hydratedAgreement?.service_window_notes ?? prev.service_window_notes ?? "",
-          recurring_summary_label:
-            hydratedAgreement?.recurring_summary_label ?? prev.recurring_summary_label ?? "",
-          next_occurrence_date:
-            hydratedAgreement?.next_occurrence_date ?? prev.next_occurrence_date ?? "",
-          description: hydratedAgreement?.description ?? prev.description,
-          payment_mode: hydratedAgreement?.payment_mode || prev.payment_mode,
-          payment_structure:
-            hydratedAgreement?.payment_structure || prev.payment_structure || "simple",
-          pricing_strategy:
-            String(hydratedAgreement?.pricing_strategy || prev.pricing_strategy || "fixed")
-              .trim()
-              .toLowerCase() || "fixed",
-          retainage_percent:
-            hydratedAgreement?.retainage_percent != null
-              ? String(hydratedAgreement.retainage_percent)
-              : prev.retainage_percent || "0.00",
-          address_line1:
-            hydratedAgreement?.address_line1 ||
-            hydratedAgreement?.project_address_line1 ||
-            prev.address_line1,
-          address_line2:
-            hydratedAgreement?.address_line2 ||
-            hydratedAgreement?.project_address_line2 ||
-            prev.address_line2,
-          address_city:
-            hydratedAgreement?.address_city ||
-            hydratedAgreement?.city ||
-            hydratedAgreement?.project_address_city ||
-            prev.address_city,
-          address_state:
-            hydratedAgreement?.address_state ||
-            hydratedAgreement?.state ||
-            hydratedAgreement?.project_address_state ||
-            prev.address_state,
-          address_postal_code:
-            hydratedAgreement?.address_postal_code ||
-            hydratedAgreement?.postal_code ||
-            hydratedAgreement?.project_postal_code ||
-            prev.address_postal_code,
-        }));
+        setDLocal((prev) => {
+          const nextTitle =
+            normalizeWizardStep1Value(
+              hydratedAgreement?.project_title ||
+                hydratedAgreement?.title ||
+                hydratedAgreement?.project?.title ||
+                ""
+            ) || prev.project_title;
+          const nextType =
+            normalizeWizardStep1Value(hydratedAgreement?.project_type) || prev.project_type;
+          const nextSubtype =
+            normalizeWizardStep1Value(hydratedAgreement?.project_subtype) || prev.project_subtype;
+          const nextDescription =
+            normalizeWizardStep1Value(
+              hydratedAgreement?.description || hydratedAgreement?.scope_of_work || ""
+            ) || prev.description;
+          const nextStartDate =
+            toDateOnly(
+              normalizeWizardStep1Value(hydratedAgreement?.project_start_date || hydratedAgreement?.start || "")
+            ) || prev.project_start_date || "";
+
+          return {
+            ...prev,
+            homeowner:
+              hydratedAgreement?.homeowner != null
+                ? String(hydratedAgreement.homeowner)
+                : prev.homeowner,
+            project_title: nextTitle,
+            project_class:
+              normalizeProjectClass(hydratedAgreement?.project_class ?? prev.project_class),
+            project_type: nextType,
+            project_subtype: nextSubtype,
+            project_start_date: nextStartDate,
+            agreement_mode:
+              hydratedAgreement?.agreement_mode ?? prev.agreement_mode ?? "standard",
+            recurring_service_enabled:
+              hydratedAgreement?.recurring_service_enabled ?? prev.recurring_service_enabled ?? false,
+            recurrence_pattern:
+              hydratedAgreement?.recurrence_pattern ?? prev.recurrence_pattern ?? "monthly",
+            recurrence_interval:
+              hydratedAgreement?.recurrence_interval != null
+                ? String(hydratedAgreement.recurrence_interval)
+                : prev.recurrence_interval ?? "1",
+            recurrence_start_date:
+              hydratedAgreement?.recurrence_start_date ?? prev.recurrence_start_date ?? "",
+            recurrence_end_date:
+              hydratedAgreement?.recurrence_end_date ?? prev.recurrence_end_date ?? "",
+            maintenance_status:
+              hydratedAgreement?.maintenance_status ?? prev.maintenance_status ?? "active",
+            auto_generate_next_occurrence:
+              hydratedAgreement?.auto_generate_next_occurrence ??
+              prev.auto_generate_next_occurrence ??
+              true,
+            service_window_notes:
+              hydratedAgreement?.service_window_notes ?? prev.service_window_notes ?? "",
+            recurring_summary_label:
+              hydratedAgreement?.recurring_summary_label ?? prev.recurring_summary_label ?? "",
+            next_occurrence_date:
+              hydratedAgreement?.next_occurrence_date ?? prev.next_occurrence_date ?? "",
+            description: nextDescription,
+            payment_mode: hydratedAgreement?.payment_mode || prev.payment_mode,
+            payment_structure:
+              hydratedAgreement?.payment_structure || prev.payment_structure || "simple",
+            pricing_strategy:
+              String(hydratedAgreement?.pricing_strategy || prev.pricing_strategy || "fixed")
+                .trim()
+                .toLowerCase() || "fixed",
+            retainage_percent:
+              hydratedAgreement?.retainage_percent != null
+                ? String(hydratedAgreement.retainage_percent)
+                : prev.retainage_percent || "0.00",
+            address_line1:
+              hydratedAgreement?.address_line1 ||
+              hydratedAgreement?.project_address_line1 ||
+              prev.address_line1,
+            address_line2:
+              hydratedAgreement?.address_line2 ||
+              hydratedAgreement?.project_address_line2 ||
+              prev.address_line2,
+            address_city:
+              hydratedAgreement?.address_city ||
+              hydratedAgreement?.city ||
+              hydratedAgreement?.project_address_city ||
+              prev.address_city,
+            address_state:
+              hydratedAgreement?.address_state ||
+              hydratedAgreement?.state ||
+              hydratedAgreement?.project_address_state ||
+              prev.address_state,
+            address_postal_code:
+              hydratedAgreement?.address_postal_code ||
+              hydratedAgreement?.postal_code ||
+              hydratedAgreement?.project_postal_code ||
+              prev.address_postal_code,
+          };
+        });
       }
 
       await refreshAgreement();

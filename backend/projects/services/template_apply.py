@@ -745,7 +745,7 @@ def _workflow_profile_for_agreement(agreement: Agreement) -> dict[str, Any]:
     if isinstance(workflow_profile, dict) and workflow_profile:
         return dict(workflow_profile)
 
-    mode = normalize_project_mode(getattr(agreement, "project_mode", ""))
+    mode = _normalize_project_mode(getattr(agreement, "project_mode", ""))
     if mode == "consultation":
         return {
             "assistance_format": "consultation_only",
