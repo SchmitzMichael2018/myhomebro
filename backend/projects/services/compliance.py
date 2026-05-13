@@ -19,6 +19,17 @@ TRADE_ALIASES = {
     "handyman": {"handyman", "general repair", "repair"},
 }
 
+TRADE_LICENSE_GUIDANCE = {
+    "hvac": "HVAC work commonly requires state or local licensing. Add your license information if applicable.",
+    "electrical": "Electrical work commonly requires licensing. Verify local requirements and keep license information current.",
+    "plumbing": "Plumbing work commonly requires licensing. Verify local requirements and keep license information current.",
+    "roofing": "Roofing licensing requirements vary by state and locality. Verify local rules and insurance expectations.",
+    "foundation": "Foundation work may require licensed professionals, engineering review, permits, or inspections.",
+    "structural": "Structural work may require licensed professionals, engineering review, permits, or inspections.",
+    "gas": "Gas line work commonly requires licensed professionals and strict safety review. Verify local requirements.",
+    "fire_suppression": "Fire suppression work commonly requires licensed professionals and code review. Verify local requirements.",
+}
+
 
 def normalize_trade_key(value: Any) -> str:
     raw = str(value or "").strip().lower()
@@ -169,16 +180,23 @@ def contractor_has_insurance_on_file(contractor: Contractor | None) -> dict[str,
 def get_compliance_warning_for_trade(state_code: str, trade_key: str, contractor: Contractor | None = None) -> dict[str, Any]:
     requirement = get_trade_license_requirement(state_code, trade_key)
     if requirement is None:
+        normalized_trade = normalize_trade_key(trade_key)
+        guidance_message = TRADE_LICENSE_GUIDANCE.get(normalized_trade)
+        if guidance_message is None:
+            readable_trade = (normalized_trade.replace("_", " ").strip() or "this trade").title()
+            guidance_message = (
+                f"{readable_trade} work may require licensing, permits, inspections, or local review depending on jurisdiction."
+            )
         return {
             "required": False,
             "insurance_required": False,
-            "message": "",
+            "message": guidance_message,
             "issuing_authority_name": "",
             "official_lookup_url": "",
             "contractor_has_license_on_file": False,
             "contractor_license_status": "unknown",
             "contractor_has_insurance_on_file": False,
-            "warning_level": "none",
+            "warning_level": "info",
             "source_type": "unknown",
         }
 

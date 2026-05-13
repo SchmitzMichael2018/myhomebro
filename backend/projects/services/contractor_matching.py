@@ -5,6 +5,7 @@ from typing import Any, Iterable
 
 from projects.services.milestone_roles import detect_restricted_trade_categories
 from projects.services.payment_protection import build_payment_protection_summary
+from projects.services.contractor_capabilities import get_contractor_capability_flags
 
 
 def _safe_text(value: Any) -> str:
@@ -117,11 +118,10 @@ def build_contractor_compatibility_profile(contractor, profile=None) -> dict[str
     ways_i_work: list[dict[str, Any]] = []
     reasons: list[str] = []
 
-    accepts_diy_assistance = bool(getattr(contractor, "accepts_diy_assistance", False))
-    accepts_consultation_only = bool(getattr(contractor, "accepts_consultation_only", False))
-    accepts_hourly_help = bool(getattr(contractor, "accepts_hourly_help", False))
-    accepts_inspection_only = bool(getattr(contractor, "accepts_inspection_only", False))
-    accepts_homeowner_participation = bool(getattr(contractor, "accepts_homeowner_participation", False))
+    capability_flags = get_contractor_capability_flags(contractor)
+    accepts_diy_assistance = capability_flags["accepts_diy_assistance"]
+    accepts_consultation_only = capability_flags["accepts_consultation"]
+    accepts_inspection_only = capability_flags["accepts_inspection_only"]
 
     if accepts_diy_assistance:
         badges.append("DIY Assistance Available")
@@ -133,7 +133,7 @@ def build_contractor_compatibility_profile(contractor, profile=None) -> dict[str
             }
         )
         collaboration_score += 20
-        reasons.append("Comfortable working alongside homeowners.")
+        reasons.append("Comfortable with collaborative projects.")
     if accepts_consultation_only:
         badges.append("Consultation Available")
         ways_i_work.append(
@@ -145,39 +145,17 @@ def build_contractor_compatibility_profile(contractor, profile=None) -> dict[str
         )
         collaboration_score += 12
         reasons.append("Offers planning and guidance support.")
-    if accepts_hourly_help:
-        badges.append("Hourly Help")
-        ways_i_work.append(
-            {
-                "key": "hourly_help",
-                "label": "Hourly Help Available",
-                "description": "Can help with targeted labor, troubleshooting, and finish work.",
-            }
-        )
-        collaboration_score += 8
-        reasons.append("Can step in for partial or hourly assistance.")
     if accepts_inspection_only:
-        badges.append("Inspection Services")
+        badges.append("Inspection Services Available")
         ways_i_work.append(
             {
                 "key": "inspection_only",
-                "label": "Inspection Services",
+                "label": "Inspection Services Available",
                 "description": "Inspection and reporting are available.",
             }
         )
         collaboration_score += 12
         reasons.append("Supports inspection and review work.")
-    if accepts_homeowner_participation:
-        badges.append("Homeowner Participation Welcome")
-        ways_i_work.append(
-            {
-                "key": "homeowner_participation",
-                "label": "Homeowner Participation Welcome",
-                "description": "Homeowner participation is welcome on collaborative projects.",
-            }
-        )
-        collaboration_score += 10
-        reasons.append("Welcomes homeowner participation on the job.")
 
     if any(term in normalized_blob for term in ["escrow", "milestone payment", "milestone payments", "payment protection"]):
         reasons.append("Mentions protected milestone payments.")
@@ -186,8 +164,8 @@ def build_contractor_compatibility_profile(contractor, profile=None) -> dict[str
     if any(term in normalized_blob for term in ["inspection", "inspect", "review", "compliance"]):
         reasons.append("Works in inspection and review oriented projects.")
         collaboration_score += 8
-        if "Inspection Services" not in badges:
-            badges.append("Inspection Services")
+        if "Inspection Services Available" not in badges:
+            badges.append("Inspection Services Available")
     if any(term in normalized_blob for term in ["emergency", "24/7", "after hours", "urgent"]):
         badges.append("Emergency Service")
         reasons.append("Can support urgent or emergency service needs.")
@@ -200,27 +178,25 @@ def build_contractor_compatibility_profile(contractor, profile=None) -> dict[str
     escrow_required = any(term in normalized_blob for term in ["escrow only", "escrow required", "milestone only"])
     rescue_project_friendly = any(term in normalized_blob for term in ["finish", "rescue", "take over", "partial completion", "punch list", "help finishing"])
     inspection_capable = accepts_inspection_only or any(term in normalized_blob for term in ["inspection", "inspect", "review", "compliance"])
-    prefers_full_service_only = not any(
-        [accepts_diy_assistance, accepts_consultation_only, accepts_hourly_help, accepts_inspection_only, accepts_homeowner_participation]
-    )
-    prefers_small_projects = accepts_hourly_help or accepts_consultation_only or any(term in normalized_blob for term in ["small project", "service call", "repair", "hourly"])
+    prefers_full_service_only = not any([accepts_diy_assistance, accepts_consultation_only, accepts_inspection_only])
+    prefers_small_projects = accepts_consultation_only or any(term in normalized_blob for term in ["small project", "service call", "repair", "hourly"])
     prefers_large_projects = any(term in normalized_blob for term in ["large project", "commercial", "whole home", "full remodel"])
     emergency_service = any(term in normalized_blob for term in ["emergency", "24/7", "after hours", "urgent"])
 
-    if accepts_diy_assistance or accepts_homeowner_participation:
+    if accepts_diy_assistance:
         badges.append("Collaborative Projects")
     if escrow_friendly:
         badges.append("Escrow Friendly")
     if rescue_project_friendly:
         badges.append("Rescue Project Assistance")
-    if inspection_capable and "Inspection Services" not in badges:
-        badges.append("Inspection Services")
+    if inspection_capable and "Inspection Services Available" not in badges:
+        badges.append("Inspection Services Available")
     if accepts_consultation_only and "Consultation Available" not in badges:
         badges.append("Consultation Available")
 
     collaboration_score = max(0, min(collaboration_score, 100))
     if collaboration_score >= 70:
-        summary = "Good fit for collaborative projects and homeowner participation."
+        summary = "Good fit for collaborative projects."
         tier = "Strong Match"
     elif collaboration_score >= 45:
         summary = "Comfortable with collaborative projects and guided project support."
@@ -248,7 +224,6 @@ def build_contractor_compatibility_profile(contractor, profile=None) -> dict[str
         "accepts_diy_assistance": accepts_diy_assistance,
         "accepts_consultation": accepts_consultation_only,
         "accepts_inspection_only": accepts_inspection_only,
-        "accepts_homeowner_participation": accepts_homeowner_participation,
         "escrow_friendly": escrow_friendly,
         "escrow_required": escrow_required,
         "rescue_project_friendly": rescue_project_friendly,
@@ -422,8 +397,6 @@ def score_contractor_project_match(contractor, project_payload: Any, profile=Non
     if mode == "assisted_diy":
         if compatibility.get("accepts_diy_assistance"):
             add(18, "Offers Assisted DIY support.", "mode")
-        elif compatibility.get("accepts_homeowner_participation"):
-            add(12, "Comfortable with homeowner participation.", "mode")
         elif compatibility.get("prefers_full_service_only"):
             add(0, "Primarily focused on full-service delivery.", "mode")
         else:
@@ -481,8 +454,8 @@ def score_contractor_project_match(contractor, project_payload: Any, profile=Non
     if project.get("project_mode") in {"assisted_diy", "consultation"}:
         add(max(0, min(12, collaboration_level // 10)), "Experienced with collaborative projects.", "collaboration")
     if project.get("homeowner_participation_level") in {"medium", "high"}:
-        if compatibility.get("accepts_homeowner_participation") or compatibility.get("accepts_diy_assistance"):
-            add(10, "Homeowner participation is welcome.", "collaboration")
+        if compatibility.get("accepts_diy_assistance"):
+            add(10, "Comfortable with collaborative projects.", "collaboration")
     if project.get("project_size") == "small" and compatibility.get("prefers_small_projects"):
         add(6, "Small-project focus looks aligned.", "preference")
     if project.get("project_size") == "large" and compatibility.get("prefers_large_projects"):
@@ -520,7 +493,7 @@ def score_contractor_project_match(contractor, project_payload: Any, profile=Non
         *compatibility.get("badges", []),
         "Escrow Friendly" if compatibility.get("escrow_friendly") else None,
         "Rescue Project Assistance" if compatibility.get("rescue_project_friendly") else None,
-        "Inspection Services" if compatibility.get("inspection_capable") else None,
+        "Inspection Services Available" if compatibility.get("inspection_capable") else None,
     ]))
     badge_labels = [badge for badge in badge_labels if badge]
 

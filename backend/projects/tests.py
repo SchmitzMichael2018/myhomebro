@@ -129,6 +129,7 @@ from projects.services.benchmark_resolution import resolve_seed_benchmark_defaul
 from projects.views.customer_portal import _portal_token
 from projects.services.compliance import (
     contractor_has_required_license,
+    get_compliance_warning_for_trade,
     get_agreement_compliance_warning,
     get_public_trust_indicators,
     get_trade_license_requirement,
@@ -14868,6 +14869,17 @@ class ContractorComplianceFoundationTests(TestCase):
         self.assertEqual(len(data["trade_requirements"]), 1)
         self.assertEqual(data["trade_requirements"][0]["trade_key"], "electrical")
         self.assertTrue(data["trade_requirements"][0]["required"])
+
+    def test_trade_guidance_falls_back_for_common_licensed_trades_when_no_state_seed_exists(self):
+        warning = get_compliance_warning_for_trade("ZZ", "HVAC", self.contractor)
+
+        self.assertEqual(warning["warning_level"], "info")
+        self.assertIn("HVAC work commonly requires", warning["message"])
+        self.assertIn("license", warning["message"].lower())
+
+        handyman_warning = get_compliance_warning_for_trade("ZZ", "Handyman", self.contractor)
+        self.assertEqual(handyman_warning["warning_level"], "info")
+        self.assertIn("may require licensing", handyman_warning["message"].lower())
 
     def test_missing_required_license_detection(self):
         result = contractor_has_required_license(self.contractor, "TX", "electrical")

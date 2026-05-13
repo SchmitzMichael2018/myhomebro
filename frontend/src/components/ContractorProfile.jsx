@@ -120,9 +120,7 @@ export default function ContractorProfile() {
     service_radius_miles: 25,
     accepts_diy_assistance: false,
     accepts_consultation_only: false,
-    accepts_hourly_help: false,
     accepts_inspection_only: false,
-    accepts_homeowner_participation: false,
     license_number: "",
     license_expiration_date: "",
     skills: [],
@@ -187,9 +185,7 @@ export default function ContractorProfile() {
           service_radius_miles: Number(data.service_radius_miles || 25),
           accepts_diy_assistance: Boolean(data.accepts_diy_assistance),
           accepts_consultation_only: Boolean(data.accepts_consultation_only),
-          accepts_hourly_help: Boolean(data.accepts_hourly_help),
           accepts_inspection_only: Boolean(data.accepts_inspection_only),
-          accepts_homeowner_participation: Boolean(data.accepts_homeowner_participation),
           license_number: data.license_number || "",
           license_expiration_date:
             (data.license_expiration_date || data.license_expiration || "").slice(0, 10),
@@ -317,12 +313,7 @@ export default function ContractorProfile() {
       fd.append("service_radius_miles", String(form.service_radius_miles || 25));
       fd.append("accepts_diy_assistance", String(Boolean(form.accepts_diy_assistance)));
       fd.append("accepts_consultation_only", String(Boolean(form.accepts_consultation_only)));
-      fd.append("accepts_hourly_help", String(Boolean(form.accepts_hourly_help)));
       fd.append("accepts_inspection_only", String(Boolean(form.accepts_inspection_only)));
-      fd.append(
-        "accepts_homeowner_participation",
-        String(Boolean(form.accepts_homeowner_participation))
-      );
 
       fd.append("license_number", form.license_number || "");
       if (form.license_expiration_date) {
@@ -756,13 +747,13 @@ export default function ContractorProfile() {
         <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
           <div className="text-sm font-semibold text-slate-900">Ways I Work</div>
           <div className="mt-1 text-sm text-slate-600">
-            Surface how you prefer to work with homeowners, including guided DIY, consultation, and inspections.
+            Surface how you prefer to work with homeowners, including guided DIY, consultation, and inspection services.
           </div>
           <div className="mb-3 flex flex-wrap gap-2">
             {[
               ["accepts_diy_assistance", "DIY Assistance Available"],
               ["accepts_consultation_only", "Consultation Available"],
-              ["accepts_inspection_only", "Inspection Only"],
+              ["accepts_inspection_only", "Inspection Services Available"],
             ].map(([key, label]) =>
               form[key] ? (
                 <span key={key} className="rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">
@@ -789,7 +780,7 @@ export default function ContractorProfile() {
             {
               key: "accepts_diy_assistance",
               title: "DIY Assistance Available",
-              description: "Offer guided homeowner participation and assisted DIY projects.",
+              description: "Offer guided DIY projects and collaborative support.",
             },
             {
               key: "accepts_consultation_only",
@@ -797,19 +788,9 @@ export default function ContractorProfile() {
               description: "Offer advice, walkthroughs, and planning-only help.",
             },
             {
-              key: "accepts_hourly_help",
-              title: "Hourly Help",
-              description: "Offer time-and-materials labor help on a flexible basis.",
-            },
-            {
               key: "accepts_inspection_only",
-              title: "Inspection Only",
+              title: "Inspection Services Available",
               description: "Offer inspections without full-service execution.",
-            },
-            {
-              key: "accepts_homeowner_participation",
-              title: "Homeowner Participation",
-              description: "You are open to working alongside the homeowner.",
             },
           ].map((item) => {
             const active = Boolean(form[item.key]);

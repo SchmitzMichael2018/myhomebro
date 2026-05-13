@@ -16,6 +16,7 @@ from projects.models import (
 )
 from projects.models_project_intake import ProjectIntake
 from projects.services.compliance import get_public_trust_indicators
+from projects.services.contractor_capabilities import get_contractor_capability_flags
 from projects.services.contractor_matching import (
     build_contractor_compatibility_profile,
     score_contractor_project_match,
@@ -46,11 +47,9 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
     public_url = serializers.SerializerMethodField()
     public_trust_indicators = serializers.SerializerMethodField()
     contractor_profile_insights = serializers.SerializerMethodField()
-    accepts_diy_assistance = serializers.BooleanField(source="contractor.accepts_diy_assistance", read_only=True)
-    accepts_consultation_only = serializers.BooleanField(source="contractor.accepts_consultation_only", read_only=True)
-    accepts_hourly_help = serializers.BooleanField(source="contractor.accepts_hourly_help", read_only=True)
-    accepts_inspection_only = serializers.BooleanField(source="contractor.accepts_inspection_only", read_only=True)
-    accepts_homeowner_participation = serializers.BooleanField(source="contractor.accepts_homeowner_participation", read_only=True)
+    accepts_diy_assistance = serializers.SerializerMethodField()
+    accepts_consultation_only = serializers.SerializerMethodField()
+    accepts_inspection_only = serializers.SerializerMethodField()
 
     class Meta:
         model = ContractorPublicProfile
@@ -94,9 +93,7 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
             "contractor_profile_insights",
             "accepts_diy_assistance",
             "accepts_consultation_only",
-            "accepts_hourly_help",
             "accepts_inspection_only",
-            "accepts_homeowner_participation",
             "seo_title",
             "seo_description",
             "public_url",
@@ -143,6 +140,17 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
         if not contractor_id:
             return []
         return get_contractor_profile_insights(contractor_id)
+
+    def get_accepts_diy_assistance(self, obj):
+        return bool(get_contractor_capability_flags(getattr(obj, "contractor", None))["accepts_diy_assistance"])
+
+    def get_accepts_consultation_only(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        return bool(getattr(contractor, "accepts_consultation_only", False))
+
+    def get_accepts_inspection_only(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        return bool(getattr(contractor, "accepts_inspection_only", False))
 
 
 class PublicGalleryItemSerializer(serializers.ModelSerializer):
@@ -511,11 +519,9 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
     compatibility_badges = serializers.SerializerMethodField()
     ways_i_work = serializers.SerializerMethodField()
     compatibility_summary = serializers.SerializerMethodField()
-    accepts_diy_assistance = serializers.BooleanField(source="contractor.accepts_diy_assistance", read_only=True)
-    accepts_consultation_only = serializers.BooleanField(source="contractor.accepts_consultation_only", read_only=True)
-    accepts_hourly_help = serializers.BooleanField(source="contractor.accepts_hourly_help", read_only=True)
-    accepts_inspection_only = serializers.BooleanField(source="contractor.accepts_inspection_only", read_only=True)
-    accepts_homeowner_participation = serializers.BooleanField(source="contractor.accepts_homeowner_participation", read_only=True)
+    accepts_diy_assistance = serializers.SerializerMethodField()
+    accepts_consultation_only = serializers.SerializerMethodField()
+    accepts_inspection_only = serializers.SerializerMethodField()
 
     class Meta:
         model = ContractorPublicProfile
@@ -564,9 +570,7 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
             "compatibility_summary",
             "accepts_diy_assistance",
             "accepts_consultation_only",
-            "accepts_hourly_help",
             "accepts_inspection_only",
-            "accepts_homeowner_participation",
         ]
 
     def get_logo_url(self, obj):
@@ -608,6 +612,17 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
         if count <= 0:
             return obj.reviews.filter(is_verified=True, is_public=True).count()
         return count
+
+    def get_accepts_diy_assistance(self, obj):
+        return bool(get_contractor_capability_flags(getattr(obj, "contractor", None))["accepts_diy_assistance"])
+
+    def get_accepts_consultation_only(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        return bool(getattr(contractor, "accepts_consultation_only", False))
+
+    def get_accepts_inspection_only(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        return bool(getattr(contractor, "accepts_inspection_only", False))
 
     def get_public_trust_indicators(self, obj):
         return get_public_trust_indicators(

@@ -92,6 +92,10 @@ def _business_details(contractor: Contractor | None, payload: dict[str, Any]) ->
     def _contractor_bool(field: str) -> bool:
         return bool(getattr(contractor, field, False)) if contractor is not None else False
 
+    accepts_diy_assistance = bool(
+        raw.get("accepts_diy_assistance", _contractor_bool("accepts_diy_assistance") or _contractor_bool("accepts_homeowner_participation"))
+    )
+
     return _normalize_json_value(
         {
             "service_area_type": _safe_text(
@@ -101,11 +105,9 @@ def _business_details(contractor: Contractor | None, payload: dict[str, Any]) ->
             "emergency_services": bool(raw.get("emergency_services", False)),
             "licensed": bool(raw.get("licensed", False)),
             "insured": bool(raw.get("insured", False)),
-            "accepts_diy_assistance": bool(raw.get("accepts_diy_assistance", _contractor_bool("accepts_diy_assistance"))),
+            "accepts_diy_assistance": accepts_diy_assistance,
             "accepts_consultation_only": bool(raw.get("accepts_consultation_only", _contractor_bool("accepts_consultation_only"))),
-            "accepts_hourly_help": bool(raw.get("accepts_hourly_help", _contractor_bool("accepts_hourly_help"))),
             "accepts_inspection_only": bool(raw.get("accepts_inspection_only", _contractor_bool("accepts_inspection_only"))),
-            "accepts_homeowner_participation": bool(raw.get("accepts_homeowner_participation", _contractor_bool("accepts_homeowner_participation"))),
         }
     )
 
@@ -285,9 +287,7 @@ def get_contractor_onboarding_setup(contractor: Contractor | None) -> dict[str, 
                 "insured": False,
                 "accepts_diy_assistance": False,
                 "accepts_consultation_only": False,
-                "accepts_hourly_help": False,
                 "accepts_inspection_only": False,
-                "accepts_homeowner_participation": False,
             },
             "source": "server",
             "summary": "Tell us what kind of work you do and we’ll build your default setup.",

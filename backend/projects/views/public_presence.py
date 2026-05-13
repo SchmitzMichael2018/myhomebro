@@ -330,9 +330,7 @@ class ContractorPublicProfileManageView(APIView):
         flag_fields = (
             "accepts_diy_assistance",
             "accepts_consultation_only",
-            "accepts_hourly_help",
             "accepts_inspection_only",
-            "accepts_homeowner_participation",
         )
         update_fields = []
         for field in flag_fields:

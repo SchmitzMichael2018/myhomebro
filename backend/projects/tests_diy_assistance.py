@@ -44,9 +44,7 @@ class DIYAssistanceTests(TestCase):
             {
                 "accepts_diy_assistance": True,
                 "accepts_consultation_only": True,
-                "accepts_hourly_help": True,
                 "accepts_inspection_only": False,
-                "accepts_homeowner_participation": True,
             },
             format="json",
         )
@@ -56,15 +54,11 @@ class DIYAssistanceTests(TestCase):
         self.contractor.refresh_from_db()
         self.assertTrue(self.contractor.accepts_diy_assistance)
         self.assertTrue(self.contractor.accepts_consultation_only)
-        self.assertTrue(self.contractor.accepts_hourly_help)
-        self.assertTrue(self.contractor.accepts_homeowner_participation)
 
         me_response = self.client.get("/api/projects/contractors/me/")
         self.assertEqual(me_response.status_code, 200)
         self.assertTrue(me_response.data["accepts_diy_assistance"])
         self.assertTrue(me_response.data["accepts_consultation_only"])
-        self.assertTrue(me_response.data["accepts_hourly_help"])
-        self.assertTrue(me_response.data["accepts_homeowner_participation"])
 
     def test_intake_conversion_carries_project_mode_and_participation_notes(self):
         homeowner = Homeowner.objects.create(
@@ -190,15 +184,11 @@ class DIYAssistanceTests(TestCase):
     def test_intake_analysis_returns_contractor_match_snapshot(self):
         self.contractor.accepts_diy_assistance = True
         self.contractor.accepts_consultation_only = True
-        self.contractor.accepts_hourly_help = True
         self.contractor.accepts_inspection_only = True
-        self.contractor.accepts_homeowner_participation = True
         self.contractor.save(update_fields=[
             "accepts_diy_assistance",
             "accepts_consultation_only",
-            "accepts_hourly_help",
             "accepts_inspection_only",
-            "accepts_homeowner_participation",
         ])
         self.contractor.skills.create(name="Flooring", slug="flooring")
         profile = ContractorPublicProfile.objects.create(
@@ -252,12 +242,10 @@ class DIYAssistanceTests(TestCase):
         self.contractor.accepts_diy_assistance = True
         self.contractor.accepts_consultation_only = True
         self.contractor.accepts_inspection_only = True
-        self.contractor.accepts_homeowner_participation = True
         self.contractor.save(update_fields=[
             "accepts_diy_assistance",
             "accepts_consultation_only",
             "accepts_inspection_only",
-            "accepts_homeowner_participation",
         ])
         self.contractor.skills.create(name="Electrical", slug="electrical")
         profile = ContractorPublicProfile.objects.create(
@@ -278,18 +266,16 @@ class DIYAssistanceTests(TestCase):
 
         self.assertIn("DIY Assistance Available", payload["compatibility_badges"])
         self.assertIn("Consultation Available", payload["compatibility_badges"])
-        self.assertIn("Inspection Services", payload["compatibility_badges"])
+        self.assertIn("Inspection Services Available", payload["compatibility_badges"])
         self.assertTrue(payload["compatibility_profile"]["summary"])
         self.assertTrue(payload["ways_i_work"])
         self.assertIn("Good fit", payload["compatibility_summary"])
 
     def test_public_lead_serializer_exposes_matching_snapshot(self):
         self.contractor.accepts_diy_assistance = True
-        self.contractor.accepts_homeowner_participation = True
         self.contractor.accepts_inspection_only = True
         self.contractor.save(update_fields=[
             "accepts_diy_assistance",
-            "accepts_homeowner_participation",
             "accepts_inspection_only",
         ])
         self.contractor.skills.create(name="Flooring", slug="flooring-compatibility")

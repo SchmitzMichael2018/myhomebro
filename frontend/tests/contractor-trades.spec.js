@@ -241,7 +241,9 @@ test("profile uses the shared trade multiselect and saves canonical trades", asy
   await expect(page.getByText("Ways I Work")).toBeVisible();
   await expect(page.locator("span", { hasText: "DIY Assistance Available" }).first()).toBeVisible();
   await expect(page.locator("span", { hasText: "Consultation Available" }).first()).toBeVisible();
-  await expect(page.locator("span", { hasText: "Inspection Only" }).first()).toBeVisible();
+  await expect(page.locator("span", { hasText: "Inspection Services Available" }).first()).toBeVisible();
+  await expect(page.getByText("Hourly Help")).toHaveCount(0);
+  await expect(page.getByText("Homeowner Participation")).toHaveCount(0);
 
   await page.getByTestId("contractor-profile-trade-search").fill("roof");
   await page.getByTestId("contractor-profile-trade-option-roofing").click();

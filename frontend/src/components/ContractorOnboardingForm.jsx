@@ -38,9 +38,7 @@ const EMPTY_SETUP = {
     insured: false,
     accepts_diy_assistance: false,
     accepts_consultation_only: false,
-    accepts_hourly_help: false,
     accepts_inspection_only: false,
-    accepts_homeowner_participation: false,
   },
   recommended_setup: {},
   suggested_plan: {},
@@ -735,28 +733,18 @@ export default function ContractorOnboardingForm() {
                   {[
                     {
                       key: "accepts_diy_assistance",
-                      label: "DIY assistance",
-                      description: "Offer guided homeowner participation.",
+                      label: "DIY Assistance",
+                      description: "Offer guided DIY projects and collaborative support.",
                     },
                     {
                       key: "accepts_consultation_only",
-                      label: "Consultation only",
+                      label: "Consultation",
                       description: "Offer advice and planning without full execution.",
                     },
                     {
-                      key: "accepts_hourly_help",
-                      label: "Hourly help",
-                      description: "Offer flexible labor help on an hourly basis.",
-                    },
-                    {
                       key: "accepts_inspection_only",
-                      label: "Inspection only",
-                      description: "Offer inspection visits without full-service work.",
-                    },
-                    {
-                      key: "accepts_homeowner_participation",
-                      label: "Homeowner participation",
-                      description: "Open to working alongside the homeowner.",
+                      label: "Inspection Services",
+                      description: "Offer inspection visits and review support.",
                     },
                   ].map((item) => {
                     const checked = Boolean(businessDetails[item.key]);

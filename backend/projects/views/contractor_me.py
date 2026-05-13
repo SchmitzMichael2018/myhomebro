@@ -12,6 +12,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from projects.models import Contractor, Skill
 from projects.services.compliance import get_profile_compliance_snapshot, sync_legacy_contractor_compliance_records
+from projects.services.contractor_capabilities import get_contractor_capability_flags
 from projects.services.contractor_onboarding import (
     build_onboarding_snapshot,
     update_onboarding_progress,
@@ -161,6 +162,7 @@ class ContractorMeView(APIView):
         onboarding_snapshot = build_onboarding_snapshot(c)
         sms_status = get_sms_status_payload(contractor=c)
         sms_automation = build_sms_automation_summary(contractor=c)
+        capability_flags = get_contractor_capability_flags(c)
 
         payload = {
             "id": c.id,
@@ -180,11 +182,9 @@ class ContractorMeView(APIView):
             "license_file": _safe_url(c.license_file),
             "insurance_file": _safe_url(getattr(c, "insurance_file", None)),
             "skills": [s.name for s in c.skills.all()],
-            "accepts_diy_assistance": bool(getattr(c, "accepts_diy_assistance", False)),
+            "accepts_diy_assistance": bool(capability_flags["accepts_diy_assistance"]),
             "accepts_consultation_only": bool(getattr(c, "accepts_consultation_only", False)),
-            "accepts_hourly_help": bool(getattr(c, "accepts_hourly_help", False)),
             "accepts_inspection_only": bool(getattr(c, "accepts_inspection_only", False)),
-            "accepts_homeowner_participation": bool(getattr(c, "accepts_homeowner_participation", False)),
 
             # intro pricing / UI
             "created_at": _safe_dt(contractor_created_raw),
@@ -258,11 +258,9 @@ class ContractorMeView(APIView):
                 "preferred_signoff": getattr(public_profile, "preferred_signoff", "") or "",
                 "brand_primary_color": getattr(public_profile, "brand_primary_color", "") or "",
                 "logo_url": _safe_url(getattr(public_profile, "logo", None)),
-                "accepts_diy_assistance": bool(getattr(c, "accepts_diy_assistance", False)),
+                "accepts_diy_assistance": bool(capability_flags["accepts_diy_assistance"]),
                 "accepts_consultation_only": bool(getattr(c, "accepts_consultation_only", False)),
-                "accepts_hourly_help": bool(getattr(c, "accepts_hourly_help", False)),
                 "accepts_inspection_only": bool(getattr(c, "accepts_inspection_only", False)),
-                "accepts_homeowner_participation": bool(getattr(c, "accepts_homeowner_participation", False)),
             }
         else:
             payload["public_profile"] = None
@@ -318,9 +316,7 @@ class ContractorMeView(APIView):
                 "license_number",
                 "accepts_diy_assistance",
                 "accepts_consultation_only",
-                "accepts_hourly_help",
                 "accepts_inspection_only",
-                "accepts_homeowner_participation",
             ]:
                 if f in data:
                     if f.startswith("accepts_"):

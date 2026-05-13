@@ -279,17 +279,12 @@ function PublicPresenceBrandPreview({ profile, galleryRows, reviewsRows }) {
                 ) : null}
                 {profile.accepts_inspection_only ? (
                   <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                    Inspection Services
-                  </span>
-                ) : null}
-                {profile.accepts_homeowner_participation ? (
-                  <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                    Homeowner participation welcome
+                    Inspection Services Available
                   </span>
                 ) : null}
               </div>
               <div className="mt-2 text-sm text-slate-600">
-                Guided project assistance, homeowner participation, and inspection-friendly support are highlighted when enabled.
+                Guided project assistance, consultation, and inspection-friendly support are highlighted when enabled.
               </div>
             </div>
           </div>

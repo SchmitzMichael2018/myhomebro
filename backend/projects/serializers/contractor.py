@@ -25,9 +25,7 @@ class ContractorSerializer(serializers.ModelSerializer):
             "phone",
             "accepts_diy_assistance",
             "accepts_consultation_only",
-            "accepts_hourly_help",
             "accepts_inspection_only",
-            "accepts_homeowner_participation",
 
             # ✅ Address pieces (must exist on model)
             "address",

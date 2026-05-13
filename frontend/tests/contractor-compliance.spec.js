@@ -114,6 +114,105 @@ test('contractor profile shows state and trade compliance guidance', async ({ pa
   );
 });
 
+test('contractor profile shows cautious HVAC licensing guidance', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'complete',
+        connected: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        email: 'playwright@myhomebro.local',
+        full_name: 'Playwright Builder',
+        business_name: 'Playwright Builder Co',
+        phone: '555-111-2222',
+        address: '123 Main St',
+        city: 'Austin',
+        state: 'TX',
+        zip: '78701',
+        license_number: '',
+        license_expiration_date: '',
+        skills: ['HVAC'],
+        compliance_records: [],
+        compliance_trade_requirements: [],
+        insurance_status: {
+          has_insurance: false,
+          status: 'missing',
+        },
+        ai: {
+          access: 'included',
+          enabled: true,
+          unlimited: true,
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/compliance/profile-preview/', async (route) => {
+    const body = route.request().postDataJSON();
+    const hasHvac = Array.isArray(body?.skills) && body.skills.includes('HVAC');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        state_code: body?.state || 'TX',
+        trade_requirements: hasHvac
+          ? [
+              {
+                required: false,
+                insurance_required: true,
+                message: 'HVAC work commonly requires state or local licensing. Add your license information if applicable.',
+                issuing_authority_name: 'Texas Department of Licensing and Regulation',
+                official_lookup_url: '',
+                contractor_has_license_on_file: false,
+                contractor_license_status: 'missing',
+                contractor_has_insurance_on_file: false,
+                warning_level: 'info',
+                source_type: 'portal',
+                state_code: 'TX',
+                trade_key: 'hvac',
+              },
+            ]
+          : [],
+      }),
+    });
+  });
+
+  await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('contractor-compliance-preview')).toContainText('HVAC in TX');
+  await expect(page.getByTestId('contractor-compliance-preview')).toContainText(
+    'HVAC work commonly requires state or local licensing'
+  );
+});
+
 test('public profile trust indicators stay conservative', async ({ page }) => {
   await page.route('**/api/projects/public/contractors/bright-build-co/', async (route) => {
     await route.fulfill({

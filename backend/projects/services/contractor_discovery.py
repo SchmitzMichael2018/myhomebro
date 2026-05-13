@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite
+from projects.services.contractor_capabilities import get_contractor_capability_flags
 from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.google_places_contractors import (
     calculate_distance_miles,
@@ -173,9 +174,7 @@ def _build_listing_shim(listing: ContractorDirectoryListing):
         public_profile=None,
         accepts_diy_assistance=False,
         accepts_consultation_only=False,
-        accepts_hourly_help=False,
         accepts_inspection_only=False,
-        accepts_homeowner_participation=False,
         service_radius_miles=25,
     )
 
@@ -300,6 +299,7 @@ def _score_listing(project: dict[str, Any], listing: ContractorDirectoryListing)
 
 
 def _build_card_from_contractors(contractor: Contractor, profile: ContractorPublicProfile, project: dict[str, Any]) -> dict[str, Any]:
+    capability_flags = get_contractor_capability_flags(contractor)
     match = score_contractor_project_match(contractor, project, profile=profile)
     claimed = True
     distance_miles = None
@@ -334,23 +334,23 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
             "full_service",
             *(
                 ["assisted_diy"]
-                if getattr(contractor, "accepts_diy_assistance", False)
+                if capability_flags["accepts_diy_assistance"]
                 else []
             ),
             *(
                 ["consultation"]
-                if getattr(contractor, "accepts_consultation_only", False)
+                if capability_flags["accepts_consultation"]
                 else []
             ),
             *(
                 ["inspection_only"]
-                if getattr(contractor, "accepts_inspection_only", False)
+                if capability_flags["accepts_inspection_only"]
                 else []
             ),
         ],
         "escrow_friendly": bool(match.get("compatibility_profile", {}).get("escrow_friendly", False) or getattr(profile, "show_quote_cta", False)),
-        "assisted_diy_friendly": bool(getattr(contractor, "accepts_diy_assistance", False) or getattr(contractor, "accepts_homeowner_participation", False)),
-        "inspection_capable": bool(getattr(contractor, "accepts_inspection_only", False) or match.get("compatibility_profile", {}).get("inspection_capable")),
+        "assisted_diy_friendly": bool(capability_flags["accepts_diy_assistance"]),
+        "inspection_capable": bool(capability_flags["accepts_inspection_only"] or match.get("compatibility_profile", {}).get("inspection_capable")),
         "rescue_project_friendly": bool(match.get("compatibility_profile", {}).get("rescue_project_friendly", False)),
         "compatibility_profile": match.get("compatibility_profile", {}),
         "source_priority": 300,
@@ -415,7 +415,7 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
             "summary": "Local business listing discovered through MyHomeBro.",
             "badges": [
                 "Escrow Friendly" if match.get("escrow_friendly") else None,
-                "Inspection Services" if match.get("inspection_capable") else None,
+                "Inspection Services Available" if match.get("inspection_capable") else None,
             ],
             "ways_i_work": [],
             "reasons": match.get("reasons", []),
