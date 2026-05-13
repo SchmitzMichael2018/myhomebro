@@ -1,5 +1,53 @@
 import { expect, test } from "@playwright/test";
 
+test("start-project page redirects when the API returns a legacy share_token response", async ({
+  page,
+}) => {
+  await page.route("**/api/projects/public-intake/start/", async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        intake_id: 601,
+        share_token: "legacy-share-token",
+        status: "draft",
+        public_url: "http://localhost:5173/start-project/legacy-share-token",
+      }),
+    });
+  });
+
+  await page.goto("/start-project", { waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/start-project\/legacy-share-token$/);
+});
+
+test("start-project page logs backend failures and shows a helpful error", async ({ page }) => {
+  const consoleErrors = [];
+
+  page.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+
+  await page.route("**/api/projects/public-intake/start/", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "Failed to create intake draft.",
+      }),
+    });
+  });
+
+  await page.goto("/start-project", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("heading", { name: "Starting your project request" })).toBeVisible();
+  await expect(page.getByText("Failed to create intake draft.").first()).toBeVisible({
+    timeout: 15000,
+  });
+  expect(consoleErrors.join(" ")).toContain("Public intake start");
+  expect(consoleErrors.join(" ")).toContain("Failed to create intake draft.");
+});
+
 test("landing page drives into intake and public intake shows branching choices after submit", async ({
   page,
 }) => {

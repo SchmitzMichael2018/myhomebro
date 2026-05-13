@@ -1,7 +1,28 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import api from "../api";
+import api, { debugAxiosError, extractApiErrorMessage } from "../api";
+
+function resolveStartToken(data) {
+  const token =
+    data?.token ||
+    data?.share_token ||
+    data?.intake_token ||
+    data?.public_token ||
+    "";
+  if (token) return String(token).trim();
+
+  const publicUrl = String(data?.public_url || data?.url || "").trim();
+  if (!publicUrl) return "";
+
+  try {
+    const path = new URL(publicUrl, window.location.origin).pathname.replace(/\/+$/, "");
+    const match = path.match(/\/(?:start-project|public-intake)\/([^/]+)$/i);
+    return match?.[1] ? String(match[1]).trim() : "";
+  } catch {
+    return "";
+  }
+}
 
 export default function StartProjectIntake() {
   const navigate = useNavigate();
@@ -32,8 +53,12 @@ export default function StartProjectIntake() {
         const { data } = await api.post("/projects/public-intake/start/", payload);
         if (cancelled) return;
 
-        const token = data?.token;
+        const token = resolveStartToken(data);
         if (!token) {
+          console.error("Could not start project intake: missing token in response", {
+            responseData: data,
+            payload,
+          });
           setStartError("Could not start project intake.");
           return;
         }
@@ -41,8 +66,16 @@ export default function StartProjectIntake() {
         navigate(`/start-project/${token}`, { replace: true });
       } catch (e) {
         if (cancelled) return;
+        debugAxiosError(e, "Public intake start");
         const message =
-          e?.response?.data?.detail || "Could not start your project intake.";
+          extractApiErrorMessage(e) ||
+          e?.response?.data?.detail ||
+          "Could not start your project intake.";
+        console.error("Could not start project intake", {
+          message,
+          status: e?.response?.status,
+          responseData: e?.response?.data,
+        });
         setStartError(message);
         toast.error(message);
       } finally {

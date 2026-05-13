@@ -2419,7 +2419,31 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_LANDING_PAGE)
         self.assertEqual(lead.full_name, "Landing Prospect")
         self.assertEqual(lead.project_address, "100 Landing Way")
-        self.assertEqual(lead.project_description, "Need a remodel estimate from the landing page.")
+        self.assertEqual(lead.project_description, "Remodel request.")
+
+    def test_public_intake_start_allows_anonymous_visitors(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Anonymous Starter",
+                "customer_email": "anonymous@example.com",
+                "customer_phone": "555-000-1111",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["token"])
+        self.assertEqual(payload["status"], "draft")
+        self.assertIn("/start-project/", payload["public_url"])
+        intake = ProjectIntake.objects.get(share_token=payload["token"])
+        self.assertEqual(intake.customer_name, "Anonymous Starter")
+        self.assertEqual(intake.customer_email, "anonymous@example.com")
+        self.assertEqual(intake.customer_phone, "555-000-1111")
 
     def test_public_intake_accepts_blank_optional_numeric_fields(self):
         start_response = self.client.post(

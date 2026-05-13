@@ -3,6 +3,7 @@ from __future__ import annotations
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 
 from projects.models import ContractorPublicProfile, PublicContractorLead
 from projects.models_project_intake import ProjectIntake
@@ -18,7 +19,8 @@ class PublicIntakeStartView(APIView):
 
     Creates a draft intake, generates a share token, and returns the tokenized public URL.
     """
-    permission_classes = []
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         customer_name = (request.data.get("customer_name") or "").strip()
