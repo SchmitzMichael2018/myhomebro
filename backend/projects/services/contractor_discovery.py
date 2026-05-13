@@ -14,7 +14,7 @@ from projects.services.contractor_capabilities import get_contractor_capability_
 from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.google_places_contractors import (
     calculate_distance_miles,
-    project_type_to_places_query,
+    infer_project_places_query,
     search_google_places_contractors,
     suggest_radius_miles,
 )
@@ -312,6 +312,12 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         distance_miles = None
 
     badges = list(match.get("badges") or [])
+    phone = _safe_text(profile.phone_public if getattr(profile, "show_phone_public", False) else "")
+    email = _safe_text(profile.email_public if getattr(profile, "show_email_public", False) else "")
+    address_parts = [
+        _safe_text(profile.city or contractor.city),
+        _safe_text(profile.state or contractor.state),
+    ]
     return {
         "id": f"contractor:{contractor.id}",
         "source": ContractorDirectoryListing.SOURCE_MYHOMEBRO,
@@ -321,11 +327,24 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         "rating": round(float(getattr(contractor, "average_rating", 0) or 0), 2) if getattr(contractor, "review_count", 0) else None,
         "review_count": int(getattr(contractor, "review_count", 0) or 0),
         "website_url": _safe_text(getattr(profile, "website_url", "")),
+        "phone": phone,
+        "email": email,
+        "public_email": email,
         "city": profile.city or contractor.city or "",
         "state": profile.state or contractor.state or "",
+        "zip_code": "",
+        "address": ", ".join(part for part in address_parts if part),
+        "formatted_address": ", ".join(part for part in address_parts if part),
+        "location": {
+            "city": profile.city or contractor.city or "",
+            "state": profile.state or contractor.state or "",
+            "zip_code": "",
+            "latitude": None,
+            "longitude": None,
+        },
         "distance_miles": distance_miles,
-        "phone_available": bool(getattr(profile, "show_phone_public", False) and _safe_text(profile.phone_public)),
-        "email_available": bool(getattr(profile, "show_email_public", False) and _safe_text(profile.email_public)),
+        "phone_available": bool(phone),
+        "email_available": bool(email),
         "invite_available": True,
         "recommendation_tier": match.get("tier", "Limited Match"),
         "compatibility_score": match.get("score", 0),
@@ -386,6 +405,11 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
     supported_modes = list(match.get("supported_modes") or ["full_service"])
     if listing.source == ContractorDirectoryListing.SOURCE_MYHOMEBRO and "full_service" not in supported_modes:
         supported_modes.append("full_service")
+    phone = _safe_text(listing.phone_number)
+    email = _safe_text(listing.email)
+    address = _safe_text(listing.formatted_address) or ", ".join(
+        part for part in [_safe_text(listing.city), _safe_text(listing.state), _safe_text(listing.zip_code)] if part
+    )
 
     return {
         "id": f"listing:{listing.id}",
@@ -396,12 +420,25 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
         "rating": listing.google_rating,
         "review_count": int(listing.google_review_count or 0),
         "website_url": _safe_text(listing.website_url),
+        "phone": phone,
+        "email": email,
+        "public_email": email,
         "city": listing.city or "",
         "state": listing.state or "",
+        "zip_code": listing.zip_code or "",
+        "address": address,
+        "formatted_address": address,
+        "location": {
+            "city": listing.city or "",
+            "state": listing.state or "",
+            "zip_code": listing.zip_code or "",
+            "latitude": listing.latitude,
+            "longitude": listing.longitude,
+        },
         "distance_miles": distance_miles,
-        "phone_available": bool(_safe_text(listing.phone_number)),
-        "email_available": bool(_safe_text(listing.email)),
-        "invite_available": bool(_safe_text(listing.phone_number) or _safe_text(listing.email) or bool(listing.claimed_contractor_id)),
+        "phone_available": bool(phone),
+        "email_available": bool(email),
+        "invite_available": bool(phone or email or bool(listing.claimed_contractor_id)),
         "recommendation_tier": match.get("tier", "Limited Match"),
         "compatibility_score": match.get("score", 0),
         "recommendation_reasons": list(match.get("reasons") or []),
@@ -437,7 +474,13 @@ def build_contractor_recommendations(
     limit: int = 5,
 ) -> dict[str, Any]:
     project = _normalize_project_payload(intake=intake, payload=payload)
-    search_query = _safe_text(query) or project_type_to_places_query(project.get("project_type"), project.get("project_subtype"))
+    search_query = _safe_text(query) or infer_project_places_query(
+        project_type=project.get("project_type"),
+        project_subtype=project.get("project_subtype"),
+        project_title=project.get("project_title"),
+        description=project.get("description"),
+        project_scope_summary=project.get("project_scope_summary"),
+    )
     radius = int(radius_miles or suggest_radius_miles(project.get("project_type"), project.get("project_subtype"), project.get("project_mode")))
     if latitude not in (None, "", []) and longitude not in (None, "", []):
         project["latitude"] = latitude

@@ -19,6 +19,59 @@ function cardSelectionKey(card) {
   return safeText(card?.id);
 }
 
+function buildInferredSearchQuery(form) {
+  const text = [
+    form?.ai_project_type,
+    form?.ai_project_subtype,
+    form?.ai_project_title,
+    form?.ai_description,
+    form?.accomplishment_text,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const inferred = [];
+  const push = (value) => {
+    if (value && !inferred.includes(value)) inferred.push(value);
+  };
+
+  if (/kitchen|cabinet|countertop|quartz|granite/.test(text)) {
+    push("kitchen remodel contractor");
+    push("cabinet contractor");
+    push("countertop installer");
+  }
+  if (/bathroom|vanity|shower|tub/.test(text)) {
+    push("bathroom remodel contractor");
+  }
+  if (/roof|roofing|shingle|leak/.test(text)) {
+    push("roofing contractor");
+  }
+  if (/floor|flooring|tile|hardwood|laminate/.test(text)) {
+    push("flooring contractor");
+  }
+  if (/paint|painting|painter/.test(text)) {
+    push("painter");
+  }
+  if (/electrical|electrician|panel|wire|wiring/.test(text)) {
+    push("electrician");
+  }
+  if (/plumbing|plumber|pipe|drain|sewer/.test(text)) {
+    push("plumber");
+  }
+  if (/hvac|air conditioning|cooling|heating|furnace/.test(text)) {
+    push("hvac contractor");
+  }
+  if (/drywall|sheetrock/.test(text)) {
+    push("drywall contractor");
+  }
+  if (/remodel|renovation|renovate/.test(text)) {
+    push("remodeling contractor");
+  }
+
+  return inferred.join(" ").trim();
+}
+
 export default function ContractorDiscoveryStep({
   token,
   form,
@@ -33,6 +86,13 @@ export default function ContractorDiscoveryStep({
   const [summary, setSummary] = useState(null);
   const [query, setQuery] = useState("");
   const [radiusMiles, setRadiusMiles] = useState("");
+  const inferredQuery = useMemo(() => buildInferredSearchQuery(form), [
+    form?.accomplishment_text,
+    form?.ai_description,
+    form?.ai_project_subtype,
+    form?.ai_project_title,
+    form?.ai_project_type,
+  ]);
 
   const modeLabel = projectModeLabel(form?.project_mode);
   const ctaLabel = normalizeProjectMode(form?.project_mode) === "consultation" ? "Request Quote" : "Request Project Review";
@@ -42,6 +102,11 @@ export default function ContractorDiscoveryStep({
   useEffect(() => {
     if (!active || !token) return;
 
+    if (!safeText(query) && inferredQuery) {
+      setQuery(inferredQuery);
+      return;
+    }
+
     let mounted = true;
 
     async function loadResults() {
@@ -50,7 +115,18 @@ export default function ContractorDiscoveryStep({
         const { data } = await api.get("/projects/public-intake/contractor-search/", {
           params: {
             token,
-            query: query || form?.ai_project_type || form?.ai_project_subtype || form?.accomplishment_text || "",
+            query: safeText(query) || inferredQuery || undefined,
+            project_title: safeText(form?.ai_project_title) || undefined,
+            project_type: safeText(form?.ai_project_type) || undefined,
+            project_subtype: safeText(form?.ai_project_subtype) || undefined,
+            description: safeText(form?.accomplishment_text) || undefined,
+            project_scope_summary: safeText(form?.ai_description) || safeText(form?.accomplishment_text) || undefined,
+            project_city: safeText(form?.project_city || form?.customer_city) || undefined,
+            project_state: safeText(form?.project_state || form?.customer_state) || undefined,
+            project_postal_code: safeText(form?.project_postal_code || form?.customer_postal_code) || undefined,
+            project_class: safeText(form?.project_class) || undefined,
+            project_mode: safeText(form?.project_mode) || undefined,
+            payment_preference: safeText(form?.payment_preference) || undefined,
             radius_miles: radiusMiles || undefined,
             limit: 8,
           },
@@ -71,7 +147,7 @@ export default function ContractorDiscoveryStep({
     return () => {
       mounted = false;
     };
-  }, [active, token, form?.accomplishment_text, form?.ai_project_subtype, form?.ai_project_type, query, radiusMiles]);
+  }, [active, token, form?.accomplishment_text, form?.ai_description, form?.ai_project_subtype, form?.ai_project_title, form?.ai_project_type, inferredQuery, query, radiusMiles]);
 
   function toggleSelection(card) {
     const key = cardSelectionKey(card);
@@ -151,7 +227,8 @@ export default function ContractorDiscoveryStep({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search a specialty or contractor name"
+            placeholder="We infer a specialty from your project, or you can search one"
+            data-testid="public-intake-contractor-search-input"
             className="ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
           />
         </label>
@@ -257,8 +334,9 @@ export default function ContractorDiscoveryStep({
                       Website
                     </a>
                   ) : null}
-                  <span>{card.phone_available ? "Phone available" : "Phone not listed"}</span>
-                  <span>{card.email_available ? "Email available" : "Email not listed"}</span>
+                  <span>{card.phone || (card.phone_available ? "Phone available" : "Phone not listed")}</span>
+                  <span>{card.public_email || card.email || (card.email_available ? "Email available" : "Email not listed")}</span>
+                  {card.address || card.formatted_address ? <span>{card.address || card.formatted_address}</span> : null}
                 </div>
               </article>
             );

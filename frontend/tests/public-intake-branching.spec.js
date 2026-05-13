@@ -200,14 +200,41 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-project-snapshot-title")).toContainText("Project Snapshot");
   await page.getByTestId("public-intake-project-snapshot-continue").click();
   await expect(page.getByTestId("public-intake-structured-output-step")).toBeVisible();
-  await expect(page.getByTestId("public-intake-structured-output-title")).toContainText("Your Project Plan");
+  await expect(page.getByTestId("public-intake-structured-output-title")).toContainText("Project Summary");
+  await expect(page.getByText("Your contractor will create the final agreement and milestones later.")).toBeVisible();
+  await expect(page.getByText("Original Description")).toBeVisible();
+  await expect(page.getByText("Need a bid-ready commercial scope.")).toBeVisible();
+  await expect(page.getByText("Milestones / Project Phases")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add milestone" })).toHaveCount(0);
   await page.getByTestId("public-intake-structured-continue").click();
+  await expect(page.getByTestId("public-intake-project-details-step")).toBeVisible();
+  await expect(page.getByTestId("public-intake-customer-address-autocomplete")).toBeVisible();
+  await page.getByTestId("public-intake-customer-address-line1").fill("501 Manual Bid Lane");
+  await page.getByTestId("public-intake-customer-city").fill("Austin");
+  await page.getByTestId("public-intake-customer-state").fill("TX");
+  await page.getByTestId("public-intake-customer-postal-code").fill("78702");
+  await expect(page.getByTestId("public-intake-customer-address-line1")).toHaveValue("501 Manual Bid Lane");
+  await page.getByLabel("Project address is the same as my customer/home address").uncheck();
+  await expect(page.getByTestId("public-intake-project-address-autocomplete")).toBeVisible();
+  await page.getByTestId("public-intake-project-address-line1").fill("777 Job Site Rd");
+  await page.getByTestId("public-intake-project-city").fill("Austin");
+  await page.getByTestId("public-intake-project-state").fill("TX");
+  await page.getByTestId("public-intake-project-postal-code").fill("78703");
+  await expect(page.getByTestId("public-intake-project-address-line1")).toHaveValue("777 Job Site Rd");
   await page.getByRole("button", { name: "Choose Path" }).click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");
   await expect(page.getByTestId("public-intake-branch-single")).toContainText("Work with one contractor");
   await expect(page.getByTestId("public-intake-branch-multi")).toContainText("Get multiple quotes");
 
+  await page.getByTestId("public-intake-branch-single").click();
+  await page.getByTestId("public-intake-branch-skip").click();
+  await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
+  await expect(page.getByText("No contractor invites saved yet")).toBeVisible();
+  await expect(page.getByText("Need a bid-ready commercial scope.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Choose Path" }).click();
+  await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await page.getByTestId("public-intake-branch-multi").click();
   const multiBranch = page.getByTestId("public-intake-branching-section");
   await multiBranch.getByPlaceholder("Name").first().fill("Alpha Build");
@@ -235,6 +262,173 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
   await expect(page.getByText("1 invite prepared")).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "single_contractor")).toBeTruthy();
+});
+
+test("public intake contractor search auto-infers a specialty from the project description", async ({
+  page,
+}) => {
+  const requestedQueries = [];
+
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 503,
+          token: "landing-token-search",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/landing-token-search",
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/contractor-search/") && method === "GET") {
+      const url = new URL(requestUrl);
+      requestedQueries.push(url.searchParams.get("query") || "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          summary: {
+            search_query: url.searchParams.get("query") || "",
+            radius_miles: 25,
+            project_mode: "full_service",
+            payment_preference: "escrow",
+            results_count: 2,
+          },
+          results: [
+            {
+              id: "listing:100",
+              source: "myhomebro",
+              business_name: "Verified Kitchen Pros",
+              claimed: true,
+              label: "MyHomeBro Verified",
+              rating: 4.9,
+              review_count: 19,
+              website_url: "https://example.com",
+              city: "Austin",
+              state: "TX",
+              distance_miles: 3.2,
+              phone_available: true,
+              email_available: true,
+              invite_available: true,
+              recommendation_tier: "Strong Match",
+              compatibility_score: 95,
+              recommendation_reasons: ["Offers Assisted DIY support."],
+              supported_project_modes: ["full_service"],
+              escrow_friendly: true,
+              assisted_diy_friendly: true,
+              inspection_capable: true,
+              rescue_project_friendly: false,
+            },
+            {
+              id: "listing:101",
+              source: "google_places",
+              business_name: "Local Countertop Listing",
+              claimed: false,
+              label: "Local Business Listing",
+              rating: 4.7,
+              review_count: 8,
+              website_url: "https://example.org",
+              city: "Austin",
+              state: "TX",
+              distance_miles: 4.1,
+              phone_available: true,
+              email_available: false,
+              invite_available: true,
+              recommendation_tier: "Good Match",
+              compatibility_score: 78,
+              recommendation_reasons: ["Supports escrow milestone payments."],
+              supported_project_modes: ["assisted_diy"],
+              escrow_friendly: true,
+              assisted_diy_friendly: true,
+              inspection_capable: false,
+              rescue_project_friendly: false,
+            },
+          ],
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/improve-description/") && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Description improved.",
+          description: "Remove kitchen cabinets and install quartz countertops with contractor review.",
+          source: "ai",
+          current_description: route.request().postDataJSON()?.current_description || "",
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 503,
+          token: "landing-token-search",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "Search Prospect",
+          customer_email: "search@example.com",
+          customer_phone: "555-555-5555",
+          customer_address_line1: "100 Search St",
+          customer_address_line2: "",
+          customer_city: "Austin",
+          customer_state: "TX",
+          customer_postal_code: "78701",
+          same_as_customer_address: true,
+          project_class: "residential",
+          project_address_line1: "100 Search St",
+          project_address_line2: "",
+          project_city: "Austin",
+          project_state: "TX",
+          project_postal_code: "78701",
+          accomplishment_text: "",
+          ai_project_title: "",
+          ai_project_type: "",
+          ai_project_subtype: "",
+          ai_description: "",
+          ai_project_timeline_days: null,
+          ai_project_budget: null,
+          ai_milestones: [],
+          measurement_handling: "",
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
+          ai_analysis_payload: {},
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          sent_at: null,
+          completed_at: null,
+        }),
+      });
+    }
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("landing-start-project-intake-button").click();
+  await expect(page).toHaveURL(/\/start-project\/landing-token-search$/);
+  await page.getByTestId("public-intake-accomplishment-text").fill("Remove kitchen cabinets and install quartz countertops.");
+  await page.getByRole("button", { name: "Choose Local Contractors" }).click();
+
+  await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible();
+  await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue(/kitchen remodel contractor|cabinet contractor|countertop installer/);
+  await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("MyHomeBro Verified");
+  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local Business Listing");
+  expect(requestedQueries[0]).toMatch(/kitchen remodel contractor|cabinet contractor|countertop installer/);
 });
 
 test("public intake description helper refines the project idea before generating the plan", async ({

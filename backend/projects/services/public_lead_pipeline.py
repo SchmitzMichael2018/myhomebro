@@ -72,6 +72,8 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
     analysis = getattr(intake, "ai_analysis_payload", None) or getattr(lead, "ai_analysis", {}) or {}
 
     normalized_source = normalize_public_lead_source(getattr(intake, "lead_source", None))
+    original_description = (getattr(intake, "accomplishment_text", "") or "").strip()
+    refined_description = (getattr(intake, "ai_description", "") or "").strip()
     payload = {
         "contractor": contractor,
         "public_profile": profile,
@@ -84,7 +86,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         "state": (intake.project_state or "").strip(),
         "zip_code": (intake.project_postal_code or "").strip(),
         "project_type": (getattr(intake, "ai_project_type", "") or "").strip(),
-        "project_description": (getattr(intake, "ai_description", "") or intake.accomplishment_text or "").strip(),
+        "project_description": original_description or refined_description,
         "preferred_timeline": (
             (getattr(intake, "desired_timing_text", "") or "").strip()
             or (
@@ -99,6 +101,9 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
             "property_type": (getattr(intake, "property_type", "") or "").strip(),
             "budget_range_text": (getattr(intake, "budget_range_text", "") or "").strip(),
             "desired_timing_text": (getattr(intake, "desired_timing_text", "") or "").strip(),
+            "original_description": original_description,
+            "refined_description": refined_description,
+            "project_scope_summary": refined_description or original_description or analysis.get("project_scope_summary", ""),
             "preferred_contact_method": (getattr(intake, "preferred_contact_method", "") or "").strip(),
             "contact_consent": bool(getattr(intake, "contact_consent", False)),
             "request_path_label": "Request a Quote"
@@ -130,7 +135,6 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         "project_description",
         "preferred_timeline",
         "budget_text",
-        "desired_timing_text",
         "ai_analysis",
         "status",
         "updated_at",

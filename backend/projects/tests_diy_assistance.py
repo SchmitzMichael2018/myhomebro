@@ -22,6 +22,7 @@ from projects.models_project_intake import ProjectIntake
 from projects.services.legal_clauses import build_legal_notices
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_analysis import analyze_project_intake
+from projects.services.contractor_discovery import build_contractor_recommendations
 from projects.services.milestone_roles import annotate_milestone_roles
 from projects.services.payment_protection import build_payment_protection_summary
 from projects.services.contractor_matching import score_contractor_project_match
@@ -620,6 +621,31 @@ class DIYAssistanceTests(TestCase):
         self.assertGreaterEqual(len(results), 1)
         self.assertEqual(results[0]["source"], ContractorDirectoryListing.SOURCE_MYHOMEBRO)
         self.assertTrue(results[0]["claimed"])
+
+    def test_contractor_search_infers_trade_terms_from_project_context(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            customer_name="Customer Seven B",
+            customer_email="customer7b@example.com",
+            project_class="residential",
+            project_mode="full_service",
+            accomplishment_text="Remove kitchen cabinets and install quartz countertops.",
+            ai_project_title="Kitchen refresh",
+            ai_project_type="Remodel",
+            ai_project_subtype="Kitchen",
+            project_city="Austin",
+            project_state="TX",
+        )
+        intake.ensure_share_token()
+
+        with patch("projects.services.contractor_discovery.search_google_places_contractors", return_value=[]):
+            result = build_contractor_recommendations(intake=intake, query="")
+
+        self.assertIn("search_query", result["summary"])
+        self.assertRegex(
+            result["summary"]["search_query"].lower(),
+            r"kitchen remodel contractor|cabinet contractor|countertop installer",
+        )
 
     @patch("projects.services.contractor_discovery.send_twilio_sms", return_value=(True, "sent"))
     @patch("projects.services.contractor_discovery.send_postmark_email", return_value=(True, "sent"))

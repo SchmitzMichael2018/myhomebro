@@ -862,7 +862,7 @@ test('landing-source intake and public-profile intake land in the same contracto
   await expect(page.getByTestId('public-intake-project-snapshot-title')).toContainText('Project Snapshot');
   await page.getByTestId('public-intake-project-snapshot-continue').click();
   await expect(page.getByTestId('public-intake-structured-output-step')).toBeVisible();
-  await expect(page.getByTestId('public-intake-structured-output-title')).toContainText('Your Project Plan');
+  await expect(page.getByTestId('public-intake-structured-output-title')).toContainText('Project Summary');
   await page.getByTestId('public-intake-structured-continue').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('public-intake-customer-address-line1')).toBeVisible();

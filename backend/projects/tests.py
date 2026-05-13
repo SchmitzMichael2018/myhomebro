@@ -86,6 +86,7 @@ from projects.models_attachments import AgreementAttachment
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
+from projects.models_contractor_discovery import ContractorDirectoryListing
 from receipts.models import Receipt
 from projects.models_subcontractor import (
     SubcontractorInvitation,
@@ -2993,6 +2994,78 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.ai_analysis.get("project_scope_summary"), "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.")
         self.assertEqual(lead.ai_analysis.get("project_family_key"), "kitchen_remodel")
         self.assertEqual(lead.ai_analysis.get("project_family_label"), "Kitchen remodel-focused review")
+
+    @patch("projects.services.contractor_discovery.search_google_places_contractors", return_value=[])
+    def test_public_intake_contractor_search_infers_context_and_returns_safe_contact_fields(self, _mock_places):
+        self.profile.phone_public = "512-555-0100"
+        self.profile.email_public = "hello@brightbuild.example"
+        self.profile.website_url = "https://brightbuild.example"
+        self.profile.show_phone_public = True
+        self.profile.show_email_public = True
+        self.profile.save(
+            update_fields=[
+                "phone_public",
+                "email_public",
+                "website_url",
+                "show_phone_public",
+                "show_email_public",
+                "updated_at",
+            ]
+        )
+        listing = ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_CACHED_DIRECTORY,
+            business_name="Austin Countertop Listing",
+            phone_number="512-555-0199",
+            email="quotes@countertop.example",
+            website_url="https://countertop.example",
+            formatted_address="44 Quartz Ave, Austin, TX 78701",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            primary_trade="countertop",
+            trade_categories=["countertop", "kitchen"],
+            google_rating=4.7,
+            google_review_count=32,
+        )
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Search Prospect",
+            accomplishment_text="Remove kitchen cabinets and install quartz countertops.",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+        )
+        intake.ensure_share_token()
+
+        response = self.client.get(
+            "/api/projects/public-intake/contractor-search/",
+            {
+                "token": intake.share_token,
+                "description": "Remove kitchen cabinets and install quartz countertops.",
+                "project_title": "Kitchen countertop update",
+                "city": "Austin",
+                "state": "TX",
+                "zip": "78701",
+                "limit": 5,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.content.decode())
+        payload = response.json()
+        self.assertRegex(payload["summary"]["search_query"].lower(), r"kitchen remodel contractor|countertop")
+        results = payload["results"]
+        self.assertGreaterEqual(len(results), 2)
+        self.assertEqual(results[0]["label"], "MyHomeBro Verified")
+        self.assertEqual(results[0]["phone"], "512-555-0100")
+        self.assertEqual(results[0]["public_email"], "hello@brightbuild.example")
+        listing_row = next(row for row in results if row["id"] == f"listing:{listing.id}")
+        self.assertEqual(listing_row["label"], "Local Business Listing")
+        self.assertEqual(listing_row["phone"], "512-555-0199")
+        self.assertEqual(listing_row["public_email"], "quotes@countertop.example")
+        self.assertEqual(listing_row["address"], "44 Quartz Ave, Austin, TX 78701")
 
     def test_public_intake_analysis_skips_questions_for_already_clear_description(self):
         intake = ProjectIntake.objects.create(

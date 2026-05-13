@@ -19,6 +19,19 @@ PROJECT_TYPE_QUERY_MAP = {
     "general": "general contractor",
 }
 
+PROJECT_CONTEXT_QUERY_HINTS = [
+    (("kitchen", "cabinet", "countertop", "quartz", "granite"), "kitchen remodel contractor"),
+    (("bathroom", "vanity", "shower", "tub"), "bathroom remodel contractor"),
+    (("roof", "roofing", "shingle", "leak"), "roofing contractor"),
+    (("floor", "flooring", "tile", "hardwood", "laminate"), "flooring contractor"),
+    (("paint", "painting", "painter"), "painter"),
+    (("electrical", "electrician", "panel", "wire", "wiring"), "electrician"),
+    (("plumbing", "plumber", "pipe", "drain", "sewer"), "plumber"),
+    (("hvac", "air conditioning", "ac ", " furnace", "cooling", "heating"), "hvac contractor"),
+    (("drywall", "sheetrock"), "drywall contractor"),
+    (("remodel", "renovation", "renovate"), "remodeling contractor"),
+]
+
 PROJECT_RADIUS_MAP = {
     "handyman": 10,
     "small": 10,
@@ -54,6 +67,42 @@ def project_type_to_places_query(project_type: Any, project_subtype: Any = "") -
     if subtype:
         return f"{subtype} contractor"
     return "contractor"
+
+
+def infer_project_places_query(
+    *,
+    project_type: Any = "",
+    project_subtype: Any = "",
+    project_title: Any = "",
+    description: Any = "",
+    project_scope_summary: Any = "",
+) -> str:
+    base_query = project_type_to_places_query(project_type, project_subtype)
+    text = " ".join(
+        [
+            _safe_text(project_type),
+            _safe_text(project_subtype),
+            _safe_text(project_title),
+            _safe_text(description),
+            _safe_text(project_scope_summary),
+        ]
+    ).lower()
+    if not text.strip():
+        return base_query
+
+    hints: list[str] = []
+    for keywords, query in PROJECT_CONTEXT_QUERY_HINTS:
+        if any(keyword in text for keyword in keywords):
+            if query not in hints:
+                hints.append(query)
+
+    if not hints:
+        return base_query
+
+    if base_query and base_query not in hints:
+        hints.insert(0, base_query)
+
+    return " ".join(hints[:3]).strip() or base_query
 
 
 def suggest_radius_miles(project_type: Any = "", project_subtype: Any = "", project_mode: Any = "") -> int:

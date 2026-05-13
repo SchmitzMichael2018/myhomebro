@@ -48,9 +48,23 @@ class PublicIntakeContractorSearchView(APIView):
         longitude = request.query_params.get("lng")
         radius_miles = request.query_params.get("radius_miles")
         limit = request.query_params.get("limit")
+        project_context = {
+            "project_type": request.query_params.get("project_type"),
+            "project_subtype": request.query_params.get("project_subtype"),
+            "project_title": request.query_params.get("project_title"),
+            "description": request.query_params.get("description"),
+            "project_scope_summary": request.query_params.get("project_scope_summary"),
+            "project_city": request.query_params.get("city") or request.query_params.get("project_city"),
+            "project_state": request.query_params.get("state") or request.query_params.get("project_state"),
+            "project_postal_code": request.query_params.get("zip") or request.query_params.get("project_postal_code"),
+            "project_class": request.query_params.get("project_class"),
+            "project_mode": request.query_params.get("project_mode"),
+            "payment_preference": request.query_params.get("payment_preference"),
+        }
 
         result = build_contractor_recommendations(
             intake=intake,
+            payload=project_context,
             query=query,
             latitude=latitude,
             longitude=longitude,

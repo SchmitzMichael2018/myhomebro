@@ -2,6 +2,7 @@
 import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../../api";
+import AddressAutocomplete from "../AddressAutocomplete.jsx";
 import { PROJECT_MODE_OPTIONS, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
 import { buildAssistedDiySafetyWarning } from "./projectSafety.js";
 import ContractorDiscoveryStep from "./ContractorDiscoveryStep.jsx";
@@ -220,7 +221,7 @@ export default function PublicIntakeWizard() {
   const stepLabels = [
     "Project Idea",
     "Refine Your Project",
-    "AI Structured Output",
+    "Project Summary",
     "Project Details",
     "Contact Info",
     "Choose Local Contractors",
@@ -738,6 +739,12 @@ export default function PublicIntakeWizard() {
     }
   }
 
+  function handleSkipContractorBranch() {
+    setBranchResult((prev) => prev || null);
+    setCurrentStep(7);
+    toast.success("You can skip contractor entry for now and continue.");
+  }
+
   async function handleConfirm() {
     if (!canFinish) {
       toast.error("Please complete the project and contact details first.");
@@ -778,6 +785,8 @@ export default function PublicIntakeWizard() {
     addRow("project-type", "Project Type", form.ai_project_type);
     addRow("area", "Area", form.ai_project_subtype);
     addRow("main-goal", "Main Goal", getMainGoalSummary(form.ai_project_title, form.ai_description));
+    addRow("original-description", "Original Description", form.accomplishment_text);
+    addRow("refined-description", "Refined Description", form.ai_description || form.accomplishment_text);
     addRow("timing", "Timing", getFriendlyTimelineLabel(form.ai_project_timeline_days));
     addRow("budget", "Budget", getFriendlyBudgetLabel(form.ai_project_budget));
 
@@ -795,6 +804,7 @@ export default function PublicIntakeWizard() {
   }, [
     clarificationQuestions,
     form.ai_clarification_answers,
+    form.accomplishment_text,
     form.ai_description,
     form.ai_project_budget,
     form.ai_project_subtype,
@@ -835,18 +845,18 @@ export default function PublicIntakeWizard() {
     if (currentStep === 6) return "You are choosing the path that feels right.";
     if (currentStep === 5) return "Review a few good contractor matches before you decide the next step.";
     if (currentStep === 4) return "A few details now will help the next step feel easy.";
-    if (currentStep === 3) return "You are refining the details that shape the plan.";
-    if (currentStep === 2) return "Your project is taking shape.";
+    if (currentStep === 3) return "Add the location details that help contractors review your request.";
+    if (currentStep === 2) return "Your contractor will review this summary before creating the final scope.";
     if (currentStep === 1) return "Refine the details so your contractor can review the request more clearly.";
-    return "Start with your idea and we will help shape the rest.";
+    return "Tell us about the project and we will help organize it for contractor review.";
   }, [currentStep]);
   const renderStep = () => {
     if (currentStep === 0) {
       return (
         <div className="rounded-3xl border border-white/70 bg-white/95 p-8 shadow-2xl shadow-black/10 backdrop-blur">
-          <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Project Idea</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Tell us about the project</h2>
           <p className="mt-2 text-base text-gray-600">
-            Tell us what you&apos;d like to get done. We&apos;ll help organize it into a clear project plan.
+            Tell us what you&apos;d like to get done. We&apos;ll help organize it for contractor review.
           </p>
           <textarea
             data-testid="public-intake-accomplishment-text"
@@ -935,7 +945,7 @@ export default function PublicIntakeWizard() {
               disabled={saving || !canGenerateStructure}
               className="rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:opacity-60"
             >
-              {saving ? "Generating..." : "Generate My Project Plan"}
+              {saving ? "Generating..." : "Build Project Summary"}
             </button>
           </div>
         </div>
@@ -1292,195 +1302,70 @@ export default function PublicIntakeWizard() {
     }
 
     if (currentStep === 2) {
-      const milestones = Array.isArray(form.ai_milestones) ? form.ai_milestones : [];
-      const measurementOptions = [
-        { value: "provided", label: "Provided" },
-        { value: "site_visit_required", label: "Site visit required" },
-        { value: "not_sure", label: "Not sure" },
+      const summaryCards = [
+        {
+          key: "summary-original-description",
+          label: "Original Description",
+          value: form.accomplishment_text || "No description entered yet.",
+        },
+        {
+          key: "summary-refined-description",
+          label: "Refined Description",
+          value: form.ai_description || form.accomplishment_text || "No refined description yet.",
+        },
+        {
+          key: "summary-project-type",
+          label: "Project Type",
+          value: [form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Not set yet",
+        },
+        {
+          key: "summary-timeline-budget",
+          label: "Timeline / Budget",
+          value: [
+            form.ai_project_timeline_days ? `${form.ai_project_timeline_days} days` : "Timeline not set",
+            form.ai_project_budget ? `$${Number(form.ai_project_budget).toLocaleString()}` : "Budget not set",
+          ].join(" • "),
+        },
+        {
+          key: "summary-measurements",
+          label: "Measurements",
+          value: form.measurement_handling || "Not set",
+        },
       ];
       return (
         <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-structured-output-step">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-              AI Project Plan
+              AI Project Snapshot
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900" data-testid="public-intake-structured-output-title">
-              Your Project Plan
+              Project Summary
             </h2>
             <p className="mt-2 text-base text-slate-600">
-              Here&apos;s the structured project outline we created from your description and answers. You can review and adjust anything before continuing.
+              Here&apos;s the project summary we created from your description and answers.
             </p>
-            <p className="mt-1 text-sm text-slate-500">You can edit anything before continuing.</p>
             <p className="mt-1 text-sm text-slate-500">
-              Your contractor will still review and confirm the final details.
+              We&apos;ll help organize this for contractor review. Your contractor will create the final agreement and milestones later.
             </p>
           </div>
 
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm" data-testid="public-intake-structured-section-project-details">
-              <div className="text-sm font-semibold text-gray-900">Project Details</div>
-              <div className="mt-4 grid grid-cols-1 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Project Title</label>
-                  <input
-                    data-testid="public-intake-structured-project-title"
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                    value={form.ai_project_title}
-                    onChange={(e) => setField("ai_project_title", e.target.value)}
-                    placeholder="Suggested project title"
-                  />
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-900">Project Type</label>
-                    <input
-                      data-testid="public-intake-structured-project-type"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                      value={form.ai_project_type}
-                      onChange={(e) => setField("ai_project_type", e.target.value)}
-                      placeholder="Repair, Remodel, Installation..."
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-900">Area / Subtype</label>
-                    <input
-                      data-testid="public-intake-structured-project-subtype"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                      value={form.ai_project_subtype}
-                      onChange={(e) => setField("ai_project_subtype", e.target.value)}
-                      placeholder="Bathroom remodel, roof repair..."
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-900">Timeline</label>
-                    <input
-                      data-testid="public-intake-structured-project-timeline"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                      value={form.ai_project_timeline_days}
-                      onChange={(e) => setField("ai_project_timeline_days", e.target.value)}
-                      placeholder="10"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-900">Budget</label>
-                    <input
-                      data-testid="public-intake-structured-project-budget"
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                      value={form.ai_project_budget}
-                      onChange={(e) => setField("ai_project_budget", e.target.value)}
-                      placeholder="5000"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-900">Measurements handling</label>
-                  <div className="flex flex-wrap gap-2">
-                    {measurementOptions.map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setField("measurement_handling", opt.value)}
-                        className={`rounded-full border px-3 py-2 text-sm font-semibold ${
-                          form.measurement_handling === opt.value
-                            ? "border-indigo-500 bg-indigo-600 text-white"
-                            : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
-                        data-testid={`public-intake-structured-measurement-${opt.value}`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm" data-testid="public-intake-structured-section-scope">
-              <div className="text-sm font-semibold text-gray-900">Refined Description</div>
-              <p className="mt-1 text-sm text-slate-600">
-                Keep this short and clear. It will help guide the agreement and scope review.
-              </p>
-              <textarea
-                data-testid="public-intake-structured-description"
-                className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                rows={10}
-                value={form.ai_description}
-                onChange={(e) => setField("ai_description", e.target.value)}
-                placeholder="Short, agreement-ready scope summary"
-              />
-              <div className="mt-3 text-xs text-slate-500">
-                You can refine this anytime before submitting.
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2" data-testid="public-intake-structured-section-milestones">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-gray-900">Milestones / Project Phases</div>
-                  <p className="mt-1 text-sm text-slate-600">These help turn the project into a clear plan of work.</p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      ai_milestones: [...(prev.ai_milestones || []), emptyMilestone((prev.ai_milestones || []).length)],
-                    }))
-                  }
-                >
-                  Add milestone
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                {milestones.length ? (
-                  milestones.map((milestone, index) => (
-                    <div
-                      key={`milestone-${index}`}
-                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-                      data-testid={`public-intake-structured-milestone-${index}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Milestone {index + 1}
-                        </div>
-                      </div>
-                      <div className="mt-3 grid gap-3 md:grid-cols-2">
-                        <div>
-                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Title</label>
-                          <input
-                            data-testid={`public-intake-structured-milestone-${index}-title`}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                            value={milestone.title || ""}
-                            onChange={(e) => setMilestone(index, "title", e.target.value)}
-                            placeholder={`Milestone ${index + 1}`}
-                          />
-                        </div>
-                        <div className="md:col-span-2">
-                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Description</label>
-                          <textarea
-                            data-testid={`public-intake-structured-milestone-${index}-description`}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                            rows={3}
-                            value={milestone.description || ""}
-                            onChange={(e) => setMilestone(index, "description", e.target.value)}
-                            placeholder="Short milestone description"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-600">
-                    No milestones yet. Add a few to help organize the plan.
-                  </div>
-                )}
-              </div>
-            </section>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            {summaryCards.map((card) => (
+              <section key={card.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                <div className="text-sm font-semibold text-gray-900">{card.label}</div>
+                <div className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">{card.value}</div>
+              </section>
+            ))}
           </div>
+
+          <section className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-indigo-900">What happens next</div>
+            <ul className="mt-3 space-y-2 text-sm text-indigo-900/80">
+              <li>• Your contractor reviews this summary and your original wording.</li>
+              <li>• They may refine the scope, pricing, and milestones later.</li>
+              <li>• You can still adjust the details before you send it forward.</li>
+            </ul>
+          </section>
         </div>
       );
     }
@@ -1493,7 +1378,7 @@ export default function PublicIntakeWizard() {
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Project Details</h2>
             <p className="mt-2 text-base text-slate-600">
-              Add the project location and any details that help turn the plan into a clear agreement.
+              Add the project location and a few details that help contractors review your request.
             </p>
             <p className="mt-1 text-sm text-slate-500">
               Keep going at the pace that feels right. You can adjust these details later if needed.
@@ -1503,7 +1388,33 @@ export default function PublicIntakeWizard() {
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
               <div className="text-sm font-semibold text-gray-900">Customer Address</div>
-              <p className="mt-1 text-sm text-slate-600">Where should the project be tied to in your records?</p>
+              <p className="mt-1 text-sm text-slate-600">Where should this request be tied to in your records?</p>
+              <div className="mt-4">
+                <div data-testid="public-intake-customer-address-autocomplete" className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Address search</div>
+                  <AddressAutocomplete
+                    value={form.customer_address_line1}
+                    onChangeText={(text) => setField("customer_address_line1", text)}
+                    onSelect={(addr) => {
+                      const nextLine1 = addr.line1 || form.customer_address_line1 || "";
+                      const nextCity = addr.city || form.customer_city || "";
+                      const nextState = addr.state || form.customer_state || "";
+                      const nextPostal = addr.postal_code || form.customer_postal_code || "";
+                      setForm((prev) => {
+                        const next = {
+                          ...prev,
+                          customer_address_line1: nextLine1,
+                          customer_city: nextCity,
+                          customer_state: nextState,
+                          customer_postal_code: nextPostal,
+                        };
+                        return next.same_as_customer_address ? copyCustomerAddressToProject(next) : next;
+                      });
+                    }}
+                    placeholder="Start typing the street address (pick from suggestions)…"
+                  />
+                </div>
+              </div>
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <label className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
@@ -1558,8 +1469,8 @@ export default function PublicIntakeWizard() {
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
-              <div className="text-sm font-semibold text-gray-900">Project Class</div>
-              <p className="mt-1 text-sm text-slate-600">This helps organize the plan and any follow-up steps.</p>
+                <div className="text-sm font-semibold text-gray-900">Project Class</div>
+              <p className="mt-1 text-sm text-slate-600">This helps organize the request and any follow-up steps.</p>
               <div className="mt-4 flex flex-wrap gap-3">
                 {[{ value: "residential", label: "Residential" }, { value: "commercial", label: "Commercial" }].map((opt) => (
                   <label
@@ -1678,10 +1589,10 @@ export default function PublicIntakeWizard() {
                 </div>
               ) : null}
               <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                <div className="text-sm font-semibold text-slate-900">Payment &amp; Protection Preferences</div>
-                <p className="mt-1 text-sm text-slate-600">
-                  Escrow milestone payments help protect both homeowners and contractors by releasing funds as work is completed and approved.
-                </p>
+              <div className="text-sm font-semibold text-slate-900">Payment &amp; Protection Preferences</div>
+              <p className="mt-1 text-sm text-slate-600">
+                Escrow milestone payments help protect both homeowners and contractors by releasing funds as work is completed and approved.
+              </p>
                 <div className="mt-3 grid gap-2">
                   {[
                     { value: "escrow", label: "Escrow milestone payments", help: "Recommended for most projects." },
@@ -1738,6 +1649,26 @@ export default function PublicIntakeWizard() {
               <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
                 <div className="text-sm font-semibold text-gray-900">Project Address</div>
                 <p className="mt-1 text-sm text-slate-600">Where is the work actually happening?</p>
+                <div className="mt-4">
+                  <div data-testid="public-intake-project-address-autocomplete" className="rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Address search</div>
+                    <AddressAutocomplete
+                      value={form.project_address_line1}
+                      onChangeText={(text) => setField("project_address_line1", text)}
+                      onSelect={(addr) => {
+                        setForm((prev) => ({
+                          ...prev,
+                          project_address_line1: addr.line1 || prev.project_address_line1 || "",
+                          project_address_line2: addr.line2 || prev.project_address_line2 || "",
+                          project_city: addr.city || prev.project_city || "",
+                          project_state: addr.state || prev.project_state || "",
+                          project_postal_code: addr.postal_code || prev.project_postal_code || "",
+                        }));
+                      }}
+                      placeholder="Start typing the street address (pick from suggestions)…"
+                    />
+                  </div>
+                </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="md:col-span-2">
                     <label className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
@@ -1898,7 +1829,7 @@ export default function PublicIntakeWizard() {
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">How would you like to proceed?</h2>
             <p className="mt-2 text-base text-slate-600">
-              Choose the option that feels right for this project. You can still adjust it before sending anything forward.
+              Choose the option that feels right for this project. Choose local contractors to review your request, or skip for now.
             </p>
           </div>
 
@@ -2017,7 +1948,7 @@ export default function PublicIntakeWizard() {
               This is your chance to confirm the details we&apos;ve gathered so far.
             </p>
             <p className="mt-1 text-sm text-slate-500">
-              You&apos;re not committing to work yet - this just helps contractors understand your project.
+              You&apos;re not committing to work yet. Your contractor will create the final agreement and milestones later.
             </p>
           </div>
 
@@ -2041,13 +1972,20 @@ export default function PublicIntakeWizard() {
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
-            <div className="text-sm font-semibold text-gray-900">Project Plan</div>
+            <div className="text-sm font-semibold text-gray-900">Project Summary</div>
             <div className="mt-4 space-y-3">
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Original description</div>
+                <div className="mt-2 whitespace-pre-line text-sm text-slate-700">{form.accomplishment_text || "No original description yet."}</div>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Refined description</div>
+                <div className="mt-2 whitespace-pre-line text-sm text-slate-700">{form.ai_description || form.accomplishment_text || "No refined description yet."}</div>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project summary</div>
                 <div className="mt-1 text-sm font-semibold text-slate-900">{form.ai_project_title || "Untitled project"}</div>
-                <div className="mt-1 text-sm text-slate-700">{form.ai_project_type || "Project type not set"}</div>
-                <div className="mt-2 whitespace-pre-line text-sm text-slate-600">{form.ai_description || form.accomplishment_text}</div>
+                <div className="mt-1 text-sm text-slate-700">{[form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Project type not set"}</div>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timeline and budget</div>
@@ -2077,25 +2015,18 @@ export default function PublicIntakeWizard() {
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
-            <div className="text-sm font-semibold text-gray-900">Milestones and Notes</div>
+            <div className="text-sm font-semibold text-gray-900">Helpful notes for contractor review</div>
             <div className="mt-4 grid gap-4 lg:grid-cols-2">
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Milestones</div>
-                <div className="mt-3 space-y-3">
-                  {(form.ai_milestones || []).length ? (
-                    (form.ai_milestones || []).map((milestone, index) => (
-                      <div key={`review-milestone-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                        <div className="text-sm font-semibold text-slate-900">{milestone.title || `Milestone ${index + 1}`}</div>
-                        <div className="mt-1 text-sm text-slate-600">{milestone.description || "No description provided."}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-sm text-slate-600">No milestones yet.</div>
-                  )}
-                </div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">What the contractor will do next</div>
+                <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                  <li>• Review your description and any project notes.</li>
+                  <li>• Confirm the final scope, pricing, and milestones with you.</li>
+                  <li>• Adjust the agreement before work begins.</li>
+                </ul>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Clarification Summary</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project context</div>
                 <div className="mt-3 space-y-2 text-sm text-slate-700">
                   {Object.entries(form.ai_clarification_answers || {}).length ? (
                     Object.entries(form.ai_clarification_answers || {})
@@ -2199,9 +2130,20 @@ export default function PublicIntakeWizard() {
                 Continue to Choose Path
               </button>
             ) : currentStep === 6 ? (
-              <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save and Review"}</button>
+              <>
+                <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save and Review"}</button>
+                <button
+                  type="button"
+                  onClick={handleSkipContractorBranch}
+                  disabled={branchSubmitting || saving}
+                  data-testid="public-intake-branch-skip"
+                  className="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  Skip for now
+                </button>
+              </>
             ) : currentStep === 7 ? (
-              <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Project Plan"}</button>
+              <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Project Request"}</button>
             ) : currentStep === 2 ? (
               <button
                 type="button"
@@ -2234,7 +2176,7 @@ export default function PublicIntakeWizard() {
 
         <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-xl shadow-black/10">
           <div className="text-sm text-slate-600">
-            Once you submit this project plan, your contractor can review it and prepare the agreement.
+            Once you submit this project request, your contractor can review it and prepare the agreement.
           </div>
         </div>
       </div>
