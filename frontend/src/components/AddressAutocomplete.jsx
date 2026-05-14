@@ -27,13 +27,13 @@ function loadMapsOnce(apiKey) {
   if (__mhbMapsPromise) return __mhbMapsPromise;
 
   __mhbMapsPromise = new Promise((resolve, reject) => {
-    if (!apiKey) {
-      reject(new Error("Missing VITE_GOOGLE_MAPS_API_KEY"));
+    if (window.google?.maps?.importLibrary) {
+      resolve();
       return;
     }
 
-    if (window.google?.maps?.importLibrary) {
-      resolve();
+    if (!apiKey) {
+      reject(new Error("Missing VITE_GOOGLE_MAPS_API_KEY"));
       return;
     }
 
@@ -84,9 +84,42 @@ function loadMapsOnce(apiKey) {
 function pickComponent(components, type) {
   if (!Array.isArray(components)) return null;
   return (
-    components.find((c) => Array.isArray(c.types) && c.types.includes(type)) ||
+    components.find((c) => {
+      const types = Array.isArray(c?.types)
+        ? c.types
+        : Array.isArray(c?.componentTypes)
+        ? c.componentTypes
+        : [];
+      return types.includes(type) || c?.type === type || c?.componentType === type;
+    }) ||
     null
   );
+}
+
+function firstAddressLineFromFormatted(value) {
+  return String(value || "").split(",")[0]?.trim() || "";
+}
+
+function componentLongText(component) {
+  if (!component) return "";
+  return String(
+    component.longText ||
+    component.long_name ||
+    component.name ||
+    component.text ||
+    ""
+  ).trim();
+}
+
+function componentShortText(component) {
+  if (!component) return "";
+  return String(
+    component.shortText ||
+    component.short_name ||
+    component.abbreviation ||
+    componentLongText(component) ||
+    ""
+  ).trim();
 }
 
 function parseAddressComponentsFromPlace(place) {
@@ -96,49 +129,41 @@ function parseAddressComponentsFromPlace(place) {
     place?.address_components?.map?.((x) => x) ||
     [];
 
-  const streetNumber =
-    pickComponent(comps, "street_number")?.longText ||
-    pickComponent(comps, "street_number")?.long_name ||
-    "";
+  const formattedLine1 = firstAddressLineFromFormatted(
+    place?.formattedAddress || place?.formatted_address
+  );
 
-  const route =
-    pickComponent(comps, "route")?.longText ||
-    pickComponent(comps, "route")?.long_name ||
-    "";
+  const streetNumber = componentLongText(pickComponent(comps, "street_number"));
 
-  const line1 = [streetNumber, route].filter(Boolean).join(" ").trim();
+  const route = componentLongText(pickComponent(comps, "route"));
+
+  let line1 = [streetNumber, route].filter(Boolean).join(" ").trim();
+  if (formattedLine1) {
+    const normalizedFormatted = formattedLine1.toLowerCase();
+    const normalizedLine1 = line1.toLowerCase();
+    const normalizedRoute = route.toLowerCase();
+    if (!line1 || (route && normalizedFormatted.includes(normalizedRoute) && normalizedFormatted !== normalizedLine1)) {
+      line1 = formattedLine1;
+    }
+  }
 
   const city =
-    pickComponent(comps, "locality")?.longText ||
-    pickComponent(comps, "locality")?.long_name ||
-    pickComponent(comps, "sublocality")?.longText ||
-    pickComponent(comps, "sublocality")?.long_name ||
-    pickComponent(comps, "postal_town")?.longText ||
-    pickComponent(comps, "postal_town")?.long_name ||
+    componentLongText(pickComponent(comps, "locality")) ||
+    componentLongText(pickComponent(comps, "sublocality")) ||
+    componentLongText(pickComponent(comps, "sublocality_level_1")) ||
+    componentLongText(pickComponent(comps, "postal_town")) ||
     "";
 
-  const state =
-    pickComponent(comps, "administrative_area_level_1")?.shortText ||
-    pickComponent(comps, "administrative_area_level_1")?.short_name ||
-    "";
+  const state = componentShortText(pickComponent(comps, "administrative_area_level_1"));
 
-  const postal =
-    pickComponent(comps, "postal_code")?.longText ||
-    pickComponent(comps, "postal_code")?.long_name ||
-    "";
+  const postal = componentLongText(pickComponent(comps, "postal_code"));
 
-  const postalSuffix =
-    pickComponent(comps, "postal_code_suffix")?.longText ||
-    pickComponent(comps, "postal_code_suffix")?.long_name ||
-    "";
+  const postalSuffix = componentLongText(pickComponent(comps, "postal_code_suffix"));
 
   // ZIP+4 if suffix exists
   const postal_code = postalSuffix ? `${postal}-${postalSuffix}` : postal;
 
-  const country =
-    pickComponent(comps, "country")?.shortText ||
-    pickComponent(comps, "country")?.short_name ||
-    "US";
+  const country = componentShortText(pickComponent(comps, "country")) || "US";
 
   return { line1, city, state, postal_code, country };
 }

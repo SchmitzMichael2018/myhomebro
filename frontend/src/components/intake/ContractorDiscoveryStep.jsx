@@ -37,8 +37,8 @@ function buildInferredSearchQuery(form) {
   };
 
   if (/kitchen|cabinet|countertop|quartz|granite/.test(text)) {
-    push("kitchen remodel contractor");
-    push("cabinet contractor");
+    push("kitchen remodeling contractor");
+    push("cabinet installer");
     push("countertop installer");
   }
   if (/bathroom|vanity|shower|tub/.test(text)) {
@@ -270,7 +270,7 @@ export default function ContractorDiscoveryStep({
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                       <span className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${tierClass}`}>{tierLabel}</span>
                       <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-700">
-                        {card.label}
+                        {card.source_label || card.label}
                       </span>
                       {card.rating ? <span>{Number(card.rating).toFixed(1)} rating</span> : null}
                       {card.review_count ? <span>{card.review_count} reviews</span> : null}
@@ -347,6 +347,15 @@ export default function ContractorDiscoveryStep({
           </div>
         )}
       </div>
+
+      {!loading && results.length && Number(summary?.external_results_count || 0) === 0 ? (
+        <div
+          data-testid="public-intake-no-local-listings-note"
+          className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          No outside local listings found yet. You can still invite a contractor manually or continue.
+        </div>
+      ) : null}
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div className="text-sm text-slate-600">

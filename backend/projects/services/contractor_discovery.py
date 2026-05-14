@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -15,7 +16,7 @@ from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.google_places_contractors import (
     calculate_distance_miles,
     infer_project_places_query,
-    search_google_places_contractors,
+    search_google_places_contractors_with_diagnostics,
     suggest_radius_miles,
 )
 from projects.services.notification_center import create_notification
@@ -324,6 +325,7 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         "business_name": profile.business_name_public or contractor.business_name or contractor.name or "",
         "claimed": claimed,
         "label": "MyHomeBro Verified",
+        "source_label": "MyHomeBro Verified",
         "rating": round(float(getattr(contractor, "average_rating", 0) or 0), 2) if getattr(contractor, "review_count", 0) else None,
         "review_count": int(getattr(contractor, "review_count", 0) or 0),
         "website_url": _safe_text(getattr(profile, "website_url", "")),
@@ -417,6 +419,7 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
         "business_name": listing.business_name or listing.normalized_business_name or "",
         "claimed": bool(listing.claimed_profile and listing.claimed_contractor_id),
         "label": "MyHomeBro Verified" if listing.claimed_profile and listing.claimed_contractor_id else "Local Business Listing",
+        "source_label": "MyHomeBro Verified" if listing.claimed_profile and listing.claimed_contractor_id else "Local Business Listing",
         "rating": listing.google_rating,
         "review_count": int(listing.google_review_count or 0),
         "website_url": _safe_text(listing.website_url),
@@ -505,7 +508,7 @@ def build_contractor_recommendations(
         seen_keys.add(key)
         results.append(card)
 
-    google_places = search_google_places_contractors(
+    google_search = search_google_places_contractors_with_diagnostics(
         project_type=project.get("project_type"),
         project_subtype=project.get("project_subtype"),
         query=search_query,
@@ -514,6 +517,7 @@ def build_contractor_recommendations(
         radius_miles=radius,
         limit=max(limit, 5),
     )
+    google_places = google_search.get("results") or []
     for place in google_places:
         listing = upsert_directory_listing_from_google(place)
         if listing is None:
@@ -535,7 +539,12 @@ def build_contractor_recommendations(
             row.get("business_name", ""),
         )
     )
-    results = results[: max(limit, 1)]
+    max_results = max(limit, 1)
+    local_results = [row for row in results if row.get("label") == "Local Business Listing"]
+    sliced_results = results[:max_results]
+    if local_results and not any(row.get("label") == "Local Business Listing" for row in sliced_results) and max_results > 1:
+        sliced_results = sliced_results[: max_results - 1] + [local_results[0]]
+    results = sliced_results
 
     summary = {
         "search_query": search_query,
@@ -543,7 +552,16 @@ def build_contractor_recommendations(
         "project_mode": project.get("project_mode", "full_service"),
         "payment_preference": project.get("payment_preference", "escrow"),
         "results_count": len(results),
+        "external_results_count": len(local_results),
+        "external_search": {
+            "source": "google_places",
+            "configured": bool((google_search.get("diagnostic") or {}).get("configured")),
+            "requested": bool((google_search.get("diagnostic") or {}).get("requested")),
+            "results_count": int((google_search.get("diagnostic") or {}).get("results_count") or 0),
+        },
     }
+    if getattr(settings, "DEBUG", False):
+        summary["external_search_diagnostic"] = google_search.get("diagnostic") or {}
 
     return {"summary": summary, "results": results}
 

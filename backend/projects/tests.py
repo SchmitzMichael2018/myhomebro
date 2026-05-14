@@ -2995,7 +2995,41 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.ai_analysis.get("project_family_key"), "kitchen_remodel")
         self.assertEqual(lead.ai_analysis.get("project_family_label"), "Kitchen remodel-focused review")
 
-    @patch("projects.services.contractor_discovery.search_google_places_contractors", return_value=[])
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={
+            "diagnostic": {
+                "configured": True,
+                "requested": True,
+                "results_count": 1,
+                "text_status": 200,
+                "nearby_status": None,
+                "error": "",
+            },
+            "results": [
+                {
+                    "source": ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+                    "google_place_id": "places/local-quartz-pros",
+                    "business_name": "Local Quartz Pros",
+                    "formatted_address": "88 Countertop Rd, Austin, TX 78701",
+                    "city": "Austin",
+                    "state": "TX",
+                    "zip_code": "78701",
+                    "latitude": 30.2672,
+                    "longitude": -97.7431,
+                    "primary_trade": "countertop_contractor",
+                    "trade_categories": ["countertop_contractor", "cabinet_maker"],
+                    "google_rating": 4.8,
+                    "google_review_count": 41,
+                    "business_status": "OPERATIONAL",
+                    "website_url": "https://localquartz.example",
+                    "google_maps_url": "https://maps.example/local-quartz-pros",
+                    "phone_number": "512-555-0177",
+                    "email": "",
+                }
+            ],
+        },
+    )
     def test_public_intake_contractor_search_infers_context_and_returns_safe_contact_fields(self, _mock_places):
         self.profile.phone_public = "512-555-0100"
         self.profile.email_public = "hello@brightbuild.example"
@@ -3055,17 +3089,28 @@ class ContractorPublicPresenceApiTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.content.decode())
         payload = response.json()
-        self.assertRegex(payload["summary"]["search_query"].lower(), r"kitchen remodel contractor|countertop")
+        self.assertRegex(payload["summary"]["search_query"].lower(), r"kitchen remodeling contractor|countertop installer")
         results = payload["results"]
-        self.assertGreaterEqual(len(results), 2)
+        self.assertGreaterEqual(len(results), 3)
         self.assertEqual(results[0]["label"], "MyHomeBro Verified")
+        self.assertEqual(results[0]["source_label"], "MyHomeBro Verified")
         self.assertEqual(results[0]["phone"], "512-555-0100")
         self.assertEqual(results[0]["public_email"], "hello@brightbuild.example")
         listing_row = next(row for row in results if row["id"] == f"listing:{listing.id}")
         self.assertEqual(listing_row["label"], "Local Business Listing")
+        self.assertEqual(listing_row["source_label"], "Local Business Listing")
         self.assertEqual(listing_row["phone"], "512-555-0199")
         self.assertEqual(listing_row["public_email"], "quotes@countertop.example")
         self.assertEqual(listing_row["address"], "44 Quartz Ave, Austin, TX 78701")
+        google_row = next(row for row in results if row["business_name"] == "Local Quartz Pros")
+        self.assertGreater(results.index(google_row), 0)
+        self.assertEqual(google_row["label"], "Local Business Listing")
+        self.assertEqual(google_row["source_label"], "Local Business Listing")
+        self.assertEqual(google_row["phone"], "512-555-0177")
+        self.assertEqual(google_row["website_url"], "https://localquartz.example")
+        self.assertEqual(google_row["address"], "88 Countertop Rd, Austin, TX 78701")
+        self.assertEqual(payload["summary"]["external_search"]["results_count"], 1)
+        self.assertTrue(_mock_places.called)
 
     def test_public_intake_analysis_skips_questions_for_already_clear_description(self):
         intake = ProjectIntake.objects.create(

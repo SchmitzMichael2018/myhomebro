@@ -53,6 +53,37 @@ test("landing page drives into intake and public intake shows branching choices 
 }) => {
   const branchRequests = [];
 
+  await page.addInitScript(() => {
+    function MockPlaceAutocompleteElement() {
+      const element = document.createElement("div");
+      element.appendChild(document.createElement("input"));
+      const nativeAddEventListener = element.addEventListener.bind(element);
+      element.addEventListener = (type, callback, options) => {
+        if (type === "gmp-select") {
+          window.__mhbTriggerPlaceSelect = (place) =>
+            callback({
+              placePrediction: {
+                toPlace: () => place,
+              },
+            });
+        }
+        return nativeAddEventListener(type, callback, options);
+      };
+      return element;
+    }
+
+    window.google = {
+      maps: {
+        importLibrary: async () => ({
+          PlaceAutocompleteElement: MockPlaceAutocompleteElement,
+        }),
+        places: {
+          PlaceAutocompleteElement: MockPlaceAutocompleteElement,
+        },
+      },
+    };
+  });
+
   await page.route("**/api/projects/public-intake/**", async (route) => {
     const requestUrl = route.request().url();
     const method = route.request().method();
@@ -216,6 +247,28 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-customer-address-line1")).toHaveValue("501 Manual Bid Lane");
   await page.getByLabel("Project address is the same as my customer/home address").uncheck();
   await expect(page.getByTestId("public-intake-project-address-autocomplete")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => typeof window.__mhbTriggerPlaceSelect === "function"))
+    .toBe(true);
+  await page.evaluate(() => {
+    window.__mhbTriggerPlaceSelect({
+      formattedAddress: "123 Main St, Austin, TX 78704",
+      id: "place-123-main",
+      addressComponents: [
+        { type: "street_number", longText: "123", shortText: "123" },
+        { type: "route", longText: "Main St", shortText: "Main St" },
+        { type: "locality", longText: "Austin", shortText: "Austin" },
+        { type: "administrative_area_level_1", longText: "Texas", shortText: "TX" },
+        { type: "postal_code", longText: "78704", shortText: "78704" },
+        { type: "country", longText: "United States", shortText: "US" },
+      ],
+      fetchFields: async () => {},
+    });
+  });
+  await expect(page.getByTestId("public-intake-project-address-line1")).toHaveValue("123 Main St");
+  await expect(page.getByTestId("public-intake-project-city")).toHaveValue("Austin");
+  await expect(page.getByTestId("public-intake-project-state")).toHaveValue("TX");
+  await expect(page.getByTestId("public-intake-project-postal-code")).toHaveValue("78704");
   await page.getByTestId("public-intake-project-address-line1").fill("777 Job Site Rd");
   await page.getByTestId("public-intake-project-city").fill("Austin");
   await page.getByTestId("public-intake-project-state").fill("TX");
@@ -425,10 +478,10 @@ test("public intake contractor search auto-infers a specialty from the project d
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible();
-  await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue(/kitchen remodel contractor|cabinet contractor|countertop installer/);
+  await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue(/kitchen remodeling contractor|cabinet installer|countertop installer/);
   await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("MyHomeBro Verified");
   await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local Business Listing");
-  expect(requestedQueries[0]).toMatch(/kitchen remodel contractor|cabinet contractor|countertop installer/);
+  expect(requestedQueries[0]).toMatch(/kitchen remodeling contractor|cabinet installer|countertop installer/);
 });
 
 test("public intake description helper refines the project idea before generating the plan", async ({

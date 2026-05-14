@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import math
+import logging
 from typing import Any
 
 import requests
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 PROJECT_TYPE_QUERY_MAP = {
@@ -20,7 +23,9 @@ PROJECT_TYPE_QUERY_MAP = {
 }
 
 PROJECT_CONTEXT_QUERY_HINTS = [
-    (("kitchen", "cabinet", "countertop", "quartz", "granite"), "kitchen remodel contractor"),
+    (("kitchen", "remodel", "renovation"), "kitchen remodeling contractor"),
+    (("cabinet", "cabinets", "cabinetry"), "cabinet installer"),
+    (("countertop", "countertops", "quartz", "granite"), "countertop installer"),
     (("bathroom", "vanity", "shower", "tub"), "bathroom remodel contractor"),
     (("roof", "roofing", "shingle", "leak"), "roofing contractor"),
     (("floor", "flooring", "tile", "hardwood", "laminate"), "flooring contractor"),
@@ -62,7 +67,7 @@ def project_type_to_places_query(project_type: Any, project_subtype: Any = "") -
     for key, query in PROJECT_TYPE_QUERY_MAP.items():
         if key in text or key in subtype:
             return query
-    if text:
+    if text and len(text.split()) <= 4:
         return f"{text} contractor"
     if subtype:
         return f"{subtype} contractor"
@@ -99,7 +104,7 @@ def infer_project_places_query(
     if not hints:
         return base_query
 
-    if base_query and base_query not in hints:
+    if base_query and base_query != "contractor" and base_query not in hints:
         hints.insert(0, base_query)
 
     return " ".join(hints[:3]).strip() or base_query
@@ -206,13 +211,46 @@ def search_google_places_contractors(
     radius_miles: Any = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
+    return search_google_places_contractors_with_diagnostics(
+        project_type=project_type,
+        project_subtype=project_subtype,
+        query=query,
+        latitude=latitude,
+        longitude=longitude,
+        radius_miles=radius_miles,
+        limit=limit,
+    )["results"]
+
+
+def search_google_places_contractors_with_diagnostics(
+    *,
+    project_type: Any = "",
+    project_subtype: Any = "",
+    query: Any = "",
+    latitude: Any = None,
+    longitude: Any = None,
+    radius_miles: Any = None,
+    limit: int = 5,
+) -> dict[str, Any]:
     api_key = google_places_api_key()
+    diagnostic: dict[str, Any] = {
+        "configured": bool(api_key),
+        "requested": False,
+        "text_status": None,
+        "nearby_status": None,
+        "error": "",
+        "results_count": 0,
+    }
     if not api_key:
-        return []
+        diagnostic["error"] = "google_places_api_key_missing"
+        logger.info("Google Places contractor search skipped: API key is not configured.")
+        return {"results": [], "diagnostic": diagnostic}
 
     search_text = _safe_text(query) or project_type_to_places_query(project_type, project_subtype)
     max_results = max(int(limit or 5), 1)
     headers = _places_headers()
+    diagnostic["requested"] = True
+    diagnostic["query"] = search_text
 
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -229,6 +267,7 @@ def search_google_places_contractors(
             },
             timeout=10,
         )
+        diagnostic["text_status"] = response.status_code
         if 200 <= response.status_code < 300:
             payload = response.json() if response.content else {}
             for place in payload.get("places", [])[:max_results]:
@@ -239,8 +278,17 @@ def search_google_places_contractors(
                 if place_id:
                     seen.add(place_id)
                 results.append(normalized)
+        else:
+            diagnostic["error"] = f"text_search_http_{response.status_code}"
+            logger.warning(
+                "Google Places text contractor search failed",
+                extra={"status_code": response.status_code, "query": search_text},
+            )
     except Exception:
-        return results
+        diagnostic["error"] = "text_search_exception"
+        logger.exception("Google Places text contractor search raised an exception.")
+        diagnostic["results_count"] = len(results)
+        return {"results": results[:max_results], "diagnostic": diagnostic}
 
     if latitude not in (None, "", []) and longitude not in (None, "", []):
         try:
@@ -259,6 +307,7 @@ def search_google_places_contractors(
                 },
                 timeout=10,
             )
+            diagnostic["nearby_status"] = nearby_response.status_code
             if 200 <= nearby_response.status_code < 300:
                 payload = nearby_response.json() if nearby_response.content else {}
                 for place in payload.get("places", [])[:max_results]:
@@ -269,10 +318,20 @@ def search_google_places_contractors(
                     if place_id:
                         seen.add(place_id)
                     results.append(normalized)
+            else:
+                diagnostic["error"] = diagnostic["error"] or f"nearby_search_http_{nearby_response.status_code}"
+                logger.warning(
+                    "Google Places nearby contractor search failed",
+                    extra={"status_code": nearby_response.status_code, "query": search_text},
+                )
         except Exception:
-            return results
+            diagnostic["error"] = diagnostic["error"] or "nearby_search_exception"
+            logger.exception("Google Places nearby contractor search raised an exception.")
+            diagnostic["results_count"] = len(results)
+            return {"results": results[:max_results], "diagnostic": diagnostic}
 
-    return results[:max_results]
+    diagnostic["results_count"] = len(results[:max_results])
+    return {"results": results[:max_results], "diagnostic": diagnostic}
 
 
 def calculate_distance_miles(
