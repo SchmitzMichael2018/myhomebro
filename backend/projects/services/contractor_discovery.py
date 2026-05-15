@@ -211,10 +211,10 @@ def _normalize_project_payload(intake=None, payload: dict[str, Any] | None = Non
             or getattr(intake, "ai_description", "")
             or getattr(intake, "accomplishment_text", "")
         ),
-        "project_city": _safe_text(payload.get("project_city") or getattr(intake, "project_city", "")),
-        "project_state": _safe_text(payload.get("project_state") or getattr(intake, "project_state", "")),
-        "project_postal_code": _safe_text(payload.get("project_postal_code") or getattr(intake, "project_postal_code", "")),
-        "project_address_line1": _safe_text(payload.get("project_address_line1") or getattr(intake, "project_address_line1", "")),
+        "project_city": _safe_text(payload.get("project_city") or getattr(intake, "project_city", "") or getattr(intake, "customer_city", "")),
+        "project_state": _safe_text(payload.get("project_state") or getattr(intake, "project_state", "") or getattr(intake, "customer_state", "")),
+        "project_postal_code": _safe_text(payload.get("project_postal_code") or getattr(intake, "project_postal_code", "") or getattr(intake, "customer_postal_code", "")),
+        "project_address_line1": _safe_text(payload.get("project_address_line1") or getattr(intake, "project_address_line1", "") or getattr(intake, "customer_address_line1", "")),
         "project_class": _safe_text(payload.get("project_class") or getattr(intake, "project_class", "")),
         "homeowner_participation_notes": _safe_text(
             payload.get("homeowner_participation_notes") or getattr(intake, "homeowner_participation_notes", "")
@@ -665,6 +665,15 @@ def build_contractor_recommendations(
     results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
 
+    # Build keyword stems from search_query for trade-relevance filtering of cached listings.
+    # We use 4-char stems so "electrician"→"elec" matches "electrical", "plumb" matches "plumbing", etc.
+    _search_stems: list[str] = []
+    if search_query:
+        for _w in search_query.lower().replace("_", " ").split():
+            _w = "".join(ch for ch in _w if ch.isalnum())
+            if len(_w) >= 4:
+                _search_stems.append(_w[:4])
+
     for contractor, profile in _iter_contractors_for_public_profiles():
         card = _build_card_from_contractors(contractor, profile, project)
         if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
@@ -685,6 +694,15 @@ def build_contractor_recommendations(
             continue
         if card.get("distance_miles") is not None and float(card.get("distance_miles")) > radius:
             continue
+        # Filter unclaimed cached listings by trade relevance to the search query.
+        if not card.get("claimed") and _search_stems:
+            _trade_text = " ".join([
+                _safe_text(listing.primary_trade).replace("_", " "),
+                " ".join(listing.trade_categories or []).replace("_", " "),
+                _safe_text(listing.business_name),
+            ]).lower()
+            if not any(stem in _trade_text for stem in _search_stems):
+                continue
         key = card["id"]
         if key in seen_keys:
             continue
