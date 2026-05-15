@@ -15,6 +15,7 @@ from projects.services.contractor_capabilities import get_contractor_capability_
 from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.google_places_contractors import (
     calculate_distance_miles,
+    geocode_project_location,
     infer_project_places_query,
     search_google_places_contractors_with_diagnostics,
     suggest_radius_miles,
@@ -101,6 +102,7 @@ def _normalize_project_payload(intake=None, payload: dict[str, Any] | None = Non
         "project_city": _safe_text(payload.get("project_city") or getattr(intake, "project_city", "")),
         "project_state": _safe_text(payload.get("project_state") or getattr(intake, "project_state", "")),
         "project_postal_code": _safe_text(payload.get("project_postal_code") or getattr(intake, "project_postal_code", "")),
+        "project_address_line1": _safe_text(payload.get("project_address_line1") or getattr(intake, "project_address_line1", "")),
         "project_class": _safe_text(payload.get("project_class") or getattr(intake, "project_class", "")),
         "homeowner_participation_notes": _safe_text(
             payload.get("homeowner_participation_notes") or getattr(intake, "homeowner_participation_notes", "")
@@ -351,6 +353,8 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         "recommendation_tier": match.get("tier", "Limited Match"),
         "compatibility_score": match.get("score", 0),
         "recommendation_reasons": list(match.get("reasons") or []),
+        "match_reason": "; ".join(list(match.get("reasons") or [])[:2]),
+        "match_badges": list(match.get("badges") or [])[:4],
         "supported_project_modes": [
             "full_service",
             *(
@@ -445,6 +449,8 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
         "recommendation_tier": match.get("tier", "Limited Match"),
         "compatibility_score": match.get("score", 0),
         "recommendation_reasons": list(match.get("reasons") or []),
+        "match_reason": "; ".join(list(match.get("reasons") or [])[:2]),
+        "match_badges": list(match.get("reasons") or [])[:4],
         "supported_project_modes": supported_modes,
         "escrow_friendly": bool(match.get("escrow_friendly", False)),
         "assisted_diy_friendly": bool(match.get("assisted_diy_friendly", False)),
@@ -484,16 +490,37 @@ def build_contractor_recommendations(
         description=project.get("description"),
         project_scope_summary=project.get("project_scope_summary"),
     )
-    radius = int(radius_miles or suggest_radius_miles(project.get("project_type"), project.get("project_subtype"), project.get("project_mode")))
+    try:
+        radius = int(float(radius_miles or 25))
+    except Exception:
+        radius = 25
+    radius = max(1, min(radius, 25))
     if latitude not in (None, "", []) and longitude not in (None, "", []):
         project["latitude"] = latitude
         project["longitude"] = longitude
+    else:
+        geocoded = geocode_project_location(
+            address_line1=project.get("project_address_line1"),
+            city=project.get("project_city"),
+            state=project.get("project_state"),
+            postal_code=project.get("project_postal_code"),
+        )
+        if geocoded.get("latitude") not in (None, "", []) and geocoded.get("longitude") not in (None, "", []):
+            latitude = geocoded.get("latitude")
+            longitude = geocoded.get("longitude")
+            project["latitude"] = latitude
+            project["longitude"] = longitude
+    project_state = _safe_text(project.get("project_state")).lower()
 
     results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
 
     for contractor, profile in _iter_contractors_for_public_profiles():
         card = _build_card_from_contractors(contractor, profile, project)
+        if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
+            continue
+        if card.get("distance_miles") is not None and float(card.get("distance_miles")) > radius:
+            continue
         key = card["id"]
         if key in seen_keys:
             continue
@@ -502,6 +529,10 @@ def build_contractor_recommendations(
 
     for listing in ContractorDirectoryListing.objects.all().order_by("-claimed_profile", "-google_review_count", "-google_rating", "business_name")[:100]:
         card = _build_card_from_listing(listing, project)
+        if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
+            continue
+        if card.get("distance_miles") is not None and float(card.get("distance_miles")) > radius:
+            continue
         key = card["id"]
         if key in seen_keys:
             continue
@@ -516,6 +547,7 @@ def build_contractor_recommendations(
         longitude=longitude,
         radius_miles=radius,
         limit=max(limit, 5),
+        enforce_radius=True,
     )
     google_places = google_search.get("results") or []
     for place in google_places:

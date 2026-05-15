@@ -37,6 +37,7 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "property_type",
             "budget_range_text",
             "desired_timing_text",
+            "tentative_start_date",
             "payment_preference",
             "homeowner_participation_notes",
             "homeowner_started_work",

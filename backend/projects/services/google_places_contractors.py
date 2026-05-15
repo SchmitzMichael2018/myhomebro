@@ -20,9 +20,19 @@ PROJECT_TYPE_QUERY_MAP = {
     "drywall": "drywall contractor",
     "remodeling": "remodeling contractor",
     "general": "general contractor",
+    "patio": "patio contractor",
+    "concrete": "concrete contractor",
+    "hardscape": "hardscape contractor",
+    "masonry": "masonry contractor",
+    "driveway": "concrete contractor",
+    "walkway": "concrete contractor",
 }
 
 PROJECT_CONTEXT_QUERY_HINTS = [
+    (("patio", "concrete slab", "slab", "driveway", "walkway", "hardscape", "masonry", "paver", "pavers"), "concrete contractor"),
+    (("patio", "patio extension", "patio repair", "paver", "pavers"), "patio contractor"),
+    (("masonry", "brick", "stone", "block"), "masonry contractor"),
+    (("hardscape", "retaining wall", "outdoor living"), "hardscape contractor"),
     (("kitchen", "remodel", "renovation"), "kitchen remodeling contractor"),
     (("cabinet", "cabinets", "cabinetry"), "cabinet installer"),
     (("countertop", "countertops", "quartz", "granite"), "countertop installer"),
@@ -36,6 +46,32 @@ PROJECT_CONTEXT_QUERY_HINTS = [
     (("drywall", "sheetrock"), "drywall contractor"),
     (("remodel", "renovation", "renovate"), "remodeling contractor"),
 ]
+
+EXCLUDED_CONTRACTOR_KEYWORDS = {
+    "electrician",
+    "electrical",
+    "plumbing",
+    "plumber",
+    "hvac",
+    "heating",
+    "air conditioning",
+    "air_conditioning",
+    "roofing",
+    "roofer",
+    "solar",
+}
+
+CONCRETE_PATIO_KEYWORDS = {
+    "patio",
+    "concrete",
+    "masonry",
+    "hardscape",
+    "driveway",
+    "walkway",
+    "paver",
+    "pavers",
+    "slab",
+}
 
 PROJECT_RADIUS_MAP = {
     "handyman": 10,
@@ -145,6 +181,75 @@ def _haversine_miles(lat1, lng1, lat2, lng2) -> float | None:
     return round(r * c, 1)
 
 
+def is_concrete_or_patio_context(*values: Any) -> bool:
+    text = " ".join(_safe_text(value).lower() for value in values)
+    return any(keyword in text for keyword in CONCRETE_PATIO_KEYWORDS)
+
+
+def _place_text(place: dict[str, Any]) -> str:
+    display_name = place.get("displayName") or {}
+    name = display_name.get("text") if isinstance(display_name, dict) else display_name
+    types = place.get("types") if isinstance(place.get("types"), list) else []
+    values = [
+        name,
+        place.get("formattedAddress"),
+        place.get("primaryType"),
+        " ".join(types),
+    ]
+    return " ".join(_safe_text(value).lower().replace("_", " ") for value in values)
+
+
+def should_exclude_place_for_context(place: dict[str, Any], *, concrete_or_patio_context: bool = False) -> bool:
+    if not concrete_or_patio_context:
+        return False
+    text = _place_text(place)
+    return any(keyword in text for keyword in EXCLUDED_CONTRACTOR_KEYWORDS)
+
+
+def geocode_project_location(
+    *,
+    address_line1: Any = "",
+    city: Any = "",
+    state: Any = "",
+    postal_code: Any = "",
+) -> dict[str, Any]:
+    api_key = google_places_api_key()
+    address = ", ".join(
+        part
+        for part in [_safe_text(address_line1), _safe_text(city), _safe_text(state), _safe_text(postal_code)]
+        if part
+    )
+    diagnostic = {"configured": bool(api_key), "requested": False, "status": None, "error": ""}
+    if not api_key or not address:
+        diagnostic["error"] = "google_geocode_api_key_missing" if not api_key else "missing_address"
+        return {"latitude": None, "longitude": None, "diagnostic": diagnostic}
+
+    try:
+        diagnostic["requested"] = True
+        response = requests.get(
+            "https://maps.googleapis.com/maps/api/geocode/json",
+            params={"address": address, "key": api_key},
+            timeout=10,
+        )
+        diagnostic["status"] = response.status_code
+        if not (200 <= response.status_code < 300):
+            diagnostic["error"] = f"geocode_http_{response.status_code}"
+            logger.warning("Google geocode request failed", extra={"status_code": response.status_code})
+            return {"latitude": None, "longitude": None, "diagnostic": diagnostic}
+        payload = response.json() if response.content else {}
+        first = (payload.get("results") or [None])[0] or {}
+        location = ((first.get("geometry") or {}).get("location") or {})
+        return {
+            "latitude": location.get("lat"),
+            "longitude": location.get("lng"),
+            "diagnostic": diagnostic,
+        }
+    except Exception:
+        diagnostic["error"] = "geocode_exception"
+        logger.exception("Google geocode request raised an exception.")
+        return {"latitude": None, "longitude": None, "diagnostic": diagnostic}
+
+
 def _places_headers() -> dict[str, str]:
     return {
         "X-Goog-Api-Key": google_places_api_key(),
@@ -198,6 +303,8 @@ def _normalize_place(place: dict[str, Any], *, source: str = "google_places") ->
         "google_maps_url": _safe_text(place.get("googleMapsUri")),
         "phone_number": _safe_text(place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber")),
         "email": "",
+        "match_badges": [],
+        "match_reason": "",
     }
 
 
@@ -210,6 +317,7 @@ def search_google_places_contractors(
     longitude: Any = None,
     radius_miles: Any = None,
     limit: int = 5,
+    enforce_radius: bool = True,
 ) -> list[dict[str, Any]]:
     return search_google_places_contractors_with_diagnostics(
         project_type=project_type,
@@ -219,6 +327,7 @@ def search_google_places_contractors(
         longitude=longitude,
         radius_miles=radius_miles,
         limit=limit,
+        enforce_radius=enforce_radius,
     )["results"]
 
 
@@ -231,6 +340,7 @@ def search_google_places_contractors_with_diagnostics(
     longitude: Any = None,
     radius_miles: Any = None,
     limit: int = 5,
+    enforce_radius: bool = True,
 ) -> dict[str, Any]:
     api_key = google_places_api_key()
     diagnostic: dict[str, Any] = {
@@ -251,6 +361,8 @@ def search_google_places_contractors_with_diagnostics(
     headers = _places_headers()
     diagnostic["requested"] = True
     diagnostic["query"] = search_text
+    concrete_or_patio_context = is_concrete_or_patio_context(project_type, project_subtype, query)
+    radius = _radius_meters(radius_miles or 25)
 
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -264,6 +376,18 @@ def search_google_places_contractors_with_diagnostics(
                 "languageCode": "en",
                 "regionCode": "us",
                 "maxResultCount": max_results,
+                **(
+                    {
+                        "locationBias": {
+                            "circle": {
+                                "center": {"latitude": float(latitude), "longitude": float(longitude)},
+                                "radius": radius,
+                            }
+                        }
+                    }
+                    if latitude not in (None, "", []) and longitude not in (None, "", [])
+                    else {}
+                ),
             },
             timeout=10,
         )
@@ -271,7 +395,21 @@ def search_google_places_contractors_with_diagnostics(
         if 200 <= response.status_code < 300:
             payload = response.json() if response.content else {}
             for place in payload.get("places", [])[:max_results]:
+                if should_exclude_place_for_context(place, concrete_or_patio_context=concrete_or_patio_context):
+                    continue
                 normalized = _normalize_place(place)
+                distance = calculate_distance_miles(
+                    origin_latitude=latitude,
+                    origin_longitude=longitude,
+                    destination_latitude=normalized.get("latitude"),
+                    destination_longitude=normalized.get("longitude"),
+                )
+                normalized["distance_miles"] = distance
+                if enforce_radius and distance is not None and distance > float(radius_miles or 25):
+                    continue
+                if concrete_or_patio_context:
+                    normalized["match_badges"] = ["Patio/concrete related"]
+                    normalized["match_reason"] = "Matched patio, concrete, masonry, or hardscape project context."
                 place_id = normalized.get("google_place_id")
                 if place_id and place_id in seen:
                     continue
@@ -290,7 +428,7 @@ def search_google_places_contractors_with_diagnostics(
         diagnostic["results_count"] = len(results)
         return {"results": results[:max_results], "diagnostic": diagnostic}
 
-    if latitude not in (None, "", []) and longitude not in (None, "", []):
+    if latitude not in (None, "", []) and longitude not in (None, "", []) and not results:
         try:
             nearby_response = requests.post(
                 "https://places.googleapis.com/v1/places:searchNearby",
@@ -301,7 +439,7 @@ def search_google_places_contractors_with_diagnostics(
                     "locationRestriction": {
                         "circle": {
                             "center": {"latitude": float(latitude), "longitude": float(longitude)},
-                            "radius": _radius_meters(radius_miles),
+                            "radius": radius,
                         }
                     },
                 },
@@ -311,7 +449,21 @@ def search_google_places_contractors_with_diagnostics(
             if 200 <= nearby_response.status_code < 300:
                 payload = nearby_response.json() if nearby_response.content else {}
                 for place in payload.get("places", [])[:max_results]:
+                    if should_exclude_place_for_context(place, concrete_or_patio_context=concrete_or_patio_context):
+                        continue
                     normalized = _normalize_place(place)
+                    distance = calculate_distance_miles(
+                        origin_latitude=latitude,
+                        origin_longitude=longitude,
+                        destination_latitude=normalized.get("latitude"),
+                        destination_longitude=normalized.get("longitude"),
+                    )
+                    normalized["distance_miles"] = distance
+                    if enforce_radius and distance is not None and distance > float(radius_miles or 25):
+                        continue
+                    if concrete_or_patio_context:
+                        normalized["match_badges"] = ["Patio/concrete related"]
+                        normalized["match_reason"] = "Matched patio, concrete, masonry, or hardscape project context."
                     place_id = normalized.get("google_place_id")
                     if place_id and place_id in seen:
                         continue
@@ -329,6 +481,9 @@ def search_google_places_contractors_with_diagnostics(
             logger.exception("Google Places nearby contractor search raised an exception.")
             diagnostic["results_count"] = len(results)
             return {"results": results[:max_results], "diagnostic": diagnostic}
+
+    if enforce_radius and any(row.get("distance_miles") is not None for row in results):
+        results = [row for row in results if row.get("distance_miles") is not None]
 
     diagnostic["results_count"] = len(results[:max_results])
     return {"results": results[:max_results], "diagnostic": diagnostic}

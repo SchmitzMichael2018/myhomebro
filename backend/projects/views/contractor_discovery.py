@@ -57,6 +57,7 @@ class PublicIntakeContractorSearchView(APIView):
             "project_city": request.query_params.get("city") or request.query_params.get("project_city"),
             "project_state": request.query_params.get("state") or request.query_params.get("project_state"),
             "project_postal_code": request.query_params.get("zip") or request.query_params.get("project_postal_code"),
+            "project_address_line1": request.query_params.get("address") or request.query_params.get("project_address_line1"),
             "project_class": request.query_params.get("project_class"),
             "project_mode": request.query_params.get("project_mode"),
             "payment_preference": request.query_params.get("payment_preference"),

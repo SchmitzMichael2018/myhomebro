@@ -2995,6 +2995,42 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.ai_analysis.get("project_family_key"), "kitchen_remodel")
         self.assertEqual(lead.ai_analysis.get("project_family_label"), "Kitchen remodel-focused review")
 
+    def test_google_places_query_for_patio_extension_prefers_concrete_and_filters_unrelated_trades(self):
+        from projects.services.google_places_contractors import (
+            infer_project_places_query,
+            should_exclude_place_for_context,
+        )
+
+        query = infer_project_places_query(
+            project_title="Patio extension",
+            description="Extend the existing patio by constructing a 10-foot by 12-foot concrete slab.",
+        ).lower()
+
+        self.assertIn("concrete contractor", query)
+        self.assertIn("patio contractor", query)
+        self.assertNotIn("electrician", query)
+        self.assertNotIn("plumber", query)
+        self.assertTrue(
+            should_exclude_place_for_context(
+                {
+                    "displayName": {"text": "Fast Electrical Services"},
+                    "primaryType": "electrician",
+                    "types": ["electrician", "electrical_contractor"],
+                },
+                concrete_or_patio_context=True,
+            )
+        )
+        self.assertFalse(
+            should_exclude_place_for_context(
+                {
+                    "displayName": {"text": "Austin Concrete Patio Pros"},
+                    "primaryType": "concrete_contractor",
+                    "types": ["concrete_contractor", "masonry_contractor"],
+                },
+                concrete_or_patio_context=True,
+            )
+        )
+
     @patch(
         "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
         return_value={

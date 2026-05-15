@@ -86,6 +86,9 @@ class PublicIntakeView(APIView):
         "same_as_customer_address",
         "project_class",
         "project_mode",
+        "budget_range_text",
+        "desired_timing_text",
+        "tentative_start_date",
         "payment_preference",
         "project_address_line1",
         "project_address_line2",
@@ -101,6 +104,7 @@ class PublicIntakeView(APIView):
         "ai_project_type",
         "ai_project_subtype",
         "ai_description",
+        "refined_description",
         "ai_project_timeline_days",
         "ai_project_budget",
         "measurement_handling",
@@ -184,6 +188,9 @@ class PublicIntakeView(APIView):
             "project_class": intake.project_class,
             "project_mode": intake.project_mode,
             "payment_preference": intake.payment_preference,
+            "budget_range_text": intake.budget_range_text,
+            "desired_timing_text": intake.desired_timing_text,
+            "tentative_start_date": intake.tentative_start_date.isoformat() if intake.tentative_start_date else "",
 
             "project_address_line1": intake.project_address_line1,
             "project_address_line2": intake.project_address_line2,
@@ -192,6 +199,7 @@ class PublicIntakeView(APIView):
             "project_postal_code": intake.project_postal_code,
 
             "accomplishment_text": intake.accomplishment_text,
+            "original_description": intake.accomplishment_text,
             "homeowner_participation_notes": intake.homeowner_participation_notes,
             "homeowner_started_work": intake.homeowner_started_work,
             "homeowner_task_summary": intake.homeowner_task_summary,
@@ -200,6 +208,7 @@ class PublicIntakeView(APIView):
             "ai_project_type": intake.ai_project_type,
             "ai_project_subtype": intake.ai_project_subtype,
             "ai_description": intake.ai_description,
+            "refined_description": intake.ai_description,
             "ai_project_timeline_days": intake.ai_project_timeline_days,
             "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
             "measurement_handling": intake.measurement_handling,
@@ -247,6 +256,10 @@ class PublicIntakeView(APIView):
 
         for field in self.SAFE_FIELDS:
             if field in request.data:
+                if field == "refined_description":
+                    setattr(intake, "ai_description", request.data.get(field) or "")
+                    changed.append("ai_description")
+                    continue
                 if field == "project_class":
                     value = str(request.data.get(field) or "").strip().lower()
                     if value not in {"residential", "commercial"}:
@@ -278,6 +291,8 @@ class PublicIntakeView(APIView):
                         except (InvalidOperation, TypeError, ValueError):
                             optional_numeric_errors[field] = ["Enter a valid amount."]
                             continue
+                elif field == "tentative_start_date":
+                    setattr(intake, field, blank_to_none(raw_value))
                 else:
                     setattr(intake, field, raw_value)
                 changed.append(field)
@@ -394,8 +409,13 @@ class PublicIntakeView(APIView):
                     "ai_project_type": intake.ai_project_type,
                     "ai_project_subtype": intake.ai_project_subtype,
                     "ai_description": intake.ai_description,
+                    "original_description": intake.accomplishment_text,
+                    "refined_description": intake.ai_description,
                     "ai_project_timeline_days": intake.ai_project_timeline_days,
                     "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+                    "budget_range_text": intake.budget_range_text,
+                    "desired_timing_text": intake.desired_timing_text,
+                    "tentative_start_date": intake.tentative_start_date.isoformat() if intake.tentative_start_date else "",
                     "measurement_handling": intake.measurement_handling,
                     "ai_milestones": intake.ai_milestones,
                     "ai_clarification_questions": intake.ai_clarification_questions,
@@ -414,6 +434,7 @@ class PublicIntakeView(APIView):
                 "ai_project_type",
                 "ai_project_subtype",
                 "ai_description",
+                "refined_description",
                 "ai_project_timeline_days",
                 "ai_project_budget",
                 "ai_milestones",
@@ -490,8 +511,13 @@ class PublicIntakeView(APIView):
                 "ai_project_type": intake.ai_project_type,
                 "ai_project_subtype": intake.ai_project_subtype,
                 "ai_description": intake.ai_description,
+                "original_description": intake.accomplishment_text,
+                "refined_description": intake.ai_description,
                 "ai_project_timeline_days": intake.ai_project_timeline_days,
                 "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+                "budget_range_text": intake.budget_range_text,
+                "desired_timing_text": intake.desired_timing_text,
+                "tentative_start_date": intake.tentative_start_date.isoformat() if intake.tentative_start_date else "",
                 "measurement_handling": intake.measurement_handling,
                 "ai_milestones": intake.ai_milestones,
                 "ai_clarification_questions": intake.ai_clarification_questions,

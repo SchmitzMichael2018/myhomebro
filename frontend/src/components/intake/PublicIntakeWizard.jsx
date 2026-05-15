@@ -137,12 +137,16 @@ const blankForm = {
   project_state: "",
   project_postal_code: "",
   accomplishment_text: "",
+  refined_description: "",
   ai_project_title: "",
   ai_project_type: "",
   ai_project_subtype: "",
   ai_description: "",
   ai_project_timeline_days: "",
   ai_project_budget: "",
+  budget_range_text: "",
+  desired_timing_text: "",
+  tentative_start_date: "",
   measurement_handling: "",
   ai_milestones: [emptyMilestone(0), emptyMilestone(1), emptyMilestone(2)],
   ai_clarification_questions: [],
@@ -185,7 +189,6 @@ export default function PublicIntakeWizard() {
   const [discoveryTargets, setDiscoveryTargets] = useState([]);
   const [clarificationUploading, setClarificationUploading] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [clarificationSnapshotMode, setClarificationSnapshotMode] = useState(false);
   const [branchContacts, setBranchContacts] = useState([
     { name: "", email: "", phone: "" },
     { name: "", email: "", phone: "" },
@@ -280,12 +283,16 @@ export default function PublicIntakeWizard() {
           project_state: data?.project_state || "",
           project_postal_code: data?.project_postal_code || "",
           accomplishment_text: data?.accomplishment_text || "",
+          refined_description: data?.refined_description || data?.ai_description || "",
           ai_project_title: data?.ai_project_title || "",
           ai_project_type: data?.ai_project_type || "",
           ai_project_subtype: data?.ai_project_subtype || "",
           ai_description: data?.ai_description || "",
           ai_project_timeline_days: data?.ai_project_timeline_days ?? "",
           ai_project_budget: moneyValue(data?.ai_project_budget),
+          budget_range_text: data?.budget_range_text || "",
+          desired_timing_text: data?.desired_timing_text || "",
+          tentative_start_date: data?.tentative_start_date || "",
           measurement_handling: data?.measurement_handling || "",
           ai_milestones: normalizeMilestones(data?.ai_milestones),
           ai_clarification_questions: Array.isArray(data?.ai_clarification_questions)
@@ -438,12 +445,16 @@ export default function PublicIntakeWizard() {
       ai_project_type: data?.ai_project_type ?? prev.ai_project_type,
       ai_project_subtype: data?.ai_project_subtype ?? prev.ai_project_subtype,
       ai_description: data?.ai_description ?? prev.ai_description,
+      refined_description: data?.refined_description ?? data?.ai_description ?? prev.refined_description,
       ai_project_timeline_days: data?.ai_project_timeline_days ?? prev.ai_project_timeline_days,
       ai_project_budget:
         data?.ai_project_budget !== undefined && data?.ai_project_budget !== null
           ? String(data.ai_project_budget)
           : prev.ai_project_budget,
       measurement_handling: data?.measurement_handling ?? prev.measurement_handling,
+      budget_range_text: data?.budget_range_text ?? prev.budget_range_text,
+      desired_timing_text: data?.desired_timing_text ?? prev.desired_timing_text,
+      tentative_start_date: data?.tentative_start_date ?? prev.tentative_start_date,
       ai_milestones: normalizeMilestones(data?.ai_milestones ?? prev.ai_milestones),
       ai_clarification_questions: Array.isArray(data?.ai_clarification_questions)
         ? data.ai_clarification_questions
@@ -516,7 +527,6 @@ export default function PublicIntakeWizard() {
     const data = await saveIntake({ showToast: false, allowBranch: false });
     if (!data) return;
     setCurrentQuestionIndex(0);
-    setClarificationSnapshotMode(false);
     setCurrentStep(1);
     toast.success("Project structure generated.");
   }
@@ -563,7 +573,11 @@ export default function PublicIntakeWizard() {
 
   function acceptDescriptionSuggestion() {
     if (descriptionRefinement.status !== "ready") return;
-    setField("accomplishment_text", descriptionRefinement.suggestion);
+    setForm((prev) => ({
+      ...prev,
+      refined_description: descriptionRefinement.suggestion,
+      ai_description: descriptionRefinement.suggestion,
+    }));
     setDescriptionRefinement({
       status: "idle",
       original: "",
@@ -605,11 +619,10 @@ export default function PublicIntakeWizard() {
     if (!saved) return;
 
     if (!clarificationQuestions.length || currentQuestionIndex >= clarificationQuestions.length - 1) {
-      setClarificationSnapshotMode(true);
+      setCurrentStep(2);
       return;
     }
 
-    setClarificationSnapshotMode(false);
     setCurrentQuestionIndex((prev) => Math.min(prev + 1, clarificationQuestions.length - 1));
   }
 
@@ -641,13 +654,6 @@ export default function PublicIntakeWizard() {
 
   function handleBack() {
     if (currentStep === 1) {
-      if (clarificationSnapshotMode) {
-        setClarificationSnapshotMode(false);
-        if (clarificationQuestions.length) {
-          setCurrentQuestionIndex((prev) => Math.min(prev, clarificationQuestions.length - 1));
-        }
-        return;
-      }
       if (currentQuestionIndex > 0) {
         setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
       } else {
@@ -784,11 +790,14 @@ export default function PublicIntakeWizard() {
 
     addRow("project-type", "Project Type", form.ai_project_type);
     addRow("area", "Area", form.ai_project_subtype);
-    addRow("main-goal", "Main Goal", getMainGoalSummary(form.ai_project_title, form.ai_description));
+    addRow("main-goal", "Main Goal", getMainGoalSummary(form.ai_project_title, form.refined_description || form.ai_description));
     addRow("original-description", "Original Description", form.accomplishment_text);
-    addRow("refined-description", "Refined Description", form.ai_description || form.accomplishment_text);
-    addRow("timing", "Timing", getFriendlyTimelineLabel(form.ai_project_timeline_days));
-    addRow("budget", "Budget", getFriendlyBudgetLabel(form.ai_project_budget));
+    addRow("refined-description", "Refined Description", form.refined_description || form.ai_description);
+    addRow("timing", "Timeline", form.desired_timing_text || "Not provided");
+    if (form.desired_timing_text === "Specific date") {
+      addRow("tentative-start-date", "Tentative Start Date", form.tentative_start_date || "Not provided");
+    }
+    addRow("budget", "Budget Range", form.budget_range_text || "Not provided");
 
     (clarificationQuestions || []).forEach((question) => {
       const key = question?.key || "";
@@ -806,40 +815,16 @@ export default function PublicIntakeWizard() {
     form.ai_clarification_answers,
     form.accomplishment_text,
     form.ai_description,
+    form.refined_description,
     form.ai_project_budget,
     form.ai_project_subtype,
     form.ai_project_title,
     form.ai_project_timeline_days,
     form.ai_project_type,
+    form.budget_range_text,
+    form.desired_timing_text,
+    form.tentative_start_date,
   ]);
-  const projectSnapshotRows = useMemo(() => {
-    const rows = [];
-    const seenLabels = new Set();
-    const addRow = (label, value) => {
-      const normalized = summarizeTextValue(value, 140);
-      const rowLabel = summarizeTextValue(label, 60);
-      if (!normalized || seenLabels.has(rowLabel)) return;
-      seenLabels.add(rowLabel);
-      rows.push({ label: rowLabel, value: normalized });
-    };
-
-    projectSummaryRows
-      .filter((row) => !String(row.key || "").startsWith("clarification-"))
-      .slice(0, 6)
-      .forEach((row) => addRow(row.label, row.value));
-
-    projectSummaryRows
-      .filter((row) => String(row.key || "").startsWith("clarification-"))
-      .slice(0, 3)
-      .forEach((row) => addRow(row.label, row.value));
-
-    const photoCount = Array.isArray(form.clarification_photos) ? form.clarification_photos.length : 0;
-    if (photoCount > 0) {
-      addRow("Photos", `${photoCount} photo${photoCount === 1 ? "" : "s"} attached`);
-    }
-
-    return rows;
-  }, [form.clarification_photos, projectSummaryRows]);
   const confidenceMessage = useMemo(() => {
     if (currentStep >= 7) return "Almost ready to send to contractors.";
     if (currentStep === 6) return "You are choosing the path that feels right.";
@@ -959,78 +944,6 @@ export default function PublicIntakeWizard() {
       const options = Array.isArray(activeClarificationQuestion?.options) ? activeClarificationQuestion.options : [];
       const isChoiceQuestion = options.length > 0;
       const isTextareaQuestion = (activeClarificationQuestion?.inputType || activeClarificationQuestion?.type) === "textarea";
-
-      if (clarificationSnapshotMode) {
-        return (
-          <div
-            className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10"
-            data-testid="public-intake-project-snapshot"
-          >
-            <div className="max-w-3xl">
-              <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-                Project Snapshot
-              </div>
-              <div className="mt-3 text-2xl font-semibold tracking-tight text-gray-900" data-testid="public-intake-project-snapshot-title">
-                Project Snapshot
-              </div>
-              <p className="mt-2 text-base text-slate-600">
-                Here&apos;s the clearer starting point we&apos;ve built from your answers.
-              </p>
-              <p className="mt-1 text-sm text-slate-500">
-                Your contractor will still review and confirm the final scope.
-              </p>
-
-              <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                {projectSnapshotRows.length ? (
-                  projectSnapshotRows.map((row) => (
-                    <div
-                      key={row.label}
-                      data-testid={`public-intake-project-snapshot-row-${toTestIdSegment(row.label)}`}
-                      className="rounded-xl bg-slate-50 px-4 py-3"
-                    >
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        {row.label}
-                      </div>
-                      <div className="mt-1 text-sm font-medium leading-6 text-slate-900">{row.value}</div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                    We&apos;ve captured the project details you shared so far.
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClarificationSnapshotMode(false);
-                    if (questionCount) {
-                      setCurrentQuestionIndex(Math.min(Math.max(currentQuestionIndex, 0), questionCount - 1));
-                    }
-                  }}
-                  data-testid="public-intake-project-snapshot-back"
-                  className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Back to Clarifications
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClarificationSnapshotMode(false);
-                    setCurrentStep(2);
-                  }}
-                  data-testid="public-intake-project-snapshot-continue"
-                  className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
-                >
-                  Continue to Project Summary
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      }
 
       return (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.28fr)_minmax(300px,0.72fr)]">
@@ -1232,7 +1145,7 @@ export default function PublicIntakeWizard() {
                           data-testid="public-intake-clarification-next"
                           className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
                         >
-                          {isLastQuestion ? "Review Project Snapshot" : "Next"}
+                          {isLastQuestion ? "Review Project Summary" : "Next"}
                         </button>
                       </div>
                     </div>
@@ -1292,7 +1205,7 @@ export default function PublicIntakeWizard() {
                   data-testid="public-intake-clarification-next"
                   className="mt-5 w-full rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
                 >
-                  Continue to Project Snapshot
+                  Continue to Project Summary
                 </button>
               ) : null}
             </div>
@@ -1311,32 +1224,37 @@ export default function PublicIntakeWizard() {
         {
           key: "summary-refined-description",
           label: "Refined Description",
-          value: form.ai_description || form.accomplishment_text || "No refined description yet.",
+          value: form.refined_description || form.ai_description || "Not provided",
         },
         {
           key: "summary-project-type",
           label: "Project Type",
-          value: [form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Not set yet",
+          value: [form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Not provided",
         },
         {
-          key: "summary-timeline-budget",
-          label: "Timeline / Budget",
-          value: [
-            form.ai_project_timeline_days ? `${form.ai_project_timeline_days} days` : "Timeline not set",
-            form.ai_project_budget ? `$${Number(form.ai_project_budget).toLocaleString()}` : "Budget not set",
-          ].join(" • "),
+          key: "summary-timeline",
+          label: "Timeline",
+          value:
+            form.desired_timing_text === "Specific date"
+              ? `${form.desired_timing_text}: ${form.tentative_start_date || "Not provided"}`
+              : form.desired_timing_text || "Not provided",
+        },
+        {
+          key: "summary-budget",
+          label: "Budget Range",
+          value: form.budget_range_text || "Not provided",
         },
         {
           key: "summary-measurements",
           label: "Measurements",
-          value: form.measurement_handling || "Not set",
+          value: form.measurement_handling || "Not provided",
         },
       ];
       return (
         <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-structured-output-step">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-              AI Project Snapshot
+              Project Summary
             </div>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900" data-testid="public-intake-structured-output-title">
               Project Summary
@@ -1384,6 +1302,65 @@ export default function PublicIntakeWizard() {
               Keep going at the pace that feels right. You can adjust these details later if needed.
             </p>
           </div>
+
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-gray-900">Budget and timing</div>
+            <p className="mt-1 text-sm text-slate-600">Optional details help contractors understand urgency and ballpark fit.</p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Budget range</label>
+                <select
+                  data-testid="public-intake-budget-range"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                  value={form.budget_range_text}
+                  onChange={(e) => setField("budget_range_text", e.target.value)}
+                >
+                  <option value="">Not provided</option>
+                  <option value="Not sure yet">Not sure yet</option>
+                  <option value="Under $1,000">Under $1,000</option>
+                  <option value="$1,000-$2,500">$1,000-$2,500</option>
+                  <option value="$2,500-$5,000">$2,500-$5,000</option>
+                  <option value="$5,000-$10,000">$5,000-$10,000</option>
+                  <option value="$10,000+">$10,000+</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Timeline</label>
+                <select
+                  data-testid="public-intake-timeline"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                  value={form.desired_timing_text}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      desired_timing_text: value,
+                      tentative_start_date: value === "Specific date" ? prev.tentative_start_date : "",
+                    }));
+                  }}
+                >
+                  <option value="">Not provided</option>
+                  <option value="As soon as possible">As soon as possible</option>
+                  <option value="Within the next month">Within the next month</option>
+                  <option value="1-3 months">1-3 months</option>
+                  <option value="Just planning right now">Just planning right now</option>
+                  <option value="Specific date">Specific date</option>
+                </select>
+              </div>
+              {form.desired_timing_text === "Specific date" ? (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Tentative start date</label>
+                  <input
+                    type="date"
+                    data-testid="public-intake-tentative-start-date"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.tentative_start_date}
+                    onChange={(e) => setField("tentative_start_date", e.target.value)}
+                  />
+                </div>
+              ) : null}
+            </div>
+          </section>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
@@ -1980,19 +1957,22 @@ export default function PublicIntakeWizard() {
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Refined description</div>
-                <div className="mt-2 whitespace-pre-line text-sm text-slate-700">{form.ai_description || form.accomplishment_text || "No refined description yet."}</div>
+                <div className="mt-2 whitespace-pre-line text-sm text-slate-700">{form.refined_description || form.ai_description || "Not provided"}</div>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project summary</div>
                 <div className="mt-1 text-sm font-semibold text-slate-900">{form.ai_project_title || "Untitled project"}</div>
-                <div className="mt-1 text-sm text-slate-700">{[form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Project type not set"}</div>
+                <div className="mt-1 text-sm text-slate-700">{[form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Not provided"}</div>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timeline and budget</div>
-                <div className="mt-1 text-sm text-slate-700">Timeline: {form.ai_project_timeline_days || "Not set"} days</div>
-                <div className="mt-1 text-sm text-slate-700">Budget: {form.ai_project_budget ? `$${Number(form.ai_project_budget).toLocaleString()}` : "Not set"}</div>
                 <div className="mt-1 text-sm text-slate-700">
-                  Measurements: {form.measurement_handling || "Not set"}
+                  Timeline: {form.desired_timing_text || "Not provided"}
+                  {form.desired_timing_text === "Specific date" ? ` (${form.tentative_start_date || "Not provided"})` : ""}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">Budget: {form.budget_range_text || "Not provided"}</div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Measurements: {form.measurement_handling || "Not provided"}
                 </div>
               </div>
             </div>

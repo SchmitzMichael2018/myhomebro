@@ -121,13 +121,14 @@ export default function ContractorDiscoveryStep({
             project_subtype: safeText(form?.ai_project_subtype) || undefined,
             description: safeText(form?.accomplishment_text) || undefined,
             project_scope_summary: safeText(form?.ai_description) || safeText(form?.accomplishment_text) || undefined,
+            project_address_line1: safeText(form?.project_address_line1 || form?.customer_address_line1) || undefined,
             project_city: safeText(form?.project_city || form?.customer_city) || undefined,
             project_state: safeText(form?.project_state || form?.customer_state) || undefined,
             project_postal_code: safeText(form?.project_postal_code || form?.customer_postal_code) || undefined,
             project_class: safeText(form?.project_class) || undefined,
             project_mode: safeText(form?.project_mode) || undefined,
             payment_preference: safeText(form?.payment_preference) || undefined,
-            radius_miles: radiusMiles || undefined,
+            radius_miles: radiusMiles || 25,
             limit: 8,
           },
         });
@@ -343,7 +344,7 @@ export default function ContractorDiscoveryStep({
           })
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 lg:col-span-2">
-            We could not find matches yet. Try a broader search or continue with the next step.
+            We couldn&apos;t find strong local matches within 25 miles. You can still invite a contractor manually or broaden the search.
           </div>
         )}
       </div>

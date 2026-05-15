@@ -143,12 +143,16 @@ test("landing page drives into intake and public intake shows branching choices 
           project_state: "TX",
           project_postal_code: "78701",
           accomplishment_text: "",
+          refined_description: "",
           ai_project_title: "",
           ai_project_type: "",
           ai_project_subtype: "",
           ai_description: "",
           ai_project_timeline_days: null,
           ai_project_budget: null,
+          budget_range_text: "",
+          desired_timing_text: "",
+          tentative_start_date: "",
           ai_milestones: [],
           measurement_handling: "",
           ai_clarification_questions: [],
@@ -179,8 +183,12 @@ test("landing page drives into intake and public intake shows branching choices 
         ai_project_type: "Commercial",
         ai_project_subtype: "General Commercial",
         ai_description: "Structured commercial scope summary.",
+        refined_description: body.refined_description || body.ai_description || "Structured commercial scope summary.",
         ai_project_timeline_days: 10,
         ai_project_budget: "5000.00",
+        budget_range_text: body.budget_range_text || "",
+        desired_timing_text: body.desired_timing_text || "",
+        tentative_start_date: body.tentative_start_date || "",
         measurement_handling: "site_visit_required",
         ai_milestones: [
           { title: "Preparation", description: "Prepare site and confirm scope." },
@@ -227,9 +235,6 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-measurement-provided")).toHaveCount(0);
   await expect(page.getByText("No clarification questions are needed for this project.")).toHaveCount(0);
   await page.getByTestId("public-intake-clarification-next").click();
-  await expect(page.getByTestId("public-intake-project-snapshot")).toBeVisible();
-  await expect(page.getByTestId("public-intake-project-snapshot-title")).toContainText("Project Snapshot");
-  await page.getByTestId("public-intake-project-snapshot-continue").click();
   await expect(page.getByTestId("public-intake-structured-output-step")).toBeVisible();
   await expect(page.getByTestId("public-intake-structured-output-title")).toContainText("Project Summary");
   await expect(page.getByText("Your contractor will create the final agreement and milestones later.")).toBeVisible();
@@ -239,6 +244,9 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByRole("button", { name: "Add milestone" })).toHaveCount(0);
   await page.getByTestId("public-intake-structured-continue").click();
   await expect(page.getByTestId("public-intake-project-details-step")).toBeVisible();
+  await page.getByTestId("public-intake-budget-range").selectOption("$2,500-$5,000");
+  await page.getByTestId("public-intake-timeline").selectOption("Specific date");
+  await page.getByTestId("public-intake-tentative-start-date").fill("2026-06-15");
   await expect(page.getByTestId("public-intake-customer-address-autocomplete")).toBeVisible();
   await page.getByTestId("public-intake-customer-address-line1").fill("501 Manual Bid Lane");
   await page.getByTestId("public-intake-customer-city").fill("Austin");
@@ -580,9 +588,13 @@ test("public intake description helper refines the project idea before generatin
         ai_project_title: "Commercial Scope Request",
         ai_project_type: "Commercial",
         ai_project_subtype: "General Commercial",
-        ai_description: "Structured commercial scope summary.",
+        ai_description: body.ai_description || body.refined_description || "Structured commercial scope summary.",
+        refined_description: body.refined_description || body.ai_description || "Structured commercial scope summary.",
         ai_project_timeline_days: 10,
         ai_project_budget: "5000.00",
+        budget_range_text: body.budget_range_text || "",
+        desired_timing_text: body.desired_timing_text || "",
+        tentative_start_date: body.tentative_start_date || "",
         measurement_handling: "site_visit_required",
         ai_milestones: [],
         ai_clarification_questions: [],
@@ -618,10 +630,14 @@ test("public intake description helper refines the project idea before generatin
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
   );
   await page.getByTestId("public-intake-description-use-version").click();
-  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue(
-    "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
-  );
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need to replace kitchen cabinets");
 
   await page.getByTestId("public-intake-generate-structure").click();
   await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
+  await expect(page.getByTestId("public-intake-project-summary-row-original-description")).toContainText(
+    "Need to replace kitchen cabinets"
+  );
+  await expect(page.getByTestId("public-intake-project-summary-row-refined-description")).toContainText(
+    "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
+  );
 });
