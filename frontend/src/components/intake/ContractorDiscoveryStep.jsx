@@ -12,7 +12,7 @@ function formatDistance(value) {
   if (value === null || value === undefined || value === "") return "";
   const number = Number(value);
   if (!Number.isFinite(number)) return "";
-  return `${number.toFixed(number >= 10 ? 0 : 1)} mi`;
+  return `${number.toFixed(number >= 10 ? 0 : 1)} miles away`;
 }
 
 function cardSelectionKey(card) {
@@ -133,7 +133,10 @@ export default function ContractorDiscoveryStep({
           },
         });
         if (!mounted) return;
-        setResults(Array.isArray(data?.results) ? data.results : []);
+        const filteredResults = Array.isArray(data?.results)
+          ? data.results.filter((card) => card?.source !== "google_places" || card?.distance_miles !== null && card?.distance_miles !== undefined && card?.distance_miles !== "")
+          : [];
+        setResults(filteredResults);
         setSummary(data?.summary || null);
       } catch (error) {
         if (!mounted) return;
@@ -148,7 +151,26 @@ export default function ContractorDiscoveryStep({
     return () => {
       mounted = false;
     };
-  }, [active, token, form?.accomplishment_text, form?.ai_description, form?.ai_project_subtype, form?.ai_project_title, form?.ai_project_type, inferredQuery, query, radiusMiles]);
+  }, [
+    active,
+    token,
+    form?.accomplishment_text,
+    form?.ai_description,
+    form?.ai_project_subtype,
+    form?.ai_project_title,
+    form?.ai_project_type,
+    form?.project_address_line1,
+    form?.project_city,
+    form?.project_state,
+    form?.project_postal_code,
+    form?.customer_address_line1,
+    form?.customer_city,
+    form?.customer_state,
+    form?.customer_postal_code,
+    inferredQuery,
+    query,
+    radiusMiles,
+  ]);
 
   function toggleSelection(card) {
     const key = cardSelectionKey(card);
@@ -275,7 +297,9 @@ export default function ContractorDiscoveryStep({
                       </span>
                       {card.rating ? <span>{Number(card.rating).toFixed(1)} rating</span> : null}
                       {card.review_count ? <span>{card.review_count} reviews</span> : null}
-                      {card.distance_miles ? <span>{formatDistance(card.distance_miles)}</span> : null}
+                      {card.distance_miles !== null && card.distance_miles !== undefined ? (
+                        <span className="font-semibold text-slate-800">{formatDistance(card.distance_miles)}</span>
+                      ) : null}
                     </div>
                   </div>
                   <button
@@ -344,7 +368,7 @@ export default function ContractorDiscoveryStep({
           })
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 lg:col-span-2">
-            We couldn&apos;t find strong local matches within 25 miles. You can still invite a contractor manually or broaden the search.
+            We couldn&apos;t find strong local matches within 25 miles of this project address. You can invite a contractor manually or adjust the project location.
           </div>
         )}
       </div>

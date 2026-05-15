@@ -3031,6 +3031,91 @@ class ContractorPublicPresenceApiTests(TestCase):
             )
         )
 
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.post")
+    def test_google_places_radius_filter_excludes_out_of_state_and_unknown_location_results(self, mock_post):
+        from projects.services.google_places_contractors import search_google_places_contractors_with_diagnostics
+
+        def fake_response(*_args, **_kwargs):
+            return SimpleNamespace(
+                status_code=200,
+                content=b"{}",
+                json=lambda: {
+                    "places": [
+                        {
+                            "id": "places/local-concrete",
+                            "displayName": {"text": "Austin Concrete Patio Co"},
+                            "formattedAddress": "100 Local Rd, Austin, TX 78701",
+                            "location": {"latitude": 30.27, "longitude": -97.74},
+                            "primaryType": "concrete_contractor",
+                            "types": ["concrete_contractor"],
+                            "rating": 4.8,
+                            "userRatingCount": 42,
+                        },
+                        {
+                            "id": "places/dallas-concrete",
+                            "displayName": {"text": "Dallas Concrete Floors"},
+                            "formattedAddress": "200 Far Rd, Dallas, TX 75201",
+                            "location": {"latitude": 32.7767, "longitude": -96.7970},
+                            "primaryType": "concrete_contractor",
+                            "types": ["concrete_contractor"],
+                            "rating": 4.9,
+                            "userRatingCount": 90,
+                        },
+                        {
+                            "id": "places/unknown-location",
+                            "displayName": {"text": "Concrete Without Coordinates"},
+                            "formattedAddress": "Texas",
+                            "primaryType": "concrete_contractor",
+                            "types": ["concrete_contractor"],
+                            "rating": 4.7,
+                            "userRatingCount": 12,
+                        },
+                    ]
+                },
+            )
+
+        mock_post.side_effect = fake_response
+
+        payload = search_google_places_contractors_with_diagnostics(
+            project_type="Concrete",
+            query="concrete contractor patio contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            radius_miles=25,
+            limit=5,
+            enforce_radius=True,
+        )
+
+        results = payload["results"]
+        self.assertEqual([row["business_name"] for row in results], ["Austin Concrete Patio Co"])
+        self.assertIsNotNone(results[0]["distance_miles"])
+        self.assertLessEqual(results[0]["distance_miles"], 25)
+        self.assertEqual(payload["diagnostic"]["filtered_out_of_radius_count"], 1)
+        self.assertEqual(payload["diagnostic"]["filtered_unknown_location_count"], 1)
+        self.assertTrue(payload["diagnostic"]["location_filter_applied"])
+
+        request_body = mock_post.call_args.kwargs["json"]
+        self.assertIn("locationRestriction", request_body)
+        self.assertEqual(request_body["locationRestriction"]["circle"]["radius"], 40234)
+        self.assertEqual(request_body["locationRestriction"]["circle"]["center"]["latitude"], 30.2672)
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    def test_google_places_radius_filter_requires_project_location(self):
+        from projects.services.google_places_contractors import search_google_places_contractors_with_diagnostics
+
+        payload = search_google_places_contractors_with_diagnostics(
+            project_type="Concrete",
+            query="concrete contractor",
+            radius_miles=25,
+            limit=5,
+            enforce_radius=True,
+        )
+
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["diagnostic"]["error"], "missing_project_location")
+        self.assertFalse(payload["diagnostic"]["location_filter_applied"])
+
     @patch(
         "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
         return_value={
@@ -3062,11 +3147,16 @@ class ContractorPublicPresenceApiTests(TestCase):
                     "google_maps_url": "https://maps.example/local-quartz-pros",
                     "phone_number": "512-555-0177",
                     "email": "",
+                    "distance_miles": 3.1,
                 }
             ],
         },
     )
-    def test_public_intake_contractor_search_infers_context_and_returns_safe_contact_fields(self, _mock_places):
+    @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        return_value={"latitude": 30.2672, "longitude": -97.7431, "diagnostic": {"configured": True}},
+    )
+    def test_public_intake_contractor_search_infers_context_and_returns_safe_contact_fields(self, _mock_geocode, _mock_places):
         self.profile.phone_public = "512-555-0100"
         self.profile.email_public = "hello@brightbuild.example"
         self.profile.website_url = "https://brightbuild.example"
@@ -3096,6 +3186,8 @@ class ContractorPublicPresenceApiTests(TestCase):
             trade_categories=["countertop", "kitchen"],
             google_rating=4.7,
             google_review_count=32,
+            latitude=30.2680,
+            longitude=-97.7440,
         )
         intake = ProjectIntake.objects.create(
             contractor=self.contractor,
@@ -3145,6 +3237,7 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(google_row["phone"], "512-555-0177")
         self.assertEqual(google_row["website_url"], "https://localquartz.example")
         self.assertEqual(google_row["address"], "88 Countertop Rd, Austin, TX 78701")
+        self.assertIsNotNone(google_row["distance_miles"])
         self.assertEqual(payload["summary"]["external_search"]["results_count"], 1)
         self.assertTrue(_mock_places.called)
 

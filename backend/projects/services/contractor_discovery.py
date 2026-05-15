@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -23,6 +24,8 @@ from projects.services.google_places_contractors import (
 from projects.services.notification_center import create_notification
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_text(value: Any) -> str:
@@ -512,6 +515,38 @@ def build_contractor_recommendations(
             project["longitude"] = longitude
     project_state = _safe_text(project.get("project_state")).lower()
 
+    has_project_location = latitude not in (None, "", []) and longitude not in (None, "", [])
+    logger.info(
+        "Contractor discovery location context.",
+        extra={
+            "project_city": project.get("project_city"),
+            "project_state": project.get("project_state"),
+            "project_postal_code": project.get("project_postal_code"),
+            "has_latitude": latitude not in (None, "", []),
+            "has_longitude": longitude not in (None, "", []),
+        },
+    )
+    if not has_project_location:
+        summary = {
+            "search_query": search_query,
+            "radius_miles": radius,
+            "location_filter_applied": False,
+            "filtered_out_of_radius_count": 0,
+            "project_mode": project.get("project_mode", "full_service"),
+            "payment_preference": project.get("payment_preference", "escrow"),
+            "results_count": 0,
+            "external_results_count": 0,
+            "external_search": {
+                "source": "google_places",
+                "configured": bool(getattr(settings, "GOOGLE_PLACES_API_KEY", "") or getattr(settings, "GOOGLE_MAPS_API_KEY", "")),
+                "requested": False,
+                "results_count": 0,
+                "error": "missing_project_location",
+            },
+            "reason": "missing_project_location",
+        }
+        return {"summary": summary, "results": []}
+
     results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
 
@@ -530,6 +565,8 @@ def build_contractor_recommendations(
     for listing in ContractorDirectoryListing.objects.all().order_by("-claimed_profile", "-google_review_count", "-google_rating", "business_name")[:100]:
         card = _build_card_from_listing(listing, project)
         if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
+            continue
+        if not card.get("claimed") and card.get("distance_miles") is None:
             continue
         if card.get("distance_miles") is not None and float(card.get("distance_miles")) > radius:
             continue
@@ -551,10 +588,14 @@ def build_contractor_recommendations(
     )
     google_places = google_search.get("results") or []
     for place in google_places:
+        if place.get("distance_miles") is None:
+            continue
         listing = upsert_directory_listing_from_google(place)
         if listing is None:
             continue
         card = _build_card_from_listing(listing, project)
+        if card.get("distance_miles") is None or float(card.get("distance_miles")) > radius:
+            continue
         key = card["id"]
         if key in seen_keys:
             continue
@@ -565,9 +606,9 @@ def build_contractor_recommendations(
         key=lambda row: (
             -int(bool(row.get("claimed"))),
             -int(row.get("source_priority", 0)),
+            float(row.get("distance_miles") if row.get("distance_miles") is not None else 9999),
             -int(row.get("compatibility_score", 0)),
             -(float(row.get("rating") or 0) * 10),
-            float(row.get("distance_miles") or 9999),
             row.get("business_name", ""),
         )
     )
@@ -581,6 +622,8 @@ def build_contractor_recommendations(
     summary = {
         "search_query": search_query,
         "radius_miles": radius,
+        "location_filter_applied": True,
+        "filtered_out_of_radius_count": int((google_search.get("diagnostic") or {}).get("filtered_out_of_radius_count") or 0),
         "project_mode": project.get("project_mode", "full_service"),
         "payment_preference": project.get("payment_preference", "escrow"),
         "results_count": len(results),

@@ -350,6 +350,11 @@ def search_google_places_contractors_with_diagnostics(
         "nearby_status": None,
         "error": "",
         "results_count": 0,
+        "radius_miles": 25,
+        "location_filter_applied": False,
+        "filtered_out_of_radius_count": 0,
+        "filtered_unknown_location_count": 0,
+        "pre_distance_filter_count": 0,
     }
     if not api_key:
         diagnostic["error"] = "google_places_api_key_missing"
@@ -362,7 +367,28 @@ def search_google_places_contractors_with_diagnostics(
     diagnostic["requested"] = True
     diagnostic["query"] = search_text
     concrete_or_patio_context = is_concrete_or_patio_context(project_type, project_subtype, query)
-    radius = _radius_meters(radius_miles or 25)
+    radius_limit = 25 if enforce_radius else float(radius_miles or 25)
+    radius = 40234 if enforce_radius else _radius_meters(radius_miles or 25)
+    diagnostic["radius_miles"] = radius_limit
+    has_search_center = latitude not in (None, "", []) and longitude not in (None, "", [])
+    diagnostic["location_filter_applied"] = bool(enforce_radius and has_search_center)
+    if enforce_radius and not has_search_center:
+        diagnostic["error"] = "missing_project_location"
+        logger.info(
+            "Google Places contractor search skipped: missing usable project location.",
+            extra={"has_latitude": latitude not in (None, "", []), "has_longitude": longitude not in (None, "", [])},
+        )
+        return {"results": [], "diagnostic": diagnostic}
+
+    try:
+        center = {"latitude": float(latitude), "longitude": float(longitude)} if has_search_center else None
+    except (TypeError, ValueError):
+        diagnostic["error"] = "missing_project_location"
+        logger.info(
+            "Google Places contractor search skipped: invalid project location.",
+            extra={"has_latitude": latitude not in (None, "", []), "has_longitude": longitude not in (None, "", [])},
+        )
+        return {"results": [], "diagnostic": diagnostic}
 
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -378,14 +404,14 @@ def search_google_places_contractors_with_diagnostics(
                 "maxResultCount": max_results,
                 **(
                     {
-                        "locationBias": {
+                        "locationRestriction" if enforce_radius else "locationBias": {
                             "circle": {
-                                "center": {"latitude": float(latitude), "longitude": float(longitude)},
+                                "center": center,
                                 "radius": radius,
                             }
                         }
                     }
-                    if latitude not in (None, "", []) and longitude not in (None, "", [])
+                    if center
                     else {}
                 ),
             },
@@ -397,6 +423,7 @@ def search_google_places_contractors_with_diagnostics(
             for place in payload.get("places", [])[:max_results]:
                 if should_exclude_place_for_context(place, concrete_or_patio_context=concrete_or_patio_context):
                     continue
+                diagnostic["pre_distance_filter_count"] += 1
                 normalized = _normalize_place(place)
                 distance = calculate_distance_miles(
                     origin_latitude=latitude,
@@ -405,7 +432,11 @@ def search_google_places_contractors_with_diagnostics(
                     destination_longitude=normalized.get("longitude"),
                 )
                 normalized["distance_miles"] = distance
-                if enforce_radius and distance is not None and distance > float(radius_miles or 25):
+                if enforce_radius and distance is None:
+                    diagnostic["filtered_unknown_location_count"] += 1
+                    continue
+                if enforce_radius and distance > radius_limit:
+                    diagnostic["filtered_out_of_radius_count"] += 1
                     continue
                 if concrete_or_patio_context:
                     normalized["match_badges"] = ["Patio/concrete related"]
@@ -428,7 +459,17 @@ def search_google_places_contractors_with_diagnostics(
         diagnostic["results_count"] = len(results)
         return {"results": results[:max_results], "diagnostic": diagnostic}
 
-    if latitude not in (None, "", []) and longitude not in (None, "", []) and not results:
+    if enforce_radius and not results:
+        logger.info(
+            "Google Places broad contractor fallback skipped because radius enforcement is active.",
+            extra={
+                "has_latitude": bool(center),
+                "has_longitude": bool(center),
+                "pre_distance_filter_count": diagnostic["pre_distance_filter_count"],
+                "results_after_distance_filter": len(results),
+            },
+        )
+    elif latitude not in (None, "", []) and longitude not in (None, "", []) and not results:
         try:
             nearby_response = requests.post(
                 "https://places.googleapis.com/v1/places:searchNearby",
@@ -451,6 +492,7 @@ def search_google_places_contractors_with_diagnostics(
                 for place in payload.get("places", [])[:max_results]:
                     if should_exclude_place_for_context(place, concrete_or_patio_context=concrete_or_patio_context):
                         continue
+                    diagnostic["pre_distance_filter_count"] += 1
                     normalized = _normalize_place(place)
                     distance = calculate_distance_miles(
                         origin_latitude=latitude,
@@ -459,7 +501,11 @@ def search_google_places_contractors_with_diagnostics(
                         destination_longitude=normalized.get("longitude"),
                     )
                     normalized["distance_miles"] = distance
-                    if enforce_radius and distance is not None and distance > float(radius_miles or 25):
+                    if enforce_radius and distance is None:
+                        diagnostic["filtered_unknown_location_count"] += 1
+                        continue
+                    if enforce_radius and distance > radius_limit:
+                        diagnostic["filtered_out_of_radius_count"] += 1
                         continue
                     if concrete_or_patio_context:
                         normalized["match_badges"] = ["Patio/concrete related"]
@@ -482,8 +528,33 @@ def search_google_places_contractors_with_diagnostics(
             diagnostic["results_count"] = len(results)
             return {"results": results[:max_results], "diagnostic": diagnostic}
 
-    if enforce_radius and any(row.get("distance_miles") is not None for row in results):
-        results = [row for row in results if row.get("distance_miles") is not None]
+    if enforce_radius:
+        before = len(results)
+        results = [
+            row
+            for row in results
+            if row.get("distance_miles") is not None and float(row.get("distance_miles")) <= radius_limit
+        ]
+        diagnostic["filtered_out_of_radius_count"] += before - len(results)
+        logger.info(
+            "Google Places contractor radius filter applied.",
+            extra={
+                "has_project_location": bool(center),
+                "pre_distance_filter_count": diagnostic["pre_distance_filter_count"],
+                "results_after_distance_filter": len(results),
+                "filtered_out_of_radius_count": diagnostic["filtered_out_of_radius_count"],
+                "filtered_unknown_location_count": diagnostic["filtered_unknown_location_count"],
+            },
+        )
+
+    results.sort(
+        key=lambda row: (
+            float(row.get("distance_miles") if row.get("distance_miles") is not None else 9999),
+            -(float(row.get("rating") or 0) * 10),
+            -int(row.get("review_count") or 0),
+            row.get("business_name", ""),
+        )
+    )
 
     diagnostic["results_count"] = len(results[:max_results])
     return {"results": results[:max_results], "diagnostic": diagnostic}
