@@ -3122,6 +3122,198 @@ class ContractorPublicPresenceApiTests(TestCase):
             "diagnostic": {
                 "configured": True,
                 "requested": True,
+                "results_count": 0,
+                "google_raw_count": 0,
+                "after_distance_filter_count": 0,
+                "filtered_out_of_radius_count": 0,
+                "missing_coordinates_count": 0,
+                "empty_reason": "google_returned_zero",
+            },
+            "results": [],
+        },
+    )
+    @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        return_value={"latitude": 30.2672, "longitude": -97.7431, "diagnostic": {"configured": True}},
+    )
+    def test_contractor_discovery_geocodes_from_city_state_zip_when_lat_lng_missing(self, mock_geocode, mock_places):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Location Prospect",
+            accomplishment_text="Need flooring installed.",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+        )
+        intake.ensure_share_token()
+
+        response = self.client.get(
+            "/api/projects/public-intake/contractor-search/",
+            {
+                "token": intake.share_token,
+                "query": "flooring contractor",
+                "city": "Austin",
+                "state": "TX",
+                "zip": "78701",
+                "limit": 5,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.content.decode())
+        payload = response.json()
+        self.assertEqual(payload["summary"]["location_resolution_status"], "resolved")
+        self.assertEqual(payload["summary"]["location_source"], "city_state_zip")
+        self.assertTrue(payload["summary"]["project_lat_present"])
+        self.assertTrue(payload["summary"]["project_lng_present"])
+        mock_geocode.assert_called()
+        self.assertEqual(mock_geocode.call_args.kwargs["city"], "Austin")
+        self.assertEqual(mock_geocode.call_args.kwargs["state"], "TX")
+        self.assertEqual(mock_geocode.call_args.kwargs["postal_code"], "78701")
+        self.assertTrue(mock_places.called)
+
+    @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        return_value={"latitude": None, "longitude": None, "diagnostic": {"configured": True}},
+    )
+    def test_contractor_discovery_empty_reason_when_geocode_fails(self, _mock_geocode):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring",
+                "description": "Install new floors.",
+                "project_city": "Austin",
+                "project_state": "ZZ",
+                "project_postal_code": "78701",
+            },
+            query="flooring contractor",
+            limit=5,
+        )
+
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["summary"]["location_resolution_status"], "geocode_failed")
+        self.assertEqual(payload["summary"]["reason"], "geocode_failed")
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={
+            "diagnostic": {
+                "configured": True,
+                "requested": True,
+                "results_count": 0,
+                "google_raw_count": 2,
+                "after_distance_filter_count": 0,
+                "filtered_out_of_radius_count": 2,
+                "missing_coordinates_count": 0,
+                "empty_reason": "all_results_outside_radius",
+            },
+            "results": [],
+        },
+    )
+    @patch("projects.services.contractor_discovery._iter_contractors_for_public_profiles", return_value=[])
+    def test_contractor_discovery_empty_reason_when_google_results_outside_radius(self, _mock_contractors, _mock_places):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring",
+                "description": "Install new floors.",
+                "project_city": "Austin",
+                "project_state": "ZZ",
+                "project_postal_code": "78701",
+            },
+            query="flooring contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["summary"]["reason"], "all_results_outside_radius")
+        self.assertEqual(payload["summary"]["google_raw_count"], 2)
+        self.assertEqual(payload["summary"]["filtered_out_of_radius_count"], 2)
+
+    @patch("projects.services.contractor_discovery._iter_contractors_for_public_profiles", return_value=[])
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        side_effect=[
+            {
+                "diagnostic": {
+                    "configured": True,
+                    "requested": True,
+                    "results_count": 0,
+                    "google_raw_count": 0,
+                    "after_distance_filter_count": 0,
+                    "filtered_out_of_radius_count": 0,
+                    "missing_coordinates_count": 0,
+                    "empty_reason": "google_returned_zero",
+                },
+                "results": [],
+            },
+            {
+                "diagnostic": {
+                    "configured": True,
+                    "requested": True,
+                    "results_count": 1,
+                    "google_raw_count": 1,
+                    "after_distance_filter_count": 1,
+                    "filtered_out_of_radius_count": 0,
+                    "missing_coordinates_count": 0,
+                    "empty_reason": "",
+                },
+                "results": [
+                    {
+                        "source": ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+                        "google_place_id": "places/local-flooring-company",
+                        "business_name": "Local Flooring Company",
+                        "formatted_address": "9 Floor Way, Austin, TX 78701",
+                        "city": "Austin",
+                        "state": "TX",
+                        "zip_code": "78701",
+                        "latitude": 30.268,
+                        "longitude": -97.744,
+                        "primary_trade": "flooring_contractor",
+                        "trade_categories": ["flooring_contractor"],
+                        "google_rating": 4.6,
+                        "google_review_count": 22,
+                        "phone_number": "512-555-0300",
+                        "distance_miles": 0.1,
+                    }
+                ],
+            },
+        ],
+    )
+    def test_contractor_discovery_retries_once_with_broader_flooring_query_when_google_zero(self, mock_places, _mock_contractors):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring",
+                "description": "Install new floors.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="flooring contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+
+        self.assertEqual(mock_places.call_count, 2)
+        self.assertEqual(mock_places.call_args_list[1].kwargs["query"], "floor installation contractor")
+        self.assertEqual(payload["results"][0]["business_name"], "Local Flooring Company")
+        self.assertEqual(payload["summary"]["reason"], "")
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={
+            "diagnostic": {
+                "configured": True,
+                "requested": True,
                 "results_count": 1,
                 "text_status": 200,
                 "nearby_status": None,

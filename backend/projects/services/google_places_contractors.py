@@ -355,6 +355,10 @@ def search_google_places_contractors_with_diagnostics(
         "filtered_out_of_radius_count": 0,
         "filtered_unknown_location_count": 0,
         "pre_distance_filter_count": 0,
+        "google_raw_count": 0,
+        "after_distance_filter_count": 0,
+        "missing_coordinates_count": 0,
+        "empty_reason": "",
     }
     if not api_key:
         diagnostic["error"] = "google_places_api_key_missing"
@@ -420,7 +424,9 @@ def search_google_places_contractors_with_diagnostics(
         diagnostic["text_status"] = response.status_code
         if 200 <= response.status_code < 300:
             payload = response.json() if response.content else {}
-            for place in payload.get("places", [])[:max_results]:
+            places = payload.get("places", [])[:max_results]
+            diagnostic["google_raw_count"] += len(places)
+            for place in places:
                 if should_exclude_place_for_context(place, concrete_or_patio_context=concrete_or_patio_context):
                     continue
                 diagnostic["pre_distance_filter_count"] += 1
@@ -434,6 +440,7 @@ def search_google_places_contractors_with_diagnostics(
                 normalized["distance_miles"] = distance
                 if enforce_radius and distance is None:
                     diagnostic["filtered_unknown_location_count"] += 1
+                    diagnostic["missing_coordinates_count"] += 1
                     continue
                 if enforce_radius and distance > radius_limit:
                     diagnostic["filtered_out_of_radius_count"] += 1
@@ -489,7 +496,9 @@ def search_google_places_contractors_with_diagnostics(
             diagnostic["nearby_status"] = nearby_response.status_code
             if 200 <= nearby_response.status_code < 300:
                 payload = nearby_response.json() if nearby_response.content else {}
-                for place in payload.get("places", [])[:max_results]:
+                places = payload.get("places", [])[:max_results]
+                diagnostic["google_raw_count"] += len(places)
+                for place in places:
                     if should_exclude_place_for_context(place, concrete_or_patio_context=concrete_or_patio_context):
                         continue
                     diagnostic["pre_distance_filter_count"] += 1
@@ -503,6 +512,7 @@ def search_google_places_contractors_with_diagnostics(
                     normalized["distance_miles"] = distance
                     if enforce_radius and distance is None:
                         diagnostic["filtered_unknown_location_count"] += 1
+                        diagnostic["missing_coordinates_count"] += 1
                         continue
                     if enforce_radius and distance > radius_limit:
                         diagnostic["filtered_out_of_radius_count"] += 1
@@ -546,6 +556,15 @@ def search_google_places_contractors_with_diagnostics(
                 "filtered_unknown_location_count": diagnostic["filtered_unknown_location_count"],
             },
         )
+        diagnostic["after_distance_filter_count"] = len(results)
+
+    if enforce_radius and not results:
+        if diagnostic["google_raw_count"] <= 0:
+            diagnostic["empty_reason"] = "google_returned_zero"
+        elif diagnostic["missing_coordinates_count"] >= diagnostic["google_raw_count"]:
+            diagnostic["empty_reason"] = "all_results_missing_coordinates"
+        elif diagnostic["filtered_out_of_radius_count"] > 0:
+            diagnostic["empty_reason"] = "all_results_outside_radius"
 
     results.sort(
         key=lambda row: (

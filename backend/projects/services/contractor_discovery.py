@@ -32,6 +32,115 @@ def _safe_text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+def _has_value(value: Any) -> bool:
+    return value not in (None, "", [])
+
+
+def _location_metadata(
+    *,
+    project: dict[str, Any],
+    latitude: Any = None,
+    longitude: Any = None,
+    source: str = "missing",
+    status: str = "missing_project_location",
+    reason: str = "",
+) -> dict[str, Any]:
+    return {
+        "location_filter_applied": _has_value(latitude) and _has_value(longitude),
+        "location_resolution_status": status,
+        "location_source": source,
+        "project_lat_present": _has_value(latitude),
+        "project_lng_present": _has_value(longitude),
+        "search_center_city": project.get("project_city", ""),
+        "search_center_state": project.get("project_state", ""),
+        "search_center_zip": project.get("project_postal_code", ""),
+        "reason": reason,
+    }
+
+
+def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude: Any = None, longitude: Any = None) -> dict[str, Any]:
+    if _has_value(latitude) and _has_value(longitude):
+        return {
+            **_location_metadata(project=project, latitude=latitude, longitude=longitude, source="intake_lat_lng", status="resolved"),
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+
+    saved_location = {}
+    try:
+        saved_location = (getattr(intake, "ai_analysis_payload", None) or {}).get("contractor_discovery_location") or {}
+    except Exception:
+        saved_location = {}
+    saved_lat = saved_location.get("latitude")
+    saved_lng = saved_location.get("longitude")
+    if _has_value(saved_lat) and _has_value(saved_lng):
+        return {
+            **_location_metadata(project=project, latitude=saved_lat, longitude=saved_lng, source="intake_lat_lng", status="resolved"),
+            "latitude": saved_lat,
+            "longitude": saved_lng,
+        }
+
+    candidates = []
+    address_line1 = _safe_text(project.get("project_address_line1"))
+    city = _safe_text(project.get("project_city"))
+    state = _safe_text(project.get("project_state"))
+    postal_code = _safe_text(project.get("project_postal_code"))
+    if address_line1 and (city or state or postal_code):
+        candidates.append(("project_address", {"address_line1": address_line1, "city": city, "state": state, "postal_code": postal_code}))
+    if city and (state or postal_code):
+        candidates.append(("city_state_zip", {"address_line1": "", "city": city, "state": state, "postal_code": postal_code}))
+    if postal_code:
+        candidates.append(("zip_only", {"address_line1": "", "city": "", "state": "", "postal_code": postal_code}))
+
+    if not candidates:
+        return {
+            **_location_metadata(project=project, source="missing", status="missing_project_location", reason="missing_project_location"),
+            "latitude": None,
+            "longitude": None,
+        }
+
+    for source, kwargs in candidates:
+        geocoded = geocode_project_location(**kwargs)
+        lat = geocoded.get("latitude")
+        lng = geocoded.get("longitude")
+        if _has_value(lat) and _has_value(lng):
+            if intake is not None:
+                try:
+                    analysis = dict(getattr(intake, "ai_analysis_payload", None) or {})
+                    analysis["contractor_discovery_location"] = {
+                        "latitude": lat,
+                        "longitude": lng,
+                        "source": source,
+                    }
+                    intake.ai_analysis_payload = analysis
+                    intake.save(update_fields=["ai_analysis_payload", "updated_at"])
+                except Exception:
+                    logger.exception("Could not persist contractor discovery geocode result.")
+            return {
+                **_location_metadata(project=project, latitude=lat, longitude=lng, source=source, status="resolved"),
+                "latitude": lat,
+                "longitude": lng,
+            }
+
+    return {
+        **_location_metadata(project=project, source=candidates[-1][0], status="geocode_failed", reason="geocode_failed"),
+        "latitude": None,
+        "longitude": None,
+    }
+
+
+def _broader_contractor_queries(query: str) -> list[str]:
+    text = _safe_text(query).lower()
+    if "floor" in text:
+        return ["flooring contractor", "floor installation contractor", "flooring company"]
+    if "concrete" in text or "patio" in text:
+        return ["concrete contractor", "patio contractor", "masonry contractor"]
+    if "cabinet" in text or "countertop" in text or "kitchen" in text:
+        return ["kitchen remodeling contractor", "cabinet installer", "countertop installer"]
+    first = _safe_text(query)
+    return [first] if first else []
+
+
 def _safe_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
@@ -498,40 +607,38 @@ def build_contractor_recommendations(
     except Exception:
         radius = 25
     radius = max(1, min(radius, 25))
-    if latitude not in (None, "", []) and longitude not in (None, "", []):
+    location_meta = _resolve_project_location(intake=intake, project=project, latitude=latitude, longitude=longitude)
+    latitude = location_meta.get("latitude")
+    longitude = location_meta.get("longitude")
+    if _has_value(latitude) and _has_value(longitude):
         project["latitude"] = latitude
         project["longitude"] = longitude
-    else:
-        geocoded = geocode_project_location(
-            address_line1=project.get("project_address_line1"),
-            city=project.get("project_city"),
-            state=project.get("project_state"),
-            postal_code=project.get("project_postal_code"),
-        )
-        if geocoded.get("latitude") not in (None, "", []) and geocoded.get("longitude") not in (None, "", []):
-            latitude = geocoded.get("latitude")
-            longitude = geocoded.get("longitude")
-            project["latitude"] = latitude
-            project["longitude"] = longitude
     project_state = _safe_text(project.get("project_state")).lower()
 
-    has_project_location = latitude not in (None, "", []) and longitude not in (None, "", [])
+    has_project_location = _has_value(latitude) and _has_value(longitude)
     logger.info(
         "Contractor discovery location context.",
         extra={
+            "intake_id": getattr(intake, "id", None),
+            "intake_token": str(getattr(intake, "share_token", ""))[:8] if getattr(intake, "share_token", "") else "",
+            "query": search_query,
+            "location_source": location_meta.get("location_source"),
             "project_city": project.get("project_city"),
             "project_state": project.get("project_state"),
             "project_postal_code": project.get("project_postal_code"),
-            "has_latitude": latitude not in (None, "", []),
-            "has_longitude": longitude not in (None, "", []),
+            "has_latitude": _has_value(latitude),
+            "has_longitude": _has_value(longitude),
         },
     )
     if not has_project_location:
         summary = {
             "search_query": search_query,
             "radius_miles": radius,
-            "location_filter_applied": False,
+            **{key: value for key, value in location_meta.items() if key not in {"latitude", "longitude"}},
             "filtered_out_of_radius_count": 0,
+            "google_raw_count": 0,
+            "after_distance_filter_count": 0,
+            "missing_coordinates_count": 0,
             "project_mode": project.get("project_mode", "full_service"),
             "payment_preference": project.get("payment_preference", "escrow"),
             "results_count": 0,
@@ -541,10 +648,18 @@ def build_contractor_recommendations(
                 "configured": bool(getattr(settings, "GOOGLE_PLACES_API_KEY", "") or getattr(settings, "GOOGLE_MAPS_API_KEY", "")),
                 "requested": False,
                 "results_count": 0,
-                "error": "missing_project_location",
+                "error": location_meta.get("reason") or location_meta.get("location_resolution_status"),
             },
-            "reason": "missing_project_location",
         }
+        logger.info(
+            "Contractor discovery returned no results before search.",
+            extra={
+                "intake_id": getattr(intake, "id", None),
+                "query": search_query,
+                "location_source": location_meta.get("location_source"),
+                "empty_reason": summary.get("reason"),
+            },
+        )
         return {"summary": summary, "results": []}
 
     results: list[dict[str, Any]] = []
@@ -586,6 +701,38 @@ def build_contractor_recommendations(
         limit=max(limit, 5),
         enforce_radius=True,
     )
+    google_diag = google_search.get("diagnostic") or {}
+    if not google_search.get("results") and int(google_diag.get("google_raw_count") or 0) <= 0:
+        attempted_queries = {_safe_text(search_query).lower()}
+        retried = False
+        for fallback_query in _broader_contractor_queries(search_query):
+            if not fallback_query or fallback_query.lower() in attempted_queries:
+                continue
+            if retried:
+                break
+            retried = True
+            attempted_queries.add(fallback_query.lower())
+            retry_search = search_google_places_contractors_with_diagnostics(
+                project_type=project.get("project_type"),
+                project_subtype=project.get("project_subtype"),
+                query=fallback_query,
+                latitude=latitude,
+                longitude=longitude,
+                radius_miles=radius,
+                limit=max(limit, 5),
+                enforce_radius=True,
+            )
+            retry_diag = retry_search.get("diagnostic") or {}
+            google_diag["google_raw_count"] = int(google_diag.get("google_raw_count") or 0) + int(retry_diag.get("google_raw_count") or 0)
+            google_diag["pre_distance_filter_count"] = int(google_diag.get("pre_distance_filter_count") or 0) + int(retry_diag.get("pre_distance_filter_count") or 0)
+            google_diag["filtered_out_of_radius_count"] = int(google_diag.get("filtered_out_of_radius_count") or 0) + int(retry_diag.get("filtered_out_of_radius_count") or 0)
+            google_diag["filtered_unknown_location_count"] = int(google_diag.get("filtered_unknown_location_count") or 0) + int(retry_diag.get("filtered_unknown_location_count") or 0)
+            google_diag["missing_coordinates_count"] = int(google_diag.get("missing_coordinates_count") or 0) + int(retry_diag.get("missing_coordinates_count") or 0)
+            google_diag["after_distance_filter_count"] = int(google_diag.get("after_distance_filter_count") or 0) + int(retry_diag.get("after_distance_filter_count") or 0)
+            if retry_search.get("results"):
+                google_search = retry_search
+                google_diag = {**google_diag, **(retry_search.get("diagnostic") or {}), "fallback_query": fallback_query}
+                break
     google_places = google_search.get("results") or []
     for place in google_places:
         if place.get("distance_miles") is None:
@@ -618,23 +765,61 @@ def build_contractor_recommendations(
     if local_results and not any(row.get("label") == "Local Business Listing" for row in sliced_results) and max_results > 1:
         sliced_results = sliced_results[: max_results - 1] + [local_results[0]]
     results = sliced_results
+    google_diag = google_diag or google_search.get("diagnostic") or {}
+    google_raw_count = int(google_diag.get("google_raw_count") or google_diag.get("pre_distance_filter_count") or 0)
+    after_distance_filter_count = int(google_diag.get("after_distance_filter_count") or google_diag.get("results_count") or 0)
+    missing_coordinates_count = int(google_diag.get("missing_coordinates_count") or google_diag.get("filtered_unknown_location_count") or 0)
+    filtered_out_of_radius_count = int(google_diag.get("filtered_out_of_radius_count") or 0)
+    empty_reason = ""
+    if not results:
+        if google_diag.get("error") == "missing_project_location":
+            empty_reason = "missing_project_location"
+        elif google_raw_count <= 0:
+            empty_reason = "google_returned_zero"
+        elif missing_coordinates_count >= google_raw_count:
+            empty_reason = "all_results_missing_coordinates"
+        elif filtered_out_of_radius_count > 0:
+            empty_reason = "all_results_outside_radius"
+        else:
+            empty_reason = google_diag.get("empty_reason") or "google_returned_zero"
 
     summary = {
         "search_query": search_query,
         "radius_miles": radius,
-        "location_filter_applied": True,
-        "filtered_out_of_radius_count": int((google_search.get("diagnostic") or {}).get("filtered_out_of_radius_count") or 0),
+        **{key: value for key, value in location_meta.items() if key not in {"latitude", "longitude"}},
+        "google_raw_count": google_raw_count,
+        "after_distance_filter_count": after_distance_filter_count,
+        "filtered_out_of_radius_count": filtered_out_of_radius_count,
+        "missing_coordinates_count": missing_coordinates_count,
+        "reason": empty_reason,
         "project_mode": project.get("project_mode", "full_service"),
         "payment_preference": project.get("payment_preference", "escrow"),
         "results_count": len(results),
         "external_results_count": len(local_results),
         "external_search": {
             "source": "google_places",
-            "configured": bool((google_search.get("diagnostic") or {}).get("configured")),
-            "requested": bool((google_search.get("diagnostic") or {}).get("requested")),
-            "results_count": int((google_search.get("diagnostic") or {}).get("results_count") or 0),
+            "configured": bool(google_diag.get("configured")),
+            "requested": bool(google_diag.get("requested")),
+            "results_count": int(google_diag.get("results_count") or 0),
+            "error": google_diag.get("error") or "",
         },
     }
+    logger.info(
+        "Contractor discovery search completed.",
+        extra={
+            "intake_id": getattr(intake, "id", None),
+            "intake_token": str(getattr(intake, "share_token", ""))[:8] if getattr(intake, "share_token", "") else "",
+            "query": search_query,
+            "location_source": summary.get("location_source"),
+            "has_latitude": summary.get("project_lat_present"),
+            "has_longitude": summary.get("project_lng_present"),
+            "google_raw_count": google_raw_count,
+            "after_distance_filter_count": after_distance_filter_count,
+            "filtered_out_of_radius_count": filtered_out_of_radius_count,
+            "missing_coordinates_count": missing_coordinates_count,
+            "empty_reason": empty_reason,
+        },
+    )
     if getattr(settings, "DEBUG", False):
         summary["external_search_diagnostic"] = google_search.get("diagnostic") or {}
 

@@ -19,6 +19,26 @@ function cardSelectionKey(card) {
   return safeText(card?.id);
 }
 
+function emptyStateMessage(summary) {
+  const reason = safeText(summary?.reason || summary?.external_search?.error || summary?.external_search_diagnostic?.empty_reason);
+  if (reason === "missing_project_location") {
+    return "We need a project ZIP code or address before searching local contractors.";
+  }
+  if (reason === "geocode_failed") {
+    return "We couldn’t confirm this project location. Please check the address or ZIP code.";
+  }
+  if (reason === "google_returned_zero") {
+    return "Google did not return local matches for this search. Try broadening the search term.";
+  }
+  if (reason === "all_results_outside_radius") {
+    return "We found contractors, but none were within 25 miles of the project address.";
+  }
+  if (reason === "all_results_missing_coordinates") {
+    return "Google returned possible matches, but they did not include usable map coordinates. Try adjusting the project location or search term.";
+  }
+  return "We couldn’t find strong local matches within 25 miles of this project address. You can invite a contractor manually or adjust the project location.";
+}
+
 function buildInferredSearchQuery(form) {
   const text = [
     form?.ai_project_type,
@@ -96,6 +116,7 @@ export default function ContractorDiscoveryStep({
 
   const modeLabel = projectModeLabel(form?.project_mode);
   const ctaLabel = normalizeProjectMode(form?.project_mode) === "consultation" ? "Request Quote" : "Request Project Review";
+  const showDebug = Boolean(import.meta.env.DEV || (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG));
 
   const selectedKeys = useMemo(() => new Set((selectedTargets || []).map(cardSelectionKey).filter(Boolean)), [selectedTargets]);
 
@@ -134,7 +155,11 @@ export default function ContractorDiscoveryStep({
         });
         if (!mounted) return;
         const filteredResults = Array.isArray(data?.results)
-          ? data.results.filter((card) => card?.source !== "google_places" || card?.distance_miles !== null && card?.distance_miles !== undefined && card?.distance_miles !== "")
+          ? data.results.filter(
+              (card) =>
+                card?.source !== "google_places" ||
+                (card?.distance_miles !== null && card?.distance_miles !== undefined && card?.distance_miles !== "")
+            )
           : [];
         setResults(filteredResults);
         setSummary(data?.summary || null);
@@ -368,10 +393,17 @@ export default function ContractorDiscoveryStep({
           })
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 lg:col-span-2">
-            We couldn&apos;t find strong local matches within 25 miles of this project address. You can invite a contractor manually or adjust the project location.
+            {emptyStateMessage(summary)}
           </div>
         )}
       </div>
+
+      {!loading && showDebug && summary ? (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500" data-testid="public-intake-contractor-debug">
+          Location source: {summary.location_source || "unknown"} · Raw: {summary.google_raw_count ?? 0} · After radius:{" "}
+          {summary.after_distance_filter_count ?? 0} · Reason: {summary.reason || "none"}
+        </div>
+      ) : null}
 
       {!loading && results.length && Number(summary?.external_results_count || 0) === 0 ? (
         <div
