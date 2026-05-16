@@ -3173,6 +3173,66 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(mock_geocode.call_args.kwargs["state"], "TX")
         self.assertEqual(mock_geocode.call_args.kwargs["postal_code"], "78701")
         self.assertTrue(mock_places.called)
+        self.assertTrue(payload["summary"]["external_search"]["requested"])
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={
+            "diagnostic": {
+                "configured": True,
+                "requested": True,
+                "results_count": 0,
+                "google_raw_count": 0,
+                "after_distance_filter_count": 0,
+                "filtered_out_of_radius_count": 0,
+                "missing_coordinates_count": 0,
+                "empty_reason": "google_returned_zero",
+            },
+            "results": [],
+        },
+    )
+    @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        return_value={"latitude": 29.4692, "longitude": -98.6639, "diagnostic": {"configured": True}},
+    )
+    def test_contractor_discovery_normalizes_zip4_and_prefers_city_state_zip(self, mock_geocode, mock_places):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Zip Prospect",
+            accomplishment_text="Extend the patio with a concrete slab.",
+            project_city="San Antonio",
+            project_state="TX",
+            project_postal_code="78251-4013",
+        )
+        intake.ensure_share_token()
+
+        response = self.client.get(
+            "/api/projects/public-intake/contractor-search/",
+            {
+                "token": intake.share_token,
+                "query": "concrete contractor",
+                "city": "San Antonio",
+                "state": "TX",
+                "zip": "78251-4013",
+                "limit": 5,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.content.decode())
+        payload = response.json()
+        self.assertEqual(payload["summary"]["location_resolution_status"], "resolved")
+        self.assertEqual(payload["summary"]["location_source"], "city_state_zip")
+        self.assertEqual(payload["summary"]["search_center_zip"], "78251")
+        self.assertEqual(payload["summary"]["search_center_zip_original"], "78251-4013")
+        self.assertEqual(mock_geocode.call_args.kwargs["city"], "San Antonio")
+        self.assertEqual(mock_geocode.call_args.kwargs["state"], "TX")
+        self.assertEqual(mock_geocode.call_args.kwargs["postal_code"], "78251")
+        self.assertNotEqual(mock_geocode.call_args.kwargs["city"], "")
+        self.assertTrue(payload["summary"]["external_search"]["requested"])
+        self.assertTrue(mock_places.called)
 
     @patch(
         "projects.services.contractor_discovery.geocode_project_location",

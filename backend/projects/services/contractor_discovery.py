@@ -36,6 +36,16 @@ def _has_value(value: Any) -> bool:
     return value not in (None, "", [])
 
 
+def _normalize_postal_code(value: Any) -> str:
+    text = _safe_text(value)
+    if not text:
+        return ""
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) >= 5:
+        return digits[:5]
+    return text
+
+
 def _location_metadata(
     *,
     project: dict[str, Any],
@@ -53,7 +63,8 @@ def _location_metadata(
         "project_lng_present": _has_value(longitude),
         "search_center_city": project.get("project_city", ""),
         "search_center_state": project.get("project_state", ""),
-        "search_center_zip": project.get("project_postal_code", ""),
+        "search_center_zip": _normalize_postal_code(project.get("project_postal_code", "")),
+        "search_center_zip_original": project.get("project_postal_code_original", project.get("project_postal_code", "")),
         "reason": reason,
     }
 
@@ -84,11 +95,17 @@ def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude:
     address_line1 = _safe_text(project.get("project_address_line1"))
     city = _safe_text(project.get("project_city"))
     state = _safe_text(project.get("project_state"))
-    postal_code = _safe_text(project.get("project_postal_code"))
+    original_postal_code = _safe_text(project.get("project_postal_code"))
+    postal_code = _normalize_postal_code(original_postal_code)
+    if postal_code:
+        project["project_postal_code"] = postal_code
+        project["project_postal_code_original"] = original_postal_code
     if address_line1 and (city or state or postal_code):
         candidates.append(("project_address", {"address_line1": address_line1, "city": city, "state": state, "postal_code": postal_code}))
-    if city and (state or postal_code):
+    if city and state and postal_code:
         candidates.append(("city_state_zip", {"address_line1": "", "city": city, "state": state, "postal_code": postal_code}))
+    if city and state:
+        candidates.append(("city_state", {"address_line1": "", "city": city, "state": state, "postal_code": ""}))
     if postal_code:
         candidates.append(("zip_only", {"address_line1": "", "city": "", "state": "", "postal_code": postal_code}))
 
