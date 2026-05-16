@@ -675,7 +675,7 @@ def build_contractor_recommendations(
     latitude: Any = None,
     longitude: Any = None,
     radius_miles: Any = None,
-    limit: int = 5,
+    limit: int = 40,
 ) -> dict[str, Any]:
     project = _normalize_project_payload(intake=intake, payload=payload)
     search_query = _safe_text(query) or infer_project_places_query(
@@ -799,7 +799,7 @@ def build_contractor_recommendations(
         latitude=latitude,
         longitude=longitude,
         radius_miles=radius,
-        limit=max(limit, 5),
+        limit=max(limit, 20),
         enforce_radius=True,
     )
     google_diag = google_search.get("diagnostic") or {}
@@ -820,7 +820,7 @@ def build_contractor_recommendations(
                 latitude=latitude,
                 longitude=longitude,
                 radius_miles=radius,
-                limit=max(limit, 5),
+                limit=max(limit, 20),
                 enforce_radius=True,
             )
             retry_diag = retry_search.get("diagnostic") or {}

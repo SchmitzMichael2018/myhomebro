@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { MapPin, ShieldCheck } from "lucide-react";
 import api from "../../api";
 import { ProjectModeBadge, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
 import { contractorMatchTierClass, contractorMatchTierLabel } from "../../lib/contractorMatching.js";
@@ -18,6 +19,8 @@ function formatDistance(value) {
 function cardSelectionKey(card) {
   return safeText(card?.id);
 }
+
+const RESULTS_PER_PAGE = 10;
 
 function emptyStateMessage(summary) {
   const reason = safeText(summary?.reason || summary?.external_search?.error || summary?.external_search_diagnostic?.empty_reason);
@@ -141,6 +144,7 @@ export default function ContractorDiscoveryStep({
   const [hasUserEditedSearch, setHasUserEditedSearch] = useState(false);
   const [searchInitKey, setSearchInitKey] = useState("");
   const [radiusMiles, setRadiusMiles] = useState("");
+  const [visibleCount, setVisibleCount] = useState(RESULTS_PER_PAGE);
   const suggestedSearchQuery = useMemo(() => buildInferredSearchQuery(form), [
     form?.accomplishment_text,
     form?.original_description,
@@ -184,6 +188,12 @@ export default function ContractorDiscoveryStep({
   const showDebug = Boolean(import.meta.env.DEV || (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG));
 
   const selectedKeys = useMemo(() => new Set((selectedTargets || []).map(cardSelectionKey).filter(Boolean)), [selectedTargets]);
+  const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount]);
+  const resultStart = results.length ? 1 : 0;
+  const resultEnd = Math.min(visibleCount, results.length);
+  const resultCountText = results.length
+    ? `Showing ${resultStart}-${resultEnd} of ${results.length} contractors`
+    : "Matches will appear here once loaded.";
 
   useEffect(() => {
     if (!active || !token) return;
@@ -232,7 +242,7 @@ export default function ContractorDiscoveryStep({
             project_mode: safeText(form?.project_mode) || undefined,
             payment_preference: safeText(form?.payment_preference) || undefined,
             radius_miles: radiusMiles || 25,
-            limit: 8,
+            limit: 40,
           },
         });
         if (!mounted) return;
@@ -244,6 +254,7 @@ export default function ContractorDiscoveryStep({
             )
           : [];
         setResults(filteredResults);
+        setVisibleCount(RESULTS_PER_PAGE);
         setSummary(data?.summary || null);
       } catch (error) {
         if (!mounted) return;
@@ -370,6 +381,10 @@ export default function ContractorDiscoveryStep({
         </div>
       </div>
 
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        Verified contractors are active MyHomeBro members. Local business listings are nearby companies discovered from public business data.
+      </div>
+
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium text-slate-700">
           Search
@@ -422,16 +437,35 @@ export default function ContractorDiscoveryStep({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      {!loading && results.length ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+          <div data-testid="public-intake-contractor-result-count">{resultCountText}</div>
+          {visibleCount < results.length ? (
+            <button
+              type="button"
+              onClick={() => setVisibleCount((prev) => Math.min(prev + RESULTS_PER_PAGE, results.length))}
+              data-testid="public-intake-contractor-load-more-top"
+              className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+            >
+              Load More
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2" data-testid="public-intake-contractor-results-list">
         {loading ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
             Finding the best local contractor matches...
           </div>
         ) : results.length ? (
-          results.map((card) => {
+          visibleResults.map((card) => {
             const selected = selectedKeys.has(cardSelectionKey(card));
             const tierClass = contractorMatchTierClass(card.recommendation_tier);
             const tierLabel = contractorMatchTierLabel(card.recommendation_tier);
+            const sourceLabel = safeText(card.source_label || card.label);
+            const isVerified = Boolean(card.claimed || sourceLabel.toLowerCase().includes("myhomebro"));
+            const distanceText = formatDistance(card.distance_miles);
             return (
               <article
                 key={card.id}
@@ -445,15 +479,31 @@ export default function ContractorDiscoveryStep({
                     <div className="text-base font-semibold text-gray-900">{card.business_name || "Local contractor"}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                       <span className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${tierClass}`}>{tierLabel}</span>
-                      <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-700">
-                        {card.source_label || card.label}
+                      <span
+                        data-testid={`public-intake-contractor-source-badge-${cardSelectionKey(card)}`}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-semibold ${
+                          isVerified
+                            ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                            : "border-slate-300 bg-slate-100 text-slate-800"
+                        }`}
+                      >
+                        {isVerified ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> : <MapPin className="h-3.5 w-3.5" aria-hidden="true" />}
+                        {isVerified ? "Verified on MyHomeBro" : "Local Business Listing"}
                       </span>
                       {card.rating ? <span>{Number(card.rating).toFixed(1)} rating</span> : null}
                       {card.review_count ? <span>{card.review_count} reviews</span> : null}
-                      {card.distance_miles !== null && card.distance_miles !== undefined ? (
-                        <span className="font-semibold text-slate-800">{formatDistance(card.distance_miles)}</span>
+                      {distanceText ? (
+                        <span
+                          data-testid={`public-intake-contractor-distance-${cardSelectionKey(card)}`}
+                          className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-800"
+                        >
+                          {distanceText}
+                        </span>
                       ) : null}
                     </div>
+                    {!isVerified ? (
+                      <div className="mt-2 text-xs font-medium text-slate-500">Not yet verified on MyHomeBro</div>
+                    ) : null}
                   </div>
                   <button
                     type="button"
@@ -526,6 +576,19 @@ export default function ContractorDiscoveryStep({
         )}
       </div>
 
+      {!loading && visibleCount < results.length ? (
+        <div className="mt-5 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((prev) => Math.min(prev + RESULTS_PER_PAGE, results.length))}
+            data-testid="public-intake-contractor-load-more"
+            className="rounded-full border border-indigo-200 bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+          >
+            Load More
+          </button>
+        </div>
+      ) : null}
+
       {!loading && showDebug && summary ? (
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500" data-testid="public-intake-contractor-debug">
           Location source: {summary.location_source || "unknown"} · Raw: {summary.google_raw_count ?? 0} · After radius:{" "}
@@ -551,7 +614,7 @@ export default function ContractorDiscoveryStep({
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div className="text-sm text-slate-600">
-          {summary?.results_count ? `${summary.results_count} matches loaded` : "Matches will appear here once loaded."}
+          {resultCountText}
         </div>
         <button
           type="button"

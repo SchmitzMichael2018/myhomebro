@@ -48,6 +48,10 @@ class PublicIntakeContractorSearchView(APIView):
         longitude = request.query_params.get("lng")
         radius_miles = request.query_params.get("radius_miles")
         limit = request.query_params.get("limit")
+        try:
+            limit = max(1, min(int(limit or 40), 50))
+        except (TypeError, ValueError):
+            limit = 40
         project_context = {
             "project_type": request.query_params.get("project_type"),
             "project_subtype": request.query_params.get("project_subtype"),
@@ -70,7 +74,7 @@ class PublicIntakeContractorSearchView(APIView):
             latitude=latitude,
             longitude=longitude,
             radius_miles=radius_miles,
-            limit=int(limit or 5),
+            limit=limit,
         )
         return Response(result, status=status.HTTP_200_OK)
 

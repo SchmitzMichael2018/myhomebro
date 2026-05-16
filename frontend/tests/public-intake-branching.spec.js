@@ -369,7 +369,8 @@ test("public intake contractor search auto-infers a specialty from the project d
             radius_miles: 25,
             project_mode: "full_service",
             payment_preference: "escrow",
-            results_count: 2,
+            results_count: 12,
+            external_results_count: 11,
           },
           results: [
             {
@@ -378,6 +379,7 @@ test("public intake contractor search auto-infers a specialty from the project d
               business_name: "Verified Kitchen Pros",
               claimed: true,
               label: "MyHomeBro Verified",
+              source_label: "MyHomeBro Verified",
               rating: 4.9,
               review_count: 19,
               website_url: "https://example.com",
@@ -402,6 +404,7 @@ test("public intake contractor search auto-infers a specialty from the project d
               business_name: "Local Countertop Listing",
               claimed: false,
               label: "Local Business Listing",
+              source_label: "Local Business Listing",
               rating: 4.7,
               review_count: 8,
               website_url: "https://example.org",
@@ -420,6 +423,31 @@ test("public intake contractor search auto-infers a specialty from the project d
               inspection_capable: false,
               rescue_project_friendly: false,
             },
+            ...Array.from({ length: 10 }, (_, index) => ({
+              id: `listing:${102 + index}`,
+              source: "google_places",
+              business_name: `Local Listing ${index + 2}`,
+              claimed: false,
+              label: "Local Business Listing",
+              source_label: "Local Business Listing",
+              rating: 4.5,
+              review_count: 5 + index,
+              website_url: "https://example.org",
+              city: "Austin",
+              state: "TX",
+              distance_miles: 5 + index,
+              phone_available: true,
+              email_available: false,
+              invite_available: true,
+              recommendation_tier: "Good Match",
+              compatibility_score: 70 - index,
+              recommendation_reasons: ["Nearby local business listing."],
+              supported_project_modes: ["full_service"],
+              escrow_friendly: true,
+              assisted_diy_friendly: false,
+              inspection_capable: false,
+              rescue_project_friendly: false,
+            })),
           ],
         }),
       });
@@ -498,8 +526,19 @@ test("public intake contractor search auto-infers a specialty from the project d
     /kitchen remodeling contractor|cabinet installer|countertop installer/,
     { timeout: 15000 }
   );
-  await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("MyHomeBro Verified");
+  await expect(page.getByText("Verified contractors are active MyHomeBro members.")).toBeVisible();
+  await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-10 of 12 contractors");
+  await expect(page.locator('[data-testid^="public-intake-contractor-card-"]').first()).toContainText("Verified Kitchen Pros");
+  await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("Verified on MyHomeBro");
   await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local Business Listing");
+  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Not yet verified on MyHomeBro");
+  await expect(page.getByTestId("public-intake-contractor-distance-listing:100")).toContainText("3.2 miles away");
+  await expect(page.getByTestId("public-intake-contractor-source-badge-listing:100")).toHaveClass(/bg-emerald-600/);
+  await expect(page.getByTestId("public-intake-contractor-source-badge-listing:101")).toHaveClass(/bg-slate-100/);
+  await expect(page.getByTestId("public-intake-contractor-card-listing:111")).toHaveCount(0);
+  await page.getByTestId("public-intake-contractor-load-more").click();
+  await expect(page.getByTestId("public-intake-contractor-card-listing:111")).toBeVisible();
+  await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-12 of 12 contractors");
   expect(requestedQueries[0]).toMatch(/kitchen remodeling contractor|cabinet installer|countertop installer/);
 
   const searchInput = page.getByTestId("public-intake-contractor-search-input");
@@ -752,9 +791,9 @@ test("public intake description helper refines the project idea before generatin
   await page.getByTestId("public-intake-improve-description-button").click();
   await expect(page.getByTestId("public-intake-description-refinement-card")).toBeVisible();
   await expect(page.getByTestId("public-intake-description-refinement-card")).toContainText(
-    "Hereâ€™s a clearer version based on your description."
+    "Here’s a clearer version based on your description."
   );
-  await expect(page.getByTestId("public-intake-description-refinement-card")).not.toContainText(/&aacute;|pos;s|H#re|Ã¢/);
+  await expect(page.getByTestId("public-intake-description-refinement-card")).not.toContainText(/&aacute;|pos;s|H#re|â/);
   await expect(page.getByTestId("public-intake-description-refined-textarea")).toHaveValue(
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
   );
