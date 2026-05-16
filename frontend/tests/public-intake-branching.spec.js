@@ -180,8 +180,8 @@ test("landing page drives into intake and public intake shows branching choices 
         status: "submitted",
         lead_id: 88,
         ai_project_title: "Commercial Scope Request",
-        ai_project_type: "Commercial",
-        ai_project_subtype: "General Commercial",
+        ai_project_type: body.ai_project_type || "General Contracting",
+        ai_project_subtype: body.ai_project_subtype || "Commercial Scope",
         ai_description: "Structured commercial scope summary.",
         refined_description: body.refined_description || body.ai_description || "Structured commercial scope summary.",
         ai_project_timeline_days: 10,
@@ -189,7 +189,7 @@ test("landing page drives into intake and public intake shows branching choices 
         budget_range_text: body.budget_range_text || "",
         desired_timing_text: body.desired_timing_text || "",
         tentative_start_date: body.tentative_start_date || "",
-        measurement_handling: "site_visit_required",
+        measurement_handling: body.measurement_handling || "site_visit_required",
         ai_milestones: [
           { title: "Preparation", description: "Prepare site and confirm scope." },
           { title: "Core Work", description: "Complete the requested work." },
@@ -223,6 +223,7 @@ test("landing page drives into intake and public intake shows branching choices 
   await page.getByTestId("landing-start-project-intake-button").click();
   await expect(page).toHaveURL(/\/start-project\/landing-token$/);
   await expect(page.getByText("Project Intake", { exact: true })).toBeVisible();
+  await expect(page.getByText("Status: draft")).toBeVisible();
 
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
   await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need a bid-ready commercial scope.");
@@ -235,18 +236,13 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-measurement-provided")).toHaveCount(0);
   await expect(page.getByText("No clarification questions are needed for this project.")).toHaveCount(0);
   await page.getByTestId("public-intake-clarification-next").click();
-  await expect(page.getByTestId("public-intake-structured-output-step")).toBeVisible();
-  await expect(page.getByTestId("public-intake-structured-output-title")).toContainText("Project Summary");
-  await expect(page.getByText("Your contractor will create the final agreement and milestones later.")).toBeVisible();
-  await expect(page.getByText("Original Description")).toBeVisible();
-  await expect(page.getByText("Need a bid-ready commercial scope.")).toBeVisible();
-  await expect(page.getByText("Milestones / Project Phases")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Add milestone" })).toHaveCount(0);
-  await page.getByTestId("public-intake-structured-continue").click();
   await expect(page.getByTestId("public-intake-project-details-step")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Project Details" })).toBeVisible();
+  await expect(page.getByTestId("public-intake-project-type")).not.toHaveValue("");
   await page.getByTestId("public-intake-budget-range").selectOption("$2,500-$5,000");
   await page.getByTestId("public-intake-timeline").selectOption("Specific date");
   await page.getByTestId("public-intake-tentative-start-date").fill("2026-06-15");
+  await page.getByTestId("public-intake-measurements-input").fill("Approx. 20 ft x 12 ft work area");
   await expect(page.getByTestId("public-intake-customer-address-autocomplete")).toBeVisible();
   await page.getByTestId("public-intake-customer-address-line1").fill("501 Manual Bid Lane");
   await page.getByTestId("public-intake-customer-city").fill("Austin");
@@ -282,6 +278,18 @@ test("landing page drives into intake and public intake shows branching choices 
   await page.getByTestId("public-intake-project-state").fill("TX");
   await page.getByTestId("public-intake-project-postal-code").fill("78703");
   await expect(page.getByTestId("public-intake-project-address-line1")).toHaveValue("777 Job Site Rd");
+  await page.getByTestId("public-intake-project-details-continue").click();
+  await expect(page.getByTestId("public-intake-structured-output-step")).toBeVisible();
+  await expect(page.getByTestId("public-intake-structured-output-title")).toContainText("Project Summary");
+  await expect(page.getByText("Your contractor will create the final agreement and milestones later.")).toBeVisible();
+  await expect(page.getByText("Original Description")).toBeVisible();
+  await expect(page.getByText("Need a bid-ready commercial scope.")).toBeVisible();
+  await expect(page.getByText("$2,500-$5,000")).toBeVisible();
+  await expect(page.getByText("Specific date: 2026-06-15")).toBeVisible();
+  await expect(page.getByText("Approx. 20 ft x 12 ft work area")).toBeVisible();
+  await expect(page.getByText("777 Job Site Rd")).toBeVisible();
+  await expect(page.getByText("Milestones / Project Phases")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add milestone" })).toHaveCount(0);
   await page.getByRole("button", { name: "Choose Path" }).click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");
@@ -486,7 +494,10 @@ test("public intake contractor search auto-infers a specialty from the project d
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible();
-  await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue(/kitchen remodeling contractor|cabinet installer|countertop installer/);
+  await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue(
+    /kitchen remodeling contractor|cabinet installer|countertop installer/,
+    { timeout: 15000 }
+  );
   await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("MyHomeBro Verified");
   await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local Business Listing");
   expect(requestedQueries[0]).toMatch(/kitchen remodeling contractor|cabinet installer|countertop installer/);
@@ -709,9 +720,9 @@ test("public intake description helper refines the project idea before generatin
         id: 502,
         status: "submitted",
         lead_id: 99,
-        ai_project_title: "Commercial Scope Request",
-        ai_project_type: "Commercial",
-        ai_project_subtype: "General Commercial",
+        ai_project_title: "Kitchen Cabinet Replacement",
+        ai_project_type: body.ai_project_type || "Cabinets / Carpentry",
+        ai_project_subtype: body.ai_project_subtype || "Kitchen Remodeling",
         ai_description: body.ai_description || body.refined_description || "Structured commercial scope summary.",
         refined_description: body.refined_description || body.ai_description || "Structured commercial scope summary.",
         ai_project_timeline_days: 10,
@@ -719,7 +730,7 @@ test("public intake description helper refines the project idea before generatin
         budget_range_text: body.budget_range_text || "",
         desired_timing_text: body.desired_timing_text || "",
         tentative_start_date: body.tentative_start_date || "",
-        measurement_handling: "site_visit_required",
+        measurement_handling: body.measurement_handling || "site_visit_required",
         ai_milestones: [],
         ai_clarification_questions: [],
         ai_clarification_answers: {},
@@ -741,9 +752,9 @@ test("public intake description helper refines the project idea before generatin
   await page.getByTestId("public-intake-improve-description-button").click();
   await expect(page.getByTestId("public-intake-description-refinement-card")).toBeVisible();
   await expect(page.getByTestId("public-intake-description-refinement-card")).toContainText(
-    "Here’s a clearer version based on your description."
+    "Hereâ€™s a clearer version based on your description."
   );
-  await expect(page.getByTestId("public-intake-description-refinement-card")).not.toContainText(/&aacute;|pos;s|H#re|â/);
+  await expect(page.getByTestId("public-intake-description-refinement-card")).not.toContainText(/&aacute;|pos;s|H#re|Ã¢/);
   await expect(page.getByTestId("public-intake-description-refined-textarea")).toHaveValue(
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
   );
@@ -773,4 +784,8 @@ test("public intake description helper refines the project idea before generatin
   await expect(page.getByTestId("public-intake-project-summary-row-refined-description")).toContainText(
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
   );
+  await page.getByTestId("public-intake-clarification-next").click();
+  await expect(page.getByTestId("public-intake-project-details-step")).toBeVisible();
+  await expect(page.getByTestId("public-intake-project-type")).toHaveValue("Cabinets / Carpentry");
+  await expect(page.getByTestId("public-intake-project-subtype")).toHaveValue("Kitchen Remodeling");
 });

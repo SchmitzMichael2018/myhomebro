@@ -114,6 +114,108 @@ function getMainGoalSummary(title, description) {
   return summarizeTextValue(firstSentence, 120);
 }
 
+function buildProjectContextText(form) {
+  const analysis = form?.ai_analysis_payload && typeof form.ai_analysis_payload === "object" ? form.ai_analysis_payload : {};
+  return [
+    form?.accomplishment_text,
+    form?.refined_description,
+    form?.ai_description,
+    form?.project_scope_summary,
+    analysis.project_scope_summary,
+    analysis.scope_summary,
+    form?.ai_project_title,
+    form?.ai_project_type,
+    form?.ai_project_subtype,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function inferProjectType(form) {
+  const text = buildProjectContextText(form);
+  if (!text.trim()) return { type: "", subtype: "" };
+
+  if (/(patio|concrete|slab|driveway|walkway|sidewalk|masonry|hardscape|paver)/.test(text)) {
+    return { type: "Concrete", subtype: "Patio / Hardscape" };
+  }
+  if (/(kitchen|cabinet|countertop|carpentry|quartz|granite)/.test(text)) {
+    if (/(cabinet|carpentry)/.test(text)) {
+      return { type: "Cabinets / Carpentry", subtype: "Kitchen Remodeling" };
+    }
+    return { type: "Kitchen Remodeling", subtype: "Countertops" };
+  }
+  if (/(floor|flooring|tile|vinyl|laminate|hardwood)/.test(text)) {
+    return { type: "Flooring", subtype: "" };
+  }
+  if (/(bathroom|shower|tub|vanity)/.test(text)) {
+    return { type: "Bathroom Remodeling", subtype: "" };
+  }
+  if (/(roof|shingle|leak)/.test(text)) {
+    return { type: "Roofing", subtype: "" };
+  }
+  if (/(paint|drywall|sheetrock)/.test(text)) {
+    return { type: "Painting / Drywall", subtype: "" };
+  }
+  return { type: "General Contracting", subtype: "" };
+}
+
+function inferMeasurements(form) {
+  const text = [
+    form?.accomplishment_text,
+    form?.refined_description,
+    form?.ai_description,
+    form?.project_scope_summary,
+    form?.ai_analysis_payload?.project_scope_summary,
+    form?.ai_analysis_payload?.scope_summary,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const results = [];
+  const add = (value) => {
+    const normalized = String(value || "").replace(/\s+/g, " ").trim();
+    if (normalized && !results.includes(normalized)) results.push(normalized);
+  };
+
+  for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')\s*(?:x|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?/gi)) {
+    add(`${match[1]} ft x ${match[2]} ft`);
+  }
+  for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')\s*(?:extension|extend|addition)/gi)) {
+    add(`${match[1]} ft extension`);
+  }
+  for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*(?:in|inch|inches|")\s*(?:slab|concrete|thick|thickness)/gi)) {
+    add(`${match[1]} in slab`);
+  }
+  for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*(?:sq\.?\s*ft|square\s*feet)/gi)) {
+    add(`${match[1]} sq ft`);
+  }
+
+  return results;
+}
+
+function formatProjectAddress(form) {
+  return [
+    form.project_address_line1,
+    form.project_address_line2,
+    [form.project_city, form.project_state, form.project_postal_code].filter(Boolean).join(", "),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function projectClassLabel(value) {
+  return value === "commercial" ? "Commercial" : "Residential";
+}
+
+function paymentPreferenceLabel(value) {
+  const map = {
+    escrow: "Escrow milestone payments",
+    direct: "Direct payment to contractor",
+    discuss: "Discuss payment options with contractor",
+  };
+  return map[value] || "Not provided";
+}
+
 const blankForm = {
   customer_name: "",
   customer_email: "",
@@ -141,6 +243,7 @@ const blankForm = {
   ai_project_title: "",
   ai_project_type: "",
   ai_project_subtype: "",
+  project_scope_summary: "",
   ai_description: "",
   ai_project_timeline_days: "",
   ai_project_budget: "",
@@ -188,6 +291,8 @@ export default function PublicIntakeWizard() {
   const [branchResult, setBranchResult] = useState(null);
   const [discoveryTargets, setDiscoveryTargets] = useState([]);
   const [clarificationUploading, setClarificationUploading] = useState(false);
+  const [projectTypeTouched, setProjectTypeTouched] = useState(false);
+  const [measurementsTouched, setMeasurementsTouched] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [branchContacts, setBranchContacts] = useState([
     { name: "", email: "", phone: "" },
@@ -220,12 +325,49 @@ export default function PublicIntakeWizard() {
     form.homeowner_assistance_summary,
     form.project_mode,
   ]);
+  const inferredProjectType = useMemo(() => inferProjectType(form), [
+    form.accomplishment_text,
+    form.refined_description,
+    form.ai_description,
+    form.project_scope_summary,
+    form.ai_analysis_payload,
+    form.ai_project_title,
+    form.ai_project_type,
+    form.ai_project_subtype,
+  ]);
+  const inferredMeasurements = useMemo(() => inferMeasurements(form), [
+    form.accomplishment_text,
+    form.refined_description,
+    form.ai_description,
+    form.project_scope_summary,
+    form.ai_analysis_payload,
+  ]);
+
+  useEffect(() => {
+    if (!loaded || projectTypeTouched || !inferredProjectType.type) return;
+    setForm((prev) => {
+      if (prev.ai_project_type && prev.ai_project_subtype) return prev;
+      return {
+        ...prev,
+        ai_project_type: prev.ai_project_type || inferredProjectType.type,
+        ai_project_subtype: prev.ai_project_subtype || inferredProjectType.subtype,
+      };
+    });
+  }, [inferredProjectType, loaded, projectTypeTouched]);
+
+  useEffect(() => {
+    if (!loaded || measurementsTouched || !inferredMeasurements.length) return;
+    setForm((prev) => {
+      if (String(prev.measurement_handling || "").trim()) return prev;
+      return { ...prev, measurement_handling: inferredMeasurements.join("\n") };
+    });
+  }, [inferredMeasurements, loaded, measurementsTouched]);
 
   const stepLabels = [
     "Project Idea",
     "Refine Your Project",
-    "Project Summary",
     "Project Details",
+    "Project Summary",
     "Contact Info",
     "Choose Local Contractors",
     "Choose Path",
@@ -287,6 +429,7 @@ export default function PublicIntakeWizard() {
           ai_project_title: data?.ai_project_title || "",
           ai_project_type: data?.ai_project_type || "",
           ai_project_subtype: data?.ai_project_subtype || "",
+          project_scope_summary: data?.project_scope_summary || data?.ai_analysis_payload?.project_scope_summary || "",
           ai_description: data?.ai_description || "",
           ai_project_timeline_days: data?.ai_project_timeline_days ?? "",
           ai_project_budget: moneyValue(data?.ai_project_budget),
@@ -417,11 +560,16 @@ export default function PublicIntakeWizard() {
   }
 
   function handleAccomplishmentChange(value) {
+    setProjectTypeTouched(false);
+    setMeasurementsTouched(false);
     setForm((prev) => ({
       ...prev,
       accomplishment_text: value,
       refined_description: "",
       ai_description: "",
+      ai_project_type: "",
+      ai_project_subtype: "",
+      measurement_handling: "",
     }));
     if (descriptionRefinement.status === "ready") {
       setDescriptionRefinement({
@@ -449,6 +597,8 @@ export default function PublicIntakeWizard() {
       ai_project_title: data?.ai_project_title ?? prev.ai_project_title,
       ai_project_type: data?.ai_project_type ?? prev.ai_project_type,
       ai_project_subtype: data?.ai_project_subtype ?? prev.ai_project_subtype,
+      project_scope_summary:
+        data?.project_scope_summary ?? data?.ai_analysis_payload?.project_scope_summary ?? prev.project_scope_summary,
       ai_description: data?.ai_description ?? prev.ai_description,
       refined_description: data?.refined_description ?? data?.ai_description ?? prev.refined_description,
       ai_project_timeline_days: data?.ai_project_timeline_days ?? prev.ai_project_timeline_days,
@@ -769,15 +919,7 @@ export default function PublicIntakeWizard() {
   }
 
   const effectiveForm = getEffectiveProjectForm(form);
-  const summaryAddress = [
-    effectiveForm.project_address_line1,
-    effectiveForm.project_address_line2,
-    [effectiveForm.project_city, effectiveForm.project_state, effectiveForm.project_postal_code]
-      .filter(Boolean)
-      .join(", "),
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const summaryAddress = formatProjectAddress(effectiveForm);
   const projectSummaryRows = useMemo(() => {
     const rows = [];
     const seenKeys = new Set();
@@ -798,11 +940,12 @@ export default function PublicIntakeWizard() {
     addRow("main-goal", "Main Goal", getMainGoalSummary(form.ai_project_title, form.refined_description || form.ai_description));
     addRow("original-description", "Original Description", form.accomplishment_text);
     addRow("refined-description", "Refined Description", form.refined_description || form.ai_description);
-    addRow("timing", "Timeline", form.desired_timing_text || "Not provided");
+    addRow("timing", "Timeline", form.desired_timing_text);
     if (form.desired_timing_text === "Specific date") {
-      addRow("tentative-start-date", "Tentative Start Date", form.tentative_start_date || "Not provided");
+      addRow("tentative-start-date", "Tentative Start Date", form.tentative_start_date);
     }
-    addRow("budget", "Budget Range", form.budget_range_text || "Not provided");
+    addRow("budget", "Budget Range", form.budget_range_text);
+    addRow("measurements", "Measurements", form.measurement_handling);
 
     (clarificationQuestions || []).forEach((question) => {
       const key = question?.key || "";
@@ -828,15 +971,16 @@ export default function PublicIntakeWizard() {
     form.ai_project_type,
     form.budget_range_text,
     form.desired_timing_text,
+    form.measurement_handling,
     form.tentative_start_date,
   ]);
   const confidenceMessage = useMemo(() => {
     if (currentStep >= 7) return "Almost ready to send to contractors.";
     if (currentStep === 6) return "You are choosing the path that feels right.";
     if (currentStep === 5) return "Review a few good contractor matches before you decide the next step.";
-    if (currentStep === 4) return "A few details now will help the next step feel easy.";
-    if (currentStep === 3) return "Add the location details that help contractors review your request.";
-    if (currentStep === 2) return "Your contractor will review this summary before creating the final scope.";
+    if (currentStep === 4) return "A few contact details now will help the next step feel easy.";
+    if (currentStep === 3) return "Your contractor will review this summary before creating the final scope.";
+    if (currentStep === 2) return "Add the location and project details that help contractors review your request.";
     if (currentStep === 1) return "Refine the details so your contractor can review the request more clearly.";
     return "Tell us about the project and we will help organize it for contractor review.";
   }, [currentStep]);
@@ -1170,7 +1314,7 @@ export default function PublicIntakeWizard() {
                           data-testid="public-intake-clarification-next"
                           className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
                         >
-                          {isLastQuestion ? "Review Project Summary" : "Next"}
+                          {isLastQuestion ? "Continue to Project Details" : "Next"}
                         </button>
                       </div>
                     </div>
@@ -1230,7 +1374,7 @@ export default function PublicIntakeWizard() {
                   data-testid="public-intake-clarification-next"
                   className="mt-5 w-full rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
                 >
-                  Continue to Project Summary
+                  Continue to Project Details
                 </button>
               ) : null}
             </div>
@@ -1239,7 +1383,7 @@ export default function PublicIntakeWizard() {
       );
     }
 
-    if (currentStep === 2) {
+    if (currentStep === 3) {
       const summaryCards = [
         {
           key: "summary-original-description",
@@ -1273,6 +1417,26 @@ export default function PublicIntakeWizard() {
           key: "summary-measurements",
           label: "Measurements",
           value: form.measurement_handling || "Not provided",
+        },
+        {
+          key: "summary-project-class",
+          label: "Project Class",
+          value: projectClassLabel(form.project_class),
+        },
+        {
+          key: "summary-project-mode",
+          label: "Project Mode",
+          value: projectModeLabel(form.project_mode) || "Not provided",
+        },
+        {
+          key: "summary-payment-preference",
+          label: "Payment Preference",
+          value: paymentPreferenceLabel(form.payment_preference),
+        },
+        {
+          key: "summary-address",
+          label: "Address / Location",
+          value: summaryAddress || "Not provided",
         },
       ];
       return (
@@ -1312,7 +1476,7 @@ export default function PublicIntakeWizard() {
         </div>
       );
     }
-    if (currentStep === 3) {
+    if (currentStep === 2) {
       return (
         <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-project-details-step">
           <div className="max-w-3xl">
@@ -1327,6 +1491,51 @@ export default function PublicIntakeWizard() {
               Keep going at the pace that feels right. You can adjust these details later if needed.
             </p>
           </div>
+
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-gray-900">Project type</div>
+            <p className="mt-1 text-sm text-slate-600">
+              We inferred this from your description. You can adjust it before contractors review the request.
+            </p>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Project Type</label>
+                <select
+                  data-testid="public-intake-project-type"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                  value={form.ai_project_type}
+                  onChange={(e) => {
+                    setProjectTypeTouched(true);
+                    setField("ai_project_type", e.target.value);
+                  }}
+                >
+                  <option value="">Not provided</option>
+                  <option value="Concrete">Concrete</option>
+                  <option value="Patio / Hardscape">Patio / Hardscape</option>
+                  <option value="Cabinets / Carpentry">Cabinets / Carpentry</option>
+                  <option value="Kitchen Remodeling">Kitchen Remodeling</option>
+                  <option value="Bathroom Remodeling">Bathroom Remodeling</option>
+                  <option value="Flooring">Flooring</option>
+                  <option value="Painting / Drywall">Painting / Drywall</option>
+                  <option value="Roofing">Roofing</option>
+                  <option value="General Contracting">General Contracting</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Subtype or focus</label>
+                <input
+                  data-testid="public-intake-project-subtype"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                  value={form.ai_project_subtype}
+                  onChange={(e) => {
+                    setProjectTypeTouched(true);
+                    setField("ai_project_subtype", e.target.value);
+                  }}
+                  placeholder="Example: Patio / Hardscape"
+                />
+              </div>
+            </div>
+          </section>
 
           <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
             <div className="text-sm font-semibold text-gray-900">Budget and timing</div>
@@ -1385,6 +1594,122 @@ export default function PublicIntakeWizard() {
                 </div>
               ) : null}
             </div>
+          </section>
+
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-gray-900">Measurements</div>
+            <p className="mt-1 text-sm text-slate-600">
+              Share any dimensions you know. Your contractor will confirm measurements before final pricing.
+            </p>
+            {inferredMeasurements.length ? (
+              <div className="mt-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Inferred from your description</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {inferredMeasurements.map((measurement) => (
+                    <span
+                      key={measurement}
+                      className="rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800"
+                    >
+                      {measurement}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <input
+                  data-testid="public-intake-measurement-length"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Approx. length"
+                  onChange={(e) => {
+                    setMeasurementsTouched(true);
+                    setForm((prev) => ({
+                      ...prev,
+                      measurement_handling: [
+                        e.target.value ? `Length: ${e.target.value}` : "",
+                        prev.ai_clarification_answers?.measurement_width ? `Width: ${prev.ai_clarification_answers.measurement_width}` : "",
+                        prev.ai_clarification_answers?.measurement_quantity ? `Area/quantity: ${prev.ai_clarification_answers.measurement_quantity}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join("\n"),
+                      ai_clarification_answers: {
+                        ...(prev.ai_clarification_answers || {}),
+                        measurement_length: e.target.value,
+                      },
+                    }));
+                  }}
+                />
+                <input
+                  data-testid="public-intake-measurement-width"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Approx. width"
+                  onChange={(e) => {
+                    setMeasurementsTouched(true);
+                    setForm((prev) => ({
+                      ...prev,
+                      measurement_handling: [
+                        prev.ai_clarification_answers?.measurement_length ? `Length: ${prev.ai_clarification_answers.measurement_length}` : "",
+                        e.target.value ? `Width: ${e.target.value}` : "",
+                        prev.ai_clarification_answers?.measurement_quantity ? `Area/quantity: ${prev.ai_clarification_answers.measurement_quantity}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join("\n"),
+                      ai_clarification_answers: {
+                        ...(prev.ai_clarification_answers || {}),
+                        measurement_width: e.target.value,
+                      },
+                    }));
+                  }}
+                />
+                <input
+                  data-testid="public-intake-measurement-quantity"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Area or quantity"
+                  onChange={(e) => {
+                    setMeasurementsTouched(true);
+                    setForm((prev) => ({
+                      ...prev,
+                      measurement_handling: [
+                        prev.ai_clarification_answers?.measurement_length ? `Length: ${prev.ai_clarification_answers.measurement_length}` : "",
+                        prev.ai_clarification_answers?.measurement_width ? `Width: ${prev.ai_clarification_answers.measurement_width}` : "",
+                        e.target.value ? `Area/quantity: ${e.target.value}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join("\n"),
+                      ai_clarification_answers: {
+                        ...(prev.ai_clarification_answers || {}),
+                        measurement_quantity: e.target.value,
+                      },
+                    }));
+                  }}
+                />
+              </div>
+            )}
+            <div className="mt-4">
+              <label className="mb-1 block text-sm font-medium text-gray-900">Measurement notes</label>
+              <textarea
+                data-testid="public-intake-measurements-input"
+                rows={4}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                value={form.measurement_handling}
+                onChange={(e) => {
+                  setMeasurementsTouched(true);
+                  setField("measurement_handling", e.target.value);
+                }}
+                placeholder="Example: 12 ft x 10 ft existing patio, 6 ft extension, 4 in slab"
+              />
+            </div>
+            <button
+              type="button"
+              data-testid="public-intake-measurements-not-sure"
+              onClick={() => {
+                setMeasurementsTouched(true);
+                setField("measurement_handling", "Not sure yet");
+              }}
+              className="mt-3 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              Not sure yet
+            </button>
           </section>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -2117,7 +2442,7 @@ export default function PublicIntakeWizard() {
             type="button"
             onClick={handleBack}
             disabled={currentStep === 0 || saving || branchSubmitting}
-            data-testid={currentStep === 2 ? "public-intake-structured-back" : undefined}
+            data-testid={currentStep === 3 ? "public-intake-structured-back" : undefined}
             className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
             Back
@@ -2149,7 +2474,7 @@ export default function PublicIntakeWizard() {
               </>
             ) : currentStep === 7 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Project Request"}</button>
-            ) : currentStep === 2 ? (
+            ) : currentStep === 3 ? (
               <button
                 type="button"
                 onClick={handleNext}
@@ -2157,7 +2482,17 @@ export default function PublicIntakeWizard() {
                 data-testid="public-intake-structured-continue"
                 className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                Continue to Project Details
+                Continue to Contact Info
+              </button>
+            ) : currentStep === 2 ? (
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={saving || branchSubmitting}
+                data-testid="public-intake-project-details-continue"
+                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                Continue to Project Summary
               </button>
             ) : currentStep === 4 ? (
               <button
