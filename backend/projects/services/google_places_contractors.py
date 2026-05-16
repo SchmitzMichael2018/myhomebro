@@ -467,10 +467,10 @@ def search_google_places_contractors_with_diagnostics(
             "maxResultCount": max_results,
             **(
                 {
-                    "locationRestriction" if enforce_radius else "locationBias": {
+                    "locationBias": {
                         "circle": {
                             "center": center,
-                            "radius": radius,
+                            "radius": float(radius),
                         }
                     }
                 }

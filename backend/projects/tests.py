@@ -3096,9 +3096,10 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertTrue(payload["diagnostic"]["location_filter_applied"])
 
         request_body = mock_post.call_args.kwargs["json"]
-        self.assertIn("locationRestriction", request_body)
-        self.assertEqual(request_body["locationRestriction"]["circle"]["radius"], 40234)
-        self.assertEqual(request_body["locationRestriction"]["circle"]["center"]["latitude"], 30.2672)
+        self.assertIn("locationBias", request_body)
+        self.assertNotIn("locationRestriction", request_body)
+        self.assertEqual(request_body["locationBias"]["circle"]["radius"], 40234.0)
+        self.assertEqual(request_body["locationBias"]["circle"]["center"]["latitude"], 30.2672)
         self.assertNotIn("includedType", request_body)
         self.assertNotIn("languageCode", request_body)
         self.assertNotIn("regionCode", request_body)
@@ -3141,10 +3142,10 @@ class ContractorPublicPresenceApiTests(TestCase):
             {
                 "textQuery": "concrete contractor",
                 "maxResultCount": 8,
-                "locationRestriction": {
+                "locationBias": {
                     "circle": {
                         "center": {"latitude": 30.2672, "longitude": -97.7431},
-                        "radius": 40234,
+                        "radius": 40234.0,
                     }
                 },
             },
@@ -3174,7 +3175,9 @@ class ContractorPublicPresenceApiTests(TestCase):
         request_body = mock_post.call_args.kwargs["json"]
         self.assertEqual(request_body["textQuery"], "kitchen remodeling contractor")
         self.assertEqual(request_body["maxResultCount"], 20)
-        self.assertEqual(request_body["locationRestriction"]["circle"]["radius"], 40234)
+        self.assertIn("locationBias", request_body)
+        self.assertNotIn("locationRestriction", request_body)
+        self.assertEqual(request_body["locationBias"]["circle"]["radius"], 40234.0)
         self.assertNotIn("includedType", request_body)
         self.assertEqual(payload["diagnostic"]["http_status"], 200)
 
