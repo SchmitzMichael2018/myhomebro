@@ -296,6 +296,7 @@ def geocode_project_location(
 def _places_headers() -> dict[str, str]:
     return {
         "X-Goog-Api-Key": google_places_api_key(),
+        "Content-Type": "application/json",
         "X-Goog-FieldMask": ",".join(
             [
                 "places.id",
@@ -314,6 +315,20 @@ def _places_headers() -> dict[str, str]:
             ]
         ),
     }
+
+
+def _debug_headers(headers: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in (headers or {}).items() if key.lower() != "x-goog-api-key"}
+
+
+def _response_body_debug(response: Any) -> Any:
+    text = _safe_text(getattr(response, "text", ""))
+    if text:
+        return text[:4000]
+    try:
+        return response.json()
+    except Exception:
+        return ""
 
 
 def _normalize_place(place: dict[str, Any], *, source: str = "google_places") -> dict[str, Any]:
@@ -409,10 +424,16 @@ def search_google_places_contractors_with_diagnostics(
         return {"results": [], "diagnostic": diagnostic}
 
     search_text = _safe_text(query) or project_type_to_places_query(project_type, project_subtype)
-    max_results = max(int(limit or 5), 1)
+    max_results = min(max(int(limit or 5), 1), 20)
     headers = _places_headers()
+    text_search_url = "https://places.googleapis.com/v1/places:searchText"
     diagnostic["requested"] = True
     diagnostic["query"] = search_text
+    diagnostic["request_url"] = text_search_url
+    diagnostic["request_headers_debug"] = _debug_headers(headers)
+    diagnostic["request_payload_debug"] = {}
+    diagnostic["http_status"] = None
+    diagnostic["response_body"] = ""
     concrete_or_patio_context = is_concrete_or_patio_context(project_type, project_subtype, query)
     radius_limit = 25 if enforce_radius else float(radius_miles or 25)
     radius = 40234 if enforce_radius else _radius_meters(radius_miles or 25)
@@ -441,30 +462,41 @@ def search_google_places_contractors_with_diagnostics(
     seen: set[str] = set()
 
     try:
-        response = requests.post(
-            "https://places.googleapis.com/v1/places:searchText",
-            headers=headers,
-            json={
-                "textQuery": search_text,
-                "languageCode": "en",
-                "regionCode": "us",
-                "maxResultCount": max_results,
-                **(
-                    {
-                        "locationRestriction" if enforce_radius else "locationBias": {
-                            "circle": {
-                                "center": center,
-                                "radius": radius,
-                            }
+        request_payload = {
+            "textQuery": search_text,
+            "maxResultCount": max_results,
+            **(
+                {
+                    "locationRestriction" if enforce_radius else "locationBias": {
+                        "circle": {
+                            "center": center,
+                            "radius": radius,
                         }
                     }
-                    if center
-                    else {}
-                ),
+                }
+                if center
+                else {}
+            ),
+        }
+        diagnostic["request_payload_debug"] = request_payload
+        logger.info(
+            "Google Places Text Search contractor request prepared.",
+            extra={
+                "request_url": text_search_url,
+                "request_payload": request_payload,
+                "request_headers": _debug_headers(headers),
+                "query": search_text,
+                "location_filter_applied": diagnostic["location_filter_applied"],
             },
+        )
+        response = requests.post(
+            text_search_url,
+            headers=headers,
+            json=request_payload,
             timeout=10,
         )
         diagnostic["text_status"] = response.status_code
+        diagnostic["http_status"] = response.status_code
         if 200 <= response.status_code < 300:
             payload = response.json() if response.content else {}
             places = payload.get("places", [])[:max_results]
@@ -499,9 +531,25 @@ def search_google_places_contractors_with_diagnostics(
                 results.append(normalized)
         else:
             diagnostic["error"] = f"text_search_http_{response.status_code}"
+            if response.status_code == 400:
+                diagnostic["http_error_type"] = "bad_request"
+            elif response.status_code == 403:
+                diagnostic["http_error_type"] = "permission_denied"
+            elif response.status_code == 429:
+                diagnostic["http_error_type"] = "rate_limited"
+            else:
+                diagnostic["http_error_type"] = "http_error"
+            diagnostic["response_body"] = _response_body_debug(response)
             logger.warning(
-                "Google Places text contractor search failed",
-                extra={"status_code": response.status_code, "query": search_text},
+                "Google Places Text Search contractor request failed.",
+                extra={
+                    "request_url": text_search_url,
+                    "request_payload": request_payload,
+                    "request_headers": _debug_headers(headers),
+                    "status_code": response.status_code,
+                    "response_body": diagnostic["response_body"],
+                    "query": search_text,
+                },
             )
     except Exception:
         diagnostic["error"] = "text_search_exception"

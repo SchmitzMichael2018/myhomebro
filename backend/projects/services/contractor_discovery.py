@@ -903,6 +903,9 @@ def build_contractor_recommendations(
             "requested": bool(google_diag.get("requested")),
             "results_count": int(google_diag.get("results_count") or 0),
             "error": google_diag.get("error") or "",
+            "http_status": google_diag.get("http_status") or google_diag.get("text_status"),
+            "response_body": google_diag.get("response_body") or "",
+            "request_payload_debug": google_diag.get("request_payload_debug") or {},
         },
     }
     logger.info(

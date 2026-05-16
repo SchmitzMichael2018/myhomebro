@@ -3099,6 +3099,84 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertIn("locationRestriction", request_body)
         self.assertEqual(request_body["locationRestriction"]["circle"]["radius"], 40234)
         self.assertEqual(request_body["locationRestriction"]["circle"]["center"]["latitude"], 30.2672)
+        self.assertNotIn("includedType", request_body)
+        self.assertNotIn("languageCode", request_body)
+        self.assertNotIn("regionCode", request_body)
+        self.assertEqual(mock_post.call_args.args[0], "https://places.googleapis.com/v1/places:searchText")
+        self.assertEqual(mock_post.call_args.kwargs["headers"]["Content-Type"], "application/json")
+        self.assertIn("X-Goog-FieldMask", mock_post.call_args.kwargs["headers"])
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.post")
+    def test_google_places_text_search_http_400_includes_request_and_response_diagnostics(self, mock_post):
+        from projects.services.google_places_contractors import search_google_places_contractors_with_diagnostics
+
+        mock_post.return_value = SimpleNamespace(
+            status_code=400,
+            content=b'{"error":{"message":"Invalid JSON payload received.","status":"INVALID_ARGUMENT"}}',
+            text='{"error":{"message":"Invalid JSON payload received.","status":"INVALID_ARGUMENT"}}',
+            json=lambda: {"error": {"message": "Invalid JSON payload received.", "status": "INVALID_ARGUMENT"}},
+        )
+
+        payload = search_google_places_contractors_with_diagnostics(
+            project_type="Concrete",
+            query="concrete contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            radius_miles=25,
+            limit=8,
+            enforce_radius=True,
+        )
+
+        diagnostic = payload["diagnostic"]
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(diagnostic["error"], "text_search_http_400")
+        self.assertEqual(diagnostic["http_status"], 400)
+        self.assertEqual(diagnostic["http_error_type"], "bad_request")
+        self.assertIn("Invalid JSON payload", diagnostic["response_body"])
+        self.assertEqual(diagnostic["request_url"], "https://places.googleapis.com/v1/places:searchText")
+        self.assertNotIn("X-Goog-Api-Key", diagnostic["request_headers_debug"])
+        self.assertEqual(
+            diagnostic["request_payload_debug"],
+            {
+                "textQuery": "concrete contractor",
+                "maxResultCount": 8,
+                "locationRestriction": {
+                    "circle": {
+                        "center": {"latitude": 30.2672, "longitude": -97.7431},
+                        "radius": 40234,
+                    }
+                },
+            },
+        )
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.post")
+    def test_google_places_text_search_caps_max_results_for_valid_places_new_payload(self, mock_post):
+        from projects.services.google_places_contractors import search_google_places_contractors_with_diagnostics
+
+        mock_post.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            text="{}",
+            json=lambda: {"places": []},
+        )
+
+        payload = search_google_places_contractors_with_diagnostics(
+            query="kitchen remodeling contractor",
+            latitude=29.42,
+            longitude=-98.49,
+            radius_miles=25,
+            limit=50,
+            enforce_radius=True,
+        )
+
+        request_body = mock_post.call_args.kwargs["json"]
+        self.assertEqual(request_body["textQuery"], "kitchen remodeling contractor")
+        self.assertEqual(request_body["maxResultCount"], 20)
+        self.assertEqual(request_body["locationRestriction"]["circle"]["radius"], 40234)
+        self.assertNotIn("includedType", request_body)
+        self.assertEqual(payload["diagnostic"]["http_status"], 200)
 
     @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
     def test_google_places_radius_filter_requires_project_location(self):
