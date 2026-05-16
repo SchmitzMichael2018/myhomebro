@@ -502,6 +502,120 @@ test("public intake contractor search auto-infers a specialty from the project d
   await expect.poll(() => requestedQueries.at(-1)).toBe("concrete contractor");
 });
 
+test("public intake contractor search resets stale query when project context changes", async ({
+  page,
+}) => {
+  const requestedQueries = [];
+
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 504,
+          token: "landing-token-stale-search",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/landing-token-stale-search",
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/contractor-search/") && method === "GET") {
+      const url = new URL(requestUrl);
+      requestedQueries.push(url.searchParams.get("query") || "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          summary: {
+            search_query: url.searchParams.get("query") || "",
+            radius_miles: 25,
+            project_mode: "full_service",
+            payment_preference: "escrow",
+            results_count: 0,
+          },
+          results: [],
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 504,
+          token: "landing-token-stale-search",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "Search Prospect",
+          customer_email: "search@example.com",
+          customer_phone: "555-555-5555",
+          customer_address_line1: "100 Search St",
+          customer_address_line2: "",
+          customer_city: "Austin",
+          customer_state: "TX",
+          customer_postal_code: "78701",
+          same_as_customer_address: true,
+          project_class: "residential",
+          project_address_line1: "100 Search St",
+          project_address_line2: "",
+          project_city: "Austin",
+          project_state: "TX",
+          project_postal_code: "78701",
+          accomplishment_text: "",
+          original_description: "",
+          refined_description: "",
+          project_scope_summary: "",
+          ai_project_title: "",
+          ai_project_type: "",
+          ai_project_subtype: "",
+          ai_description: "",
+          ai_milestones: [],
+          measurement_handling: "",
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
+          ai_analysis_payload: {},
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          sent_at: null,
+          completed_at: null,
+        }),
+      });
+    }
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("landing-start-project-intake-button").click();
+  await expect(page).toHaveURL(/\/start-project\/landing-token-stale-search$/);
+  await page.getByTestId("public-intake-accomplishment-text").fill("Install a new plumbing pipe under the sink.");
+  await page.getByRole("button", { name: "Choose Local Contractors" }).click();
+
+  const searchInput = page.getByTestId("public-intake-contractor-search-input");
+  await expect(searchInput).toHaveValue("plumber");
+  await expect.poll(() => requestedQueries.at(-1)).toBe("plumber");
+  await searchInput.fill("plumber");
+
+  await page.getByRole("button", { name: /Project Idea/ }).click();
+  await page.getByTestId("public-intake-accomplishment-text").fill(
+    "Patio extension: construct a concrete slab and repair the existing patio surface."
+  );
+  await page.getByRole("button", { name: "Choose Local Contractors" }).click();
+
+  await expect(searchInput).toHaveValue("concrete contractor patio contractor");
+  await expect.poll(() => requestedQueries.at(-1)).toBe("concrete contractor patio contractor");
+  expect(requestedQueries.at(-1)).not.toBe("plumber");
+});
+
 test("public intake description helper refines the project idea before generating the plan", async ({
   page,
 }) => {

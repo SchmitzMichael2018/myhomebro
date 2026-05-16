@@ -69,7 +69,10 @@ function buildInferredSearchQuery(form) {
     form?.ai_project_type,
     form?.ai_project_subtype,
     form?.ai_project_title,
+    form?.project_scope_summary,
+    form?.refined_description,
     form?.ai_description,
+    form?.original_description,
     form?.accomplishment_text,
   ]
     .filter(Boolean)
@@ -81,6 +84,10 @@ function buildInferredSearchQuery(form) {
     if (value && !inferred.includes(value)) inferred.push(value);
   };
 
+  if (/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/.test(text)) {
+    push("concrete contractor");
+    push("patio contractor");
+  }
   if (/kitchen|cabinet|countertop|quartz|granite/.test(text)) {
     push("kitchen remodeling contractor");
     push("cabinet installer");
@@ -136,7 +143,10 @@ export default function ContractorDiscoveryStep({
   const [radiusMiles, setRadiusMiles] = useState("");
   const suggestedSearchQuery = useMemo(() => buildInferredSearchQuery(form), [
     form?.accomplishment_text,
+    form?.original_description,
+    form?.refined_description,
     form?.ai_description,
+    form?.project_scope_summary,
     form?.ai_project_subtype,
     form?.ai_project_title,
     form?.ai_project_type,
@@ -146,7 +156,10 @@ export default function ContractorDiscoveryStep({
       [
         token,
         form?.accomplishment_text,
+        form?.original_description,
+        form?.refined_description,
         form?.ai_description,
+        form?.project_scope_summary,
         form?.ai_project_subtype,
         form?.ai_project_title,
         form?.ai_project_type,
@@ -156,7 +169,10 @@ export default function ContractorDiscoveryStep({
     [
       token,
       form?.accomplishment_text,
+      form?.original_description,
+      form?.refined_description,
       form?.ai_description,
+      form?.project_scope_summary,
       form?.ai_project_subtype,
       form?.ai_project_title,
       form?.ai_project_type,
@@ -170,15 +186,14 @@ export default function ContractorDiscoveryStep({
   const selectedKeys = useMemo(() => new Set((selectedTargets || []).map(cardSelectionKey).filter(Boolean)), [selectedTargets]);
 
   useEffect(() => {
-    if (!active || !token || !suggestedSearchQuery) return;
-    if (hasUserEditedSearch) return;
+    if (!active || !token) return;
     if (searchInitKey === projectSearchKey) return;
 
     setUserSearchInput(suggestedSearchQuery);
     setSubmittedSearchQuery(suggestedSearchQuery);
     setHasUserEditedSearch(false);
     setSearchInitKey(projectSearchKey);
-  }, [active, token, suggestedSearchQuery, hasUserEditedSearch, projectSearchKey, searchInitKey]);
+  }, [active, token, suggestedSearchQuery, projectSearchKey, searchInitKey]);
 
   useEffect(() => {
     if (!active || !token) return;
@@ -203,7 +218,12 @@ export default function ContractorDiscoveryStep({
             project_type: safeText(form?.ai_project_type) || undefined,
             project_subtype: safeText(form?.ai_project_subtype) || undefined,
             description: safeText(form?.accomplishment_text) || undefined,
-            project_scope_summary: safeText(form?.ai_description) || safeText(form?.accomplishment_text) || undefined,
+            project_scope_summary:
+              safeText(form?.project_scope_summary) ||
+              safeText(form?.refined_description) ||
+              safeText(form?.ai_description) ||
+              safeText(form?.accomplishment_text) ||
+              undefined,
             project_address_line1: safeText(form?.project_address_line1 || form?.customer_address_line1) || undefined,
             project_city: safeText(form?.project_city || form?.customer_city) || undefined,
             project_state: safeText(form?.project_state || form?.customer_state) || undefined,
@@ -242,7 +262,10 @@ export default function ContractorDiscoveryStep({
     active,
     token,
     form?.accomplishment_text,
+    form?.original_description,
+    form?.refined_description,
     form?.ai_description,
+    form?.project_scope_summary,
     form?.ai_project_subtype,
     form?.ai_project_title,
     form?.ai_project_type,
