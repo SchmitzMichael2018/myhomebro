@@ -3182,6 +3182,75 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(payload["diagnostic"]["http_status"], 200)
 
     @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.post")
+    def test_google_places_radius_filter_honors_selected_radius_options(self, mock_post):
+        from projects.services.google_places_contractors import search_google_places_contractors_with_diagnostics
+
+        mock_post.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            text="{}",
+            json=lambda: {
+                "places": [
+                    {
+                        "id": "places/midrange-concrete",
+                        "displayName": {"text": "Midrange Concrete Co"},
+                        "formattedAddress": "Nearby, TX",
+                        "location": {"latitude": 30.36, "longitude": -97.7431},
+                        "primaryType": "concrete_contractor",
+                        "types": ["concrete_contractor"],
+                    }
+                ]
+            },
+        )
+
+        five_mile_payload = search_google_places_contractors_with_diagnostics(
+            query="concrete contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            radius_miles=5,
+            limit=5,
+            enforce_radius=True,
+        )
+        self.assertEqual(five_mile_payload["results"], [])
+        self.assertEqual(five_mile_payload["diagnostic"]["empty_reason"], "all_results_outside_radius")
+
+        twenty_five_mile_payload = search_google_places_contractors_with_diagnostics(
+            query="concrete contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            radius_miles=25,
+            limit=5,
+            enforce_radius=True,
+        )
+        self.assertEqual([row["business_name"] for row in twenty_five_mile_payload["results"]], ["Midrange Concrete Co"])
+        self.assertLessEqual(twenty_five_mile_payload["results"][0]["distance_miles"], 25)
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.post")
+    def test_google_places_radius_bias_uses_one_hundred_miles_for_regional_search(self, mock_post):
+        from projects.services.google_places_contractors import search_google_places_contractors_with_diagnostics
+
+        mock_post.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            text="{}",
+            json=lambda: {"places": []},
+        )
+
+        search_google_places_contractors_with_diagnostics(
+            query="concrete contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            radius_miles=100,
+            limit=5,
+            enforce_radius=True,
+        )
+
+        request_body = mock_post.call_args.kwargs["json"]
+        self.assertEqual(request_body["locationBias"]["circle"]["radius"], 160934.0)
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
     def test_google_places_radius_filter_requires_project_location(self):
         from projects.services.google_places_contractors import search_google_places_contractors_with_diagnostics
 

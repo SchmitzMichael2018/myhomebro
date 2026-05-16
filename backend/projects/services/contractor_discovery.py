@@ -686,10 +686,10 @@ def build_contractor_recommendations(
         project_scope_summary=project.get("project_scope_summary"),
     )
     try:
-        radius = int(float(radius_miles or 25))
+        requested_radius = int(float(radius_miles or 25))
     except Exception:
-        radius = 25
-    radius = max(1, min(radius, 25))
+        requested_radius = 25
+    radius = requested_radius if requested_radius in {5, 10, 15, 25, 50, 100} else 25
     location_meta = _resolve_project_location(intake=intake, project=project, latitude=latitude, longitude=longitude)
     latitude = location_meta.get("latitude")
     longitude = location_meta.get("longitude")

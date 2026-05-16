@@ -21,10 +21,28 @@ function cardSelectionKey(card) {
 }
 
 const RESULTS_PER_PAGE = 10;
+const RADIUS_OPTIONS = [
+  { value: "5", label: "5 miles" },
+  { value: "10", label: "10 miles" },
+  { value: "15", label: "15 miles" },
+  { value: "25", label: "25 miles" },
+  { value: "50", label: "50 miles" },
+  { value: "100", label: "50+ miles" },
+];
 
-function emptyStateMessage(summary) {
+function radiusDisplayLabel(value) {
+  const option = RADIUS_OPTIONS.find((item) => item.value === String(value || "25"));
+  return option?.label || "25 miles";
+}
+
+function radiusWithinLabel(value) {
+  return `within ${radiusDisplayLabel(value)}`;
+}
+
+function emptyStateMessage(summary, radiusMiles = 25) {
   const reason = safeText(summary?.reason || summary?.external_search?.error || summary?.external_search_diagnostic?.empty_reason);
   const geocodeStatus = safeText(summary?.geocode_status);
+  const radiusLabel = radiusDisplayLabel(summary?.radius_miles || radiusMiles);
   if (geocodeStatus === "REQUEST_DENIED") {
     return "We're temporarily unable to verify project locations due to a configuration issue.";
   }
@@ -59,12 +77,12 @@ function emptyStateMessage(summary) {
     return "Google did not return local matches for this search. Try broadening the search term.";
   }
   if (reason === "all_results_outside_radius") {
-    return "We found contractors, but none were within 25 miles of the project address.";
+    return `We found contractors, but none were within ${radiusLabel} of the project address.`;
   }
   if (reason === "all_results_missing_coordinates") {
     return "Google returned possible matches, but they did not include usable map coordinates. Try adjusting the project location or search term.";
   }
-  return "We couldn’t find strong local matches within 25 miles of this project address. You can invite a contractor manually or adjust the project location.";
+  return `We couldn’t find strong local matches within ${radiusLabel} of this project address. You can invite a contractor manually or adjust the project location.`;
 }
 
 function buildInferredSearchQuery(form) {
@@ -143,7 +161,7 @@ export default function ContractorDiscoveryStep({
   const [submittedSearchQuery, setSubmittedSearchQuery] = useState("");
   const [hasUserEditedSearch, setHasUserEditedSearch] = useState(false);
   const [searchInitKey, setSearchInitKey] = useState("");
-  const [radiusMiles, setRadiusMiles] = useState("");
+  const [radiusMiles, setRadiusMiles] = useState("25");
   const [visibleCount, setVisibleCount] = useState(RESULTS_PER_PAGE);
   const suggestedSearchQuery = useMemo(() => buildInferredSearchQuery(form), [
     form?.accomplishment_text,
@@ -194,6 +212,7 @@ export default function ContractorDiscoveryStep({
   const resultCountText = results.length
     ? `Showing ${resultStart}-${resultEnd} of ${results.length} contractors`
     : "Matches will appear here once loaded.";
+  const activeRadiusLabel = radiusWithinLabel(summary?.radius_miles || radiusMiles);
 
   useEffect(() => {
     if (!active || !token) return;
@@ -425,13 +444,22 @@ export default function ContractorDiscoveryStep({
         ) : null}
         <label className="text-sm font-medium text-slate-700">
           Radius
-          <input
+          <select
             value={radiusMiles}
             onChange={(e) => setRadiusMiles(e.target.value)}
-            placeholder="25"
-            className="ml-2 w-24 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-          />
+            data-testid="public-intake-contractor-radius-select"
+            className="ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+          >
+            {RADIUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
+        <div className="text-sm font-medium text-slate-600" data-testid="public-intake-contractor-radius-display">
+          {activeRadiusLabel}
+        </div>
         <div className="text-sm text-slate-600">
           {selectedTargets.length ? `${selectedTargets.length} selected` : "Select up to 5 contractors"}
         </div>
@@ -571,7 +599,7 @@ export default function ContractorDiscoveryStep({
           })
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 lg:col-span-2">
-            {emptyStateMessage(summary)}
+            {emptyStateMessage(summary, radiusMiles)}
           </div>
         )}
       </div>

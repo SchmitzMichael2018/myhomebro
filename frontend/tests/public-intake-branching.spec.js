@@ -337,6 +337,7 @@ test("public intake contractor search auto-infers a specialty from the project d
   page,
 }) => {
   const requestedQueries = [];
+  const requestedRadii = [];
 
   await page.route("**/api/projects/public-intake/**", async (route) => {
     const requestUrl = route.request().url();
@@ -359,14 +360,35 @@ test("public intake contractor search auto-infers a specialty from the project d
 
     if (requestUrl.includes("/contractor-search/") && method === "GET") {
       const url = new URL(requestUrl);
+      const requestedRadius = url.searchParams.get("radius_miles") || "25";
       requestedQueries.push(url.searchParams.get("query") || "");
+      requestedRadii.push(requestedRadius);
+      if (requestedRadius === "5") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            summary: {
+              search_query: url.searchParams.get("query") || "",
+              radius_miles: 5,
+              reason: "all_results_outside_radius",
+              project_mode: "full_service",
+              payment_preference: "escrow",
+              results_count: 0,
+              external_results_count: 0,
+            },
+            results: [],
+          }),
+        });
+        return;
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
           summary: {
             search_query: url.searchParams.get("query") || "",
-            radius_miles: 25,
+            radius_miles: Number(requestedRadius),
             project_mode: "full_service",
             payment_preference: "escrow",
             results_count: 12,
@@ -522,6 +544,8 @@ test("public intake contractor search auto-infers a specialty from the project d
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible();
+  await expect(page.getByTestId("public-intake-contractor-radius-select")).toHaveValue("25");
+  await expect(page.getByTestId("public-intake-contractor-radius-display")).toHaveText("within 25 miles");
   await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue(
     /kitchen remodeling contractor|cabinet installer|countertop installer/,
     { timeout: 15000 }
@@ -540,6 +564,16 @@ test("public intake contractor search auto-infers a specialty from the project d
   await expect(page.getByTestId("public-intake-contractor-card-listing:111")).toBeVisible();
   await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-12 of 12 contractors");
   expect(requestedQueries[0]).toMatch(/kitchen remodeling contractor|cabinet installer|countertop installer/);
+  expect(requestedRadii[0]).toBe("25");
+
+  await page.getByTestId("public-intake-contractor-radius-select").selectOption("5");
+  await expect(page.getByText("We found contractors, but none were within 5 miles of the project address.")).toBeVisible();
+  await expect.poll(() => requestedRadii.at(-1)).toBe("5");
+
+  await page.getByTestId("public-intake-contractor-radius-select").selectOption("100");
+  await expect(page.getByTestId("public-intake-contractor-radius-display")).toHaveText("within 50+ miles");
+  await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-10 of 12 contractors");
+  await expect.poll(() => requestedRadii.at(-1)).toBe("100");
 
   const searchInput = page.getByTestId("public-intake-contractor-search-input");
   await searchInput.fill("");

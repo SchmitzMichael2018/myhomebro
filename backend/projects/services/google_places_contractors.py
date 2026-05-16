@@ -435,8 +435,11 @@ def search_google_places_contractors_with_diagnostics(
     diagnostic["http_status"] = None
     diagnostic["response_body"] = ""
     concrete_or_patio_context = is_concrete_or_patio_context(project_type, project_subtype, query)
-    radius_limit = 25 if enforce_radius else float(radius_miles or 25)
-    radius = 40234 if enforce_radius else _radius_meters(radius_miles or 25)
+    try:
+        radius_limit = max(float(radius_miles or 25), 1.0)
+    except (TypeError, ValueError):
+        radius_limit = 25.0
+    radius = _radius_meters(radius_limit)
     diagnostic["radius_miles"] = radius_limit
     has_search_center = latitude not in (None, "", []) and longitude not in (None, "", [])
     diagnostic["location_filter_applied"] = bool(enforce_radius and has_search_center)

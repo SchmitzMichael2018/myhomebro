@@ -52,6 +52,11 @@ class PublicIntakeContractorSearchView(APIView):
             limit = max(1, min(int(limit or 40), 50))
         except (TypeError, ValueError):
             limit = 40
+        try:
+            radius_miles = int(float(radius_miles or 25))
+        except (TypeError, ValueError):
+            radius_miles = 25
+        radius_miles = radius_miles if radius_miles in {5, 10, 15, 25, 50, 100} else 25
         project_context = {
             "project_type": request.query_params.get("project_type"),
             "project_subtype": request.query_params.get("project_subtype"),
