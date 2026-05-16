@@ -490,6 +490,16 @@ test("public intake contractor search auto-infers a specialty from the project d
   await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("MyHomeBro Verified");
   await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local Business Listing");
   expect(requestedQueries[0]).toMatch(/kitchen remodeling contractor|cabinet installer|countertop installer/);
+
+  const searchInput = page.getByTestId("public-intake-contractor-search-input");
+  await searchInput.fill("");
+  await expect(searchInput).toHaveValue("");
+  await page.waitForTimeout(250);
+  await expect(searchInput).toHaveValue("");
+  await searchInput.fill("concrete contractor");
+  await page.getByTestId("public-intake-contractor-search-submit").click();
+  await expect(searchInput).toHaveValue("concrete contractor");
+  await expect.poll(() => requestedQueries.at(-1)).toBe("concrete contractor");
 });
 
 test("public intake description helper refines the project idea before generating the plan", async ({

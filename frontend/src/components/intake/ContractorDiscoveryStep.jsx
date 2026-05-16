@@ -104,15 +104,39 @@ export default function ContractorDiscoveryStep({
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [query, setQuery] = useState("");
+  const [userSearchInput, setUserSearchInput] = useState("");
+  const [submittedSearchQuery, setSubmittedSearchQuery] = useState("");
+  const [hasUserEditedSearch, setHasUserEditedSearch] = useState(false);
+  const [searchInitKey, setSearchInitKey] = useState("");
   const [radiusMiles, setRadiusMiles] = useState("");
-  const inferredQuery = useMemo(() => buildInferredSearchQuery(form), [
+  const suggestedSearchQuery = useMemo(() => buildInferredSearchQuery(form), [
     form?.accomplishment_text,
     form?.ai_description,
     form?.ai_project_subtype,
     form?.ai_project_title,
     form?.ai_project_type,
   ]);
+  const projectSearchKey = useMemo(
+    () =>
+      [
+        token,
+        form?.accomplishment_text,
+        form?.ai_description,
+        form?.ai_project_subtype,
+        form?.ai_project_title,
+        form?.ai_project_type,
+      ]
+        .map((value) => safeText(value))
+        .join("|"),
+    [
+      token,
+      form?.accomplishment_text,
+      form?.ai_description,
+      form?.ai_project_subtype,
+      form?.ai_project_title,
+      form?.ai_project_type,
+    ]
+  );
 
   const modeLabel = projectModeLabel(form?.project_mode);
   const ctaLabel = normalizeProjectMode(form?.project_mode) === "consultation" ? "Request Quote" : "Request Project Review";
@@ -121,10 +145,23 @@ export default function ContractorDiscoveryStep({
   const selectedKeys = useMemo(() => new Set((selectedTargets || []).map(cardSelectionKey).filter(Boolean)), [selectedTargets]);
 
   useEffect(() => {
+    if (!active || !token || !suggestedSearchQuery) return;
+    if (hasUserEditedSearch) return;
+    if (searchInitKey === projectSearchKey) return;
+
+    setUserSearchInput(suggestedSearchQuery);
+    setSubmittedSearchQuery(suggestedSearchQuery);
+    setHasUserEditedSearch(false);
+    setSearchInitKey(projectSearchKey);
+  }, [active, token, suggestedSearchQuery, hasUserEditedSearch, projectSearchKey, searchInitKey]);
+
+  useEffect(() => {
     if (!active || !token) return;
 
-    if (!safeText(query) && inferredQuery) {
-      setQuery(inferredQuery);
+    const searchTerm = safeText(submittedSearchQuery);
+    if (!searchTerm) {
+      setResults([]);
+      setSummary(null);
       return;
     }
 
@@ -136,7 +173,7 @@ export default function ContractorDiscoveryStep({
         const { data } = await api.get("/projects/public-intake/contractor-search/", {
           params: {
             token,
-            query: safeText(query) || inferredQuery || undefined,
+            query: searchTerm,
             project_title: safeText(form?.ai_project_title) || undefined,
             project_type: safeText(form?.ai_project_type) || undefined,
             project_subtype: safeText(form?.ai_project_subtype) || undefined,
@@ -192,10 +229,26 @@ export default function ContractorDiscoveryStep({
     form?.customer_city,
     form?.customer_state,
     form?.customer_postal_code,
-    inferredQuery,
-    query,
+    submittedSearchQuery,
     radiusMiles,
   ]);
+
+  function handleSearchSubmit() {
+    const nextQuery = safeText(userSearchInput);
+    if (!nextQuery) {
+      toast.error("Enter a contractor type to search.");
+      return;
+    }
+    setSubmittedSearchQuery(nextQuery);
+  }
+
+  function handleUseSuggestedSearch() {
+    if (!suggestedSearchQuery) return;
+    setUserSearchInput(suggestedSearchQuery);
+    setSubmittedSearchQuery(suggestedSearchQuery);
+    setHasUserEditedSearch(false);
+    setSearchInitKey(projectSearchKey);
+  }
 
   function toggleSelection(card) {
     const key = cardSelectionKey(card);
@@ -273,13 +326,40 @@ export default function ContractorDiscoveryStep({
         <label className="text-sm font-medium text-slate-700">
           Search
           <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={userSearchInput}
+            onChange={(e) => {
+              setUserSearchInput(e.target.value);
+              setHasUserEditedSearch(true);
+            }}
             placeholder="We infer a specialty from your project, or you can search one"
             data-testid="public-intake-contractor-search-input"
             className="ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
           />
         </label>
+        <button
+          type="button"
+          onClick={handleSearchSubmit}
+          disabled={!safeText(userSearchInput)}
+          data-testid="public-intake-contractor-search-submit"
+          className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Search
+        </button>
+        {suggestedSearchQuery && hasUserEditedSearch ? (
+          <button
+            type="button"
+            onClick={handleUseSuggestedSearch}
+            data-testid="public-intake-use-suggested-search"
+            className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+          >
+            Use suggested search
+          </button>
+        ) : null}
+        {!safeText(userSearchInput) && hasUserEditedSearch ? (
+          <div className="text-sm text-amber-700" data-testid="public-intake-contractor-search-empty">
+            Enter a contractor type to search.
+          </div>
+        ) : null}
         <label className="text-sm font-medium text-slate-700">
           Radius
           <input
