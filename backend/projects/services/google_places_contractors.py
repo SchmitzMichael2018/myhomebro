@@ -214,29 +214,70 @@ def geocode_project_location(
     postal_code: Any = "",
 ) -> dict[str, Any]:
     api_key = google_places_api_key()
+    normalized_postal_code = "".join(ch for ch in _safe_text(postal_code) if ch.isdigit())[:5] or _safe_text(postal_code)
     address = ", ".join(
         part
-        for part in [_safe_text(address_line1), _safe_text(city), _safe_text(state), _safe_text(postal_code)]
+        for part in [_safe_text(address_line1), _safe_text(city), _safe_text(state), normalized_postal_code]
         if part
     )
-    diagnostic = {"configured": bool(api_key), "requested": False, "status": None, "error": ""}
+    diagnostic = {
+        "configured": bool(api_key),
+        "requested": False,
+        "http_status": None,
+        "status": None,
+        "error": "",
+        "error_message": "",
+        "candidate": address,
+        "normalized_zip": normalized_postal_code,
+        "from_cache": False,
+        "error_type": "",
+    }
     if not api_key or not address:
         diagnostic["error"] = "google_geocode_api_key_missing" if not api_key else "missing_address"
+        diagnostic["status"] = diagnostic["error"]
+        diagnostic["error_type"] = "system" if not api_key else "user"
         return {"latitude": None, "longitude": None, "diagnostic": diagnostic}
 
     try:
         diagnostic["requested"] = True
+        logger.info(
+            "Google geocode candidate attempted.",
+            extra={"candidate": address, "normalized_zip": normalized_postal_code, "from_cache": False},
+        )
         response = requests.get(
             "https://maps.googleapis.com/maps/api/geocode/json",
             params={"address": address, "key": api_key},
             timeout=10,
         )
-        diagnostic["status"] = response.status_code
+        diagnostic["http_status"] = response.status_code
         if not (200 <= response.status_code < 300):
             diagnostic["error"] = f"geocode_http_{response.status_code}"
-            logger.warning("Google geocode request failed", extra={"status_code": response.status_code})
+            diagnostic["status"] = diagnostic["error"]
+            diagnostic["error_type"] = "system"
+            logger.warning(
+                "Google geocode HTTP request failed.",
+                extra={"http_status": response.status_code, "candidate": address, "normalized_zip": normalized_postal_code},
+            )
             return {"latitude": None, "longitude": None, "diagnostic": diagnostic}
         payload = response.json() if response.content else {}
+        google_status = _safe_text(payload.get("status") or "UNKNOWN_ERROR")
+        error_message = _safe_text(payload.get("error_message"))
+        diagnostic["status"] = google_status
+        diagnostic["error_message"] = error_message
+        logger.info(
+            "Google geocode response received.",
+            extra={
+                "candidate": address,
+                "normalized_zip": normalized_postal_code,
+                "google_status": google_status,
+                "google_error_message": error_message,
+                "from_cache": False,
+            },
+        )
+        if google_status != "OK":
+            diagnostic["error"] = google_status
+            diagnostic["error_type"] = "user" if google_status in {"ZERO_RESULTS", "INVALID_REQUEST"} else "system"
+            return {"latitude": None, "longitude": None, "diagnostic": diagnostic}
         first = (payload.get("results") or [None])[0] or {}
         location = ((first.get("geometry") or {}).get("location") or {})
         return {
@@ -246,6 +287,8 @@ def geocode_project_location(
         }
     except Exception:
         diagnostic["error"] = "geocode_exception"
+        diagnostic["status"] = "geocode_exception"
+        diagnostic["error_type"] = "system"
         logger.exception("Google geocode request raised an exception.")
         return {"latitude": None, "longitude": None, "diagnostic": diagnostic}
 

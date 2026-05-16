@@ -54,7 +54,11 @@ def _location_metadata(
     source: str = "missing",
     status: str = "missing_project_location",
     reason: str = "",
+    geocode_diagnostic: dict[str, Any] | None = None,
+    geocode_attempt_count: int = 0,
+    geocode_fallback_attempted: bool = False,
 ) -> dict[str, Any]:
+    diagnostic = geocode_diagnostic or {}
     return {
         "location_filter_applied": _has_value(latitude) and _has_value(longitude),
         "location_resolution_status": status,
@@ -66,13 +70,26 @@ def _location_metadata(
         "search_center_zip": _normalize_postal_code(project.get("project_postal_code", "")),
         "search_center_zip_original": project.get("project_postal_code_original", project.get("project_postal_code", "")),
         "reason": reason,
+        "geocode_status": diagnostic.get("status") or "",
+        "geocode_error_message": diagnostic.get("error_message") or "",
+        "geocode_candidate_used": diagnostic.get("candidate") or "",
+        "geocode_from_cache": bool(diagnostic.get("from_cache")),
+        "geocode_attempt_count": geocode_attempt_count,
+        "geocode_fallback_attempted": geocode_fallback_attempted,
     }
 
 
 def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude: Any = None, longitude: Any = None) -> dict[str, Any]:
     if _has_value(latitude) and _has_value(longitude):
         return {
-            **_location_metadata(project=project, latitude=latitude, longitude=longitude, source="intake_lat_lng", status="resolved"),
+            **_location_metadata(
+                project=project,
+                latitude=latitude,
+                longitude=longitude,
+                source="intake_lat_lng",
+                status="resolved",
+                geocode_diagnostic={"from_cache": False},
+            ),
             "latitude": latitude,
             "longitude": longitude,
         }
@@ -86,7 +103,19 @@ def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude:
     saved_lng = saved_location.get("longitude")
     if _has_value(saved_lat) and _has_value(saved_lng):
         return {
-            **_location_metadata(project=project, latitude=saved_lat, longitude=saved_lng, source="intake_lat_lng", status="resolved"),
+            **_location_metadata(
+                project=project,
+                latitude=saved_lat,
+                longitude=saved_lng,
+                source="intake_lat_lng",
+                status="resolved",
+                geocode_diagnostic={
+                    "from_cache": True,
+                    "status": "OK",
+                    "candidate": saved_location.get("candidate", ""),
+                    "error_message": "",
+                },
+            ),
             "latitude": saved_lat,
             "longitude": saved_lng,
         }
@@ -116,8 +145,23 @@ def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude:
             "longitude": None,
         }
 
+    last_diagnostic: dict[str, Any] = {}
+    attempt_count = 0
     for source, kwargs in candidates:
+        attempt_count += 1
         geocoded = geocode_project_location(**kwargs)
+        last_diagnostic = geocoded.get("diagnostic") or {}
+        logger.info(
+            "Contractor discovery geocode candidate result.",
+            extra={
+                "candidate": last_diagnostic.get("candidate"),
+                "normalized_zip": last_diagnostic.get("normalized_zip"),
+                "google_status": last_diagnostic.get("status"),
+                "google_error_message": last_diagnostic.get("error_message"),
+                "from_cache": bool(last_diagnostic.get("from_cache")),
+                "fallback_candidates_attempted": attempt_count - 1,
+            },
+        )
         lat = geocoded.get("latitude")
         lng = geocoded.get("longitude")
         if _has_value(lat) and _has_value(lng):
@@ -128,19 +172,41 @@ def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude:
                         "latitude": lat,
                         "longitude": lng,
                         "source": source,
+                        "candidate": last_diagnostic.get("candidate", ""),
                     }
                     intake.ai_analysis_payload = analysis
                     intake.save(update_fields=["ai_analysis_payload", "updated_at"])
                 except Exception:
                     logger.exception("Could not persist contractor discovery geocode result.")
             return {
-                **_location_metadata(project=project, latitude=lat, longitude=lng, source=source, status="resolved"),
+                **_location_metadata(
+                    project=project,
+                    latitude=lat,
+                    longitude=lng,
+                    source=source,
+                    status="resolved",
+                    geocode_diagnostic={**last_diagnostic, "from_cache": False},
+                    geocode_attempt_count=attempt_count,
+                    geocode_fallback_attempted=attempt_count > 1,
+                ),
                 "latitude": lat,
                 "longitude": lng,
             }
 
+    failed_status = _safe_text(last_diagnostic.get("status"))
+    failed_reason = "geocode_failed"
+    if failed_status in {"ZERO_RESULTS", "INVALID_REQUEST", "REQUEST_DENIED", "OVER_QUERY_LIMIT", "OVER_DAILY_LIMIT", "UNKNOWN_ERROR"}:
+        failed_reason = failed_status
     return {
-        **_location_metadata(project=project, source=candidates[-1][0], status="geocode_failed", reason="geocode_failed"),
+        **_location_metadata(
+            project=project,
+            source=candidates[-1][0],
+            status="geocode_failed",
+            reason=failed_reason,
+            geocode_diagnostic=last_diagnostic,
+            geocode_attempt_count=attempt_count,
+            geocode_fallback_attempted=attempt_count > 1,
+        ),
         "latitude": None,
         "longitude": None,
     }

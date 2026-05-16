@@ -3234,6 +3234,162 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertTrue(payload["summary"]["external_search"]["requested"])
         self.assertTrue(mock_places.called)
 
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.get")
+    def test_google_geocode_reports_request_denied_status(self, mock_get):
+        from projects.services.google_places_contractors import geocode_project_location
+
+        mock_get.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            json=lambda: {"status": "REQUEST_DENIED", "error_message": "API key not authorized."},
+        )
+
+        result = geocode_project_location(city="San Antonio", state="TX", postal_code="78245")
+
+        self.assertIsNone(result["latitude"])
+        self.assertEqual(result["diagnostic"]["status"], "REQUEST_DENIED")
+        self.assertEqual(result["diagnostic"]["error_message"], "API key not authorized.")
+        self.assertEqual(result["diagnostic"]["error_type"], "system")
+        self.assertEqual(result["diagnostic"]["candidate"], "San Antonio, TX, 78245")
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.get")
+    def test_google_geocode_reports_zero_results_status(self, mock_get):
+        from projects.services.google_places_contractors import geocode_project_location
+
+        mock_get.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            json=lambda: {"status": "ZERO_RESULTS"},
+        )
+
+        result = geocode_project_location(city="Nowhere", state="TX", postal_code="00000-1234")
+
+        self.assertIsNone(result["latitude"])
+        self.assertEqual(result["diagnostic"]["status"], "ZERO_RESULTS")
+        self.assertEqual(result["diagnostic"]["error_type"], "user")
+        self.assertEqual(result["diagnostic"]["normalized_zip"], "00000")
+        self.assertEqual(result["diagnostic"]["candidate"], "Nowhere, TX, 00000")
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.get")
+    def test_google_geocode_reports_over_query_limit_status(self, mock_get):
+        from projects.services.google_places_contractors import geocode_project_location
+
+        mock_get.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            json=lambda: {"status": "OVER_QUERY_LIMIT", "error_message": "Quota exceeded."},
+        )
+
+        result = geocode_project_location(city="San Antonio", state="TX", postal_code="78245")
+
+        self.assertIsNone(result["latitude"])
+        self.assertEqual(result["diagnostic"]["status"], "OVER_QUERY_LIMIT")
+        self.assertEqual(result["diagnostic"]["error_message"], "Quota exceeded.")
+        self.assertEqual(result["diagnostic"]["error_type"], "system")
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.get")
+    def test_google_geocode_reports_ok_response(self, mock_get):
+        from projects.services.google_places_contractors import geocode_project_location
+
+        mock_get.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            json=lambda: {
+                "status": "OK",
+                "results": [{"geometry": {"location": {"lat": 29.4241, "lng": -98.4936}}}],
+            },
+        )
+
+        result = geocode_project_location(city="San Antonio", state="TX", postal_code="78245")
+
+        self.assertEqual(result["latitude"], 29.4241)
+        self.assertEqual(result["longitude"], -98.4936)
+        self.assertEqual(result["diagnostic"]["status"], "OK")
+        self.assertEqual(result["diagnostic"]["candidate"], "San Antonio, TX, 78245")
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={
+            "diagnostic": {
+                "configured": True,
+                "requested": True,
+                "results_count": 0,
+                "google_raw_count": 0,
+                "after_distance_filter_count": 0,
+                "filtered_out_of_radius_count": 0,
+                "missing_coordinates_count": 0,
+                "empty_reason": "google_returned_zero",
+            },
+            "results": [],
+        },
+    )
+    @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        side_effect=[
+            {
+                "latitude": None,
+                "longitude": None,
+                "diagnostic": {
+                    "status": "ZERO_RESULTS",
+                    "error_message": "",
+                    "candidate": "Bad Street, San Antonio, TX, 78251",
+                    "from_cache": False,
+                },
+            },
+            {
+                "latitude": 29.4692,
+                "longitude": -98.6639,
+                "diagnostic": {
+                    "status": "OK",
+                    "error_message": "",
+                    "candidate": "San Antonio, TX, 78251",
+                    "from_cache": False,
+                },
+            },
+        ],
+    )
+    def test_contractor_discovery_geocode_fallback_candidate_progression(self, mock_geocode, mock_places):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Fallback Prospect",
+            accomplishment_text="Need flooring installed.",
+            project_address_line1="Bad Street",
+            project_city="San Antonio",
+            project_state="TX",
+            project_postal_code="78251-4013",
+        )
+        intake.ensure_share_token()
+
+        response = self.client.get(
+            "/api/projects/public-intake/contractor-search/",
+            {
+                "token": intake.share_token,
+                "query": "flooring contractor",
+                "address": "Bad Street",
+                "city": "San Antonio",
+                "state": "TX",
+                "zip": "78251-4013",
+                "limit": 5,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.content.decode())
+        payload = response.json()
+        self.assertEqual(payload["summary"]["location_resolution_status"], "resolved")
+        self.assertEqual(payload["summary"]["location_source"], "city_state_zip")
+        self.assertEqual(payload["summary"]["geocode_status"], "OK")
+        self.assertEqual(payload["summary"]["geocode_candidate_used"], "San Antonio, TX, 78251")
+        self.assertEqual(payload["summary"]["geocode_attempt_count"], 2)
+        self.assertTrue(payload["summary"]["geocode_fallback_attempted"])
+        self.assertTrue(mock_places.called)
+
     @patch(
         "projects.services.contractor_discovery.geocode_project_location",
         return_value={"latitude": None, "longitude": None, "diagnostic": {"configured": True}},

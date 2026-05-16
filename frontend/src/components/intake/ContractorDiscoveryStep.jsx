@@ -21,6 +21,31 @@ function cardSelectionKey(card) {
 
 function emptyStateMessage(summary) {
   const reason = safeText(summary?.reason || summary?.external_search?.error || summary?.external_search_diagnostic?.empty_reason);
+  const geocodeStatus = safeText(summary?.geocode_status);
+  if (geocodeStatus === "REQUEST_DENIED") {
+    return "We're temporarily unable to verify project locations due to a configuration issue.";
+  }
+  if (geocodeStatus === "OVER_QUERY_LIMIT" || geocodeStatus === "OVER_DAILY_LIMIT" || geocodeStatus === "UNKNOWN_ERROR") {
+    return "Location services are temporarily busy. Please try again shortly.";
+  }
+  if (geocodeStatus === "ZERO_RESULTS") {
+    return "We couldn't verify this address. Please check the ZIP code or street address.";
+  }
+  if (geocodeStatus === "INVALID_REQUEST") {
+    return "We need more project location information before searching contractors.";
+  }
+  if (reason === "REQUEST_DENIED") {
+    return "We're temporarily unable to verify project locations due to a configuration issue.";
+  }
+  if (reason === "OVER_QUERY_LIMIT" || reason === "OVER_DAILY_LIMIT" || reason === "UNKNOWN_ERROR") {
+    return "Location services are temporarily busy. Please try again shortly.";
+  }
+  if (reason === "ZERO_RESULTS") {
+    return "We couldn't verify this address. Please check the ZIP code or street address.";
+  }
+  if (reason === "INVALID_REQUEST") {
+    return "We need more project location information before searching contractors.";
+  }
   if (reason === "missing_project_location") {
     return "We need a project ZIP code or address before searching local contractors.";
   }
@@ -482,6 +507,13 @@ export default function ContractorDiscoveryStep({
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500" data-testid="public-intake-contractor-debug">
           Location source: {summary.location_source || "unknown"} · Raw: {summary.google_raw_count ?? 0} · After radius:{" "}
           {summary.after_distance_filter_count ?? 0} · Reason: {summary.reason || "none"}
+        </div>
+      ) : null}
+
+      {!loading && showDebug && summary ? (
+        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500" data-testid="public-intake-contractor-geocode-debug">
+          Geocode: {summary.geocode_status || "none"} · Candidate: {summary.geocode_candidate_used || "none"} · Fallbacks:{" "}
+          {summary.geocode_attempt_count ?? 0} · Cached: {summary.geocode_from_cache ? "yes" : "no"}
         </div>
       ) : null}
 
