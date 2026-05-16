@@ -417,7 +417,12 @@ export default function PublicIntakeWizard() {
   }
 
   function handleAccomplishmentChange(value) {
-    setForm((prev) => ({ ...prev, accomplishment_text: value }));
+    setForm((prev) => ({
+      ...prev,
+      accomplishment_text: value,
+      refined_description: "",
+      ai_description: "",
+    }));
     if (descriptionRefinement.status === "ready") {
       setDescriptionRefinement({
         status: "idle",
@@ -882,8 +887,8 @@ export default function PublicIntakeWizard() {
                   <div className="text-sm font-semibold text-indigo-900">Suggested version</div>
                   <p className="mt-1 text-sm text-indigo-800">
                     {descriptionRefinement.source === "ai"
-                      ? "Here&apos;s a clearer version based on your description."
-                      : "Here&apos;s a cleaner version based on what you wrote."}
+                      ? "Here’s a clearer version based on your description."
+                      : "Here’s a cleaner version based on what you wrote."}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -919,6 +924,26 @@ export default function PublicIntakeWizard() {
               />
               <div className="mt-2 text-xs text-indigo-700">
                 Review and edit this suggestion before using it.
+              </div>
+            </div>
+          ) : null}
+          {descriptionRefinement.status !== "ready" && String(form.refined_description || form.ai_description || "").trim() ? (
+            <div
+              className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm"
+              data-testid="public-intake-description-accepted-card"
+            >
+              <div className="text-sm font-semibold text-emerald-900">Accepted refined version</div>
+              <p className="mt-1 text-sm text-emerald-800">
+                We&apos;ll use this clearer version for contractor review while keeping your original wording separately.
+              </p>
+              <div
+                className="mt-3 whitespace-pre-line rounded-xl bg-white px-4 py-3 text-sm leading-6 text-slate-800"
+                data-testid="public-intake-description-accepted-text"
+              >
+                {form.refined_description || form.ai_description}
+              </div>
+              <div className="mt-2 text-xs text-emerald-800">
+                Editing the project description above will clear this accepted version and use your manual wording instead.
               </div>
             </div>
           ) : null}
