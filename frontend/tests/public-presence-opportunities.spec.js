@@ -92,6 +92,21 @@ async function mockPublicPresenceWithOpportunities(page, initialRows) {
       }),
     });
   });
+  await page.route('**/api/projects/contractor-activation-summary/dismiss/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        should_show_activation_guide: false,
+        has_pending_opportunities: false,
+        pending_opportunity_count: 0,
+        guide_sections: {
+          public_leads: { visible: false, completed: false, dismissed: true },
+          draft_agreement: { visible: false, completed: false, dismissed: false },
+        },
+      }),
+    });
+  });
   await page.route(/.*\/api\/projects\/contractor-opportunities\/101\/accept\/$/, async (route) => {
     state.opportunities = state.opportunities.map((row) =>
       row.id === 101
@@ -147,12 +162,16 @@ test('Public Leads tab loads ContractorOpportunity rows and accepts into draft a
   await page.goto('/app/public-presence?tab=leads', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Public Leads' }).click();
 
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Homeowner');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Homeowner selected you');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Concrete Patio Extension');
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toContainText(
+    'A homeowner selected your business for project review.'
+  );
   await expect(page.getByTestId('public-leads-activation-banner')).toContainText(
     'This homeowner request came through MyHomeBro public discovery.'
   );
+  await page.getByTestId('contractor-contextual-guide-dismiss').click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Homeowner');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Homeowner selected you');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Concrete Patio Extension');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('This request came from a homeowner project intake');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('12 ft x 10 ft patio');
   await expect(page.getByRole('button', { name: 'Accept Opportunity' })).toBeVisible();

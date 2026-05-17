@@ -20,6 +20,7 @@ import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.j
 import { generateContractorPublicProfile } from '../api.js';
 import { ProjectModeBadge } from '../components/projectMode.jsx';
 import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
+import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
@@ -445,6 +446,7 @@ export default function ContractorPublicPresencePage() {
   const [leadsRows, setLeadsRows] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [activationSummary, setActivationSummary] = useState(null);
+  const [dismissedContextualGuides, setDismissedContextualGuides] = useState(new Set());
   const [galleryBusy, setGalleryBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [leadBusy, setLeadBusy] = useState(false);
@@ -513,6 +515,12 @@ export default function ContractorPublicPresencePage() {
     }
     return '';
   }, [activationSummary]);
+  const publicLeadsGuide = useMemo(() => {
+    if (activeTab !== 'leads') return null;
+    const picked = pickContextualGuide(activationSummary, ['public_leads']);
+    if (!picked || dismissedContextualGuides.has(picked.sectionKey)) return null;
+    return picked;
+  }, [activationSummary, activeTab, dismissedContextualGuides]);
   const selectedLeadRecommendedSetup = useMemo(() => {
     const baseRecommendation = buildProjectSetupRecommendation({
       projectTitle:
@@ -568,6 +576,17 @@ export default function ContractorPublicPresencePage() {
       toast.error('Could not load public profile settings.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function dismissActivationSection(section) {
+    setDismissedContextualGuides((current) => new Set([...current, section]));
+    try {
+      const { data } = await api.post('/projects/contractor-activation-summary/dismiss/', { section });
+      setActivationSummary(data || null);
+    } catch (err) {
+      console.error(err);
+      toast.error('Could not dismiss activation guidance.');
     }
   }
 
@@ -1005,6 +1024,10 @@ export default function ContractorPublicPresencePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+      <ContractorContextualGuideModal
+        guide={publicLeadsGuide}
+        onDismiss={dismissActivationSection}
+      />
       <Modal
         visible={generateProfileOpen}
         title="Generate My Profile"

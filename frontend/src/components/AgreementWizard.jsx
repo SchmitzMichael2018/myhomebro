@@ -21,6 +21,7 @@ import Step3WarrantyAttachments from "./Step3WarrantyAttachments.jsx";
 import Step4Finalize from "./Step4Finalize.jsx";
 import { useAssistantDock } from "./AssistantDock.jsx";
 import { WorkflowHint } from "./WorkflowHint.jsx";
+import ContractorContextualGuideModal, { pickContextualGuide } from "./ContractorContextualGuideModal.jsx";
 import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
@@ -707,6 +708,10 @@ export default function AgreementWizard() {
       !activationSummary?.guide_sections?.draft_agreement?.dismissed &&
       !activationSummary?.guide_sections?.draft_agreement?.completed
   );
+  const draftContextualGuide = useMemo(() => {
+    if (!isOpportunityDraftAgreement) return null;
+    return pickContextualGuide(activationSummary, ["draft_agreement"]);
+  }, [activationSummary, isOpportunityDraftAgreement]);
   const canOpenContractWorkspace = [
     "sent",
     "signed",
@@ -1994,6 +1999,10 @@ export default function AgreementWizard() {
         </div>
       }
     >
+      <ContractorContextualGuideModal
+        guide={draftContextualGuide}
+        onDismiss={dismissOpportunityDraftBanner}
+      />
       <div className="flex items-start justify-between gap-4">
         <div>
           <div

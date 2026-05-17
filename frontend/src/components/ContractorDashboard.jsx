@@ -9,7 +9,7 @@ import StatCard from "./StatCard.jsx";
 import Modal from "react-modal";
 import DashboardCard from "./dashboard/DashboardCard.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
-import ContractorActivationGuide from "./ContractorActivationGuide.jsx";
+import ContractorContextualGuideModal, { pickContextualGuide } from "./ContractorContextualGuideModal.jsx";
 import { ProjectModeBadge, normalizeProjectMode } from "./projectMode.jsx";
 import { deriveMilestoneRoleLabel, normalizeMilestoneRole } from "./milestoneRole.jsx";
 import { contractorMatchTierClass, contractorMatchTierLabel } from "../lib/contractorMatching.js";
@@ -1119,6 +1119,8 @@ export default function ContractorDashboard() {
   const [activityFeed, setActivityFeed] = useState([]);
   const [nextBestAction, setNextBestAction] = useState(null);
   const [activationSummary, setActivationSummary] = useState(null);
+  const [dismissedContextualGuides, setDismissedContextualGuides] = useState(new Set());
+  const [contextualGuideSuppressed, setContextualGuideSuppressed] = useState(false);
 
   const [agreements, setAgreements] = useState([]);
   const [publicLeads, setPublicLeads] = useState([]);
@@ -1291,6 +1293,8 @@ export default function ContractorDashboard() {
   }, [who, isEmployee]);
 
   async function dismissActivationSection(section) {
+    setContextualGuideSuppressed(true);
+    setDismissedContextualGuides((current) => new Set([...current, section]));
     try {
       const { data } = await api.post("/projects/contractor-activation-summary/dismiss/", { section });
       setActivationSummary(data || null);
@@ -2086,11 +2090,42 @@ export default function ContractorDashboard() {
     mStats.completedCount,
     contractorNextActions,
   ]);
-  const nextActionCards = useMemo(() => contractorNextActions.slice(1, 11), [contractorNextActions]);
+  const nextActionCards = useMemo(() => {
+    if (contractorNextActions.length) return contractorNextActions.slice(0, 10);
+    const traditionalSection = activationSummary?.guide_sections?.traditional_onboarding;
+    if (traditionalSection?.visible && !traditionalSection.completed && !traditionalSection.dismissed) {
+      return [
+        {
+          key: "dashboard-traditional-onboarding",
+          title: traditionalSection.title || "Finish onboarding",
+          description: traditionalSection.description || "Complete your setup to start working in MyHomeBro.",
+          buttonLabel: traditionalSection.action_label || "Open",
+          navigationTarget: traditionalSection.action_url || "/app/profile",
+        },
+      ];
+    }
+    if (heroBand.quiet) return [];
+    return [
+      {
+        key: "dashboard-fallback-next-action",
+        title: heroBand.title,
+        description: heroBand.message,
+        buttonLabel: heroBand.ctaLabel || "Open",
+        navigationTarget: heroBand.navigationTarget,
+        action: heroBand.action,
+      },
+    ];
+  }, [activationSummary, contractorNextActions, heroBand]);
   const visibleNextActionCards = useMemo(
     () => nextActionCards.slice(0, showAllNextActions ? 10 : 5),
     [nextActionCards, showAllNextActions]
   );
+  const contextualGuide = useMemo(() => {
+    if (contextualGuideSuppressed) return null;
+    const picked = pickContextualGuide(activationSummary, ["prefilled_profile", "public_leads"]);
+    if (!picked || dismissedContextualGuides.has(picked.sectionKey)) return null;
+    return picked;
+  }, [activationSummary, contextualGuideSuppressed, dismissedContextualGuides]);
   const projectModeStats = useMemo(() => {
     const list = Array.isArray(agreements) ? agreements : [];
     const counts = {
@@ -2300,65 +2335,60 @@ export default function ContractorDashboard() {
       titleClassName="drop-shadow-none"
     >
       <div className="space-y-5">
+      {!isEmployee ? (
+        <ContractorContextualGuideModal
+          guide={contextualGuide}
+          onDismiss={dismissActivationSection}
+        />
+      ) : null}
 
       {!isEmployee ? (
         <div className="space-y-5">
-          <DashboardCard
-            testId="dashboard-next-best-action"
-            tone={heroBand.quiet ? "subtle" : "action"}
-            className={`overflow-hidden border p-0 shadow-[0_20px_48px_rgba(15,23,42,0.12)] ${
-              heroBand.quiet ? "border-slate-200 bg-white" : "border-sky-900/20"
-            }`}
+          <DashboardSection
+            title="Quick Actions"
+            subtitle="Creation and navigation shortcuts for the next move."
           >
-            <div className="flex flex-col gap-5 px-5 py-5 md:px-7 md:py-6 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-3xl">
-                <div
-                  className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${
-                    heroBand.quiet
-                      ? "text-[#4f6f95]"
-                      : "text-sky-100"
-                  }`}
-                >
-                  {heroBand.label}
-                </div>
-                <div
-                  className={`mt-3 text-2xl font-semibold tracking-tight md:text-[2rem] ${
-                    heroBand.quiet ? "text-[#19395f]" : "text-white"
-                  }`}
-                >
-                  {heroBand.title}
-                </div>
-                <div
-                  className={`mt-2 text-sm md:text-[15px] ${
-                    heroBand.quiet ? "text-slate-700" : "text-sky-50"
-                  }`}
-                >
-                  {heroBand.message}
-                </div>
-                {heroBand.rationale ? (
-                  <div className={`mt-3 text-xs font-medium ${heroBand.quiet ? "text-slate-600" : "text-sky-100/90"}`}>
-                    {heroBand.rationale}
-                  </div>
-                ) : null}
-              </div>
-              {!heroBand.quiet && heroBand.ctaLabel ? (
+            <DashboardCard
+              testId="dashboard-quick-actions-row"
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
+            >
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (typeof heroBand.action === "function") {
-                      heroBand.action();
-                      return;
-                    }
-                    navigate(heroBand.navigationTarget || "/app/dashboard");
-                  }}
-                  className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#18395f] hover:bg-sky-50"
+                  onClick={goNewAgreement}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
                 >
-                  {heroBand.ctaLabel}
-                  <ArrowRight className="h-4 w-4" />
+                  <FilePlus2 className="h-4 w-4" />
+                  <span>New Agreement</span>
                 </button>
-              ) : null}
-            </div>
-          </DashboardCard>
+                <button
+                  type="button"
+                  onClick={goNewMilestone}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                >
+                  <ListPlus className="h-4 w-4" />
+                  <span>New Milestone</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={goInvoices}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                >
+                  <BadgeDollarSign className="h-4 w-4" />
+                  <span>Payment</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={openNewExpense}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                >
+                  <HandCoins className="h-4 w-4" />
+                  <span>Expense</span>
+                </button>
+              </div>
+            </DashboardCard>
+          </DashboardSection>
 
           <DashboardCard
             testId="dashboard-next-actions"
@@ -2376,7 +2406,7 @@ export default function ContractorDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
-                  {contractorNextActions.length} total
+                  {nextActionCards.length} total
                 </span>
                 {nextActionCards.length > 5 ? (
                   <button
@@ -2396,7 +2426,13 @@ export default function ContractorDashboard() {
                     key={item.key}
                     data-testid={`dashboard-next-action-item-${item.key}`}
                     type="button"
-                    onClick={() => navigate(item.navigationTarget || "/app/dashboard")}
+                    onClick={() => {
+                      if (typeof item.action === "function") {
+                        item.action();
+                        return;
+                      }
+                      navigate(item.navigationTarget || "/app/dashboard");
+                    }}
                     className="flex w-full items-start justify-between gap-4 rounded-xl border border-sky-200 bg-white px-4 py-3 text-left transition hover:-translate-y-px hover:border-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
                   >
                     <div className="min-w-0">
@@ -2419,6 +2455,7 @@ export default function ContractorDashboard() {
             )}
           </DashboardCard>
 
+          {false ? (
           <DashboardSection
             title="Project Context"
             subtitle="Compact mode, payment, and workflow filters for the jobs you are already managing."
@@ -2574,57 +2611,14 @@ export default function ContractorDashboard() {
             </DashboardCard>
           </DashboardSection>
 
-          <DashboardSection
-            title="Quick Actions"
-            subtitle="Shortcuts for the next move."
-          >
-            <DashboardCard
-              testId="dashboard-quick-actions-row"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
-            >
-              <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-                <button
-                  type="button"
-                  onClick={goNewAgreement}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
-                >
-                  <FilePlus2 className="h-4 w-4" />
-                  <span>New Agreement</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={goNewMilestone}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
-                >
-                  <ListPlus className="h-4 w-4" />
-                  <span>New Milestone</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={goInvoices}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
-                >
-                  <BadgeDollarSign className="h-4 w-4" />
-                  <span>Payment</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={openNewExpense}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
-                >
-                  <HandCoins className="h-4 w-4" />
-                  <span>Expense</span>
-                </button>
-              </div>
-            </DashboardCard>
-          </DashboardSection>
+          ) : null}
 
           <DashboardSection
             title="Schedule"
             subtitle="Active due work only. Planned timelines stay in agreement previews until activated."
           >
             <DashboardCard
+              testId="dashboard-schedule-section"
               tone="subtle"
               className={`border-slate-200/90 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)] ${
                 scheduleHasItems ? "p-4" : "p-3.5"
@@ -2704,10 +2698,58 @@ export default function ContractorDashboard() {
           </DashboardSection>
 
           <DashboardSection
+            title="Project Context"
+            subtitle="Operational filters for the jobs you are already managing."
+          >
+            <DashboardCard
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              testId="dashboard-project-context"
+            >
+              <div className="flex flex-wrap gap-2.5">
+                {[
+                  { label: "Residential", count: projectClassStats.residential, href: "/app/agreements?project_class=residential", tone: "border-sky-200 bg-sky-50 text-sky-800" },
+                  { label: "Commercial", count: projectClassStats.commercial, href: "/app/agreements?project_class=commercial", tone: "border-indigo-200 bg-indigo-50 text-indigo-800" },
+                  { label: "Full Service", count: projectModeStats.full_service, href: "/app/milestones?project_mode=full_service&filter=incomplete", tone: "border-blue-200 bg-blue-50 text-blue-800" },
+                  { label: "Assisted DIY", count: projectModeStats.assisted_diy, href: "/app/milestones?project_mode=assisted_diy&filter=incomplete", tone: "border-amber-200 bg-amber-50 text-amber-900" },
+                  { label: "Consultation", count: projectModeStats.consultation, href: "/app/milestones?project_mode=consultation&filter=incomplete", tone: "border-violet-200 bg-violet-50 text-violet-800" },
+                  { label: "Inspection Only", count: projectModeStats.inspection_only, href: "/app/milestones?project_mode=inspection_only&filter=incomplete", tone: "border-slate-200 bg-slate-100 text-slate-800" },
+                  { label: "Direct Payment", count: paymentProtectionStats.direct, href: "/app/agreements?payment_mode=direct", tone: "border-slate-200 bg-slate-100 text-slate-800" },
+                  { label: "Escrow Preferred", count: paymentProtectionStats.preferred, href: "/app/agreements?payment_mode=escrow&payment_protection=preferred", tone: "border-emerald-200 bg-emerald-50 text-emerald-900" },
+                  { label: "Escrow Recommended", count: paymentProtectionStats.recommended, href: "/app/agreements?payment_mode=escrow&payment_protection=recommended", tone: "border-amber-200 bg-amber-50 text-amber-900" },
+                  { label: "Escrow Required", count: paymentProtectionStats.required, href: "/app/agreements?payment_mode=escrow&payment_protection=required", tone: "border-rose-200 bg-rose-50 text-rose-900" },
+                ]
+                  .filter((item) => Number(item.count || 0) > 0)
+                  .map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => navigate(item.href)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold leading-none transition hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${item.tone}`}
+                    >
+                      <span>{item.label}</span>
+                      <span className="rounded-full bg-white/90 px-2 py-0.5 text-xs font-extrabold text-slate-950 shadow-[0_1px_2px_rgba(15,23,42,0.08)]">
+                        {Number(item.count || 0).toLocaleString()}
+                      </span>
+                    </button>
+                  ))}
+                {projectClassStats.residential + projectClassStats.commercial === 0 &&
+                Object.values(projectModeStats).every((count) => Number(count || 0) === 0) &&
+                Object.values(paymentProtectionStats).every((count) => Number(count || 0) === 0) ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500">
+                    Project context appears here once agreements are active.
+                  </div>
+                ) : null}
+              </div>
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
             title="Work and Money"
             subtitle="Track job progress on the left and payment handoffs on the right."
           >
             <DashboardCard
+              testId="dashboard-work-money"
               tone="subtle"
               className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
             >
@@ -3242,14 +3284,7 @@ export default function ContractorDashboard() {
             </DashboardCard>
           </DashboardSection>
 
-          {!isEmployee ? (
-            <ContractorActivationGuide
-              summary={activationSummary}
-              onDismiss={dismissActivationSection}
-              className="mb-6"
-            />
-          ) : null}
-
+          {false ? (
           <DashboardSection
             title="Recommended Project Matches"
             subtitle="Projects that fit your collaboration style, payment preferences, and service capabilities."
@@ -3365,6 +3400,7 @@ export default function ContractorDashboard() {
               )}
             </DashboardCard>
           </DashboardSection>
+          ) : null}
 
           {false ? (
           <>

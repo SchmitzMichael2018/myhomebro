@@ -83,7 +83,7 @@ function activationSummary(overrides = {}) {
   };
 }
 
-test('dashboard shows contextual activation guide and dismiss hides a section', async ({ page }) => {
+test('dashboard shows contextual activation modal and dismissal does not immediately reappear', async ({ page }) => {
   await mockAuth(page);
 
   let summary = activationSummary();
@@ -107,12 +107,17 @@ test('dashboard shows contextual activation guide and dismiss hides a section', 
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('contractor-activation-guide')).toContainText('We prepared your business profile');
-  await expect(page.getByTestId('contractor-activation-guide')).toContainText('A homeowner request may be waiting');
-  await expect(page.getByTestId('contractor-activation-guide')).toContainText('Nothing has been sent to a homeowner without your confirmation.');
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toContainText('We prepared your business profile');
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toContainText(
+    'Nothing has been sent to a homeowner without your confirmation.'
+  );
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toContainText(
+    'You can edit or remove any prefilled business information.'
+  );
+  await expect(page.getByTestId('contractor-activation-guide')).toHaveCount(0);
 
-  await page.getByTestId('contractor-activation-dismiss-public_leads').click();
-  await expect(page.getByTestId('contractor-activation-section-public_leads')).toHaveCount(0);
+  await page.getByTestId('contractor-contextual-guide-dismiss').click();
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toHaveCount(0);
 });
 
 test('traditional contractors do not see homeowner-selection guidance by default', async ({ page }) => {
@@ -148,9 +153,61 @@ test('traditional contractors do not see homeowner-selection guidance by default
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('contractor-activation-guide')).toContainText('Finish your MyHomeBro setup');
-  await expect(page.getByTestId('contractor-activation-guide')).not.toContainText('homeowner request may be waiting');
-  await expect(page.getByTestId('contractor-activation-guide')).not.toContainText('We prepared your business profile');
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Finish your MyHomeBro setup');
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('homeowner request may be waiting');
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('We prepared your business profile');
+});
+
+test('dashboard renders operational hierarchy without persistent smart activation section', async ({ page }) => {
+  await mockAuth(page);
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(activationSummary({
+        should_show_activation_guide: false,
+        has_prefilled_profile: false,
+        has_pending_opportunities: false,
+        pending_opportunity_count: 0,
+        guide_sections: {
+          prefilled_profile: { visible: false, completed: false, dismissed: false },
+          public_leads: { visible: false, completed: false, dismissed: false },
+          draft_agreement: { visible: false, completed: false, dismissed: false },
+          traditional_onboarding: { visible: false, completed: true, dismissed: true },
+        },
+      })),
+    });
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByText('Quick Actions').first()).toBeVisible();
+  await expect(page.getByText('Next Actions').first()).toBeVisible();
+  await expect(page.getByText('Schedule').first()).toBeVisible();
+  await expect(page.getByText('Project Context').first()).toBeVisible();
+  await expect(page.getByText('Work and Money').first()).toBeVisible();
+  await expect(page.getByText('Bids Snapshot').first()).toBeVisible();
+  await expect(page.getByTestId('contractor-activation-guide')).toHaveCount(0);
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toHaveCount(0);
+  await expect(page.getByText('Recommended Project Matches')).toHaveCount(0);
+  await expect(page.getByText('Open lead inbox')).toHaveCount(0);
+
+  const quickBox = await page.getByTestId('dashboard-quick-actions-row').boundingBox();
+  const nextBox = await page.getByTestId('dashboard-next-actions').boundingBox();
+  const scheduleBox = await page.getByTestId('dashboard-schedule-section').boundingBox();
+  const contextBox = await page.getByTestId('dashboard-project-context').boundingBox();
+  const workBox = await page.getByTestId('dashboard-work-money').boundingBox();
+  const bidsBox = await page.getByTestId('dashboard-bids-summary').boundingBox();
+
+  expect(quickBox.y).toBeLessThan(nextBox.y);
+  expect(nextBox.y).toBeLessThan(scheduleBox.y);
+  expect(scheduleBox.y).toBeLessThan(contextBox.y);
+  expect(contextBox.y).toBeLessThan(workBox.y);
+  expect(workBox.y).toBeLessThan(bidsBox.y);
+
+  await page.getByTestId('dashboard-bids-view-all').click();
+  await expect(page).toHaveURL(/\/app\/bids$/);
 });
 
 test('opportunity draft agreement banner renders and dismisses', async ({ page }) => {
@@ -210,9 +267,13 @@ test('opportunity draft agreement banner renders and dismisses', async ({ page }
 
   await page.goto('/app/agreements/901/wizard?step=1', { waitUntil: 'domcontentloaded' });
 
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toContainText(
+    'This draft agreement was prepared from the homeowner intake to save setup time.'
+  );
   await expect(page.getByTestId('contractor-activation-draft-banner')).toContainText(
     'This draft agreement was prepared from a homeowner request.'
   );
-  await page.getByTestId('contractor-activation-draft-dismiss').click();
+  await page.getByTestId('contractor-contextual-guide-dismiss').click();
+  await expect(page.getByTestId('contractor-contextual-guide-modal')).toHaveCount(0);
   await expect(page.getByTestId('contractor-activation-draft-banner')).toHaveCount(0);
 });

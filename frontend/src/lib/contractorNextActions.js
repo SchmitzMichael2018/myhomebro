@@ -199,7 +199,7 @@ export function getContractorNextActions({
       buildAction({
         key: `agreement-draft:${latestDraft.id}`,
         dedupeKey: `agreement:${latestDraft.id}`,
-        title: "Send your next agreement",
+        title: "Draft agreement ready to send",
         description: "A draft agreement is ready for review and sending.",
         buttonLabel: "Open draft",
         navigationTarget: `/app/agreements/${latestDraft.id}/wizard?step=1`,
@@ -212,6 +212,7 @@ export function getContractorNextActions({
 
   const awaitingSignature = agreementRows.filter(
     (agreement) =>
+      normalizeStatus(agreement?.status) !== "draft" &&
       !agreement?.signature_is_satisfied &&
       !agreement?.is_fully_signed &&
       normalizeStatus(agreement?.status) !== "signed"
