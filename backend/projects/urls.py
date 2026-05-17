@@ -61,6 +61,8 @@ from .views.public_intake import (
 )
 from .views.contractor_discovery import (
     AdminContractorDirectoryView,
+    AdminContractorDirectoryImportApplyView,
+    AdminContractorDirectoryImportPreviewView,
     AdminContractorSearchView,
     ContractorDiscoveryClaimView,
     PublicIntakeContractorSearchView,
@@ -568,6 +570,9 @@ urlpatterns = [
     path("public-intake/send-contractor-invites/", PublicIntakeSendContractorInvitesView.as_view()),
     path("admin/contractor-search/", AdminContractorSearchView.as_view()),
     path("admin/contractor-directory/", AdminContractorDirectoryView.as_view()),
+    path("admin/contractor-directory/import-preview/", AdminContractorDirectoryImportPreviewView.as_view()),
+    path("admin/contractor-directory/import-apply/", AdminContractorDirectoryImportApplyView.as_view()),
+    path("admin/contractor-directory/<int:entry_id>/", AdminContractorDirectoryView.as_view()),
 
     # -------------------------------------------------
     # Owner → employee assignment

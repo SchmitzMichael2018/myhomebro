@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import csv
+import io
+import json
+
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -8,7 +15,12 @@ from rest_framework.views import APIView
 from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry, ContractorDiscoveryInvite
 from projects.models import Contractor
 from projects.models_project_intake import ProjectIntake
-from projects.services.contractor_directory import upsert_directory_entry_from_place
+from projects.services.contractor_directory import (
+    normalize_business_name,
+    normalize_phone,
+    normalize_website_domain,
+    upsert_directory_entry_from_place,
+)
 from projects.services.contractor_discovery import (
     build_contractor_recommendations,
     claim_discovery_invite,
@@ -19,6 +31,58 @@ from projects.services.google_places_contractors import geocode_project_location
 
 def _safe_text(value) -> str:
     return "" if value is None else str(value).strip()
+
+
+EMAIL_NOT_LISTED_SENTINELS = {"email not listed", "not listed", "none", "null", "n/a"}
+
+
+def _null_if_blank(value):
+    text = _safe_text(value)
+    return text or None
+
+
+def _normalize_email_value(value, *, reject_placeholder=True):
+    text = _safe_text(value)
+    if not text:
+        return None, None
+    if text.lower() in EMAIL_NOT_LISTED_SENTINELS:
+        if reject_placeholder:
+            return None, "Do not save placeholder email text."
+        return None, None
+    try:
+        validate_email(text)
+    except ValidationError:
+        return None, "Enter a valid public email address."
+    return text.lower(), None
+
+
+def _parse_services(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        raw_items = value
+    else:
+        text = _safe_text(value)
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                raw_items = parsed if isinstance(parsed, list) else [text]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raw_items = [text]
+        else:
+            raw_items = text.replace("\n", ",").replace(";", ",").split(",")
+    services = []
+    for item in raw_items:
+        text = _safe_text(item)
+        if text and text not in services:
+            services.append(text)
+    return services
+
+
+def _changed_services(existing, proposed):
+    return list(existing or []) != list(proposed or [])
 
 
 def _get_intake_from_request(request):
@@ -133,8 +197,96 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "claimed": entry.claimed,
         "profile_status": entry.profile_status,
         "enrichment_status": entry.enrichment_status,
+        "email_source_url": entry.email_source_url,
+        "services_source_url": entry.services_source_url,
+        "enrichment_notes": entry.enrichment_notes,
+        "enriched_at": entry.enriched_at,
+        "enriched_by": entry.enriched_by_id,
         "first_seen_at": entry.first_seen_at,
         "last_seen_at": entry.last_seen_at,
+    }
+
+
+def _find_directory_match(row: dict) -> ContractorDirectoryEntry | None:
+    raw_id = _safe_text(row.get("id") or row.get("matched_entry_id"))
+    if raw_id.isdigit():
+        found = ContractorDirectoryEntry.objects.filter(pk=int(raw_id)).first()
+        if found:
+            return found
+
+    website_domain = normalize_website_domain(row.get("website"))
+    if website_domain:
+        found = ContractorDirectoryEntry.objects.filter(website_domain=website_domain).first()
+        if found:
+            return found
+
+    normalized_phone = normalize_phone(row.get("phone"))
+    if normalized_phone:
+        found = ContractorDirectoryEntry.objects.filter(normalized_phone=normalized_phone).first()
+        if found:
+            return found
+
+    normalized_name = normalize_business_name(row.get("business_name"))
+    city = _safe_text(row.get("city"))
+    state_value = _safe_text(row.get("state"))
+    if normalized_name and city and state_value:
+        return ContractorDirectoryEntry.objects.filter(
+            normalized_name=normalized_name,
+            city__iexact=city,
+            state__iexact=state_value,
+        ).first()
+    return None
+
+
+def _preview_import_row(row: dict) -> dict:
+    entry = _find_directory_match(row)
+    proposed_email, email_error = _normalize_email_value(row.get("public_email"), reject_placeholder=True)
+    proposed_phone = _null_if_blank(row.get("phone"))
+    proposed_services = _parse_services(row.get("services"))
+    warnings = []
+    row_status = "ready"
+
+    if entry is None:
+        row_status = "no_match"
+        warnings.append("No matching directory entry found.")
+    elif email_error:
+        row_status = "invalid_email"
+        warnings.append(email_error)
+    elif proposed_email:
+        duplicate = ContractorDirectoryEntry.objects.filter(public_email__iexact=proposed_email).exclude(pk=entry.pk).first()
+        if duplicate:
+            row_status = "duplicate_email_warning"
+            warnings.append(f"Email is already used by entry #{duplicate.pk}.")
+
+    if entry is not None and row_status == "ready":
+        has_changes = False
+        if proposed_email and proposed_email != (entry.public_email or ""):
+            has_changes = True
+        if proposed_phone and proposed_phone != (entry.phone or ""):
+            has_changes = True
+        if proposed_services and _changed_services(entry.services, proposed_services):
+            has_changes = True
+        for field in ["email_source_url", "services_source_url", "enrichment_notes"]:
+            if _safe_text(row.get(field)) and _safe_text(row.get(field)) != _safe_text(getattr(entry, field, "")):
+                has_changes = True
+        if not has_changes:
+            row_status = "no_changes"
+            warnings.append("No changes detected.")
+
+    return {
+        "matched_entry_id": entry.pk if entry else None,
+        "business_name": _safe_text(row.get("business_name")) or (entry.business_name if entry else ""),
+        "existing_public_email": entry.public_email if entry else None,
+        "proposed_public_email": proposed_email,
+        "existing_phone": entry.phone if entry else None,
+        "proposed_phone": proposed_phone,
+        "existing_services": entry.services if entry else [],
+        "proposed_services": proposed_services,
+        "email_source_url": _safe_text(row.get("email_source_url")),
+        "services_source_url": _safe_text(row.get("services_source_url")),
+        "enrichment_notes": _safe_text(row.get("enrichment_notes")),
+        "status": row_status,
+        "warnings": warnings,
     }
 
 
@@ -229,6 +381,133 @@ class AdminContractorDirectoryView(APIView):
         except (TypeError, ValueError):
             limit = 100
         return Response({"results": [_directory_entry_payload(entry) for entry in qs[:limit]]}, status=status.HTTP_200_OK)
+
+    def patch(self, request, entry_id: int, *args, **kwargs):
+        entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
+        if entry is None:
+            return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        errors = {}
+        data = request.data
+        enrichment_touched = False
+
+        if "public_email" in data:
+            email_value, email_error = _normalize_email_value(data.get("public_email"), reject_placeholder=True)
+            if email_error:
+                errors["public_email"] = email_error
+            else:
+                entry.public_email = email_value
+                enrichment_touched = True
+
+        if errors:
+            return Response({"errors": errors, "detail": "Please correct the highlighted fields."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if "business_name" in data:
+            entry.business_name = _safe_text(data.get("business_name")) or entry.business_name
+            entry.normalized_name = normalize_business_name(entry.business_name)
+        if "website" in data:
+            entry.website = _null_if_blank(data.get("website"))
+            entry.website_domain = _null_if_blank(normalize_website_domain(entry.website))
+        if "phone" in data:
+            entry.phone = _null_if_blank(data.get("phone"))
+            entry.normalized_phone = _null_if_blank(normalize_phone(entry.phone))
+        if "services" in data:
+            entry.services = _parse_services(data.get("services"))
+            enrichment_touched = True
+        if "profile_status" in data:
+            entry.profile_status = _safe_text(data.get("profile_status")) or ContractorDirectoryEntry.PROFILE_BASIC
+        if "enrichment_status" in data:
+            entry.enrichment_status = _safe_text(data.get("enrichment_status")) or ContractorDirectoryEntry.ENRICHMENT_NOT_STARTED
+        for field in ["email_source_url", "services_source_url", "enrichment_notes"]:
+            if field in data:
+                setattr(entry, field, _null_if_blank(data.get(field)))
+                enrichment_touched = True
+
+        if enrichment_touched:
+            if "enrichment_status" not in data:
+                entry.enrichment_status = ContractorDirectoryEntry.ENRICHMENT_REVIEWED
+            entry.enriched_at = timezone.now()
+            entry.enriched_by = request.user
+
+        entry.save()
+        return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
+
+
+class AdminContractorDirectoryImportPreviewView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, *args, **kwargs):
+        csv_text = _safe_text(request.data.get("csv_text"))
+        uploaded = request.FILES.get("file") if hasattr(request, "FILES") else None
+        if uploaded is not None:
+            csv_text = uploaded.read().decode("utf-8-sig")
+        if not csv_text:
+            return Response({"detail": "Upload or paste CSV text first."}, status=status.HTTP_400_BAD_REQUEST)
+
+        reader = csv.DictReader(io.StringIO(csv_text))
+        rows = [_preview_import_row(row) for row in reader]
+        return Response({"results": rows, "count": len(rows)}, status=status.HTTP_200_OK)
+
+
+class AdminContractorDirectoryImportApplyView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, *args, **kwargs):
+        rows = request.data.get("rows") or request.data.get("preview_rows") or []
+        overwrite = bool(request.data.get("overwrite", False))
+        updated_count = 0
+        skipped_count = 0
+        warnings = []
+
+        if not isinstance(rows, list):
+            return Response({"detail": "Rows must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+
+        for row in rows:
+            if not isinstance(row, dict):
+                skipped_count += 1
+                continue
+            entry_id = row.get("matched_entry_id")
+            entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first() if entry_id else None
+            admin_approved = bool(row.get("admin_approved")) or row.get("status") == "admin_approved"
+            if entry is None or row.get("status") not in {"ready", "admin_approved", "duplicate_email_warning"}:
+                skipped_count += 1
+                continue
+            if row.get("status") == "duplicate_email_warning" and not admin_approved:
+                skipped_count += 1
+                warnings.append(f"Entry #{entry.pk} skipped because duplicate email warning was not approved.")
+                continue
+
+            email_value, email_error = _normalize_email_value(row.get("proposed_public_email") or row.get("public_email"), reject_placeholder=True)
+            if email_error:
+                skipped_count += 1
+                warnings.append(f"Entry #{entry.pk} skipped: {email_error}")
+                continue
+            if email_value and entry.public_email and entry.public_email.lower() != email_value.lower() and not overwrite and not admin_approved:
+                skipped_count += 1
+                warnings.append(f"Entry #{entry.pk} skipped because it already has an email.")
+                continue
+
+            if email_value:
+                entry.public_email = email_value
+            if row.get("proposed_phone") or row.get("phone"):
+                entry.phone = _null_if_blank(row.get("proposed_phone") or row.get("phone"))
+                entry.normalized_phone = _null_if_blank(normalize_phone(entry.phone))
+            services = _parse_services(row.get("proposed_services") if "proposed_services" in row else row.get("services"))
+            if services:
+                entry.services = services
+            for field in ["email_source_url", "services_source_url", "enrichment_notes"]:
+                if field in row:
+                    setattr(entry, field, _null_if_blank(row.get(field)))
+            entry.enrichment_status = ContractorDirectoryEntry.ENRICHMENT_REVIEWED
+            entry.enriched_at = timezone.now()
+            entry.enriched_by = request.user
+            entry.save()
+            updated_count += 1
+
+        return Response(
+            {"updated_count": updated_count, "skipped_count": skipped_count, "warnings": warnings},
+            status=status.HTTP_200_OK,
+        )
 
 
 class ContractorDiscoveryClaimView(APIView):

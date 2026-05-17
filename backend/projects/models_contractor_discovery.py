@@ -109,13 +109,17 @@ class ContractorDirectoryEntry(models.Model):
     ]
 
     PROFILE_BASIC = "basic"
+    PROFILE_REVIEWED = "reviewed"
     PROFILE_STATUS_CHOICES = [
         (PROFILE_BASIC, "Basic"),
+        (PROFILE_REVIEWED, "Reviewed"),
     ]
 
     ENRICHMENT_NOT_STARTED = "not_started"
+    ENRICHMENT_REVIEWED = "reviewed"
     ENRICHMENT_STATUS_CHOICES = [
         (ENRICHMENT_NOT_STARTED, "Not Started"),
+        (ENRICHMENT_REVIEWED, "Reviewed"),
     ]
 
     business_name = models.CharField(max_length=255)
@@ -146,6 +150,17 @@ class ContractorDirectoryEntry(models.Model):
     )
     profile_status = models.CharField(max_length=32, choices=PROFILE_STATUS_CHOICES, default=PROFILE_BASIC, db_index=True)
     enrichment_status = models.CharField(max_length=32, choices=ENRICHMENT_STATUS_CHOICES, default=ENRICHMENT_NOT_STARTED, db_index=True)
+    email_source_url = models.URLField(null=True, blank=True)
+    services_source_url = models.URLField(null=True, blank=True)
+    enrichment_notes = models.TextField(null=True, blank=True)
+    enriched_at = models.DateTimeField(null=True, blank=True)
+    enriched_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_directory_enrichments",
+    )
     first_seen_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(auto_now=True)
 
