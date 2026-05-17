@@ -9,6 +9,7 @@ import ContractorDashboard from "../components/ContractorDashboard.jsx";
 
 /* ✅ Admin */
 import AdminDashboard from "../pages/AdminDashboard.jsx";
+import AdminContractorDirectory from "../pages/admin/AdminContractorDirectory.jsx";
 import AdminMarketplacePage from "../pages/admin/AdminMarketplacePage.jsx";
 
 /* Employee pages */
@@ -137,6 +138,7 @@ export function protectedRoutes() {
           <Route path="admin/marketplace/contractors" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/import" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/listings/:id" element={<AdminMarketplacePage />} />
+          <Route path="admin/contractor-directory" element={<AdminContractorDirectory />} />
           <Route path="admin/agreements/:id" element={<AgreementDetail adminMode />} />
           <Route path="admin/templates" element={<AdminTemplatesPage />} />
           <Route path="admin/disputes" element={<Disputes />} />

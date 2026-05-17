@@ -316,6 +316,7 @@ export default function Sidebar({ variant = "desktop" }) {
             <div className="mt-2 space-y-1">
               <SubItem to="/app/admin" label="Overview" />
               <SubItem to="/app/admin/marketplace" label="Marketplace" />
+              <SubItem to="/app/admin/contractor-directory" label="Directory" />
               <SubItem to="/app/admin/templates" label="Templates" />
               <SubItem to="/app/admin?view=goals" label="Goals (CEO)" />
               <SubItem to="/app/admin?view=contractors" label="Contractors" />
