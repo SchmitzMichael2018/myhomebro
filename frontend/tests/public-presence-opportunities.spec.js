@@ -54,6 +54,44 @@ async function mockPublicPresenceWithOpportunities(page, initialRows) {
       body: JSON.stringify({ results: state.opportunities }),
     });
   });
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    const hasPending = state.opportunities.some((row) => row.status === 'pending');
+    const hasConverted = state.opportunities.some((row) => row.status === 'converted');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        activation_type: hasPending || hasConverted ? 'homeowner_selected' : 'traditional_signup',
+        has_prefilled_profile: false,
+        has_pending_opportunities: hasPending,
+        pending_opportunity_count: state.opportunities.filter((row) => row.status === 'pending').length,
+        has_converted_opportunity: hasConverted,
+        latest_agreement_id: hasConverted ? 901 : null,
+        latest_agreement_url: hasConverted ? '/app/agreements/901/wizard?step=1' : '',
+        should_show_activation_guide: hasPending || hasConverted,
+        guide_sections: {
+          public_leads: {
+            visible: hasPending,
+            completed: false,
+            dismissed: false,
+            title: 'A homeowner request may be waiting',
+            description: 'Nothing has been sent to a homeowner without your confirmation.',
+            action_url: '/app/public-presence?tab=leads',
+            action_label: 'Open Public Leads',
+          },
+          draft_agreement: {
+            visible: hasConverted,
+            completed: false,
+            dismissed: false,
+            title: 'Draft agreements are starting points',
+            description: 'Draft agreements are starting points, not final contracts.',
+            action_url: '/app/agreements/901/wizard?step=1',
+            action_label: 'Open Draft Agreement',
+          },
+        },
+      }),
+    });
+  });
   await page.route(/.*\/api\/projects\/contractor-opportunities\/101\/accept\/$/, async (route) => {
     state.opportunities = state.opportunities.map((row) =>
       row.id === 101
@@ -112,6 +150,9 @@ test('Public Leads tab loads ContractorOpportunity rows and accepts into draft a
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Homeowner');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Homeowner selected you');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Concrete Patio Extension');
+  await expect(page.getByTestId('public-leads-activation-banner')).toContainText(
+    'This homeowner request came through MyHomeBro public discovery.'
+  );
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('This request came from a homeowner project intake');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('12 ft x 10 ft patio');
   await expect(page.getByRole('button', { name: 'Accept Opportunity' })).toBeVisible();

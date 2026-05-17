@@ -225,6 +225,15 @@ class Skill(models.Model):
 
 
 class Contractor(models.Model):
+    ACTIVATION_TRADITIONAL_SIGNUP = "traditional_signup"
+    ACTIVATION_PREFILLED_DIRECTORY = "prefilled_directory"
+    ACTIVATION_HOMEOWNER_SELECTED = "homeowner_selected"
+    ACTIVATION_TYPE_CHOICES = [
+        (ACTIVATION_TRADITIONAL_SIGNUP, "Traditional Signup"),
+        (ACTIVATION_PREFILLED_DIRECTORY, "Prefilled Directory"),
+        (ACTIVATION_HOMEOWNER_SELECTED, "Homeowner Selected"),
+    ]
+
     SERVICE_RADIUS_CHOICES = [
         (10, "10"),
         (25, "25"),
@@ -278,6 +287,19 @@ class Contractor(models.Model):
     onboarding_last_step_reached = models.CharField(max_length=50, blank=True, default="")
     onboarding_step_entered_at = models.DateTimeField(null=True, blank=True)
     onboarding_step_durations = models.JSONField(default=dict, blank=True)
+    activation_type = models.CharField(
+        max_length=40,
+        choices=ACTIVATION_TYPE_CHOICES,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    has_seen_prefilled_profile_intro = models.BooleanField(default=False)
+    has_seen_public_leads_intro = models.BooleanField(default=False)
+    has_seen_draft_agreement_intro = models.BooleanField(default=False)
+    has_completed_guided_activation = models.BooleanField(default=False)
+    first_opportunity_seen_at = models.DateTimeField(null=True, blank=True)
+    first_draft_agreement_seen_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

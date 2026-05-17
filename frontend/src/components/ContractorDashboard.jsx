@@ -9,6 +9,7 @@ import StatCard from "./StatCard.jsx";
 import Modal from "react-modal";
 import DashboardCard from "./dashboard/DashboardCard.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
+import ContractorActivationGuide from "./ContractorActivationGuide.jsx";
 import { ProjectModeBadge, normalizeProjectMode } from "./projectMode.jsx";
 import { deriveMilestoneRoleLabel, normalizeMilestoneRole } from "./milestoneRole.jsx";
 import { contractorMatchTierClass, contractorMatchTierLabel } from "../lib/contractorMatching.js";
@@ -1117,6 +1118,7 @@ export default function ContractorDashboard() {
   const [contractorProfile, setContractorProfile] = useState(null);
   const [activityFeed, setActivityFeed] = useState([]);
   const [nextBestAction, setNextBestAction] = useState(null);
+  const [activationSummary, setActivationSummary] = useState(null);
 
   const [agreements, setAgreements] = useState([]);
   const [publicLeads, setPublicLeads] = useState([]);
@@ -1206,13 +1208,14 @@ export default function ContractorDashboard() {
           return;
         }
 
-        const [mRes, iRes, aRes, lRes, oRes, dRes] = await Promise.allSettled([
+        const [mRes, iRes, aRes, lRes, oRes, dRes, actRes] = await Promise.allSettled([
           api.get("/projects/milestones/"),
           api.get("/projects/invoices/"),
           api.get("/projects/agreements/"),
           api.get("/projects/contractor/public-leads/"),
           api.get("/projects/contractor-opportunities/"),
           getContractorDrawRequests(),
+          api.get("/projects/contractor-activation-summary/"),
         ]);
 
         if (!mounted) return;
@@ -1271,6 +1274,13 @@ export default function ContractorDashboard() {
           console.error(dRes.reason);
           setDrawRequests([]);
         }
+
+        if (actRes.status === "fulfilled") {
+          setActivationSummary(actRes.value.data || null);
+        } else {
+          console.error(actRes.reason);
+          setActivationSummary(null);
+        }
       } catch (e) {
         console.error(e);
         toast.error("Failed to load dashboard data.");
@@ -1279,6 +1289,16 @@ export default function ContractorDashboard() {
 
     return () => (mounted = false);
   }, [who, isEmployee]);
+
+  async function dismissActivationSection(section) {
+    try {
+      const { data } = await api.post("/projects/contractor-activation-summary/dismiss/", { section });
+      setActivationSummary(data || null);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not dismiss activation guidance.");
+    }
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -3221,6 +3241,14 @@ export default function ContractorDashboard() {
               ) : null}
             </DashboardCard>
           </DashboardSection>
+
+          {!isEmployee ? (
+            <ContractorActivationGuide
+              summary={activationSummary}
+              onDismiss={dismissActivationSection}
+              className="mb-6"
+            />
+          ) : null}
 
           <DashboardSection
             title="Recommended Project Matches"

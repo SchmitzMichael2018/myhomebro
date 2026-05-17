@@ -491,6 +491,7 @@ export default function AgreementWizard() {
 
   const [agreement, setAgreementState] = useState(null);
   const [loadingAgreement, setLoadingAgreement] = useState(false);
+  const [activationSummary, setActivationSummary] = useState(null);
   const didResumeStepRef = useRef(false);
 
   const [dLocal, setDLocal] = useState(() => buildEmptyDLocal(resolvedProjectFamily));
@@ -698,6 +699,14 @@ export default function AgreementWizard() {
   const agreementStatus = String(agreement?.status || agreement?.workflow_status || "")
     .trim()
     .toLowerCase();
+  const isOpportunityDraftAgreement = String(
+    agreement?.collaboration_summary_snapshot?.source || ""
+  ).toLowerCase() === "contractor_opportunity";
+  const showOpportunityDraftBanner = Boolean(
+    isOpportunityDraftAgreement &&
+      !activationSummary?.guide_sections?.draft_agreement?.dismissed &&
+      !activationSummary?.guide_sections?.draft_agreement?.completed
+  );
   const canOpenContractWorkspace = [
     "sent",
     "signed",
@@ -711,7 +720,19 @@ export default function AgreementWizard() {
       ? Number(agreement.amendment_number)
       : agreement?.amendment != null
       ? Number(agreement.amendment)
-      : 0;
+    : 0;
+
+  const dismissOpportunityDraftBanner = useCallback(async () => {
+    try {
+      const { data } = await api.post("/projects/contractor-activation-summary/dismiss/", {
+        section: "draft_agreement",
+      });
+      setActivationSummary(data || null);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not dismiss draft guidance.");
+    }
+  }, []);
 
   const markAgreementPdfViewed = useCallback(async () => {
     if (!agreementId) return;
@@ -1068,6 +1089,24 @@ export default function AgreementWizard() {
   useEffect(() => {
     reloadPeople();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/projects/contractor-activation-summary/");
+        if (!active) return;
+        setActivationSummary(data || null);
+      } catch {
+        if (!active) return;
+        setActivationSummary(null);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -2049,6 +2088,26 @@ export default function AgreementWizard() {
           <div className="mt-1">
             Next steps: send the agreement, assign subcontractors if needed, and start tracking progress.
           </div>
+        </div>
+      ) : null}
+
+      {showOpportunityDraftBanner ? (
+        <div
+          data-testid="contractor-activation-draft-banner"
+          className="mt-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+        >
+          <div>
+            <div className="font-semibold">This draft agreement was prepared from a homeowner request.</div>
+            <div className="mt-1">Review and edit it before sending.</div>
+          </div>
+          <button
+            type="button"
+            onClick={dismissOpportunityDraftBanner}
+            className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+            data-testid="contractor-activation-draft-dismiss"
+          >
+            Dismiss
+          </button>
         </div>
       ) : null}
 

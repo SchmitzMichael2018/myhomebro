@@ -73,6 +73,10 @@ from .views.contractor_discovery import (
     PublicIntakeContractorSearchView,
     PublicIntakeSendContractorInvitesView,
 )
+from .views.contractor_activation import (
+    ContractorActivationSummaryDismissView,
+    ContractorActivationSummaryView,
+)
 from .views.public_intake_start import PublicIntakeStartView
 from .views.project_intake import ProjectIntakeViewSet
 
@@ -583,6 +587,8 @@ urlpatterns = [
     path("contractor-opportunities/", ContractorOpportunityListView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/accept/", ContractorOpportunityAcceptView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/decline/", ContractorOpportunityDeclineView.as_view()),
+    path("contractor-activation-summary/", ContractorActivationSummaryView.as_view()),
+    path("contractor-activation-summary/dismiss/", ContractorActivationSummaryDismissView.as_view()),
 
     # -------------------------------------------------
     # Owner → employee assignment

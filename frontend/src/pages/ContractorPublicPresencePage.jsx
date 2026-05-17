@@ -444,6 +444,7 @@ export default function ContractorPublicPresencePage() {
   const [reviewsRows, setReviewsRows] = useState([]);
   const [leadsRows, setLeadsRows] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
+  const [activationSummary, setActivationSummary] = useState(null);
   const [galleryBusy, setGalleryBusy] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [leadBusy, setLeadBusy] = useState(false);
@@ -502,6 +503,16 @@ export default function ContractorPublicPresencePage() {
     }),
     [selectedLead]
   );
+  const activationLeadBanner = useMemo(() => {
+    const sections = activationSummary?.guide_sections || {};
+    if (activationSummary?.has_converted_opportunity && sections.draft_agreement?.visible && !sections.draft_agreement?.dismissed) {
+      return 'This draft workspace was prepared to help you respond faster.';
+    }
+    if (activationSummary?.has_pending_opportunities && sections.public_leads?.visible && !sections.public_leads?.dismissed) {
+      return 'This homeowner request came through MyHomeBro public discovery.';
+    }
+    return '';
+  }, [activationSummary]);
   const selectedLeadRecommendedSetup = useMemo(() => {
     const baseRecommendation = buildProjectSetupRecommendation({
       projectTitle:
@@ -536,12 +547,13 @@ export default function ContractorPublicPresencePage() {
   async function loadAll() {
     try {
       setLoading(true);
-      const [profileRes, qrRes, galleryRes, reviewsRes, leadsRes] = await Promise.all([
+      const [profileRes, qrRes, galleryRes, reviewsRes, leadsRes, activationRes] = await Promise.all([
         api.get('/projects/contractor/public-profile/'),
         api.get('/projects/contractor/public-profile/qr/'),
         api.get('/projects/contractor/gallery/'),
         api.get('/projects/contractor/reviews/'),
         api.get('/projects/contractor-opportunities/'),
+        api.get('/projects/contractor-activation-summary/'),
       ]);
       setProfile({ ...defaultProfile, ...(profileRes.data || {}) });
       setQrData(qrRes.data || null);
@@ -550,6 +562,7 @@ export default function ContractorPublicPresencePage() {
       const leadResults = normalizeList(leadsRes.data);
       setLeadsRows(leadResults);
       setSelectedLead(leadResults[0] || null);
+      setActivationSummary(activationRes.data || null);
     } catch (err) {
       console.error(err);
       toast.error('Could not load public profile settings.');
@@ -1510,6 +1523,14 @@ export default function ContractorPublicPresencePage() {
                   Add Lead
                 </button>
               </div>
+              {activationLeadBanner ? (
+                <div
+                  data-testid="public-leads-activation-banner"
+                  className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-900"
+                >
+                  {activationLeadBanner}
+                </div>
+              ) : null}
               <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
               <div className="space-y-3">
                 {leadsRows.length === 0 ? (
