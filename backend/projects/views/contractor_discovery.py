@@ -186,24 +186,56 @@ class PublicIntakeSendContractorInvitesView(APIView):
 
 def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
     directory_entry = getattr(opportunity, "directory_entry", None)
+    project_description = opportunity.project_description or ""
+    refined_description = opportunity.refined_description or ""
+    next_url = (
+        f"/app/agreements/{opportunity.converted_agreement_id}/wizard?step=1"
+        if opportunity.converted_agreement_id
+        else ""
+    )
     return {
         "id": opportunity.id,
         "opportunity_id": opportunity.id,
         "directory_entry_id": opportunity.directory_entry_id,
         "contractor_business_name": getattr(directory_entry, "business_name", ""),
+        "directory_business_name": getattr(directory_entry, "business_name", ""),
         "homeowner_name": opportunity.homeowner_name,
         "homeowner_email": opportunity.homeowner_email,
         "homeowner_phone": opportunity.homeowner_phone,
+        "full_name": opportunity.homeowner_name,
+        "email": opportunity.homeowner_email,
+        "phone": opportunity.homeowner_phone,
         "project_title": opportunity.project_title,
         "project_type": opportunity.project_type,
         "project_subtype": opportunity.project_subtype,
+        "project_description": project_description,
+        "short_description": project_description[:180],
+        "refined_description": refined_description,
         "project_city": opportunity.project_city,
         "project_state": opportunity.project_state,
+        "city": opportunity.project_city,
+        "state": opportunity.project_state,
+        "project_address": opportunity.project_address,
+        "project_zip": opportunity.project_zip,
+        "zip_code": opportunity.project_zip,
+        "budget_min": opportunity.budget_min,
+        "budget_max": opportunity.budget_max,
+        "timeline": opportunity.timeline,
+        "preferred_timeline": opportunity.timeline,
+        "measurements": opportunity.measurements or [],
+        "photos": opportunity.photos or [],
+        "photos_count": len(opportunity.photos or []),
+        "selected_by_homeowner": opportunity.selected_by_homeowner,
         "status": opportunity.status,
+        "source": "contractor_opportunity",
         "selected_at": opportunity.selected_at,
+        "created_at": opportunity.selected_at,
         "accepted_at": opportunity.accepted_at,
         "converted_customer_id": opportunity.converted_customer_id,
         "converted_agreement_id": opportunity.converted_agreement_id,
+        "converted_agreement": opportunity.converted_agreement_id,
+        "agreement_id": opportunity.converted_agreement_id,
+        "next_url": next_url,
     }
 
 
@@ -606,9 +638,57 @@ class ContractorOpportunityAcceptView(APIView):
                 "customer_id": getattr(customer, "id", None),
                 "agreement_id": getattr(agreement, "id", None),
                 "next_url": f"/app/agreements/{agreement.id}/wizard?step=1" if agreement is not None else "",
+                **_opportunity_payload(converted_opportunity),
             },
             status=status.HTTP_200_OK,
         )
+
+
+class ContractorOpportunityListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        contractor = getattr(request.user, "contractor_profile", None)
+        if contractor is None:
+            return Response({"detail": "Only contractors can view opportunities."}, status=status.HTTP_403_FORBIDDEN)
+        qs = ContractorOpportunity.objects.select_related("directory_entry").filter(
+            directory_entry__claimed_by_contractor=contractor
+        ) | ContractorOpportunity.objects.select_related("directory_entry").filter(
+            accepted_by_contractor=contractor
+        )
+        qs = qs.distinct().order_by("-selected_at", "-id")
+        for param, field in [
+            ("status", "status"),
+            ("project_type", "project_type__iexact"),
+            ("project_subtype", "project_subtype__iexact"),
+        ]:
+            value = _safe_text(request.query_params.get(param))
+            if value:
+                qs = qs.filter(**{field: value})
+        selected = _safe_text(request.query_params.get("selected_by_homeowner")).lower()
+        if selected in {"true", "false"}:
+            qs = qs.filter(selected_by_homeowner=selected == "true")
+        return Response({"results": [_opportunity_payload(row) for row in qs[:100]]}, status=status.HTTP_200_OK)
+
+
+class ContractorOpportunityDeclineView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, opportunity_id: int, *args, **kwargs):
+        contractor = getattr(request.user, "contractor_profile", None)
+        if contractor is None:
+            return Response({"detail": "Only contractors can decline opportunities."}, status=status.HTTP_403_FORBIDDEN)
+        opportunity = ContractorOpportunity.objects.select_related("directory_entry").filter(pk=opportunity_id).first()
+        if opportunity is None:
+            return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+        linked = opportunity.directory_entry.claimed_by_contractor_id == contractor.id or opportunity.accepted_by_contractor_id == contractor.id
+        if not linked:
+            return Response({"detail": "This opportunity is not linked to your contractor profile."}, status=status.HTTP_403_FORBIDDEN)
+        if opportunity.converted_agreement_id:
+            return Response({"detail": "Converted opportunities cannot be declined."}, status=status.HTTP_400_BAD_REQUEST)
+        opportunity.status = ContractorOpportunity.STATUS_DECLINED
+        opportunity.save(update_fields=["status", "updated_at"])
+        return Response(_opportunity_payload(opportunity), status=status.HTTP_200_OK)
 
 
 class AdminContractorOpportunityListView(APIView):

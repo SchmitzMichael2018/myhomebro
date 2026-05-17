@@ -171,3 +171,49 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["contractor_business_name"], "Austin Concrete Pro")
         self.assertEqual(response.data["results"][0]["homeowner_email"], "casey@example.com")
+
+    def test_contractor_only_sees_own_opportunities_and_status_filtering(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        other_entry = ContractorDirectoryEntry.objects.create(
+            business_name="Other Claimed Entry",
+            normalized_name=normalize_business_name("Other Claimed Entry"),
+            claimed=True,
+            claimed_by_contractor=self.other_contractor,
+        )
+        ContractorOpportunity.objects.create(
+            directory_entry=other_entry,
+            homeowner_name="Other Homeowner",
+            homeowner_email="other-homeowner@example.com",
+            project_title="Other Project",
+            status=ContractorOpportunity.STATUS_PENDING,
+        )
+        self.client.force_authenticate(self.contractor_user)
+
+        response = self.client.get("/api/projects/contractor-opportunities/", {"status": "pending"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["homeowner_email"], "casey@example.com")
+        self.assertEqual(response.data["results"][0]["status"], "pending")
+
+    def test_converted_opportunities_return_agreement_info(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        self.client.force_authenticate(self.contractor_user)
+        self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
+
+        response = self.client.get("/api/projects/contractor-opportunities/", {"status": "converted"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["status"], "converted")
+        self.assertIsNotNone(response.data["results"][0]["agreement_id"])
+        self.assertIn("/app/agreements/", response.data["results"][0]["next_url"])

@@ -45,6 +45,10 @@ function fmtDateTime(value) {
 
 function statusChipClass(value) {
   const normalized = String(value || '').toLowerCase();
+  if (normalized === 'pending') return 'border-blue-200 bg-blue-50 text-blue-700';
+  if (normalized === 'converted') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (normalized === 'declined') return 'border-rose-200 bg-rose-50 text-rose-700';
+  if (normalized === 'expired') return 'border-slate-200 bg-slate-100 text-slate-600';
   if (normalized === 'new') return 'border-blue-200 bg-blue-50 text-blue-700';
   if (normalized === 'pending_customer_response') {
     return 'border-amber-200 bg-amber-50 text-amber-700';
@@ -64,6 +68,7 @@ function statusChipClass(value) {
 
 function sourceLabel(value) {
   const normalized = String(value || '').toLowerCase();
+  if (normalized === 'contractor_opportunity') return 'Homeowner Intake';
   if (normalized === 'landing_page') return 'Landing Page';
   if (normalized === 'public_profile' || normalized === 'profile') return 'Public Profile';
   if (normalized === 'quote_request') return 'Request a Quote';
@@ -76,6 +81,11 @@ function sourceLabel(value) {
 
 function statusLabel(value) {
   const normalized = String(value || '').toLowerCase();
+  if (normalized === 'pending') return 'New';
+  if (normalized === 'accepted') return 'Accepted';
+  if (normalized === 'converted') return 'Draft Ready';
+  if (normalized === 'declined') return 'Declined';
+  if (normalized === 'expired') return 'Expired';
   if (normalized === 'new') return 'New Inbound';
   if (normalized === 'pending_customer_response') return 'Waiting on Customer';
   if (normalized === 'ready_for_review') return 'Ready for Review';
@@ -90,6 +100,20 @@ function statusLabel(value) {
 
 function leadCanSkipColdAcceptance(lead) {
   return ['contractor_sent_form', 'manual', 'quote_request'].includes(String(lead?.source || '').toLowerCase());
+}
+
+function isOpportunityLead(lead) {
+  return String(lead?.source || '').toLowerCase() === 'contractor_opportunity' || Boolean(lead?.opportunity_id);
+}
+
+function opportunityBudgetText(lead) {
+  if (lead?.budget_text) return lead.budget_text;
+  const min = lead?.budget_min;
+  const max = lead?.budget_max;
+  if (min && max) return `$${Number(min).toLocaleString()}-$${Number(max).toLocaleString()}`;
+  if (min) return `$${Number(min).toLocaleString()}+`;
+  if (max) return `Up to $${Number(max).toLocaleString()}`;
+  return '';
 }
 
 function leadHasScopeDetails(lead) {
@@ -133,6 +157,15 @@ function leadCanAnalyzeFromUi(lead) {
 
 function getLeadPrimaryAction(lead) {
   if (!lead) return null;
+  if (isOpportunityLead(lead)) {
+    const status = String(lead.status || '').toLowerCase();
+    if (lead.converted_agreement || lead.agreement_id || lead.next_url) {
+      return { kind: 'open_agreement', label: 'Open Draft Agreement' };
+    }
+    if (status === 'pending') return { kind: 'accept', label: 'Accept Opportunity' };
+    if (status === 'accepted') return { kind: 'continue_review', label: 'Continue Review' };
+    return null;
+  }
   if (lead.converted_agreement) {
     return { kind: 'open_agreement', label: 'Open Draft Agreement' };
   }
@@ -508,7 +541,7 @@ export default function ContractorPublicPresencePage() {
         api.get('/projects/contractor/public-profile/qr/'),
         api.get('/projects/contractor/gallery/'),
         api.get('/projects/contractor/reviews/'),
-        api.get('/projects/contractor/public-leads/'),
+        api.get('/projects/contractor-opportunities/'),
       ]);
       setProfile({ ...defaultProfile, ...(profileRes.data || {}) });
       setQrData(qrRes.data || null);
@@ -714,6 +747,10 @@ export default function ContractorPublicPresencePage() {
   }
 
   async function saveLead(lead) {
+    if (isOpportunityLead(lead)) {
+      toast.error('Opportunity updates are handled through the opportunity actions.');
+      return;
+    }
     try {
       setLeadBusy(true);
       const { data } = await api.patch(`/projects/contractor/public-leads/${lead.id}/`, {
@@ -740,12 +777,13 @@ export default function ContractorPublicPresencePage() {
     if (!selectedLead) return;
     try {
       setLeadBusy(true);
-      const { data } = await api.post(
-        `/projects/contractor/public-leads/${selectedLead.id}/accept/`
-      );
+      const endpoint = isOpportunityLead(selectedLead)
+        ? `/projects/contractor-opportunities/${selectedLead.opportunity_id || selectedLead.id}/accept/`
+        : `/projects/contractor/public-leads/${selectedLead.id}/accept/`;
+      const { data } = await api.post(endpoint);
       setLeadsRows((prev) => prev.map((row) => (row.id === data.id ? data : row)));
       setSelectedLead(data);
-      toast.success(data?.notification_detail || 'Lead accepted.');
+      toast.success(data?.notification_detail || (isOpportunityLead(data) ? 'Opportunity accepted.' : 'Lead accepted.'));
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.email?.[0] || 'Failed to accept lead.');
@@ -758,12 +796,13 @@ export default function ContractorPublicPresencePage() {
     if (!selectedLead) return;
     try {
       setLeadBusy(true);
-      const { data } = await api.post(
-        `/projects/contractor/public-leads/${selectedLead.id}/reject/`
-      );
+      const endpoint = isOpportunityLead(selectedLead)
+        ? `/projects/contractor-opportunities/${selectedLead.opportunity_id || selectedLead.id}/decline/`
+        : `/projects/contractor/public-leads/${selectedLead.id}/reject/`;
+      const { data } = await api.post(endpoint);
       setLeadsRows((prev) => prev.map((row) => (row.id === data.id ? data : row)));
       setSelectedLead(data);
-      toast.success(data?.notification_detail || 'Lead rejected.');
+      toast.success(data?.notification_detail || (isOpportunityLead(data) ? 'Opportunity declined.' : 'Lead rejected.'));
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.detail || 'Failed to reject lead.');
@@ -856,10 +895,11 @@ export default function ContractorPublicPresencePage() {
       navigate(`/app/intake/new?intakeId=${selectedLead.source_intake_id}`);
       return;
     }
-    if (selectedLead.converted_agreement) {
-      navigate(`/app/agreements/${selectedLead.converted_agreement}`);
+    if (primaryLeadAction.kind === 'open_agreement' || selectedLead.converted_agreement || selectedLead.agreement_id || selectedLead.next_url) {
+      navigate(selectedLead.next_url || `/app/agreements/${selectedLead.converted_agreement || selectedLead.agreement_id}`);
       return;
     }
+    if (primaryLeadAction.kind === 'continue_review') return;
     await createAgreementFromLead();
   }
 
@@ -1474,7 +1514,7 @@ export default function ContractorPublicPresencePage() {
               <div className="space-y-3">
                 {leadsRows.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    No leads yet. Add one manually, share your public profile, or post your QR code to start collecting project requests.
+                    No homeowner requests yet. Share your public profile or wait for matching project requests.
                   </div>
                 ) : leadsRows.map((lead) => (
                   <button
@@ -1486,8 +1526,9 @@ export default function ContractorPublicPresencePage() {
                       selectedLead?.id === lead.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-800',
                     ].join(' ')}
                   >
-                    <div className="text-sm font-semibold">{lead.full_name}</div>
-                    <div className="mt-1 text-xs opacity-80">{lead.project_type || 'New project request'}</div>
+                    <div className="text-sm font-semibold">{lead.full_name || lead.homeowner_name || 'Homeowner Request'}</div>
+                    <div className="mt-1 text-xs opacity-80">{lead.project_title || lead.project_type || 'New project request'}</div>
+                    <div className="mt-1 text-xs opacity-80">{[lead.city, lead.state].filter(Boolean).join(', ') || 'Location not provided'}</div>
                     <div className="mt-2">
                       <ProjectModeBadge
                         mode={lead.project_mode}
@@ -1503,6 +1544,17 @@ export default function ContractorPublicPresencePage() {
                     ) : null}
                     <div className="mt-2 inline-flex rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-semibold opacity-90">
                       {sourceLabel(lead.source)}
+                    </div>
+                    <span className={`mt-2 ml-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusChipClass(lead.status)}`}>
+                      {statusLabel(lead.status)}
+                    </span>
+                    {lead.selected_by_homeowner ? (
+                      <div className="mt-2 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        Homeowner selected you
+                      </div>
+                    ) : null}
+                    <div className="mt-2 text-xs opacity-80">
+                      {[opportunityBudgetText(lead), lead.timeline || lead.preferred_timeline].filter(Boolean).join(' · ')}
                     </div>
                   </button>
                 ))}
@@ -1572,7 +1624,7 @@ export default function ContractorPublicPresencePage() {
                     </div>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-lg font-semibold text-slate-900">{selectedLead.full_name}</div>
+                        <div className="text-lg font-semibold text-slate-900">{selectedLead.full_name || selectedLead.homeowner_name}</div>
                         <div className="mt-1 text-sm text-slate-600">
                           {selectedLead.email || 'No email'} · {selectedLead.phone || 'No phone'}
                         </div>
@@ -1587,10 +1639,16 @@ export default function ContractorPublicPresencePage() {
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
                       <div><span className="font-semibold text-slate-900">Source:</span> {sourceLabel(selectedLead.source)}</div>
-                      <div><span className="font-semibold text-slate-900">Timeline:</span> {selectedLead.preferred_timeline || '-'}</div>
-                      <div><span className="font-semibold text-slate-900">Budget:</span> {selectedLead.budget_text || '-'}</div>
-                      <div><span className="font-semibold text-slate-900">Created:</span> {fmtDateTime(selectedLead.created_at)}</div>
+                      <div><span className="font-semibold text-slate-900">Timeline:</span> {selectedLead.timeline || selectedLead.preferred_timeline || '-'}</div>
+                      <div><span className="font-semibold text-slate-900">Budget:</span> {opportunityBudgetText(selectedLead) || '-'}</div>
+                      <div><span className="font-semibold text-slate-900">Selected:</span> {fmtDateTime(selectedLead.selected_at || selectedLead.created_at)}</div>
+                      <div><span className="font-semibold text-slate-900">Location:</span> {[selectedLead.project_address, selectedLead.city, selectedLead.state, selectedLead.zip_code].filter(Boolean).join(', ') || '-'}</div>
                     </div>
+                    {isOpportunityLead(selectedLead) ? (
+                      <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                        This request came from a homeowner project intake. MyHomeBro prepared the project details to help you respond faster.
+                      </div>
+                    ) : null}
                     {selectedLead.accepted_at ? (
                       <div className="mt-3 text-xs font-medium text-indigo-700">
                         Accepted: {fmtDateTime(selectedLead.accepted_at)}
@@ -1599,9 +1657,33 @@ export default function ContractorPublicPresencePage() {
                     <div className="mt-4 text-sm text-slate-700">
                     {selectedLead.ai_analysis?.project_scope_summary ||
                         selectedLead.ai_analysis?.suggested_description ||
+                        selectedLead.refined_description ||
                         selectedLead.project_description ||
                         'No project description provided.'}
                     </div>
+                    {selectedLead.refined_description ? (
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Refined Description</div>
+                        <div className="mt-1">{selectedLead.refined_description}</div>
+                      </div>
+                    ) : null}
+                    {Array.isArray(selectedLead.measurements) && selectedLead.measurements.length ? (
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Measurements</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {selectedLead.measurements.map((item, index) => (
+                            <span key={`${item?.label || item}-${index}`} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                              {typeof item === 'string' ? item : item.label || item.value || JSON.stringify(item)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {selectedLead.photos_count ? (
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                        Photos attached: {selectedLead.photos_count}
+                      </div>
+                    ) : null}
                     {selectedLeadMatching?.tier ? (
                       <div
                         data-testid="public-lead-compatibility"
@@ -1767,7 +1849,9 @@ export default function ContractorPublicPresencePage() {
                           Lead states are guided by the action buttons below so the pipeline stays consistent from review through agreement drafting.
                         </div>
                       </div>
-                      <textarea value={selectedLead.internal_notes || ''} onChange={(e) => setSelectedLead((prev) => ({ ...prev, internal_notes: e.target.value }))} rows={4} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Internal notes" />
+                      {!isOpportunityLead(selectedLead) ? (
+                        <textarea value={selectedLead.internal_notes || ''} onChange={(e) => setSelectedLead((prev) => ({ ...prev, internal_notes: e.target.value }))} rows={4} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Internal notes" />
+                      ) : null}
                     </div>
                     {selectedLead.converted_homeowner_name ? (
                       <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
@@ -1785,14 +1869,21 @@ export default function ContractorPublicPresencePage() {
                           {primaryLeadAction.label}
                         </button>
                       ) : null}
-                      {!leadCanSkipColdAcceptance(selectedLead) && selectedLead.status === 'new' ? (
+                      {isOpportunityLead(selectedLead) && selectedLead.status === 'pending' ? (
+                        <button type="button" onClick={rejectLead} disabled={leadBusy || Boolean(selectedLead.converted_agreement)} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60">
+                          Decline
+                        </button>
+                      ) : null}
+                      {!isOpportunityLead(selectedLead) && !leadCanSkipColdAcceptance(selectedLead) && selectedLead.status === 'new' ? (
                         <button type="button" onClick={rejectLead} disabled={leadBusy || Boolean(selectedLead.converted_agreement)} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60">
                           Reject Lead
                         </button>
                       ) : null}
-                      <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || !leadCanAnalyzeFromUi(selectedLead)} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
-                        Analyze Intake with AI
-                      </button>
+                      {!isOpportunityLead(selectedLead) ? (
+                        <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || !leadCanAnalyzeFromUi(selectedLead)} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                          Analyze Intake with AI
+                        </button>
+                      ) : null}
                       {leadCanSendIntake(selectedLead) &&
                       primaryLeadAction?.kind !== 'send_intake' ? (
                         <button
@@ -1811,32 +1902,40 @@ export default function ContractorPublicPresencePage() {
                           Create AI-Assisted Agreement
                         </button>
                       ) : null}
-                      <button type="button" onClick={() => updateLeadStatus('contacted')} disabled={leadBusy || selectedLead.status === 'contacted'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
-                        Mark Contacted
-                      </button>
-                      <button type="button" onClick={() => updateLeadStatus('closed')} disabled={leadBusy || selectedLead.status === 'closed'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
-                        Mark Closed
-                      </button>
-                      <button type="button" onClick={() => updateLeadStatus('archived')} disabled={leadBusy || selectedLead.status === 'archived'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
-                        Archive Lead
-                      </button>
+                      {!isOpportunityLead(selectedLead) ? (
+                        <button type="button" onClick={() => updateLeadStatus('contacted')} disabled={leadBusy || selectedLead.status === 'contacted'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                          Mark Contacted
+                        </button>
+                      ) : null}
+                      {!isOpportunityLead(selectedLead) ? (
+                        <button type="button" onClick={() => updateLeadStatus('closed')} disabled={leadBusy || selectedLead.status === 'closed'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                          Mark Closed
+                        </button>
+                      ) : null}
+                      {!isOpportunityLead(selectedLead) ? (
+                        <button type="button" onClick={() => updateLeadStatus('archived')} disabled={leadBusy || selectedLead.status === 'archived'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                          Archive Lead
+                        </button>
+                      ) : null}
                       {!selectedLead.converted_homeowner_id && leadCanRunAiActions(selectedLead) ? (
                         <button type="button" onClick={convertLeadToCustomer} disabled={leadBusy} className="rounded-xl border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60">
                           Create Customer Record
                         </button>
                       ) : null}
-                      {selectedLead.converted_agreement ? (
-                        <button type="button" onClick={() => navigate(`/app/agreements/${selectedLead.converted_agreement}`)} className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+                      {selectedLead.converted_agreement || selectedLead.agreement_id || selectedLead.next_url ? (
+                        <button type="button" onClick={() => navigate(selectedLead.next_url || `/app/agreements/${selectedLead.converted_agreement || selectedLead.agreement_id}`)} className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
                           Open Draft Agreement
                         </button>
                       ) : null}
-                      <button type="button" onClick={() => saveLead(selectedLead)} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-                        {leadBusy ? 'Saving...' : 'Save Changes'}
-                      </button>
+                      {!isOpportunityLead(selectedLead) ? (
+                        <button type="button" onClick={() => saveLead(selectedLead)} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                          {leadBusy ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      ) : null}
                     </div>
                   </>
                 ) : (
-                  <div className="text-sm text-slate-500">Choose a lead to review its details, status, and next actions.</div>
+                  <div className="text-sm text-slate-500">Choose a homeowner request to review its details and next steps.</div>
                 )}
               </div>
             </div>

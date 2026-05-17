@@ -1206,11 +1206,12 @@ export default function ContractorDashboard() {
           return;
         }
 
-        const [mRes, iRes, aRes, lRes, dRes] = await Promise.allSettled([
+        const [mRes, iRes, aRes, lRes, oRes, dRes] = await Promise.allSettled([
           api.get("/projects/milestones/"),
           api.get("/projects/invoices/"),
           api.get("/projects/agreements/"),
           api.get("/projects/contractor/public-leads/"),
+          api.get("/projects/contractor-opportunities/"),
           getContractorDrawRequests(),
         ]);
 
@@ -1242,11 +1243,18 @@ export default function ContractorDashboard() {
           setAgreements([]);
         }
 
-        if (lRes.status === "fulfilled") {
-          const list = Array.isArray(lRes.value.data)
-            ? lRes.value.data
-            : lRes.value.data?.results || [];
-          setPublicLeads(list);
+        if (lRes.status === "fulfilled" || oRes.status === "fulfilled") {
+          const list = lRes.status === "fulfilled"
+            ? Array.isArray(lRes.value.data)
+              ? lRes.value.data
+              : lRes.value.data?.results || []
+            : [];
+          const opportunityList = oRes.status === "fulfilled"
+            ? Array.isArray(oRes.value.data)
+              ? oRes.value.data
+              : oRes.value.data?.results || []
+            : [];
+          setPublicLeads([...list, ...opportunityList]);
         } else {
           console.error(lRes.reason);
           setPublicLeads([]);
@@ -2133,7 +2141,7 @@ export default function ContractorDashboard() {
         return {
           ...lead,
           matching,
-          score: Number(matching?.score || 0),
+          score: Number(matching?.score || (lead?.source === "contractor_opportunity" ? 60 : 0)),
           tier: String(matching?.tier || "").trim(),
           requirements: matching?.project_requirements || {},
         };
@@ -2144,6 +2152,7 @@ export default function ContractorDashboard() {
     const counts = {
       strong: 0,
       good: 0,
+      pending: 0,
       assisted_diy: 0,
       rescue: 0,
       escrow: 0,
@@ -2151,6 +2160,7 @@ export default function ContractorDashboard() {
     for (const row of normalizedRows) {
       if (String(row.tier).toLowerCase() === "strong match") counts.strong += 1;
       else counts.good += 1;
+      if (row.source === "contractor_opportunity" && row.status === "pending") counts.pending += 1;
       if (normalizeProjectMode(row.requirements?.project_mode || row.project_mode) === "assisted_diy") counts.assisted_diy += 1;
       if (row.requirements?.rescue_project) counts.rescue += 1;
       if (String(row.requirements?.payment_preference || "").toLowerCase() !== "direct") counts.escrow += 1;
@@ -3223,6 +3233,12 @@ export default function ContractorDashboard() {
             >
               <div className="grid gap-3 md:grid-cols-4">
                 {[
+                  {
+                    label: "New Opportunities",
+                    value: contractorMatchOpportunities.counts.pending,
+                    tone: "border-blue-200 bg-blue-50 text-blue-800",
+                    description: "Homeowners selected you for review.",
+                  },
                   {
                     label: "Strong Matches",
                     value: contractorMatchOpportunities.counts.strong,
