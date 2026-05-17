@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test("public intake surfaces contractor discovery and sends review requests", async ({ page }) => {
-  const sentInvites = [];
+test("public intake surfaces contractor discovery and creates pending review opportunities", async ({ page }) => {
+  const selectedOpportunities = [];
 
   await page.route("**/api/projects/public-intake/**", async (route) => {
     const url = route.request().url();
@@ -78,25 +78,22 @@ test("public intake surfaces contractor discovery and sends review requests", as
       return;
     }
 
-    if (url.includes("/send-contractor-invites/") && method === "POST") {
+    if (url.includes("/select-contractor/") && method === "POST") {
       const body = route.request().postDataJSON();
-      sentInvites.push(body);
+      selectedOpportunities.push(body);
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          detail: "Invites sent.",
-          invite_count: body.selected_contractors?.length || 0,
+          success: true,
+          status: "pending",
+          opportunity_count: body.selected_contractors?.length || 0,
           created: (body.selected_contractors || []).map((item, index) => ({
             id: index + 1,
-            invite_token: `invite-${index + 1}`,
-            status: "sent",
-            channel: "sms",
-            target_id: item.id,
-            target_type: item.id.startsWith("listing:") ? "listing" : "contractor",
-            source: item.source,
-            claim_url: `/contractors/claim/invite-${index + 1}`,
-            claimed: false,
+            opportunity_id: index + 1,
+            directory_entry_id: 100 + index,
+            status: "pending",
+            contractor_business_name: item.business_name,
           })),
         }),
       });
@@ -163,7 +160,7 @@ test("public intake surfaces contractor discovery and sends review requests", as
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible({ timeout: 15000 });
   const verifiedCard = page.getByTestId("public-intake-contractor-card-contractor:12");
   const listingCard = page.getByTestId("public-intake-contractor-card-listing:33");
-  await expect(verifiedCard.getByText("MyHomeBro Verified")).toBeVisible();
+  await expect(verifiedCard.getByText("Verified on MyHomeBro")).toBeVisible();
   await expect(listingCard.getByText("Local Business Listing")).toBeVisible();
   await expect(verifiedCard.getByTitle("Homeowner participates with contractor guidance and support.")).toBeVisible();
   await expect(verifiedCard.getByText("Inspection Capable")).toBeVisible();
@@ -174,8 +171,9 @@ test("public intake surfaces contractor discovery and sends review requests", as
 
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branch-single")).toBeVisible();
-  expect(sentInvites).toHaveLength(1);
-  expect(sentInvites[0].selected_contractors[0].id).toBe("listing:33");
+  expect(selectedOpportunities).toHaveLength(1);
+  expect(selectedOpportunities[0].selected_contractors[0].id).toBe("listing:33");
+  expect(selectedOpportunities[0].selected_contractors[0].business_name).toBe("Local Handy Team");
 });
 
 test("contractor claim page lets a contractor claim a listing", async ({ page }) => {

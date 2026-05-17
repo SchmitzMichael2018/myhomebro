@@ -228,6 +228,105 @@ class ContractorDirectoryDiscovery(models.Model):
         return f"{self.source_type} discovery for {self.directory_entry_id}"
 
 
+class ContractorOpportunity(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_DECLINED = "declined"
+    STATUS_EXPIRED = "expired"
+    STATUS_CONVERTED = "converted"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_DECLINED, "Declined"),
+        (STATUS_EXPIRED, "Expired"),
+        (STATUS_CONVERTED, "Converted"),
+    ]
+
+    directory_entry = models.ForeignKey(
+        "projects.ContractorDirectoryEntry",
+        on_delete=models.CASCADE,
+        related_name="opportunities",
+    )
+    intake_request = models.ForeignKey(
+        "projects.ProjectIntake",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_opportunities",
+    )
+    project = models.ForeignKey(
+        "projects.Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_opportunities",
+    )
+    homeowner_name = models.CharField(max_length=255, null=True, blank=True)
+    homeowner_email = models.EmailField(null=True, blank=True)
+    homeowner_phone = models.CharField(max_length=50, null=True, blank=True)
+    project_address = models.CharField(max_length=255, null=True, blank=True)
+    project_city = models.CharField(max_length=120, null=True, blank=True)
+    project_state = models.CharField(max_length=60, null=True, blank=True)
+    project_zip = models.CharField(max_length=20, null=True, blank=True)
+    project_type = models.CharField(max_length=120, null=True, blank=True)
+    project_subtype = models.CharField(max_length=120, null=True, blank=True)
+    project_title = models.CharField(max_length=255, null=True, blank=True)
+    project_description = models.TextField(null=True, blank=True)
+    refined_description = models.TextField(null=True, blank=True)
+    budget_min = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    budget_max = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    timeline = models.CharField(max_length=120, null=True, blank=True)
+    measurements = models.JSONField(default=list, blank=True)
+    photos = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    selected_by_homeowner = models.BooleanField(default=True, db_index=True)
+    selected_at = models.DateTimeField(auto_now_add=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    accepted_by_contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="accepted_opportunities",
+    )
+    converted_customer = models.ForeignKey(
+        "projects.Homeowner",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_opportunities",
+    )
+    converted_agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_opportunities",
+    )
+    conversion_notes = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-selected_at", "-id"]
+        indexes = [
+            models.Index(fields=["directory_entry", "status"]),
+            models.Index(fields=["intake_request", "status"]),
+            models.Index(fields=["project", "status"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["directory_entry", "intake_request"],
+                condition=models.Q(intake_request__isnull=False),
+                name="uniq_opportunity_directory_entry_intake",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"Opportunity #{self.pk} for {self.directory_entry_id}"
+
+
 class ContractorDiscoveryInvite(models.Model):
     CHANNEL_SMS = "sms"
     CHANNEL_EMAIL = "email"

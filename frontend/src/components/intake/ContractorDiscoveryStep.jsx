@@ -356,23 +356,52 @@ export default function ContractorDiscoveryStep({
 
     try {
       setSending(true);
-      const { data } = await api.post("/projects/public-intake/send-contractor-invites/", {
+      const { data } = await api.post("/projects/public-intake/select-contractor/", {
         token,
         selected_contractors: selectedTargets.map((card) => ({
           id: card.id,
+          directory_entry_id: card.directory_entry_id,
+          google_place_id: card.google_place_id,
+          business_name: card.business_name,
+          website_url: card.website_url,
+          phone: card.phone,
+          public_email: card.public_email || card.email,
+          address: card.address || card.formatted_address,
+          city: card.city,
+          state: card.state,
+          zip_code: card.zip_code,
+          latitude: card.latitude,
+          longitude: card.longitude,
+          rating: card.rating,
+          review_count: card.review_count,
+          services: card.services || card.trade_categories || card.recommendation_reasons,
           source: card.source,
-          channel: "sms",
         })),
-        preferred_channel: "sms",
+        project_context: {
+          homeowner_name: safeText(form?.customer_name),
+          homeowner_email: safeText(form?.customer_email),
+          homeowner_phone: safeText(form?.customer_phone),
+          project_title: safeText(form?.ai_project_title),
+          project_type: safeText(form?.ai_project_type),
+          project_subtype: safeText(form?.ai_project_subtype),
+          project_description: safeText(form?.accomplishment_text),
+          refined_description: safeText(form?.refined_description || form?.ai_description || form?.project_scope_summary),
+          project_address_line1: safeText(form?.project_address_line1 || form?.customer_address_line1),
+          project_city: safeText(form?.project_city || form?.customer_city),
+          project_state: safeText(form?.project_state || form?.customer_state),
+          project_postal_code: safeText(form?.project_postal_code || form?.customer_postal_code),
+          timeline: safeText(form?.desired_timing_text || form?.timeline),
+          measurements: form?.measurements || form?.measurement_answers || [],
+        },
       });
       onInvitesCreated?.(data);
       toast.success(
         Array.isArray(data?.created) && data.created.length
           ? `Requested ${data.created.length} contractor review${data.created.length === 1 ? "" : "s"}.`
-          : "No invites were created."
+          : "No contractor review requests were created."
       );
     } catch (error) {
-      toast.error(error?.response?.data?.detail || "Could not send contractor review requests.");
+      toast.error(error?.response?.data?.detail || "Could not save contractor review requests.");
     } finally {
       setSending(false);
     }

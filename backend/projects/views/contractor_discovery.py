@@ -12,7 +12,7 @@ from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry, ContractorDiscoveryInvite
+from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models import Contractor
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_directory import (
@@ -20,6 +20,10 @@ from projects.services.contractor_directory import (
     normalize_phone,
     normalize_website_domain,
     upsert_directory_entry_from_place,
+)
+from projects.services.contractor_opportunities import (
+    accept_contractor_opportunity,
+    create_or_update_opportunity_from_selection,
 )
 from projects.services.contractor_discovery import (
     build_contractor_recommendations,
@@ -178,6 +182,73 @@ class PublicIntakeSendContractorInvitesView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(result, status=status.HTTP_200_OK)
+
+
+def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
+    directory_entry = getattr(opportunity, "directory_entry", None)
+    return {
+        "id": opportunity.id,
+        "opportunity_id": opportunity.id,
+        "directory_entry_id": opportunity.directory_entry_id,
+        "contractor_business_name": getattr(directory_entry, "business_name", ""),
+        "homeowner_name": opportunity.homeowner_name,
+        "homeowner_email": opportunity.homeowner_email,
+        "homeowner_phone": opportunity.homeowner_phone,
+        "project_title": opportunity.project_title,
+        "project_type": opportunity.project_type,
+        "project_subtype": opportunity.project_subtype,
+        "project_city": opportunity.project_city,
+        "project_state": opportunity.project_state,
+        "status": opportunity.status,
+        "selected_at": opportunity.selected_at,
+        "accepted_at": opportunity.accepted_at,
+        "converted_customer_id": opportunity.converted_customer_id,
+        "converted_agreement_id": opportunity.converted_agreement_id,
+    }
+
+
+class PublicIntakeSelectContractorView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        intake, error = _get_intake_from_request(request)
+        if error:
+            return error
+
+        selected = request.data.get("selected_contractors") or request.data.get("selected") or []
+        if request.data.get("directory_entry_id") or request.data.get("id") or request.data.get("place"):
+            selected = [request.data]
+        if not isinstance(selected, list) or not selected:
+            return Response({"detail": "Select at least one contractor."}, status=status.HTTP_400_BAD_REQUEST)
+
+        created = []
+        payload = request.data.get("project_context") if isinstance(request.data.get("project_context"), dict) else request.data
+        for selection in selected:
+            if not isinstance(selection, dict):
+                continue
+            try:
+                opportunity = create_or_update_opportunity_from_selection(
+                    {
+                        "intake_request": intake,
+                        "selection": selection,
+                        "payload": payload,
+                    }
+                )
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            created.append(_opportunity_payload(opportunity))
+
+        return Response(
+            {
+                "success": True,
+                "status": ContractorOpportunity.STATUS_PENDING,
+                "created": created,
+                "opportunity_count": len(created),
+                "opportunity_id": created[0]["opportunity_id"] if created else None,
+                "directory_entry_id": created[0]["directory_entry_id"] if created else None,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
@@ -508,6 +579,64 @@ class AdminContractorDirectoryImportApplyView(APIView):
             {"updated_count": updated_count, "skipped_count": skipped_count, "warnings": warnings},
             status=status.HTTP_200_OK,
         )
+
+
+class ContractorOpportunityAcceptView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, opportunity_id: int, *args, **kwargs):
+        contractor = getattr(request.user, "contractor_profile", None)
+        if contractor is None:
+            return Response({"detail": "Only contractors can accept opportunities."}, status=status.HTTP_403_FORBIDDEN)
+        opportunity = ContractorOpportunity.objects.select_related("directory_entry").filter(pk=opportunity_id).first()
+        if opportunity is None:
+            return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            result = accept_contractor_opportunity(opportunity, contractor)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        converted_opportunity = result["opportunity"]
+        agreement = result.get("agreement")
+        customer = result.get("customer")
+        return Response(
+            {
+                "opportunity_id": converted_opportunity.id,
+                "status": converted_opportunity.status,
+                "customer_id": getattr(customer, "id", None),
+                "agreement_id": getattr(agreement, "id", None),
+                "next_url": f"/app/agreements/{agreement.id}/wizard?step=1" if agreement is not None else "",
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminContractorOpportunityListView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        qs = ContractorOpportunity.objects.select_related("directory_entry", "converted_customer", "converted_agreement").order_by("-selected_at")
+        for param, field in [
+            ("status", "status"),
+            ("directory_entry", "directory_entry_id"),
+            ("state", "project_state__iexact"),
+            ("city", "project_city__iexact"),
+            ("project_type", "project_type__iexact"),
+        ]:
+            value = _safe_text(request.query_params.get(param))
+            if value:
+                qs = qs.filter(**{field: value})
+        selected_from = _safe_text(request.query_params.get("selected_from"))
+        selected_to = _safe_text(request.query_params.get("selected_to"))
+        if selected_from:
+            qs = qs.filter(selected_at__date__gte=selected_from)
+        if selected_to:
+            qs = qs.filter(selected_at__date__lte=selected_to)
+        try:
+            limit = max(1, min(int(request.query_params.get("limit") or 100), 250))
+        except (TypeError, ValueError):
+            limit = 100
+        return Response({"results": [_opportunity_payload(row) for row in qs[:limit]]}, status=status.HTTP_200_OK)
 
 
 class ContractorDiscoveryClaimView(APIView):
