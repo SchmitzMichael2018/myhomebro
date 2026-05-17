@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 import uuid
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
@@ -93,6 +94,123 @@ class ContractorDirectoryListing(models.Model):
     def save(self, *args, **kwargs):
         self.normalized_business_name = _normalize_business_name(self.business_name)
         super().save(*args, **kwargs)
+
+
+class ContractorDirectoryEntry(models.Model):
+    SOURCE_GOOGLE_PLACES = "google_places"
+    SOURCE_ADMIN = "admin_search"
+    SOURCE_PUBLIC_INTAKE = "public_intake"
+    SOURCE_MANUAL = "manual"
+    SOURCE_CHOICES = [
+        (SOURCE_GOOGLE_PLACES, "Google Places"),
+        (SOURCE_ADMIN, "Admin Search"),
+        (SOURCE_PUBLIC_INTAKE, "Public Intake"),
+        (SOURCE_MANUAL, "Manual"),
+    ]
+
+    PROFILE_BASIC = "basic"
+    PROFILE_STATUS_CHOICES = [
+        (PROFILE_BASIC, "Basic"),
+    ]
+
+    ENRICHMENT_NOT_STARTED = "not_started"
+    ENRICHMENT_STATUS_CHOICES = [
+        (ENRICHMENT_NOT_STARTED, "Not Started"),
+    ]
+
+    business_name = models.CharField(max_length=255)
+    normalized_name = models.CharField(max_length=255, db_index=True)
+    website = models.URLField(null=True, blank=True)
+    website_domain = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    phone = models.CharField(max_length=40, null=True, blank=True)
+    normalized_phone = models.CharField(max_length=40, null=True, blank=True, db_index=True)
+    public_email = models.EmailField(null=True, blank=True)
+    address_line1 = models.CharField(max_length=255, null=True, blank=True)
+    city = models.CharField(max_length=120, null=True, blank=True, db_index=True)
+    state = models.CharField(max_length=60, null=True, blank=True, db_index=True)
+    zip_code = models.CharField(max_length=20, null=True, blank=True, db_index=True)
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    google_place_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    rating = models.FloatField(null=True, blank=True)
+    review_count = models.PositiveIntegerField(null=True, blank=True)
+    services = models.JSONField(default=list, blank=True)
+    source = models.CharField(max_length=32, choices=SOURCE_CHOICES, default=SOURCE_GOOGLE_PLACES, db_index=True)
+    claimed = models.BooleanField(default=False, db_index=True)
+    claimed_by_contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="directory_entries",
+    )
+    profile_status = models.CharField(max_length=32, choices=PROFILE_STATUS_CHOICES, default=PROFILE_BASIC, db_index=True)
+    enrichment_status = models.CharField(max_length=32, choices=ENRICHMENT_STATUS_CHOICES, default=ENRICHMENT_NOT_STARTED, db_index=True)
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["business_name", "city", "state"]
+        indexes = [
+            models.Index(fields=["website_domain"]),
+            models.Index(fields=["normalized_phone"]),
+            models.Index(fields=["normalized_name", "zip_code"]),
+            models.Index(fields=["normalized_name", "city", "state"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.business_name or f"Directory Entry {self.pk}"
+
+
+class ContractorDirectoryDiscovery(models.Model):
+    SOURCE_PUBLIC_INTAKE = "public_intake"
+    SOURCE_ADMIN_SEARCH = "admin_search"
+    SOURCE_UNKNOWN = "unknown"
+    SOURCE_TYPE_CHOICES = [
+        (SOURCE_PUBLIC_INTAKE, "Public Intake"),
+        (SOURCE_ADMIN_SEARCH, "Admin Search"),
+        (SOURCE_UNKNOWN, "Unknown"),
+    ]
+
+    directory_entry = models.ForeignKey(
+        "projects.ContractorDirectoryEntry",
+        on_delete=models.CASCADE,
+        related_name="discoveries",
+    )
+    source_type = models.CharField(max_length=32, choices=SOURCE_TYPE_CHOICES, default=SOURCE_UNKNOWN, db_index=True)
+    search_term = models.CharField(max_length=255, null=True, blank=True)
+    project_type = models.CharField(max_length=120, null=True, blank=True)
+    project_subtype = models.CharField(max_length=120, null=True, blank=True)
+    search_city = models.CharField(max_length=120, null=True, blank=True)
+    search_state = models.CharField(max_length=60, null=True, blank=True)
+    search_zip = models.CharField(max_length=20, null=True, blank=True)
+    radius_miles = models.PositiveIntegerField(null=True, blank=True)
+    intake_request = models.ForeignKey(
+        "projects.ProjectIntake",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="directory_discoveries",
+    )
+    admin_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_directory_discoveries",
+    )
+    selected_by_homeowner = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["source_type", "created_at"]),
+            models.Index(fields=["search_city", "search_state", "search_zip"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source_type} discovery for {self.directory_entry_id}"
 
 
 class ContractorDiscoveryInvite(models.Model):

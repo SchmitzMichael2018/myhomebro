@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models_contractor_discovery import ContractorDiscoveryInvite
+from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry, ContractorDiscoveryInvite
 from projects.models import Contractor
 from projects.models_project_intake import ProjectIntake
+from projects.services.contractor_directory import upsert_directory_entry_from_place
 from projects.services.contractor_discovery import (
     build_contractor_recommendations,
     claim_discovery_invite,
     create_discovery_invites,
 )
+from projects.services.google_places_contractors import geocode_project_location, search_google_places_contractors_with_diagnostics
 
 
 def _safe_text(value) -> str:
@@ -112,6 +114,121 @@ class PublicIntakeSendContractorInvitesView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(result, status=status.HTTP_200_OK)
+
+
+def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
+    return {
+        "id": entry.id,
+        "business_name": entry.business_name,
+        "website": entry.website,
+        "phone": entry.phone,
+        "public_email": entry.public_email,
+        "city": entry.city,
+        "state": entry.state,
+        "zip_code": entry.zip_code,
+        "rating": entry.rating,
+        "review_count": entry.review_count,
+        "services": entry.services or [],
+        "source": entry.source,
+        "claimed": entry.claimed,
+        "profile_status": entry.profile_status,
+        "enrichment_status": entry.enrichment_status,
+        "first_seen_at": entry.first_seen_at,
+        "last_seen_at": entry.last_seen_at,
+    }
+
+
+class AdminContractorSearchView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        query = _safe_text(request.query_params.get("query"))
+        city = _safe_text(request.query_params.get("city"))
+        state_value = _safe_text(request.query_params.get("state"))
+        zip_code = _safe_text(request.query_params.get("zip") or request.query_params.get("postal_code"))
+        latitude = request.query_params.get("lat")
+        longitude = request.query_params.get("lng")
+        try:
+            radius_miles = int(float(request.query_params.get("radius_miles") or 25))
+        except (TypeError, ValueError):
+            radius_miles = 25
+        radius_miles = radius_miles if radius_miles in {5, 10, 15, 25, 50, 100} else 25
+        try:
+            limit = max(1, min(int(request.query_params.get("limit") or 20), 50))
+        except (TypeError, ValueError):
+            limit = 20
+
+        if not latitude or not longitude:
+            geocode = geocode_project_location(city=city, state=state_value, postal_code=zip_code)
+            latitude = geocode.get("latitude")
+            longitude = geocode.get("longitude")
+
+        google_result = search_google_places_contractors_with_diagnostics(
+            query=query,
+            latitude=latitude,
+            longitude=longitude,
+            radius_miles=radius_miles,
+            limit=limit,
+            enforce_radius=True,
+        )
+        context = {
+            "source_type": ContractorDirectoryDiscovery.SOURCE_ADMIN_SEARCH,
+            "search_term": query,
+            "search_city": city,
+            "search_state": state_value,
+            "search_zip": zip_code,
+            "radius_miles": radius_miles,
+            "admin_user": request.user,
+        }
+        entries = []
+        for place in google_result.get("results") or []:
+            entry = upsert_directory_entry_from_place(place, context=context)
+            if entry is not None:
+                entries.append(_directory_entry_payload(entry))
+
+        return Response(
+            {
+                "summary": {
+                    "search_query": query,
+                    "radius_miles": radius_miles,
+                    "results_count": len(google_result.get("results") or []),
+                    "directory_entries_count": len(entries),
+                    "external_search": google_result.get("diagnostic") or {},
+                },
+                "results": google_result.get("results") or [],
+                "directory_entries": entries,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminContractorDirectoryView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def get(self, request, *args, **kwargs):
+        qs = ContractorDirectoryEntry.objects.all().order_by("-last_seen_at", "business_name")
+        if _safe_text(request.query_params.get("missing_email")).lower() == "true":
+            qs = qs.filter(public_email__isnull=True)
+        if _safe_text(request.query_params.get("has_website")).lower() == "true":
+            qs = qs.exclude(website__isnull=True).exclude(website="")
+        for param, field in [
+            ("city", "city__iexact"),
+            ("state", "state__iexact"),
+            ("source", "source"),
+            ("profile_status", "profile_status"),
+            ("enrichment_status", "enrichment_status"),
+        ]:
+            value = _safe_text(request.query_params.get(param))
+            if value:
+                qs = qs.filter(**{field: value})
+        claimed = _safe_text(request.query_params.get("claimed")).lower()
+        if claimed in {"true", "false"}:
+            qs = qs.filter(claimed=claimed == "true")
+        try:
+            limit = max(1, min(int(request.query_params.get("limit") or 100), 250))
+        except (TypeError, ValueError):
+            limit = 100
+        return Response({"results": [_directory_entry_payload(entry) for entry in qs[:limit]]}, status=status.HTTP_200_OK)
 
 
 class ContractorDiscoveryClaimView(APIView):

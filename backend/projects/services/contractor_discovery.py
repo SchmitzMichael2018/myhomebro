@@ -21,6 +21,7 @@ from projects.services.google_places_contractors import (
     search_google_places_contractors_with_diagnostics,
     suggest_radius_miles,
 )
+from projects.services.contractor_directory import upsert_directory_entry_from_place
 from projects.services.notification_center import create_notification
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
@@ -835,9 +836,22 @@ def build_contractor_recommendations(
                 google_diag = {**google_diag, **(retry_search.get("diagnostic") or {}), "fallback_query": fallback_query}
                 break
     google_places = google_search.get("results") or []
+    capture_context = {
+        "source_type": "public_intake" if intake is not None else "unknown",
+        "search_term": search_query,
+        "project_type": project.get("project_type"),
+        "project_subtype": project.get("project_subtype"),
+        "search_city": project.get("project_city"),
+        "search_state": project.get("project_state"),
+        "search_zip": project.get("project_postal_code"),
+        "radius_miles": radius,
+        "intake_request": intake,
+        "selected_by_homeowner": False,
+    }
     for place in google_places:
         if place.get("distance_miles") is None:
             continue
+        upsert_directory_entry_from_place(place, context=capture_context)
         listing = upsert_directory_listing_from_google(place)
         if listing is None:
             continue

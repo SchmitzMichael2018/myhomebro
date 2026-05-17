@@ -3031,6 +3031,83 @@ class ContractorPublicPresenceApiTests(TestCase):
             )
         )
 
+    def test_contractor_directory_upsert_prevents_duplicates_and_records_discovery(self):
+        from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry
+        from projects.services.contractor_directory import upsert_directory_entry_from_place
+
+        base_place = {
+            "google_place_id": "places/abc-roofing",
+            "business_name": "ABC Roofing LLC",
+            "website_url": "https://www.abcroofing.com/contact",
+            "phone_number": "(512) 555-0101",
+            "formatted_address": "10 Roof Rd, Austin, TX 78701",
+            "city": "Austin",
+            "state": "TX",
+            "zip_code": "78701-1234",
+            "latitude": 30.2672,
+            "longitude": -97.7431,
+            "primary_trade": "roofing_contractor",
+            "google_rating": 4.8,
+            "google_review_count": 40,
+            "email": "Email not listed",
+        }
+        entry = upsert_directory_entry_from_place(
+            base_place,
+            context={"source_type": "admin_search", "search_term": "roofing contractor", "search_city": "Austin"},
+        )
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), 1)
+        self.assertEqual(entry.normalized_name, "abc roofing")
+        self.assertEqual(entry.website_domain, "abcroofing.com")
+        self.assertEqual(entry.normalized_phone, "5125550101")
+        self.assertEqual(entry.zip_code, "78701")
+        self.assertIsNone(entry.public_email)
+        self.assertEqual(ContractorDirectoryDiscovery.objects.count(), 1)
+        self.assertEqual(entry.discoveries.first().source_type, "admin_search")
+
+        upsert_directory_entry_from_place({**base_place, "business_name": "ABC Roofing Inc", "rating": 4.9})
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), 1)
+
+        upsert_directory_entry_from_place({
+            **base_place,
+            "google_place_id": "",
+            "website_url": "https://abcroofing.com/services",
+            "phone_number": "",
+        })
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), 1)
+
+        upsert_directory_entry_from_place({
+            **base_place,
+            "google_place_id": "",
+            "website_url": "",
+            "phone_number": "512.555.0101",
+        })
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), 1)
+
+        upsert_directory_entry_from_place({
+            "business_name": "Same Name Co",
+            "formatted_address": "1 First St, Austin, TX 78704",
+            "city": "Austin",
+            "state": "TX",
+            "zip_code": "78704",
+        })
+        upsert_directory_entry_from_place({
+            "business_name": "Same Name LLC",
+            "formatted_address": "2 Second St, Austin, TX 78704",
+            "city": "Austin",
+            "state": "TX",
+            "zip_code": "78704",
+        })
+        self.assertEqual(ContractorDirectoryEntry.objects.filter(normalized_name="same name").count(), 1)
+
+        upsert_directory_entry_from_place({
+            "business_name": "Same Name LLC",
+            "formatted_address": "3 Third St, Austin, TX 78705",
+            "city": "Austin",
+            "state": "TX",
+            "zip_code": "78705",
+        })
+        self.assertEqual(ContractorDirectoryEntry.objects.filter(normalized_name="same name").count(), 2)
+
     @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
     @patch("projects.services.google_places_contractors.requests.post")
     def test_google_places_radius_filter_excludes_out_of_state_and_unknown_location_results(self, mock_post):
@@ -3797,7 +3874,101 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(google_row["address"], "88 Countertop Rd, Austin, TX 78701")
         self.assertIsNotNone(google_row["distance_miles"])
         self.assertEqual(payload["summary"]["external_search"]["results_count"], 1)
+        self.assertNotIn("directory_entries", payload)
+        from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry
+
+        entry = ContractorDirectoryEntry.objects.get(google_place_id="places/local-quartz-pros")
+        self.assertEqual(entry.business_name, "Local Quartz Pros")
+        self.assertIsNone(entry.public_email)
+        self.assertTrue(
+            ContractorDirectoryDiscovery.objects.filter(
+                directory_entry=entry,
+                source_type=ContractorDirectoryDiscovery.SOURCE_PUBLIC_INTAKE,
+                intake_request=intake,
+            ).exists()
+        )
         self.assertTrue(_mock_places.called)
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch(
+        "projects.views.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={
+            "diagnostic": {"configured": True, "requested": True, "results_count": 1, "error": ""},
+            "results": [
+                {
+                    "source": ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+                    "google_place_id": "places/shared-directory-company",
+                    "business_name": "Shared Directory Company",
+                    "formatted_address": "50 Shared Way, Austin, TX 78701",
+                    "city": "Austin",
+                    "state": "TX",
+                    "zip_code": "78701",
+                    "latitude": 30.2672,
+                    "longitude": -97.7431,
+                    "primary_trade": "concrete_contractor",
+                    "trade_categories": ["concrete_contractor"],
+                    "google_rating": 4.6,
+                    "google_review_count": 12,
+                    "website_url": "https://shared.example/contact",
+                    "phone_number": "(512) 555-0444",
+                    "distance_miles": 2.2,
+                }
+            ],
+        },
+    )
+    def test_admin_search_creates_directory_entries_and_shares_entries_with_intake(self, _mock_places):
+        from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry
+
+        user_model = get_user_model()
+        admin = user_model.objects.create_user(email="directory-admin@example.com", password="testpass123", is_staff=True)
+        self.client.force_authenticate(admin)
+        response = self.client.get(
+            "/api/projects/admin/contractor-search/",
+            {"query": "concrete contractor", "lat": 30.2672, "lng": -97.7431, "radius_miles": 25},
+        )
+
+        self.assertEqual(response.status_code, 200, response.content.decode())
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), 1)
+        entry = ContractorDirectoryEntry.objects.get()
+        self.assertEqual(entry.google_place_id, "places/shared-directory-company")
+        self.assertEqual(entry.website_domain, "shared.example")
+        self.assertTrue(
+            ContractorDirectoryDiscovery.objects.filter(
+                directory_entry=entry,
+                source_type=ContractorDirectoryDiscovery.SOURCE_ADMIN_SEARCH,
+                admin_user=admin,
+            ).exists()
+        )
+
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            accomplishment_text="Need a concrete contractor.",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+        )
+        intake.ensure_share_token()
+        self.client.force_authenticate(user=None)
+        with patch(
+            "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+            return_value=_mock_places.return_value,
+        ):
+            response = self.client.get(
+                "/api/projects/public-intake/contractor-search/",
+                {"token": intake.share_token, "query": "concrete contractor", "lat": 30.2672, "lng": -97.7431},
+            )
+        self.assertEqual(response.status_code, 200, response.content.decode())
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), 1)
+        self.assertEqual(entry.discoveries.filter(source_type=ContractorDirectoryDiscovery.SOURCE_ADMIN_SEARCH).count(), 1)
+        self.assertTrue(entry.discoveries.filter(source_type=ContractorDirectoryDiscovery.SOURCE_PUBLIC_INTAKE).exists())
+
+        self.client.force_authenticate(admin)
+        response = self.client.get("/api/projects/admin/contractor-directory/", {"has_website": "true", "missing_email": "true"})
+        self.assertEqual(response.status_code, 200, response.content.decode())
+        self.assertEqual(response.json()["results"][0]["business_name"], "Shared Directory Company")
 
     def test_public_intake_analysis_skips_questions_for_already_clear_description(self):
         intake = ProjectIntake.objects.create(
