@@ -343,6 +343,14 @@ def _places_headers() -> dict[str, str]:
     }
 
 
+def _place_details_headers() -> dict[str, str]:
+    return {
+        "X-Goog-Api-Key": google_places_api_key(),
+        "Content-Type": "application/json",
+        "X-Goog-FieldMask": "id,displayName,formattedAddress,addressComponents,location",
+    }
+
+
 def _debug_headers(headers: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in (headers or {}).items() if key.lower() != "x-goog-api-key"}
 
@@ -355,6 +363,49 @@ def _response_body_debug(response: Any) -> Any:
         return response.json()
     except Exception:
         return ""
+
+
+def fetch_google_place_details(place_id: Any) -> dict[str, Any]:
+    api_key = google_places_api_key()
+    place_name = _safe_text(place_id)
+    diagnostic = {
+        "configured": bool(api_key),
+        "requested": False,
+        "http_status": None,
+        "error": "",
+        "response_body": "",
+    }
+    if not api_key or not place_name:
+        diagnostic["error"] = "google_places_api_key_missing" if not api_key else "missing_place_id"
+        return {"place": {}, "diagnostic": diagnostic}
+
+    resource_name = place_name if place_name.startswith("places/") else f"places/{place_name}"
+    url = f"https://places.googleapis.com/v1/{resource_name}"
+    headers = _place_details_headers()
+    diagnostic["requested"] = True
+    diagnostic["request_url"] = url
+    diagnostic["request_headers_debug"] = _debug_headers(headers)
+    try:
+        logger.info(
+            "Google Place Details request prepared.",
+            extra={"request_url": url, "request_headers": _debug_headers(headers), "place_id_present": bool(place_name)},
+        )
+        response = requests.get(url, headers=headers, timeout=10)
+        diagnostic["http_status"] = response.status_code
+        if not (200 <= response.status_code < 300):
+            diagnostic["error"] = f"place_details_http_{response.status_code}"
+            diagnostic["response_body"] = _response_body_debug(response)
+            logger.warning(
+                "Google Place Details request failed.",
+                extra={"request_url": url, "status_code": response.status_code, "response_body": diagnostic["response_body"]},
+            )
+            return {"place": {}, "diagnostic": diagnostic}
+        payload = response.json() if response.content else {}
+        return {"place": payload if isinstance(payload, dict) else {}, "diagnostic": diagnostic}
+    except Exception:
+        diagnostic["error"] = "place_details_exception"
+        logger.exception("Google Place Details request raised an exception.")
+        return {"place": {}, "diagnostic": diagnostic}
 
 
 def _normalize_place(place: dict[str, Any], *, source: str = "google_places") -> dict[str, Any]:
@@ -373,6 +424,7 @@ def _normalize_place(place: dict[str, Any], *, source: str = "google_places") ->
         "google_place_id": _safe_text(place.get("id")),
         "business_name": _safe_text(display_name.get("text") if isinstance(display_name, dict) else display_name),
         "formatted_address": _safe_text(place.get("formattedAddress")),
+        "addressComponents": place.get("addressComponents") if isinstance(place.get("addressComponents"), list) else [],
         "city": "",
         "state": "",
         "zip_code": "",

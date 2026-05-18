@@ -3159,6 +3159,58 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(updated.city, "Manual City")
         self.assertEqual(updated.zip_code, "78000")
 
+    def test_contractor_directory_parses_suite_formatted_address(self):
+        from projects.services.contractor_directory import upsert_directory_entry_from_place
+
+        entry = upsert_directory_entry_from_place(
+            {
+                "business_name": "Suite Builder LLC",
+                "formattedAddress": "16654 San Pedro Ave, Suite 6004, San Antonio, TX 78232, USA",
+            }
+        )
+        self.assertEqual(entry.address_line1, "16654 San Pedro Ave, Suite 6004")
+        self.assertEqual(entry.city, "San Antonio")
+        self.assertEqual(entry.state, "TX")
+        self.assertEqual(entry.zip_code, "78232")
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
+    @patch("projects.services.google_places_contractors.requests.get")
+    def test_contractor_directory_place_details_fills_missing_city_state_zip(self, mock_get):
+        from projects.services.contractor_directory import upsert_directory_entry_from_place
+
+        mock_get.return_value = SimpleNamespace(
+            status_code=200,
+            content=b"{}",
+            text="",
+            json=lambda: {
+                "id": "places/details-builder",
+                "formattedAddress": "16654 San Pedro Ave, San Antonio, TX 78232, USA",
+                "addressComponents": [
+                    {"longText": "16654", "shortText": "16654", "types": ["street_number"]},
+                    {"longText": "San Pedro Avenue", "shortText": "San Pedro Ave", "types": ["route"]},
+                    {"longText": "San Antonio", "shortText": "San Antonio", "types": ["locality"]},
+                    {"longText": "Texas", "shortText": "TX", "types": ["administrative_area_level_1"]},
+                    {"longText": "78232", "shortText": "78232", "types": ["postal_code"]},
+                ],
+                "location": {"latitude": 29.595, "longitude": -98.475},
+            },
+        )
+
+        entry = upsert_directory_entry_from_place(
+            {
+                "google_place_id": "places/details-builder",
+                "business_name": "Details Builder LLC",
+                "address_line1": "16654 San Pedro Ave",
+                "latitude": 29.595,
+                "longitude": -98.475,
+            }
+        )
+        self.assertEqual(entry.address_line1, "16654 San Pedro Ave")
+        self.assertEqual(entry.city, "San Antonio")
+        self.assertEqual(entry.state, "TX")
+        self.assertEqual(entry.zip_code, "78232")
+        mock_get.assert_called_once()
+
     @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
     @patch("projects.services.google_places_contractors.requests.post")
     def test_google_places_radius_filter_excludes_out_of_state_and_unknown_location_results(self, mock_post):

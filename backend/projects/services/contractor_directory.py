@@ -176,7 +176,10 @@ def _address_from_formatted_address(value: Any) -> dict[str, str]:
     if not formatted:
         return {}
     parts = [part.strip() for part in formatted.split(",") if part.strip()]
-    parsed = {"address_line1": parts[0] if parts else "", "city": "", "state": "", "zip_code": ""}
+    line1 = parts[0] if parts else ""
+    if len(parts) >= 4 and re.match(r"^(suite|ste|unit|apt|#)\b", parts[1], flags=re.IGNORECASE):
+        line1 = f"{line1}, {parts[1]}".strip(", ")
+    parsed = {"address_line1": line1, "city": "", "state": "", "zip_code": ""}
     has_country = bool(parts and parts[-1].lower() in {"usa", "us", "united states", "united states of america"})
     if len(parts) >= 4 and has_country:
         parsed["city"] = parts[-3]
@@ -201,6 +204,10 @@ def _address_from_formatted_address(value: Any) -> dict[str, str]:
         if zip_match:
             parsed["zip_code"] = normalize_zip(zip_match.group(0))
     return parsed
+
+
+def parse_google_formatted_address(value: Any) -> dict[str, str]:
+    return _address_from_formatted_address(value)
 
 
 def parse_place_address(place: dict[str, Any]) -> dict[str, str]:
@@ -268,6 +275,55 @@ def normalize_place_result(place: dict[str, Any]) -> dict[str, Any]:
         "services": _place_services(place),
         "source": _safe_text(place.get("source")) or ContractorDirectoryEntry.SOURCE_GOOGLE_PLACES,
     }
+
+
+def _has_complete_location(data: dict[str, Any] | None) -> bool:
+    if not data:
+        return False
+    return all(_safe_text(data.get(field)) for field in ["city", "state", "zip_code"])
+
+
+def _entry_has_complete_location(entry: ContractorDirectoryEntry | None) -> bool:
+    if entry is None:
+        return False
+    return bool(entry.city and entry.state and entry.zip_code)
+
+
+def _merge_place_details(base_place: dict[str, Any], details: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base_place or {})
+    for field in ["addressComponents", "address_components", "formattedAddress", "formatted_address", "location"]:
+        value = details.get(field)
+        if value not in (None, "", []):
+            merged[field] = value
+    if details.get("id") and not _safe_text(merged.get("google_place_id") or merged.get("id") or merged.get("place_id")):
+        merged["id"] = details.get("id")
+    if details.get("displayName") and not _display_name(merged):
+        merged["displayName"] = details.get("displayName")
+    return merged
+
+
+def _enrich_place_location_if_needed(
+    place: dict[str, Any],
+    data: dict[str, Any],
+    entry: ContractorDirectoryEntry | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if _has_complete_location(data) or _entry_has_complete_location(entry):
+        return place, data
+    google_place_id = _safe_text(data.get("google_place_id") or place.get("google_place_id") or place.get("id") or place.get("place_id"))
+    if not google_place_id:
+        return place, data
+    try:
+        from projects.services.google_places_contractors import fetch_google_place_details
+
+        details_payload = fetch_google_place_details(google_place_id)
+    except Exception:
+        return place, data
+    details = details_payload.get("place") if isinstance(details_payload, dict) else {}
+    if not isinstance(details, dict) or not details:
+        return place, data
+    enriched_place = _merge_place_details(place, details)
+    enriched_data = normalize_place_result(enriched_place)
+    return enriched_place, enriched_data
 
 
 def find_existing_directory_entry(normalized_data: dict[str, Any]) -> ContractorDirectoryEntry | None:
@@ -341,11 +397,15 @@ def upsert_directory_entry_from_place(
     place: dict[str, Any],
     context: dict[str, Any] | None = None,
 ) -> ContractorDirectoryEntry | None:
-    data = normalize_place_result(place or {})
+    place = place or {}
+    data = normalize_place_result(place)
     if not data.get("business_name") or not data.get("normalized_name"):
         return None
 
     entry = find_existing_directory_entry(data)
+    place, data = _enrich_place_location_if_needed(place, data, entry)
+    if entry is None:
+        entry = find_existing_directory_entry(data)
     if entry is None:
         entry = ContractorDirectoryEntry.objects.create(**data)
     else:
