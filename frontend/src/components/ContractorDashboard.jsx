@@ -2411,12 +2411,12 @@ export default function ContractorDashboard() {
 
           <div
             data-testid="dashboard-priority-schedule-grid"
-            className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] xl:items-stretch"
+            className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] xl:items-start"
           >
             <DashboardCard
               testId="dashboard-next-actions"
               tone="premium"
-              className="h-full p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
+              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
             >
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
@@ -2641,12 +2641,11 @@ export default function ContractorDashboard() {
             subtitle="Active due work only. Planned timelines stay in agreement previews until activated."
             variant="premium"
             testId="dashboard-schedule-wrapper"
-            className="h-full"
           >
             <DashboardCard
               testId="dashboard-schedule-section"
               tone="premium"
-              className={`h-full min-h-[210px] shadow-[0_22px_50px_rgba(2,8,23,0.34)] ${
+              className={`min-h-[210px] shadow-[0_22px_50px_rgba(2,8,23,0.34)] ${
                 scheduleHasItems ? "p-4" : "p-3.5"
               }`}
             >
@@ -2775,19 +2774,18 @@ export default function ContractorDashboard() {
 
           <div
             data-testid="dashboard-work-bids-grid"
-            className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] xl:items-stretch"
+            className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] xl:items-start"
           >
           <DashboardSection
             title="Work and Money"
             subtitle="Track job progress on the left and payment handoffs on the right."
             variant="premium"
             testId="dashboard-work-money-wrapper"
-            className="h-full"
           >
             <DashboardCard
               testId="dashboard-work-money"
               tone="premium"
-              className="h-full p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
+              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
             >
               <div id="layout" className="grid gap-4 xl:grid-cols-2 xl:items-start">
                 <div className="space-y-3">
@@ -3222,12 +3220,11 @@ export default function ContractorDashboard() {
             subtitle="A compact look at bid activity before it becomes an agreement."
             variant="premium"
             testId="dashboard-bids-wrapper"
-            className="h-full"
           >
             <DashboardCard
               testId="dashboard-bids-summary"
               tone="premium"
-              className="h-full p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
+              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
             >
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-xl border border-white/10 bg-white/10 p-4">

@@ -209,6 +209,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   expect(scheduleBox.y).toBeLessThan(workWrapperBox.y);
   expect(Math.abs(nextBox.y - scheduleWrapperBox.y)).toBeLessThan(40);
   expect(Math.abs(workWrapperBox.y - bidsWrapperBox.y)).toBeLessThan(40);
+  expect(scheduleBox.y + scheduleBox.height).toBeLessThan(bidsWrapperBox.y);
 
   const scheduleContainsBids = await page
     .getByTestId('dashboard-schedule-section')
