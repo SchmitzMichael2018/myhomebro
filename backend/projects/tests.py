@@ -3108,6 +3108,57 @@ class ContractorPublicPresenceApiTests(TestCase):
         })
         self.assertEqual(ContractorDirectoryEntry.objects.filter(normalized_name="same name").count(), 2)
 
+    def test_contractor_directory_maps_google_location_fields_without_blank_overwrite(self):
+        from projects.services.contractor_directory import upsert_directory_entry_from_place
+
+        formatted_entry = upsert_directory_entry_from_place(
+            {
+                "google_place_id": "places/spectrum-concrete",
+                "business_name": "Spectrum Concrete Co",
+                "formatted_address": "12703 Spectrum Dr #103, San Antonio, TX 78249, USA",
+            }
+        )
+        self.assertEqual(formatted_entry.address_line1, "12703 Spectrum Dr #103")
+        self.assertEqual(formatted_entry.city, "San Antonio")
+        self.assertEqual(formatted_entry.state, "TX")
+        self.assertEqual(formatted_entry.zip_code, "78249")
+
+        component_entry = upsert_directory_entry_from_place(
+            {
+                "google_place_id": "places/component-builder",
+                "business_name": "Component Builder LLC",
+                "addressComponents": [
+                    {"longText": "12703", "shortText": "12703", "types": ["street_number"]},
+                    {"longText": "Spectrum Drive", "shortText": "Spectrum Dr", "types": ["route"]},
+                    {"longText": "103", "shortText": "103", "types": ["subpremise"]},
+                    {"longText": "San Antonio", "shortText": "San Antonio", "types": ["locality"]},
+                    {"longText": "Texas", "shortText": "TX", "types": ["administrative_area_level_1"]},
+                    {"longText": "78249-4013", "shortText": "78249-4013", "types": ["postal_code"]},
+                ],
+            }
+        )
+        self.assertEqual(component_entry.address_line1, "12703 Spectrum Dr #103")
+        self.assertEqual(component_entry.city, "San Antonio")
+        self.assertEqual(component_entry.state, "TX")
+        self.assertEqual(component_entry.zip_code, "78249")
+
+        component_entry.address_line1 = "Manual Address"
+        component_entry.city = "Manual City"
+        component_entry.state = "TX"
+        component_entry.zip_code = "78000"
+        component_entry.save(update_fields=["address_line1", "city", "state", "zip_code"])
+        updated = upsert_directory_entry_from_place(
+            {
+                "google_place_id": "places/component-builder",
+                "business_name": "Component Builder LLC",
+                "formatted_address": "",
+                "addressComponents": [],
+            }
+        )
+        self.assertEqual(updated.address_line1, "Manual Address")
+        self.assertEqual(updated.city, "Manual City")
+        self.assertEqual(updated.zip_code, "78000")
+
     @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
     @patch("projects.services.google_places_contractors.requests.post")
     def test_google_places_radius_filter_excludes_out_of_state_and_unknown_location_results(self, mock_post):

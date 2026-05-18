@@ -25,6 +25,7 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
             normalized_phone=normalize_phone("(512) 555-0101"),
             city="Austin",
             state="TX",
+            zip_code="78701",
             services=["concrete contractor"],
         )
 
@@ -33,6 +34,10 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
             f"/api/projects/admin/contractor-directory/{self.entry.id}/",
             {
                 "public_email": "hello@austinconcrete.example",
+                "address_line1": "12703 Spectrum Dr #103",
+                "city": "San Antonio",
+                "state": "TX",
+                "zip_code": "78249-4013",
                 "services": "concrete contractor, patio contractor",
                 "email_source_url": "https://www.austinconcrete.example/contact",
                 "services_source_url": "https://www.austinconcrete.example/services",
@@ -44,6 +49,10 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.public_email, "hello@austinconcrete.example")
+        self.assertEqual(self.entry.address_line1, "12703 Spectrum Dr #103")
+        self.assertEqual(self.entry.city, "San Antonio")
+        self.assertEqual(self.entry.state, "TX")
+        self.assertEqual(self.entry.zip_code, "78249")
         self.assertEqual(self.entry.services, ["concrete contractor", "patio contractor"])
         self.assertEqual(self.entry.enrichment_status, ContractorDirectoryEntry.ENRICHMENT_REVIEWED)
         self.assertIsNotNone(self.entry.enriched_at)
@@ -110,6 +119,12 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
                         "status": "ready",
                         "proposed_public_email": "hello@austinconcrete.example",
                         "proposed_phone": "512-555-2222",
+                        "proposed_location": {
+                            "address_line1": "12703 Spectrum Dr #103",
+                            "city": "San Antonio",
+                            "state": "Texas",
+                            "zip_code": "78249-4013",
+                        },
                         "proposed_services": ["concrete contractor", "patio contractor"],
                         "email_source_url": "https://www.austinconcrete.example/contact",
                         "services_source_url": "https://www.austinconcrete.example/services",
@@ -125,8 +140,61 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.public_email, "hello@austinconcrete.example")
         self.assertEqual(self.entry.phone, "512-555-2222")
+        self.assertEqual(self.entry.address_line1, "12703 Spectrum Dr #103")
+        self.assertEqual(self.entry.city, "San Antonio")
+        self.assertEqual(self.entry.state, "TX")
+        self.assertEqual(self.entry.zip_code, "78249")
         self.assertEqual(self.entry.services, ["concrete contractor", "patio contractor"])
         self.assertEqual(self.entry.enriched_by, self.user)
+
+    def test_csv_import_preview_and_apply_support_address_fields_without_blank_overwrite(self):
+        self.entry.address_line1 = "Existing Manual Address"
+        self.entry.city = "Austin"
+        self.entry.state = "TX"
+        self.entry.zip_code = "78701"
+        self.entry.save(update_fields=["address_line1", "city", "state", "zip_code"])
+
+        csv_text = (
+            "id,business_name,website,public_email,phone,address_line1,city,state,zip_code,services,email_source_url,services_source_url,enrichment_notes\n"
+            f"{self.entry.id},Austin Concrete Co,https://www.austinconcrete.example,,512-555-0101,12703 Spectrum Dr #103,San Antonio,TX,78249,\"concrete\",,,\n"
+        )
+        preview = self.client.post(
+            "/api/projects/admin/contractor-directory/import-preview/",
+            {"csv_text": csv_text},
+            format="json",
+        )
+        self.assertEqual(preview.status_code, 200)
+        row = preview.data["results"][0]
+        self.assertEqual(row["status"], "ready")
+        self.assertEqual(row["proposed_location"]["address_line1"], "12703 Spectrum Dr #103")
+        self.assertEqual(row["proposed_location"]["zip_code"], "78249")
+
+        apply = self.client.post(
+            "/api/projects/admin/contractor-directory/import-apply/",
+            {"rows": [row]},
+            format="json",
+        )
+        self.assertEqual(apply.status_code, 200)
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.address_line1, "12703 Spectrum Dr #103")
+        self.assertEqual(self.entry.city, "San Antonio")
+        self.assertEqual(self.entry.state, "TX")
+        self.assertEqual(self.entry.zip_code, "78249")
+
+        blank_row = {
+            "matched_entry_id": self.entry.id,
+            "status": "ready",
+            "proposed_location": {"address_line1": "", "city": "", "state": "", "zip_code": ""},
+            "proposed_services": ["concrete"],
+        }
+        self.client.post(
+            "/api/projects/admin/contractor-directory/import-apply/",
+            {"rows": [blank_row]},
+            format="json",
+        )
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.address_line1, "12703 Spectrum Dr #103")
+        self.assertEqual(self.entry.city, "San Antonio")
 
     def test_csv_import_apply_does_not_overwrite_existing_email_without_approval(self):
         self.entry.public_email = "existing@austinconcrete.example"

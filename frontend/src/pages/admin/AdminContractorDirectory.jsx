@@ -15,8 +15,10 @@ const EXPORT_HEADERS = [
   "business_name",
   "website",
   "phone",
+  "address_line1",
   "city",
   "state",
+  "zip_code",
   "public_email",
   "services",
   "email_source_url",
@@ -62,6 +64,15 @@ function servicesToText(value) {
   return safeText(value);
 }
 
+function formatLocation(row) {
+  const line1 = safeText(row?.address_line1);
+  const cityStateZip = [
+    [row?.city, row?.state].filter(Boolean).join(", "),
+    row?.zip_code,
+  ].filter(Boolean).join(" ");
+  return [line1, cityStateZip].filter(Boolean).join("\n");
+}
+
 function csvEscape(value) {
   const text = Array.isArray(value) ? value.join("; ") : safeText(value);
   return `"${text.replace(/"/g, '""')}"`;
@@ -90,6 +101,10 @@ function editFormFromRow(row) {
     business_name: row?.business_name || "",
     website: row?.website || "",
     phone: row?.phone || "",
+    address_line1: row?.address_line1 || "",
+    city: row?.city || "",
+    state: row?.state || "",
+    zip_code: row?.zip_code || "",
     public_email: row?.public_email || "",
     services: servicesToText(row?.services || []),
     email_source_url: row?.email_source_url || "",
@@ -358,7 +373,7 @@ export default function AdminContractorDirectory() {
         <p className="mt-1 text-sm text-sky-100/75">
           Paste reviewed website/email enrichment rows, preview matches, then apply approved updates.
         </p>
-        <textarea data-testid="admin-contractor-import-csv" value={csvText} onChange={(event) => setCsvText(event.target.value)} placeholder="id,business_name,website,public_email,phone,services,email_source_url,services_source_url,enrichment_notes" className={`${inputClass} mt-4 min-h-28 font-mono`} />
+        <textarea data-testid="admin-contractor-import-csv" value={csvText} onChange={(event) => setCsvText(event.target.value)} placeholder="id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,email_source_url,services_source_url,enrichment_notes" className={`${inputClass} mt-4 min-h-28 font-mono`} />
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" data-testid="admin-contractor-import-preview" onClick={previewImport} disabled={importLoading || !safeText(csvText)} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#0a2550] disabled:opacity-60">Preview Import</button>
           <button type="button" data-testid="admin-contractor-import-apply" onClick={applyImport} disabled={importLoading || !importRows.length} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">Apply Approved Updates</button>
@@ -370,7 +385,7 @@ export default function AdminContractorDirectory() {
             <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-wide text-sky-100/65">
-                  {["Approve", "Match Status", "Business Name", "Existing Email", "Proposed Email", "Existing Services", "Proposed Services", "Warnings"].map((heading) => (
+                  {["Approve", "Match Status", "Business Name", "Existing Email", "Proposed Email", "Proposed Location", "Existing Services", "Proposed Services", "Warnings"].map((heading) => (
                     <th key={heading} className={tableHeadClass}>{heading}</th>
                   ))}
                 </tr>
@@ -385,6 +400,7 @@ export default function AdminContractorDirectory() {
                     <td className={tableCellClass}>{row.business_name}</td>
                     <td className={tableCellClass}>{row.existing_public_email || "Email not listed"}</td>
                     <td className={tableCellClass}>{row.proposed_public_email || ""}</td>
+                    <td className={`${tableCellClass} whitespace-pre-line`}>{formatLocation(row.proposed_location || {})}</td>
                     <td className={tableCellClass}>{servicesToText(row.existing_services)}</td>
                     <td className={tableCellClass}>{servicesToText(row.proposed_services)}</td>
                     <td className={tableCellClass}>{(row.warnings || []).join("; ")}</td>
@@ -436,7 +452,7 @@ export default function AdminContractorDirectory() {
           <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide text-sky-100/65">
-                {["Actions", "Business Name", "Website", "Phone", "Email", "City", "State", "Rating", "Reviews", "Claimed", "Profile Status", "Enrichment Status", "Last Seen"].map((heading) => (
+                {["Actions", "Business Name", "Website", "Phone", "Email", "Location", "Rating", "Reviews", "Claimed", "Profile Status", "Enrichment Status", "Last Seen"].map((heading) => (
                   <th key={heading} className={tableHeadClass}>{heading}</th>
                 ))}
               </tr>
@@ -451,8 +467,7 @@ export default function AdminContractorDirectory() {
                   <td className={tableCellClass}>{row.website ? <a href={row.website} target="_blank" rel="noreferrer" className="font-semibold text-sky-100 hover:underline">{websiteHost(row.website)}</a> : <span className="text-sky-100/45">Not listed</span>}</td>
                   <td className={tableCellClass}>{row.phone || "Not listed"}</td>
                   <td className={tableCellClass}>{row.public_email || "Email not listed"}</td>
-                  <td className={tableCellClass}>{row.city || ""}</td>
-                  <td className={tableCellClass}>{row.state || ""}</td>
+                  <td className={`${tableCellClass} whitespace-pre-line`}>{formatLocation(row)}</td>
                   <td className={tableCellClass}>{row.rating ?? ""}</td>
                   <td className={tableCellClass}>{row.review_count ?? ""}</td>
                   <td className={tableCellClass}>{row.claimed ? "Yes" : "No"}</td>
@@ -484,6 +499,10 @@ export default function AdminContractorDirectory() {
                 ["business_name", "Business Name"],
                 ["website", "Website"],
                 ["phone", "Phone"],
+                ["address_line1", "Address Line 1"],
+                ["city", "City"],
+                ["state", "State"],
+                ["zip_code", "ZIP Code"],
                 ["public_email", "Public Email"],
                 ["email_source_url", "Email Source URL"],
                 ["services_source_url", "Services Source URL"],

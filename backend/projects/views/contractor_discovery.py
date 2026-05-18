@@ -18,7 +18,9 @@ from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_directory import (
     normalize_business_name,
     normalize_phone,
+    normalize_state,
     normalize_website_domain,
+    normalize_zip,
     upsert_directory_entry_from_place,
 )
 from projects.services.contractor_opportunities import (
@@ -290,6 +292,7 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "website": entry.website,
         "phone": entry.phone,
         "public_email": entry.public_email,
+        "address_line1": entry.address_line1,
         "city": entry.city,
         "state": entry.state,
         "zip_code": entry.zip_code,
@@ -346,6 +349,12 @@ def _preview_import_row(row: dict) -> dict:
     proposed_email, email_error = _normalize_email_value(row.get("public_email"), reject_placeholder=True)
     proposed_phone = _null_if_blank(row.get("phone"))
     proposed_services = _parse_services(row.get("services"))
+    proposed_location = {
+        "address_line1": _null_if_blank(row.get("address_line1")),
+        "city": _null_if_blank(row.get("city")),
+        "state": _null_if_blank(normalize_state(row.get("state"))),
+        "zip_code": _null_if_blank(normalize_zip(row.get("zip_code") or row.get("zip"))),
+    }
     warnings = []
     row_status = "ready"
 
@@ -369,6 +378,9 @@ def _preview_import_row(row: dict) -> dict:
             has_changes = True
         if proposed_services and _changed_services(entry.services, proposed_services):
             has_changes = True
+        for field, value in proposed_location.items():
+            if value and _safe_text(value) != _safe_text(getattr(entry, field, "")):
+                has_changes = True
         for field in ["email_source_url", "services_source_url", "enrichment_notes"]:
             if _safe_text(row.get(field)) and _safe_text(row.get(field)) != _safe_text(getattr(entry, field, "")):
                 has_changes = True
@@ -385,6 +397,13 @@ def _preview_import_row(row: dict) -> dict:
         "proposed_phone": proposed_phone,
         "existing_services": entry.services if entry else [],
         "proposed_services": proposed_services,
+        "existing_location": {
+            "address_line1": entry.address_line1 if entry else None,
+            "city": entry.city if entry else None,
+            "state": entry.state if entry else None,
+            "zip_code": entry.zip_code if entry else None,
+        },
+        "proposed_location": proposed_location,
         "email_source_url": _safe_text(row.get("email_source_url")),
         "services_source_url": _safe_text(row.get("services_source_url")),
         "enrichment_notes": _safe_text(row.get("enrichment_notes")),
@@ -514,6 +533,14 @@ class AdminContractorDirectoryView(APIView):
         if "phone" in data:
             entry.phone = _null_if_blank(data.get("phone"))
             entry.normalized_phone = _null_if_blank(normalize_phone(entry.phone))
+        if "address_line1" in data:
+            entry.address_line1 = _null_if_blank(data.get("address_line1"))
+        if "city" in data:
+            entry.city = _null_if_blank(data.get("city"))
+        if "state" in data:
+            entry.state = _null_if_blank(normalize_state(data.get("state")))
+        if "zip_code" in data:
+            entry.zip_code = _null_if_blank(normalize_zip(data.get("zip_code")))
         if "services" in data:
             entry.services = _parse_services(data.get("services"))
             enrichment_touched = True
@@ -598,6 +625,13 @@ class AdminContractorDirectoryImportApplyView(APIView):
             services = _parse_services(row.get("proposed_services") if "proposed_services" in row else row.get("services"))
             if services:
                 entry.services = services
+            location_updates = row.get("proposed_location") if isinstance(row.get("proposed_location"), dict) else row
+            for field in ["address_line1", "city", "state", "zip_code"]:
+                value = location_updates.get(field) if isinstance(location_updates, dict) else None
+                if field == "zip_code":
+                    value = normalize_zip(value)
+                if value not in (None, ""):
+                    setattr(entry, field, normalize_state(value) if field == "state" else _safe_text(value))
             for field in ["email_source_url", "services_source_url", "enrichment_notes"]:
                 if field in row:
                     setattr(entry, field, _null_if_blank(row.get(field)))

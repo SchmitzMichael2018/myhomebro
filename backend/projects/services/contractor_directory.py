@@ -10,6 +10,58 @@ from projects.models_contractor_discovery import ContractorDirectoryDiscovery, C
 
 
 COMMON_SUFFIXES = {"llc", "inc", "co", "company", "ltd"}
+STATE_ABBREVIATIONS = {
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
+}
 
 
 def _safe_text(value: Any) -> str:
@@ -51,6 +103,16 @@ def normalize_zip(value: Any) -> str:
     return digits[:5] if digits else _safe_text(value)[:5]
 
 
+def normalize_state(value: Any) -> str:
+    text = _safe_text(value)
+    if not text:
+        return ""
+    compact = re.sub(r"[^A-Za-z]", "", text).upper()
+    if len(compact) == 2:
+        return compact
+    return STATE_ABBREVIATIONS.get(text.lower(), text[:2].upper() if len(text) >= 2 else text.upper())
+
+
 def _display_name(place: dict[str, Any]) -> str:
     display_name = place.get("displayName")
     if isinstance(display_name, dict):
@@ -63,6 +125,97 @@ def _place_location(place: dict[str, Any]) -> dict[str, Any]:
     return {
         "latitude": place.get("latitude", location.get("latitude")),
         "longitude": place.get("longitude", location.get("longitude")),
+    }
+
+
+def _component_text(component: dict[str, Any], prefer_short: bool = False) -> str:
+    if prefer_short:
+        return _safe_text(component.get("shortText") or component.get("short_name") or component.get("longText") or component.get("long_name"))
+    return _safe_text(component.get("longText") or component.get("long_name") or component.get("shortText") or component.get("short_name"))
+
+
+def _address_from_components(place: dict[str, Any]) -> dict[str, str]:
+    components = place.get("address_components") or place.get("addressComponents") or []
+    if not isinstance(components, list):
+        return {}
+
+    by_type: dict[str, dict[str, Any]] = {}
+    for component in components:
+        if not isinstance(component, dict):
+            continue
+        for item_type in component.get("types") or []:
+            by_type.setdefault(_safe_text(item_type), component)
+
+    street_number = _component_text(by_type.get("street_number", {}))
+    route = _component_text(by_type.get("route", {}), prefer_short=True)
+    subpremise = _component_text(by_type.get("subpremise", {}), prefer_short=True)
+    line1 = " ".join(part for part in [street_number, route] if part).strip()
+    if subpremise:
+        suffix = subpremise if subpremise.startswith("#") else f"#{subpremise}"
+        line1 = f"{line1} {suffix}".strip() if line1 else suffix
+
+    city = (
+        _component_text(by_type.get("locality", {}))
+        or _component_text(by_type.get("postal_town", {}))
+        or _component_text(by_type.get("sublocality", {}))
+        or _component_text(by_type.get("administrative_area_level_3", {}))
+    )
+    state = normalize_state(_component_text(by_type.get("administrative_area_level_1", {}), prefer_short=True))
+    zip_code = normalize_zip(_component_text(by_type.get("postal_code", {}), prefer_short=True))
+
+    return {
+        "address_line1": line1,
+        "city": city,
+        "state": state,
+        "zip_code": zip_code,
+    }
+
+
+def _address_from_formatted_address(value: Any) -> dict[str, str]:
+    formatted = _safe_text(value)
+    if not formatted:
+        return {}
+    parts = [part.strip() for part in formatted.split(",") if part.strip()]
+    parsed = {"address_line1": parts[0] if parts else "", "city": "", "state": "", "zip_code": ""}
+    has_country = bool(parts and parts[-1].lower() in {"usa", "us", "united states", "united states of america"})
+    if len(parts) >= 4 and has_country:
+        parsed["city"] = parts[-3]
+        state_zip = parts[-2]
+    elif len(parts) >= 3:
+        parsed["city"] = parts[-2]
+        state_zip = parts[-1]
+    elif len(parts) == 2:
+        state_zip = parts[-1]
+    else:
+        state_zip = ""
+
+    match = re.search(r"\b([A-Za-z]{2}|[A-Za-z][A-Za-z\s]+?)\s+(\d{5}(?:-\d{4})?)\b", state_zip)
+    if match:
+        parsed["state"] = normalize_state(match.group(1))
+        parsed["zip_code"] = normalize_zip(match.group(2))
+    else:
+        tokens = state_zip.split()
+        if tokens:
+            parsed["state"] = normalize_state(tokens[0])
+        zip_match = re.search(r"\b\d{5}(?:-\d{4})?\b", formatted)
+        if zip_match:
+            parsed["zip_code"] = normalize_zip(zip_match.group(0))
+    return parsed
+
+
+def parse_place_address(place: dict[str, Any]) -> dict[str, str]:
+    formatted_address = _safe_text(place.get("formatted_address") or place.get("formattedAddress") or place.get("address"))
+    component_address = _address_from_components(place)
+    formatted = _address_from_formatted_address(formatted_address)
+    explicit = {
+        "address_line1": _safe_text(place.get("address_line1")),
+        "city": _safe_text(place.get("city")),
+        "state": normalize_state(place.get("state")),
+        "zip_code": normalize_zip(place.get("zip_code") or place.get("postal_code") or place.get("postalCode")),
+    }
+    return {
+        field: explicit.get(field) or component_address.get(field) or formatted.get(field) or ""
+        for field in ["address_line1", "city", "state", "zip_code"]
     }
 
 
@@ -94,11 +247,7 @@ def normalize_place_result(place: dict[str, Any]) -> dict[str, Any]:
     email = _safe_text(place.get("public_email") or place.get("email"))
     if email.lower() in {"email not listed", "not listed", "none", "null"}:
         email = ""
-    formatted_address = _safe_text(place.get("formatted_address") or place.get("formattedAddress") or place.get("address"))
-    address_line1 = _safe_text(place.get("address_line1"))
-    if not address_line1 and formatted_address:
-        address_line1 = formatted_address.split(",")[0].strip()
-    zip_code = normalize_zip(place.get("zip_code") or place.get("postal_code") or place.get("postalCode"))
+    address = parse_place_address(place)
     return {
         "business_name": business_name,
         "normalized_name": normalize_business_name(business_name),
@@ -107,10 +256,10 @@ def normalize_place_result(place: dict[str, Any]) -> dict[str, Any]:
         "phone": _null_if_blank(phone),
         "normalized_phone": _null_if_blank(normalize_phone(phone)),
         "public_email": _null_if_blank(email),
-        "address_line1": _null_if_blank(address_line1),
-        "city": _null_if_blank(place.get("city")),
-        "state": _null_if_blank(place.get("state")),
-        "zip_code": _null_if_blank(zip_code),
+        "address_line1": _null_if_blank(address.get("address_line1")),
+        "city": _null_if_blank(address.get("city")),
+        "state": _null_if_blank(address.get("state")),
+        "zip_code": _null_if_blank(address.get("zip_code")),
         "latitude": location.get("latitude"),
         "longitude": location.get("longitude"),
         "google_place_id": _null_if_blank(place.get("google_place_id") or place.get("id") or place.get("place_id")),

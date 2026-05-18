@@ -29,9 +29,11 @@ async function mockAdminDirectory(page) {
       business_name: 'Austin Concrete Co',
       website: 'https://www.austinconcrete.example/contact',
       phone: '512-555-0101',
+      address_line1: '12703 Spectrum Dr #103',
       public_email: null,
-      city: 'Austin',
+      city: 'San Antonio',
       state: 'TX',
+      zip_code: '78249',
       rating: 4.8,
       review_count: 22,
       services: ['concrete_contractor'],
@@ -174,6 +176,8 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-search-radius')).toHaveValue('25');
 
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('12703 Spectrum Dr #103');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('San Antonio, TX 78249');
   await expect(page.getByText('Email not listed')).toBeVisible();
   await expect(page.getByRole('link', { name: 'austinconcrete.example' })).toHaveAttribute(
     'href',
@@ -219,18 +223,28 @@ test('admin contractor directory supports manual edit, import preview/apply, and
 
   await page.getByTestId('admin-contractor-edit-42').click();
   await expect(page.getByTestId('admin-contractor-edit-modal')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-edit-address_line1')).toHaveValue('12703 Spectrum Dr #103');
+  await expect(page.getByTestId('admin-contractor-edit-city')).toHaveValue('San Antonio');
+  await expect(page.getByTestId('admin-contractor-edit-state')).toHaveValue('TX');
+  await expect(page.getByTestId('admin-contractor-edit-zip_code')).toHaveValue('78249');
   await page.getByTestId('admin-contractor-edit-public_email').fill('hello@austinconcrete.example');
+  await page.getByTestId('admin-contractor-edit-address_line1').fill('900 Builder Way');
+  await page.getByTestId('admin-contractor-edit-city').fill('Austin');
+  await page.getByTestId('admin-contractor-edit-state').fill('TX');
+  await page.getByTestId('admin-contractor-edit-zip_code').fill('78701');
   await page.getByTestId('admin-contractor-edit-services').fill('concrete contractor, patio contractor');
   await page.getByTestId('admin-contractor-edit-email_source_url').fill('https://www.austinconcrete.example/contact');
   await page.getByTestId('admin-contractor-edit-save').click();
 
   await expect.poll(() => mocks.wasPatchRequested()).toBe(true);
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('hello@austinconcrete.example');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('900 Builder Way');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin, TX 78701');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('reviewed');
 
   await page.getByTestId('admin-contractor-import-csv').fill(
-    'id,business_name,website,public_email,phone,services,email_source_url,services_source_url,enrichment_notes\n' +
-      '42,Austin Concrete Co,https://www.austinconcrete.example,hello@austinconcrete.example,512-555-0101,"concrete contractor, patio contractor",https://www.austinconcrete.example/contact,https://www.austinconcrete.example/services,Reviewed website.'
+    'id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,email_source_url,services_source_url,enrichment_notes\n' +
+      '42,Austin Concrete Co,https://www.austinconcrete.example,512-555-0101,900 Builder Way,Austin,TX,78701,hello@austinconcrete.example,"concrete contractor, patio contractor",https://www.austinconcrete.example/contact,https://www.austinconcrete.example/services,Reviewed website.'
   );
   await page.getByTestId('admin-contractor-import-preview').click();
   await expect(page.getByTestId('admin-contractor-import-preview-table')).toContainText('ready');
@@ -254,6 +268,10 @@ test('admin contractor directory export includes enrichment columns and blank mi
   expect(text).toContain('email_source_url');
   expect(text).toContain('services_source_url');
   expect(text).toContain('enrichment_notes');
+  expect(text).toContain('address_line1');
+  expect(text).toContain('zip_code');
+  expect(text).toContain('"12703 Spectrum Dr #103"');
+  expect(text).toContain('"78249"');
   expect(text).toContain('"Austin Concrete Co"');
   expect(text).not.toContain('Email not listed');
 });
