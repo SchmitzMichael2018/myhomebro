@@ -3719,6 +3719,55 @@ class ContractorPublicPresenceApiTests(TestCase):
         "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
         return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
     )
+    def test_bedroom_extension_overrides_stale_flooring_and_patio_classification(self, _mock_places):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+        from projects.services.project_titles import generate_project_title, normalize_project_classification
+
+        normalized = normalize_project_classification(
+            project_type="Flooring",
+            project_subtype="Patio / Hardscape",
+            description="Bedroom Extension",
+            refined_description="Build a bedroom extension on the home.",
+        )
+
+        self.assertEqual(normalized["project_type"], "General Contracting")
+        self.assertEqual(normalized["project_subtype"], "Bedroom Addition")
+        self.assertNotEqual(normalized["project_subtype"], "Patio / Hardscape")
+        self.assertEqual(
+            generate_project_title(
+                project_title="Flooring Installation Project",
+                project_type="Flooring",
+                project_subtype="Patio / Hardscape",
+                description="Bedroom Extension",
+            ),
+            "Bedroom Extension Project",
+        )
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring Installation Project",
+                "project_type": "Flooring",
+                "project_subtype": "Patio / Hardscape",
+                "description": "Bedroom Extension",
+                "project_scope_summary": "Build a bedroom extension on the home.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="flooring installation contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+
+        self.assertEqual(payload["summary"]["search_query"], "home addition contractor")
+        self.assertNotIn("flooring", payload["summary"]["search_query"].lower())
+        self.assertNotIn("patio", payload["summary"]["search_query"].lower())
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
+    )
     def test_verified_contractor_uses_user_email_only_when_public_email_enabled(self, _mock_places):
         from projects.services.contractor_discovery import build_contractor_recommendations
 

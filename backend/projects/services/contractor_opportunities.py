@@ -15,7 +15,7 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
-from projects.services.project_titles import generate_project_title
+from projects.services.project_titles import generate_project_title, normalize_project_classification
 from projects.utils import categorize_project, load_legal_text
 
 
@@ -163,10 +163,16 @@ def _opportunity_defaults(context: dict[str, Any]) -> dict[str, Any]:
     measurements = payload.get("measurements") or payload.get("measurement_answers")
     if measurements is None and intake is not None:
         measurements = getattr(intake, "ai_analysis_payload", {}).get("measurements", [])
-    project_type = _null_if_blank(payload.get("project_type") or getattr(intake, "ai_project_type", ""))
-    project_subtype = _null_if_blank(payload.get("project_subtype") or getattr(intake, "ai_project_subtype", ""))
     project_description = _null_if_blank(payload.get("project_description") or payload.get("description") or getattr(intake, "accomplishment_text", ""))
     refined_description = _null_if_blank(payload.get("refined_description") or getattr(intake, "ai_description", ""))
+    normalized_classification = normalize_project_classification(
+        project_type=payload.get("project_type") or getattr(intake, "ai_project_type", ""),
+        project_subtype=payload.get("project_subtype") or getattr(intake, "ai_project_subtype", ""),
+        description=project_description,
+        refined_description=refined_description,
+    )
+    project_type = _null_if_blank(normalized_classification.get("project_type"))
+    project_subtype = _null_if_blank(normalized_classification.get("project_subtype"))
     project_title = generate_project_title(
         project_title=payload.get("project_title") or getattr(intake, "ai_project_title", ""),
         project_type=project_type,

@@ -6,6 +6,7 @@ from typing import Any
 
 import requests
 from django.conf import settings
+from projects.services.project_titles import is_home_addition_description
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,8 @@ def infer_project_places_query(
     if not text.strip():
         return base_query
 
+    if is_home_addition_description(description, project_scope_summary):
+        return "home addition contractor"
     if any(term in text for term in ["floor", "flooring", "hardwood", "laminate", "vinyl", "tile"]):
         return "flooring installation contractor" if any(term in text for term in ["install", "installation"]) else "flooring contractor"
     if any(term in text for term in ["electrical", "electrician", "panel", "wiring"]):

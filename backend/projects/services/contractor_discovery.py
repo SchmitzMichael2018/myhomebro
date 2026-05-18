@@ -22,6 +22,7 @@ from projects.services.google_places_contractors import (
     suggest_radius_miles,
 )
 from projects.services.contractor_directory import upsert_directory_entry_from_place
+from projects.services.project_titles import is_home_addition_description, normalize_project_classification
 from projects.services.notification_center import create_notification
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
@@ -241,6 +242,13 @@ def _sanitize_search_query_for_project(query: str, project: dict[str, Any]) -> s
         ]
         if _safe_text(value)
     )
+    description_text = " ".join(
+        _safe_text(value).lower()
+        for value in [project.get("description"), project.get("project_scope_summary")]
+        if _safe_text(value)
+    )
+    if is_home_addition_description(description_text):
+        return "home addition contractor"
     source = classification or full_text
     if any(term in source for term in ["floor", "flooring", "hardwood", "laminate", "vinyl", "tile"]):
         return "flooring installation contractor" if any(term in full_text for term in ["install", "installation"]) else "flooring contractor"
@@ -725,6 +733,15 @@ def build_contractor_recommendations(
     limit: int = 40,
 ) -> dict[str, Any]:
     project = _normalize_project_payload(intake=intake, payload=payload)
+    normalized_classification = normalize_project_classification(
+        project_type=project.get("project_type"),
+        project_subtype=project.get("project_subtype"),
+        description=project.get("description"),
+        refined_description=project.get("project_scope_summary"),
+    )
+    if normalized_classification.get("project_type"):
+        project["project_type"] = normalized_classification["project_type"]
+        project["project_subtype"] = normalized_classification.get("project_subtype", "")
     search_query = _safe_text(query) or infer_project_places_query(
         project_type=project.get("project_type"),
         project_subtype=project.get("project_subtype"),

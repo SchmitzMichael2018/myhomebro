@@ -895,6 +895,139 @@ test("public intake flooring contractor search does not include stale electrical
   expect(requestedQueries.at(-1)).not.toContain("electric");
 });
 
+test("public intake bedroom extension overrides stale flooring and patio classification", async ({ page }) => {
+  const requestedQueries = [];
+
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 506,
+          token: "landing-token-bedroom-extension",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/landing-token-bedroom-extension",
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/contractor-search/") && method === "GET") {
+      const url = new URL(requestUrl);
+      requestedQueries.push(url.searchParams.get("query") || "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          summary: {
+            search_query: url.searchParams.get("query") || "",
+            radius_miles: 25,
+            project_mode: "full_service",
+            payment_preference: "escrow",
+            results_count: 0,
+          },
+          results: [],
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 506,
+          token: "landing-token-bedroom-extension",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "Bedroom Prospect",
+          customer_email: "bedroom@example.com",
+          customer_phone: "555-555-5555",
+          customer_address_line1: "100 Addition St",
+          customer_city: "Austin",
+          customer_state: "TX",
+          customer_postal_code: "78701",
+          same_as_customer_address: true,
+          project_class: "residential",
+          project_address_line1: "100 Addition St",
+          project_city: "Austin",
+          project_state: "TX",
+          project_postal_code: "78701",
+          accomplishment_text: "",
+          original_description: "",
+          refined_description: "",
+          project_scope_summary: "",
+          ai_project_title: "",
+          ai_project_type: "",
+          ai_project_subtype: "",
+          ai_description: "",
+          ai_milestones: [],
+          measurement_handling: "",
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
+          ai_analysis_payload: {},
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          sent_at: null,
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "Intake updated successfully.",
+        id: 506,
+        status: "submitted",
+        ai_project_title: body.ai_project_title || "Bedroom Extension Project",
+        ai_project_type: body.ai_project_type || "General Contracting",
+        ai_project_subtype: body.ai_project_subtype || "Bedroom Addition",
+        ai_description: body.refined_description || body.ai_description || "",
+        refined_description: body.refined_description || body.ai_description || "",
+        ai_milestones: [],
+        ai_clarification_questions: [],
+        ai_clarification_answers: {},
+        clarification_photos: [],
+        ai_analysis_payload: {},
+        branch_invites: [],
+      }),
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("landing-start-project-intake-button").click();
+  await expect(page).toHaveURL(/\/start-project\/landing-token-bedroom-extension$/);
+  await page.getByTestId("public-intake-accomplishment-text").fill("Bedroom Extension");
+  await page.getByRole("button", { name: /4 Project Summary/ }).click();
+
+  const summaryStep = page.getByTestId("public-intake-structured-output-step");
+  await expect(summaryStep).toContainText("General Contracting / Bedroom Addition");
+  await expect(summaryStep).not.toContainText("Flooring Installation Project");
+  await expect(summaryStep).not.toContainText("Patio / Hardscape");
+
+  await page.getByRole("button", { name: /8 Review \+ Confirm/ }).click();
+  await expect(page.getByTestId("public-intake-review-step")).toContainText("Bedroom Extension Project");
+  await expect(page.getByTestId("public-intake-review-step")).not.toContainText("Flooring Installation Project");
+
+  await page.getByRole("button", { name: "Choose Local Contractors" }).click();
+  const searchInput = page.getByTestId("public-intake-contractor-search-input");
+  await expect(searchInput).toHaveValue("home addition contractor");
+  await expect(searchInput).not.toHaveValue(/flooring|patio|hardscape/);
+  await expect.poll(() => requestedQueries.at(-1)).toBe("home addition contractor");
+});
+
 test("public intake description helper refines the project idea before generating the plan", async ({
   page,
 }) => {

@@ -85,7 +85,27 @@ function emptyStateMessage(summary, radiusMiles = 25) {
   return `We couldn’t find strong local matches within ${radiusLabel} of this project address. You can invite a contractor manually or adjust the project location.`;
 }
 
+function isHomeAdditionText(text) {
+  return /bedroom\s+extension|room\s+addition|home\s+addition|house\s+extension|add(?:ing)?\s+(?:a\s+)?room|add(?:ing)?\s+(?:a\s+)?bedroom|build(?:ing)?\s+(?:an?\s+)?addition/.test(
+    String(text || "").toLowerCase()
+  );
+}
+
 function buildInferredSearchQuery(form) {
+  const descriptionText = [
+    form?.original_description,
+    form?.accomplishment_text,
+    form?.refined_description,
+    form?.ai_description,
+    form?.project_scope_summary,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (isHomeAdditionText(descriptionText)) {
+    return "home addition contractor";
+  }
+
   const classificationText = [form?.ai_project_type, form?.ai_project_subtype, form?.ai_project_title]
     .filter(Boolean)
     .join(" ")

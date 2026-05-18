@@ -17,7 +17,7 @@ from projects.models import PublicContractorLead
 from projects.ai.agreement_description_writer import generate_or_improve_description
 from projects.services.invites_delivery import build_invite_url
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
-from projects.services.project_titles import generate_project_title
+from projects.services.project_titles import generate_project_title, normalize_project_classification
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 
 
@@ -80,6 +80,25 @@ def _ensure_generated_intake_title(intake: ProjectIntake, changed: list[str]) ->
     if generated and generated != intake.ai_project_title:
         intake.ai_project_title = generated
         changed.append("ai_project_title")
+
+
+def _normalized_intake_classification(intake: ProjectIntake) -> dict[str, str]:
+    return normalize_project_classification(
+        project_type=intake.ai_project_type,
+        project_subtype=intake.ai_project_subtype,
+        description=intake.accomplishment_text,
+        refined_description=intake.ai_description,
+    )
+
+
+def _ensure_normalized_intake_classification(intake: ProjectIntake, changed: list[str]) -> None:
+    normalized = _normalized_intake_classification(intake)
+    if normalized.get("project_type") and normalized["project_type"] != intake.ai_project_type:
+        intake.ai_project_type = normalized["project_type"]
+        changed.append("ai_project_type")
+    if normalized.get("project_subtype") and normalized["project_subtype"] != intake.ai_project_subtype:
+        intake.ai_project_subtype = normalized["project_subtype"]
+        changed.append("ai_project_subtype")
 
 
 class PublicIntakeView(APIView):
@@ -187,6 +206,7 @@ class PublicIntakeView(APIView):
             )
 
         project_title = _generated_intake_title(intake)
+        classification = _normalized_intake_classification(intake)
         payload = {
             "id": intake.id,
             "token": intake.share_token,
@@ -225,8 +245,8 @@ class PublicIntakeView(APIView):
             "homeowner_task_summary": intake.homeowner_task_summary,
             "homeowner_assistance_summary": intake.homeowner_assistance_summary,
             "ai_project_title": project_title,
-            "ai_project_type": intake.ai_project_type,
-            "ai_project_subtype": intake.ai_project_subtype,
+            "ai_project_type": classification.get("project_type") or intake.ai_project_type,
+            "ai_project_subtype": classification.get("project_subtype") or intake.ai_project_subtype,
             "ai_description": intake.ai_description,
             "refined_description": intake.ai_description,
             "ai_project_timeline_days": intake.ai_project_timeline_days,
@@ -414,6 +434,7 @@ class PublicIntakeView(APIView):
         if branch_error:
             return Response({"detail": branch_error}, status=status.HTTP_400_BAD_REQUEST)
 
+        _ensure_normalized_intake_classification(intake, changed)
         _ensure_generated_intake_title(intake, changed)
 
         branch_only_request = bool(branch_flow) and not has_intake_field_updates
@@ -511,6 +532,7 @@ class PublicIntakeView(APIView):
                 ]
             )
 
+        _ensure_normalized_intake_classification(intake, changed)
         _ensure_generated_intake_title(intake, changed)
 
         intake.save(update_fields=changed + ["updated_at"])

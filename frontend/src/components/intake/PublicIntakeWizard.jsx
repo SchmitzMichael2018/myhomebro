@@ -132,7 +132,60 @@ function buildProjectContextText(form) {
     .toLowerCase();
 }
 
+function buildDescriptionSourceText(form) {
+  return [
+    form?.accomplishment_text,
+    form?.refined_description,
+    form?.ai_description,
+    form?.project_scope_summary,
+    form?.ai_analysis_payload?.project_scope_summary,
+    form?.ai_analysis_payload?.scope_summary,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function isHomeAdditionText(text) {
+  return /bedroom\s+extension|room\s+addition|home\s+addition|house\s+extension|add(?:ing)?\s+(?:a\s+)?room|add(?:ing)?\s+(?:a\s+)?bedroom|build(?:ing)?\s+(?:an?\s+)?addition/.test(
+    String(text || "").toLowerCase()
+  );
+}
+
+function inferProjectTypeFromDescription(form) {
+  const text = buildDescriptionSourceText(form);
+  if (!text.trim()) return null;
+  if (isHomeAdditionText(text)) {
+    return { type: "General Contracting", subtype: /bedroom/.test(text) ? "Bedroom Addition" : "Home Addition" };
+  }
+  if (/(patio|concrete|slab|driveway|walkway|sidewalk|masonry|hardscape|paver)/.test(text)) {
+    return { type: "Concrete", subtype: "Patio / Hardscape" };
+  }
+  if (/(kitchen|cabinet|countertop|carpentry|quartz|granite)/.test(text)) {
+    if (/(cabinet|carpentry)/.test(text)) {
+      return { type: "Cabinets / Carpentry", subtype: "Kitchen Remodeling" };
+    }
+    return { type: "Kitchen Remodeling", subtype: "Countertops" };
+  }
+  if (/(floor|flooring|tile|vinyl|laminate|hardwood)/.test(text)) {
+    return { type: "Flooring", subtype: "" };
+  }
+  if (/(bathroom|shower|tub|vanity)/.test(text)) {
+    return { type: "Bathroom Remodeling", subtype: "" };
+  }
+  if (/(roof|shingle|leak)/.test(text)) {
+    return { type: "Roofing", subtype: "" };
+  }
+  if (/(paint|drywall|sheetrock)/.test(text)) {
+    return { type: "Painting / Drywall", subtype: "" };
+  }
+  return null;
+}
+
 function inferProjectType(form) {
+  const descriptionInferred = inferProjectTypeFromDescription(form);
+  if (descriptionInferred) return descriptionInferred;
+
   const text = buildProjectContextText(form);
   if (!text.trim()) return { type: "", subtype: "" };
 
@@ -170,6 +223,10 @@ function cleanProjectTitle(value) {
 }
 
 function generateProjectTitle(form) {
+  const descriptionContext = buildDescriptionSourceText(form);
+  if (isHomeAdditionText(descriptionContext)) {
+    return /bedroom\s+extension/.test(descriptionContext) ? "Bedroom Extension Project" : "Bedroom Addition Project";
+  }
   const existing = cleanProjectTitle(form?.ai_project_title);
   if (existing) return existing;
 
@@ -407,11 +464,11 @@ export default function PublicIntakeWizard() {
   useEffect(() => {
     if (!loaded || projectTypeTouched || !inferredProjectType.type) return;
     setForm((prev) => {
-      if (prev.ai_project_type && prev.ai_project_subtype) return prev;
+      if (prev.ai_project_type === inferredProjectType.type && prev.ai_project_subtype === inferredProjectType.subtype) return prev;
       return {
         ...prev,
-        ai_project_type: prev.ai_project_type || inferredProjectType.type,
-        ai_project_subtype: prev.ai_project_subtype || inferredProjectType.subtype,
+        ai_project_type: inferredProjectType.type,
+        ai_project_subtype: inferredProjectType.subtype,
       };
     });
   }, [inferredProjectType, loaded, projectTypeTouched]);
@@ -643,8 +700,21 @@ export default function PublicIntakeWizard() {
       ai_project_type: "",
       ai_project_subtype: "",
       project_scope_summary: "",
+      ai_milestones: normalizeMilestones([]),
+      ai_clarification_questions: [],
+      ai_clarification_answers: {},
+      ai_analysis_payload: {},
       measurement_handling: "",
     }));
+    setDiscoveryTargets([]);
+    setBranchResult(null);
+    setBranchMode("single_contractor");
+    setBranchContacts([
+      { name: "", email: "", phone: "" },
+      { name: "", email: "", phone: "" },
+    ]);
+    setSingleContractor({ name: "", email: "", phone: "" });
+    setBranchMessage("");
     if (descriptionRefinement.status === "ready") {
       setDescriptionRefinement({
         status: "idle",
@@ -1022,7 +1092,7 @@ export default function PublicIntakeWizard() {
     };
 
     addRow("project-type", "Project Type", form.ai_project_type);
-    addRow("area", "Area", form.ai_project_subtype);
+    addRow("project-focus", "Project Focus", form.ai_project_subtype);
     addRow("main-goal", "Main Goal", getMainGoalSummary(generatedProjectTitle, form.refined_description || form.ai_description));
     addRow("original-description", "Original Description", form.accomplishment_text);
     addRow("refined-description", "Refined Description", form.refined_description || form.ai_description);
