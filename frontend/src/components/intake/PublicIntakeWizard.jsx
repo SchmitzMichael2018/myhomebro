@@ -160,6 +160,55 @@ function inferProjectType(form) {
   return { type: "General Contracting", subtype: "" };
 }
 
+function cleanProjectTitle(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (["untitled project", "custom project", "select type", "select subtype", "project"].includes(text.toLowerCase())) {
+    return "";
+  }
+  return text;
+}
+
+function generateProjectTitle(form) {
+  const existing = cleanProjectTitle(form?.ai_project_title);
+  if (existing) return existing;
+
+  const context = [
+    form?.ai_project_type,
+    form?.ai_project_subtype,
+    form?.project_scope_summary,
+    form?.refined_description,
+    form?.ai_description,
+    form?.accomplishment_text,
+    form?.measurement_handling,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (/(kitchen|cabinet|carpentry)/.test(context)) return "Kitchen Cabinet Installation";
+  if (/(countertop|quartz|granite)/.test(context)) return "Countertop Installation Project";
+  if (/(floor|flooring|tile|vinyl|laminate|hardwood)/.test(context)) {
+    return /(replace|replacement|remove old)/.test(context) ? "Flooring Replacement Project" : "Flooring Installation Project";
+  }
+  if (/(patio|concrete|slab|driveway|walkway|masonry|hardscape|paver)/.test(context)) {
+    return /patio/.test(context) ? "Patio Concrete Project" : "Concrete Project";
+  }
+  if (/(bathroom|shower|tub|vanity)/.test(context)) return "Bathroom Remodel Project";
+  if (/(roof|roofing|shingle|leak)/.test(context)) return /(repair|leak)/.test(context) ? "Roof Repair Request" : "Roofing Project";
+  if (/(paint|painting|painter)/.test(context)) return "Painting Project";
+  if (/(drywall|sheetrock)/.test(context)) return "Drywall Project";
+  if (/(electrical|electrician|panel|wire|wiring)/.test(context)) return "Electrical Project";
+  if (/(plumbing|plumber|pipe|drain|sewer)/.test(context)) return "Plumbing Project";
+  if (/(hvac|air conditioning|cooling|heating|furnace)/.test(context)) return "HVAC Project";
+
+  const subtype = cleanProjectTitle(form?.ai_project_subtype);
+  if (subtype) return `${subtype} Project`;
+  const type = cleanProjectTitle(form?.ai_project_type);
+  if (type) return `${type} Project`;
+  return "Home Improvement Project";
+}
+
 function inferMeasurements(form) {
   const text = [
     form?.accomplishment_text,
@@ -307,6 +356,7 @@ export default function PublicIntakeWizard() {
     source: "",
   });
   const [form, setForm] = useState(blankForm);
+  const [submissionConfirmation, setSubmissionConfirmation] = useState(null);
   const [assistedDiyAcknowledged, setAssistedDiyAcknowledged] = useState(false);
   const safetyWarning = useMemo(() => {
     if (normalizeProjectMode(form.project_mode) !== "assisted_diy") {
@@ -341,6 +391,16 @@ export default function PublicIntakeWizard() {
     form.ai_description,
     form.project_scope_summary,
     form.ai_analysis_payload,
+  ]);
+  const generatedProjectTitle = useMemo(() => generateProjectTitle(form), [
+    form.accomplishment_text,
+    form.ai_description,
+    form.ai_project_subtype,
+    form.ai_project_title,
+    form.ai_project_type,
+    form.measurement_handling,
+    form.project_scope_summary,
+    form.refined_description,
   ]);
 
   useEffect(() => {
@@ -567,8 +627,10 @@ export default function PublicIntakeWizard() {
       accomplishment_text: value,
       refined_description: "",
       ai_description: "",
+      ai_project_title: "",
       ai_project_type: "",
       ai_project_subtype: "",
+      project_scope_summary: "",
       measurement_handling: "",
     }));
     if (descriptionRefinement.status === "ready") {
@@ -641,6 +703,7 @@ export default function PublicIntakeWizard() {
       const mergedForm = formOverrides ? { ...form, ...formOverrides } : form;
       const effectiveForm = getEffectiveProjectForm(mergedForm);
       const payload = { token, ...effectiveForm };
+      payload.ai_project_title = generateProjectTitle(effectiveForm);
       payload.measurement_handling = form.measurement_handling || "";
       payload.ai_clarification_answers = form.ai_clarification_answers || {};
 
@@ -912,10 +975,21 @@ export default function PublicIntakeWizard() {
       return;
     }
 
-    const saved = await saveIntake({ showToast: false });
+    const saved = await saveIntake({
+      showToast: false,
+      formOverrides: { ai_project_title: generatedProjectTitle },
+    });
     if (!saved) return;
 
-    toast.success("Your project intake is ready.");
+    const selectedCount =
+      Number(saved?.opportunity_count || 0) ||
+      (Array.isArray(saved?.created) ? saved.created.length : 0) ||
+      (Array.isArray(discoveryTargets) ? discoveryTargets.length : 0);
+    setSubmissionConfirmation({
+      projectTitle: saved?.ai_project_title || generatedProjectTitle || "Home Improvement Project",
+      selectedCount,
+    });
+    toast.success("Project request submitted.");
   }
 
   const effectiveForm = getEffectiveProjectForm(form);
@@ -937,7 +1011,7 @@ export default function PublicIntakeWizard() {
 
     addRow("project-type", "Project Type", form.ai_project_type);
     addRow("area", "Area", form.ai_project_subtype);
-    addRow("main-goal", "Main Goal", getMainGoalSummary(form.ai_project_title, form.refined_description || form.ai_description));
+    addRow("main-goal", "Main Goal", getMainGoalSummary(generatedProjectTitle, form.refined_description || form.ai_description));
     addRow("original-description", "Original Description", form.accomplishment_text);
     addRow("refined-description", "Refined Description", form.refined_description || form.ai_description);
     addRow("timing", "Timeline", form.desired_timing_text);
@@ -971,6 +1045,7 @@ export default function PublicIntakeWizard() {
     form.ai_project_type,
     form.budget_range_text,
     form.desired_timing_text,
+    generatedProjectTitle,
     form.measurement_handling,
     form.tentative_start_date,
   ]);
@@ -2131,7 +2206,7 @@ export default function PublicIntakeWizard() {
       return (
         <ContractorDiscoveryStep
           token={token}
-          form={form}
+          form={{ ...form, ai_project_title: generatedProjectTitle }}
           active
           selectedTargets={discoveryTargets}
           setSelectedTargets={setDiscoveryTargets}
@@ -2311,7 +2386,7 @@ export default function PublicIntakeWizard() {
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project summary</div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">{form.ai_project_title || "Untitled project"}</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{generatedProjectTitle}</div>
                 <div className="mt-1 text-sm text-slate-700">{[form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Not provided"}</div>
               </div>
               <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
@@ -2403,6 +2478,68 @@ export default function PublicIntakeWizard() {
 
     return null;
   };
+
+  if (submissionConfirmation) {
+    return (
+      <div className="w-full">
+        <div
+          className="rounded-2xl border border-white/70 bg-white p-8 shadow-2xl shadow-black/10"
+          data-testid="public-intake-submit-confirmation"
+        >
+          <div className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+            Submitted
+          </div>
+          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-gray-900">Project Request Submitted</h1>
+          <p className="mt-3 max-w-2xl text-base text-slate-700">
+            Your project request has been submitted. The selected contractor can now review your project details and prepare the next step.
+          </p>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project title</div>
+              <div className="mt-2 text-lg font-semibold text-slate-900" data-testid="public-intake-confirmation-title">
+                {submissionConfirmation.projectTitle}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Selected contractors</div>
+              <div className="mt-2 text-lg font-semibold text-slate-900" data-testid="public-intake-confirmation-contractor-count">
+                {submissionConfirmation.selectedCount || 0}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-sm text-indigo-950">
+            <div className="font-semibold">What happens next</div>
+            <ul className="mt-3 space-y-2">
+              <li>The contractor can review your project details and context.</li>
+              <li>They can prepare or refine the agreement before sending anything to you.</li>
+              <li>You will be notified when there is an update if notifications are available.</li>
+            </ul>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <a href="/" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
+              Return Home
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                setSubmissionConfirmation(null);
+                setCurrentStep(3);
+              }}
+              className="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              View Project Summary
+            </button>
+            <a href="/start-project" className="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Start Another Project
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full">

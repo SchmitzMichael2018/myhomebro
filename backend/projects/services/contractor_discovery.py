@@ -225,6 +225,43 @@ def _broader_contractor_queries(query: str) -> list[str]:
     return [first] if first else []
 
 
+def _sanitize_search_query_for_project(query: str, project: dict[str, Any]) -> str:
+    classification = " ".join(
+        _safe_text(project.get(key)).lower()
+        for key in ["project_type", "project_subtype", "project_title"]
+        if _safe_text(project.get(key))
+    )
+    full_text = " ".join(
+        _safe_text(value).lower()
+        for value in [
+            classification,
+            project.get("description"),
+            project.get("project_scope_summary"),
+            query,
+        ]
+        if _safe_text(value)
+    )
+    source = classification or full_text
+    if any(term in source for term in ["floor", "flooring", "hardwood", "laminate", "vinyl", "tile"]):
+        return "flooring contractor flooring installation"
+    if any(term in source for term in ["patio", "concrete", "slab", "driveway", "walkway", "masonry", "hardscape", "paver"]):
+        return "concrete contractor patio contractor"
+    if any(term in source for term in ["kitchen", "cabinet", "countertop", "quartz", "granite"]):
+        terms = ["kitchen remodeling contractor"]
+        if "cabinet" in full_text:
+            terms.append("cabinet installer")
+        if any(term in full_text for term in ["countertop", "quartz", "granite"]):
+            terms.append("countertop installer")
+        return " ".join(dict.fromkeys(terms))
+    if any(term in source for term in ["electrical", "electrician", "panel", "wiring"]):
+        return "electrician"
+    if any(term in source for term in ["plumbing", "plumber", "pipe", "drain", "sewer"]):
+        return "plumber"
+    if any(term in source for term in ["hvac", "air conditioning", "cooling", "heating", "furnace"]):
+        return "hvac contractor"
+    return _safe_text(query)
+
+
 def _safe_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
@@ -511,8 +548,12 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         distance_miles = None
 
     badges = list(match.get("badges") or [])
-    phone = _safe_text(profile.phone_public if getattr(profile, "show_phone_public", False) else "")
-    email = _safe_text(profile.email_public if getattr(profile, "show_email_public", False) else "")
+    phone = ""
+    if getattr(profile, "show_phone_public", False):
+        phone = _safe_text(profile.phone_public or getattr(contractor, "phone", ""))
+    email = ""
+    if getattr(profile, "show_email_public", False):
+        email = _safe_text(profile.email_public or getattr(contractor, "email", "") or getattr(getattr(contractor, "user", None), "email", ""))
     address_parts = [
         _safe_text(profile.city or contractor.city),
         _safe_text(profile.state or contractor.state),
@@ -686,6 +727,7 @@ def build_contractor_recommendations(
         description=project.get("description"),
         project_scope_summary=project.get("project_scope_summary"),
     )
+    search_query = _sanitize_search_query_for_project(search_query, project)
     try:
         requested_radius = int(float(radius_miles or 25))
     except Exception:

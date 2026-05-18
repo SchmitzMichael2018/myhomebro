@@ -15,6 +15,7 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
+from projects.services.project_titles import generate_project_title
 from projects.utils import categorize_project, load_legal_text
 
 
@@ -162,6 +163,18 @@ def _opportunity_defaults(context: dict[str, Any]) -> dict[str, Any]:
     measurements = payload.get("measurements") or payload.get("measurement_answers")
     if measurements is None and intake is not None:
         measurements = getattr(intake, "ai_analysis_payload", {}).get("measurements", [])
+    project_type = _null_if_blank(payload.get("project_type") or getattr(intake, "ai_project_type", ""))
+    project_subtype = _null_if_blank(payload.get("project_subtype") or getattr(intake, "ai_project_subtype", ""))
+    project_description = _null_if_blank(payload.get("project_description") or payload.get("description") or getattr(intake, "accomplishment_text", ""))
+    refined_description = _null_if_blank(payload.get("refined_description") or getattr(intake, "ai_description", ""))
+    project_title = generate_project_title(
+        project_title=payload.get("project_title") or getattr(intake, "ai_project_title", ""),
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=project_description,
+        refined_description=refined_description,
+        measurements=measurements,
+    )
 
     return {
         "project": context.get("project"),
@@ -172,11 +185,11 @@ def _opportunity_defaults(context: dict[str, Any]) -> dict[str, Any]:
         "project_city": _null_if_blank(payload.get("project_city") or getattr(intake, "project_city", "")),
         "project_state": _null_if_blank(payload.get("project_state") or getattr(intake, "project_state", "")),
         "project_zip": _null_if_blank(payload.get("project_zip") or payload.get("project_postal_code") or getattr(intake, "project_postal_code", "")),
-        "project_type": _null_if_blank(payload.get("project_type") or getattr(intake, "ai_project_type", "")),
-        "project_subtype": _null_if_blank(payload.get("project_subtype") or getattr(intake, "ai_project_subtype", "")),
-        "project_title": _null_if_blank(payload.get("project_title") or getattr(intake, "ai_project_title", "")),
-        "project_description": _null_if_blank(payload.get("project_description") or payload.get("description") or getattr(intake, "accomplishment_text", "")),
-        "refined_description": _null_if_blank(payload.get("refined_description") or getattr(intake, "ai_description", "")),
+        "project_type": project_type,
+        "project_subtype": project_subtype,
+        "project_title": project_title,
+        "project_description": project_description,
+        "refined_description": refined_description,
         "budget_min": _decimal_or_none(payload.get("budget_min")),
         "budget_max": _decimal_or_none(payload.get("budget_max")),
         "timeline": _null_if_blank(payload.get("timeline") or getattr(intake, "desired_timing_text", "")),
@@ -249,12 +262,20 @@ def convert_opportunity_to_customer_and_draft_agreement(opportunity: ContractorO
         return {"customer": opportunity.converted_customer, "agreement": opportunity.converted_agreement, "created": False}
 
     customer = opportunity.converted_customer or _find_or_create_customer(opportunity, contractor)
+    generated_title = generate_project_title(
+        project_title=opportunity.project_title,
+        project_type=opportunity.project_type,
+        project_subtype=opportunity.project_subtype,
+        description=opportunity.project_description,
+        refined_description=opportunity.refined_description,
+        measurements=opportunity.measurements,
+    )
     project = opportunity.project
     if project is None:
         project = Project.objects.create(
             contractor=contractor,
             homeowner=customer,
-            title=opportunity.project_title or opportunity.project_type or "Project Request",
+            title=generated_title,
             description=opportunity.refined_description or opportunity.project_description or "",
             project_street_address=opportunity.project_address or "",
             project_city=opportunity.project_city or "",

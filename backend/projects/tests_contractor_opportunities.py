@@ -88,6 +88,41 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(Homeowner.objects.count(), 0)
         self.assertEqual(Agreement.objects.count(), 0)
 
+    def test_selecting_contractor_generates_project_title_when_missing(self):
+        self.intake.ai_project_title = ""
+        self.intake.ai_project_type = "Flooring"
+        self.intake.ai_project_subtype = ""
+        self.intake.accomplishment_text = "Replace old flooring in the living room."
+        self.intake.ai_description = "Replace old flooring in the living room with contractor review."
+        self.intake.save(
+            update_fields=[
+                "ai_project_title",
+                "ai_project_type",
+                "ai_project_subtype",
+                "accomplishment_text",
+                "ai_description",
+                "updated_at",
+            ]
+        )
+
+        response = self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        opportunity = ContractorOpportunity.objects.get()
+        self.assertEqual(opportunity.project_title, "Flooring Replacement Project")
+        self.assertNotEqual(opportunity.project_title.lower(), "untitled project")
+
+        self.client.force_authenticate(self.contractor_user)
+        accept = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
+
+        self.assertEqual(accept.status_code, 200)
+        agreement = Agreement.objects.get()
+        self.assertEqual(agreement.project.title, "Flooring Replacement Project")
+
     def test_selecting_same_contractor_and_intake_twice_does_not_duplicate(self):
         payload = {
             "token": self.intake.share_token,

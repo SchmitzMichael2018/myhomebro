@@ -330,6 +330,12 @@ test("landing page drives into intake and public intake shows branching choices 
 
   await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
   await expect(page.getByText("1 invite prepared")).toBeVisible();
+  await expect(page.getByText("Untitled project")).toHaveCount(0);
+  await page.getByTestId("public-intake-submit-button").click();
+  await expect(page.getByTestId("public-intake-submit-confirmation")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Project Request Submitted" })).toBeVisible();
+  await expect(page.getByTestId("public-intake-confirmation-title")).not.toContainText("Untitled project");
+  await expect(page.getByText("The selected contractor can now review your project details and prepare the next step.")).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "single_contractor")).toBeTruthy();
 });
 
@@ -685,7 +691,7 @@ test("public intake contractor search resets stale query when project context ch
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
   const searchInput = page.getByTestId("public-intake-contractor-search-input");
-  await expect(searchInput).toHaveValue("plumber");
+  await expect(searchInput).toHaveValue("plumber", { timeout: 15000 });
   await expect.poll(() => requestedQueries.at(-1)).toBe("plumber");
   await searchInput.fill("plumber");
 
@@ -698,6 +704,132 @@ test("public intake contractor search resets stale query when project context ch
   await expect(searchInput).toHaveValue("concrete contractor patio contractor");
   await expect.poll(() => requestedQueries.at(-1)).toBe("concrete contractor patio contractor");
   expect(requestedQueries.at(-1)).not.toBe("plumber");
+});
+
+test("public intake flooring contractor search does not include stale electrical terms", async ({ page }) => {
+  const requestedQueries = [];
+
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 505,
+          token: "landing-token-flooring-search",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/landing-token-flooring-search",
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/contractor-search/") && method === "GET") {
+      const url = new URL(requestUrl);
+      requestedQueries.push(url.searchParams.get("query") || "");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          summary: {
+            search_query: url.searchParams.get("query") || "",
+            radius_miles: 25,
+            project_mode: "full_service",
+            payment_preference: "escrow",
+            results_count: 0,
+          },
+          results: [],
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 505,
+          token: "landing-token-flooring-search",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "Flooring Prospect",
+          customer_email: "flooring@example.com",
+          customer_phone: "555-555-5555",
+          customer_address_line1: "100 Floor St",
+          customer_city: "Austin",
+          customer_state: "TX",
+          customer_postal_code: "78701",
+          same_as_customer_address: true,
+          project_class: "residential",
+          project_address_line1: "100 Floor St",
+          project_city: "Austin",
+          project_state: "TX",
+          project_postal_code: "78701",
+          accomplishment_text: "",
+          original_description: "",
+          refined_description: "",
+          project_scope_summary: "",
+          ai_project_title: "",
+          ai_project_type: "",
+          ai_project_subtype: "",
+          ai_description: "",
+          ai_milestones: [],
+          measurement_handling: "",
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
+          ai_analysis_payload: {},
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          sent_at: null,
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "Intake updated successfully.",
+        id: 505,
+        status: "submitted",
+        ai_project_title: body.ai_project_title || "Flooring Installation Project",
+        ai_project_type: body.ai_project_type || "Flooring",
+        ai_project_subtype: body.ai_project_subtype || "",
+        ai_description: body.refined_description || body.ai_description || "",
+        refined_description: body.refined_description || body.ai_description || "",
+        ai_milestones: [],
+        ai_clarification_questions: [],
+        ai_clarification_answers: {},
+        clarification_photos: [],
+        ai_analysis_payload: {},
+        branch_invites: [],
+      }),
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("landing-start-project-intake-button").click();
+  await expect(page).toHaveURL(/\/start-project\/landing-token-flooring-search$/);
+  await page.getByTestId("public-intake-accomplishment-text").fill(
+    "Install new flooring in the living room. Ignore an old electric search term."
+  );
+  await page.getByRole("button", { name: "Choose Local Contractors" }).click();
+
+  const searchInput = page.getByTestId("public-intake-contractor-search-input");
+  await expect(searchInput).toHaveValue(/flooring contractor/);
+  await expect(searchInput).not.toHaveValue(/electric/);
+  await expect.poll(() => requestedQueries.at(-1)).toContain("flooring contractor");
+  expect(requestedQueries.at(-1)).not.toContain("electric");
 });
 
 test("public intake description helper refines the project idea before generating the plan", async ({

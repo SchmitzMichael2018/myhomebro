@@ -86,7 +86,11 @@ function emptyStateMessage(summary, radiusMiles = 25) {
 }
 
 function buildInferredSearchQuery(form) {
-  const text = [
+  const classificationText = [form?.ai_project_type, form?.ai_project_subtype, form?.ai_project_title]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const fullText = [
     form?.ai_project_type,
     form?.ai_project_subtype,
     form?.ai_project_title,
@@ -100,45 +104,85 @@ function buildInferredSearchQuery(form) {
     .join(" ")
     .toLowerCase();
 
+  const matches = (pattern) => pattern.test(classificationText) || (!classificationText.trim() && pattern.test(fullText));
+  const contextMatches = (pattern) => pattern.test(fullText);
+
+  if (matches(/floor|flooring|tile|hardwood|laminate|vinyl/)) {
+    return "flooring contractor flooring installation";
+  }
+  if (matches(/electrical|electrician|panel|wire|wiring/)) {
+    return "electrician";
+  }
+  if (matches(/plumbing|plumber|pipe|drain|sewer/)) {
+    return "plumber";
+  }
+  if (matches(/hvac|air conditioning|cooling|heating|furnace/)) {
+    return "hvac contractor";
+  }
+  if (matches(/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/)) {
+    return "concrete contractor patio contractor";
+  }
+  if (matches(/kitchen|cabinet|countertop|quartz|granite/)) {
+    const inferred = ["kitchen remodeling contractor"];
+    if (contextMatches(/cabinet/)) inferred.push("cabinet installer");
+    if (contextMatches(/countertop|quartz|granite/)) inferred.push("countertop installer");
+    return inferred.join(" ");
+  }
+  if (matches(/bathroom|vanity|shower|tub/)) {
+    return "bathroom remodel contractor";
+  }
+  if (matches(/roof|roofing|shingle|leak/)) {
+    return "roofing contractor";
+  }
+  if (matches(/paint|painting|painter/)) {
+    return "painter";
+  }
+  if (matches(/drywall|sheetrock/)) {
+    return "drywall contractor";
+  }
+  if (matches(/remodel|renovation|renovate/)) {
+    return "remodeling contractor";
+  }
+
   const inferred = [];
   const push = (value) => {
     if (value && !inferred.includes(value)) inferred.push(value);
   };
 
-  if (/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/.test(text)) {
+  if (/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/.test(fullText)) {
     push("concrete contractor");
     push("patio contractor");
   }
-  if (/kitchen|cabinet|countertop|quartz|granite/.test(text)) {
+  if (/kitchen|cabinet|countertop|quartz|granite/.test(fullText)) {
     push("kitchen remodeling contractor");
     push("cabinet installer");
     push("countertop installer");
   }
-  if (/bathroom|vanity|shower|tub/.test(text)) {
+  if (/bathroom|vanity|shower|tub/.test(fullText)) {
     push("bathroom remodel contractor");
   }
-  if (/roof|roofing|shingle|leak/.test(text)) {
+  if (/roof|roofing|shingle|leak/.test(fullText)) {
     push("roofing contractor");
   }
-  if (/floor|flooring|tile|hardwood|laminate/.test(text)) {
+  if (/floor|flooring|tile|hardwood|laminate/.test(fullText)) {
     push("flooring contractor");
   }
-  if (/paint|painting|painter/.test(text)) {
+  if (/paint|painting|painter/.test(fullText)) {
     push("painter");
   }
-  if (/electrical|electrician|panel|wire|wiring/.test(text)) {
+  if (/electrical|electrician|panel|wire|wiring/.test(fullText)) {
     push("electrician");
   }
-  if (/plumbing|plumber|pipe|drain|sewer/.test(text)) {
+  if (/plumbing|plumber|pipe|drain|sewer/.test(fullText)) {
     push("plumber");
   }
-  if (/hvac|air conditioning|cooling|heating|furnace/.test(text)) {
+  if (/hvac|air conditioning|cooling|heating|furnace/.test(fullText)) {
     push("hvac contractor");
   }
-  if (/drywall|sheetrock/.test(text)) {
+  if (/drywall|sheetrock/.test(fullText)) {
     push("drywall contractor");
   }
-  if (/remodel|renovation|renovate/.test(text)) {
+  if (/remodel|renovation|renovate/.test(fullText)) {
     push("remodeling contractor");
   }
 

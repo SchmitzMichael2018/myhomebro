@@ -3679,6 +3679,78 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(payload["summary"]["google_raw_count"], 2)
         self.assertEqual(payload["summary"]["filtered_out_of_radius_count"], 2)
 
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
+    )
+    def test_flooring_contractor_search_removes_unrelated_electrical_terms(self, _mock_places):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring Installation Project",
+                "project_type": "Flooring",
+                "description": "Install flooring in the hallway. Previous stale query mentioned electric.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="flooring contractor electric",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+
+        self.assertIn("flooring contractor", payload["summary"]["search_query"])
+        self.assertNotIn("electric", payload["summary"]["search_query"])
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
+    )
+    def test_verified_contractor_uses_user_email_only_when_public_email_enabled(self, _mock_places):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        self.profile.email_public = ""
+        self.profile.show_email_public = True
+        self.profile.save(update_fields=["email_public", "show_email_public", "updated_at"])
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Kitchen Project",
+                "project_type": "Kitchen Remodeling",
+                "description": "Kitchen cabinets.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="kitchen remodeling contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+        verified = next(row for row in payload["results"] if row["label"] == "MyHomeBro Verified")
+        self.assertEqual(verified["public_email"], self.contractor_user.email)
+
+        self.profile.show_email_public = False
+        self.profile.save(update_fields=["show_email_public", "updated_at"])
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Kitchen Project",
+                "project_type": "Kitchen Remodeling",
+                "description": "Kitchen cabinets.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="kitchen remodeling contractor",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+        verified = next(row for row in payload["results"] if row["label"] == "MyHomeBro Verified")
+        self.assertEqual(verified["public_email"], "")
+
     @patch("projects.services.contractor_discovery._iter_contractors_for_public_profiles", return_value=[])
     @patch(
         "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",

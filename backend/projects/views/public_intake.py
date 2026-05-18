@@ -17,6 +17,7 @@ from projects.models import PublicContractorLead
 from projects.ai.agreement_description_writer import generate_or_improve_description
 from projects.services.invites_delivery import build_invite_url
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
+from projects.services.project_titles import generate_project_title
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 
 
@@ -61,6 +62,24 @@ def _deterministic_refine_description(description: str) -> str:
         cleaned += "."
 
     return cleaned
+
+
+def _generated_intake_title(intake: ProjectIntake) -> str:
+    return generate_project_title(
+        project_title=intake.ai_project_title,
+        project_type=intake.ai_project_type,
+        project_subtype=intake.ai_project_subtype,
+        description=intake.accomplishment_text,
+        refined_description=intake.ai_description,
+        measurements=intake.measurement_handling,
+    )
+
+
+def _ensure_generated_intake_title(intake: ProjectIntake, changed: list[str]) -> None:
+    generated = _generated_intake_title(intake)
+    if generated and generated != intake.ai_project_title:
+        intake.ai_project_title = generated
+        changed.append("ai_project_title")
 
 
 class PublicIntakeView(APIView):
@@ -167,6 +186,7 @@ class PublicIntakeView(APIView):
                 or getattr(intake.contractor, "email", "")
             )
 
+        project_title = _generated_intake_title(intake)
         payload = {
             "id": intake.id,
             "token": intake.share_token,
@@ -204,7 +224,7 @@ class PublicIntakeView(APIView):
             "homeowner_started_work": intake.homeowner_started_work,
             "homeowner_task_summary": intake.homeowner_task_summary,
             "homeowner_assistance_summary": intake.homeowner_assistance_summary,
-            "ai_project_title": intake.ai_project_title,
+            "ai_project_title": project_title,
             "ai_project_type": intake.ai_project_type,
             "ai_project_subtype": intake.ai_project_subtype,
             "ai_description": intake.ai_description,
@@ -394,6 +414,8 @@ class PublicIntakeView(APIView):
         if branch_error:
             return Response({"detail": branch_error}, status=status.HTTP_400_BAD_REQUEST)
 
+        _ensure_generated_intake_title(intake, changed)
+
         branch_only_request = bool(branch_flow) and not has_intake_field_updates
         if branch_only_request:
             intake.save(update_fields=changed + ["updated_at"])
@@ -488,6 +510,8 @@ class PublicIntakeView(APIView):
                     "analyzed_at",
                 ]
             )
+
+        _ensure_generated_intake_title(intake, changed)
 
         intake.save(update_fields=changed + ["updated_at"])
         status_override = None
