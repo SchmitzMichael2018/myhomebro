@@ -160,6 +160,7 @@ test('traditional contractors do not see homeowner-selection guidance by default
 });
 
 test('dashboard renders operational hierarchy without persistent smart activation section', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await mockAuth(page);
   await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
     await route.fulfill({
@@ -196,14 +197,26 @@ test('dashboard renders operational hierarchy without persistent smart activatio
 
   const quickBox = await page.getByTestId('dashboard-quick-actions-row').boundingBox();
   const nextBox = await page.getByTestId('dashboard-next-actions').boundingBox();
+  const scheduleWrapperBox = await page.getByTestId('dashboard-schedule-wrapper').boundingBox();
   const scheduleBox = await page.getByTestId('dashboard-schedule-section').boundingBox();
+  const workWrapperBox = await page.getByTestId('dashboard-work-money-wrapper').boundingBox();
   const workBox = await page.getByTestId('dashboard-work-money').boundingBox();
+  const bidsWrapperBox = await page.getByTestId('dashboard-bids-wrapper').boundingBox();
   const bidsBox = await page.getByTestId('dashboard-bids-summary').boundingBox();
 
   expect(quickBox.y).toBeLessThan(nextBox.y);
-  expect(nextBox.y).toBeLessThan(scheduleBox.y);
-  expect(scheduleBox.y).toBeLessThan(workBox.y);
-  expect(workBox.y).toBeLessThan(bidsBox.y);
+  expect(quickBox.y).toBeLessThan(scheduleWrapperBox.y);
+  expect(scheduleBox.y).toBeLessThan(workWrapperBox.y);
+  expect(Math.abs(nextBox.y - scheduleWrapperBox.y)).toBeLessThan(40);
+  expect(Math.abs(workWrapperBox.y - bidsWrapperBox.y)).toBeLessThan(40);
+
+  const scheduleContainsBids = await page
+    .getByTestId('dashboard-schedule-section')
+    .evaluate((schedule) => Boolean(schedule.querySelector('[data-testid="dashboard-bids-summary"]')));
+  expect(scheduleContainsBids).toBe(false);
+
+  await expect(page.getByTestId('dashboard-priority-schedule-grid')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-bids-grid')).toBeVisible();
 
   const workMoney = page.getByTestId('dashboard-work-money');
   const workMoneyClass = await workMoney.getAttribute('class');
