@@ -131,6 +131,29 @@ def infer_project_places_query(
     if not text.strip():
         return base_query
 
+    if any(term in text for term in ["floor", "flooring", "hardwood", "laminate", "vinyl", "tile"]):
+        return "flooring installation contractor" if any(term in text for term in ["install", "installation"]) else "flooring contractor"
+    if any(term in text for term in ["electrical", "electrician", "panel", "wiring"]):
+        return "electrician"
+    if any(term in text for term in ["plumbing", "plumber", "pipe", "drain", "sewer"]):
+        return "plumber"
+    if any(term in text for term in ["roof", "roofing", "shingle", "leak"]):
+        return "roofing contractor"
+    if any(term in text for term in ["patio", "concrete", "slab", "driveway", "walkway", "masonry", "hardscape", "paver"]):
+        if any(term in text for term in ["masonry", "brick", "stone", "block"]):
+            return "masonry contractor"
+        if "patio" in text:
+            return "patio contractor"
+        if any(term in text for term in ["hardscape", "paver", "pavers", "retaining wall"]):
+            return "hardscape contractor"
+        return "concrete contractor"
+    if any(term in text for term in ["kitchen", "cabinet", "countertop", "quartz", "granite"]):
+        if "cabinet" in text:
+            return "cabinet installer"
+        if any(term in text for term in ["countertop", "quartz", "granite"]):
+            return "countertop installer"
+        return "kitchen remodeling contractor"
+
     hints: list[str] = []
     for keywords, query in PROJECT_CONTEXT_QUERY_HINTS:
         if any(keyword in text for keyword in keywords):

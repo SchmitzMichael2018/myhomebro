@@ -3,6 +3,28 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, { debugAxiosError, extractApiErrorMessage } from "../api";
 
+const PUBLIC_INTAKE_STORAGE_PATTERNS = [
+  /^public[-_:]?intake/i,
+  /^start[-_:]?project/i,
+  /^myhomebro[-_:]?public[-_:]?intake/i,
+  /^mhb[-_:]?public[-_:]?intake/i,
+];
+
+export function resetPublicIntakeWizardState() {
+  if (typeof window === "undefined") return;
+  const clearMatchingKeys = (storage) => {
+    if (!storage) return;
+    for (let index = storage.length - 1; index >= 0; index -= 1) {
+      const key = storage.key(index);
+      if (key && PUBLIC_INTAKE_STORAGE_PATTERNS.some((pattern) => pattern.test(key))) {
+        storage.removeItem(key);
+      }
+    }
+  };
+  clearMatchingKeys(window.localStorage);
+  clearMatchingKeys(window.sessionStorage);
+}
+
 function resolveStartToken(data) {
   const token =
     data?.token ||
@@ -37,6 +59,7 @@ export default function StartProjectIntake() {
       try {
         setStarting(true);
         setStartError("");
+        resetPublicIntakeWizardState();
 
         const payload = {
           customer_name: (searchParams.get("name") || "").trim(),
@@ -63,7 +86,12 @@ export default function StartProjectIntake() {
           return;
         }
 
-        navigate(`/start-project/${token}`, { replace: true });
+        try {
+          window.sessionStorage.setItem("mhb-public-intake-fresh-token", token);
+        } catch {
+          // Non-critical; navigation state also marks this as a new project start.
+        }
+        navigate(`/start-project/${token}`, { replace: true, state: { publicIntakeFreshStart: true } });
       } catch (e) {
         if (cancelled) return;
         debugAxiosError(e, "Public intake start");

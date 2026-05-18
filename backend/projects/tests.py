@@ -3701,8 +3701,19 @@ class ContractorPublicPresenceApiTests(TestCase):
             limit=5,
         )
 
-        self.assertIn("flooring contractor", payload["summary"]["search_query"])
+        self.assertRegex(payload["summary"]["search_query"], r"flooring (installation )?contractor")
         self.assertNotIn("electric", payload["summary"]["search_query"])
+
+        from projects.services.google_places_contractors import infer_project_places_query
+
+        self.assertEqual(
+            infer_project_places_query(
+                project_type="Flooring",
+                project_title="Flooring Installation Project",
+                description="Install hallway flooring. Previous stale query mentioned electric.",
+            ),
+            "flooring installation contractor",
+        )
 
     @patch(
         "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",

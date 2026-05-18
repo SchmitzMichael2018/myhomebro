@@ -48,6 +48,68 @@ test("start-project page logs backend failures and shows a helpful error", async
   expect(consoleErrors.join(" ")).toContain("Failed to create intake draft.");
 });
 
+test("start-project fresh CTA opens project idea even with stale intake browser state", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("public-intake-current-step", "2");
+    window.localStorage.setItem("public-intake-selected-contractors", JSON.stringify([{ id: "stale" }]));
+    window.sessionStorage.setItem("mhb-public-intake-fresh-token", "old-token");
+  });
+
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 602,
+          token: "fresh-start-token",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/fresh-start-token",
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 602,
+          token: "fresh-start-token",
+          status: "draft",
+          contractor_name: "Your contractor",
+          accomplishment_text: "Stale restored scope",
+          ai_project_title: "Stale Flooring Project",
+          ai_project_type: "Flooring",
+          ai_project_subtype: "",
+          ai_description: "Stale generated scope.",
+          ai_milestones: [{ title: "Old phase", description: "" }],
+          ai_clarification_questions: [{ key: "old", question: "Old question?" }],
+          ai_clarification_answers: {},
+          clarification_photos: [],
+          ai_analysis_payload: {},
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          completed_at: null,
+        }),
+      });
+    }
+  });
+
+  await page.goto("/start-project", { waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/start-project\/fresh-start-token$/);
+  await expect(page.getByRole("heading", { name: "Tell us about the project" })).toBeVisible();
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("");
+  await expect(page.getByTestId("public-intake-project-details-step")).toHaveCount(0);
+  await expect(page.getByTestId("public-intake-contractor-discovery-step")).toHaveCount(0);
+});
+
 test("landing page drives into intake and public intake shows branching choices after submit", async ({
   page,
 }) => {
@@ -701,8 +763,8 @@ test("public intake contractor search resets stale query when project context ch
   );
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
-  await expect(searchInput).toHaveValue("concrete contractor patio contractor");
-  await expect.poll(() => requestedQueries.at(-1)).toBe("concrete contractor patio contractor");
+  await expect(searchInput).toHaveValue("patio contractor");
+  await expect.poll(() => requestedQueries.at(-1)).toBe("patio contractor");
   expect(requestedQueries.at(-1)).not.toBe("plumber");
 });
 
@@ -826,9 +888,10 @@ test("public intake flooring contractor search does not include stale electrical
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
   const searchInput = page.getByTestId("public-intake-contractor-search-input");
-  await expect(searchInput).toHaveValue(/flooring contractor/);
+  await expect(searchInput).toHaveValue("flooring installation contractor");
   await expect(searchInput).not.toHaveValue(/electric/);
-  await expect.poll(() => requestedQueries.at(-1)).toContain("flooring contractor");
+  await expect(searchInput).not.toHaveValue("flooring contractor flooring installation");
+  await expect.poll(() => requestedQueries.at(-1)).toBe("flooring installation contractor");
   expect(requestedQueries.at(-1)).not.toContain("electric");
 });
 

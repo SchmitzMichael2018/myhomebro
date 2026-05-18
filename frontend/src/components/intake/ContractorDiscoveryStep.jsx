@@ -108,7 +108,7 @@ function buildInferredSearchQuery(form) {
   const contextMatches = (pattern) => pattern.test(fullText);
 
   if (matches(/floor|flooring|tile|hardwood|laminate|vinyl/)) {
-    return "flooring contractor flooring installation";
+    return contextMatches(/install|installation/) ? "flooring installation contractor" : "flooring contractor";
   }
   if (matches(/electrical|electrician|panel|wire|wiring/)) {
     return "electrician";
@@ -120,13 +120,15 @@ function buildInferredSearchQuery(form) {
     return "hvac contractor";
   }
   if (matches(/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/)) {
-    return "concrete contractor patio contractor";
+    if (contextMatches(/masonry|brick|stone|block/)) return "masonry contractor";
+    if (contextMatches(/patio/)) return "patio contractor";
+    if (contextMatches(/hardscape|paver|pavers|retaining wall/)) return "hardscape contractor";
+    return "concrete contractor";
   }
   if (matches(/kitchen|cabinet|countertop|quartz|granite/)) {
-    const inferred = ["kitchen remodeling contractor"];
-    if (contextMatches(/cabinet/)) inferred.push("cabinet installer");
-    if (contextMatches(/countertop|quartz|granite/)) inferred.push("countertop installer");
-    return inferred.join(" ");
+    if (contextMatches(/cabinet/)) return "cabinet installer";
+    if (contextMatches(/countertop|quartz|granite/)) return "countertop installer";
+    return "kitchen remodeling contractor";
   }
   if (matches(/bathroom|vanity|shower|tub/)) {
     return "bathroom remodel contractor";
@@ -150,13 +152,15 @@ function buildInferredSearchQuery(form) {
   };
 
   if (/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/.test(fullText)) {
-    push("concrete contractor");
-    push("patio contractor");
+    if (/masonry|brick|stone|block/.test(fullText)) push("masonry contractor");
+    else if (/patio/.test(fullText)) push("patio contractor");
+    else if (/hardscape|paver|pavers|retaining wall/.test(fullText)) push("hardscape contractor");
+    else push("concrete contractor");
   }
   if (/kitchen|cabinet|countertop|quartz|granite/.test(fullText)) {
-    push("kitchen remodeling contractor");
-    push("cabinet installer");
-    push("countertop installer");
+    if (/cabinet/.test(fullText)) push("cabinet installer");
+    else if (/countertop|quartz|granite/.test(fullText)) push("countertop installer");
+    else push("kitchen remodeling contractor");
   }
   if (/bathroom|vanity|shower|tub/.test(fullText)) {
     push("bathroom remodel contractor");
@@ -165,7 +169,7 @@ function buildInferredSearchQuery(form) {
     push("roofing contractor");
   }
   if (/floor|flooring|tile|hardwood|laminate/.test(fullText)) {
-    push("flooring contractor");
+    push(contextMatches(/install|installation/) ? "flooring installation contractor" : "flooring contractor");
   }
   if (/paint|painting|painter/.test(fullText)) {
     push("painter");

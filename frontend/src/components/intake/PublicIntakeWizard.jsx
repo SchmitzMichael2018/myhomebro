@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../../api";
 import AddressAutocomplete from "../AddressAutocomplete.jsx";
@@ -328,6 +328,7 @@ function StepPill({ active, complete, label, index }) {
 
 export default function PublicIntakeWizard() {
   const { token = "" } = useParams();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -459,6 +460,15 @@ export default function PublicIntakeWizard() {
               }
             : null
         );
+        let freshStartFromStorage = false;
+        try {
+          freshStartFromStorage = window.sessionStorage.getItem("mhb-public-intake-fresh-token") === token;
+          if (freshStartFromStorage) window.sessionStorage.removeItem("mhb-public-intake-fresh-token");
+        } catch {
+          freshStartFromStorage = false;
+        }
+        const isSubmitted = Boolean(data?.submitted_at || data?.completed_at || data?.post_submit_flow_selected_at);
+        const freshStart = (Boolean(location.state?.publicIntakeFreshStart) || freshStartFromStorage) && !isSubmitted;
 
         setForm({
           customer_name: data?.customer_name || "",
@@ -484,26 +494,26 @@ export default function PublicIntakeWizard() {
           project_city: data?.project_city || "",
           project_state: data?.project_state || "",
           project_postal_code: data?.project_postal_code || "",
-          accomplishment_text: data?.accomplishment_text || "",
-          refined_description: data?.refined_description || data?.ai_description || "",
-          ai_project_title: data?.ai_project_title || "",
-          ai_project_type: data?.ai_project_type || "",
-          ai_project_subtype: data?.ai_project_subtype || "",
-          project_scope_summary: data?.project_scope_summary || data?.ai_analysis_payload?.project_scope_summary || "",
-          ai_description: data?.ai_description || "",
-          ai_project_timeline_days: data?.ai_project_timeline_days ?? "",
-          ai_project_budget: moneyValue(data?.ai_project_budget),
-          budget_range_text: data?.budget_range_text || "",
-          desired_timing_text: data?.desired_timing_text || "",
-          tentative_start_date: data?.tentative_start_date || "",
-          measurement_handling: data?.measurement_handling || "",
-          ai_milestones: normalizeMilestones(data?.ai_milestones),
-          ai_clarification_questions: Array.isArray(data?.ai_clarification_questions)
+          accomplishment_text: freshStart ? "" : data?.accomplishment_text || "",
+          refined_description: freshStart ? "" : data?.refined_description || data?.ai_description || "",
+          ai_project_title: freshStart ? "" : data?.ai_project_title || "",
+          ai_project_type: freshStart ? "" : data?.ai_project_type || "",
+          ai_project_subtype: freshStart ? "" : data?.ai_project_subtype || "",
+          project_scope_summary: freshStart ? "" : data?.project_scope_summary || data?.ai_analysis_payload?.project_scope_summary || "",
+          ai_description: freshStart ? "" : data?.ai_description || "",
+          ai_project_timeline_days: freshStart ? "" : data?.ai_project_timeline_days ?? "",
+          ai_project_budget: freshStart ? "" : moneyValue(data?.ai_project_budget),
+          budget_range_text: freshStart ? "" : data?.budget_range_text || "",
+          desired_timing_text: freshStart ? "" : data?.desired_timing_text || "",
+          tentative_start_date: freshStart ? "" : data?.tentative_start_date || "",
+          measurement_handling: freshStart ? "" : data?.measurement_handling || "",
+          ai_milestones: freshStart ? normalizeMilestones([]) : normalizeMilestones(data?.ai_milestones),
+          ai_clarification_questions: !freshStart && Array.isArray(data?.ai_clarification_questions)
             ? data.ai_clarification_questions
             : [],
-          ai_clarification_answers: data?.ai_clarification_answers || {},
-          ai_analysis_payload: data?.ai_analysis_payload || {},
-          clarification_photos: Array.isArray(data?.clarification_photos) ? data.clarification_photos : [],
+          ai_clarification_answers: freshStart ? {} : data?.ai_clarification_answers || {},
+          ai_analysis_payload: freshStart ? {} : data?.ai_analysis_payload || {},
+          clarification_photos: !freshStart && Array.isArray(data?.clarification_photos) ? data.clarification_photos : [],
         });
 
         const clarificationQuestions = Array.isArray(data?.ai_clarification_questions)
@@ -530,7 +540,9 @@ export default function PublicIntakeWizard() {
         const hasClarificationAnswers =
           data?.ai_clarification_answers && Object.keys(data.ai_clarification_answers || {}).length > 0;
         setCurrentStep(
-          data?.post_submit_flow_selected_at
+          freshStart
+            ? 0
+            : data?.post_submit_flow_selected_at
             ? 6
             : data?.post_submit_flow
               ? 5
@@ -555,7 +567,7 @@ export default function PublicIntakeWizard() {
     return () => {
       mounted = false;
     };
-  }, [token]);
+  }, [token, location.search, location.state]);
 
   useEffect(() => {
     if (!form.same_as_customer_address) return;

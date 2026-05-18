@@ -243,16 +243,21 @@ def _sanitize_search_query_for_project(query: str, project: dict[str, Any]) -> s
     )
     source = classification or full_text
     if any(term in source for term in ["floor", "flooring", "hardwood", "laminate", "vinyl", "tile"]):
-        return "flooring contractor flooring installation"
+        return "flooring installation contractor" if any(term in full_text for term in ["install", "installation"]) else "flooring contractor"
     if any(term in source for term in ["patio", "concrete", "slab", "driveway", "walkway", "masonry", "hardscape", "paver"]):
-        return "concrete contractor patio contractor"
+        if any(term in full_text for term in ["masonry", "brick", "stone", "block"]):
+            return "masonry contractor"
+        if "patio" in full_text:
+            return "patio contractor"
+        if any(term in full_text for term in ["hardscape", "paver", "pavers", "retaining wall"]):
+            return "hardscape contractor"
+        return "concrete contractor"
     if any(term in source for term in ["kitchen", "cabinet", "countertop", "quartz", "granite"]):
-        terms = ["kitchen remodeling contractor"]
         if "cabinet" in full_text:
-            terms.append("cabinet installer")
+            return "cabinet installer"
         if any(term in full_text for term in ["countertop", "quartz", "granite"]):
-            terms.append("countertop installer")
-        return " ".join(dict.fromkeys(terms))
+            return "countertop installer"
+        return "kitchen remodeling contractor"
     if any(term in source for term in ["electrical", "electrician", "panel", "wiring"]):
         return "electrician"
     if any(term in source for term in ["plumbing", "plumber", "pipe", "drain", "sewer"]):
