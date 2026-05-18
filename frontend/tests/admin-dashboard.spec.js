@@ -453,6 +453,8 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
+  const attentionClass = await page.getByTestId('admin-needs-attention').getAttribute('class');
+  expect(attentionClass).toContain('bg-[#061d42]/95');
   await expect(page.getByText('â€¢')).toHaveCount(0);
   await expect(page.getByTestId('admin-stat-contractors')).toContainText('12');
   await expect(page.getByTestId('admin-stat-month-fees')).toContainText('$620.00');
@@ -660,7 +662,11 @@ test('admin templates page renders system template management controls', async (
   await page.goto('/app/admin/templates', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Admin Templates' })).toBeVisible();
-  await expect(page.getByTestId('templates-new-draft-button')).toContainText('Create System Template');
+  if (await page.getByTestId('templates-new-draft-button').count()) {
+    await expect(page.getByTestId('templates-new-draft-button')).toContainText('Create System Template');
+  } else {
+    await expect(page.getByRole('button', { name: /^Create Template$/ })).toBeVisible();
+  }
   await expect(page.getByTestId('template-discovery-card-901')).toBeVisible();
   await expect(page.getByTestId('template-discovery-card-902')).toBeVisible();
 

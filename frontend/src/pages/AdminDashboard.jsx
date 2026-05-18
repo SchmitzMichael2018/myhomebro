@@ -149,19 +149,19 @@ function agreementEscrowStatus(row) {
 ========================= */
 const SectionTitle = ({ title, subtitle }) => (
   <div className="mb-3">
-    <div className="text-sm font-extrabold text-slate-900">{title}</div>
-    {subtitle ? <div className="mt-0.5 text-xs text-slate-700">{subtitle}</div> : null}
+    <div className="text-sm font-extrabold text-white">{title}</div>
+    {subtitle ? <div className="mt-0.5 text-xs text-sky-100/75">{subtitle}</div> : null}
   </div>
 );
 
 const SoftCard = ({ children, className = "" }) => (
-  <div className={["rounded-2xl border border-black/10 bg-white/70 shadow-sm", "backdrop-blur-md", className].join(" ")}>
+  <div className={["rounded-2xl border border-white/10 bg-[#061d42]/95 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]", "backdrop-blur-md", className].join(" ")}>
     {children}
   </div>
 );
 
 const BorderedSection = ({ title, subtitle, children, testId }) => (
-  <div data-testid={testId} className="rounded-2xl border border-white/25 bg-white/10 p-4 shadow-sm">
+  <div data-testid={testId} className="rounded-2xl border border-white/10 bg-white/8 p-4 shadow-sm">
     <SectionTitle title={title} subtitle={subtitle} />
     {children}
   </div>
@@ -170,12 +170,12 @@ const BorderedSection = ({ title, subtitle, children, testId }) => (
 const StatCard = ({ label, value, sub, tone = "neutral", onClick, testId }) => {
   const toneClass =
     tone === "good"
-      ? "bg-emerald-50 border-emerald-200"
+      ? "bg-emerald-400/10 border-emerald-300/30"
       : tone === "warn"
-        ? "bg-amber-50 border-amber-200"
+        ? "bg-amber-400/10 border-amber-300/30"
         : tone === "bad"
-          ? "bg-rose-50 border-rose-200"
-          : "bg-white/70 border-black/10";
+          ? "bg-rose-400/10 border-rose-300/30"
+          : "bg-white/10 border-white/10";
 
   const clickable = typeof onClick === "function";
 
@@ -188,13 +188,13 @@ const StatCard = ({ label, value, sub, tone = "neutral", onClick, testId }) => {
       className={[
         "text-left rounded-2xl border p-4 shadow-sm backdrop-blur-md transition",
         toneClass,
-        clickable ? "hover:bg-white/80 cursor-pointer" : "cursor-default",
+        clickable ? "hover:bg-white/15 cursor-pointer" : "cursor-default",
       ].join(" ")}
       title={clickable ? "Click to drill down" : undefined}
     >
-      <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-3xl font-extrabold text-slate-900">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-slate-600">{sub}</div> : null}
+      <div className="text-[11px] font-extrabold uppercase tracking-wide text-sky-100/65">{label}</div>
+      <div className="mt-2 text-3xl font-extrabold text-white">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-sky-100/70">{sub}</div> : null}
     </button>
   );
 };
@@ -209,53 +209,53 @@ const ThinStat = ({ label, value, sub, onClick, testId }) => {
       data-testid={testId}
       className={[
         "text-left rounded-xl border border-black/10 bg-white/70 p-3 shadow-sm transition",
-        clickable ? "hover:bg-white cursor-pointer" : "cursor-default",
+        "border-white/10 bg-white/10",
+        clickable ? "hover:bg-white/15 cursor-pointer" : "cursor-default",
       ].join(" ")}
       title={clickable ? "Click to drill down" : undefined}
     >
-      <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-xl font-extrabold text-slate-900">{value}</div>
-      {sub ? <div className="mt-0.5 text-[11px] text-slate-600">{sub}</div> : null}
+      <div className="text-[11px] font-extrabold uppercase tracking-wide text-sky-100/65">{label}</div>
+      <div className="mt-1 text-xl font-extrabold text-white">{value}</div>
+      {sub ? <div className="mt-0.5 text-[11px] text-sky-100/70">{sub}</div> : null}
     </button>
   );
 };
 
 const TableShell = ({ children }) => (
-  <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/70 shadow-sm">
+  <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/8 shadow-sm">
     {children}
   </div>
 );
 
 const Th = ({ children }) => (
-  <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">{children}</th>
+  <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-sky-100/65">{children}</th>
 );
 
 const Td = ({ children, className = "", colSpan }) => (
-  <td colSpan={colSpan} className={`px-3 py-3 align-top text-slate-800 ${className}`}>
+  <td colSpan={colSpan} className={`px-3 py-3 align-top text-sky-100/80 ${className}`}>
     {children}
   </td>
 );
-
 const ActionItem = ({ icon, title, desc, onClick, tone = "neutral" }) => {
   const toneClass =
     tone === "bad"
-      ? "border-rose-200 bg-rose-50"
+      ? "border-rose-300/30 bg-rose-400/10"
       : tone === "warn"
-        ? "border-amber-200 bg-amber-50"
+        ? "border-amber-300/30 bg-amber-400/10"
         : tone === "good"
-          ? "border-emerald-200 bg-emerald-50"
-          : "border-black/10 bg-white/70";
+          ? "border-emerald-300/30 bg-emerald-400/10"
+          : "border-white/10 bg-white/10";
 
   return (
     <button
       onClick={onClick}
-      className={["w-full text-left rounded-xl border p-3 shadow-sm", "hover:bg-white transition", toneClass].join(" ")}
+      className={["w-full text-left rounded-xl border p-3 shadow-sm", "hover:bg-white/15 transition", toneClass].join(" ")}
     >
       <div className="flex items-start gap-2">
         <div className="text-base">{icon}</div>
         <div className="min-w-0">
-          <div className="text-sm font-extrabold text-slate-900 truncate">{title}</div>
-          {desc ? <div className="mt-0.5 text-xs text-slate-600">{desc}</div> : null}
+          <div className="text-sm font-extrabold text-white truncate">{title}</div>
+          {desc ? <div className="mt-0.5 text-xs text-sky-100/70">{desc}</div> : null}
         </div>
       </div>
     </button>
@@ -281,12 +281,12 @@ const SectionCard = ({ title, subtitle, children, testId, className = "", tone =
     className={[
       "rounded-3xl border p-5 shadow-sm backdrop-blur-md",
       tone === "bad"
-        ? "border-rose-200 bg-rose-50/90"
+        ? "border-rose-300/30 bg-[#061d42]/95 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]"
         : tone === "warn"
-          ? "border-amber-200 bg-amber-50/90"
+          ? "border-amber-300/30 bg-[#061d42]/95 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]"
           : tone === "good"
-            ? "border-emerald-200 bg-emerald-50/90"
-            : "border-black/10 bg-white/80",
+            ? "border-emerald-300/30 bg-[#061d42]/95 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]"
+            : "border-white/10 bg-[#061d42]/95 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]",
       className,
     ].join(" ")}
   >
@@ -692,15 +692,22 @@ export default function AdminDashboard() {
      Render
   ========================= */
   return (
-    <div className="mx-auto max-w-7xl p-6">
+    <div
+      className="min-h-screen px-4 py-6 md:px-6"
+      style={{
+        background:
+          "linear-gradient(135deg, #041735 0%, #063f96 38%, #667f88 70%, #f0c94b 100%)",
+      }}
+    >
+    <div className="mx-auto max-w-7xl">
       <div className="flex flex-wrap items-baseline gap-3">
-        <div className="text-2xl font-extrabold text-slate-900">Admin</div>
-        <div className="text-sm text-slate-700 capitalize">{view}</div>
+        <div className="text-3xl font-extrabold text-white drop-shadow-sm">Admin</div>
+        <div className="text-sm font-semibold text-sky-100/80 capitalize">{view}</div>
 
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={loadAll}
-            className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-slate-50"
+            className="rounded-xl border border-white/20 bg-white px-4 py-2 text-sm font-extrabold text-[#0a2550] shadow-sm hover:bg-sky-50"
           >
             Refresh
           </button>
@@ -726,8 +733,8 @@ export default function AdminDashboard() {
             className={[
               "rounded-full border px-3 py-1.5 text-xs font-extrabold transition",
               view === key
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-black/10 bg-white/70 text-slate-700 hover:bg-white",
+                ? "border-white/25 bg-white text-[#0a2550]"
+                : "border-white/15 bg-white/10 text-sky-100 hover:bg-white/15",
             ].join(" ")}
           >
             {label}
@@ -1674,6 +1681,7 @@ export default function AdminDashboard() {
           )}
         </>
       )}
+    </div>
     </div>
   );
 }

@@ -161,6 +161,10 @@ test('admin contractor directory supports search, filters, table, and export aff
   await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-contractor-directory-page')).toBeVisible();
+  const pageClass = await page.getByTestId('admin-contractor-directory-page').getAttribute('class');
+  expect(pageClass).toContain('min-h-screen');
+  const importClass = await page.getByTestId('admin-contractor-import-section').getAttribute('class');
+  expect(importClass).toContain('bg-[#061d42]/95');
   await expect(page.getByRole('heading', { name: 'Contractor Directory', exact: true })).toBeVisible();
   await expect(page.getByText('Search results are automatically saved to the contractor directory.')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-search-term')).toBeVisible();
