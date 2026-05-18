@@ -24,6 +24,9 @@ import {
   ListPlus,
   HandCoins,
   Receipt,
+  ClipboardCheck,
+  FileText,
+  Flag,
   CalendarDays,
   AlertTriangle,
   Wrench,
@@ -536,67 +539,80 @@ function FlowMetricButton({
   );
 }
 
-function PipelineRow({ title, count, amount, description, onClick, tone = "neutral", testId }) {
+function PipelineRow({ title, count, amount, description, onClick, tone = "neutral", testId, icon: Icon }) {
   const toneClass =
     tone === "good"
-      ? "border-emerald-200 bg-emerald-50/60"
-      : tone === "warn"
-      ? "border-amber-200 bg-amber-50/60 ring-1 ring-amber-100"
-      : tone === "bad"
-      ? "border-rose-200 bg-rose-50/60 ring-1 ring-rose-100"
-      : tone === "active"
-      ? "border-sky-200 bg-sky-50/60 ring-1 ring-sky-100"
-      : "border-slate-200 bg-white";
+      ? "border-emerald-300/30 bg-emerald-400/10"
+    : tone === "warn"
+      ? "border-amber-300/30 bg-amber-400/10"
+    : tone === "bad"
+      ? "border-rose-300/30 bg-rose-400/10"
+    : tone === "active"
+      ? "border-sky-300/30 bg-sky-400/10"
+    : tone === "purple"
+      ? "border-violet-300/30 bg-violet-400/10"
+      : "border-white/10 bg-white/8";
 
   const titleClass =
     tone === "good"
-      ? "text-emerald-900"
-      : tone === "warn"
-      ? "text-amber-950"
-      : tone === "bad"
-      ? "text-rose-950"
-      : tone === "active"
-      ? "text-sky-950"
-      : "text-slate-900";
+      ? "text-emerald-100"
+    : tone === "warn"
+      ? "text-amber-100"
+    : tone === "bad"
+      ? "text-rose-100"
+    : tone === "active"
+      ? "text-sky-100"
+    : tone === "purple"
+      ? "text-violet-100"
+      : "text-white";
 
   const descriptionClass =
     tone === "good"
-      ? "text-emerald-900/70"
-      : tone === "warn"
-      ? "text-amber-900/75"
-      : tone === "bad"
-      ? "text-rose-900/75"
-      : tone === "active"
-      ? "text-sky-900/75"
-      : "text-slate-600";
+      ? "text-emerald-50/75"
+    : tone === "warn"
+      ? "text-amber-50/75"
+    : tone === "bad"
+      ? "text-rose-50/75"
+    : tone === "active"
+      ? "text-sky-50/75"
+    : tone === "purple"
+      ? "text-violet-50/75"
+      : "text-sky-100/70";
 
   return (
     <button
       type="button"
       data-testid={testId}
       onClick={onClick}
-      className={`group flex min-h-[128px] w-full items-start justify-between gap-4 rounded-2xl border p-5 text-left shadow-sm transition-colors transition-shadow hover:border-slate-300 hover:shadow-md ${toneClass}`}
+      className={`group flex min-h-[76px] w-full items-start justify-between gap-3 rounded-xl border p-3 text-left shadow-[0_12px_30px_rgba(2,8,23,0.18)] transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12 hover:shadow-[0_18px_38px_rgba(2,8,23,0.24)] ${toneClass}`}
     >
       <div className="min-w-0 flex-1">
-        <div className={`text-xs font-semibold uppercase tracking-[0.14em] ${titleClass}`}>{title}</div>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
-          <div className={`text-3xl font-bold leading-none ${titleClass}`}>
+        <div className="flex items-center gap-3">
+          {Icon ? (
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}>
+              <Icon className={`h-4 w-4 ${titleClass}`} aria-hidden="true" />
+            </div>
+          ) : null}
+          <div className={`text-xs font-semibold uppercase tracking-[0.14em] ${titleClass}`}>{title}</div>
+        </div>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <div className={`text-xl font-bold leading-none ${titleClass}`}>
             {typeof count === "number" ? Number(count).toLocaleString() : "0"}
           </div>
           <div className={`pb-0.5 text-sm font-medium leading-5 ${descriptionClass}`}>
             items
           </div>
-          <div className={`sm:ml-auto text-2xl font-semibold leading-none ${titleClass}`}>
+          <div className={`ml-auto text-lg font-semibold leading-none ${titleClass}`}>
             {currency(amount)}
           </div>
         </div>
-        <div className={`mt-3 text-sm leading-5 ${descriptionClass}`}>{description}</div>
+        <div className={`mt-1 text-xs leading-5 ${descriptionClass}`}>{description}</div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 opacity-0 transition group-hover:opacity-100">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/70 opacity-0 transition group-hover:opacity-100">
           View
         </div>
-        <ChevronRight className="h-4 w-4 text-slate-400 transition group-hover:text-slate-600" />
+        <ChevronRight className="h-4 w-4 text-sky-100/60 transition group-hover:text-white" />
       </div>
     </button>
   );
@@ -2231,6 +2247,7 @@ export default function ContractorDashboard() {
     {
       key: "not-started",
       title: "Not Started",
+      icon: Target,
       count: mStats.notStartedCount,
       amount: mStats.notStartedAmount,
       description: "Milestones with no recorded progress.",
@@ -2240,6 +2257,7 @@ export default function ContractorDashboard() {
     {
       key: "in-progress",
       title: "In Progress",
+      icon: ListTodo,
       count: mStats.inProgressCount,
       amount: mStats.inProgressAmount,
       description: "Milestones underway but not yet complete.",
@@ -2249,6 +2267,7 @@ export default function ContractorDashboard() {
     {
       key: "completed",
       title: "Completed",
+      icon: CheckCircle2,
       count: mStats.completedCount,
       amount: mStats.completedAmount,
       description: "Finished milestones waiting to move forward.",
@@ -2258,39 +2277,29 @@ export default function ContractorDashboard() {
     {
       key: "awaiting-review",
       title: "Awaiting Review",
+      icon: ClipboardCheck,
       count: mStats.reviewedCount,
       amount: mStats.reviewedAmount,
       description: "Completed milestones waiting on review or approval.",
       tone: "warn",
-      onClick: () => navigate(`/app/reviewer/queue`),
+      onClick: () => navigate(`/app/milestones?filter=reviewed`),
     },
     {
       key: "invoiced",
       title: "Invoiced",
+      icon: FileText,
       count: mStats.invoicedCount,
       amount: mStats.invoicedAmount,
       description: "Milestones already tied to an invoice or payment request.",
-      tone: "neutral",
-      onClick: goInvoices,
+      tone: "purple",
+      onClick: () => navigate(`/app/milestones?filter=invoiced`),
     },
-    ...(mStats.reworkCount > 0
-      ? [
-          {
-            key: "rework",
-            title: "Rework / Issues",
-            count: mStats.reworkCount,
-            amount: mStats.reworkAmount,
-            description: "Dispute-driven work that still needs attention.",
-            tone: "bad",
-            onClick: goReworkMilestones,
-          },
-        ]
-      : []),
   ];
   const moneyPipelineRows = [
     {
       key: "awaiting-customer",
       title: "Awaiting Customer Approval",
+      icon: Receipt,
       count: paymentSummary.awaiting_customer_approval.count,
       amount: paymentSummary.awaiting_customer_approval.amount,
       description: "Invoices or draw requests waiting on owner or customer review.",
@@ -2300,6 +2309,7 @@ export default function ContractorDashboard() {
     {
       key: "payment-pending",
       title: "Payment Pending",
+      icon: WalletMinimal,
       count: paymentSummary.payment_pending.count,
       amount: paymentSummary.payment_pending.amount,
       description: "Approved work still moving through payment.",
@@ -2309,6 +2319,7 @@ export default function ContractorDashboard() {
     {
       key: "paid",
       title: "Paid",
+      icon: BadgeCheck,
       count: paymentSummary.paid.count,
       amount: paymentSummary.paid.amount,
       description: "Invoices or draw requests fully paid or released.",
@@ -2318,6 +2329,7 @@ export default function ContractorDashboard() {
     {
       key: "issues",
       title: "Disputes / Issues",
+      icon: Flag,
       count: paymentSummary.issues.count,
       amount: paymentSummary.issues.amount,
       description: "Records with disputes, requested changes, or rejection issues.",
@@ -2334,7 +2346,13 @@ export default function ContractorDashboard() {
       compact
       titleClassName="drop-shadow-none"
     >
-      <div className="space-y-5">
+      <div
+        className="-mx-4 -mb-6 min-h-screen space-y-5 px-4 pb-8 pt-1 md:-mx-6 md:px-6"
+        style={{
+          background:
+            "linear-gradient(135deg, #041735 0%, #063f96 38%, #667f88 70%, #f0c94b 100%)",
+        }}
+      >
       {!isEmployee ? (
         <ContractorContextualGuideModal
           guide={contextualGuide}
@@ -2347,17 +2365,18 @@ export default function ContractorDashboard() {
           <DashboardSection
             title="Quick Actions"
             subtitle="Creation and navigation shortcuts for the next move."
+            variant="premium"
           >
             <DashboardCard
               testId="dashboard-quick-actions-row"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
+              tone="premium"
+              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
             >
               <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
                 <button
                   type="button"
                   onClick={goNewAgreement}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
                 >
                   <FilePlus2 className="h-4 w-4" />
                   <span>New Agreement</span>
@@ -2365,7 +2384,7 @@ export default function ContractorDashboard() {
                 <button
                   type="button"
                   onClick={goNewMilestone}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
                 >
                   <ListPlus className="h-4 w-4" />
                   <span>New Milestone</span>
@@ -2373,7 +2392,7 @@ export default function ContractorDashboard() {
                 <button
                   type="button"
                   onClick={goInvoices}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
                 >
                   <BadgeDollarSign className="h-4 w-4" />
                   <span>Payment</span>
@@ -2381,7 +2400,7 @@ export default function ContractorDashboard() {
                 <button
                   type="button"
                   onClick={openNewExpense}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
                 >
                   <HandCoins className="h-4 w-4" />
                   <span>Expense</span>
@@ -2390,29 +2409,30 @@ export default function ContractorDashboard() {
             </DashboardCard>
           </DashboardSection>
 
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] xl:items-stretch">
           <DashboardCard
             testId="dashboard-next-actions"
-            tone="subtle"
-            className="border-sky-200/80 bg-sky-50/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+            tone="premium"
+            className="h-full p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
           >
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#3f6d9e]">
+                <div className="text-2xl font-bold tracking-[-0.01em] text-white">
                   Next Actions
                 </div>
-                <div className="mt-1 text-sm text-slate-600">
+                <div className="mt-1 text-sm text-sky-100/85">
                   Top priorities from agreements, milestones, quotes, approvals, and payouts.
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm">
                   {nextActionCards.length} total
                 </span>
                 {nextActionCards.length > 5 ? (
                   <button
                     type="button"
                     onClick={() => setShowAllNextActions((current) => !current)}
-                    className="rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+                    className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/15"
                   >
                     {showAllNextActions ? "Show fewer" : "View all actions"}
                   </button>
@@ -2433,15 +2453,15 @@ export default function ContractorDashboard() {
                       }
                       navigate(item.navigationTarget || "/app/dashboard");
                     }}
-                    className="flex w-full items-start justify-between gap-4 rounded-xl border border-sky-200 bg-white px-4 py-3 text-left transition hover:-translate-y-px hover:border-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
+                    className="flex w-full items-start justify-between gap-4 rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-[#061d42]"
                   >
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                      <div className="mt-1 text-sm leading-6 text-slate-600">{item.description}</div>
+                      <div className="text-sm font-semibold text-white">{item.title}</div>
+                      <div className="mt-1 text-sm leading-6 text-sky-100/75">{item.description}</div>
                     </div>
                     <span
                       data-testid={`dashboard-next-action-button-${item.key}`}
-                      className="shrink-0 rounded-full bg-[#18395f] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white"
+                      className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#0a2550]"
                     >
                       {item.buttonLabel || "Open"}
                     </span>
@@ -2449,7 +2469,7 @@ export default function ContractorDashboard() {
                 ))}
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-sky-200 bg-white px-4 py-3 text-sm text-slate-600">
+              <div className="rounded-xl border border-dashed border-white/20 bg-white/8 px-4 py-3 text-sm text-sky-100/80">
                 No next actions surfaced yet.
               </div>
             )}
@@ -2616,11 +2636,12 @@ export default function ContractorDashboard() {
           <DashboardSection
             title="Schedule"
             subtitle="Active due work only. Planned timelines stay in agreement previews until activated."
+            variant="premium"
           >
             <DashboardCard
               testId="dashboard-schedule-section"
-              tone="subtle"
-              className={`border-slate-200/90 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)] ${
+              tone="premium"
+              className={`h-full shadow-[0_22px_50px_rgba(2,8,23,0.34)] ${
                 scheduleHasItems ? "p-4" : "p-3.5"
               }`}
             >
@@ -2653,29 +2674,29 @@ export default function ContractorDashboard() {
                       type="button"
                       data-testid="dashboard-schedule-tomorrow"
                       onClick={goAgreementScheduleTomorrow}
-                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-100"
+                      className="flex items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
                     >
                       <div>
-                        <div className="text-sm font-semibold text-slate-900">Due Tomorrow</div>
-                        <div className="mt-1 text-xs font-medium text-slate-600">
+                        <div className="text-sm font-semibold text-white">Due Tomorrow</div>
+                        <div className="mt-1 text-xs font-medium text-sky-100/75">
                           {dueSchedule.tomorrow.count} items | {currency(dueSchedule.tomorrow.amount)}
                         </div>
                       </div>
-                      <ArrowRight className="h-4 w-4 text-slate-500" />
+                      <ArrowRight className="h-4 w-4 text-sky-100/70" />
                     </button>
                     <button
                       type="button"
                       data-testid="dashboard-schedule-week"
                       onClick={goAgreementScheduleWeek}
-                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-100"
+                      className="flex items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
                     >
                       <div>
-                        <div className="text-sm font-semibold text-slate-900">This Week</div>
-                        <div className="mt-1 text-xs font-medium text-slate-600">
+                        <div className="text-sm font-semibold text-white">This Week</div>
+                        <div className="mt-1 text-xs font-medium text-sky-100/75">
                           {dueSchedule.week.count} items | {currency(dueSchedule.week.amount)}
                         </div>
                       </div>
-                      <ArrowRight className="h-4 w-4 text-slate-500" />
+                      <ArrowRight className="h-4 w-4 text-sky-100/70" />
                     </button>
                   </div>
                 </div>
@@ -2683,20 +2704,22 @@ export default function ContractorDashboard() {
                 <button
                   type="button"
                   onClick={goCalendar}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3 text-left"
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left hover:border-white/30 hover:bg-white/12"
                 >
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">Schedule is clear</div>
-                    <div className="mt-1 text-xs font-medium text-slate-600">
+                    <div className="text-sm font-semibold text-white">Schedule is clear</div>
+                    <div className="mt-1 text-xs font-medium text-sky-100/75">
                       No overdue or upcoming due items are surfaced right now.
                     </div>
                   </div>
-                  <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+                  <CalendarDays className="h-4 w-4 shrink-0 text-sky-100/70" />
                 </button>
               )}
             </DashboardCard>
           </DashboardSection>
+          </div>
 
+          {false ? (
           <DashboardSection
             title="Project Context"
             subtitle="Operational filters for the jobs you are already managing."
@@ -2743,24 +2766,27 @@ export default function ContractorDashboard() {
               </div>
             </DashboardCard>
           </DashboardSection>
+          ) : null}
 
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] xl:items-start">
           <DashboardSection
             title="Work and Money"
             subtitle="Track job progress on the left and payment handoffs on the right."
+            variant="premium"
           >
             <DashboardCard
               testId="dashboard-work-money"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
+              tone="premium"
+              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
             >
-              <div id="layout" className="grid gap-5 xl:grid-cols-2 xl:items-start">
+              <div id="layout" className="grid gap-4 xl:grid-cols-2 xl:items-start">
                 <div className="space-y-3">
                   <div className="mb-4">
                     <div className="flex items-center gap-2">
-                      <ListTodo className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                      <h2 className="text-xl font-semibold text-slate-800">Work Pipeline</h2>
+                      <ListTodo className="h-4 w-4 text-sky-100/70" aria-hidden="true" />
+                      <h2 className="text-xl font-semibold text-white">Work Pipeline</h2>
                     </div>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-sky-100/75">
                       Track job progress across milestones
                     </p>
                   </div>
@@ -2769,6 +2795,7 @@ export default function ContractorDashboard() {
                       <PipelineRow
                         key={row.key}
                         testId={`dashboard-work-${row.key}`}
+                        icon={row.icon}
                         title={row.title}
                         count={row.count}
                         amount={row.amount}
@@ -2783,10 +2810,10 @@ export default function ContractorDashboard() {
                 <div className="space-y-3">
                   <div className="mb-4 mt-6 xl:mt-0">
                     <div className="flex items-center gap-2">
-                      <WalletMinimal className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                      <h2 className="text-xl font-semibold text-slate-800">Money Pipeline</h2>
+                      <WalletMinimal className="h-4 w-4 text-sky-100/70" aria-hidden="true" />
+                      <h2 className="text-xl font-semibold text-white">Money Pipeline</h2>
                     </div>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-sky-100/75">
                       Track payments from approval to payout
                     </p>
                   </div>
@@ -2795,6 +2822,7 @@ export default function ContractorDashboard() {
                       <PipelineRow
                         key={row.key}
                         testId={`dashboard-money-${row.key}`}
+                        icon={row.icon}
                         title={row.title}
                         count={row.count}
                         amount={row.amount}
@@ -3182,51 +3210,52 @@ export default function ContractorDashboard() {
           <DashboardSection
             title="Bids Snapshot"
             subtitle="A compact look at bid activity before it becomes an agreement."
+            variant="premium"
           >
             <DashboardCard
               testId="dashboard-bids-summary"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
+              tone="premium"
+              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
             >
               <div className="grid gap-3 md:grid-cols-4">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Open Bids</div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Open Bids</div>
+                  <div className="mt-2 text-2xl font-extrabold text-white">
                     {Number(bidsSnapshotSummary?.open_bids || 0).toLocaleString()}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">Draft + Submitted</div>
+                  <div className="mt-1 text-xs text-sky-100/70">Draft + Submitted</div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">
                     Under Review
                   </div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                  <div className="mt-2 text-2xl font-extrabold text-white">
                     {Number(bidsSnapshotSummary?.under_review_bids || 0).toLocaleString()}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">Active bid conversations</div>
+                  <div className="mt-1 text-xs text-sky-100/70">Active bid conversations</div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Awarded</div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Awarded</div>
+                  <div className="mt-2 text-2xl font-extrabold text-white">
                     {Number(bidsSnapshotSummary?.awarded_bids || 0).toLocaleString()}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">Ready to convert or open</div>
+                  <div className="mt-1 text-xs text-sky-100/70">Ready to convert</div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">
                     Not Selected / Declined
                   </div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                  <div className="mt-2 text-2xl font-extrabold text-white">
                     {Number(bidsSnapshotSummary?.declined_expired_bids || 0).toLocaleString()}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">Closed opportunities and bids passed over by the customer</div>
+                  <div className="mt-1 text-xs text-sky-100/70">Closed opportunities</div>
                 </div>
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Recent Bids</div>
-                  <div className="mt-1 text-sm text-slate-600">
+                  <div className="text-sm font-semibold text-white">Recent Bids</div>
+                  <div className="mt-1 text-sm text-sky-100/75">
                     {bidsSnapshotLoading
                       ? "Loading bids snapshot..."
                       : bidsSnapshotRecent.length
@@ -3237,7 +3266,7 @@ export default function ContractorDashboard() {
                 <button
                   type="button"
                   onClick={() => navigate("/app/bids")}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
                   data-testid="dashboard-bids-view-all"
                 >
                   View all bids
@@ -3248,7 +3277,7 @@ export default function ContractorDashboard() {
                 <div className="mt-4 overflow-x-auto" data-testid="dashboard-bids-recent-table">
                   <table className="min-w-full text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <tr className="border-b border-white/10 text-left text-xs font-semibold uppercase tracking-wide text-sky-100/65">
                         <th className="py-3 pr-3">Project</th>
                         <th className="py-3 pr-3">Class</th>
                         <th className="py-3 pr-3">Status</th>
@@ -3260,11 +3289,11 @@ export default function ContractorDashboard() {
                         <tr
                           key={row.bid_id || row.id}
                           data-testid={`dashboard-bids-row-${row.bid_id || row.id}`}
-                          className="border-b border-slate-100 last:border-b-0"
+                          className="border-b border-white/10 last:border-b-0"
                         >
                           <td className="py-3 pr-3">
-                            <div className="font-semibold text-slate-900">{row.project_title || row.project_name || "Untitled Bid"}</div>
-                            <div className="mt-1 text-xs text-slate-500">{row.customer_name || "Unknown Customer"}</div>
+                            <div className="font-semibold text-white">{row.project_title || row.project_name || "Untitled Bid"}</div>
+                            <div className="mt-1 text-xs text-sky-100/65">{row.customer_name || "Unknown Customer"}</div>
                             <div className="mt-2">
                               <ProjectModeBadge
                                 mode={row.project_mode}
@@ -3272,9 +3301,9 @@ export default function ContractorDashboard() {
                               />
                             </div>
                           </td>
-                          <td className="py-3 pr-3 text-slate-700">{row.project_class_label || row.project_class || "Residential"}</td>
-                          <td className="py-3 pr-3 text-slate-700">{row.status_label || row.status || "Submitted"}</td>
-                          <td className="py-3 text-slate-700">{row.next_action?.label || "View details"}</td>
+                          <td className="py-3 pr-3 text-sky-100/75">{row.project_class_label || row.project_class || "Residential"}</td>
+                          <td className="py-3 pr-3 text-sky-100/75">{row.status_label || row.status || "Submitted"}</td>
+                          <td className="py-3 text-sky-100/75">{row.next_action?.label || "View details"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -3283,6 +3312,7 @@ export default function ContractorDashboard() {
               ) : null}
             </DashboardCard>
           </DashboardSection>
+          </div>
 
           {false ? (
           <DashboardSection

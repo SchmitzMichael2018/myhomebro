@@ -185,26 +185,41 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(page.getByText('Quick Actions').first()).toBeVisible();
   await expect(page.getByText('Next Actions').first()).toBeVisible();
   await expect(page.getByText('Schedule').first()).toBeVisible();
-  await expect(page.getByText('Project Context').first()).toBeVisible();
   await expect(page.getByText('Work and Money').first()).toBeVisible();
   await expect(page.getByText('Bids Snapshot').first()).toBeVisible();
   await expect(page.getByTestId('contractor-activation-guide')).toHaveCount(0);
   await expect(page.getByTestId('contractor-contextual-guide-modal')).toHaveCount(0);
+  await expect(page.getByText('Project Context')).toHaveCount(0);
   await expect(page.getByText('Recommended Project Matches')).toHaveCount(0);
   await expect(page.getByText('Open lead inbox')).toHaveCount(0);
+  await expect(page.getByText('Next Actions')).toHaveCount(1);
 
   const quickBox = await page.getByTestId('dashboard-quick-actions-row').boundingBox();
   const nextBox = await page.getByTestId('dashboard-next-actions').boundingBox();
   const scheduleBox = await page.getByTestId('dashboard-schedule-section').boundingBox();
-  const contextBox = await page.getByTestId('dashboard-project-context').boundingBox();
   const workBox = await page.getByTestId('dashboard-work-money').boundingBox();
   const bidsBox = await page.getByTestId('dashboard-bids-summary').boundingBox();
 
   expect(quickBox.y).toBeLessThan(nextBox.y);
   expect(nextBox.y).toBeLessThan(scheduleBox.y);
-  expect(scheduleBox.y).toBeLessThan(contextBox.y);
-  expect(contextBox.y).toBeLessThan(workBox.y);
+  expect(scheduleBox.y).toBeLessThan(workBox.y);
   expect(workBox.y).toBeLessThan(bidsBox.y);
+
+  const workMoney = page.getByTestId('dashboard-work-money');
+  const workMoneyClass = await workMoney.getAttribute('class');
+  expect(workMoneyClass).toContain('bg-[#061d42]/95');
+  await expect(workMoney).toContainText('Not Started');
+  await expect(workMoney).toContainText('In Progress');
+  await expect(workMoney).toContainText('Completed');
+  await expect(workMoney).toContainText('Awaiting Review');
+  await expect(workMoney).toContainText('Invoiced');
+  await expect(workMoney).toContainText('Awaiting Customer Approval');
+  await expect(workMoney).toContainText('Payment Pending');
+  await expect(workMoney).toContainText('Paid');
+  await expect(workMoney).toContainText('Disputes / Issues');
+
+  const bidsClass = await page.getByTestId('dashboard-bids-summary').getAttribute('class');
+  expect(bidsClass).toContain('bg-[#061d42]/95');
 
   await page.getByTestId('dashboard-bids-view-all').click();
   await expect(page).toHaveURL(/\/app\/bids$/);

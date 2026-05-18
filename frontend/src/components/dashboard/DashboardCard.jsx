@@ -13,6 +13,8 @@ export default function DashboardCard({
       ? "border-amber-200 bg-amber-50"
       : tone === "action"
       ? "border-sky-200 bg-gradient-to-br from-[#0f3c66] via-[#1b4d85] to-[#2f6fb3] text-white"
+      : tone === "premium"
+      ? "border-white/10 bg-[#061d42]/95 text-white"
       : "border-slate-200 bg-white";
 
   return (
