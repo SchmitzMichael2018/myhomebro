@@ -241,6 +241,23 @@ def _place_services(place: dict[str, Any]) -> list[str]:
     return services
 
 
+def normalize_service_label(value: Any) -> str:
+    text = _safe_text(value).lower().replace("_", " ")
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    return " ".join(part for part in text.split() if part)
+
+
+def normalize_services(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        values = [values] if _safe_text(values) else []
+    normalized: list[str] = []
+    for value in values:
+        text = normalize_service_label(value)
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
 def normalize_place_result(place: dict[str, Any]) -> dict[str, Any]:
     location = _place_location(place)
     business_name = _display_name(place)
@@ -255,6 +272,8 @@ def normalize_place_result(place: dict[str, Any]) -> dict[str, Any]:
     if email.lower() in {"email not listed", "not listed", "none", "null"}:
         email = ""
     address = parse_place_address(place)
+    services = _place_services(place)
+    normalized_services = normalize_services(services)
     return {
         "business_name": business_name,
         "normalized_name": normalize_business_name(business_name),
@@ -269,10 +288,16 @@ def normalize_place_result(place: dict[str, Any]) -> dict[str, Any]:
         "zip_code": _null_if_blank(address.get("zip_code")),
         "latitude": location.get("latitude"),
         "longitude": location.get("longitude"),
+        "service_radius_miles": place.get("service_radius_miles") or 25,
+        "service_city": _null_if_blank(place.get("service_city") or address.get("city")),
+        "service_state": _null_if_blank(normalize_state(place.get("service_state") or address.get("state"))),
+        "service_zip": _null_if_blank(normalize_zip(place.get("service_zip") or address.get("zip_code"))),
+        "primary_service": _null_if_blank(place.get("primary_service") or (normalized_services[0] if normalized_services else "")),
+        "normalized_services": normalized_services,
         "google_place_id": _null_if_blank(place.get("google_place_id") or place.get("id") or place.get("place_id")),
         "rating": place.get("rating") if place.get("rating") is not None else place.get("google_rating"),
         "review_count": place.get("review_count") if place.get("review_count") is not None else place.get("google_review_count"),
-        "services": _place_services(place),
+        "services": services,
         "source": _safe_text(place.get("source")) or ContractorDirectoryEntry.SOURCE_GOOGLE_PLACES,
     }
 
@@ -421,6 +446,11 @@ def upsert_directory_entry_from_place(
             "city",
             "state",
             "zip_code",
+            "service_radius_miles",
+            "service_city",
+            "service_state",
+            "service_zip",
+            "primary_service",
             "latitude",
             "longitude",
             "google_place_id",
@@ -436,6 +466,10 @@ def upsert_directory_entry_from_place(
         if merged_services != (entry.services or []):
             entry.services = merged_services
             update_fields.append("services")
+        merged_normalized_services = normalize_services([*(entry.normalized_services or []), *(data.get("normalized_services") or [])])
+        if merged_normalized_services != (entry.normalized_services or []):
+            entry.normalized_services = merged_normalized_services
+            update_fields.append("normalized_services")
         entry.save(update_fields=[*set(update_fields), "last_seen_at"] if update_fields else ["last_seen_at"])
 
     record_directory_discovery(entry, context)

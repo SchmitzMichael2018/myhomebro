@@ -151,6 +151,7 @@ export default function AdminContractorDirectory() {
   const [importLoading, setImportLoading] = useState(false);
   const [importMessage, setImportMessage] = useState("");
   const [importError, setImportError] = useState("");
+  const [claimLinks, setClaimLinks] = useState({});
 
   const exportRows = useMemo(
     () => directoryRows.filter((row) => !row.public_email && row.website),
@@ -245,6 +246,37 @@ export default function AdminContractorDirectory() {
       setEditError(apiErrors?.public_email || error?.response?.data?.detail || "Could not save this contractor.");
     } finally {
       setEditSaving(false);
+    }
+  }
+
+  async function generateClaimLink(row) {
+    setSuccessMessage("");
+    setDirectoryError("");
+    try {
+      const { data } = await api.post(`/projects/admin/contractor-directory/${row.id}/claim-link/`, {});
+      setClaimLinks((prev) => ({ ...prev, [row.id]: data?.claim_url || "" }));
+      setSuccessMessage("Claim link generated.");
+    } catch (error) {
+      setDirectoryError(error?.response?.data?.detail || "Could not generate a claim link.");
+    }
+  }
+
+  async function copyClaimLink(row) {
+    const link = claimLinks[row.id];
+    if (!link) return;
+    const absoluteLink = link.startsWith("http") ? link : `${window.location.origin}${link}`;
+    await navigator.clipboard?.writeText(absoluteLink);
+    setSuccessMessage("Claim link copied.");
+  }
+
+  async function markClaimed(row) {
+    setDirectoryError("");
+    try {
+      await api.post(`/projects/admin/contractor-directory/${row.id}/mark-claimed/`, {});
+      setSuccessMessage("Directory entry marked as claimed.");
+      await loadDirectory();
+    } catch (error) {
+      setDirectoryError(error?.response?.data?.detail || "Could not mark this entry as claimed.");
     }
   }
 
@@ -461,7 +493,19 @@ export default function AdminContractorDirectory() {
               {directoryRows.map((row) => (
                 <tr key={row.id} className="border-b border-white/10">
                   <td className={tableCellClass}>
-                    <button type="button" data-testid={`admin-contractor-edit-${row.id}`} onClick={() => openEdit(row)} className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold text-white">Edit</button>
+                    <div className="flex min-w-44 flex-wrap gap-2">
+                      <button type="button" data-testid={`admin-contractor-edit-${row.id}`} onClick={() => openEdit(row)} className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold text-white">Edit</button>
+                      <button type="button" data-testid={`admin-contractor-claim-link-${row.id}`} onClick={() => generateClaimLink(row)} className="rounded-lg border border-sky-200/30 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-50">Generate Claim Link</button>
+                      {claimLinks[row.id] ? (
+                        <button type="button" data-testid={`admin-contractor-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50">Copy Claim Link</button>
+                      ) : null}
+                      {!row.claimed ? (
+                        <button type="button" data-testid={`admin-contractor-mark-claimed-${row.id}`} onClick={() => markClaimed(row)} className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-50">Mark Claimed</button>
+                      ) : null}
+                      {row.claimed_contractor_id ? (
+                        <span className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-white">Contractor #{row.claimed_contractor_id}</span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className={`${tableCellClass} font-semibold text-white`}>{row.business_name}</td>
                   <td className={tableCellClass}>{row.website ? <a href={row.website} target="_blank" rel="noreferrer" className="font-semibold text-sky-100 hover:underline">{websiteHost(row.website)}</a> : <span className="text-sky-100/45">Not listed</span>}</td>

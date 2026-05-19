@@ -61,10 +61,13 @@ from .views.public_intake import (
 )
 from .views.contractor_discovery import (
     AdminContractorDirectoryView,
+    AdminContractorDirectoryClaimLinkView,
     AdminContractorDirectoryImportApplyView,
     AdminContractorDirectoryImportPreviewView,
+    AdminContractorDirectoryManualClaimView,
     AdminContractorSearchView,
     AdminContractorOpportunityListView,
+    ContractorDirectoryClaimView,
     ContractorOpportunityDeclineView,
     ContractorOpportunityListView,
     ContractorOpportunityAcceptView,
@@ -582,6 +585,8 @@ urlpatterns = [
     path("admin/contractor-directory/", AdminContractorDirectoryView.as_view()),
     path("admin/contractor-directory/import-preview/", AdminContractorDirectoryImportPreviewView.as_view()),
     path("admin/contractor-directory/import-apply/", AdminContractorDirectoryImportApplyView.as_view()),
+    path("admin/contractor-directory/<int:entry_id>/claim-link/", AdminContractorDirectoryClaimLinkView.as_view()),
+    path("admin/contractor-directory/<int:entry_id>/mark-claimed/", AdminContractorDirectoryManualClaimView.as_view()),
     path("admin/contractor-directory/<int:entry_id>/", AdminContractorDirectoryView.as_view()),
     path("admin/contractor-opportunities/", AdminContractorOpportunityListView.as_view()),
     path("contractor-opportunities/", ContractorOpportunityListView.as_view()),
@@ -589,6 +594,7 @@ urlpatterns = [
     path("contractor-opportunities/<int:opportunity_id>/decline/", ContractorOpportunityDeclineView.as_view()),
     path("contractor-activation-summary/", ContractorActivationSummaryView.as_view()),
     path("contractor-activation-summary/dismiss/", ContractorActivationSummaryDismissView.as_view()),
+    path("contractors/directory-claim/<uuid:token>/", ContractorDirectoryClaimView.as_view()),
 
     # -------------------------------------------------
     # Owner → employee assignment

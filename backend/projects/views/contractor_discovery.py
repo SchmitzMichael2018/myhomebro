@@ -12,7 +12,13 @@ from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
+from projects.models_contractor_discovery import (
+    ContractorDirectoryClaimToken,
+    ContractorDirectoryDiscovery,
+    ContractorDirectoryEntry,
+    ContractorDiscoveryInvite,
+    ContractorOpportunity,
+)
 from projects.models import Contractor
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_directory import (
@@ -22,6 +28,12 @@ from projects.services.contractor_directory import (
     normalize_website_domain,
     normalize_zip,
     upsert_directory_entry_from_place,
+)
+from projects.services.contractor_directory_claims import (
+    claim_directory_entry_with_token,
+    directory_entry_prefill_payload,
+    generate_directory_claim_token,
+    manually_mark_directory_entry_claimed,
 )
 from projects.services.contractor_opportunities import (
     accept_contractor_opportunity,
@@ -299,8 +311,15 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "rating": entry.rating,
         "review_count": entry.review_count,
         "services": entry.services or [],
+        "service_radius_miles": entry.service_radius_miles,
+        "service_city": entry.service_city,
+        "service_state": entry.service_state,
+        "service_zip": entry.service_zip,
+        "primary_service": entry.primary_service,
+        "normalized_services": entry.normalized_services or [],
         "source": entry.source,
         "claimed": entry.claimed,
+        "claimed_contractor_id": entry.claimed_by_contractor_id,
         "profile_status": entry.profile_status,
         "enrichment_status": entry.enrichment_status,
         "email_source_url": entry.email_source_url,
@@ -541,6 +560,18 @@ class AdminContractorDirectoryView(APIView):
             entry.state = _null_if_blank(normalize_state(data.get("state")))
         if "zip_code" in data:
             entry.zip_code = _null_if_blank(normalize_zip(data.get("zip_code")))
+        if "service_radius_miles" in data:
+            try:
+                radius = int(data.get("service_radius_miles"))
+            except (TypeError, ValueError):
+                radius = 25
+            entry.service_radius_miles = radius if radius in {5, 10, 15, 25, 50, 100} else 25
+        for field in ["service_city", "service_state", "service_zip", "primary_service"]:
+            if field in data:
+                value = normalize_state(data.get(field)) if field == "service_state" else normalize_zip(data.get(field)) if field == "service_zip" else _safe_text(data.get(field))
+                setattr(entry, field, _null_if_blank(value))
+        if "normalized_services" in data and isinstance(data.get("normalized_services"), list):
+            entry.normalized_services = [str(item).strip().lower() for item in data.get("normalized_services") if str(item).strip()]
         if "services" in data:
             entry.services = _parse_services(data.get("services"))
             enrichment_touched = True
@@ -561,6 +592,69 @@ class AdminContractorDirectoryView(APIView):
 
         entry.save()
         return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
+
+
+class AdminContractorDirectoryClaimLinkView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, entry_id: int, *args, **kwargs):
+        entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
+        if entry is None:
+            return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        token = generate_directory_claim_token(entry, generated_by=request.user)
+        return Response(
+            {
+                "directory_entry_id": entry.id,
+                "claim_token": str(token.token),
+                "claim_url": token.claim_url_path,
+                "status": token.status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminContractorDirectoryManualClaimView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, entry_id: int, *args, **kwargs):
+        entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
+        if entry is None:
+            return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        entry = manually_mark_directory_entry_claimed(entry, contractor_id=request.data.get("contractor_id"))
+        return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
+
+
+class ContractorDirectoryClaimView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token: str, *args, **kwargs):
+        claim_token = ContractorDirectoryClaimToken.objects.select_related("directory_entry", "claimed_by_contractor").filter(token=token).first()
+        if claim_token is None:
+            return Response({"detail": "Claim link not found."}, status=status.HTTP_404_NOT_FOUND)
+        entry = claim_token.directory_entry
+        return Response(
+            {
+                "claim_token": str(claim_token.token),
+                "status": claim_token.status,
+                "claimed": entry.claimed,
+                "directory_entry_id": entry.id,
+                "prefill": directory_entry_prefill_payload(entry),
+                "claimed_contractor_id": entry.claimed_by_contractor_id,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request, token: str, *args, **kwargs):
+        if not request.user or not request.user.is_authenticated:
+            return Response({"detail": "Sign in or create a contractor account to claim this profile."}, status=status.HTTP_401_UNAUTHORIZED)
+        claim_token = ContractorDirectoryClaimToken.objects.select_related("directory_entry", "directory_entry__claimed_by_contractor").filter(token=token).first()
+        if claim_token is None:
+            return Response({"detail": "Claim link not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            result = claim_directory_entry_with_token(claim_token, user=request.user, payload=request.data)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class AdminContractorDirectoryImportPreviewView(APIView):

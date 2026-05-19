@@ -135,6 +135,12 @@ class ContractorDirectoryEntry(models.Model):
     zip_code = models.CharField(max_length=20, null=True, blank=True, db_index=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+    service_radius_miles = models.PositiveIntegerField(default=25, db_index=True)
+    service_city = models.CharField(max_length=120, null=True, blank=True, db_index=True)
+    service_state = models.CharField(max_length=60, null=True, blank=True, db_index=True)
+    service_zip = models.CharField(max_length=20, null=True, blank=True, db_index=True)
+    primary_service = models.CharField(max_length=120, null=True, blank=True, db_index=True)
+    normalized_services = models.JSONField(default=list, blank=True)
     google_place_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     rating = models.FloatField(null=True, blank=True)
     review_count = models.PositiveIntegerField(null=True, blank=True)
@@ -167,14 +173,66 @@ class ContractorDirectoryEntry(models.Model):
     class Meta:
         ordering = ["business_name", "city", "state"]
         indexes = [
-            models.Index(fields=["website_domain"]),
-            models.Index(fields=["normalized_phone"]),
-            models.Index(fields=["normalized_name", "zip_code"]),
-            models.Index(fields=["normalized_name", "city", "state"]),
+            models.Index(fields=["website_domain"], name="projects_co_website_f5bc68_idx"),
+            models.Index(fields=["normalized_phone"], name="projects_co_normali_388298_idx"),
+            models.Index(fields=["normalized_name", "zip_code"], name="projects_co_normali_22b99d_idx"),
+            models.Index(fields=["normalized_name", "city", "state"], name="projects_co_normali_ee3ccb_idx"),
+            models.Index(fields=["service_state", "service_zip"], name="projects_co_service_4e839f_idx"),
+            models.Index(fields=["primary_service"], name="projects_co_primary_13341d_idx"),
         ]
 
     def __str__(self) -> str:
         return self.business_name or f"Directory Entry {self.pk}"
+
+
+class ContractorDirectoryClaimToken(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_CLAIMED = "claimed"
+    STATUS_REVOKED = "revoked"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_CLAIMED, "Claimed"),
+        (STATUS_REVOKED, "Revoked"),
+    ]
+
+    directory_entry = models.ForeignKey(
+        "projects.ContractorDirectoryEntry",
+        on_delete=models.CASCADE,
+        related_name="claim_tokens",
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    generated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_directory_claim_tokens_generated",
+    )
+    claimed_by_contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="directory_claim_tokens",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["directory_entry", "status"], name="projects_co_directo_f1a1be_idx"),
+            models.Index(fields=["status", "created_at"], name="projects_co_status_f69e71_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Claim token {self.pk} for entry {self.directory_entry_id}"
+
+    @property
+    def claim_url_path(self) -> str:
+        return f"/contractors/directory-claim/{self.token}"
 
 
 class ContractorDirectoryDiscovery(models.Model):
@@ -220,8 +278,8 @@ class ContractorDirectoryDiscovery(models.Model):
     class Meta:
         ordering = ["-created_at", "-id"]
         indexes = [
-            models.Index(fields=["source_type", "created_at"]),
-            models.Index(fields=["search_city", "search_state", "search_zip"]),
+            models.Index(fields=["source_type", "created_at"], name="projects_co_source__880eb0_idx"),
+            models.Index(fields=["search_city", "search_state", "search_zip"], name="projects_co_search__073e43_idx"),
         ]
 
     def __str__(self) -> str:
@@ -310,10 +368,10 @@ class ContractorOpportunity(models.Model):
     class Meta:
         ordering = ["-selected_at", "-id"]
         indexes = [
-            models.Index(fields=["directory_entry", "status"]),
-            models.Index(fields=["intake_request", "status"]),
-            models.Index(fields=["project", "status"]),
-            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["directory_entry", "status"], name="projects_co_directo_6c6181_idx"),
+            models.Index(fields=["intake_request", "status"], name="projects_co_intake__6af8e5_idx"),
+            models.Index(fields=["project", "status"], name="projects_co_project_c3ba09_idx"),
+            models.Index(fields=["status", "created_at"], name="projects_co_status_05f037_idx"),
         ]
         constraints = [
             models.UniqueConstraint(

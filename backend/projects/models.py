@@ -17,6 +17,7 @@ from .models_dispute import Dispute, DisputeAttachment
 from .models_invite import ContractorInvite  # noqa: F401
 from .models_contractor_discovery import (  # noqa: F401
     ContractorDirectoryDiscovery,
+    ContractorDirectoryClaimToken,
     ContractorDirectoryEntry,
     ContractorDirectoryListing,
     ContractorOpportunity,
@@ -235,7 +236,9 @@ class Contractor(models.Model):
     ]
 
     SERVICE_RADIUS_CHOICES = [
+        (5, "5"),
         (10, "10"),
+        (15, "15"),
         (25, "25"),
         (50, "50"),
         (100, "100"),
