@@ -21,6 +21,9 @@ const EXPORT_HEADERS = [
   "zip_code",
   "public_email",
   "services",
+  "primary_service",
+  "normalized_services",
+  "raw_services",
   "email_source_url",
   "services_source_url",
   "enrichment_notes",
@@ -107,6 +110,9 @@ function editFormFromRow(row) {
     zip_code: row?.zip_code || "",
     public_email: row?.public_email || "",
     services: servicesToText(row?.services || []),
+    primary_service: row?.primary_service || "",
+    normalized_services: servicesToText(row?.normalized_services || []),
+    raw_services: servicesToText(row?.raw_services || []),
     email_source_url: row?.email_source_url || "",
     services_source_url: row?.services_source_url || "",
     enrichment_notes: row?.enrichment_notes || "",
@@ -130,6 +136,7 @@ export default function AdminContractorDirectory() {
     state: "",
     claimed: "",
     source: "",
+    primary_service: "",
     profile_status: "",
     enrichment_status: "",
   });
@@ -169,6 +176,7 @@ export default function AdminContractorDirectory() {
         ...(safeText(nextFilters.state) ? { state: nextFilters.state } : {}),
         ...(safeText(nextFilters.claimed) ? { claimed: nextFilters.claimed } : {}),
         ...(safeText(nextFilters.source) ? { source: nextFilters.source } : {}),
+        ...(safeText(nextFilters.primary_service) ? { primary_service: nextFilters.primary_service } : {}),
         ...(safeText(nextFilters.profile_status) ? { profile_status: nextFilters.profile_status } : {}),
         ...(safeText(nextFilters.enrichment_status) ? { enrichment_status: nextFilters.enrichment_status } : {}),
       };
@@ -405,7 +413,7 @@ export default function AdminContractorDirectory() {
         <p className="mt-1 text-sm text-sky-100/75">
           Paste reviewed website/email enrichment rows, preview matches, then apply approved updates.
         </p>
-        <textarea data-testid="admin-contractor-import-csv" value={csvText} onChange={(event) => setCsvText(event.target.value)} placeholder="id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,email_source_url,services_source_url,enrichment_notes" className={`${inputClass} mt-4 min-h-28 font-mono`} />
+        <textarea data-testid="admin-contractor-import-csv" value={csvText} onChange={(event) => setCsvText(event.target.value)} placeholder="id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,primary_service,normalized_services,raw_services,email_source_url,services_source_url,enrichment_notes" className={`${inputClass} mt-4 min-h-28 font-mono`} />
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" data-testid="admin-contractor-import-preview" onClick={previewImport} disabled={importLoading || !safeText(csvText)} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#0a2550] disabled:opacity-60">Preview Import</button>
           <button type="button" data-testid="admin-contractor-import-apply" onClick={applyImport} disabled={importLoading || !importRows.length} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">Apply Approved Updates</button>
@@ -417,7 +425,7 @@ export default function AdminContractorDirectory() {
             <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-wide text-sky-100/65">
-                  {["Approve", "Match Status", "Business Name", "Existing Email", "Proposed Email", "Proposed Location", "Existing Services", "Proposed Services", "Warnings"].map((heading) => (
+                  {["Approve", "Match Status", "Business Name", "Existing Email", "Proposed Email", "Proposed Location", "Primary Service", "Normalized Services", "Warnings"].map((heading) => (
                     <th key={heading} className={tableHeadClass}>{heading}</th>
                   ))}
                 </tr>
@@ -433,8 +441,8 @@ export default function AdminContractorDirectory() {
                     <td className={tableCellClass}>{row.existing_public_email || "Email not listed"}</td>
                     <td className={tableCellClass}>{row.proposed_public_email || ""}</td>
                     <td className={`${tableCellClass} whitespace-pre-line`}>{formatLocation(row.proposed_location || {})}</td>
-                    <td className={tableCellClass}>{servicesToText(row.existing_services)}</td>
-                    <td className={tableCellClass}>{servicesToText(row.proposed_services)}</td>
+                    <td className={tableCellClass}>{row.proposed_primary_service || row.existing_primary_service || ""}</td>
+                    <td className={tableCellClass}>{servicesToText(row.proposed_normalized_services || row.existing_normalized_services)}</td>
                     <td className={tableCellClass}>{(row.warnings || []).join("; ")}</td>
                   </tr>
                 ))}
@@ -474,6 +482,7 @@ export default function AdminContractorDirectory() {
             <option value="false">Unclaimed</option>
           </select>
           <input placeholder="Source" value={filters.source} onChange={(event) => setFilterField("source", event.target.value)} className={inputClass} />
+          <input data-testid="admin-contractor-filter-primary-service" placeholder="Primary service" value={filters.primary_service} onChange={(event) => setFilterField("primary_service", event.target.value)} className={inputClass} />
           <input placeholder="Profile status" value={filters.profile_status} onChange={(event) => setFilterField("profile_status", event.target.value)} className={inputClass} />
           <input placeholder="Enrichment status" value={filters.enrichment_status} onChange={(event) => setFilterField("enrichment_status", event.target.value)} className={inputClass} />
         </div>
@@ -484,7 +493,7 @@ export default function AdminContractorDirectory() {
           <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide text-sky-100/65">
-                {["Actions", "Business Name", "Website", "Phone", "Email", "Location", "Rating", "Reviews", "Claimed", "Profile Status", "Enrichment Status", "Last Seen"].map((heading) => (
+                {["Actions", "Business Name", "Website", "Phone", "Email", "Location", "Primary Service", "Normalized Services", "Rating", "Reviews", "Claimed", "Profile Status", "Enrichment Status", "Last Seen"].map((heading) => (
                   <th key={heading} className={tableHeadClass}>{heading}</th>
                 ))}
               </tr>
@@ -512,6 +521,8 @@ export default function AdminContractorDirectory() {
                   <td className={tableCellClass}>{row.phone || "Not listed"}</td>
                   <td className={tableCellClass}>{row.public_email || "Email not listed"}</td>
                   <td className={`${tableCellClass} whitespace-pre-line`}>{formatLocation(row)}</td>
+                  <td className={tableCellClass}>{row.primary_service || ""}</td>
+                  <td className={tableCellClass}>{servicesToText(row.normalized_services || [])}</td>
                   <td className={tableCellClass}>{row.rating ?? ""}</td>
                   <td className={tableCellClass}>{row.review_count ?? ""}</td>
                   <td className={tableCellClass}>{row.claimed ? "Yes" : "No"}</td>
@@ -548,6 +559,7 @@ export default function AdminContractorDirectory() {
                 ["state", "State"],
                 ["zip_code", "ZIP Code"],
                 ["public_email", "Public Email"],
+                ["primary_service", "Primary Service"],
                 ["email_source_url", "Email Source URL"],
                 ["services_source_url", "Services Source URL"],
               ].map(([name, label]) => (
@@ -573,6 +585,14 @@ export default function AdminContractorDirectory() {
               <label className="md:col-span-2">
                 <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Services</span>
                 <textarea data-testid="admin-contractor-edit-services" value={editForm.services} onChange={(event) => setEditForm((prev) => ({ ...prev, services: event.target.value }))} className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Normalized Services</span>
+                <textarea data-testid="admin-contractor-edit-normalized_services" value={editForm.normalized_services} onChange={(event) => setEditForm((prev) => ({ ...prev, normalized_services: event.target.value }))} className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Raw Services</span>
+                <textarea data-testid="admin-contractor-edit-raw_services" value={editForm.raw_services} onChange={(event) => setEditForm((prev) => ({ ...prev, raw_services: event.target.value }))} className="min-h-16 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600" />
               </label>
               <label className="md:col-span-2">
                 <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Enrichment Notes</span>

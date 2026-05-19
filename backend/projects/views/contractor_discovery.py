@@ -35,6 +35,7 @@ from projects.services.contractor_directory_claims import (
     generate_directory_claim_token,
     manually_mark_directory_entry_claimed,
 )
+from projects.services.contractor_service_taxonomy import clean_raw_services
 from projects.services.contractor_opportunities import (
     accept_contractor_opportunity,
     create_or_update_opportunity_from_selection,
@@ -97,6 +98,18 @@ def _parse_services(value):
         if text and text not in services:
             services.append(text)
     return services
+
+
+def _parse_label_list(value):
+    if value is None:
+        return []
+    raw_items = value if isinstance(value, list) else str(value or "").replace("\n", ",").replace(";", ",").split(",")
+    labels = []
+    for item in raw_items:
+        text = _safe_text(item)
+        if text and text not in labels:
+            labels.append(text)
+    return labels
 
 
 def _changed_services(existing, proposed):
@@ -317,6 +330,8 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "service_zip": entry.service_zip,
         "primary_service": entry.primary_service,
         "normalized_services": entry.normalized_services or [],
+        "raw_services": entry.raw_services or [],
+        "service_normalization_status": entry.service_normalization_status,
         "source": entry.source,
         "claimed": entry.claimed,
         "claimed_contractor_id": entry.claimed_by_contractor_id,
@@ -368,6 +383,9 @@ def _preview_import_row(row: dict) -> dict:
     proposed_email, email_error = _normalize_email_value(row.get("public_email"), reject_placeholder=True)
     proposed_phone = _null_if_blank(row.get("phone"))
     proposed_services = _parse_services(row.get("services"))
+    proposed_normalized_services = _parse_label_list(row.get("normalized_services"))
+    proposed_raw_services = clean_raw_services(row.get("raw_services", "").replace(";", ",").split(",") if isinstance(row.get("raw_services"), str) else row.get("raw_services"))
+    proposed_primary_service = _null_if_blank(row.get("primary_service"))
     proposed_location = {
         "address_line1": _null_if_blank(row.get("address_line1")),
         "city": _null_if_blank(row.get("city")),
@@ -397,6 +415,12 @@ def _preview_import_row(row: dict) -> dict:
             has_changes = True
         if proposed_services and _changed_services(entry.services, proposed_services):
             has_changes = True
+        if proposed_primary_service and proposed_primary_service != (entry.primary_service or ""):
+            has_changes = True
+        if proposed_normalized_services and _changed_services(entry.normalized_services, proposed_normalized_services):
+            has_changes = True
+        if proposed_raw_services and _changed_services(entry.raw_services, proposed_raw_services):
+            has_changes = True
         for field, value in proposed_location.items():
             if value and _safe_text(value) != _safe_text(getattr(entry, field, "")):
                 has_changes = True
@@ -416,6 +440,12 @@ def _preview_import_row(row: dict) -> dict:
         "proposed_phone": proposed_phone,
         "existing_services": entry.services if entry else [],
         "proposed_services": proposed_services,
+        "existing_primary_service": entry.primary_service if entry else None,
+        "proposed_primary_service": proposed_primary_service,
+        "existing_normalized_services": entry.normalized_services if entry else [],
+        "proposed_normalized_services": proposed_normalized_services,
+        "existing_raw_services": entry.raw_services if entry else [],
+        "proposed_raw_services": proposed_raw_services,
         "existing_location": {
             "address_line1": entry.address_line1 if entry else None,
             "city": entry.city if entry else None,
@@ -508,6 +538,7 @@ class AdminContractorDirectoryView(APIView):
             ("city", "city__iexact"),
             ("state", "state__iexact"),
             ("source", "source"),
+            ("primary_service", "primary_service__iexact"),
             ("profile_status", "profile_status"),
             ("enrichment_status", "enrichment_status"),
         ]:
@@ -570,8 +601,16 @@ class AdminContractorDirectoryView(APIView):
             if field in data:
                 value = normalize_state(data.get(field)) if field == "service_state" else normalize_zip(data.get(field)) if field == "service_zip" else _safe_text(data.get(field))
                 setattr(entry, field, _null_if_blank(value))
-        if "normalized_services" in data and isinstance(data.get("normalized_services"), list):
-            entry.normalized_services = [str(item).strip().lower() for item in data.get("normalized_services") if str(item).strip()]
+        if "primary_service" in data:
+            entry.primary_service = _null_if_blank(data.get("primary_service"))
+            entry.service_normalization_status = ContractorDirectoryEntry.SERVICE_NORMALIZATION_MANUAL
+        if "normalized_services" in data:
+            raw_value = data.get("normalized_services")
+            entry.normalized_services = _parse_label_list(raw_value)
+            entry.service_normalization_status = ContractorDirectoryEntry.SERVICE_NORMALIZATION_MANUAL
+        if "raw_services" in data:
+            raw_value = data.get("raw_services")
+            entry.raw_services = clean_raw_services(raw_value.replace(";", ",").split(",") if isinstance(raw_value, str) else raw_value)
         if "services" in data:
             entry.services = _parse_services(data.get("services"))
             enrichment_touched = True
@@ -719,6 +758,19 @@ class AdminContractorDirectoryImportApplyView(APIView):
             services = _parse_services(row.get("proposed_services") if "proposed_services" in row else row.get("services"))
             if services:
                 entry.services = services
+            primary_service = row.get("proposed_primary_service") or row.get("primary_service")
+            if primary_service:
+                entry.primary_service = _safe_text(primary_service)
+                entry.service_normalization_status = ContractorDirectoryEntry.SERVICE_NORMALIZATION_MANUAL
+            normalized_services = row.get("proposed_normalized_services") if "proposed_normalized_services" in row else row.get("normalized_services")
+            normalized_services = _parse_label_list(normalized_services)
+            if normalized_services:
+                entry.normalized_services = normalized_services
+                entry.service_normalization_status = ContractorDirectoryEntry.SERVICE_NORMALIZATION_MANUAL
+            raw_services = row.get("proposed_raw_services") if "proposed_raw_services" in row else row.get("raw_services")
+            raw_services = clean_raw_services(raw_services.replace(";", ",").split(",") if isinstance(raw_services, str) else raw_services)
+            if raw_services:
+                entry.raw_services = raw_services
             location_updates = row.get("proposed_location") if isinstance(row.get("proposed_location"), dict) else row
             for field in ["address_line1", "city", "state", "zip_code"]:
                 value = location_updates.get(field) if isinstance(location_updates, dict) else None

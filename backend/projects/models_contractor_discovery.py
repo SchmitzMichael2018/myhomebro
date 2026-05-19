@@ -121,6 +121,14 @@ class ContractorDirectoryEntry(models.Model):
         (ENRICHMENT_NOT_STARTED, "Not Started"),
         (ENRICHMENT_REVIEWED, "Reviewed"),
     ]
+    SERVICE_NORMALIZATION_NOT_STARTED = "not_started"
+    SERVICE_NORMALIZATION_AUTO = "auto"
+    SERVICE_NORMALIZATION_MANUAL = "manual"
+    SERVICE_NORMALIZATION_CHOICES = [
+        (SERVICE_NORMALIZATION_NOT_STARTED, "Not Started"),
+        (SERVICE_NORMALIZATION_AUTO, "Auto"),
+        (SERVICE_NORMALIZATION_MANUAL, "Manual"),
+    ]
 
     business_name = models.CharField(max_length=255)
     normalized_name = models.CharField(max_length=255, db_index=True)
@@ -141,6 +149,13 @@ class ContractorDirectoryEntry(models.Model):
     service_zip = models.CharField(max_length=20, null=True, blank=True, db_index=True)
     primary_service = models.CharField(max_length=120, null=True, blank=True, db_index=True)
     normalized_services = models.JSONField(default=list, blank=True)
+    raw_services = models.JSONField(default=list, blank=True)
+    service_normalization_status = models.CharField(
+        max_length=32,
+        choices=SERVICE_NORMALIZATION_CHOICES,
+        default=SERVICE_NORMALIZATION_NOT_STARTED,
+        db_index=True,
+    )
     google_place_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     rating = models.FloatField(null=True, blank=True)
     review_count = models.PositiveIntegerField(null=True, blank=True)

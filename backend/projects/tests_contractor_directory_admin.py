@@ -27,6 +27,9 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
             state="TX",
             zip_code="78701",
             services=["concrete contractor"],
+            primary_service="Concrete",
+            normalized_services=["Concrete"],
+            raw_services=["concrete contractor"],
         )
 
     def test_patch_updates_public_email_and_services_with_enrichment_metadata(self):
@@ -39,6 +42,9 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
                 "state": "TX",
                 "zip_code": "78249-4013",
                 "services": "concrete contractor, patio contractor",
+                "primary_service": "Patio",
+                "normalized_services": "Concrete, Patio",
+                "raw_services": "concrete contractor, patio contractor",
                 "email_source_url": "https://www.austinconcrete.example/contact",
                 "services_source_url": "https://www.austinconcrete.example/services",
                 "enrichment_notes": "Reviewed public website.",
@@ -54,6 +60,10 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(self.entry.state, "TX")
         self.assertEqual(self.entry.zip_code, "78249")
         self.assertEqual(self.entry.services, ["concrete contractor", "patio contractor"])
+        self.assertEqual(self.entry.primary_service, "Patio")
+        self.assertEqual(self.entry.normalized_services, ["Concrete", "Patio"])
+        self.assertEqual(self.entry.raw_services, ["concrete contractor", "patio contractor"])
+        self.assertEqual(self.entry.service_normalization_status, ContractorDirectoryEntry.SERVICE_NORMALIZATION_MANUAL)
         self.assertEqual(self.entry.enrichment_status, ContractorDirectoryEntry.ENRICHMENT_REVIEWED)
         self.assertIsNotNone(self.entry.enriched_at)
         self.assertEqual(self.entry.enriched_by, self.user)
@@ -236,3 +246,51 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(approved.data["updated_count"], 1)
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.public_email, "new@austinconcrete.example")
+
+    def test_service_taxonomy_normalizes_google_terms_and_preserves_manual_values(self):
+        from projects.services.contractor_directory import upsert_directory_entry_from_place
+
+        flooring = upsert_directory_entry_from_place(
+            {
+                "business_name": "River City Flooring",
+                "google_place_id": "places/river-city-flooring",
+                "types": ["point_of_interest", "establishment"],
+                "primaryType": "point_of_interest",
+            },
+            context={"search_term": "flooring contractor"},
+        )
+        self.assertEqual(flooring.primary_service, "Flooring")
+        self.assertEqual(flooring.normalized_services, ["Flooring"])
+        self.assertIn("point of interest", flooring.raw_services)
+        self.assertEqual(flooring.service_normalization_status, ContractorDirectoryEntry.SERVICE_NORMALIZATION_AUTO)
+
+        concrete = upsert_directory_entry_from_place(
+            {
+                "business_name": "River City Cement",
+                "types": ["building_materials_store", "establishment"],
+            },
+            context={"search_term": "concrete contractor"},
+        )
+        self.assertEqual(concrete.primary_service, "Concrete")
+        self.assertEqual(concrete.normalized_services, ["Concrete"])
+
+        addition = upsert_directory_entry_from_place(
+            {"business_name": "Bedroom Addition Builders", "types": ["point_of_interest"]},
+            context={"search_term": "home addition contractor", "project_subtype": "Bedroom Addition"},
+        )
+        self.assertEqual(addition.primary_service, "Home Addition")
+        self.assertIn("General Contracting", addition.normalized_services)
+
+        flooring.primary_service = "Custom Manual"
+        flooring.normalized_services = ["Custom Manual"]
+        flooring.service_normalization_status = ContractorDirectoryEntry.SERVICE_NORMALIZATION_MANUAL
+        flooring.save(update_fields=["primary_service", "normalized_services", "service_normalization_status"])
+        updated = upsert_directory_entry_from_place(
+            {
+                "business_name": "River City Flooring",
+                "google_place_id": "places/river-city-flooring",
+                "types": ["point_of_interest", "establishment"],
+            }
+        )
+        self.assertEqual(updated.primary_service, "Custom Manual")
+        self.assertEqual(updated.normalized_services, ["Custom Manual"])

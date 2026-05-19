@@ -37,6 +37,9 @@ async function mockAdminDirectory(page) {
       rating: 4.8,
       review_count: 22,
       services: ['concrete_contractor'],
+      primary_service: 'Concrete',
+      normalized_services: ['Concrete'],
+      raw_services: ['concrete contractor', 'point of interest'],
       source: 'google_places',
       claimed: false,
       profile_status: 'basic',
@@ -67,6 +70,10 @@ async function mockAdminDirectory(page) {
               proposed_public_email: 'hello@austinconcrete.example',
               existing_services: ['concrete_contractor'],
               proposed_services: ['concrete contractor', 'patio contractor'],
+              existing_primary_service: 'Concrete',
+              proposed_primary_service: 'Patio',
+              existing_normalized_services: ['Concrete'],
+              proposed_normalized_services: ['Concrete', 'Patio'],
               status: 'ready',
               warnings: [],
               email_source_url: 'https://www.austinconcrete.example/contact',
@@ -98,6 +105,7 @@ async function mockAdminDirectory(page) {
           ...payload,
           services: ['concrete contractor', 'patio contractor'],
           enrichment_status: 'reviewed',
+          service_normalization_status: 'manual',
         },
       ];
       await route.fulfill({
@@ -176,6 +184,7 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-search-radius')).toHaveValue('25');
 
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Concrete');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('12703 Spectrum Dr #103');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('San Antonio, TX 78249');
   await expect(page.getByText('Email not listed')).toBeVisible();
@@ -188,6 +197,7 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-filter-has-website')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-city')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-state')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-filter-primary-service')).toBeVisible();
 
   await page.getByTestId('admin-contractor-filter-missing-email').check();
   await expect.poll(() =>
@@ -227,7 +237,11 @@ test('admin contractor directory supports manual edit, import preview/apply, and
   await expect(page.getByTestId('admin-contractor-edit-city')).toHaveValue('San Antonio');
   await expect(page.getByTestId('admin-contractor-edit-state')).toHaveValue('TX');
   await expect(page.getByTestId('admin-contractor-edit-zip_code')).toHaveValue('78249');
+  await expect(page.getByTestId('admin-contractor-edit-primary_service')).toHaveValue('Concrete');
+  await expect(page.getByTestId('admin-contractor-edit-normalized_services')).toHaveValue('Concrete');
   await page.getByTestId('admin-contractor-edit-public_email').fill('hello@austinconcrete.example');
+  await page.getByTestId('admin-contractor-edit-primary_service').fill('Patio');
+  await page.getByTestId('admin-contractor-edit-normalized_services').fill('Concrete, Patio');
   await page.getByTestId('admin-contractor-edit-address_line1').fill('900 Builder Way');
   await page.getByTestId('admin-contractor-edit-city').fill('Austin');
   await page.getByTestId('admin-contractor-edit-state').fill('TX');
@@ -243,8 +257,8 @@ test('admin contractor directory supports manual edit, import preview/apply, and
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('reviewed');
 
   await page.getByTestId('admin-contractor-import-csv').fill(
-    'id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,email_source_url,services_source_url,enrichment_notes\n' +
-      '42,Austin Concrete Co,https://www.austinconcrete.example,512-555-0101,900 Builder Way,Austin,TX,78701,hello@austinconcrete.example,"concrete contractor, patio contractor",https://www.austinconcrete.example/contact,https://www.austinconcrete.example/services,Reviewed website.'
+    'id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,primary_service,normalized_services,raw_services,email_source_url,services_source_url,enrichment_notes\n' +
+      '42,Austin Concrete Co,https://www.austinconcrete.example,512-555-0101,900 Builder Way,Austin,TX,78701,hello@austinconcrete.example,"concrete contractor, patio contractor",Patio,"Concrete, Patio","concrete contractor",https://www.austinconcrete.example/contact,https://www.austinconcrete.example/services,Reviewed website.'
   );
   await page.getByTestId('admin-contractor-import-preview').click();
   await expect(page.getByTestId('admin-contractor-import-preview-table')).toContainText('ready');
@@ -270,7 +284,11 @@ test('admin contractor directory export includes enrichment columns and blank mi
   expect(text).toContain('enrichment_notes');
   expect(text).toContain('address_line1');
   expect(text).toContain('zip_code');
+  expect(text).toContain('primary_service');
+  expect(text).toContain('normalized_services');
+  expect(text).toContain('raw_services');
   expect(text).toContain('"12703 Spectrum Dr #103"');
+  expect(text).toContain('"Concrete"');
   expect(text).toContain('"78249"');
   expect(text).toContain('"Austin Concrete Co"');
   expect(text).not.toContain('Email not listed');
