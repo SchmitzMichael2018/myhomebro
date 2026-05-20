@@ -592,6 +592,64 @@ def _admin_search_context(request, params: dict, radius_miles: int) -> dict:
     }
 
 
+def _expanded_admin_search_query(query: str) -> str:
+    text = _safe_text(query)
+    lowered = text.lower()
+    if not text or any(term in lowered for term in ["contractor", "company", "installer", "electrician", "plumber", "roofer"]):
+        return text
+    trade_aliases = {
+        "roof": "roofing contractor",
+        "roofing": "roofing contractor",
+        "floor": "flooring contractor",
+        "flooring": "flooring contractor",
+        "concrete": "concrete contractor",
+        "patio": "patio contractor",
+        "plumbing": "plumber",
+        "electrical": "electrician",
+        "electric": "electrician",
+        "hvac": "hvac contractor",
+        "remodel": "remodeling contractor",
+        "remodeling": "remodeling contractor",
+    }
+    return trade_aliases.get(lowered, f"{text} contractor")
+
+
+def _admin_google_preview_search(
+    *,
+    query: str,
+    latitude,
+    longitude,
+    radius_miles: int,
+    limit: int,
+) -> dict:
+    first = search_google_places_contractors_with_diagnostics(
+        query=query,
+        latitude=latitude,
+        longitude=longitude,
+        radius_miles=radius_miles,
+        limit=limit,
+        enforce_radius=True,
+    )
+    if first.get("results"):
+        return first
+    expanded_query = _expanded_admin_search_query(query)
+    if not expanded_query or expanded_query == query:
+        return first
+    retry = search_google_places_contractors_with_diagnostics(
+        query=expanded_query,
+        latitude=latitude,
+        longitude=longitude,
+        radius_miles=radius_miles,
+        limit=limit,
+        enforce_radius=True,
+    )
+    retry_diagnostic = retry.get("diagnostic") or {}
+    retry_diagnostic["fallback_from_query"] = query
+    retry_diagnostic["fallback_query"] = expanded_query
+    retry["diagnostic"] = retry_diagnostic
+    return retry if retry.get("results") else first | {"diagnostic": {**(first.get("diagnostic") or {}), "fallback_query": expanded_query}}
+
+
 class AdminContractorSearchView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -613,13 +671,12 @@ class AdminContractorSearchView(APIView):
             latitude = geocode.get("latitude")
             longitude = geocode.get("longitude")
 
-        google_result = search_google_places_contractors_with_diagnostics(
+        google_result = _admin_google_preview_search(
             query=params["query"],
             latitude=latitude,
             longitude=longitude,
             radius_miles=radius_miles,
             limit=limit,
-            enforce_radius=True,
         )
         results = _with_admin_search_relevance(google_result.get("results") or [], params["query"])
         relevant_count = len([row for row in results if row.get("is_relevant")])

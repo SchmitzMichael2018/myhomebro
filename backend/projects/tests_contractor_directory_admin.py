@@ -351,6 +351,40 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(labels["Capitol City Florist"], "Weak Match")
         self.assertTrue(response.data["summary"]["capture_required"])
 
+    @patch("projects.views.contractor_discovery.geocode_project_location")
+    @patch("projects.views.contractor_discovery.search_google_places_contractors_with_diagnostics")
+    def test_admin_search_preview_retries_broad_trade_query_without_capture(self, mock_search, mock_geocode):
+        mock_geocode.return_value = {"latitude": 40.2732, "longitude": -76.8867}
+        mock_search.side_effect = [
+            {"results": [], "diagnostic": {"query": "roofing", "results_count": 0}},
+            {
+                "results": [
+                    {
+                        "id": "places/harrisburg-roofing",
+                        "business_name": "Harrisburg Roofing Pros",
+                        "types": ["roofing_contractor"],
+                        "formatted_address": "10 Roof Way, Harrisburg, PA 17101, USA",
+                    }
+                ],
+                "diagnostic": {"query": "roofing contractor", "results_count": 1},
+            },
+        ]
+        before_count = ContractorDirectoryEntry.objects.count()
+
+        response = self.client.post(
+            "/api/projects/admin/contractor-search/",
+            {"query": "roofing", "city": "Harrisburg", "state": "PA", "radius_miles": 50},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), before_count)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["business_name"], "Harrisburg Roofing Pros")
+        self.assertEqual(response.data["summary"]["external_search"]["fallback_from_query"], "roofing")
+        self.assertEqual(response.data["summary"]["external_search"]["fallback_query"], "roofing contractor")
+        self.assertEqual(mock_search.call_count, 2)
+
     def test_admin_search_capture_selected_creates_only_selected_entries(self):
         response = self.client.post(
             "/api/projects/admin/contractor-search/capture/",

@@ -218,11 +218,22 @@ async function mockAdminDirectory(page) {
 
     searchRequested = true;
     const payload = JSON.parse(route.request().postData() || '{}');
-    expect(payload.query).toBe('concrete contractor');
     expect(payload.city).toBe('Austin');
     expect(payload.state).toBe('TX');
     expect(payload.zip).toBe('78701');
     expect(payload.radius_miles).toBe('25');
+    if (payload.query === 'no results') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          summary: { results_count: 0, relevant_results_count: 0, directory_entries_count: 0, capture_required: true },
+          results: [],
+        }),
+      });
+      return;
+    }
+    expect(payload.query).toBe('concrete contractor');
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -393,6 +404,22 @@ test('admin contractor directory archives and restores entries with archived fil
 
   await page.getByTestId('admin-contractor-filter-archived').selectOption('active');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+});
+
+test('admin contractor directory shows no results only for true empty preview responses', async ({ page }) => {
+  await mockAdminDirectory(page);
+
+  await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Search results will appear here.')).toBeVisible();
+
+  await page.getByTestId('admin-contractor-search-term').fill('no results');
+  await page.getByTestId('admin-contractor-search-city').fill('Austin');
+  await page.getByTestId('admin-contractor-search-state').fill('TX');
+  await page.getByTestId('admin-contractor-search-zip').fill('78701');
+  await page.getByTestId('admin-contractor-search-submit').click();
+
+  await expect(page.getByText('No results found. Try a broader trade term, nearby city, or larger radius.')).toBeVisible();
+  await expect(page.getByText('Search results will appear here.')).toHaveCount(0);
 });
 
 test('admin contractor directory supports manual edit, import preview/apply, and enriched CSV export', async ({ page }) => {

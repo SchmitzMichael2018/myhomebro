@@ -87,6 +87,13 @@ function relevanceBadgeClass(label) {
   return "border-rose-200/35 bg-rose-300/15 text-rose-50";
 }
 
+function extractSearchPreviewResults(data) {
+  for (const key of ["results", "preview_results", "search_results", "contractors"]) {
+    if (Array.isArray(data?.[key])) return data[key];
+  }
+  return [];
+}
+
 function csvEscape(value) {
   const text = Array.isArray(value) ? value.join("; ") : safeText(value);
   return `"${text.replace(/"/g, '""')}"`;
@@ -244,7 +251,7 @@ export default function AdminContractorDirectory() {
         zip: searchForm.zip,
         radius_miles: searchForm.radius_miles,
       });
-      const results = Array.isArray(data?.results) ? data.results : [];
+      const results = extractSearchPreviewResults(data);
       setSearchResults(results);
       setSearchSummary(data?.summary || null);
       setSelectedSearchResults(
@@ -531,7 +538,12 @@ export default function AdminContractorDirectory() {
               </div>
             </article>
           ))}
-          {!searchLoading && !searchResults.length ? (
+          {!searchLoading && !searchResults.length && searchSummary ? (
+            <div className="rounded-xl border border-dashed border-amber-200/30 bg-amber-300/10 px-4 py-6 text-sm text-amber-50 md:col-span-2">
+              No results found. Try a broader trade term, nearby city, or larger radius.
+            </div>
+          ) : null}
+          {!searchLoading && !searchResults.length && !searchSummary ? (
             <div className="rounded-xl border border-dashed border-white/20 bg-white/8 px-4 py-6 text-sm text-sky-100/70 md:col-span-2">
               Search results will appear here.
             </div>
