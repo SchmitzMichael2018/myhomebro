@@ -11,6 +11,8 @@ const RADIUS_OPTIONS = [
   { value: "100", label: "50+ miles" },
 ];
 
+const DIRECTORY_PAGE_SIZE = 50;
+
 const EXPORT_HEADERS = [
   "id",
   "business_name",
@@ -233,6 +235,7 @@ function filtersFromSearch(search) {
     source: params.get("source") || "",
     primary_service: params.get("primary_service") || "",
     contact_status: params.get("contact_status") || "",
+    outreach_status: params.get("outreach_status") || "",
     preferred_outreach_method: params.get("preferred_outreach_method") || "",
     contact_confidence: params.get("contact_confidence") || "",
     claim_readiness_status: params.get("claim_readiness_status") || "",
@@ -257,6 +260,14 @@ export default function AdminContractorDirectory() {
   const [capturedCount, setCapturedCount] = useState(0);
   const [searchSummary, setSearchSummary] = useState(null);
   const [directoryRows, setDirectoryRows] = useState([]);
+  const [directoryPagination, setDirectoryPagination] = useState({
+    page: 1,
+    page_size: DIRECTORY_PAGE_SIZE,
+    total_count: 0,
+    total_pages: 1,
+    has_next: false,
+    has_previous: false,
+  });
   const [searchLoading, setSearchLoading] = useState(false);
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -280,11 +291,13 @@ export default function AdminContractorDirectory() {
     [directoryRows]
   );
 
-  async function loadDirectory(nextFilters = filters) {
+  async function loadDirectory(nextFilters = filters, nextPage = directoryPagination.page) {
     setDirectoryLoading(true);
     setDirectoryError("");
     try {
       const params = {
+        page: nextPage,
+        page_size: DIRECTORY_PAGE_SIZE,
         ...(nextFilters.missing_email ? { missing_email: "true" } : {}),
         ...(nextFilters.has_email ? { has_email: "true" } : {}),
         ...(nextFilters.has_website ? { has_website: "true" } : {}),
@@ -295,6 +308,7 @@ export default function AdminContractorDirectory() {
         ...(safeText(nextFilters.source) ? { source: nextFilters.source } : {}),
         ...(safeText(nextFilters.primary_service) ? { primary_service: nextFilters.primary_service } : {}),
         ...(safeText(nextFilters.contact_status) ? { contact_status: nextFilters.contact_status } : {}),
+        ...(safeText(nextFilters.outreach_status) ? { outreach_status: nextFilters.outreach_status } : {}),
         ...(safeText(nextFilters.preferred_outreach_method) ? { preferred_outreach_method: nextFilters.preferred_outreach_method } : {}),
         ...(safeText(nextFilters.contact_confidence) ? { contact_confidence: nextFilters.contact_confidence } : {}),
         ...(safeText(nextFilters.claim_readiness_status) ? { claim_readiness_status: nextFilters.claim_readiness_status } : {}),
@@ -304,9 +318,18 @@ export default function AdminContractorDirectory() {
       };
       const { data } = await api.get("/projects/admin/contractor-directory/", { params });
       setDirectoryRows(Array.isArray(data?.results) ? data.results : []);
+      setDirectoryPagination({
+        page: Number(data?.page || nextPage || 1),
+        page_size: Number(data?.page_size || DIRECTORY_PAGE_SIZE),
+        total_count: Number(data?.total_count ?? data?.count ?? 0),
+        total_pages: Number(data?.total_pages || 1),
+        has_next: Boolean(data?.has_next),
+        has_previous: Boolean(data?.has_previous),
+      });
     } catch (error) {
       setDirectoryError(error?.response?.data?.detail || "Could not load contractor directory.");
       setDirectoryRows([]);
+      setDirectoryPagination((prev) => ({ ...prev, total_count: 0, total_pages: 1, has_next: false, has_previous: false }));
     } finally {
       setDirectoryLoading(false);
     }
@@ -320,7 +343,7 @@ export default function AdminContractorDirectory() {
   useEffect(() => {
     const nextFilters = filtersFromSearch(location.search);
     setFilters(nextFilters);
-    loadDirectory(nextFilters);
+    loadDirectory(nextFilters, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
@@ -331,7 +354,11 @@ export default function AdminContractorDirectory() {
   function setFilterField(name, value) {
     const next = { ...filters, [name]: value };
     setFilters(next);
-    loadDirectory(next);
+    loadDirectory(next, 1);
+  }
+
+  function changeDirectoryPage(nextPage) {
+    loadDirectory(filters, nextPage);
   }
 
   async function runSearch(event) {
@@ -405,7 +432,7 @@ export default function AdminContractorDirectory() {
       setSearchSummary((prev) => ({ ...(prev || {}), ...(data?.summary || {}), directory_entries_count: captured }));
       setSelectedSearchResults({});
       setSuccessMessage(`${captured} contractor${captured === 1 ? "" : "s"} captured to the directory.`);
-      await loadDirectory();
+      await loadDirectory(filters, directoryPagination.page);
     } catch (error) {
       setSearchError(error?.response?.data?.detail || "Could not capture selected contractors.");
     } finally {
@@ -437,7 +464,7 @@ export default function AdminContractorDirectory() {
       await api.patch(`/projects/admin/contractor-directory/${editingRow.id}/`, editForm);
       setEditingRow(null);
       setSuccessMessage("Contractor directory entry updated.");
-      await loadDirectory();
+      await loadDirectory(filters, directoryPagination.page);
     } catch (error) {
       const apiErrors = error?.response?.data?.errors;
       setEditError(apiErrors?.public_email || error?.response?.data?.detail || "Could not save this contractor.");
@@ -465,7 +492,7 @@ export default function AdminContractorDirectory() {
     try {
       await api.post(`/projects/admin/contractor-directory/${row.id}/archive/`, {});
       setSuccessMessage("Directory entry archived.");
-      await loadDirectory();
+      await loadDirectory(filters, directoryPagination.page);
     } catch (error) {
       setDirectoryError(error?.response?.data?.detail || "Could not archive this directory entry.");
     }
@@ -477,7 +504,7 @@ export default function AdminContractorDirectory() {
     try {
       await api.post(`/projects/admin/contractor-directory/${row.id}/restore/`, {});
       setSuccessMessage("Directory entry restored.");
-      await loadDirectory();
+      await loadDirectory(filters, directoryPagination.page);
     } catch (error) {
       setDirectoryError(error?.response?.data?.detail || "Could not restore this directory entry.");
     }
@@ -570,13 +597,20 @@ export default function AdminContractorDirectory() {
       }
       const { data } = await api.post("/projects/admin/contractor-directory/import-apply/", { rows });
       setImportMessage(`Updated ${data?.updated_count || 0} entries. Skipped ${data?.skipped_count || 0}.`);
-      await loadDirectory();
+      await loadDirectory(filters, directoryPagination.page);
     } catch (error) {
       setImportError(error?.response?.data?.detail || "Could not apply import updates.");
     } finally {
       setImportLoading(false);
     }
   }
+
+  const showingStart = directoryPagination.total_count
+    ? ((directoryPagination.page - 1) * directoryPagination.page_size) + 1
+    : 0;
+  const showingEnd = directoryPagination.total_count
+    ? Math.min(directoryPagination.page * directoryPagination.page_size, directoryPagination.total_count)
+    : 0;
 
   return (
     <div className="min-h-screen space-y-6 px-4 py-6 md:px-6" style={pageBackground} data-testid="admin-contractor-directory-page">
@@ -796,6 +830,7 @@ export default function AdminContractorDirectory() {
           <input placeholder="Source" value={filters.source} onChange={(event) => setFilterField("source", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-primary-service" placeholder="Primary service" value={filters.primary_service} onChange={(event) => setFilterField("primary_service", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-contact-status" placeholder="Contact status" value={filters.contact_status} onChange={(event) => setFilterField("contact_status", event.target.value)} className={inputClass} />
+          <input data-testid="admin-contractor-filter-outreach-status" placeholder="Outreach status" value={filters.outreach_status} onChange={(event) => setFilterField("outreach_status", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-outreach-method" placeholder="Outreach method" value={filters.preferred_outreach_method} onChange={(event) => setFilterField("preferred_outreach_method", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-contact-confidence" placeholder="Confidence" value={filters.contact_confidence} onChange={(event) => setFilterField("contact_confidence", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-claim-readiness" placeholder="Claim readiness" value={filters.claim_readiness_status} onChange={(event) => setFilterField("claim_readiness_status", event.target.value)} className={inputClass} />
@@ -878,6 +913,34 @@ export default function AdminContractorDirectory() {
           </table>
           {!directoryLoading && !directoryRows.length ? <div className="rounded-xl border border-dashed border-white/20 bg-white/8 px-4 py-6 text-sm text-sky-100/70">No contractors captured yet. Use admin search to start building the directory.</div> : null}
           {directoryLoading ? <div className="px-4 py-6 text-sm text-sky-100/70">Loading contractor directory...</div> : null}
+        </div>
+        <div data-testid="admin-contractor-directory-pagination" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-sky-100">
+          <div data-testid="admin-contractor-directory-showing" className="font-semibold text-sky-100/80">
+            Showing {showingStart}-{showingEnd} of {directoryPagination.total_count}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="admin-contractor-directory-prev"
+              disabled={!directoryPagination.has_previous || directoryLoading}
+              onClick={() => changeDirectoryPage(Math.max(1, directoryPagination.page - 1))}
+              className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Previous
+            </button>
+            <span data-testid="admin-contractor-directory-page-summary" className="rounded-xl border border-white/10 bg-slate-950/20 px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-sky-100/75">
+              Page {directoryPagination.page} of {directoryPagination.total_pages}
+            </span>
+            <button
+              type="button"
+              data-testid="admin-contractor-directory-next"
+              disabled={!directoryPagination.has_next || directoryLoading}
+              onClick={() => changeDirectoryPage(directoryPagination.page + 1)}
+              className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </section>
 

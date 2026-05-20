@@ -110,6 +110,55 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(unclaimed.status_code, 200)
         self.assertEqual([row["business_name"] for row in unclaimed.data["results"]], ["Unclaimed Missing Email Co"])
 
+    def test_directory_list_returns_paginated_results(self):
+        for index in range(60):
+            ContractorDirectoryEntry.objects.create(
+                business_name=f"Paged Contractor {index}",
+                normalized_name=normalize_business_name(f"Paged Contractor {index}"),
+                city="Austin",
+                state="TX",
+                primary_service="Concrete",
+            )
+
+        first_page = self.client.get("/api/projects/admin/contractor-directory/")
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(first_page.data["page"], 1)
+        self.assertEqual(first_page.data["page_size"], 50)
+        self.assertEqual(first_page.data["total_count"], 61)
+        self.assertEqual(first_page.data["total_pages"], 2)
+        self.assertTrue(first_page.data["has_next"])
+        self.assertFalse(first_page.data["has_previous"])
+        self.assertEqual(len(first_page.data["results"]), 50)
+
+        second_page = self.client.get("/api/projects/admin/contractor-directory/", {"page": 2, "page_size": 50})
+        self.assertEqual(second_page.status_code, 200)
+        self.assertEqual(second_page.data["page"], 2)
+        self.assertFalse(second_page.data["has_next"])
+        self.assertTrue(second_page.data["has_previous"])
+        self.assertEqual(len(second_page.data["results"]), 11)
+
+    def test_directory_list_filters_still_apply_with_pagination(self):
+        self.entry.public_email = "hello@austinconcrete.example"
+        self.entry.save(update_fields=["public_email"])
+        for index in range(3):
+            ContractorDirectoryEntry.objects.create(
+                business_name=f"Missing Email Contractor {index}",
+                normalized_name=normalize_business_name(f"Missing Email Contractor {index}"),
+                city="Austin",
+                state="TX",
+                primary_service="Concrete",
+            )
+
+        response = self.client.get(
+            "/api/projects/admin/contractor-directory/",
+            {"missing_email": "true", "page": 1, "page_size": 2},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total_count"], 3)
+        self.assertEqual(response.data["total_pages"], 2)
+        self.assertEqual(len(response.data["results"]), 2)
+        self.assertTrue(all(row["public_email"] is None for row in response.data["results"]))
+
     def test_csv_import_preview_matches_by_id_and_flags_invalid_email(self):
         csv_text = (
             "id,business_name,website,public_email,phone,services,email_source_url,services_source_url,enrichment_notes\n"

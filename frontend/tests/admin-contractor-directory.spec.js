@@ -72,6 +72,51 @@ async function mockAdminDirectory(page) {
       is_archived: false,
       archived_at: null,
     },
+    ...Array.from({ length: 55 }, (_, index) => ({
+      id: 100 + index,
+      business_name: `Paged Contractor ${index + 1}`,
+      website: `https://paged-${index + 1}.example`,
+      phone: `512-555-${String(1000 + index).slice(-4)}`,
+      address_line1: `${index + 1} Builder Loop`,
+      public_email: index % 2 === 0 ? `hello${index + 1}@paged.example` : null,
+      has_public_email: index % 2 === 0,
+      has_phone: true,
+      has_website: true,
+      has_contact_form: false,
+      contact_form_url: '',
+      contact_status: 'phone_ready',
+      preferred_outreach_method: 'sms',
+      contact_confidence: 'high',
+      outreach_notes: '',
+      outreach_status: index % 3 === 0 ? 'phone_outreach_logged' : 'no_outreach',
+      outreach_attempt_count: index % 3 === 0 ? 1 : 0,
+      latest_outreach_type: index % 3 === 0 ? 'phone' : null,
+      latest_outreach_status: index % 3 === 0 ? 'logged' : null,
+      latest_outreach_at: index % 3 === 0 ? '2026-05-20T12:03:00Z' : null,
+      latest_outreach_notes: '',
+      claim_readiness_status: 'ready',
+      claim_readiness_notes: '',
+      city: index % 2 === 0 ? 'San Antonio' : 'Austin',
+      state: 'TX',
+      zip_code: index % 2 === 0 ? '78249' : '78701',
+      rating: 4.1,
+      review_count: index,
+      services: ['concrete_contractor'],
+      primary_service: 'Concrete',
+      normalized_services: ['Concrete'],
+      raw_services: ['concrete contractor'],
+      source: 'google_places',
+      claimed: false,
+      profile_status: 'basic',
+      enrichment_status: 'not_started',
+      email_source_url: '',
+      services_source_url: '',
+      enrichment_notes: '',
+      first_seen_at: '2026-05-01T12:00:00Z',
+      last_seen_at: '2026-05-02T12:00:00Z',
+      is_archived: false,
+      archived_at: null,
+    })),
   ];
 
   await page.route('**/api/projects/admin/contractor-directory/**', async (route) => {
@@ -218,19 +263,35 @@ async function mockAdminDirectory(page) {
     }
 
     const archivedFilter = requestUrl.searchParams.get('archived') || 'active';
-    const filteredRows = directoryRows.filter((row) => (
+    const page = Number(requestUrl.searchParams.get('page') || 1);
+    const pageSize = Number(requestUrl.searchParams.get('page_size') || 50);
+    let filteredRows = directoryRows.filter((row) => (
       archivedFilter === 'all'
         ? true
         : archivedFilter === 'archived'
           ? row.is_archived
           : !row.is_archived
     ));
+    if (requestUrl.searchParams.get('missing_email') === 'true') filteredRows = filteredRows.filter((row) => !row.public_email);
+    if (requestUrl.searchParams.get('has_email') === 'true') filteredRows = filteredRows.filter((row) => Boolean(row.public_email));
+    if (requestUrl.searchParams.get('has_website') === 'true') filteredRows = filteredRows.filter((row) => Boolean(row.website));
+    if (requestUrl.searchParams.get('outreach_status')) filteredRows = filteredRows.filter((row) => row.outreach_status === requestUrl.searchParams.get('outreach_status'));
+    const totalCount = filteredRows.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const currentPage = Math.min(Math.max(1, page), totalPages);
+    const pagedRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        count: filteredRows.length,
-        results: filteredRows,
+        count: totalCount,
+        total_count: totalCount,
+        page: currentPage,
+        page_size: pageSize,
+        total_pages: totalPages,
+        has_next: currentPage < totalPages,
+        has_previous: currentPage > 1,
+        results: pagedRows,
       }),
     });
   });
@@ -258,6 +319,11 @@ async function mockAdminDirectory(page) {
           primary_service: 'Concrete',
           normalized_services: ['Concrete'],
           raw_services: ['concrete contractor'],
+          outreach_status: 'no_outreach',
+          outreach_attempt_count: 0,
+          latest_outreach_type: null,
+          latest_outreach_status: null,
+          latest_outreach_at: null,
           source: 'google_places',
           claimed: false,
           profile_status: 'basic',
@@ -372,7 +438,16 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('No Outreach');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('0 outreach attempts');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Sms');
-  await expect(page.getByText('Email not listed')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-directory-pagination')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-directory-showing')).toContainText('Showing 1-50 of 56');
+  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 1 of 2');
+  await page.getByTestId('admin-contractor-directory-next').click();
+  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 2 of 2');
+  await expect(page.getByTestId('admin-contractor-directory-showing')).toContainText('Showing 51-56 of 56');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Paged Contractor 50');
+  await page.getByTestId('admin-contractor-directory-prev').click();
+  await expect(page.getByTestId('admin-contractor-directory-page-summary')).toContainText('Page 1 of 2');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Email not listed');
   await expect(page.getByRole('link', { name: 'austinconcrete.example' })).toHaveAttribute(
     'href',
     'https://www.austinconcrete.example/contact'
@@ -385,13 +460,19 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-filter-state')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-primary-service')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-contact-status')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-filter-outreach-status')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-outreach-method')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-contact-form')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-archived')).toHaveValue('active');
 
   await page.getByTestId('admin-contractor-filter-missing-email').check();
   await expect.poll(() =>
-    mocks.directoryRequests.some((url) => url.searchParams.get('missing_email') === 'true')
+    mocks.directoryRequests.some((url) => url.searchParams.get('missing_email') === 'true' && url.searchParams.get('page') === '1')
+  ).toBe(true);
+
+  await page.getByTestId('admin-contractor-filter-outreach-status').fill('no_outreach');
+  await expect.poll(() =>
+    mocks.directoryRequests.some((url) => url.searchParams.get('outreach_status') === 'no_outreach' && url.searchParams.get('page') === '1')
   ).toBe(true);
 
   await page.getByTestId('admin-contractor-filter-has-website').check();
@@ -447,12 +528,13 @@ test('admin contractor directory supports search, filters, table, and export aff
 test('admin contractor directory initializes filters from marketplace URL query params', async ({ page }) => {
   const mocks = await mockAdminDirectory(page);
 
-  await page.goto('/app/admin/contractor-directory?missing_email=true&has_email=true&has_website=true&claimed=false&primary_service=Concrete&city=San%20Antonio&state=TX&archived=all', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/admin/contractor-directory?missing_email=true&has_email=true&has_website=true&claimed=false&primary_service=Concrete&city=San%20Antonio&state=TX&archived=all&outreach_status=no_outreach', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-contractor-filter-missing-email')).toBeChecked();
   await expect(page.getByTestId('admin-contractor-filter-has-email')).toBeChecked();
   await expect(page.getByTestId('admin-contractor-filter-has-website')).toBeChecked();
   await expect(page.getByTestId('admin-contractor-filter-primary-service')).toHaveValue('Concrete');
+  await expect(page.getByTestId('admin-contractor-filter-outreach-status')).toHaveValue('no_outreach');
   await expect(page.getByTestId('admin-contractor-filter-city')).toHaveValue('San Antonio');
   await expect(page.getByTestId('admin-contractor-filter-state')).toHaveValue('TX');
   await expect(page.getByTestId('admin-contractor-filter-archived')).toHaveValue('all');
@@ -463,6 +545,7 @@ test('admin contractor directory initializes filters from marketplace URL query 
       && url.searchParams.get('has_website') === 'true'
       && url.searchParams.get('claimed') === 'false'
       && url.searchParams.get('primary_service') === 'Concrete'
+      && url.searchParams.get('outreach_status') === 'no_outreach'
       && url.searchParams.get('city') === 'San Antonio'
       && url.searchParams.get('state') === 'TX'
       && url.searchParams.get('archived') === 'all'

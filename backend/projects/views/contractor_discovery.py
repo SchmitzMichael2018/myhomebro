@@ -6,6 +6,7 @@ import json
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
+from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -835,7 +836,8 @@ class AdminContractorDirectoryView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        qs = ContractorDirectoryEntry.objects.all().order_by("-last_seen_at", "business_name")
+        latest_outreach_type = ContractorDirectoryOutreachLog.objects.filter(directory_entry=OuterRef("pk")).order_by("-created_at", "-id").values("outreach_type")[:1]
+        qs = ContractorDirectoryEntry.objects.annotate(latest_outreach_type=Subquery(latest_outreach_type)).order_by("-last_seen_at", "business_name")
         archived = _safe_text(request.query_params.get("archived") or "active").lower()
         if archived in {"archived", "true"}:
             qs = qs.filter(is_archived=True)
@@ -867,11 +869,53 @@ class AdminContractorDirectoryView(APIView):
         claimed = _safe_text(request.query_params.get("claimed")).lower()
         if claimed in {"true", "false"}:
             qs = qs.filter(claimed=claimed == "true")
+        outreach_status = _safe_text(request.query_params.get("outreach_status")).lower()
+        if outreach_status:
+            if outreach_status == "claimed":
+                qs = qs.filter(claimed=True)
+            elif outreach_status == "no_outreach":
+                qs = qs.filter(claimed=False, latest_outreach_type__isnull=True).exclude(
+                    contact_status=ContractorDirectoryEntry.CONTACT_STATUS_MANUAL_REVIEW_NEEDED
+                )
+            elif outreach_status == "manual_review_needed":
+                qs = qs.filter(contact_status=ContractorDirectoryEntry.CONTACT_STATUS_MANUAL_REVIEW_NEEDED)
+            else:
+                outreach_type_by_status = {
+                    "phone_outreach_logged": ContractorDirectoryOutreachLog.TYPE_PHONE,
+                    "website_outreach_logged": ContractorDirectoryOutreachLog.TYPE_WEBSITE_FORM,
+                    "claim_link_generated": ContractorDirectoryOutreachLog.TYPE_CLAIM_LINK_COPIED,
+                    "email_outreach_logged": ContractorDirectoryOutreachLog.TYPE_EMAIL,
+                    "sms_outreach_logged": ContractorDirectoryOutreachLog.TYPE_SMS,
+                }
+                outreach_type = outreach_type_by_status.get(outreach_status)
+                if outreach_type:
+                    qs = qs.filter(latest_outreach_type=outreach_type)
+
+        total_count = qs.count()
         try:
-            limit = max(1, min(int(request.query_params.get("limit") or 100), 250))
+            page_size = max(1, min(int(request.query_params.get("page_size") or 50), 250))
         except (TypeError, ValueError):
-            limit = 100
-        return Response({"results": [_directory_entry_payload(entry) for entry in qs[:limit]]}, status=status.HTTP_200_OK)
+            page_size = 50
+        try:
+            page = max(1, int(request.query_params.get("page") or 1))
+        except (TypeError, ValueError):
+            page = 1
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+        page = min(page, total_pages)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return Response(
+            {
+                "results": [_directory_entry_payload(entry) for entry in qs[start:end]],
+                "total_count": total_count,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_previous": page > 1,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     def patch(self, request, entry_id: int, *args, **kwargs):
         entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
