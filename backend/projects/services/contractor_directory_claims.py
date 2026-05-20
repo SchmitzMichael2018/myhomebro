@@ -10,6 +10,7 @@ from projects.models import Contractor, Skill
 from projects.models_contractor_discovery import ContractorDirectoryClaimToken, ContractorDirectoryEntry
 from projects.services.contractor_directory import normalize_services
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
+from projects.services.contractor_contactability import refresh_contactability
 
 
 def _safe_text(value: Any) -> str:
@@ -139,6 +140,7 @@ def claim_directory_entry_with_token(token: ContractorDirectoryClaimToken, *, us
     if payload and "service_radius_miles" in payload:
         entry.service_radius_miles = _coerce_radius(payload.get("service_radius_miles"))
     entry.save(update_fields=["claimed", "claimed_by_contractor", "service_radius_miles", "last_seen_at"])
+    refresh_contactability(entry)
     token.status = ContractorDirectoryClaimToken.STATUS_CLAIMED
     token.claimed_by_contractor = contractor
     token.claimed_at = timezone.now()
@@ -163,4 +165,5 @@ def manually_mark_directory_entry_claimed(entry: ContractorDirectoryEntry, *, co
         entry.claimed_by_contractor = contractor
         _prefill_profile_from_entry(contractor, entry)
     entry.save(update_fields=["claimed", "claimed_by_contractor", "last_seen_at"])
+    refresh_contactability(entry)
     return entry

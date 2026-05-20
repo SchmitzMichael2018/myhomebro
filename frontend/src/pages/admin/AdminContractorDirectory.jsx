@@ -21,6 +21,14 @@ const EXPORT_HEADERS = [
   "state",
   "zip_code",
   "public_email",
+  "contact_status",
+  "preferred_outreach_method",
+  "contact_confidence",
+  "has_contact_form",
+  "contact_form_url",
+  "claim_readiness_status",
+  "claim_readiness_notes",
+  "outreach_notes",
   "services",
   "primary_service",
   "normalized_services",
@@ -46,6 +54,11 @@ const tableCellClass = "px-3 py-3 text-sky-100/80";
 
 function safeText(value) {
   return String(value ?? "").trim();
+}
+
+function titleize(value) {
+  const text = safeText(value).replace(/_/g, " ");
+  return text ? text.replace(/\b\w/g, (char) => char.toUpperCase()) : "";
 }
 
 function formatDate(value) {
@@ -127,6 +140,14 @@ function editFormFromRow(row) {
     state: row?.state || "",
     zip_code: row?.zip_code || "",
     public_email: row?.public_email || "",
+    has_contact_form: Boolean(row?.has_contact_form),
+    contact_form_url: row?.contact_form_url || "",
+    preferred_outreach_method: row?.preferred_outreach_method || "",
+    contact_status: row?.contact_status || "",
+    contact_confidence: row?.contact_confidence || "",
+    outreach_notes: row?.outreach_notes || "",
+    claim_readiness_status: row?.claim_readiness_status || "",
+    claim_readiness_notes: row?.claim_readiness_notes || "",
     services: servicesToText(row?.services || []),
     primary_service: row?.primary_service || "",
     normalized_services: servicesToText(row?.normalized_services || []),
@@ -151,6 +172,11 @@ function filtersFromSearch(search) {
     archived: params.get("archived") || "active",
     source: params.get("source") || "",
     primary_service: params.get("primary_service") || "",
+    contact_status: params.get("contact_status") || "",
+    preferred_outreach_method: params.get("preferred_outreach_method") || "",
+    contact_confidence: params.get("contact_confidence") || "",
+    claim_readiness_status: params.get("claim_readiness_status") || "",
+    has_contact_form: params.get("has_contact_form") === "true",
     profile_status: params.get("profile_status") || "",
     enrichment_status: params.get("enrichment_status") || "",
   };
@@ -208,6 +234,11 @@ export default function AdminContractorDirectory() {
         ...(safeText(nextFilters.archived) ? { archived: nextFilters.archived } : {}),
         ...(safeText(nextFilters.source) ? { source: nextFilters.source } : {}),
         ...(safeText(nextFilters.primary_service) ? { primary_service: nextFilters.primary_service } : {}),
+        ...(safeText(nextFilters.contact_status) ? { contact_status: nextFilters.contact_status } : {}),
+        ...(safeText(nextFilters.preferred_outreach_method) ? { preferred_outreach_method: nextFilters.preferred_outreach_method } : {}),
+        ...(safeText(nextFilters.contact_confidence) ? { contact_confidence: nextFilters.contact_confidence } : {}),
+        ...(safeText(nextFilters.claim_readiness_status) ? { claim_readiness_status: nextFilters.claim_readiness_status } : {}),
+        ...(nextFilters.has_contact_form ? { has_contact_form: "true" } : {}),
         ...(safeText(nextFilters.profile_status) ? { profile_status: nextFilters.profile_status } : {}),
         ...(safeText(nextFilters.enrichment_status) ? { enrichment_status: nextFilters.enrichment_status } : {}),
       };
@@ -383,6 +414,22 @@ export default function AdminContractorDirectory() {
       await loadDirectory();
     } catch (error) {
       setDirectoryError(error?.response?.data?.detail || "Could not restore this directory entry.");
+    }
+  }
+
+  async function logOutreach(row, outreachType, notes) {
+    setDirectoryError("");
+    setSuccessMessage("");
+    try {
+      await api.post(`/projects/admin/contractor-directory/${row.id}/outreach-log/`, {
+        outreach_type: outreachType,
+        destination: outreachType === "phone" ? row.phone : outreachType === "website_form" ? row.contact_form_url : "",
+        notes,
+      });
+      setSuccessMessage("Outreach activity logged.");
+      await loadDirectory();
+    } catch (error) {
+      setDirectoryError(error?.response?.data?.detail || "Could not log outreach activity.");
     }
   }
 
@@ -677,6 +724,14 @@ export default function AdminContractorDirectory() {
           </select>
           <input placeholder="Source" value={filters.source} onChange={(event) => setFilterField("source", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-primary-service" placeholder="Primary service" value={filters.primary_service} onChange={(event) => setFilterField("primary_service", event.target.value)} className={inputClass} />
+          <input data-testid="admin-contractor-filter-contact-status" placeholder="Contact status" value={filters.contact_status} onChange={(event) => setFilterField("contact_status", event.target.value)} className={inputClass} />
+          <input data-testid="admin-contractor-filter-outreach-method" placeholder="Outreach method" value={filters.preferred_outreach_method} onChange={(event) => setFilterField("preferred_outreach_method", event.target.value)} className={inputClass} />
+          <input data-testid="admin-contractor-filter-contact-confidence" placeholder="Confidence" value={filters.contact_confidence} onChange={(event) => setFilterField("contact_confidence", event.target.value)} className={inputClass} />
+          <input data-testid="admin-contractor-filter-claim-readiness" placeholder="Claim readiness" value={filters.claim_readiness_status} onChange={(event) => setFilterField("claim_readiness_status", event.target.value)} className={inputClass} />
+          <label className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm font-semibold text-sky-100">
+            <input type="checkbox" data-testid="admin-contractor-filter-contact-form" checked={filters.has_contact_form} onChange={(event) => setFilterField("has_contact_form", event.target.checked)} />
+            Contact Form
+          </label>
           <input placeholder="Profile status" value={filters.profile_status} onChange={(event) => setFilterField("profile_status", event.target.value)} className={inputClass} />
           <input placeholder="Enrichment status" value={filters.enrichment_status} onChange={(event) => setFilterField("enrichment_status", event.target.value)} className={inputClass} />
         </div>
@@ -687,7 +742,7 @@ export default function AdminContractorDirectory() {
           <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide text-sky-100/65">
-                {["Actions", "Business Name", "Website", "Phone", "Email", "Location", "Primary Service", "Normalized Services", "Rating", "Reviews", "Claimed", "Profile Status", "Enrichment Status", "Last Seen"].map((heading) => (
+                {["Actions", "Business Name", "Website", "Phone", "Email", "Contact Status", "Preferred Outreach", "Confidence", "Claim Readiness", "Location", "Primary Service", "Normalized Services", "Rating", "Reviews", "Claimed", "Profile Status", "Enrichment Status", "Last Seen"].map((heading) => (
                   <th key={heading} className={tableHeadClass}>{heading}</th>
                 ))}
               </tr>
@@ -707,6 +762,9 @@ export default function AdminContractorDirectory() {
                       ) : (
                         <button type="button" data-testid={`admin-contractor-archive-${row.id}`} onClick={() => archiveEntry(row)} className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-50">Archive/Remove Entry</button>
                       )}
+                      <button type="button" data-testid={`admin-contractor-log-phone-${row.id}`} onClick={() => logOutreach(row, "phone", "Phone call logged manually.")} className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold text-white">Log Phone Call</button>
+                      <button type="button" data-testid={`admin-contractor-log-form-${row.id}`} onClick={() => logOutreach(row, "website_form", "Website form submitted manually.")} className="rounded-lg border border-sky-200/30 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-50">Log Website Form</button>
+                      <button type="button" data-testid={`admin-contractor-log-review-${row.id}`} onClick={() => logOutreach(row, "manual_note", "Marked for manual review.")} className="rounded-lg border border-rose-200/30 bg-rose-300/10 px-3 py-1 text-xs font-bold text-rose-50">Mark Manual Review Needed</button>
                       {row.claimed_contractor_id ? (
                         <span className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-white">Contractor #{row.claimed_contractor_id}</span>
                       ) : null}
@@ -716,6 +774,10 @@ export default function AdminContractorDirectory() {
                   <td className={tableCellClass}>{row.website ? <a href={row.website} target="_blank" rel="noreferrer" className="font-semibold text-sky-100 hover:underline">{websiteHost(row.website)}</a> : <span className="text-sky-100/45">Not listed</span>}</td>
                   <td className={tableCellClass}>{row.phone || "Not listed"}</td>
                   <td className={tableCellClass}>{row.public_email || "Email not listed"}</td>
+                  <td className={tableCellClass}>{titleize(row.contact_status || "manual_review_needed")}</td>
+                  <td className={tableCellClass}>{titleize(row.preferred_outreach_method || "unknown")}</td>
+                  <td className={tableCellClass}>{titleize(row.contact_confidence || "low")}</td>
+                  <td className={tableCellClass}>{titleize(row.claim_readiness_status || "needs_manual_review")}</td>
                   <td className={`${tableCellClass} whitespace-pre-line`}>{formatLocation(row)}</td>
                   <td className={tableCellClass}>{row.primary_service || ""}</td>
                   <td className={tableCellClass}>{servicesToText(row.normalized_services || [])}</td>
@@ -755,6 +817,11 @@ export default function AdminContractorDirectory() {
                 ["state", "State"],
                 ["zip_code", "ZIP Code"],
                 ["public_email", "Public Email"],
+                ["contact_form_url", "Contact Form URL"],
+                ["preferred_outreach_method", "Preferred Outreach Method"],
+                ["contact_status", "Contact Status"],
+                ["contact_confidence", "Contact Confidence"],
+                ["claim_readiness_status", "Claim Readiness Status"],
                 ["primary_service", "Primary Service"],
                 ["email_source_url", "Email Source URL"],
                 ["services_source_url", "Services Source URL"],
@@ -764,6 +831,13 @@ export default function AdminContractorDirectory() {
                   <input data-testid={`admin-contractor-edit-${name}`} value={editForm[name]} onChange={(event) => setEditForm((prev) => ({ ...prev, [name]: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
                 </label>
               ))}
+              <label>
+                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Contact Form Found</span>
+                <select data-testid="admin-contractor-edit-has_contact_form" value={editForm.has_contact_form ? "true" : "false"} onChange={(event) => setEditForm((prev) => ({ ...prev, has_contact_form: event.target.value === "true" }))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
+                  <option value="false">No</option>
+                  <option value="true">Yes</option>
+                </select>
+              </label>
               <label>
                 <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Enrichment Status</span>
                 <select value={editForm.enrichment_status} onChange={(event) => setEditForm((prev) => ({ ...prev, enrichment_status: event.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm">
@@ -777,6 +851,14 @@ export default function AdminContractorDirectory() {
                   <option value="basic">Basic</option>
                   <option value="reviewed">Reviewed</option>
                 </select>
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Outreach Notes</span>
+                <textarea data-testid="admin-contractor-edit-outreach_notes" value={editForm.outreach_notes} onChange={(event) => setEditForm((prev) => ({ ...prev, outreach_notes: event.target.value }))} className="min-h-20 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Claim Readiness Notes</span>
+                <textarea value={editForm.claim_readiness_notes} onChange={(event) => setEditForm((prev) => ({ ...prev, claim_readiness_notes: event.target.value }))} className="min-h-16 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
               </label>
               <label className="md:col-span-2">
                 <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Services</span>

@@ -503,5 +503,8 @@ def upsert_directory_entry_from_place(
             update_fields.append("raw_services")
         entry.save(update_fields=[*set(update_fields), "last_seen_at"] if update_fields else ["last_seen_at"])
 
+    from projects.services.contractor_contactability import refresh_contactability
+
+    refresh_contactability(entry)
     record_directory_discovery(entry, context)
     return entry

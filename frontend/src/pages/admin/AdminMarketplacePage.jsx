@@ -73,6 +73,20 @@ function hasRadius(row) {
   return Number(row.service_radius_miles || 0) > 0;
 }
 
+function contactStatus(row) {
+  if (row.contact_status) return row.contact_status;
+  if (row.claimed) return "claimed";
+  if (email(row)) return "email_ready";
+  if (phone(row)) return "phone_ready";
+  if (row.has_contact_form && row.contact_form_url) return "website_form_ready";
+  if (website(row)) return "website_only";
+  return "manual_review_needed";
+}
+
+function contactLabel(value) {
+  return clean(value, "manual_review_needed").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function Badge({ tone = "slate", children }) {
   const tones = {
     amber: "border-amber-200/35 bg-amber-300/15 text-amber-100",
@@ -151,6 +165,12 @@ function computeHealth(rows) {
     withEmail,
     withWebsite,
     missingEmail: total - withEmail,
+    contactReady: rows.filter((row) => ["claimed", "email_ready", "phone_ready", "website_form_ready", "website_only", "contact_ready"].includes(contactStatus(row))).length,
+    emailReady: rows.filter((row) => contactStatus(row) === "email_ready").length,
+    phoneReady: rows.filter((row) => contactStatus(row) === "phone_ready").length,
+    websiteFormReady: rows.filter((row) => contactStatus(row) === "website_form_ready").length,
+    websiteOnly: rows.filter((row) => contactStatus(row) === "website_only").length,
+    manualReviewNeeded: rows.filter((row) => contactStatus(row) === "manual_review_needed").length,
     serviceGaps: serviceBuckets.filter((bucket) => bucket.claimed === 0 && bucket.total > 0),
     geographicGaps: geoBuckets.filter((bucket) => bucket.claimed === 0 && bucket.total > 0),
     highRatedUnclaimed: rows.filter((row) => !row.claimed && Number(rating(row) || 0) >= 4.5),
@@ -162,7 +182,7 @@ function computeHealth(rows) {
 function readinessChecks(row) {
   return [
     { label: "Claim status", ok: !!row.claimed, text: row.claimed ? "Claimed profile" : "Unclaimed listing" },
-    { label: "Email readiness", ok: !!email(row), text: email(row) ? "Email available" : "Missing email" },
+    { label: "Contactability", ok: contactStatus(row) !== "manual_review_needed", text: contactLabel(contactStatus(row)) },
     { label: "Website readiness", ok: !!website(row), text: website(row) ? "Website available" : "Missing website" },
     { label: "Service category", ok: primaryService(row) !== "Unclassified", text: primaryService(row) },
     { label: "Service radius", ok: hasRadius(row), text: hasRadius(row) ? `${row.service_radius_miles} miles` : "No radius set" },
@@ -360,9 +380,12 @@ export default function AdminMarketplacePage() {
               <MetricCard testId="admin-marketplace-metric-total" label="Total Directory Listings" value={health.total} sub="Contractor records in Directory" onClick={() => openDirectoryFilters()} />
               <MetricCard testId="admin-marketplace-metric-claimed" label="Claimed Contractors" value={health.claimed} sub="Linked to contractor accounts" tone="emerald" onClick={() => openDirectoryFilters({ claimed: "true" })} />
               <MetricCard testId="admin-marketplace-metric-unclaimed" label="Unclaimed Listings" value={health.unclaimed} sub="Claim-ready local businesses" tone="amber" onClick={() => openDirectoryFilters({ claimed: "false" })} />
-              <MetricCard testId="admin-marketplace-metric-has-email" label="Listings With Email" value={health.withEmail} sub="Ready for outreach workflows" onClick={() => openDirectoryFilters({ has_email: "true" })} />
-              <MetricCard testId="admin-marketplace-metric-has-website" label="Listings With Website" value={health.withWebsite} sub="Useful for enrichment review" onClick={() => openDirectoryFilters({ has_website: "true" })} />
-              <MetricCard testId="admin-marketplace-metric-missing-email" label="Listings Missing Email" value={health.missingEmail} sub="Directory enrichment backlog" tone="amber" onClick={() => openDirectoryFilters({ missing_email: "true" })} />
+              <MetricCard testId="admin-marketplace-metric-contact-ready" label="Contact Ready" value={health.contactReady} sub="Email, phone, form, website, or claimed" tone="emerald" onClick={() => openDirectoryFilters({ contact_status: "phone_ready" })} />
+              <MetricCard testId="admin-marketplace-metric-email-ready" label="Email Ready" value={health.emailReady} sub="Direct public email available" onClick={() => openDirectoryFilters({ contact_status: "email_ready" })} />
+              <MetricCard testId="admin-marketplace-metric-phone-ready" label="Phone Ready" value={health.phoneReady} sub="Phone/SMS outreach possible" onClick={() => openDirectoryFilters({ contact_status: "phone_ready" })} />
+              <MetricCard testId="admin-marketplace-metric-form-ready" label="Website Form Ready" value={health.websiteFormReady} sub="Manual form outreach possible" onClick={() => openDirectoryFilters({ contact_status: "website_form_ready" })} />
+              <MetricCard testId="admin-marketplace-metric-website-only" label="Website Only" value={health.websiteOnly} sub="Claim-link/manual review path" tone="amber" onClick={() => openDirectoryFilters({ contact_status: "website_only" })} />
+              <MetricCard testId="admin-marketplace-metric-manual-review" label="Manual Review Needed" value={health.manualReviewNeeded} sub="No usable contact method yet" tone="amber" onClick={() => openDirectoryFilters({ contact_status: "manual_review_needed" })} />
             </section>
 
             <div className="grid gap-6 xl:grid-cols-2">
@@ -463,7 +486,7 @@ export default function AdminMarketplacePage() {
                     <tr key={row.id} data-testid={`admin-marketplace-coverage-row-${row.id}`} className="hover:bg-white/5">
                       <td className={tableCellClass}>
                         <div className="font-extrabold text-white">{row.business_name}</div>
-                        <div className="mt-1 text-xs text-sky-100/75">{clean(phone(row), "Phone not listed")} | {email(row) ? "Email available" : "Email missing"}</div>
+                        <div className="mt-1 text-xs text-sky-100/75">{clean(phone(row), "Phone not listed")} | {contactLabel(contactStatus(row))}</div>
                       </td>
                       <td className={tableCellClass}>
                         <div className="font-bold text-sky-50">{primaryService(row)}</div>
@@ -473,7 +496,7 @@ export default function AdminMarketplacePage() {
                       <td className={tableCellClass}>
                         <div className="flex flex-wrap gap-1">
                           <Badge tone={row.claimed ? "emerald" : "amber"}>{row.claimed ? "Claimed" : "Unclaimed"}</Badge>
-                          <Badge tone={email(row) ? "emerald" : "rose"}>{email(row) ? "Email ready" : "Missing email"}</Badge>
+                          <Badge tone={contactStatus(row) === "manual_review_needed" ? "rose" : "emerald"}>{contactLabel(contactStatus(row))}</Badge>
                           <Badge tone={website(row) ? "sky" : "slate"}>{website(row) ? "Website ready" : "No website"}</Badge>
                         </div>
                       </td>
@@ -542,7 +565,7 @@ export default function AdminMarketplacePage() {
                 <div className={panelClass}>
                   <div className="flex flex-wrap gap-2">
                     <Badge tone={listing.claimed ? "emerald" : "amber"}>{listing.claimed ? "Claimed contractor" : "Unclaimed listing"}</Badge>
-                    <Badge tone={email(listing) ? "emerald" : "rose"}>{email(listing) ? "Email ready" : "Email missing"}</Badge>
+                    <Badge tone={contactStatus(listing) === "manual_review_needed" ? "rose" : "emerald"}>{contactLabel(contactStatus(listing))}</Badge>
                     <Badge tone={website(listing) ? "sky" : "slate"}>{website(listing) ? "Website ready" : "No website"}</Badge>
                   </div>
                   <dl className="mt-4 grid gap-3 text-sm">

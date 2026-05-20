@@ -16,6 +16,7 @@ from projects.models_contractor_discovery import (
     ContractorDirectoryClaimToken,
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
+    ContractorDirectoryOutreachLog,
     ContractorDiscoveryInvite,
     ContractorOpportunity,
 )
@@ -35,6 +36,7 @@ from projects.services.contractor_directory_claims import (
     generate_directory_claim_token,
     manually_mark_directory_entry_claimed,
 )
+from projects.services.contractor_contactability import refresh_contactability
 from projects.services.contractor_service_taxonomy import clean_raw_services
 from projects.services.contractor_opportunities import (
     accept_contractor_opportunity,
@@ -317,6 +319,17 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "website": entry.website,
         "phone": entry.phone,
         "public_email": entry.public_email,
+        "has_public_email": entry.has_public_email,
+        "has_phone": entry.has_phone,
+        "has_website": entry.has_website,
+        "has_contact_form": entry.has_contact_form,
+        "contact_form_url": entry.contact_form_url,
+        "preferred_outreach_method": entry.preferred_outreach_method,
+        "contact_confidence": entry.contact_confidence,
+        "contact_status": entry.contact_status,
+        "outreach_notes": entry.outreach_notes,
+        "claim_readiness_status": entry.claim_readiness_status,
+        "claim_readiness_notes": entry.claim_readiness_notes,
         "address_line1": entry.address_line1,
         "city": entry.city,
         "state": entry.state,
@@ -509,6 +522,14 @@ def _preview_import_row(row: dict) -> dict:
         "email_source_url": _safe_text(row.get("email_source_url")),
         "services_source_url": _safe_text(row.get("services_source_url")),
         "enrichment_notes": _safe_text(row.get("enrichment_notes")),
+        "contact_status": _safe_text(row.get("contact_status")),
+        "preferred_outreach_method": _safe_text(row.get("preferred_outreach_method")),
+        "contact_confidence": _safe_text(row.get("contact_confidence")),
+        "has_contact_form": _safe_text(row.get("has_contact_form")),
+        "contact_form_url": _safe_text(row.get("contact_form_url")),
+        "outreach_notes": _safe_text(row.get("outreach_notes")),
+        "claim_readiness_status": _safe_text(row.get("claim_readiness_status")),
+        "claim_readiness_notes": _safe_text(row.get("claim_readiness_notes")),
         "status": row_status,
         "warnings": warnings,
     }
@@ -804,6 +825,8 @@ class AdminContractorDirectoryView(APIView):
             qs = qs.exclude(public_email__isnull=True).exclude(public_email="")
         if _safe_text(request.query_params.get("has_website")).lower() == "true":
             qs = qs.exclude(website__isnull=True).exclude(website="")
+        if _safe_text(request.query_params.get("has_contact_form")).lower() == "true":
+            qs = qs.filter(has_contact_form=True)
         for param, field in [
             ("city", "city__iexact"),
             ("state", "state__iexact"),
@@ -811,6 +834,10 @@ class AdminContractorDirectoryView(APIView):
             ("primary_service", "primary_service__iexact"),
             ("profile_status", "profile_status"),
             ("enrichment_status", "enrichment_status"),
+            ("contact_status", "contact_status"),
+            ("preferred_outreach_method", "preferred_outreach_method"),
+            ("contact_confidence", "contact_confidence"),
+            ("claim_readiness_status", "claim_readiness_status"),
         ]:
             value = _safe_text(request.query_params.get(param))
             if value:
@@ -853,6 +880,12 @@ class AdminContractorDirectoryView(APIView):
         if "phone" in data:
             entry.phone = _null_if_blank(data.get("phone"))
             entry.normalized_phone = _null_if_blank(normalize_phone(entry.phone))
+        for field in ["has_contact_form", "contact_form_url", "preferred_outreach_method", "contact_status", "contact_confidence", "outreach_notes", "claim_readiness_status", "claim_readiness_notes"]:
+            if field in data:
+                if field == "has_contact_form":
+                    setattr(entry, field, bool(data.get(field)))
+                else:
+                    setattr(entry, field, _null_if_blank(data.get(field)))
         if "address_line1" in data:
             entry.address_line1 = _null_if_blank(data.get("address_line1"))
         if "city" in data:
@@ -900,6 +933,16 @@ class AdminContractorDirectoryView(APIView):
             entry.enriched_by = request.user
 
         entry.save()
+        manual_contact_fields = {
+            field: _null_if_blank(data.get(field))
+            for field in ["preferred_outreach_method", "contact_status", "contact_confidence", "claim_readiness_status", "claim_readiness_notes"]
+            if field in data
+        }
+        refresh_contactability(entry)
+        if manual_contact_fields:
+            for field, value in manual_contact_fields.items():
+                setattr(entry, field, value)
+            entry.save(update_fields=[*manual_contact_fields.keys(), "last_seen_at"])
         return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
 
 
@@ -931,6 +974,44 @@ class AdminContractorDirectoryRestoreView(APIView):
         return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
 
 
+class AdminContractorDirectoryOutreachLogView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, entry_id: int, *args, **kwargs):
+        entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
+        if entry is None:
+            return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        outreach_type = _safe_text(request.data.get("outreach_type") or ContractorDirectoryOutreachLog.TYPE_MANUAL_NOTE)
+        allowed_types = {choice[0] for choice in ContractorDirectoryOutreachLog.TYPE_CHOICES}
+        if outreach_type not in allowed_types:
+            return Response({"detail": "Unsupported outreach type."}, status=status.HTTP_400_BAD_REQUEST)
+        log = ContractorDirectoryOutreachLog.objects.create(
+            directory_entry=entry,
+            outreach_type=outreach_type,
+            destination=_null_if_blank(request.data.get("destination")),
+            status=_null_if_blank(request.data.get("status")) or "logged",
+            created_by=request.user,
+            notes=_null_if_blank(request.data.get("notes")),
+        )
+        if outreach_type == ContractorDirectoryOutreachLog.TYPE_MANUAL_NOTE:
+            entry.contact_status = ContractorDirectoryEntry.CONTACT_STATUS_MANUAL_REVIEW_NEEDED
+            entry.outreach_notes = _null_if_blank(request.data.get("notes")) or entry.outreach_notes
+            entry.save(update_fields=["contact_status", "outreach_notes", "last_seen_at"])
+        return Response(
+            {
+                "id": log.id,
+                "directory_entry_id": entry.id,
+                "outreach_type": log.outreach_type,
+                "destination": log.destination,
+                "status": log.status,
+                "notes": log.notes,
+                "created_at": log.created_at,
+                "entry": _directory_entry_payload(entry),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class AdminContractorDirectoryClaimLinkView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -939,6 +1020,14 @@ class AdminContractorDirectoryClaimLinkView(APIView):
         if entry is None:
             return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
         token = generate_directory_claim_token(entry, generated_by=request.user)
+        ContractorDirectoryOutreachLog.objects.create(
+            directory_entry=entry,
+            outreach_type=ContractorDirectoryOutreachLog.TYPE_CLAIM_LINK_COPIED,
+            destination=token.claim_url_path,
+            status="generated",
+            created_by=request.user,
+            notes="Claim link generated by admin.",
+        )
         return Response(
             {
                 "directory_entry_id": entry.id,
@@ -1085,10 +1174,22 @@ class AdminContractorDirectoryImportApplyView(APIView):
             for field in ["email_source_url", "services_source_url", "enrichment_notes"]:
                 if field in row:
                     setattr(entry, field, _null_if_blank(row.get(field)))
+            manual_contact_fields = {}
+            for field in ["contact_form_url", "preferred_outreach_method", "contact_status", "contact_confidence", "outreach_notes", "claim_readiness_status", "claim_readiness_notes"]:
+                if field in row and _safe_text(row.get(field)):
+                    setattr(entry, field, _null_if_blank(row.get(field)))
+                    manual_contact_fields[field] = _null_if_blank(row.get(field))
+            if "has_contact_form" in row:
+                entry.has_contact_form = str(row.get("has_contact_form")).strip().lower() in {"true", "1", "yes", "y"}
             entry.enrichment_status = ContractorDirectoryEntry.ENRICHMENT_REVIEWED
             entry.enriched_at = timezone.now()
             entry.enriched_by = request.user
             entry.save()
+            refresh_contactability(entry)
+            if manual_contact_fields:
+                for field, value in manual_contact_fields.items():
+                    setattr(entry, field, value)
+                entry.save(update_fields=[*manual_contact_fields.keys(), "last_seen_at"])
             updated_count += 1
 
         return Response(

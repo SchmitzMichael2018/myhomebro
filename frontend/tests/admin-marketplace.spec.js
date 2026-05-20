@@ -7,6 +7,10 @@ const directoryRows = [
     website: 'https://claimedroofing.example',
     phone: '(555) 123-4567',
     public_email: 'hello@claimedroofing.example',
+    contact_status: 'claimed',
+    preferred_outreach_method: 'claim_link_manual',
+    contact_confidence: 'high',
+    claim_readiness_status: 'ready',
     address_line1: '123 Main St',
     city: 'Austin',
     state: 'TX',
@@ -28,6 +32,10 @@ const directoryRows = [
     website: 'https://localplumbing.example',
     phone: '(555) 222-0100',
     public_email: null,
+    contact_status: 'phone_ready',
+    preferred_outreach_method: 'sms',
+    contact_confidence: 'high',
+    claim_readiness_status: 'ready',
     city: 'Dallas',
     state: 'TX',
     zip_code: '75201',
@@ -48,6 +56,10 @@ const directoryRows = [
     website: '',
     phone: '(555) 333-0100',
     public_email: null,
+    contact_status: 'phone_ready',
+    preferred_outreach_method: 'sms',
+    contact_confidence: 'high',
+    claim_readiness_status: 'ready',
     city: 'San Antonio',
     state: 'TX',
     zip_code: '78249',
@@ -128,12 +140,14 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByText('Total Directory Listings')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-summary').getByText('Claimed Contractors')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-summary').getByText('Unclaimed Listings')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-summary').getByText('Listings With Email')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-summary').getByText('Listings With Website')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-summary').getByText('Listings Missing Email')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-summary').getByText('Contact Ready')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-summary').getByText('Email Ready')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-summary').getByText('Phone Ready')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-summary').getByText('Website Form Ready')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-summary').getByText('Manual Review Needed')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-service-gaps').getByText('Plumbing')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-geo-gaps').getByText('Dallas, TX')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-metric-missing-email')).toHaveClass(/cursor-pointer/);
+  await expect(page.getByTestId('admin-marketplace-metric-phone-ready')).toHaveClass(/cursor-pointer/);
 
   await expect(page.getByText('Import Enriched CSV')).toHaveCount(0);
   await expect(page.getByText('Export Missing Emails CSV')).toHaveCount(0);
@@ -142,7 +156,7 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await page.getByTestId('admin-marketplace-tabs').getByRole('button', { name: 'Marketplace Coverage' }).click();
   await expect(page.getByTestId('admin-marketplace-contractors-view')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toBeVisible();
-  await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toContainText('Email available');
+  await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toContainText('Claimed');
   await expect(page.getByTestId('admin-marketplace-open-directory-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-open-listing-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-claim-link-2')).toBeVisible();
@@ -160,8 +174,8 @@ test('admin marketplace health cards drill into directory and coverage filters',
 
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
 
-  await page.getByTestId('admin-marketplace-metric-missing-email').click();
-  await expect(page).toHaveURL(/\/app\/admin\/contractor-directory\?missing_email=true/);
+  await page.getByTestId('admin-marketplace-metric-phone-ready').click();
+  await expect(page).toHaveURL(/\/app\/admin\/contractor-directory\?contact_status=phone_ready/);
 
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('admin-marketplace-metric-unclaimed').click();

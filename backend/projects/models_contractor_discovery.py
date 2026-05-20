@@ -129,6 +129,58 @@ class ContractorDirectoryEntry(models.Model):
         (SERVICE_NORMALIZATION_AUTO, "Auto"),
         (SERVICE_NORMALIZATION_MANUAL, "Manual"),
     ]
+    CONTACT_STATUS_CLAIMED = "claimed"
+    CONTACT_STATUS_CONTACT_READY = "contact_ready"
+    CONTACT_STATUS_EMAIL_READY = "email_ready"
+    CONTACT_STATUS_PHONE_READY = "phone_ready"
+    CONTACT_STATUS_WEBSITE_FORM_READY = "website_form_ready"
+    CONTACT_STATUS_WEBSITE_ONLY = "website_only"
+    CONTACT_STATUS_MANUAL_REVIEW_NEEDED = "manual_review_needed"
+    CONTACT_STATUS_UNREACHABLE = "unreachable"
+    CONTACT_STATUS_CHOICES = [
+        (CONTACT_STATUS_CONTACT_READY, "Contact Ready"),
+        (CONTACT_STATUS_EMAIL_READY, "Email Ready"),
+        (CONTACT_STATUS_PHONE_READY, "Phone Ready"),
+        (CONTACT_STATUS_WEBSITE_FORM_READY, "Website Form Ready"),
+        (CONTACT_STATUS_WEBSITE_ONLY, "Website Only"),
+        (CONTACT_STATUS_MANUAL_REVIEW_NEEDED, "Manual Review Needed"),
+        (CONTACT_STATUS_UNREACHABLE, "Unreachable"),
+        (CONTACT_STATUS_CLAIMED, "Claimed"),
+    ]
+    OUTREACH_EMAIL = "email"
+    OUTREACH_PHONE = "phone"
+    OUTREACH_SMS = "sms"
+    OUTREACH_WEBSITE_FORM = "website_form"
+    OUTREACH_CLAIM_LINK_MANUAL = "claim_link_manual"
+    OUTREACH_UNKNOWN = "unknown"
+    OUTREACH_METHOD_CHOICES = [
+        (OUTREACH_EMAIL, "Email"),
+        (OUTREACH_PHONE, "Phone"),
+        (OUTREACH_SMS, "SMS"),
+        (OUTREACH_WEBSITE_FORM, "Website Form"),
+        (OUTREACH_CLAIM_LINK_MANUAL, "Claim Link Manual"),
+        (OUTREACH_UNKNOWN, "Unknown"),
+    ]
+    CONFIDENCE_HIGH = "high"
+    CONFIDENCE_MEDIUM = "medium"
+    CONFIDENCE_LOW = "low"
+    CONFIDENCE_CHOICES = [
+        (CONFIDENCE_HIGH, "High"),
+        (CONFIDENCE_MEDIUM, "Medium"),
+        (CONFIDENCE_LOW, "Low"),
+    ]
+    CLAIM_READY = "ready"
+    CLAIM_NEEDS_CONTACT = "needs_contact_method"
+    CLAIM_NEEDS_SERVICE = "needs_service_category"
+    CLAIM_NEEDS_LOCATION = "needs_location"
+    CLAIM_NEEDS_MANUAL_REVIEW = "needs_manual_review"
+    CLAIM_READINESS_CHOICES = [
+        (CLAIM_READY, "Ready"),
+        (CLAIM_NEEDS_CONTACT, "Needs Contact Method"),
+        (CLAIM_NEEDS_SERVICE, "Needs Service Category"),
+        (CLAIM_NEEDS_LOCATION, "Needs Location"),
+        (CLAIM_NEEDS_MANUAL_REVIEW, "Needs Manual Review"),
+    ]
 
     business_name = models.CharField(max_length=255)
     normalized_name = models.CharField(max_length=255, db_index=True)
@@ -137,12 +189,23 @@ class ContractorDirectoryEntry(models.Model):
     phone = models.CharField(max_length=40, null=True, blank=True)
     normalized_phone = models.CharField(max_length=40, null=True, blank=True, db_index=True)
     public_email = models.EmailField(null=True, blank=True)
+    has_public_email = models.BooleanField(default=False, db_index=True)
     address_line1 = models.CharField(max_length=255, null=True, blank=True)
     city = models.CharField(max_length=120, null=True, blank=True, db_index=True)
     state = models.CharField(max_length=60, null=True, blank=True, db_index=True)
     zip_code = models.CharField(max_length=20, null=True, blank=True, db_index=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+    has_phone = models.BooleanField(default=False, db_index=True)
+    has_website = models.BooleanField(default=False, db_index=True)
+    has_contact_form = models.BooleanField(default=False, db_index=True)
+    contact_form_url = models.URLField(null=True, blank=True)
+    preferred_outreach_method = models.CharField(max_length=32, choices=OUTREACH_METHOD_CHOICES, null=True, blank=True, db_index=True)
+    contact_confidence = models.CharField(max_length=16, choices=CONFIDENCE_CHOICES, null=True, blank=True, db_index=True)
+    contact_status = models.CharField(max_length=40, choices=CONTACT_STATUS_CHOICES, null=True, blank=True, db_index=True)
+    outreach_notes = models.TextField(null=True, blank=True)
+    claim_readiness_status = models.CharField(max_length=40, choices=CLAIM_READINESS_CHOICES, null=True, blank=True, db_index=True)
+    claim_readiness_notes = models.TextField(null=True, blank=True)
     service_radius_miles = models.PositiveIntegerField(default=25, db_index=True)
     service_city = models.CharField(max_length=120, null=True, blank=True, db_index=True)
     service_state = models.CharField(max_length=60, null=True, blank=True, db_index=True)
@@ -196,10 +259,57 @@ class ContractorDirectoryEntry(models.Model):
             models.Index(fields=["normalized_name", "city", "state"], name="projects_co_normali_ee3ccb_idx"),
             models.Index(fields=["service_state", "service_zip"], name="projects_co_service_4e839f_idx"),
             models.Index(fields=["primary_service"], name="projects_co_primary_13341d_idx"),
+            models.Index(fields=["contact_status"], name="projects_co_contact_7fcd35_idx"),
+            models.Index(fields=["claim_readiness_status"], name="projects_co_claim_r_3df57d_idx"),
         ]
 
     def __str__(self) -> str:
         return self.business_name or f"Directory Entry {self.pk}"
+
+
+class ContractorDirectoryOutreachLog(models.Model):
+    TYPE_EMAIL = "email"
+    TYPE_SMS = "sms"
+    TYPE_PHONE = "phone"
+    TYPE_WEBSITE_FORM = "website_form"
+    TYPE_CLAIM_LINK_COPIED = "claim_link_copied"
+    TYPE_MANUAL_NOTE = "manual_note"
+    TYPE_CHOICES = [
+        (TYPE_EMAIL, "Email"),
+        (TYPE_SMS, "SMS"),
+        (TYPE_PHONE, "Phone"),
+        (TYPE_WEBSITE_FORM, "Website Form"),
+        (TYPE_CLAIM_LINK_COPIED, "Claim Link Copied"),
+        (TYPE_MANUAL_NOTE, "Manual Note"),
+    ]
+
+    directory_entry = models.ForeignKey(
+        "projects.ContractorDirectoryEntry",
+        on_delete=models.CASCADE,
+        related_name="outreach_logs",
+    )
+    outreach_type = models.CharField(max_length=32, choices=TYPE_CHOICES, db_index=True)
+    destination = models.CharField(max_length=500, null=True, blank=True)
+    status = models.CharField(max_length=80, null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_directory_outreach_logs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["directory_entry", "created_at"], name="projects_co_outreac_6a8f21_idx"),
+            models.Index(fields=["outreach_type", "created_at"], name="projects_co_outreac_894e28_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.outreach_type} log for entry {self.directory_entry_id}"
 
 
 class ContractorDirectoryClaimToken(models.Model):

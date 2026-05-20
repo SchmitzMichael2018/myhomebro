@@ -4,6 +4,8 @@ from unittest.mock import patch
 from rest_framework.test import APIClient
 
 from projects.models_contractor_discovery import ContractorDirectoryEntry
+from projects.models_contractor_discovery import ContractorDirectoryOutreachLog
+from projects.services.contractor_contactability import refresh_contactability
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain
 
 
@@ -388,6 +390,107 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.public_email, "approved@austinconcrete.example")
         self.assertIsNone(other.public_email)
+
+    def test_contactability_derives_email_phone_website_form_and_website_only_states(self):
+        self.entry.public_email = "hello@austinconcrete.example"
+        self.entry.phone = ""
+        self.entry.website = ""
+        refresh_contactability(self.entry)
+        self.assertEqual(self.entry.contact_status, ContractorDirectoryEntry.CONTACT_STATUS_EMAIL_READY)
+        self.assertEqual(self.entry.preferred_outreach_method, ContractorDirectoryEntry.OUTREACH_EMAIL)
+        self.assertEqual(self.entry.contact_confidence, ContractorDirectoryEntry.CONFIDENCE_HIGH)
+
+        phone_only = ContractorDirectoryEntry.objects.create(
+            business_name="Phone Only Co",
+            normalized_name=normalize_business_name("Phone Only Co"),
+            phone="717-555-0100",
+            normalized_phone=normalize_phone("717-555-0100"),
+            city="Harrisburg",
+            state="PA",
+            primary_service="Roofing",
+        )
+        refresh_contactability(phone_only)
+        self.assertEqual(phone_only.contact_status, ContractorDirectoryEntry.CONTACT_STATUS_PHONE_READY)
+        self.assertEqual(phone_only.contact_confidence, ContractorDirectoryEntry.CONFIDENCE_HIGH)
+
+        form = ContractorDirectoryEntry.objects.create(
+            business_name="Form Roofing",
+            normalized_name=normalize_business_name("Form Roofing"),
+            website="https://formroof.example",
+            website_domain=normalize_website_domain("https://formroof.example"),
+            has_contact_form=True,
+            contact_form_url="https://formroof.example/contact",
+            city="Harrisburg",
+            state="PA",
+            primary_service="Roofing",
+        )
+        refresh_contactability(form)
+        self.assertEqual(form.contact_status, ContractorDirectoryEntry.CONTACT_STATUS_WEBSITE_FORM_READY)
+        self.assertEqual(form.contact_confidence, ContractorDirectoryEntry.CONFIDENCE_MEDIUM)
+
+        website_only = ContractorDirectoryEntry.objects.create(
+            business_name="Website Only Co",
+            normalized_name=normalize_business_name("Website Only Co"),
+            website="https://websiteonly.example",
+            website_domain=normalize_website_domain("https://websiteonly.example"),
+            city="Harrisburg",
+            state="PA",
+            primary_service="Roofing",
+        )
+        refresh_contactability(website_only)
+        self.assertEqual(website_only.contact_status, ContractorDirectoryEntry.CONTACT_STATUS_WEBSITE_ONLY)
+        self.assertEqual(website_only.preferred_outreach_method, ContractorDirectoryEntry.OUTREACH_CLAIM_LINK_MANUAL)
+
+    def test_contactability_manual_review_claimed_and_claim_readiness(self):
+        empty = ContractorDirectoryEntry.objects.create(
+            business_name="No Contact Co",
+            normalized_name=normalize_business_name("No Contact Co"),
+        )
+        refresh_contactability(empty)
+        self.assertEqual(empty.contact_status, ContractorDirectoryEntry.CONTACT_STATUS_MANUAL_REVIEW_NEEDED)
+        self.assertEqual(empty.contact_confidence, ContractorDirectoryEntry.CONFIDENCE_LOW)
+        self.assertEqual(empty.claim_readiness_status, ContractorDirectoryEntry.CLAIM_NEEDS_CONTACT)
+
+        self.entry.public_email = ""
+        self.entry.phone = "512-555-0101"
+        self.entry.primary_service = ""
+        self.entry.normalized_services = []
+        refresh_contactability(self.entry)
+        self.assertEqual(self.entry.claim_readiness_status, ContractorDirectoryEntry.CLAIM_NEEDS_SERVICE)
+
+        self.entry.primary_service = "Concrete"
+        self.entry.claimed = True
+        refresh_contactability(self.entry)
+        self.assertEqual(self.entry.contact_status, ContractorDirectoryEntry.CONTACT_STATUS_CLAIMED)
+        self.assertEqual(self.entry.claim_readiness_status, ContractorDirectoryEntry.CLAIM_READY)
+
+    def test_outreach_log_endpoint_records_manual_actions(self):
+        response = self.client.post(
+            f"/api/projects/admin/contractor-directory/{self.entry.id}/outreach-log/",
+            {
+                "outreach_type": ContractorDirectoryOutreachLog.TYPE_PHONE,
+                "destination": "512-555-0101",
+                "notes": "Left voicemail.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ContractorDirectoryOutreachLog.objects.filter(directory_entry=self.entry).count(), 1)
+        log = ContractorDirectoryOutreachLog.objects.get(directory_entry=self.entry)
+        self.assertEqual(log.outreach_type, ContractorDirectoryOutreachLog.TYPE_PHONE)
+        self.assertEqual(log.created_by, self.user)
+
+    def test_claim_link_generation_records_outreach_log(self):
+        response = self.client.post(f"/api/projects/admin/contractor-directory/{self.entry.id}/claim-link/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            ContractorDirectoryOutreachLog.objects.filter(
+                directory_entry=self.entry,
+                outreach_type=ContractorDirectoryOutreachLog.TYPE_CLAIM_LINK_COPIED,
+            ).exists()
+        )
 
     def test_service_taxonomy_normalizes_google_terms_and_preserves_manual_values(self):
         from projects.services.contractor_directory import upsert_directory_entry_from_place

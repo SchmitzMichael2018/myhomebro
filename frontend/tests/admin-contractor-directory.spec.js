@@ -34,6 +34,17 @@ async function mockAdminDirectory(page) {
       phone: '512-555-0101',
       address_line1: '12703 Spectrum Dr #103',
       public_email: null,
+      has_public_email: false,
+      has_phone: true,
+      has_website: true,
+      has_contact_form: false,
+      contact_form_url: '',
+      contact_status: 'phone_ready',
+      preferred_outreach_method: 'sms',
+      contact_confidence: 'high',
+      outreach_notes: '',
+      claim_readiness_status: 'ready',
+      claim_readiness_notes: 'Ready for claim-link outreach.',
       city: 'San Antonio',
       state: 'TX',
       zip_code: '78249',
@@ -66,6 +77,21 @@ async function mockAdminDirectory(page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ claim_url: '/contractors/claim/directory-token' }),
+      });
+      return;
+    }
+
+    if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/outreach-log/')) {
+      const payload = JSON.parse(route.request().postData() || '{}');
+      directoryRows = directoryRows.map((row) => (
+        row.id === 42 && payload.outreach_type === 'manual_note'
+          ? { ...row, contact_status: 'manual_review_needed', outreach_notes: payload.notes }
+          : row
+      ));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 5, outreach_type: payload.outreach_type, entry: directoryRows[0] }),
       });
       return;
     }
@@ -308,6 +334,8 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Concrete');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('12703 Spectrum Dr #103');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('San Antonio, TX 78249');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Phone Ready');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Sms');
   await expect(page.getByText('Email not listed')).toBeVisible();
   await expect(page.getByRole('link', { name: 'austinconcrete.example' })).toHaveAttribute(
     'href',
@@ -320,6 +348,9 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-filter-city')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-state')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-primary-service')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-filter-contact-status')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-filter-outreach-method')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-filter-contact-form')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-archived')).toHaveValue('active');
 
   await page.getByTestId('admin-contractor-filter-missing-email').check();
@@ -363,6 +394,8 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-copy-claim-link-42')).toBeVisible();
   await page.getByTestId('admin-contractor-copy-claim-link-42').click();
   await expect(page.getByText('Claim link copied.')).toBeVisible();
+  await page.getByTestId('admin-contractor-log-review-42').click();
+  await expect(page.getByText('Outreach activity logged.')).toBeVisible();
 });
 
 test('admin contractor directory initializes filters from marketplace URL query params', async ({ page }) => {
@@ -438,9 +471,16 @@ test('admin contractor directory supports manual edit, import preview/apply, and
   await expect(page.getByTestId('admin-contractor-edit-city')).toHaveValue('San Antonio');
   await expect(page.getByTestId('admin-contractor-edit-state')).toHaveValue('TX');
   await expect(page.getByTestId('admin-contractor-edit-zip_code')).toHaveValue('78249');
+  await expect(page.getByTestId('admin-contractor-edit-has_contact_form')).toHaveValue('false');
   await expect(page.getByTestId('admin-contractor-edit-primary_service')).toHaveValue('Concrete');
   await expect(page.getByTestId('admin-contractor-edit-normalized_services')).toHaveValue('Concrete');
   await page.getByTestId('admin-contractor-edit-public_email').fill('hello@austinconcrete.example');
+  await page.getByTestId('admin-contractor-edit-has_contact_form').selectOption('true');
+  await page.getByTestId('admin-contractor-edit-contact_form_url').fill('https://www.austinconcrete.example/contact');
+  await page.getByTestId('admin-contractor-edit-contact_status').fill('website_form_ready');
+  await page.getByTestId('admin-contractor-edit-preferred_outreach_method').fill('website_form');
+  await page.getByTestId('admin-contractor-edit-contact_confidence').fill('medium');
+  await page.getByTestId('admin-contractor-edit-outreach_notes').fill('Contact form reviewed.');
   await page.getByTestId('admin-contractor-edit-primary_service').fill('Patio');
   await page.getByTestId('admin-contractor-edit-normalized_services').fill('Concrete, Patio');
   await page.getByTestId('admin-contractor-edit-address_line1').fill('900 Builder Way');
