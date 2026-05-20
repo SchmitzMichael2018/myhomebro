@@ -3,32 +3,84 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
 import { useWhoAmI } from "../../hooks/useWhoAmI";
 
-const ADMIN_BASE = "/api/projects/admin/marketplace";
+const DIRECTORY_BASE = "/projects/admin/contractor-directory";
 
-function money(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "0.00";
-  return n.toFixed(2);
+const pageStyle = {
+  background: "linear-gradient(135deg, #041735 0%, #063f96 38%, #667f88 70%, #f0c94b 100%)",
+};
+
+const sectionClass = "rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]";
+const panelClass = "rounded-xl border border-white/10 bg-white/[0.08] p-4";
+const inputClass = "rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-sky-100/45 outline-none focus:border-sky-200";
+const tableHeadClass = "border-b border-white/10 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-sky-100/65";
+const tableCellClass = "border-b border-white/10 px-3 py-3 align-top text-sm text-sky-50/85";
+
+function viewKey(pathname) {
+  if (pathname.includes("/marketplace/listings/")) return "listing";
+  if (pathname.includes("/marketplace/contractors")) return "coverage";
+  if (pathname.includes("/marketplace/import")) return "directory";
+  return "overview";
 }
 
-function fmt(value) {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return String(value);
+function asList(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    return value.split(",").map((item) => item.trim()).filter(Boolean);
   }
+  return [];
+}
+
+function directoryRows(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
+}
+
+function clean(value, fallback = "Not listed") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function rating(row) {
+  return row.rating ?? row.google_rating ?? null;
+}
+
+function reviews(row) {
+  return row.review_count ?? row.google_review_count ?? 0;
+}
+
+function website(row) {
+  return row.website || row.website_url || "";
+}
+
+function email(row) {
+  return row.public_email || row.email || "";
+}
+
+function phone(row) {
+  return row.phone || row.phone_number || "";
+}
+
+function primaryService(row) {
+  return row.primary_service || row.primary_trade || asList(row.normalized_services)[0] || asList(row.services)[0] || "Unclassified";
+}
+
+function locationText(row) {
+  return [row.city, row.state].filter(Boolean).join(", ") || clean(row.zip_code, "Location missing");
+}
+
+function hasRadius(row) {
+  return Number(row.service_radius_miles || 0) > 0;
 }
 
 function Badge({ tone = "slate", children }) {
   const tones = {
-    amber: "bg-amber-100 text-amber-900 border-amber-200",
-    emerald: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    sky: "bg-sky-100 text-sky-800 border-sky-200",
-    violet: "bg-violet-100 text-violet-800 border-violet-200",
-    slate: "bg-slate-100 text-slate-700 border-slate-200",
-    rose: "bg-rose-100 text-rose-800 border-rose-200",
-    gold: "bg-yellow-100 text-yellow-900 border-yellow-200",
+    amber: "border-amber-200/35 bg-amber-300/15 text-amber-100",
+    emerald: "border-emerald-200/35 bg-emerald-300/15 text-emerald-100",
+    sky: "border-sky-200/35 bg-sky-300/15 text-sky-100",
+    rose: "border-rose-200/35 bg-rose-300/15 text-rose-100",
+    slate: "border-white/15 bg-white/10 text-sky-50/80",
+    violet: "border-violet-200/35 bg-violet-300/15 text-violet-100",
   };
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${tones[tone] || tones.slate}`}>
@@ -37,47 +89,78 @@ function Badge({ tone = "slate", children }) {
   );
 }
 
-function Card({ title, sub, children, testId, className = "" }) {
+function Section({ title, sub, children, testId, className = "" }) {
   return (
-    <section
-      data-testid={testId}
-      className={["rounded-3xl border border-black/10 bg-white p-5 shadow-sm", className].join(" ")}
-    >
-      <div className="mb-3">
-        <div className="text-lg font-extrabold text-slate-900">{title}</div>
-        {sub ? <div className="mt-1 text-sm text-slate-600">{sub}</div> : null}
+    <section data-testid={testId} className={`${sectionClass} ${className}`.trim()}>
+      <div className="mb-4">
+        <h2 className="text-lg font-black text-white">{title}</h2>
+        {sub ? <p className="mt-1 text-sm text-sky-100/75">{sub}</p> : null}
       </div>
       {children}
     </section>
   );
 }
 
-function PillButton({ active, children, onClick, testId }) {
+function MetricCard({ label, value, sub, tone = "sky" }) {
   return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-extrabold transition ${
-        active ? "border-slate-900 bg-slate-900 text-white" : "border-black/10 bg-white text-slate-700 hover:bg-slate-50"
-      }`}
-    >
-      {children}
-    </button>
+    <div className={panelClass}>
+      <div className="text-xs font-bold uppercase tracking-wide text-sky-100/60">{label}</div>
+      <div className={`mt-2 text-3xl font-black ${tone === "amber" ? "text-amber-100" : tone === "emerald" ? "text-emerald-100" : "text-white"}`}>
+        {Number(value || 0).toLocaleString()}
+      </div>
+      {sub ? <div className="mt-1 text-xs text-sky-100/65">{sub}</div> : null}
+    </div>
   );
 }
 
-function normalizeList(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.results)) return data.results;
-  return [];
+function groupBy(rows, keyFn) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const key = keyFn(row) || "Unclassified";
+    if (!map.has(key)) {
+      map.set(key, { key, total: 0, claimed: 0, unclaimed: 0, withEmail: 0, withWebsite: 0, rows: [] });
+    }
+    const bucket = map.get(key);
+    bucket.total += 1;
+    bucket.claimed += row.claimed ? 1 : 0;
+    bucket.unclaimed += row.claimed ? 0 : 1;
+    bucket.withEmail += email(row) ? 1 : 0;
+    bucket.withWebsite += website(row) ? 1 : 0;
+    bucket.rows.push(row);
+  });
+  return Array.from(map.values()).sort((a, b) => b.total - a.total || a.key.localeCompare(b.key));
 }
 
-function filterKey(pathname) {
-  if (pathname.includes("/marketplace/listings/")) return "listing";
-  if (pathname.includes("/marketplace/import")) return "import";
-  if (pathname.includes("/marketplace/contractors")) return "contractors";
-  return "overview";
+function computeHealth(rows) {
+  const total = rows.length;
+  const claimed = rows.filter((row) => row.claimed).length;
+  const withEmail = rows.filter((row) => email(row)).length;
+  const withWebsite = rows.filter((row) => website(row)).length;
+  const serviceBuckets = groupBy(rows, primaryService);
+  const geoBuckets = groupBy(rows, (row) => [row.city, row.state].filter(Boolean).join(", ") || row.zip_code || "Location missing");
+  return {
+    total,
+    claimed,
+    unclaimed: total - claimed,
+    withEmail,
+    withWebsite,
+    missingEmail: total - withEmail,
+    serviceGaps: serviceBuckets.filter((bucket) => bucket.claimed === 0 && bucket.total > 0),
+    geographicGaps: geoBuckets.filter((bucket) => bucket.claimed === 0 && bucket.total > 0),
+    highRatedUnclaimed: rows.filter((row) => !row.claimed && Number(rating(row) || 0) >= 4.5),
+    enrichedUnclaimed: rows.filter((row) => !row.claimed && ["reviewed", "enriched", "complete"].includes(String(row.enrichment_status || "").toLowerCase())),
+    claimedMissingRadius: rows.filter((row) => row.claimed && !hasRadius(row)),
+  };
+}
+
+function readinessChecks(row) {
+  return [
+    { label: "Claim status", ok: !!row.claimed, text: row.claimed ? "Claimed profile" : "Unclaimed listing" },
+    { label: "Email readiness", ok: !!email(row), text: email(row) ? "Email available" : "Missing email" },
+    { label: "Website readiness", ok: !!website(row), text: website(row) ? "Website available" : "Missing website" },
+    { label: "Service category", ok: primaryService(row) !== "Unclassified", text: primaryService(row) },
+    { label: "Service radius", ok: hasRadius(row), text: hasRadius(row) ? `${row.service_radius_miles} miles` : "No radius set" },
+  ];
 }
 
 export default function AdminMarketplacePage() {
@@ -86,119 +169,48 @@ export default function AdminMarketplacePage() {
   const params = useParams();
   const { data: identity, loading: whoLoading } = useWhoAmI();
   const isAdmin = ["admin", "platform_admin"].includes(String(identity?.type || identity?.role || "").toLowerCase());
-
-  const currentView = filterKey(location.pathname);
+  const currentView = viewKey(location.pathname);
   const listingId = params.id ? String(params.id) : "";
 
-  const [summary, setSummary] = useState(null);
-  const [contractors, setContractors] = useState([]);
-  const [importResults, setImportResults] = useState([]);
+  const [rows, setRows] = useState([]);
   const [listing, setListing] = useState(null);
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [status, setStatus] = useState("");
+  const [filters, setFilters] = useState({ q: "", city: "", state: "", service: "", claimed: "" });
   const [loading, setLoading] = useState(true);
-
-  const [contractorFilters, setContractorFilters] = useState({
-    q: "",
-    trade: "",
-    city: "",
-    state: "",
-    claimed: "",
-    invited: "",
-    source: "",
-    assisted_diy: "",
-    escrow_friendly: "",
-    inspection_capable: "",
-    rescue_project_friendly: "",
-    has_phone: "",
-    has_email: "",
-    min_rating: "",
-  });
-
-  const [searchFilters, setSearchFilters] = useState({
-    query: "",
-    project_type: "",
-    project_subtype: "",
-    project_mode: "",
-    city: "",
-    state: "",
-    zip: "",
-    radius_miles: "25",
-  });
-
-  const [listingDraft, setListingDraft] = useState({
-    admin_notes: "",
-    compatibility_tags: "",
-    assisted_diy_friendly: false,
-    escrow_friendly: false,
-    inspection_capable: false,
-    rescue_project_friendly: false,
-    manually_reviewed: false,
-    manually_enriched: false,
-    sms_opt_out: false,
-    email_opt_out: false,
-  });
-  const [inviteChannel, setInviteChannel] = useState("sms");
+  const [status, setStatus] = useState("");
+  const [claimLinks, setClaimLinks] = useState({});
 
   useEffect(() => {
-    if (listing) {
-      setListingDraft({
-        admin_notes: listing.admin_notes || "",
-        compatibility_tags: (listing.compatibility_tags || []).join(", "),
-        assisted_diy_friendly: !!listing.assisted_diy_friendly,
-        escrow_friendly: !!listing.escrow_friendly,
-        inspection_capable: !!listing.inspection_capable,
-        rescue_project_friendly: !!listing.rescue_project_friendly,
-        manually_reviewed: !!listing.manually_reviewed,
-        manually_enriched: !!listing.manually_enriched,
-        sms_opt_out: !!listing.sms_opt_out,
-        email_opt_out: !!listing.email_opt_out,
-      });
-    }
-  }, [listing]);
-
-  useEffect(() => {
+    if (whoLoading || !isAdmin) return undefined;
     let active = true;
-    async function load() {
+    async function loadDirectory() {
+      setLoading(true);
+      setStatus("");
       try {
-        setLoading(true);
-        setStatus("");
-        const [summaryRes, contractorRes] = await Promise.all([
-          api.get(`${ADMIN_BASE}/`),
-          api.get(`${ADMIN_BASE}/contractors/`, { params: { limit: 100 } }),
-        ]);
-        if (!active) return;
-        setSummary(summaryRes.data || null);
-        setContractors(normalizeList(contractorRes.data));
+        const { data } = await api.get(`${DIRECTORY_BASE}/`, { params: { limit: 500 } });
+        if (active) setRows(directoryRows(data));
       } catch (error) {
-        console.error(error);
-        if (active) setStatus("Failed to load marketplace dashboard.");
+        if (active) setStatus(error?.response?.data?.detail || "Failed to load marketplace health data.");
       } finally {
         if (active) setLoading(false);
       }
     }
-
-    if (!whoLoading && isAdmin) {
-      load();
-    }
-
+    loadDirectory();
     return () => {
       active = false;
     };
   }, [whoLoading, isAdmin]);
 
   useEffect(() => {
-    if (!isAdmin || currentView !== "listing" || !listingId) return;
+    if (whoLoading || !isAdmin || currentView !== "listing" || !listingId) return undefined;
     let active = true;
     async function loadListing() {
+      setLoading(true);
+      setStatus("");
       try {
-        setLoading(true);
-        const res = await api.get(`${ADMIN_BASE}/listings/${listingId}/`);
-        if (!active) return;
-        setListing(res.data || null);
+        const { data } = await api.get(`${DIRECTORY_BASE}/${listingId}/`);
+        if (active) setListing(data || null);
       } catch (error) {
-        console.error(error);
-        if (active) setStatus("Failed to load listing detail.");
+        if (active) setStatus(error?.response?.data?.detail || "Failed to load marketplace readiness detail.");
       } finally {
         if (active) setLoading(false);
       }
@@ -207,678 +219,345 @@ export default function AdminMarketplacePage() {
     return () => {
       active = false;
     };
-  }, [isAdmin, currentView, listingId]);
+  }, [whoLoading, isAdmin, currentView, listingId]);
 
-  const selectedCount = selectedIds.length;
+  const health = useMemo(() => computeHealth(rows), [rows]);
 
-  const summaryCards = useMemo(() => {
-    const base = summary?.summary || {};
-    return [
-      { label: "Total Listings", value: base.total_listings || 0, sub: "All directory records" },
-      { label: "Claimed", value: base.claimed_listings || 0, sub: "Verified contractor profiles" },
-      { label: "Unclaimed", value: base.unclaimed_listings || 0, sub: "Local business listings" },
-      { label: "Invites", value: base.total_invites || 0, sub: `Claim rate ${base.claim_rate ?? 0}%` },
-      { label: "Opt-Outs", value: base.opted_out_listings || 0, sub: "SMS/email blocked listings" },
-    ];
-  }, [summary]);
+  const filteredRows = useMemo(() => {
+    const query = filters.q.trim().toLowerCase();
+    return rows.filter((row) => {
+      const haystack = [
+        row.business_name,
+        row.city,
+        row.state,
+        row.zip_code,
+        primaryService(row),
+        asList(row.normalized_services).join(" "),
+      ].join(" ").toLowerCase();
+      if (query && !haystack.includes(query)) return false;
+      if (filters.city && String(row.city || "").toLowerCase() !== filters.city.toLowerCase()) return false;
+      if (filters.state && String(row.state || "").toLowerCase() !== filters.state.toLowerCase()) return false;
+      if (filters.service && primaryService(row).toLowerCase() !== filters.service.toLowerCase()) return false;
+      if (filters.claimed && String(Boolean(row.claimed)) !== filters.claimed) return false;
+      return true;
+    });
+  }, [filters, rows]);
 
-  const tabs = [
-    ["overview", "Overview"],
-    ["contractors", "Contractors"],
-    ["import", "Import"],
-    ["listing", "Listing Detail"],
-  ];
+  const services = useMemo(() => groupBy(rows, primaryService).map((bucket) => bucket.key), [rows]);
 
-  function goTo(path) {
+  function go(path = "") {
     navigate(`/app/admin/marketplace${path ? `/${path}` : ""}`);
   }
 
-  async function runContractorSearch() {
+  function openDirectory(row) {
+    navigate(`/app/admin/contractor-directory?entry=${row.id}`);
+  }
+
+  async function generateClaimLink(row) {
+    setStatus("");
     try {
-      setStatus("");
-      setLoading(true);
-      const res = await api.get(`${ADMIN_BASE}/contractors/`, { params: contractorFilters });
-      setContractors(normalizeList(res.data));
+      const { data } = await api.post(`${DIRECTORY_BASE}/${row.id}/claim-link/`, {});
+      setClaimLinks((prev) => ({ ...prev, [row.id]: data?.claim_url || "" }));
+      setStatus("Claim link generated. Open the Directory record to manage claim workflow details.");
     } catch (error) {
-      console.error(error);
-      setStatus("Failed to refresh contractor listings.");
-    } finally {
-      setLoading(false);
+      setStatus(error?.response?.data?.detail || "Could not generate claim link.");
     }
   }
 
-  async function runImportSearch() {
-    try {
-      setStatus("");
-      setLoading(true);
-      const res = await api.get(`${ADMIN_BASE}/import/`, { params: searchFilters });
-      setImportResults(normalizeList(res.data));
-      setSelectedIds([]);
-    } catch (error) {
-      console.error(error);
-      setStatus("Failed to search Google Places marketplace results.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function importSelected() {
-    const rows = importResults.filter((row) => selectedIds.includes(String(row.id)));
-    if (!rows.length) {
-      setStatus("Select at least one result to import.");
-      return;
-    }
-    try {
-      setStatus("");
-      setLoading(true);
-      const res = await api.post(`${ADMIN_BASE}/import/`, {
-        selected_contractors: rows,
-        admin_notes: listingDraft.admin_notes,
-        compatibility_tags: listingDraft.compatibility_tags,
-      });
-      const nextStatus = res.data?.detail || "Listings imported.";
-      await runImportSearch();
-      await runContractorSearch();
-      setStatus(nextStatus);
-    } catch (error) {
-      console.error(error);
-      setStatus("Failed to import selected listings.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveListing() {
-    if (!listing) return;
-    try {
-      setStatus("");
-      setLoading(true);
-      const res = await api.patch(`${ADMIN_BASE}/listings/${listing.id}/`, {
-        admin_notes: listingDraft.admin_notes,
-        compatibility_tags: listingDraft.compatibility_tags,
-        assisted_diy_friendly: listingDraft.assisted_diy_friendly,
-        escrow_friendly: listingDraft.escrow_friendly,
-        inspection_capable: listingDraft.inspection_capable,
-        rescue_project_friendly: listingDraft.rescue_project_friendly,
-        manually_reviewed: listingDraft.manually_reviewed,
-        manually_enriched: listingDraft.manually_enriched,
-        sms_opt_out: listingDraft.sms_opt_out,
-        email_opt_out: listingDraft.email_opt_out,
-      });
-      setListing(res.data);
-      setStatus("Listing saved.");
-    } catch (error) {
-      console.error(error);
-      setStatus("Failed to save listing changes.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function sendInvite() {
-    if (!listing) return;
-    try {
-      setStatus("");
-      setLoading(true);
-      const res = await api.post(`${ADMIN_BASE}/listings/${listing.id}/invite/`, {
-        preferred_channel: inviteChannel,
-      });
-      setStatus(res.data?.detail || "Invite sent.");
-      setListing((prev) => prev ? { ...prev, recent_invites: [res.data.invite, ...(prev.recent_invites || [])] } : prev);
-    } catch (error) {
-      console.error(error);
-      setStatus(error?.response?.data?.detail || "Failed to send invite.");
-    } finally {
-      setLoading(false);
-    }
+  async function copyClaimLink(row) {
+    const link = claimLinks[row.id];
+    if (!link) return;
+    const absoluteLink = link.startsWith("http") ? link : `${window.location.origin}${link}`;
+    await navigator.clipboard?.writeText(absoluteLink);
+    setStatus("Claim link copied.");
   }
 
   if (whoLoading) {
-    return <div className="p-6 text-slate-600">Checking admin access…</div>;
+    return <div className="p-6 text-slate-600">Checking admin access...</div>;
   }
 
   if (!isAdmin) {
     return (
       <div className="p-6">
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
-          You need admin access to view marketplace intelligence.
+          You need admin access to view marketplace operations.
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-gradient-to-b from-slate-50 to-white px-4 py-6 md:px-6">
-      <div className="mx-auto max-w-[1500px]">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div className="min-h-full px-4 py-6 md:px-6" style={pageStyle}>
+      <div className="mx-auto max-w-[1500px] space-y-6">
+        <header className={sectionClass}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-500">Admin Marketplace</div>
-              <h1 className="mt-1 text-3xl font-black text-slate-900">Contractor Discovery</h1>
-              <p className="mt-2 max-w-3xl text-sm text-slate-600">
-                Discover contractors, manage local business listings, invite businesses to claim their profile, and monitor marketplace coverage.
+              <div className="text-xs font-extrabold uppercase tracking-[0.16em] text-sky-100/65">Admin Marketplace</div>
+              <h1 className="mt-1 text-3xl font-black text-white">Marketplace Operations</h1>
+              <p className="mt-2 max-w-3xl text-sm text-sky-100/80">
+                Monitor contractor coverage, claim readiness, service gaps, and routing health. Contractor Directory remains the record management console for enrichment, imports, edits, and profile data.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
-                onClick={() => goTo("")}
-              >
+              <button type="button" className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-extrabold text-white hover:bg-white/15" onClick={() => go("")}>
                 Overview
               </button>
-              <button
-                type="button"
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
-                onClick={() => goTo("import")}
-              >
-                Discover Contractors
+              <button type="button" className="rounded-xl border border-sky-200/30 bg-sky-300/10 px-4 py-2 text-sm font-extrabold text-sky-50 hover:bg-sky-300/20" onClick={() => go("contractors")}>
+                Coverage View
+              </button>
+              <button type="button" className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-sky-50" onClick={() => navigate("/app/admin/contractor-directory")}>
+                Open Contractor Directory
               </button>
             </div>
           </div>
-
           <div className="mt-5 flex flex-wrap gap-2" data-testid="admin-marketplace-tabs">
-            {tabs.map(([key, label]) => (
-              <PillButton key={key} active={currentView === key} onClick={() => goTo(key === "overview" ? "" : key)}>
-                {label}
-              </PillButton>
-            ))}
+            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "overview" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("")}>Overview</button>
+            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "coverage" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("contractors")}>Marketplace Coverage</button>
+            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "directory" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("import")}>Directory Console</button>
           </div>
+          {status ? <div data-testid="admin-marketplace-status" className="mt-4 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-sky-50">{status}</div> : null}
+        </header>
 
-          {status ? (
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" data-testid="admin-marketplace-status">
-              {status}
-            </div>
-          ) : null}
-        </div>
-
-        {loading && currentView !== "overview" ? (
-          <Card title="Loading…" sub="Fetching marketplace data." className="mt-6">
-            <div className="text-sm text-slate-600">Please wait while marketplace intelligence loads.</div>
-          </Card>
+        {loading && !rows.length && currentView !== "listing" ? (
+          <Section title="Loading marketplace health" sub="Reading Contractor Directory records." />
         ) : null}
 
-        {currentView === "overview" && (
-          <div className="mt-6 space-y-6" data-testid="admin-marketplace-page">
-            <section data-testid="admin-marketplace-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-              {summaryCards.map((card) => (
-                <Card key={card.label} title={card.label} sub={card.sub}>
-                  <div className="text-3xl font-black text-slate-900">{Number(card.value || 0).toLocaleString()}</div>
-                </Card>
-              ))}
+        {currentView === "overview" ? (
+          <main className="space-y-6" data-testid="admin-marketplace-page">
+            <section data-testid="admin-marketplace-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+              <MetricCard label="Total Directory Listings" value={health.total} sub="Contractor records in Directory" />
+              <MetricCard label="Claimed Contractors" value={health.claimed} sub="Linked to contractor accounts" tone="emerald" />
+              <MetricCard label="Unclaimed Listings" value={health.unclaimed} sub="Claim-ready local businesses" tone="amber" />
+              <MetricCard label="Listings With Email" value={health.withEmail} sub="Ready for outreach workflows" />
+              <MetricCard label="Listings With Website" value={health.withWebsite} sub="Useful for enrichment review" />
+              <MetricCard label="Listings Missing Email" value={health.missingEmail} sub="Directory enrichment backlog" tone="amber" />
             </section>
 
-            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <Card
-                title="Marketplace Health"
-                sub="Coverage gaps by trade. Unclaimed directories are the fastest route to seeding a market."
-              >
+            <div className="grid gap-6 xl:grid-cols-2">
+              <Section title="Top Service Gaps" sub="Services with no claimed contractors yet." testId="admin-marketplace-service-gaps">
                 <div className="space-y-3">
-                  {(summary?.coverage?.gaps || []).length === 0 ? (
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
-                      No obvious coverage gaps surfaced in the current snapshot.
-                    </div>
-                  ) : (
-                    (summary?.coverage?.gaps || []).slice(0, 8).map((gap) => (
-                      <div key={`${gap.trade}-${gap.total}`} className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                        <div className="text-sm font-extrabold text-amber-900">{gap.title}</div>
-                        <div className="mt-1 text-sm text-amber-800">{gap.detail}</div>
+                  {health.serviceGaps.length ? health.serviceGaps.slice(0, 6).map((gap) => (
+                    <div key={gap.key} className={panelClass}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-extrabold text-white">{gap.key}</div>
+                        <Badge tone="amber">{gap.total} unclaimed listing{gap.total === 1 ? "" : "s"}</Badge>
                       </div>
-                    ))
+                      <div className="mt-1 text-sm text-sky-100/70">No claimed contractors are available for this service in the current directory snapshot.</div>
+                    </div>
+                  )) : (
+                    <div className={panelClass}>No service gaps detected yet.</div>
                   )}
                 </div>
-              </Card>
+              </Section>
 
-              <Card title="Quick Actions" sub="Admin moves that keep the marketplace healthy and growing.">
-                <div className="grid gap-2">
-                  <button
-                    type="button"
-                    className="rounded-xl border border-black/10 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                    onClick={() => goTo("contractors")}
-                  >
-                    Review contractor listings
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-black/10 bg-white px-4 py-3 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                    onClick={() => goTo("import")}
-                  >
-                    Search and import new businesses
-                  </button>
+              <Section title="Top Geographic Gaps" sub="Cities or ZIP areas with unclaimed supply but no claimed profile." testId="admin-marketplace-geo-gaps">
+                <div className="space-y-3">
+                  {health.geographicGaps.length ? health.geographicGaps.slice(0, 6).map((gap) => (
+                    <div key={gap.key} className={panelClass}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-extrabold text-white">{gap.key}</div>
+                        <Badge tone="amber">{gap.total} unclaimed</Badge>
+                      </div>
+                      <div className="mt-1 text-sm text-sky-100/70">Prioritize claim conversion or enrichment before routing homeowner requests here.</div>
+                    </div>
+                  )) : (
+                    <div className={panelClass}>No geographic gaps detected yet.</div>
+                  )}
                 </div>
-              </Card>
+              </Section>
             </div>
-          </div>
-        )}
 
-        {currentView === "contractors" && (
-          <div className="mt-6 space-y-4" data-testid="admin-marketplace-contractors-view">
-            <Card title="Contractor Directory Listings" sub="Claimed and unclaimed businesses with compatibility signals.">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <input
-                  data-testid="admin-marketplace-contractor-q"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="Search name, city, trade, phone..."
-                  value={contractorFilters.q}
-                  onChange={(e) => setContractorFilters((prev) => ({ ...prev, q: e.target.value }))}
-                />
-                <input
-                  data-testid="admin-marketplace-contractor-trade"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="Trade"
-                  value={contractorFilters.trade}
-                  onChange={(e) => setContractorFilters((prev) => ({ ...prev, trade: e.target.value }))}
-                />
-                <input
-                  data-testid="admin-marketplace-contractor-city"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="City"
-                  value={contractorFilters.city}
-                  onChange={(e) => setContractorFilters((prev) => ({ ...prev, city: e.target.value }))}
-                />
-                <input
-                  data-testid="admin-marketplace-contractor-state"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="State"
-                  value={contractorFilters.state}
-                  onChange={(e) => setContractorFilters((prev) => ({ ...prev, state: e.target.value }))}
-                />
-                <input
-                  data-testid="admin-marketplace-contractor-min-rating"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="Min rating"
-                  value={contractorFilters.min_rating}
-                  onChange={(e) => setContractorFilters((prev) => ({ ...prev, min_rating: e.target.value }))}
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {[
-                  ["claimed", "Claimed"],
-                  ["invited", "Invited"],
-                  ["opted_out", "Opted Out"],
-                  ["assisted_diy", "Assisted DIY"],
-                  ["escrow_friendly", "Escrow Friendly"],
-                  ["inspection_capable", "Inspection Capable"],
-                  ["rescue_project_friendly", "Rescue Friendly"],
-                  ["has_phone", "Has Phone"],
-                  ["has_email", "Has Email"],
-                ].map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${
-                      contractorFilters[key] === "1"
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-black/10 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
-                    onClick={() =>
-                      setContractorFilters((prev) => ({
-                        ...prev,
-                        [key]: prev[key] === "1" ? "" : "1",
-                      }))
-                    }
-                  >
-                    {label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className="ml-auto rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
-                  onClick={runContractorSearch}
-                >
-                  Refresh Listings
-                </button>
-              </div>
-            </Card>
+            <div className="grid gap-6 xl:grid-cols-3">
+              <Section title="High-Rated Unclaimed Contractors" sub="Good claim-link candidates." testId="admin-marketplace-high-rated">
+                <HealthList rows={health.highRatedUnclaimed} empty="No high-rated unclaimed contractors found." />
+              </Section>
+              <Section title="Enriched But Unclaimed" sub="Ready for claim conversion follow-up." testId="admin-marketplace-enriched-unclaimed">
+                <HealthList rows={health.enrichedUnclaimed} empty="No enriched unclaimed contractors yet." />
+              </Section>
+              <Section title="Claimed Missing Service Radius" sub="Routing health issue before geographic matching." testId="admin-marketplace-radius-gaps">
+                <HealthList rows={health.claimedMissingRadius} empty="Claimed contractors have service radius data." />
+              </Section>
+            </div>
+          </main>
+        ) : null}
 
-            <div className="overflow-x-auto rounded-3xl border border-black/10 bg-white shadow-sm">
-              <table className="min-w-full text-sm">
-                <thead className="border-b border-black/10 bg-slate-50">
+        {currentView === "coverage" ? (
+          <main className="space-y-4" data-testid="admin-marketplace-contractors-view">
+            <Section
+              title="Marketplace Coverage"
+              sub="Read-only contractor network coverage. Use Contractor Directory for editing, enrichment import/export, duplicate review, and full profile management."
+            >
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <input data-testid="admin-marketplace-contractor-q" className={inputClass} placeholder="Search coverage..." value={filters.q} onChange={(e) => setFilters((prev) => ({ ...prev, q: e.target.value }))} />
+                <input data-testid="admin-marketplace-contractor-city" className={inputClass} placeholder="City" value={filters.city} onChange={(e) => setFilters((prev) => ({ ...prev, city: e.target.value }))} />
+                <input data-testid="admin-marketplace-contractor-state" className={inputClass} placeholder="State" value={filters.state} onChange={(e) => setFilters((prev) => ({ ...prev, state: e.target.value }))} />
+                <select data-testid="admin-marketplace-service-filter" className={inputClass} value={filters.service} onChange={(e) => setFilters((prev) => ({ ...prev, service: e.target.value }))}>
+                  <option value="">All services</option>
+                  {services.map((service) => <option key={service} value={service}>{service}</option>)}
+                </select>
+                <select data-testid="admin-marketplace-claimed-filter" className={inputClass} value={filters.claimed} onChange={(e) => setFilters((prev) => ({ ...prev, claimed: e.target.value }))}>
+                  <option value="">All claim states</option>
+                  <option value="true">Claimed</option>
+                  <option value="false">Unclaimed</option>
+                </select>
+              </div>
+            </Section>
+
+            <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#061d42]/95 shadow-[0_22px_50px_rgba(2,8,23,0.28)]">
+              <table className="min-w-full">
+                <thead>
                   <tr>
-                    <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">Business</th>
-                    <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">Coverage</th>
-                    <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">Compatibility</th>
-                    <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">Claim / Contact</th>
-                    <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-slate-600">Action</th>
+                    <th className={tableHeadClass}>Business</th>
+                    <th className={tableHeadClass}>Coverage</th>
+                    <th className={tableHeadClass}>Claim Readiness</th>
+                    <th className={tableHeadClass}>Signals</th>
+                    <th className={tableHeadClass}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {contractors.length === 0 ? (
-                    <tr>
-                      <td className="px-3 py-6 text-slate-600" colSpan={5}>
-                        No listings match the current filters.
+                  {filteredRows.length ? filteredRows.map((row) => (
+                    <tr key={row.id} data-testid={`admin-marketplace-coverage-row-${row.id}`} className="hover:bg-white/5">
+                      <td className={tableCellClass}>
+                        <div className="font-extrabold text-white">{row.business_name}</div>
+                        <div className="mt-1 text-xs text-sky-100/60">{clean(phone(row), "Phone not listed")} | {email(row) ? "Email available" : "Email missing"}</div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <div className="font-bold text-sky-50">{primaryService(row)}</div>
+                        <div className="text-xs text-sky-100/60">{locationText(row)}</div>
+                        <div className="mt-2">{row.claimed ? <Badge tone="emerald">{row.service_radius_miles || 25} mile radius</Badge> : <Badge>Radius pending claim</Badge>}</div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge tone={row.claimed ? "emerald" : "amber"}>{row.claimed ? "Claimed" : "Unclaimed"}</Badge>
+                          <Badge tone={email(row) ? "emerald" : "rose"}>{email(row) ? "Email ready" : "Missing email"}</Badge>
+                          <Badge tone={website(row) ? "sky" : "slate"}>{website(row) ? "Website ready" : "No website"}</Badge>
+                        </div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <div className="text-xs text-sky-100/70">Rating {rating(row) || "Not rated"} | {reviews(row)} reviews</div>
+                        <div className="mt-1 text-xs text-sky-100/60">Enrichment: {clean(row.enrichment_status, "not_started")}</div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" data-testid={`admin-marketplace-open-directory-${row.id}`} onClick={() => openDirectory(row)} className="rounded-lg bg-white px-3 py-1.5 text-xs font-extrabold text-slate-900">
+                            Open in Directory
+                          </button>
+                          <button type="button" data-testid={`admin-marketplace-open-listing-${row.id}`} onClick={() => go(`listings/${row.id}`)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-extrabold text-sky-50">
+                            View Listing Detail
+                          </button>
+                          {!row.claimed ? (
+                            <button type="button" data-testid={`admin-marketplace-claim-link-${row.id}`} onClick={() => generateClaimLink(row)} className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1.5 text-xs font-extrabold text-amber-100">
+                              Generate Claim Link
+                            </button>
+                          ) : null}
+                          {claimLinks[row.id] ? (
+                            <button type="button" data-testid={`admin-marketplace-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100">
+                              Copy Claim Link
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
-                  ) : (
-                    contractors.map((row) => (
-                      <tr key={row.id} className="border-b border-black/5 hover:bg-slate-50">
-                        <td className="px-3 py-3 align-top">
-                          <div className="font-extrabold text-slate-900">{row.business_name}</div>
-                          <div className="mt-1 text-xs text-slate-600">
-                            {row.city || "—"}, {row.state || "—"} • {row.primary_trade || "—"}
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            <Badge tone={row.claimed ? "emerald" : "slate"}>{row.label}</Badge>
-                            {row.manually_reviewed ? <Badge tone="sky">Reviewed</Badge> : null}
-                            {row.manually_enriched ? <Badge tone="violet">Enriched</Badge> : null}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="text-xs text-slate-600">Rating {row.google_rating || "—"} • {row.google_review_count || 0} reviews</div>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {(row.supported_project_modes || []).map((mode) => (
-                              <Badge key={`${row.id}-${mode}`} tone={mode === "assisted_diy" ? "gold" : mode === "inspection_only" ? "slate" : mode === "consultation" ? "violet" : "sky"}>
-                                {mode === "full_service" ? "Full Service" : mode === "assisted_diy" ? "Assisted DIY" : mode === "consultation" ? "Consultation" : "Inspection Only"}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="flex flex-wrap gap-1">
-                            <Badge tone={row.recommendation_tier === "Strong Match" ? "emerald" : row.recommendation_tier === "Good Match" ? "amber" : "slate"}>{row.recommendation_tier}</Badge>
-                            <Badge tone={row.escrow_friendly ? "emerald" : "slate"}>Escrow Friendly</Badge>
-                            <Badge tone={row.assisted_diy_friendly ? "gold" : "slate"}>Assisted DIY</Badge>
-                            <Badge tone={row.inspection_capable ? "slate" : "slate"}>Inspection</Badge>
-                            <Badge tone={row.rescue_project_friendly ? "violet" : "slate"}>Rescue</Badge>
-                          </div>
-                          <div className="mt-2 text-xs text-slate-600">
-                            {row.compatibility_reasons?.slice(0, 3).join(" • ") || "No compatibility notes yet."}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="text-xs text-slate-600">{row.phone_number || "No phone"} • {row.email || "No email"}</div>
-                          <div className="mt-1 text-xs text-slate-600">{row.invite_count || 0} invite(s)</div>
-                        </td>
-                        <td className="px-3 py-3 align-top">
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              data-testid={`admin-marketplace-open-listing-${row.id}`}
-                              onClick={() => goTo(`listings/${row.id}`)}
-                              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
-                            >
-                              Open
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                  )) : (
+                    <tr>
+                      <td className={tableCellClass} colSpan={5}>No coverage records match these filters.</td>
+                    </tr>
                   )}
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+          </main>
+        ) : null}
 
-        {currentView === "import" && (
-          <div className="mt-6 space-y-4" data-testid="admin-marketplace-import-view">
-            <Card title="Discover and Import Contractors" sub="Search Google Places, preview local businesses, and mark the best fits as reviewed.">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <input
-                  data-testid="admin-marketplace-import-query"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="Search query"
-                  value={searchFilters.query}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, query: e.target.value }))}
-                />
-                <input
-                  data-testid="admin-marketplace-import-project-type"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="Project type"
-                  value={searchFilters.project_type}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, project_type: e.target.value }))}
-                />
-                <input
-                  data-testid="admin-marketplace-import-city"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="City"
-                  value={searchFilters.city}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, city: e.target.value }))}
-                />
-                <input
-                  data-testid="admin-marketplace-import-zip"
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="ZIP"
-                  value={searchFilters.zip}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, zip: e.target.value }))}
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <input
-                  data-testid="admin-marketplace-import-radius"
-                  className="w-32 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
-                  placeholder="Radius"
-                  value={searchFilters.radius_miles}
-                  onChange={(e) => setSearchFilters((prev) => ({ ...prev, radius_miles: e.target.value }))}
-                />
-                <button
-                  type="button"
-                  data-testid="admin-marketplace-import-search"
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
-                  onClick={runImportSearch}
-                >
-                  Search
-                </button>
-                <button
-                  type="button"
-                  data-testid="admin-marketplace-import-selected"
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
-                  onClick={importSelected}
-                >
-                  Import Selected ({selectedCount})
+        {currentView === "directory" ? (
+          <Section
+            title="Directory Console Owns Record Management"
+            sub="Contractor discovery search, CSV import/export, enrichment edits, duplicate prevention, and claim-link administration live in Contractor Directory."
+            testId="admin-marketplace-directory-redirect"
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className={panelClass}>
+                <h3 className="font-black text-white">Contractor Directory</h3>
+                <p className="mt-2 text-sm text-sky-100/75">Manage contractor records, enrichment, claim links, and profile data.</p>
+                <button type="button" className="mt-4 rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900" onClick={() => navigate("/app/admin/contractor-directory")}>
+                  Open Contractor Directory
                 </button>
               </div>
-            </Card>
-
-            <div className="grid gap-4">
-              {importResults.map((row) => {
-                const isSelected = selectedIds.includes(String(row.id));
-                return (
-                  <button
-                    key={row.id}
-                    type="button"
-                    data-testid={`admin-marketplace-import-result-${row.id}`}
-                    onClick={() =>
-                      setSelectedIds((prev) =>
-                        prev.includes(String(row.id))
-                          ? prev.filter((id) => id !== String(row.id))
-                          : [...prev, String(row.id)]
-                      )
-                    }
-                    className={`rounded-3xl border p-5 text-left shadow-sm transition ${isSelected ? "border-slate-900 bg-slate-50" : "border-black/10 bg-white hover:bg-slate-50"}`}
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-extrabold text-slate-900">{row.business_name}</div>
-                        <div className="mt-1 text-sm text-slate-600">{row.city || "—"}, {row.state || "—"} • {row.primary_trade || "—"}</div>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        <Badge tone={row.claimed ? "emerald" : "slate"}>{row.label}</Badge>
-                        <Badge tone={row.recommendation_tier === "Strong Match" ? "emerald" : row.recommendation_tier === "Good Match" ? "amber" : "slate"}>{row.recommendation_tier}</Badge>
-                        <Badge tone={row.escrow_friendly ? "emerald" : "slate"}>Escrow Friendly</Badge>
-                        <Badge tone={row.assisted_diy_friendly ? "gold" : "slate"}>Assisted DIY</Badge>
-                        <Badge tone={row.inspection_capable ? "slate" : "slate"}>Inspection</Badge>
-                      </div>
-                    </div>
-                    <div className="mt-3 text-sm text-slate-700">
-                      {row.compatibility_reasons?.slice(0, 4).join(" • ") || "No reasons returned."}
-                    </div>
-                  </button>
-                );
-              })}
+              <div className={panelClass}>
+                <h3 className="font-black text-white">Marketplace</h3>
+                <p className="mt-2 text-sm text-sky-100/75">Monitor contractor coverage, claim readiness, service gaps, and lead routing health without duplicating Directory editing workflows.</p>
+              </div>
             </div>
-          </div>
-        )}
+          </Section>
+        ) : null}
 
         {currentView === "listing" && listing ? (
-          <div className="mt-6 space-y-4" data-testid="admin-marketplace-listing-detail">
-            <Card title={listing.business_name} sub={`${listing.city || "—"}, ${listing.state || "—"} • ${listing.primary_trade || "—"}`}>
-              <div className="flex flex-wrap gap-2">
-                <Badge tone={listing.claimed ? "emerald" : "slate"}>{listing.label}</Badge>
-                <Badge tone={listing.manually_reviewed ? "sky" : "slate"}>{listing.manually_reviewed ? "Reviewed" : "Needs review"}</Badge>
-                <Badge tone={listing.manually_enriched ? "violet" : "slate"}>{listing.manually_enriched ? "Enriched" : "Not enriched"}</Badge>
-                <Badge tone={listing.assisted_diy_friendly ? "gold" : "slate"}>Assisted DIY Friendly</Badge>
-                <Badge tone={listing.escrow_friendly ? "emerald" : "slate"}>Escrow Friendly</Badge>
-                <Badge tone={listing.inspection_capable ? "slate" : "slate"}>Inspection Services</Badge>
-                <Badge tone={listing.rescue_project_friendly ? "violet" : "slate"}>Rescue Project Assistance</Badge>
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Rating</div>
-                  <div className="mt-1 text-2xl font-black text-slate-900">{listing.google_rating || "—"}</div>
-                  <div className="text-xs text-slate-600">{listing.google_review_count || 0} reviews</div>
+          <main className="space-y-4" data-testid="admin-marketplace-listing-detail">
+            <Section title={listing.business_name} sub="Marketplace readiness view. Open the Directory record for full editing and enrichment." testId="admin-marketplace-readiness-detail">
+              <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+                <div className={panelClass}>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone={listing.claimed ? "emerald" : "amber"}>{listing.claimed ? "Claimed contractor" : "Unclaimed listing"}</Badge>
+                    <Badge tone={email(listing) ? "emerald" : "rose"}>{email(listing) ? "Email ready" : "Email missing"}</Badge>
+                    <Badge tone={website(listing) ? "sky" : "slate"}>{website(listing) ? "Website ready" : "No website"}</Badge>
+                  </div>
+                  <dl className="mt-4 grid gap-3 text-sm">
+                    <div><dt className="text-sky-100/55">Primary service</dt><dd className="font-bold text-white">{primaryService(listing)}</dd></div>
+                    <div><dt className="text-sky-100/55">Location</dt><dd className="font-bold text-white">{locationText(listing)} {listing.zip_code || ""}</dd></div>
+                    <div><dt className="text-sky-100/55">Service radius</dt><dd className="font-bold text-white">{hasRadius(listing) ? `${listing.service_radius_miles} miles` : "Missing"}</dd></div>
+                    <div><dt className="text-sky-100/55">Rating</dt><dd className="font-bold text-white">{rating(listing) || "Not rated"} ({reviews(listing)} reviews)</dd></div>
+                  </dl>
                 </div>
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Invite Count</div>
-                  <div className="mt-1 text-2xl font-black text-slate-900">{listing.invite_count || 0}</div>
-                  <div className="text-xs text-slate-600">{fmt(listing.latest_invite_at)}</div>
-                </div>
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Contact</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">{listing.phone_number || "No phone"}</div>
-                  <div className="text-xs text-slate-600">{listing.email || "No email"}</div>
-                </div>
-                <div className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                  <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Source</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-900">{listing.source}</div>
-                  <div className="text-xs text-slate-600">{listing.google_place_id || "No Google place id"}</div>
-                </div>
-              </div>
-            </Card>
-
-            <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-              <Card title="Compatibility & Notes" sub="Adjust the marketplace metadata that drives discovery and matching.">
-                <div className="grid gap-3">
-                  <label className="block">
-                    <div className="mb-1 text-xs font-extrabold uppercase tracking-wide text-slate-500">Admin Notes</div>
-                    <textarea
-                      data-testid="admin-marketplace-listing-admin-notes"
-                      className="min-h-[120px] w-full rounded-2xl border border-black/10 bg-white px-3 py-2 text-sm"
-                      value={listingDraft.admin_notes}
-                      onChange={(e) => setListingDraft((prev) => ({ ...prev, admin_notes: e.target.value }))}
-                    />
-                  </label>
-                  <label className="block">
-                    <div className="mb-1 text-xs font-extrabold uppercase tracking-wide text-slate-500">Compatibility Tags</div>
-                    <input
-                      data-testid="admin-marketplace-listing-tags"
-                      className="w-full rounded-2xl border border-black/10 bg-white px-3 py-2 text-sm"
-                      value={listingDraft.compatibility_tags}
-                      onChange={(e) => setListingDraft((prev) => ({ ...prev, compatibility_tags: e.target.value }))}
-                    />
-                  </label>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    {[
-                      ["assisted_diy_friendly", "Assisted DIY friendly"],
-                      ["escrow_friendly", "Escrow friendly"],
-                      ["inspection_capable", "Inspection capable"],
-                      ["rescue_project_friendly", "Rescue-project friendly"],
-                      ["manually_reviewed", "Mark reviewed"],
-                      ["manually_enriched", "Mark enriched"],
-                      ["sms_opt_out", "SMS opt-out"],
-                      ["email_opt_out", "Email opt-out"],
-                    ].map(([key, label]) => (
-                      <label key={key} className="flex items-center gap-2 rounded-2xl border border-black/10 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={!!listingDraft[key]}
-                          onChange={(e) => setListingDraft((prev) => ({ ...prev, [key]: e.target.checked }))}
-                        />
-                        {label}
-                      </label>
+                <div className={panelClass}>
+                  <h3 className="font-black text-white">Matching and Routing Readiness</h3>
+                  <div className="mt-3 grid gap-2">
+                    {readinessChecks(listing).map((check) => (
+                      <div key={check.label} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                        <div>
+                          <div className="text-sm font-bold text-white">{check.label}</div>
+                          <div className="text-xs text-sky-100/60">{check.text}</div>
+                        </div>
+                        <Badge tone={check.ok ? "emerald" : "amber"}>{check.ok ? "Ready" : "Needs work"}</Badge>
+                      </div>
                     ))}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      data-testid="admin-marketplace-listing-save"
-                      className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
-                      onClick={saveListing}
-                    >
-                      Save Listing
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="button" data-testid="admin-marketplace-open-directory-detail" onClick={() => openDirectory(listing)} className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900">
+                      Open full Directory record
                     </button>
-                    <button
-                      type="button"
-                      className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-50"
-                      onClick={() => goTo("contractors")}
-                    >
-                      Back to Listings
+                    {!listing.claimed ? (
+                      <button type="button" data-testid="admin-marketplace-detail-claim-link" onClick={() => generateClaimLink(listing)} className="rounded-xl border border-amber-200/30 bg-amber-300/10 px-4 py-2 text-sm font-extrabold text-amber-100">
+                        Generate Claim Link
+                      </button>
+                    ) : null}
+                    <button type="button" onClick={() => go("contractors")} className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-extrabold text-sky-50">
+                      Back to Coverage View
                     </button>
                   </div>
                 </div>
-              </Card>
-
-              <Card title="Invite & Claim" sub="Generate a claim invite for this business listing.">
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      data-testid="admin-marketplace-listing-invite-sms"
-                      onClick={() => setInviteChannel("sms")}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${
-                        inviteChannel === "sms" ? "border-slate-900 bg-slate-900 text-white" : "border-black/10 bg-white text-slate-700"
-                      }`}
-                    >
-                      SMS
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="admin-marketplace-listing-invite-email"
-                      onClick={() => setInviteChannel("email")}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${
-                        inviteChannel === "email" ? "border-slate-900 bg-slate-900 text-white" : "border-black/10 bg-white text-slate-700"
-                      }`}
-                    >
-                      Email
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="admin-marketplace-listing-invite-manual"
-                      onClick={() => setInviteChannel("manual")}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${
-                        inviteChannel === "manual" ? "border-slate-900 bg-slate-900 text-white" : "border-black/10 bg-white text-slate-700"
-                      }`}
-                    >
-                      Manual
-                    </button>
-                  </div>
-                  <p className="text-sm text-slate-600">
-                    Claim invites are sent only after a business has been selected for discovery. Unclaimed records stay labeled as local business listings.
-                  </p>
-                  <button
-                    type="button"
-                    data-testid="admin-marketplace-send-invite"
-                    className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
-                    onClick={sendInvite}
-                  >
-                    Send Claim Invite
-                  </button>
-                  <div className="space-y-2">
-                    {(listing.recent_invites || []).length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-                        No invites recorded yet.
-                      </div>
-                    ) : (
-                      listing.recent_invites.map((invite) => (
-                        <div key={invite.id} className="rounded-2xl border border-black/10 bg-slate-50 p-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge tone={invite.status === "claimed" ? "emerald" : invite.status === "failed" ? "rose" : "slate"}>{invite.status}</Badge>
-                            <Badge tone="sky">{invite.channel}</Badge>
-                          </div>
-                          <div className="mt-2 text-xs text-slate-600">
-                            Sent {fmt(invite.sent_at)} • Clicked {fmt(invite.clicked_at)} • Claimed {fmt(invite.claimed_at)}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">{invite.claim_url}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </Card>
-            </div>
-          </div>
+              </div>
+            </Section>
+          </main>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function HealthList({ rows, empty }) {
+  if (!rows.length) {
+    return <div className={panelClass}>{empty}</div>;
+  }
+  return (
+    <div className="space-y-3">
+      {rows.slice(0, 6).map((row) => (
+        <div key={row.id} className={panelClass}>
+          <div className="font-extrabold text-white">{row.business_name}</div>
+          <div className="mt-1 text-xs text-sky-100/65">
+            {primaryService(row)} | {locationText(row)} | Rating {rating(row) || "Not rated"}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
