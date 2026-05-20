@@ -342,6 +342,8 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "enrichment_notes": entry.enrichment_notes,
         "enriched_at": entry.enriched_at,
         "enriched_by": entry.enriched_by_id,
+        "is_archived": entry.is_archived,
+        "archived_at": entry.archived_at,
         "first_seen_at": entry.first_seen_at,
         "last_seen_at": entry.last_seen_at,
     }
@@ -461,64 +463,217 @@ def _preview_import_row(row: dict) -> dict:
     }
 
 
+def _admin_search_place_name(place: dict) -> str:
+    display_name = place.get("displayName")
+    if isinstance(display_name, dict):
+        return _safe_text(display_name.get("text"))
+    return _safe_text(
+        place.get("business_name")
+        or place.get("name")
+        or display_name
+        or place.get("formatted_address")
+        or place.get("formattedAddress")
+    )
+
+
+def _admin_search_tokens(value: str) -> set[str]:
+    normalized = normalize_business_name(value)
+    return {part for part in normalized.split() if len(part) > 2}
+
+
+def _score_admin_search_relevance(place: dict, query: str) -> dict:
+    query_text = _safe_text(query)
+    place_name = _admin_search_place_name(place)
+    query_normalized = normalize_business_name(query_text)
+    name_normalized = normalize_business_name(place_name)
+    query_tokens = _admin_search_tokens(query_text)
+    name_tokens = _admin_search_tokens(place_name)
+    overlap = query_tokens & name_tokens
+
+    score = 0
+    reason = "Limited overlap with the search term."
+    if query_normalized and name_normalized:
+        if query_normalized == name_normalized:
+            score = 100
+            reason = "Business name exactly matches the search term."
+        elif query_normalized in name_normalized or name_normalized in query_normalized:
+            score = 88
+            reason = "Business name closely matches the search term."
+        elif query_tokens and query_tokens.issubset(name_tokens):
+            score = 82
+            reason = "Business name includes all search words."
+        elif overlap:
+            score = min(72, 42 + (len(overlap) * 12))
+            reason = "Business name shares search words."
+
+    raw_services = []
+    for key in ["primaryType", "types", "services", "raw_services", "normalized_services", "primary_service"]:
+        value = place.get(key)
+        if isinstance(value, list):
+            raw_services.extend(_safe_text(item) for item in value)
+        elif value:
+            raw_services.append(_safe_text(value))
+    service_tokens = _admin_search_tokens(" ".join(raw_services))
+    service_overlap = query_tokens & service_tokens
+    if service_overlap and score < 68:
+        score = max(score, 58 + min(len(service_overlap) * 6, 18))
+        reason = "Service/category data overlaps with the search term."
+
+    if score >= 80:
+        label = "Strong Match"
+    elif score >= 50:
+        label = "Possible Match"
+    else:
+        label = "Weak Match"
+
+    return {
+        "relevance_score": score,
+        "relevance_label": label,
+        "relevance_reason": reason,
+        "is_relevant": label in {"Strong Match", "Possible Match"},
+    }
+
+
+def _with_admin_search_relevance(results: list[dict], query: str) -> list[dict]:
+    enriched = []
+    for index, place in enumerate(results or []):
+        if not isinstance(place, dict):
+            continue
+        relevance = _score_admin_search_relevance(place, query)
+        enriched.append({**place, **relevance, "_original_index": index})
+    return sorted(
+        enriched,
+        key=lambda row: (
+            -int(row.get("relevance_score") or 0),
+            -(float(row.get("rating") or row.get("google_rating") or 0)),
+            -(int(row.get("review_count") or row.get("google_review_count") or 0)),
+            int(row.get("_original_index") or 0),
+        ),
+    )
+
+
+def _admin_search_params(source) -> dict:
+    return {
+        "query": _safe_text(source.get("query")),
+        "city": _safe_text(source.get("city")),
+        "state": _safe_text(source.get("state")),
+        "zip_code": _safe_text(source.get("zip") or source.get("postal_code")),
+        "latitude": source.get("lat"),
+        "longitude": source.get("lng"),
+        "radius_miles": source.get("radius_miles"),
+        "limit": source.get("limit"),
+    }
+
+
+def _coerce_admin_search_radius(value) -> int:
+    try:
+        radius_miles = int(float(value or 25))
+    except (TypeError, ValueError):
+        radius_miles = 25
+    return radius_miles if radius_miles in {5, 10, 15, 25, 50, 100} else 25
+
+
+def _coerce_admin_search_limit(value) -> int:
+    try:
+        return max(1, min(int(value or 20), 50))
+    except (TypeError, ValueError):
+        return 20
+
+
+def _admin_search_context(request, params: dict, radius_miles: int) -> dict:
+    return {
+        "source_type": ContractorDirectoryDiscovery.SOURCE_ADMIN_SEARCH,
+        "search_term": params["query"],
+        "search_city": params["city"],
+        "search_state": params["state"],
+        "search_zip": params["zip_code"],
+        "radius_miles": radius_miles,
+        "admin_user": request.user,
+    }
+
+
 class AdminContractorSearchView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        query = _safe_text(request.query_params.get("query"))
-        city = _safe_text(request.query_params.get("city"))
-        state_value = _safe_text(request.query_params.get("state"))
-        zip_code = _safe_text(request.query_params.get("zip") or request.query_params.get("postal_code"))
-        latitude = request.query_params.get("lat")
-        longitude = request.query_params.get("lng")
-        try:
-            radius_miles = int(float(request.query_params.get("radius_miles") or 25))
-        except (TypeError, ValueError):
-            radius_miles = 25
-        radius_miles = radius_miles if radius_miles in {5, 10, 15, 25, 50, 100} else 25
-        try:
-            limit = max(1, min(int(request.query_params.get("limit") or 20), 50))
-        except (TypeError, ValueError):
-            limit = 20
+        return self._preview(request, request.query_params)
+
+    def post(self, request, *args, **kwargs):
+        return self._preview(request, request.data)
+
+    def _preview(self, request, source):
+        params = _admin_search_params(source)
+        radius_miles = _coerce_admin_search_radius(params["radius_miles"])
+        limit = _coerce_admin_search_limit(params["limit"])
+        latitude = params["latitude"]
+        longitude = params["longitude"]
 
         if not latitude or not longitude:
-            geocode = geocode_project_location(city=city, state=state_value, postal_code=zip_code)
+            geocode = geocode_project_location(city=params["city"], state=params["state"], postal_code=params["zip_code"])
             latitude = geocode.get("latitude")
             longitude = geocode.get("longitude")
 
         google_result = search_google_places_contractors_with_diagnostics(
-            query=query,
+            query=params["query"],
             latitude=latitude,
             longitude=longitude,
             radius_miles=radius_miles,
             limit=limit,
             enforce_radius=True,
         )
-        context = {
-            "source_type": ContractorDirectoryDiscovery.SOURCE_ADMIN_SEARCH,
-            "search_term": query,
-            "search_city": city,
-            "search_state": state_value,
-            "search_zip": zip_code,
-            "radius_miles": radius_miles,
-            "admin_user": request.user,
-        }
-        entries = []
-        for place in google_result.get("results") or []:
-            entry = upsert_directory_entry_from_place(place, context=context)
-            if entry is not None:
-                entries.append(_directory_entry_payload(entry))
+        results = _with_admin_search_relevance(google_result.get("results") or [], params["query"])
+        relevant_count = len([row for row in results if row.get("is_relevant")])
 
         return Response(
             {
                 "summary": {
-                    "search_query": query,
+                    "search_query": params["query"],
                     "radius_miles": radius_miles,
-                    "results_count": len(google_result.get("results") or []),
-                    "directory_entries_count": len(entries),
+                    "results_count": len(results),
+                    "relevant_results_count": relevant_count,
+                    "directory_entries_count": 0,
+                    "capture_required": True,
                     "external_search": google_result.get("diagnostic") or {},
                 },
-                "results": google_result.get("results") or [],
+                "results": results,
+                "directory_entries": [],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminContractorSearchCaptureView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, *args, **kwargs):
+        selected_results = request.data.get("selected_results") or request.data.get("results") or []
+        if not isinstance(selected_results, list) or not selected_results:
+            return Response({"detail": "Select at least one contractor result to capture."}, status=status.HTTP_400_BAD_REQUEST)
+
+        params = _admin_search_params(request.data)
+        radius_miles = _coerce_admin_search_radius(params["radius_miles"])
+        context = _admin_search_context(request, params, radius_miles)
+        entries = []
+        captured_results = []
+        for place in selected_results:
+            if not isinstance(place, dict):
+                continue
+            entry = upsert_directory_entry_from_place(place, context=context)
+            if entry is None:
+                continue
+            entries.append(_directory_entry_payload(entry))
+            captured_results.append({**place, "directory_entry_id": entry.id, "captured": True})
+
+        return Response(
+            {
+                "summary": {
+                    "search_query": params["query"],
+                    "radius_miles": radius_miles,
+                    "selected_count": len(selected_results),
+                    "directory_entries_count": len(entries),
+                    "captured_count": len(entries),
+                },
+                "results": captured_results,
                 "directory_entries": entries,
             },
             status=status.HTTP_200_OK,
@@ -530,6 +685,11 @@ class AdminContractorDirectoryView(APIView):
 
     def get(self, request, *args, **kwargs):
         qs = ContractorDirectoryEntry.objects.all().order_by("-last_seen_at", "business_name")
+        archived = _safe_text(request.query_params.get("archived") or "active").lower()
+        if archived in {"archived", "true"}:
+            qs = qs.filter(is_archived=True)
+        elif archived not in {"all", "*"}:
+            qs = qs.filter(is_archived=False)
         if _safe_text(request.query_params.get("missing_email")).lower() == "true":
             qs = qs.filter(public_email__isnull=True)
         if _safe_text(request.query_params.get("has_email")).lower() == "true":
@@ -632,6 +792,34 @@ class AdminContractorDirectoryView(APIView):
             entry.enriched_by = request.user
 
         entry.save()
+        return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
+
+
+class AdminContractorDirectoryArchiveView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, entry_id: int, *args, **kwargs):
+        entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
+        if entry is None:
+            return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not entry.is_archived:
+            entry.is_archived = True
+            entry.archived_at = timezone.now()
+            entry.save(update_fields=["is_archived", "archived_at", "last_seen_at"])
+        return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
+
+
+class AdminContractorDirectoryRestoreView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, entry_id: int, *args, **kwargs):
+        entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
+        if entry is None:
+            return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        if entry.is_archived:
+            entry.is_archived = False
+            entry.archived_at = None
+            entry.save(update_fields=["is_archived", "archived_at", "last_seen_at"])
         return Response(_directory_entry_payload(entry), status=status.HTTP_200_OK)
 
 

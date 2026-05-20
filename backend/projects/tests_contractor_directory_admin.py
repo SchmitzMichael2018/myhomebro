@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from unittest.mock import patch
 from rest_framework.test import APIClient
 
 from projects.models_contractor_discovery import ContractorDirectoryEntry
@@ -315,3 +316,98 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         )
         self.assertEqual(updated.primary_service, "Custom Manual")
         self.assertEqual(updated.normalized_services, ["Custom Manual"])
+
+    @patch("projects.views.contractor_discovery.geocode_project_location")
+    @patch("projects.views.contractor_discovery.search_google_places_contractors_with_diagnostics")
+    def test_admin_search_preview_does_not_create_directory_entries(self, mock_search, mock_geocode):
+        mock_geocode.return_value = {"latitude": 30.2672, "longitude": -97.7431}
+        mock_search.return_value = {
+            "results": [
+                {
+                    "id": "places/exact",
+                    "business_name": "Austin Concrete Co",
+                    "formatted_address": "100 Builder Way, Austin, TX 78701, USA",
+                },
+                {
+                    "id": "places/unrelated",
+                    "business_name": "Capitol City Florist",
+                    "formatted_address": "200 Flower St, Austin, TX 78701, USA",
+                },
+            ],
+            "diagnostic": {"http_status": 200},
+        }
+        before_count = ContractorDirectoryEntry.objects.count()
+
+        response = self.client.post(
+            "/api/projects/admin/contractor-search/",
+            {"query": "Austin Concrete Co", "city": "Austin", "state": "TX", "zip": "78701"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ContractorDirectoryEntry.objects.count(), before_count)
+        labels = {row["business_name"]: row["relevance_label"] for row in response.data["results"]}
+        self.assertEqual(labels["Austin Concrete Co"], "Strong Match")
+        self.assertEqual(labels["Capitol City Florist"], "Weak Match")
+        self.assertTrue(response.data["summary"]["capture_required"])
+
+    def test_admin_search_capture_selected_creates_only_selected_entries(self):
+        response = self.client.post(
+            "/api/projects/admin/contractor-search/capture/",
+            {
+                "query": "Austin Concrete Co",
+                "city": "Austin",
+                "state": "TX",
+                "zip": "78701",
+                "selected_results": [
+                    {
+                        "id": "places/selected",
+                        "business_name": "Selected Concrete Co",
+                        "website_url": "https://selected-concrete.example",
+                        "formatted_address": "100 Builder Way, Austin, TX 78701, USA",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"]["captured_count"], 1)
+        self.assertTrue(ContractorDirectoryEntry.objects.filter(business_name="Selected Concrete Co").exists())
+        self.assertFalse(ContractorDirectoryEntry.objects.filter(business_name="Capitol City Florist").exists())
+
+    def test_archive_hides_entry_by_default_and_restore_returns_it(self):
+        archive = self.client.post(f"/api/projects/admin/contractor-directory/{self.entry.id}/archive/", {}, format="json")
+        self.assertEqual(archive.status_code, 200)
+        self.entry.refresh_from_db()
+        self.assertTrue(self.entry.is_archived)
+        self.assertIsNotNone(self.entry.archived_at)
+
+        default_list = self.client.get("/api/projects/admin/contractor-directory/")
+        self.assertEqual(default_list.status_code, 200)
+        self.assertNotIn(self.entry.id, [row["id"] for row in default_list.data["results"]])
+
+        archived_list = self.client.get("/api/projects/admin/contractor-directory/", {"archived": "archived"})
+        self.assertEqual(archived_list.status_code, 200)
+        self.assertIn(self.entry.id, [row["id"] for row in archived_list.data["results"]])
+
+        restore = self.client.post(f"/api/projects/admin/contractor-directory/{self.entry.id}/restore/", {}, format="json")
+        self.assertEqual(restore.status_code, 200)
+        self.entry.refresh_from_db()
+        self.assertFalse(self.entry.is_archived)
+        self.assertIsNone(self.entry.archived_at)
+
+        restored_list = self.client.get("/api/projects/admin/contractor-directory/")
+        self.assertIn(self.entry.id, [row["id"] for row in restored_list.data["results"]])
+
+    def test_archive_claimed_entry_preserves_claim_link_and_contractor_state(self):
+        self.entry.claimed = True
+        self.entry.save(update_fields=["claimed"])
+
+        response = self.client.post(f"/api/projects/admin/contractor-directory/{self.entry.id}/archive/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.entry.refresh_from_db()
+        self.assertTrue(self.entry.is_archived)
+        self.assertTrue(self.entry.claimed)
+        self.assertTrue(ContractorDirectoryEntry.objects.filter(pk=self.entry.pk).exists())

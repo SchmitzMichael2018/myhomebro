@@ -77,6 +77,16 @@ function formatLocation(row) {
   return [line1, cityStateZip].filter(Boolean).join("\n");
 }
 
+function searchResultKey(row, index) {
+  return safeText(row?.id || row?.google_place_id || row?.place_id || row?.business_name || `result-${index}`);
+}
+
+function relevanceBadgeClass(label) {
+  if (label === "Strong Match") return "border-emerald-200/35 bg-emerald-300/15 text-emerald-50";
+  if (label === "Possible Match") return "border-amber-200/35 bg-amber-300/15 text-amber-50";
+  return "border-rose-200/35 bg-rose-300/15 text-rose-50";
+}
+
 function csvEscape(value) {
   const text = Array.isArray(value) ? value.join("; ") : safeText(value);
   return `"${text.replace(/"/g, '""')}"`;
@@ -131,6 +141,7 @@ function filtersFromSearch(search) {
     city: params.get("city") || "",
     state: params.get("state") || "",
     claimed: params.get("claimed") || "",
+    archived: params.get("archived") || "active",
     source: params.get("source") || "",
     primary_service: params.get("primary_service") || "",
     profile_status: params.get("profile_status") || "",
@@ -149,6 +160,8 @@ export default function AdminContractorDirectory() {
   });
   const [filters, setFilters] = useState(() => filtersFromSearch(location.search));
   const [searchResults, setSearchResults] = useState([]);
+  const [selectedSearchResults, setSelectedSearchResults] = useState({});
+  const [capturedCount, setCapturedCount] = useState(0);
   const [searchSummary, setSearchSummary] = useState(null);
   const [directoryRows, setDirectoryRows] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -184,6 +197,7 @@ export default function AdminContractorDirectory() {
         ...(safeText(nextFilters.city) ? { city: nextFilters.city } : {}),
         ...(safeText(nextFilters.state) ? { state: nextFilters.state } : {}),
         ...(safeText(nextFilters.claimed) ? { claimed: nextFilters.claimed } : {}),
+        ...(safeText(nextFilters.archived) ? { archived: nextFilters.archived } : {}),
         ...(safeText(nextFilters.source) ? { source: nextFilters.source } : {}),
         ...(safeText(nextFilters.primary_service) ? { primary_service: nextFilters.primary_service } : {}),
         ...(safeText(nextFilters.profile_status) ? { profile_status: nextFilters.profile_status } : {}),
@@ -221,27 +235,87 @@ export default function AdminContractorDirectory() {
     setSearchLoading(true);
     setSearchError("");
     setSuccessMessage("");
+    setCapturedCount(0);
     try {
-      const { data } = await api.get("/projects/admin/contractor-search/", {
-        params: {
-          query: searchForm.query,
-          city: searchForm.city,
-          state: searchForm.state,
-          zip: searchForm.zip,
-          radius_miles: searchForm.radius_miles,
-        },
+      const { data } = await api.post("/projects/admin/contractor-search/", {
+        query: searchForm.query,
+        city: searchForm.city,
+        state: searchForm.state,
+        zip: searchForm.zip,
+        radius_miles: searchForm.radius_miles,
       });
-      setSearchResults(Array.isArray(data?.results) ? data.results : []);
+      const results = Array.isArray(data?.results) ? data.results : [];
+      setSearchResults(results);
       setSearchSummary(data?.summary || null);
-      setSuccessMessage("Search results are automatically saved to the contractor directory.");
-      await loadDirectory();
+      setSelectedSearchResults(
+        results.reduce((acc, row, index) => {
+          if (row?.is_relevant || row?.relevance_label === "Strong Match" || row?.relevance_label === "Possible Match") {
+            acc[searchResultKey(row, index)] = true;
+          }
+          return acc;
+        }, {})
+      );
+      setSuccessMessage("Search results are not saved until you capture them.");
     } catch (error) {
       setSearchError(error?.response?.data?.detail || "Contractor search failed.");
       setSearchResults([]);
+      setSelectedSearchResults({});
       setSearchSummary(null);
     } finally {
       setSearchLoading(false);
     }
+  }
+
+  function toggleSearchResult(row, index, checked) {
+    const key = searchResultKey(row, index);
+    setSelectedSearchResults((prev) => ({ ...prev, [key]: checked }));
+  }
+
+  function selectedPreviewRows({ relevantOnly = false } = {}) {
+    return searchResults.filter((row, index) => {
+      if (relevantOnly) return row?.is_relevant || row?.relevance_label === "Strong Match" || row?.relevance_label === "Possible Match";
+      return Boolean(selectedSearchResults[searchResultKey(row, index)]);
+    });
+  }
+
+  async function captureSearchResults(rows) {
+    if (!rows.length) {
+      setSearchError("Select at least one contractor result to capture.");
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError("");
+    setSuccessMessage("");
+    try {
+      const { data } = await api.post("/projects/admin/contractor-search/capture/", {
+        query: searchForm.query,
+        city: searchForm.city,
+        state: searchForm.state,
+        zip: searchForm.zip,
+        radius_miles: searchForm.radius_miles,
+        selected_results: rows,
+      });
+      const captured = Number(data?.summary?.captured_count || data?.summary?.directory_entries_count || 0);
+      setCapturedCount(captured);
+      setSearchResults(Array.isArray(data?.results) ? data.results : searchResults);
+      setSearchSummary((prev) => ({ ...(prev || {}), ...(data?.summary || {}), directory_entries_count: captured }));
+      setSelectedSearchResults({});
+      setSuccessMessage(`${captured} contractor${captured === 1 ? "" : "s"} captured to the directory.`);
+      await loadDirectory();
+    } catch (error) {
+      setSearchError(error?.response?.data?.detail || "Could not capture selected contractors.");
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  function clearSearchResults() {
+    setSearchResults([]);
+    setSelectedSearchResults({});
+    setSearchSummary(null);
+    setCapturedCount(0);
+    setSearchError("");
+    setSuccessMessage("");
   }
 
   function openEdit(row) {
@@ -277,6 +351,30 @@ export default function AdminContractorDirectory() {
       setSuccessMessage("Claim link generated.");
     } catch (error) {
       setDirectoryError(error?.response?.data?.detail || "Could not generate a claim link.");
+    }
+  }
+
+  async function archiveEntry(row) {
+    setDirectoryError("");
+    setSuccessMessage("");
+    try {
+      await api.post(`/projects/admin/contractor-directory/${row.id}/archive/`, {});
+      setSuccessMessage("Directory entry archived.");
+      await loadDirectory();
+    } catch (error) {
+      setDirectoryError(error?.response?.data?.detail || "Could not archive this directory entry.");
+    }
+  }
+
+  async function restoreEntry(row) {
+    setDirectoryError("");
+    setSuccessMessage("");
+    try {
+      await api.post(`/projects/admin/contractor-directory/${row.id}/restore/`, {});
+      setSuccessMessage("Directory entry restored.");
+      await loadDirectory();
+    } catch (error) {
+      setDirectoryError(error?.response?.data?.detail || "Could not restore this directory entry.");
     }
   }
 
@@ -344,12 +442,12 @@ export default function AdminContractorDirectory() {
           <div>
             <h2 className="text-lg font-extrabold text-white">Manual Contractor Search</h2>
             <p className="mt-1 text-sm text-sky-100/75">
-              Search results are automatically saved to the contractor directory.
+              Search results are not saved until you capture them.
             </p>
           </div>
           {searchSummary ? (
             <div className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-white">
-              {Number(searchSummary.directory_entries_count || searchResults.length || 0)} captured
+              {searchResults.length} found · {selectedPreviewRows().length} selected · {capturedCount} captured
             </div>
           ) : null}
         </div>
@@ -386,15 +484,44 @@ export default function AdminContractorDirectory() {
 
         {searchError ? <div className="mt-3 rounded-xl border border-rose-300/30 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{searchError}</div> : null}
         {successMessage ? <div className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">{successMessage}</div> : null}
+        {searchResults.length ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button type="button" data-testid="admin-contractor-capture-selected" onClick={() => captureSearchResults(selectedPreviewRows())} disabled={searchLoading || !selectedPreviewRows().length} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#0a2550] shadow-sm hover:bg-sky-50 disabled:opacity-60">
+              Capture Selected
+            </button>
+            <button type="button" data-testid="admin-contractor-capture-relevant" onClick={() => captureSearchResults(selectedPreviewRows({ relevantOnly: true }))} disabled={searchLoading || !selectedPreviewRows({ relevantOnly: true }).length} className="rounded-xl border border-emerald-200/35 bg-emerald-300/15 px-4 py-2 text-sm font-bold text-emerald-50 disabled:opacity-60">
+              Capture All Relevant
+            </button>
+            <button type="button" data-testid="admin-contractor-clear-results" onClick={clearSearchResults} disabled={searchLoading} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
+              Clear Results
+            </button>
+            <span className="text-sm text-sky-100/70">{searchResults.length} results found · {selectedPreviewRows().length} selected · {capturedCount} captured</span>
+          </div>
+        ) : null}
 
         <div className="mt-4 grid gap-3 md:grid-cols-2" data-testid="admin-contractor-search-results">
-          {searchResults.map((row) => (
-            <article key={row.id || row.google_place_id || row.business_name} className={`${subtlePanelClass} p-4`}>
-              <div className="font-bold text-white">{row.business_name || "Unnamed contractor"}</div>
+          {searchResults.map((row, index) => (
+            <article key={searchResultKey(row, index)} className={`${subtlePanelClass} p-4`}>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  data-testid={`admin-contractor-search-select-${index}`}
+                  checked={Boolean(selectedSearchResults[searchResultKey(row, index)])}
+                  onChange={(event) => toggleSearchResult(row, index, event.target.checked)}
+                  className="mt-1"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="font-bold text-white">{row.business_name || "Unnamed contractor"}</span>
+                  <span className={`ml-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-extrabold ${relevanceBadgeClass(row.relevance_label)}`}>
+                    {row.relevance_label || "Possible Match"}
+                  </span>
+                </span>
+              </label>
               <div className="mt-1 text-sm text-sky-100/70">{[row.city, row.state].filter(Boolean).join(", ") || row.formatted_address}</div>
+              {row.relevance_reason ? <div className="mt-2 text-xs text-sky-100/60">{row.relevance_reason}</div> : null}
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-sky-100/65">
                 <span>{row.source || "google_places"}</span>
-                {row.directory_entry_id ? <span>Entry #{row.directory_entry_id}</span> : <span>Captured</span>}
+                {row.directory_entry_id ? <span>Entry #{row.directory_entry_id}</span> : <span>Preview only</span>}
                 {row.rating ? <span>{Number(row.rating).toFixed(1)} rating</span> : null}
                 {row.review_count ? <span>{row.review_count} reviews</span> : null}
               </div>
@@ -489,6 +616,11 @@ export default function AdminContractorDirectory() {
             <option value="true">Claimed</option>
             <option value="false">Unclaimed</option>
           </select>
+          <select data-testid="admin-contractor-filter-archived" value={filters.archived} onChange={(event) => setFilterField("archived", event.target.value)} className={inputClass}>
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+            <option value="all">All</option>
+          </select>
           <input placeholder="Source" value={filters.source} onChange={(event) => setFilterField("source", event.target.value)} className={inputClass} />
           <input data-testid="admin-contractor-filter-primary-service" placeholder="Primary service" value={filters.primary_service} onChange={(event) => setFilterField("primary_service", event.target.value)} className={inputClass} />
           <input placeholder="Profile status" value={filters.profile_status} onChange={(event) => setFilterField("profile_status", event.target.value)} className={inputClass} />
@@ -516,6 +648,11 @@ export default function AdminContractorDirectory() {
                       {claimLinks[row.id] ? (
                         <button type="button" data-testid={`admin-contractor-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50">Copy Claim Link</button>
                       ) : null}
+                      {row.is_archived ? (
+                        <button type="button" data-testid={`admin-contractor-restore-${row.id}`} onClick={() => restoreEntry(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50">Restore Archived Entry</button>
+                      ) : (
+                        <button type="button" data-testid={`admin-contractor-archive-${row.id}`} onClick={() => archiveEntry(row)} className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-50">Archive/Remove Entry</button>
+                      )}
                       {row.claimed_contractor_id ? (
                         <span className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-white">Contractor #{row.claimed_contractor_id}</span>
                       ) : null}

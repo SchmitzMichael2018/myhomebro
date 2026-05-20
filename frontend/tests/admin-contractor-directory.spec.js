@@ -21,6 +21,8 @@ async function mockAdminDirectory(page) {
 
   const directoryRequests = [];
   let searchRequested = false;
+  let captureRequested = false;
+  let capturePayload = null;
   let patchRequested = false;
   let importApplyRequested = false;
   let directoryRows = [
@@ -49,6 +51,8 @@ async function mockAdminDirectory(page) {
       enrichment_notes: '',
       first_seen_at: '2026-05-01T12:00:00Z',
       last_seen_at: '2026-05-02T12:00:00Z',
+      is_archived: false,
+      archived_at: null,
     },
   ];
 
@@ -61,6 +65,30 @@ async function mockAdminDirectory(page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ claim_url: '/contractors/claim/directory-token' }),
+      });
+      return;
+    }
+
+    if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/archive/')) {
+      directoryRows = directoryRows.map((row) => (
+        row.id === 42 ? { ...row, is_archived: true, archived_at: '2026-05-20T12:00:00Z' } : row
+      ));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(directoryRows[0]),
+      });
+      return;
+    }
+
+    if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/restore/')) {
+      directoryRows = directoryRows.map((row) => (
+        row.id === 42 ? { ...row, is_archived: false, archived_at: null } : row
+      ));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(directoryRows[0]),
       });
       return;
     }
@@ -125,29 +153,81 @@ async function mockAdminDirectory(page) {
       return;
     }
 
+    const archivedFilter = requestUrl.searchParams.get('archived') || 'active';
+    const filteredRows = directoryRows.filter((row) => (
+      archivedFilter === 'all'
+        ? true
+        : archivedFilter === 'archived'
+          ? row.is_archived
+          : !row.is_archived
+    ));
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        count: directoryRows.length,
-        results: directoryRows,
+        count: filteredRows.length,
+        results: filteredRows,
       }),
     });
   });
 
   await page.route('**/api/projects/admin/contractor-search/**', async (route) => {
-    searchRequested = true;
     const requestUrl = new URL(route.request().url());
-    expect(requestUrl.searchParams.get('query')).toBe('concrete contractor');
-    expect(requestUrl.searchParams.get('city')).toBe('Austin');
-    expect(requestUrl.searchParams.get('state')).toBe('TX');
-    expect(requestUrl.searchParams.get('zip')).toBe('78701');
-    expect(requestUrl.searchParams.get('radius_miles')).toBe('25');
+    if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-search/capture/')) {
+      captureRequested = true;
+      capturePayload = JSON.parse(route.request().postData() || '{}');
+      directoryRows = [
+        ...directoryRows,
+        {
+          id: 77,
+          business_name: 'Admin Concrete Search Result',
+          website: 'https://searchresult.example',
+          phone: '512-555-0202',
+          address_line1: '',
+          public_email: null,
+          city: 'Austin',
+          state: 'TX',
+          zip_code: '78701',
+          rating: 4.7,
+          review_count: 12,
+          services: ['concrete_contractor'],
+          primary_service: 'Concrete',
+          normalized_services: ['Concrete'],
+          raw_services: ['concrete contractor'],
+          source: 'google_places',
+          claimed: false,
+          profile_status: 'basic',
+          enrichment_status: 'not_started',
+          first_seen_at: '2026-05-03T12:00:00Z',
+          last_seen_at: '2026-05-03T12:00:00Z',
+          is_archived: false,
+          archived_at: null,
+        },
+      ];
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          summary: { captured_count: 1, directory_entries_count: 1 },
+          results: [{ ...capturePayload.selected_results[0], directory_entry_id: 77, captured: true }],
+          directory_entries: [directoryRows[directoryRows.length - 1]],
+        }),
+      });
+      return;
+    }
+
+    searchRequested = true;
+    const payload = JSON.parse(route.request().postData() || '{}');
+    expect(payload.query).toBe('concrete contractor');
+    expect(payload.city).toBe('Austin');
+    expect(payload.state).toBe('TX');
+    expect(payload.zip).toBe('78701');
+    expect(payload.radius_miles).toBe('25');
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        summary: { directory_entries_count: 1 },
+        summary: { results_count: 2, relevant_results_count: 1, directory_entries_count: 0, capture_required: true },
         results: [
           {
             id: 'places/admin-concrete',
@@ -159,7 +239,21 @@ async function mockAdminDirectory(page) {
             rating: 4.7,
             review_count: 12,
             source: 'google_places',
-            directory_entry_id: 77,
+            relevance_label: 'Strong Match',
+            relevance_reason: 'Business name shares search words.',
+            is_relevant: true,
+          },
+          {
+            id: 'places/unrelated',
+            business_name: 'Unrelated Electric Co',
+            city: 'Austin',
+            state: 'TX',
+            rating: 4.1,
+            review_count: 5,
+            source: 'google_places',
+            relevance_label: 'Weak Match',
+            relevance_reason: 'Limited overlap with the search term.',
+            is_relevant: false,
           },
         ],
       }),
@@ -169,6 +263,8 @@ async function mockAdminDirectory(page) {
   return {
     directoryRequests,
     wasSearchRequested: () => searchRequested,
+    wasCaptureRequested: () => captureRequested,
+    capturePayload: () => capturePayload,
     wasPatchRequested: () => patchRequested,
     wasImportApplyRequested: () => importApplyRequested,
   };
@@ -185,7 +281,7 @@ test('admin contractor directory supports search, filters, table, and export aff
   const importClass = await page.getByTestId('admin-contractor-import-section').getAttribute('class');
   expect(importClass).toContain('bg-[#061d42]/95');
   await expect(page.getByRole('heading', { name: 'Contractor Directory', exact: true })).toBeVisible();
-  await expect(page.getByText('Search results are automatically saved to the contractor directory.')).toBeVisible();
+  await expect(page.getByText('Search results are not saved until you capture them.')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-search-term')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-search-city')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-search-state')).toBeVisible();
@@ -208,6 +304,7 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-filter-city')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-state')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-primary-service')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-filter-archived')).toHaveValue('active');
 
   await page.getByTestId('admin-contractor-filter-missing-email').check();
   await expect.poll(() =>
@@ -233,7 +330,17 @@ test('admin contractor directory supports search, filters, table, and export aff
 
   await expect.poll(() => mocks.wasSearchRequested()).toBe(true);
   await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Admin Concrete Search Result');
-  await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Entry #77');
+  await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Strong Match');
+  await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Unrelated Electric Co');
+  await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Weak Match');
+  await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Preview only');
+  await page.getByTestId('admin-contractor-search-select-1').uncheck();
+  await page.getByTestId('admin-contractor-capture-selected').click();
+  await expect.poll(() => mocks.wasCaptureRequested()).toBe(true);
+  expect(mocks.capturePayload().selected_results).toHaveLength(1);
+  expect(mocks.capturePayload().selected_results[0].business_name).toBe('Admin Concrete Search Result');
+  await expect(page.getByText('1 contractor captured to the directory.')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Admin Concrete Search Result');
   await expect(page.getByText('Mark Claimed')).toHaveCount(0);
   await expect(page.getByTestId('admin-contractor-claim-link-42')).toBeVisible();
   await page.getByTestId('admin-contractor-claim-link-42').click();
@@ -245,7 +352,7 @@ test('admin contractor directory supports search, filters, table, and export aff
 test('admin contractor directory initializes filters from marketplace URL query params', async ({ page }) => {
   const mocks = await mockAdminDirectory(page);
 
-  await page.goto('/app/admin/contractor-directory?missing_email=true&has_email=true&has_website=true&claimed=false&primary_service=Concrete&city=San%20Antonio&state=TX', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/admin/contractor-directory?missing_email=true&has_email=true&has_website=true&claimed=false&primary_service=Concrete&city=San%20Antonio&state=TX&archived=all', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-contractor-filter-missing-email')).toBeChecked();
   await expect(page.getByTestId('admin-contractor-filter-has-email')).toBeChecked();
@@ -253,6 +360,7 @@ test('admin contractor directory initializes filters from marketplace URL query 
   await expect(page.getByTestId('admin-contractor-filter-primary-service')).toHaveValue('Concrete');
   await expect(page.getByTestId('admin-contractor-filter-city')).toHaveValue('San Antonio');
   await expect(page.getByTestId('admin-contractor-filter-state')).toHaveValue('TX');
+  await expect(page.getByTestId('admin-contractor-filter-archived')).toHaveValue('all');
   await expect.poll(() =>
     mocks.directoryRequests.some((url) => (
       url.searchParams.get('missing_email') === 'true'
@@ -262,8 +370,29 @@ test('admin contractor directory initializes filters from marketplace URL query 
       && url.searchParams.get('primary_service') === 'Concrete'
       && url.searchParams.get('city') === 'San Antonio'
       && url.searchParams.get('state') === 'TX'
+      && url.searchParams.get('archived') === 'all'
     ))
   ).toBe(true);
+});
+
+test('admin contractor directory archives and restores entries with archived filter', async ({ page }) => {
+  await mockAdminDirectory(page);
+
+  await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  await page.getByTestId('admin-contractor-archive-42').click();
+  await expect(page.getByText('Directory entry archived.')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-directory-table')).not.toContainText('Austin Concrete Co');
+
+  await page.getByTestId('admin-contractor-filter-archived').selectOption('archived');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
+  await expect(page.getByTestId('admin-contractor-restore-42')).toBeVisible();
+  await page.getByTestId('admin-contractor-restore-42').click();
+  await expect(page.getByText('Directory entry restored.')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-directory-table')).not.toContainText('Austin Concrete Co');
+
+  await page.getByTestId('admin-contractor-filter-archived').selectOption('active');
+  await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Austin Concrete Co');
 });
 
 test('admin contractor directory supports manual edit, import preview/apply, and enriched CSV export', async ({ page }) => {

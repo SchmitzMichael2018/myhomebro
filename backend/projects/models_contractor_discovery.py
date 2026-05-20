@@ -182,6 +182,8 @@ class ContractorDirectoryEntry(models.Model):
         blank=True,
         related_name="contractor_directory_enrichments",
     )
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
     first_seen_at = models.DateTimeField(auto_now_add=True)
     last_seen_at = models.DateTimeField(auto_now=True)
 
