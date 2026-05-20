@@ -313,6 +313,22 @@ class PublicIntakeSelectContractorView(APIView):
 
 
 def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
+    latest_outreach = entry.outreach_logs.order_by("-created_at", "-id").first()
+    outreach_attempt_count = entry.outreach_logs.count()
+    outreach_status = "no_outreach"
+    if entry.claimed:
+        outreach_status = "claimed"
+    elif latest_outreach is not None:
+        outreach_status = {
+            ContractorDirectoryOutreachLog.TYPE_PHONE: "phone_outreach_logged",
+            ContractorDirectoryOutreachLog.TYPE_WEBSITE_FORM: "website_outreach_logged",
+            ContractorDirectoryOutreachLog.TYPE_CLAIM_LINK_COPIED: "claim_link_generated",
+            ContractorDirectoryOutreachLog.TYPE_MANUAL_NOTE: "manual_review_needed",
+            ContractorDirectoryOutreachLog.TYPE_EMAIL: "email_outreach_logged",
+            ContractorDirectoryOutreachLog.TYPE_SMS: "sms_outreach_logged",
+        }.get(latest_outreach.outreach_type, "outreach_logged")
+    elif entry.contact_status == ContractorDirectoryEntry.CONTACT_STATUS_MANUAL_REVIEW_NEEDED:
+        outreach_status = "manual_review_needed"
     return {
         "id": entry.id,
         "business_name": entry.business_name,
@@ -328,6 +344,12 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "contact_confidence": entry.contact_confidence,
         "contact_status": entry.contact_status,
         "outreach_notes": entry.outreach_notes,
+        "outreach_status": outreach_status,
+        "outreach_attempt_count": outreach_attempt_count,
+        "latest_outreach_type": latest_outreach.outreach_type if latest_outreach else None,
+        "latest_outreach_status": latest_outreach.status if latest_outreach else None,
+        "latest_outreach_at": latest_outreach.created_at if latest_outreach else None,
+        "latest_outreach_notes": latest_outreach.notes if latest_outreach else None,
         "claim_readiness_status": entry.claim_readiness_status,
         "claim_readiness_notes": entry.claim_readiness_notes,
         "address_line1": entry.address_line1,
@@ -1034,6 +1056,7 @@ class AdminContractorDirectoryClaimLinkView(APIView):
                 "claim_token": str(token.token),
                 "claim_url": token.claim_url_path,
                 "status": token.status,
+                "entry": _directory_entry_payload(entry),
             },
             status=status.HTTP_200_OK,
         )

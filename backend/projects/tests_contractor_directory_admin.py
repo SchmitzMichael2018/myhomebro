@@ -480,6 +480,9 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         log = ContractorDirectoryOutreachLog.objects.get(directory_entry=self.entry)
         self.assertEqual(log.outreach_type, ContractorDirectoryOutreachLog.TYPE_PHONE)
         self.assertEqual(log.created_by, self.user)
+        self.assertEqual(response.data["entry"]["outreach_status"], "phone_outreach_logged")
+        self.assertEqual(response.data["entry"]["outreach_attempt_count"], 1)
+        self.assertEqual(response.data["entry"]["latest_outreach_type"], ContractorDirectoryOutreachLog.TYPE_PHONE)
 
     def test_claim_link_generation_records_outreach_log(self):
         response = self.client.post(f"/api/projects/admin/contractor-directory/{self.entry.id}/claim-link/", {}, format="json")
@@ -491,6 +494,9 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
                 outreach_type=ContractorDirectoryOutreachLog.TYPE_CLAIM_LINK_COPIED,
             ).exists()
         )
+        self.assertEqual(response.data["entry"]["outreach_status"], "claim_link_generated")
+        self.assertEqual(response.data["entry"]["outreach_attempt_count"], 1)
+        self.assertEqual(response.data["entry"]["latest_outreach_type"], ContractorDirectoryOutreachLog.TYPE_CLAIM_LINK_COPIED)
 
     def test_service_taxonomy_normalizes_google_terms_and_preserves_manual_values(self):
         from projects.services.contractor_directory import upsert_directory_entry_from_place
