@@ -181,6 +181,7 @@ export default function AdminContractorDirectory() {
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [csvText, setCsvText] = useState("");
+  const [csvFileName, setCsvFileName] = useState("");
   const [importRows, setImportRows] = useState([]);
   const [approvedRows, setApprovedRows] = useState({});
   const [importLoading, setImportLoading] = useState(false);
@@ -406,7 +407,12 @@ export default function AdminContractorDirectory() {
       const rows = Array.isArray(data?.results) ? data.results : [];
       setImportRows(rows);
       setApprovedRows({});
-      setImportMessage(`${rows.length} import rows ready for review.`);
+      const matched = Number(data?.matched_count ?? rows.filter((row) => row.matched_entry_id).length);
+      setImportMessage(
+        matched
+          ? `Preview found ${matched} matching row${matched === 1 ? "" : "s"} out of ${rows.length}.`
+          : "No rows matched existing directory entries."
+      );
     } catch (error) {
       setImportError(error?.response?.data?.detail || "Could not preview this CSV.");
       setImportRows([]);
@@ -415,15 +421,40 @@ export default function AdminContractorDirectory() {
     }
   }
 
+  async function handleCsvFileUpload(event) {
+    const file = event.target.files?.[0];
+    setImportError("");
+    setImportMessage("");
+    if (!file) {
+      setImportError("No file selected.");
+      return;
+    }
+    setCsvFileName(file.name);
+    try {
+      const text = await file.text();
+      setCsvText(text);
+      setImportRows([]);
+      setApprovedRows({});
+      setImportMessage("CSV loaded. Review the rows below, then preview the import.");
+    } catch {
+      setImportError("Upload failed.");
+    }
+  }
+
   async function applyImport() {
     setImportLoading(true);
     setImportError("");
     setImportMessage("");
     try {
-      const rows = importRows.map((row, index) => ({
+      const rows = importRows.filter((row, index) => Boolean(approvedRows[index])).map((row, index) => ({
         ...row,
-        admin_approved: Boolean(approvedRows[index]),
+        admin_approved: true,
       }));
+      if (!rows.length) {
+        setImportError("Select at least one preview row to apply.");
+        setImportLoading(false);
+        return;
+      }
       const { data } = await api.post("/projects/admin/contractor-directory/import-apply/", { rows });
       setImportMessage(`Updated ${data?.updated_count || 0} entries. Skipped ${data?.skipped_count || 0}.`);
       await loadDirectory();
@@ -554,9 +585,19 @@ export default function AdminContractorDirectory() {
       <section className={sectionClass} data-testid="admin-contractor-import-section">
         <h2 className="text-lg font-extrabold text-white">Import Enriched CSV</h2>
         <p className="mt-1 text-sm text-sky-100/75">
-          Paste reviewed website/email enrichment rows, preview matches, then apply approved updates.
+          Upload an enriched CSV, or paste rows manually, then preview matches before applying approved updates.
         </p>
-        <textarea data-testid="admin-contractor-import-csv" value={csvText} onChange={(event) => setCsvText(event.target.value)} placeholder="id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,primary_service,normalized_services,raw_services,email_source_url,services_source_url,enrichment_notes" className={`${inputClass} mt-4 min-h-28 font-mono`} />
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#0a2550] shadow-sm hover:bg-sky-50">
+            Upload Enriched CSV
+            <input data-testid="admin-contractor-import-file" type="file" accept=".csv,text/csv" onChange={handleCsvFileUpload} className="sr-only" />
+          </label>
+          <span data-testid="admin-contractor-import-filename" className="text-sm text-sky-100/75">
+            {csvFileName || "No file selected"}
+          </span>
+        </div>
+        <div className="mt-4 text-xs font-bold uppercase tracking-wide text-sky-100/65">Or paste CSV rows manually</div>
+        <textarea data-testid="admin-contractor-import-csv" value={csvText} onChange={(event) => { setCsvText(event.target.value); setCsvFileName(""); }} placeholder="id,business_name,website,phone,address_line1,city,state,zip_code,public_email,services,primary_service,normalized_services,raw_services,email_source_url,services_source_url,enrichment_notes" className={`${inputClass} mt-2 min-h-28 font-mono`} />
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" data-testid="admin-contractor-import-preview" onClick={previewImport} disabled={importLoading || !safeText(csvText)} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-[#0a2550] disabled:opacity-60">Preview Import</button>
           <button type="button" data-testid="admin-contractor-import-apply" onClick={applyImport} disabled={importLoading || !importRows.length} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">Apply Approved Updates</button>
@@ -568,7 +609,7 @@ export default function AdminContractorDirectory() {
             <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-wide text-sky-100/65">
-                  {["Approve", "Match Status", "Business Name", "Existing Email", "Proposed Email", "Proposed Location", "Primary Service", "Normalized Services", "Warnings"].map((heading) => (
+                  {["Approve", "Match Status", "Matched By", "Business Name", "Existing Email", "Proposed Email", "Proposed Location", "Primary Service", "Normalized Services", "Warnings"].map((heading) => (
                     <th key={heading} className={tableHeadClass}>{heading}</th>
                   ))}
                 </tr>
@@ -580,6 +621,7 @@ export default function AdminContractorDirectory() {
                       <input type="checkbox" aria-label={`Approve import row ${index + 1}`} checked={Boolean(approvedRows[index])} onChange={(event) => setApprovedRows((prev) => ({ ...prev, [index]: event.target.checked }))} />
                     </td>
                     <td className={`${tableCellClass} font-semibold text-white`}>{row.status}</td>
+                    <td className={tableCellClass}>{row.matched_by || ""}</td>
                     <td className={tableCellClass}>{row.business_name}</td>
                     <td className={tableCellClass}>{row.existing_public_email || "Email not listed"}</td>
                     <td className={tableCellClass}>{row.proposed_public_email || ""}</td>

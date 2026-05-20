@@ -25,6 +25,7 @@ async function mockAdminDirectory(page) {
   let capturePayload = null;
   let patchRequested = false;
   let importApplyRequested = false;
+  let importApplyPayload = null;
   let directoryRows = [
     {
       id: 42,
@@ -99,9 +100,11 @@ async function mockAdminDirectory(page) {
         contentType: 'application/json',
         body: JSON.stringify({
           count: 1,
+          matched_count: 1,
           results: [
             {
               matched_entry_id: 42,
+              matched_by: 'id',
               business_name: 'Austin Concrete Co',
               existing_public_email: null,
               proposed_public_email: 'hello@austinconcrete.example',
@@ -125,6 +128,7 @@ async function mockAdminDirectory(page) {
 
     if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/import-apply/')) {
       importApplyRequested = true;
+      importApplyPayload = JSON.parse(route.request().postData() || '{}');
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -278,6 +282,7 @@ async function mockAdminDirectory(page) {
     capturePayload: () => capturePayload,
     wasPatchRequested: () => patchRequested,
     wasImportApplyRequested: () => importApplyRequested,
+    importApplyPayload: () => importApplyPayload,
   };
 }
 
@@ -458,10 +463,38 @@ test('admin contractor directory supports manual edit, import preview/apply, and
   );
   await page.getByTestId('admin-contractor-import-preview').click();
   await expect(page.getByTestId('admin-contractor-import-preview-table')).toContainText('ready');
+  await expect(page.getByTestId('admin-contractor-import-preview-table')).toContainText('id');
   await expect(page.getByTestId('admin-contractor-import-preview-table')).toContainText('hello@austinconcrete.example');
+  await page.getByLabel('Approve import row 1').check();
   await page.getByTestId('admin-contractor-import-apply').click();
   await expect.poll(() => mocks.wasImportApplyRequested()).toBe(true);
+  expect(mocks.importApplyPayload().rows).toHaveLength(1);
+  expect(mocks.importApplyPayload().rows[0].admin_approved).toBe(true);
   await expect(page.getByText('Updated 1 entries. Skipped 0.')).toBeVisible();
+});
+
+test('admin contractor directory upload CSV fills textarea and previews matched rows', async ({ page }) => {
+  await mockAdminDirectory(page);
+
+  await page.goto('/app/admin/contractor-directory', { waitUntil: 'domcontentloaded' });
+  const csv = [
+    'entry_id,business_name,website,public_email,services,enrichment_notes',
+    '42,Austin Concrete Co,https://www.austinconcrete.example/contact,hello@austinconcrete.example,"concrete contractor, patio contractor","Reviewed, with comma"',
+  ].join('\n');
+
+  await page.getByTestId('admin-contractor-import-file').setInputFiles({
+    name: 'enriched-contractors.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(csv),
+  });
+
+  await expect(page.getByTestId('admin-contractor-import-filename')).toContainText('enriched-contractors.csv');
+  await expect(page.getByText('CSV loaded. Review the rows below, then preview the import.')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-import-csv')).toHaveValue(csv);
+  await page.getByTestId('admin-contractor-import-preview').click();
+  await expect(page.getByText('Preview found 1 matching row out of 1.')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-import-preview-table')).toContainText('id');
+  await expect(page.getByTestId('admin-contractor-import-preview-table')).not.toContainText('no_match');
 });
 
 test('admin contractor directory export includes enrichment columns and blank missing emails', async ({ page }) => {

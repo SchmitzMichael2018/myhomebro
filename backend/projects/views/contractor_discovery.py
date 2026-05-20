@@ -349,45 +349,88 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
     }
 
 
-def _find_directory_match(row: dict) -> ContractorDirectoryEntry | None:
-    raw_id = _safe_text(row.get("id") or row.get("matched_entry_id"))
+def _normalize_csv_header(value) -> str:
+    return _safe_text(value).lstrip("\ufeff").strip().lower().replace(" ", "_")
+
+
+def _normalize_import_row(row: dict) -> dict:
+    normalized = {}
+    for key, value in (row or {}).items():
+        header = _normalize_csv_header(key)
+        if not header:
+            continue
+        normalized[header] = value
+    aliases = {
+        "directory_entry_id": "id",
+        "entry_id": "id",
+        "contractor_directory_entry_id": "id",
+        "business": "business_name",
+        "name": "business_name",
+        "website_url": "website",
+        "url": "website",
+        "phone_number": "phone",
+        "zip": "zip_code",
+        "postal_code": "zip_code",
+    }
+    for source, target in aliases.items():
+        if source in normalized and target not in normalized:
+            normalized[target] = normalized[source]
+    return normalized
+
+
+def _find_directory_match(row: dict) -> tuple[ContractorDirectoryEntry | None, str]:
+    raw_id = _safe_text(row.get("id") or row.get("matched_entry_id") or row.get("entry_id") or row.get("directory_entry_id"))
     if raw_id.isdigit():
         found = ContractorDirectoryEntry.objects.filter(pk=int(raw_id)).first()
         if found:
-            return found
+            return found, "id"
 
     website_domain = normalize_website_domain(row.get("website"))
     if website_domain:
         found = ContractorDirectoryEntry.objects.filter(website_domain=website_domain).first()
         if found:
-            return found
+            return found, "website"
 
     normalized_phone = normalize_phone(row.get("phone"))
     if normalized_phone:
         found = ContractorDirectoryEntry.objects.filter(normalized_phone=normalized_phone).first()
         if found:
-            return found
+            return found, "phone"
 
     normalized_name = normalize_business_name(row.get("business_name"))
+    zip_code = normalize_zip(row.get("zip_code") or row.get("zip"))
+    if normalized_name and zip_code:
+        found = ContractorDirectoryEntry.objects.filter(normalized_name=normalized_name, zip_code=zip_code).first()
+        if found:
+            return found, "name_zip"
+
     city = _safe_text(row.get("city"))
     state_value = _safe_text(row.get("state"))
     if normalized_name and city and state_value:
-        return ContractorDirectoryEntry.objects.filter(
+        found = ContractorDirectoryEntry.objects.filter(
             normalized_name=normalized_name,
             city__iexact=city,
             state__iexact=state_value,
         ).first()
-    return None
+        if found:
+            return found, "name_city_state"
+    if normalized_name:
+        matches = list(ContractorDirectoryEntry.objects.filter(normalized_name=normalized_name)[:2])
+        if len(matches) == 1:
+            return matches[0], "name"
+    return None, ""
 
 
 def _preview_import_row(row: dict) -> dict:
-    entry = _find_directory_match(row)
+    row = _normalize_import_row(row)
+    entry, matched_by = _find_directory_match(row)
     proposed_email, email_error = _normalize_email_value(row.get("public_email"), reject_placeholder=True)
     proposed_phone = _null_if_blank(row.get("phone"))
     proposed_services = _parse_services(row.get("services"))
     proposed_normalized_services = _parse_label_list(row.get("normalized_services"))
     proposed_raw_services = clean_raw_services(row.get("raw_services", "").replace(";", ",").split(",") if isinstance(row.get("raw_services"), str) else row.get("raw_services"))
     proposed_primary_service = _null_if_blank(row.get("primary_service"))
+    proposed_website = _null_if_blank(row.get("website"))
     proposed_location = {
         "address_line1": _null_if_blank(row.get("address_line1")),
         "city": _null_if_blank(row.get("city")),
@@ -415,6 +458,8 @@ def _preview_import_row(row: dict) -> dict:
             has_changes = True
         if proposed_phone and proposed_phone != (entry.phone or ""):
             has_changes = True
+        if proposed_website and proposed_website != (entry.website or ""):
+            has_changes = True
         if proposed_services and _changed_services(entry.services, proposed_services):
             has_changes = True
         if proposed_primary_service and proposed_primary_service != (entry.primary_service or ""):
@@ -435,11 +480,17 @@ def _preview_import_row(row: dict) -> dict:
 
     return {
         "matched_entry_id": entry.pk if entry else None,
+        "matched_by": matched_by,
         "business_name": _safe_text(row.get("business_name")) or (entry.business_name if entry else ""),
+        "submitted_id": _safe_text(row.get("id") or row.get("entry_id") or row.get("directory_entry_id")),
+        "submitted_business_name": _safe_text(row.get("business_name")),
+        "submitted_website": _safe_text(row.get("website")),
         "existing_public_email": entry.public_email if entry else None,
         "proposed_public_email": proposed_email,
         "existing_phone": entry.phone if entry else None,
         "proposed_phone": proposed_phone,
+        "existing_website": entry.website if entry else None,
+        "proposed_website": proposed_website,
         "existing_services": entry.services if entry else [],
         "proposed_services": proposed_services,
         "existing_primary_service": entry.primary_service if entry else None,
@@ -955,8 +1006,11 @@ class AdminContractorDirectoryImportPreviewView(APIView):
             return Response({"detail": "Upload or paste CSV text first."}, status=status.HTTP_400_BAD_REQUEST)
 
         reader = csv.DictReader(io.StringIO(csv_text))
+        if not reader.fieldnames:
+            return Response({"detail": "Invalid CSV header."}, status=status.HTTP_400_BAD_REQUEST)
         rows = [_preview_import_row(row) for row in reader]
-        return Response({"results": rows, "count": len(rows)}, status=status.HTTP_200_OK)
+        matched_count = len([row for row in rows if row.get("matched_entry_id")])
+        return Response({"results": rows, "count": len(rows), "matched_count": matched_count}, status=status.HTTP_200_OK)
 
 
 class AdminContractorDirectoryImportApplyView(APIView):
@@ -979,12 +1033,11 @@ class AdminContractorDirectoryImportApplyView(APIView):
             entry_id = row.get("matched_entry_id")
             entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first() if entry_id else None
             admin_approved = bool(row.get("admin_approved")) or row.get("status") == "admin_approved"
-            if entry is None or row.get("status") not in {"ready", "admin_approved", "duplicate_email_warning"}:
+            if not admin_approved:
                 skipped_count += 1
                 continue
-            if row.get("status") == "duplicate_email_warning" and not admin_approved:
+            if entry is None or row.get("status") not in {"ready", "admin_approved", "duplicate_email_warning"}:
                 skipped_count += 1
-                warnings.append(f"Entry #{entry.pk} skipped because duplicate email warning was not approved.")
                 continue
 
             email_value, email_error = _normalize_email_value(row.get("proposed_public_email") or row.get("public_email"), reject_placeholder=True)
@@ -999,6 +1052,10 @@ class AdminContractorDirectoryImportApplyView(APIView):
 
             if email_value:
                 entry.public_email = email_value
+            website_value = row.get("proposed_website") or row.get("website")
+            if website_value:
+                entry.website = _null_if_blank(website_value)
+                entry.website_domain = _null_if_blank(normalize_website_domain(website_value))
             if row.get("proposed_phone") or row.get("phone"):
                 entry.phone = _null_if_blank(row.get("proposed_phone") or row.get("phone"))
                 entry.normalized_phone = _null_if_blank(normalize_phone(entry.phone))

@@ -149,6 +149,7 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
                     {
                         "matched_entry_id": self.entry.id,
                         "status": "ready",
+                        "admin_approved": True,
                         "proposed_public_email": "hello@austinconcrete.example",
                         "proposed_phone": "512-555-2222",
                         "proposed_location": {
@@ -198,8 +199,10 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(preview.status_code, 200)
         row = preview.data["results"][0]
         self.assertEqual(row["status"], "ready")
+        self.assertEqual(row["matched_by"], "id")
         self.assertEqual(row["proposed_location"]["address_line1"], "12703 Spectrum Dr #103")
         self.assertEqual(row["proposed_location"]["zip_code"], "78249")
+        row["admin_approved"] = True
 
         apply = self.client.post(
             "/api/projects/admin/contractor-directory/import-apply/",
@@ -216,6 +219,7 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         blank_row = {
             "matched_entry_id": self.entry.id,
             "status": "ready",
+            "admin_approved": True,
             "proposed_location": {"address_line1": "", "city": "", "state": "", "zip_code": ""},
             "proposed_services": ["concrete"],
         }
@@ -268,6 +272,122 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.assertEqual(approved.data["updated_count"], 1)
         self.entry.refresh_from_db()
         self.assertEqual(self.entry.public_email, "new@austinconcrete.example")
+
+    def test_csv_import_preview_normalizes_headers_and_matching_fallbacks(self):
+        by_website = ContractorDirectoryEntry.objects.create(
+            business_name="Website Match Roofing",
+            normalized_name=normalize_business_name("Website Match Roofing"),
+            website="https://roof.example/contact",
+            website_domain=normalize_website_domain("https://roof.example/contact"),
+            city="Harrisburg",
+            state="PA",
+            zip_code="17101",
+        )
+        by_phone = ContractorDirectoryEntry.objects.create(
+            business_name="Phone Match Plumbing",
+            normalized_name=normalize_business_name("Phone Match Plumbing"),
+            phone="(717) 555-1000",
+            normalized_phone=normalize_phone("(717) 555-1000"),
+            city="Harrisburg",
+            state="PA",
+            zip_code="17102",
+        )
+        by_zip = ContractorDirectoryEntry.objects.create(
+            business_name="Zip Match Electric",
+            normalized_name=normalize_business_name("Zip Match Electric"),
+            city="Harrisburg",
+            state="PA",
+            zip_code="17103",
+        )
+        unique = ContractorDirectoryEntry.objects.create(
+            business_name="Unique Name Gutters",
+            normalized_name=normalize_business_name("Unique Name Gutters"),
+            city="York",
+            state="PA",
+        )
+        csv_text = (
+            "\ufeffID,business_name,website,phone,zip_code,public_email,services,enrichment_notes\n"
+            f"{self.entry.id},Austin Concrete Co,https://wrong.example,512-555-9999,78701,hello@austinconcrete.example,\"concrete, patio\",\"Quoted, note\"\n"
+            f",Website Match Roofing,https://www.roof.example/services,,17101,,roofing,\n"
+            f",Phone Match Plumbing,,717.555.1000,17102,,plumbing,\n"
+            f",Zip Match Electric,,,17103,,electrical,\n"
+            f",Unique Name Gutters,,,,,gutters,\n"
+        )
+
+        response = self.client.post(
+            "/api/projects/admin/contractor-directory/import-preview/",
+            {"csv_text": csv_text},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["results"]
+        self.assertEqual(response.data["matched_count"], 5)
+        self.assertEqual(rows[0]["matched_by"], "id")
+        self.assertEqual(rows[0]["proposed_services"], ["concrete", "patio"])
+        self.assertEqual(rows[0]["enrichment_notes"], "Quoted, note")
+        self.assertEqual(rows[1]["matched_entry_id"], by_website.id)
+        self.assertEqual(rows[1]["matched_by"], "website")
+        self.assertEqual(rows[2]["matched_entry_id"], by_phone.id)
+        self.assertEqual(rows[2]["matched_by"], "phone")
+        self.assertEqual(rows[3]["matched_entry_id"], by_zip.id)
+        self.assertEqual(rows[3]["matched_by"], "name_zip")
+        self.assertEqual(rows[4]["matched_entry_id"], unique.id)
+        self.assertEqual(rows[4]["matched_by"], "name")
+
+    def test_csv_import_preview_supports_entry_id_alias_and_rejects_placeholder_email(self):
+        csv_text = (
+            "entry_id,business_name,public_email\n"
+            f"{self.entry.id},Austin Concrete Co,Email not listed\n"
+        )
+        response = self.client.post(
+            "/api/projects/admin/contractor-directory/import-preview/",
+            {"csv_text": csv_text},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data["results"][0]
+        self.assertEqual(row["matched_entry_id"], self.entry.id)
+        self.assertEqual(row["matched_by"], "id")
+        self.assertEqual(row["status"], "invalid_email")
+
+    def test_csv_import_apply_updates_only_approved_rows(self):
+        other = ContractorDirectoryEntry.objects.create(
+            business_name="Other Concrete Co",
+            normalized_name=normalize_business_name("Other Concrete Co"),
+            city="Austin",
+            state="TX",
+            zip_code="78702",
+        )
+
+        response = self.client.post(
+            "/api/projects/admin/contractor-directory/import-apply/",
+            {
+                "rows": [
+                    {
+                        "matched_entry_id": self.entry.id,
+                        "status": "ready",
+                        "admin_approved": True,
+                        "proposed_public_email": "approved@austinconcrete.example",
+                    },
+                    {
+                        "matched_entry_id": other.id,
+                        "status": "ready",
+                        "admin_approved": False,
+                        "proposed_public_email": "skipped@other.example",
+                    },
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["updated_count"], 1)
+        other.refresh_from_db()
+        self.entry.refresh_from_db()
+        self.assertEqual(self.entry.public_email, "approved@austinconcrete.example")
+        self.assertIsNone(other.public_email)
 
     def test_service_taxonomy_normalizes_google_terms_and_preserves_manual_values(self):
         from projects.services.contractor_directory import upsert_directory_entry_from_place
