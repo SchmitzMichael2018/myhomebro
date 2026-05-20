@@ -236,7 +236,7 @@ const Td = ({ children, className = "", colSpan }) => (
     {children}
   </td>
 );
-const ActionItem = ({ icon, title, desc, onClick, tone = "neutral" }) => {
+const ActionItem = ({ icon, title, desc, onClick, tone = "neutral", testId }) => {
   const toneClass =
     tone === "bad"
       ? "border-rose-300/30 bg-rose-400/10"
@@ -248,11 +248,20 @@ const ActionItem = ({ icon, title, desc, onClick, tone = "neutral" }) => {
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={["w-full text-left rounded-xl border p-3 shadow-sm", "hover:bg-white/15 transition", toneClass].join(" ")}
+      data-testid={testId}
+      className={[
+        "w-full cursor-pointer rounded-xl border p-3 text-left shadow-sm transition",
+        "hover:-translate-y-0.5 hover:border-sky-200/40 hover:bg-white/15 hover:shadow-[0_12px_28px_rgba(14,165,233,0.12)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-200/70",
+        toneClass,
+      ].join(" ")}
     >
       <div className="flex items-start gap-2">
-        <div className="text-base">{icon}</div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-sm font-black text-white">
+          {icon}
+        </div>
         <div className="min-w-0">
           <div className="text-sm font-extrabold text-white truncate">{title}</div>
           {desc ? <div className="mt-0.5 text-xs text-sky-100/70">{desc}</div> : null}
@@ -769,8 +778,11 @@ export default function AdminDashboard() {
                       ))
                     )}
                   </div>
-                  <div className="rounded-2xl border border-black/10 bg-white/90 p-4 shadow-sm">
-                    <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Quick Actions</div>
+                  <div
+                    data-testid="admin-quick-actions"
+                    className="rounded-2xl border border-white/10 bg-[#0b2a58]/90 p-4 shadow-[0_16px_34px_rgba(2,8,23,0.24)]"
+                  >
+                    <div className="text-xs font-extrabold uppercase tracking-wide text-sky-100/65">Quick Actions</div>
                     <div className="mt-3 grid grid-cols-1 gap-2">
                       <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goToDisputes("active")} />
                       <ActionItem icon="🛟" title="View Support" desc="Check support requests and tickets." onClick={() => goTo("support")} />

@@ -455,6 +455,17 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
   const attentionClass = await page.getByTestId('admin-needs-attention').getAttribute('class');
   expect(attentionClass).toContain('bg-[#061d42]/95');
+  await expect(page.getByTestId('admin-quick-actions')).toBeVisible();
+  const quickActionsClass = await page.getByTestId('admin-quick-actions').getAttribute('class');
+  expect(quickActionsClass).toContain('bg-[#0b2a58]/90');
+  const marketplaceAction = page.getByTestId('admin-quick-actions').getByRole('button', { name: /Marketplace/ });
+  await expect(marketplaceAction).toBeVisible();
+  const marketplaceActionClass = await marketplaceAction.getAttribute('class');
+  expect(marketplaceActionClass).toContain('cursor-pointer');
+  expect(marketplaceActionClass).toContain('focus-visible:ring');
+  await marketplaceAction.click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace$/);
+  await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('â€¢')).toHaveCount(0);
   await expect(page.getByTestId('admin-stat-contractors')).toContainText('12');
   await expect(page.getByTestId('admin-stat-month-fees')).toContainText('$620.00');
