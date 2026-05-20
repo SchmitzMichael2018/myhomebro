@@ -56,6 +56,15 @@ async function mockAdminDirectory(page) {
     directoryRequests.push(new URL(route.request().url()));
     const requestUrl = new URL(route.request().url());
 
+    if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/claim-link/')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ claim_url: '/contractors/claim/directory-token' }),
+      });
+      return;
+    }
+
     if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/import-preview/')) {
       await route.fulfill({
         status: 200,
@@ -194,6 +203,7 @@ test('admin contractor directory supports search, filters, table, and export aff
   );
   await expect(page.getByTestId('admin-contractor-directory-export')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-missing-email')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-filter-has-email')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-has-website')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-city')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-filter-state')).toBeVisible();
@@ -224,6 +234,36 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect.poll(() => mocks.wasSearchRequested()).toBe(true);
   await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Admin Concrete Search Result');
   await expect(page.getByTestId('admin-contractor-search-results')).toContainText('Entry #77');
+  await expect(page.getByText('Mark Claimed')).toHaveCount(0);
+  await expect(page.getByTestId('admin-contractor-claim-link-42')).toBeVisible();
+  await page.getByTestId('admin-contractor-claim-link-42').click();
+  await expect(page.getByTestId('admin-contractor-copy-claim-link-42')).toBeVisible();
+  await page.getByTestId('admin-contractor-copy-claim-link-42').click();
+  await expect(page.getByText('Claim link copied.')).toBeVisible();
+});
+
+test('admin contractor directory initializes filters from marketplace URL query params', async ({ page }) => {
+  const mocks = await mockAdminDirectory(page);
+
+  await page.goto('/app/admin/contractor-directory?missing_email=true&has_email=true&has_website=true&claimed=false&primary_service=Concrete&city=San%20Antonio&state=TX', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('admin-contractor-filter-missing-email')).toBeChecked();
+  await expect(page.getByTestId('admin-contractor-filter-has-email')).toBeChecked();
+  await expect(page.getByTestId('admin-contractor-filter-has-website')).toBeChecked();
+  await expect(page.getByTestId('admin-contractor-filter-primary-service')).toHaveValue('Concrete');
+  await expect(page.getByTestId('admin-contractor-filter-city')).toHaveValue('San Antonio');
+  await expect(page.getByTestId('admin-contractor-filter-state')).toHaveValue('TX');
+  await expect.poll(() =>
+    mocks.directoryRequests.some((url) => (
+      url.searchParams.get('missing_email') === 'true'
+      && url.searchParams.get('has_email') === 'true'
+      && url.searchParams.get('has_website') === 'true'
+      && url.searchParams.get('claimed') === 'false'
+      && url.searchParams.get('primary_service') === 'Concrete'
+      && url.searchParams.get('city') === 'San Antonio'
+      && url.searchParams.get('state') === 'TX'
+    ))
+  ).toBe(true);
 });
 
 test('admin contractor directory supports manual edit, import preview/apply, and enriched CSV export', async ({ page }) => {

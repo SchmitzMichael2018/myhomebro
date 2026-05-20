@@ -86,6 +86,27 @@ class AdminContractorDirectoryEnrichmentTests(TestCase):
         self.entry.refresh_from_db()
         self.assertIsNone(self.entry.public_email)
 
+    def test_directory_list_filters_by_email_and_claim_state(self):
+        self.entry.public_email = "hello@austinconcrete.example"
+        self.entry.claimed = True
+        self.entry.save(update_fields=["public_email", "claimed"])
+        ContractorDirectoryEntry.objects.create(
+            business_name="Unclaimed Missing Email Co",
+            normalized_name=normalize_business_name("Unclaimed Missing Email Co"),
+            city="Austin",
+            state="TX",
+            primary_service="Concrete",
+            claimed=False,
+        )
+
+        with_email = self.client.get("/api/projects/admin/contractor-directory/", {"has_email": "true"})
+        self.assertEqual(with_email.status_code, 200)
+        self.assertEqual([row["business_name"] for row in with_email.data["results"]], ["Austin Concrete Co"])
+
+        unclaimed = self.client.get("/api/projects/admin/contractor-directory/", {"claimed": "false"})
+        self.assertEqual(unclaimed.status_code, 200)
+        self.assertEqual([row["business_name"] for row in unclaimed.data["results"]], ["Unclaimed Missing Email Co"])
+
     def test_csv_import_preview_matches_by_id_and_flags_invalid_email(self):
         csv_text = (
             "id,business_name,website,public_email,phone,services,email_source_url,services_source_url,enrichment_notes\n"

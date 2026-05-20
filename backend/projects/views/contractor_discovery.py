@@ -532,6 +532,8 @@ class AdminContractorDirectoryView(APIView):
         qs = ContractorDirectoryEntry.objects.all().order_by("-last_seen_at", "business_name")
         if _safe_text(request.query_params.get("missing_email")).lower() == "true":
             qs = qs.filter(public_email__isnull=True)
+        if _safe_text(request.query_params.get("has_email")).lower() == "true":
+            qs = qs.exclude(public_email__isnull=True).exclude(public_email="")
         if _safe_text(request.query_params.get("has_website")).lower() == "true":
             qs = qs.exclude(website__isnull=True).exclude(website="")
         for param, field in [

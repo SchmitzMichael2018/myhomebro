@@ -101,15 +101,21 @@ function Section({ title, sub, children, testId, className = "" }) {
   );
 }
 
-function MetricCard({ label, value, sub, tone = "sky" }) {
+function MetricCard({ label, value, sub, tone = "sky", onClick, testId }) {
+  const Component = onClick ? "button" : "div";
   return (
-    <div className={panelClass}>
+    <Component
+      type={onClick ? "button" : undefined}
+      data-testid={testId}
+      onClick={onClick}
+      className={`${panelClass} ${onClick ? "w-full cursor-pointer text-left transition hover:-translate-y-0.5 hover:border-sky-200/45 hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-sky-200/60" : ""}`}
+    >
       <div className="text-xs font-bold uppercase tracking-wide text-sky-100/60">{label}</div>
       <div className={`mt-2 text-3xl font-black ${tone === "amber" ? "text-amber-100" : tone === "emerald" ? "text-emerald-100" : "text-white"}`}>
         {Number(value || 0).toLocaleString()}
       </div>
       {sub ? <div className="mt-1 text-xs text-sky-100/65">{sub}</div> : null}
-    </div>
+    </Component>
   );
 }
 
@@ -253,6 +259,28 @@ export default function AdminMarketplacePage() {
     navigate(`/app/admin/contractor-directory?entry=${row.id}`);
   }
 
+  function openDirectoryFilters(params = {}) {
+    const search = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== "") {
+        search.set(key, String(value));
+      }
+    });
+    navigate(`/app/admin/contractor-directory${search.toString() ? `?${search.toString()}` : ""}`);
+  }
+
+  function openCoverageFilters(params = {}) {
+    setFilters((prev) => ({ ...prev, ...params }));
+    go("contractors");
+  }
+
+  function splitGeoKey(key) {
+    const [cityPart, statePart] = String(key || "").split(",").map((part) => part.trim());
+    if (cityPart && statePart) return { city: cityPart, state: statePart };
+    if (/^\d{5}/.test(cityPart || "")) return { zip_code: cityPart };
+    return { city: cityPart || "" };
+  }
+
   async function generateClaimLink(row) {
     setStatus("");
     try {
@@ -268,7 +296,11 @@ export default function AdminMarketplacePage() {
     const link = claimLinks[row.id];
     if (!link) return;
     const absoluteLink = link.startsWith("http") ? link : `${window.location.origin}${link}`;
-    await navigator.clipboard?.writeText(absoluteLink);
+    try {
+      await navigator.clipboard?.writeText(absoluteLink);
+    } catch {
+      // Clipboard permissions may be unavailable in some admin browsers.
+    }
     setStatus("Claim link copied.");
   }
 
@@ -325,25 +357,31 @@ export default function AdminMarketplacePage() {
         {currentView === "overview" ? (
           <main className="space-y-6" data-testid="admin-marketplace-page">
             <section data-testid="admin-marketplace-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-              <MetricCard label="Total Directory Listings" value={health.total} sub="Contractor records in Directory" />
-              <MetricCard label="Claimed Contractors" value={health.claimed} sub="Linked to contractor accounts" tone="emerald" />
-              <MetricCard label="Unclaimed Listings" value={health.unclaimed} sub="Claim-ready local businesses" tone="amber" />
-              <MetricCard label="Listings With Email" value={health.withEmail} sub="Ready for outreach workflows" />
-              <MetricCard label="Listings With Website" value={health.withWebsite} sub="Useful for enrichment review" />
-              <MetricCard label="Listings Missing Email" value={health.missingEmail} sub="Directory enrichment backlog" tone="amber" />
+              <MetricCard testId="admin-marketplace-metric-total" label="Total Directory Listings" value={health.total} sub="Contractor records in Directory" onClick={() => openDirectoryFilters()} />
+              <MetricCard testId="admin-marketplace-metric-claimed" label="Claimed Contractors" value={health.claimed} sub="Linked to contractor accounts" tone="emerald" onClick={() => openDirectoryFilters({ claimed: "true" })} />
+              <MetricCard testId="admin-marketplace-metric-unclaimed" label="Unclaimed Listings" value={health.unclaimed} sub="Claim-ready local businesses" tone="amber" onClick={() => openDirectoryFilters({ claimed: "false" })} />
+              <MetricCard testId="admin-marketplace-metric-has-email" label="Listings With Email" value={health.withEmail} sub="Ready for outreach workflows" onClick={() => openDirectoryFilters({ has_email: "true" })} />
+              <MetricCard testId="admin-marketplace-metric-has-website" label="Listings With Website" value={health.withWebsite} sub="Useful for enrichment review" onClick={() => openDirectoryFilters({ has_website: "true" })} />
+              <MetricCard testId="admin-marketplace-metric-missing-email" label="Listings Missing Email" value={health.missingEmail} sub="Directory enrichment backlog" tone="amber" onClick={() => openDirectoryFilters({ missing_email: "true" })} />
             </section>
 
             <div className="grid gap-6 xl:grid-cols-2">
               <Section title="Top Service Gaps" sub="Services with no claimed contractors yet." testId="admin-marketplace-service-gaps">
                 <div className="space-y-3">
                   {health.serviceGaps.length ? health.serviceGaps.slice(0, 6).map((gap) => (
-                    <div key={gap.key} className={panelClass}>
+                    <button
+                      key={gap.key}
+                      type="button"
+                      data-testid={`admin-marketplace-service-gap-${gap.key}`}
+                      onClick={() => openCoverageFilters({ service: gap.key, claimed: "false" })}
+                      className={`${panelClass} w-full cursor-pointer text-left transition hover:-translate-y-0.5 hover:border-sky-200/45 hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-sky-200/60`}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="font-extrabold text-white">{gap.key}</div>
                         <Badge tone="amber">{gap.total} unclaimed listing{gap.total === 1 ? "" : "s"}</Badge>
                       </div>
                       <div className="mt-1 text-sm text-sky-100/70">No claimed contractors are available for this service in the current directory snapshot.</div>
-                    </div>
+                    </button>
                   )) : (
                     <div className={panelClass}>No service gaps detected yet.</div>
                   )}
@@ -353,13 +391,19 @@ export default function AdminMarketplacePage() {
               <Section title="Top Geographic Gaps" sub="Cities or ZIP areas with unclaimed supply but no claimed profile." testId="admin-marketplace-geo-gaps">
                 <div className="space-y-3">
                   {health.geographicGaps.length ? health.geographicGaps.slice(0, 6).map((gap) => (
-                    <div key={gap.key} className={panelClass}>
+                    <button
+                      key={gap.key}
+                      type="button"
+                      data-testid={`admin-marketplace-geo-gap-${gap.key}`}
+                      onClick={() => openCoverageFilters({ ...splitGeoKey(gap.key), claimed: "false" })}
+                      className={`${panelClass} w-full cursor-pointer text-left transition hover:-translate-y-0.5 hover:border-sky-200/45 hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-sky-200/60`}
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="font-extrabold text-white">{gap.key}</div>
                         <Badge tone="amber">{gap.total} unclaimed</Badge>
                       </div>
                       <div className="mt-1 text-sm text-sky-100/70">Prioritize claim conversion or enrichment before routing homeowner requests here.</div>
-                    </div>
+                    </button>
                   )) : (
                     <div className={panelClass}>No geographic gaps detected yet.</div>
                   )}
@@ -369,13 +413,13 @@ export default function AdminMarketplacePage() {
 
             <div className="grid gap-6 xl:grid-cols-3">
               <Section title="High-Rated Unclaimed Contractors" sub="Good claim-link candidates." testId="admin-marketplace-high-rated">
-                <HealthList rows={health.highRatedUnclaimed} empty="No high-rated unclaimed contractors found." />
+                <HealthList rows={health.highRatedUnclaimed} empty="No high-rated unclaimed contractors found." onSelect={(row) => go(`listings/${row.id}`)} testPrefix="admin-marketplace-high-rated-item" />
               </Section>
               <Section title="Enriched But Unclaimed" sub="Ready for claim conversion follow-up." testId="admin-marketplace-enriched-unclaimed">
-                <HealthList rows={health.enrichedUnclaimed} empty="No enriched unclaimed contractors yet." />
+                <HealthList rows={health.enrichedUnclaimed} empty="No enriched unclaimed contractors yet." onSelect={(row) => go(`listings/${row.id}`)} testPrefix="admin-marketplace-enriched-item" />
               </Section>
               <Section title="Claimed Missing Service Radius" sub="Routing health issue before geographic matching." testId="admin-marketplace-radius-gaps">
-                <HealthList rows={health.claimedMissingRadius} empty="Claimed contractors have service radius data." />
+                <HealthList rows={health.claimedMissingRadius} empty="Claimed contractors have service radius data." onSelect={(row) => go(`listings/${row.id}`)} testPrefix="admin-marketplace-radius-item" />
               </Section>
             </div>
           </main>
@@ -544,19 +588,25 @@ export default function AdminMarketplacePage() {
   );
 }
 
-function HealthList({ rows, empty }) {
+function HealthList({ rows, empty, onSelect, testPrefix }) {
   if (!rows.length) {
     return <div className={panelClass}>{empty}</div>;
   }
   return (
     <div className="space-y-3">
       {rows.slice(0, 6).map((row) => (
-        <div key={row.id} className={panelClass}>
+        <button
+          key={row.id}
+          type="button"
+          data-testid={testPrefix ? `${testPrefix}-${row.id}` : undefined}
+          onClick={() => onSelect?.(row)}
+          className={`${panelClass} w-full cursor-pointer text-left transition hover:-translate-y-0.5 hover:border-sky-200/45 hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-sky-200/60`}
+        >
           <div className="font-extrabold text-white">{row.business_name}</div>
           <div className="mt-1 text-xs text-sky-100/65">
             {primaryService(row)} | {locationText(row)} | Rating {rating(row) || "Not rated"}
           </div>
-        </div>
+        </button>
       ))}
     </div>
   );

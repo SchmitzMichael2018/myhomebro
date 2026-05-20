@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import api from "../../api";
 
 const RADIUS_OPTIONS = [
@@ -121,7 +122,24 @@ function editFormFromRow(row) {
   };
 }
 
+function filtersFromSearch(search) {
+  const params = new URLSearchParams(search || "");
+  return {
+    missing_email: params.get("missing_email") === "true",
+    has_email: params.get("has_email") === "true",
+    has_website: params.get("has_website") === "true",
+    city: params.get("city") || "",
+    state: params.get("state") || "",
+    claimed: params.get("claimed") || "",
+    source: params.get("source") || "",
+    primary_service: params.get("primary_service") || "",
+    profile_status: params.get("profile_status") || "",
+    enrichment_status: params.get("enrichment_status") || "",
+  };
+}
+
 export default function AdminContractorDirectory() {
+  const location = useLocation();
   const [searchForm, setSearchForm] = useState({
     query: "",
     city: "",
@@ -129,17 +147,7 @@ export default function AdminContractorDirectory() {
     zip: "",
     radius_miles: "25",
   });
-  const [filters, setFilters] = useState({
-    missing_email: false,
-    has_website: false,
-    city: "",
-    state: "",
-    claimed: "",
-    source: "",
-    primary_service: "",
-    profile_status: "",
-    enrichment_status: "",
-  });
+  const [filters, setFilters] = useState(() => filtersFromSearch(location.search));
   const [searchResults, setSearchResults] = useState([]);
   const [searchSummary, setSearchSummary] = useState(null);
   const [directoryRows, setDirectoryRows] = useState([]);
@@ -171,6 +179,7 @@ export default function AdminContractorDirectory() {
     try {
       const params = {
         ...(nextFilters.missing_email ? { missing_email: "true" } : {}),
+        ...(nextFilters.has_email ? { has_email: "true" } : {}),
         ...(nextFilters.has_website ? { has_website: "true" } : {}),
         ...(safeText(nextFilters.city) ? { city: nextFilters.city } : {}),
         ...(safeText(nextFilters.state) ? { state: nextFilters.state } : {}),
@@ -191,9 +200,11 @@ export default function AdminContractorDirectory() {
   }
 
   useEffect(() => {
-    loadDirectory();
+    const nextFilters = filtersFromSearch(location.search);
+    setFilters(nextFilters);
+    loadDirectory(nextFilters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [location.search]);
 
   function setSearchField(name, value) {
     setSearchForm((prev) => ({ ...prev, [name]: value }));
@@ -273,19 +284,12 @@ export default function AdminContractorDirectory() {
     const link = claimLinks[row.id];
     if (!link) return;
     const absoluteLink = link.startsWith("http") ? link : `${window.location.origin}${link}`;
-    await navigator.clipboard?.writeText(absoluteLink);
-    setSuccessMessage("Claim link copied.");
-  }
-
-  async function markClaimed(row) {
-    setDirectoryError("");
     try {
-      await api.post(`/projects/admin/contractor-directory/${row.id}/mark-claimed/`, {});
-      setSuccessMessage("Directory entry marked as claimed.");
-      await loadDirectory();
-    } catch (error) {
-      setDirectoryError(error?.response?.data?.detail || "Could not mark this entry as claimed.");
+      await navigator.clipboard?.writeText(absoluteLink);
+    } catch {
+      // Browser clipboard permissions can be unavailable in test or locked-down admin sessions.
     }
+    setSuccessMessage("Claim link copied.");
   }
 
   async function previewImport() {
@@ -471,6 +475,10 @@ export default function AdminContractorDirectory() {
             Missing Email
           </label>
           <label className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm font-semibold text-sky-100">
+            <input type="checkbox" data-testid="admin-contractor-filter-has-email" checked={filters.has_email} onChange={(event) => setFilterField("has_email", event.target.checked)} />
+            Has Email
+          </label>
+          <label className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm font-semibold text-sky-100">
             <input type="checkbox" data-testid="admin-contractor-filter-has-website" checked={filters.has_website} onChange={(event) => setFilterField("has_website", event.target.checked)} />
             Has Website
           </label>
@@ -507,9 +515,6 @@ export default function AdminContractorDirectory() {
                       <button type="button" data-testid={`admin-contractor-claim-link-${row.id}`} onClick={() => generateClaimLink(row)} className="rounded-lg border border-sky-200/30 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-50">Generate Claim Link</button>
                       {claimLinks[row.id] ? (
                         <button type="button" data-testid={`admin-contractor-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50">Copy Claim Link</button>
-                      ) : null}
-                      {!row.claimed ? (
-                        <button type="button" data-testid={`admin-contractor-mark-claimed-${row.id}`} onClick={() => markClaimed(row)} className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1 text-xs font-bold text-amber-50">Mark Claimed</button>
                       ) : null}
                       {row.claimed_contractor_id ? (
                         <span className="rounded-lg border border-white/10 bg-white/10 px-3 py-1 text-xs font-bold text-white">Contractor #{row.claimed_contractor_id}</span>

@@ -95,11 +95,13 @@ async function installMarketplaceMocks(page) {
       return;
     }
 
-    if (method === 'GET' && requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/1/')) {
+    const detailMatch = requestUrl.pathname.match(/\/api\/projects\/admin\/contractor-directory\/(\d+)\/$/);
+    if (method === 'GET' && detailMatch) {
+      const row = directoryRows.find((item) => String(item.id) === detailMatch[1]) || directoryRows[0];
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(directoryRows[0]),
+        body: JSON.stringify(row),
       });
       return;
     }
@@ -131,6 +133,7 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByTestId('admin-marketplace-summary').getByText('Listings Missing Email')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-service-gaps').getByText('Plumbing')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-geo-gaps').getByText('Dallas, TX')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-metric-missing-email')).toHaveClass(/cursor-pointer/);
 
   await expect(page.getByText('Import Enriched CSV')).toHaveCount(0);
   await expect(page.getByText('Export Missing Emails CSV')).toHaveCount(0);
@@ -149,6 +152,29 @@ test('admin marketplace is an operations console, not a duplicate directory edit
 
   await page.getByTestId('admin-marketplace-open-directory-1').click();
   await expect(page).toHaveURL(/\/app\/admin\/contractor-directory\?entry=1/);
+});
+
+test('admin marketplace health cards drill into directory and coverage filters', async ({ page }) => {
+  await installMarketplaceMocks(page);
+
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('admin-marketplace-metric-missing-email').click();
+  await expect(page).toHaveURL(/\/app\/admin\/contractor-directory\?missing_email=true/);
+
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-metric-unclaimed').click();
+  await expect(page).toHaveURL(/\/app\/admin\/contractor-directory\?claimed=false/);
+
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-service-gap-Plumbing').click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/contractors/);
+  await expect(page.getByTestId('admin-marketplace-service-filter')).toHaveValue('Plumbing');
+  await expect(page.getByTestId('admin-marketplace-claimed-filter')).toHaveValue('false');
+
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('admin-marketplace-high-rated-item-2').click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/listings\/2/);
 });
 
 test('admin marketplace listing detail is a readiness view with Directory handoff', async ({ page }) => {
