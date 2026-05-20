@@ -499,6 +499,9 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractors-view')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-row-101')).toContainText('Summit Renovations');
+  const contractorRowClass = await page.getByTestId('admin-contractor-row-101').getAttribute('class');
+  expect(contractorRowClass).toContain('[&_.text-slate-600]:text-sky-100/75');
+  expect(contractorRowClass).toContain('[&_.text-slate-900]:text-sky-50');
 
   await page.goto('/app/admin?view=subcontractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-subcontractors-view')).toBeVisible();

@@ -236,6 +236,11 @@ const Td = ({ children, className = "", colSpan }) => (
     {children}
   </td>
 );
+
+const adminPrimaryText = "text-sky-50";
+const adminSecondaryText = "text-sky-100/75";
+const adminEmptyText = "text-sky-100/65";
+
 const ActionItem = ({ icon, title, desc, onClick, tone = "neutral", testId }) => {
   const toneClass =
     tone === "bad"
@@ -1123,10 +1128,14 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody>
                     {contractorFiltered.length === 0 ? (
-                      <tr><Td colSpan={7} className="text-slate-600">No results.</Td></tr>
+                      <tr><Td colSpan={7} className={adminEmptyText}>No results.</Td></tr>
                     ) : (
                       contractorFiltered.map((c) => (
-                        <tr key={c.id} data-testid={`admin-contractor-row-${c.id}`} className="border-b border-black/5">
+                        <tr
+                          key={c.id}
+                          data-testid={`admin-contractor-row-${c.id}`}
+                          className="border-b border-white/10 [&_.text-slate-600]:text-sky-100/75 [&_.text-slate-700]:text-sky-100/75 [&_.text-slate-900]:text-sky-50"
+                        >
                           <Td>
                             <div className="font-extrabold text-slate-900">{c.business_name || c.name || "—"}</div>
                             <div className="text-xs text-slate-600">{c.email || "—"} • #{c.id}</div>

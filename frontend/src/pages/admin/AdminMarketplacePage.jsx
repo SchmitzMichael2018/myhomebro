@@ -463,11 +463,11 @@ export default function AdminMarketplacePage() {
                     <tr key={row.id} data-testid={`admin-marketplace-coverage-row-${row.id}`} className="hover:bg-white/5">
                       <td className={tableCellClass}>
                         <div className="font-extrabold text-white">{row.business_name}</div>
-                        <div className="mt-1 text-xs text-sky-100/60">{clean(phone(row), "Phone not listed")} | {email(row) ? "Email available" : "Email missing"}</div>
+                        <div className="mt-1 text-xs text-sky-100/75">{clean(phone(row), "Phone not listed")} | {email(row) ? "Email available" : "Email missing"}</div>
                       </td>
                       <td className={tableCellClass}>
                         <div className="font-bold text-sky-50">{primaryService(row)}</div>
-                        <div className="text-xs text-sky-100/60">{locationText(row)}</div>
+                        <div className="text-xs text-sky-100/75">{locationText(row)}</div>
                         <div className="mt-2">{row.claimed ? <Badge tone="emerald">{row.service_radius_miles || 25} mile radius</Badge> : <Badge>Radius pending claim</Badge>}</div>
                       </td>
                       <td className={tableCellClass}>
@@ -478,8 +478,8 @@ export default function AdminMarketplacePage() {
                         </div>
                       </td>
                       <td className={tableCellClass}>
-                        <div className="text-xs text-sky-100/70">Rating {rating(row) || "Not rated"} | {reviews(row)} reviews</div>
-                        <div className="mt-1 text-xs text-sky-100/60">Enrichment: {clean(row.enrichment_status, "not_started")}</div>
+                        <div className="text-xs text-sky-100/75">Rating {rating(row) || "Not rated"} | {reviews(row)} reviews</div>
+                        <div className="mt-1 text-xs text-sky-100/70">Enrichment: {clean(row.enrichment_status, "not_started")}</div>
                       </td>
                       <td className={tableCellClass}>
                         <div className="flex flex-wrap gap-2">

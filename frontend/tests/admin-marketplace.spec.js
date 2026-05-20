@@ -142,6 +142,7 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await page.getByTestId('admin-marketplace-tabs').getByRole('button', { name: 'Marketplace Coverage' }).click();
   await expect(page.getByTestId('admin-marketplace-contractors-view')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-coverage-row-1')).toContainText('Email available');
   await expect(page.getByTestId('admin-marketplace-open-directory-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-open-listing-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-claim-link-2')).toBeVisible();
