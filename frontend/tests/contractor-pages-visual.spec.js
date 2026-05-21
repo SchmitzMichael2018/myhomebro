@@ -962,7 +962,9 @@ test('capture contractor dashboard for visual QA review', async ({ page }) => {
   await installDashboardMocks(page);
 
   await page.goto(dashboardConfig.url, { waitUntil: 'domcontentloaded' });
-  await page.getByText('Needs Attention').first().waitFor({ state: 'visible' });
+  await page.getByRole('heading', { name: 'Dashboard' }).waitFor({ state: 'visible' });
+  await page.getByText('Quick Actions').first().waitFor({ state: 'visible' });
+  await page.getByText('Next Actions').first().waitFor({ state: 'visible' });
 
   const screenshotPath = path.join(OUT_DIR_REL, dashboardConfig.slug);
   await page.screenshot({ path: screenshotPath, fullPage: true });
