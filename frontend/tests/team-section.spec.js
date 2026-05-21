@@ -234,13 +234,20 @@ const schedulePayload = {
   ],
 };
 
+function dateDaysFromNow(days) {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 const calendarPayload = {
   events: [
     {
       id: "AA-202-1",
       title: "Taylor Crew — Commercial Buildout",
-      start: "2026-05-04",
-      end: "2026-05-09",
+      start: dateDaysFromNow(2),
+      end: dateDaysFromNow(5),
       allDay: true,
       extendedProps: {
         type: "agreement_assignment",
@@ -256,8 +263,8 @@ const calendarPayload = {
     {
       id: "MA-2001-1",
       title: "A#202 • M1 — Cabinet Install",
-      start: "2026-05-06",
-      end: "2026-05-07",
+      start: dateDaysFromNow(3),
+      end: dateDaysFromNow(4),
       allDay: true,
       extendedProps: {
         type: "milestone_override",

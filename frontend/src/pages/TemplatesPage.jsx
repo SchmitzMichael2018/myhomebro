@@ -539,6 +539,28 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     () => buildAssistantHandoffSignature(assistantHandoff),
     [assistantHandoff]
   );
+  const assistantHasMeaningfulContent = useMemo(() => {
+    const hasValue = (value) => {
+      if (value == null) return false;
+      if (typeof value === "string") return safeTrim(value).length > 0;
+      if (Array.isArray(value)) return value.length > 0;
+      if (typeof value === "object") return Object.values(value).some(hasValue);
+      return Boolean(value);
+    };
+
+    const draftPayload = assistantHandoff.draftPayload || {};
+    const meaningfulDraftPayload = Object.entries(draftPayload).some(
+      ([key, value]) => key !== "workflow_profile" && hasValue(value)
+    );
+
+    return (
+      Object.values(assistantHandoff.prefillFields || {}).some(hasValue) ||
+      meaningfulDraftPayload ||
+      (assistantHandoff.clarificationQuestions || []).length > 0 ||
+      (assistantHandoff.suggestedMilestones || []).length > 0 ||
+      (assistantHandoff.templateRecommendations || []).length > 0
+    );
+  }, [assistantHandoff]);
   const isSystemDiscovery = !adminMode && discoverySource === "system";
 
   async function loadTemplates(options = {}) {
@@ -911,6 +933,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
   useEffect(() => {
     if (
+      !assistantHasMeaningfulContent ||
       !assistantHandoffSignature ||
       assistantHandoffSignature === assistantAppliedRef.current
     ) {
@@ -999,7 +1022,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     }
 
     assistantAppliedRef.current = assistantHandoffSignature;
-  }, [assistantHandoff, assistantHandoffSignature]);
+  }, [assistantHandoff, assistantHandoffSignature, assistantHasMeaningfulContent]);
 
   function startEditMode() {
     if (!selectedDetail || (isSelectedBuiltIn && !adminMode)) return;
