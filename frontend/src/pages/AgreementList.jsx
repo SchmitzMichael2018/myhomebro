@@ -292,13 +292,13 @@ const rowIsScheduleClosed = (row) => {
 
 function statusPillClass(status) {
   const s = safeLower(status);
-  if (s === "draft") return "border border-slate-200 bg-slate-100 text-slate-800";
-  if (s === "signed") return "border border-amber-200 bg-amber-50 text-amber-800";
-  if (s === "funded") return "border border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (s === "in_progress") return "border border-sky-200 bg-sky-50 text-sky-800";
-  if (s === "completed") return "border border-slate-300 bg-slate-200 text-slate-900";
-  if (s === "cancelled") return "border border-rose-200 bg-rose-50 text-rose-800";
-  return "border border-slate-200 bg-slate-100 text-slate-800";
+  if (s === "draft") return "border border-slate-300/30 bg-slate-400/15 text-slate-100";
+  if (s === "signed") return "border border-amber-300/50 bg-amber-400/15 text-amber-100";
+  if (s === "funded") return "border border-blue-300/50 bg-blue-400/15 text-blue-100";
+  if (s === "in_progress") return "border border-sky-300/50 bg-sky-400/15 text-sky-100";
+  if (s === "completed") return "border border-emerald-300/50 bg-emerald-400/15 text-emerald-100";
+  if (s === "cancelled") return "border border-rose-300/50 bg-rose-400/15 text-rose-100";
+  return "border border-slate-300/30 bg-slate-400/15 text-slate-100";
 }
 
 function prettyStatus(status) {
@@ -378,6 +378,28 @@ function setCachedAgreementList(key, data) {
   sharedAgreementListCache.set(key, { ts: Date.now(), data });
 }
 
+function normalizeAgreementListResponse(data, fallbackPage = 1, fallbackPageSize = 10) {
+  const isPaginated = data && !Array.isArray(data) && Array.isArray(data.results);
+  const list = isPaginated ? data.results : Array.isArray(data) ? data : [];
+  const count = isPaginated ? Number(data.count ?? list.length) : list.length;
+  const pageSize = Math.max(1, Number(fallbackPageSize) || list.length || 1);
+  const totalPages = Math.max(1, Math.ceil(count / pageSize));
+  const page = Math.min(Math.max(1, Number(fallbackPage) || 1), totalPages);
+
+  return {
+    list,
+    pagination: {
+      isPaginated,
+      count,
+      page,
+      pageSize,
+      totalPages,
+      hasNext: isPaginated ? Boolean(data.next) : page < totalPages,
+      hasPrevious: isPaginated ? Boolean(data.previous) : page > 1,
+    },
+  };
+}
+
 function getFreshCachedMilestoneStats(agreementId) {
   const hit = sharedMilestoneStatsCache.get(agreementId);
   if (!hit) return null;
@@ -392,17 +414,43 @@ function setCachedMilestoneStats(agreementId, data) {
   sharedMilestoneStatsCache.set(agreementId, { ts: Date.now(), data });
 }
 
-async function fetchAgreementListData(showArchived) {
+async function fetchAgreementListData({
+  showArchived,
+  pageNumber = 1,
+  pageSize = 10,
+  search = "",
+  statusFilter = "all",
+  projectClassFilter = "all",
+  projectModeFilter = "all",
+  paymentModeFilter = "all",
+  routeFocus = "",
+  routeFilter = "",
+  routeRange = "",
+  statusParam = "",
+} = {}) {
   const { data } = await api.get("/projects/agreements/", {
     params: {
-      page_size: 250,
+      page: pageNumber,
+      page_size: pageSize,
       include_archived: showArchived ? 1 : 0,
+      search: search || undefined,
+      project_class: projectClassFilter && projectClassFilter !== "all" ? projectClassFilter : undefined,
+      project_mode: projectModeFilter && projectModeFilter !== "all" ? projectModeFilter : undefined,
+      payment_mode: paymentModeFilter && paymentModeFilter !== "all" ? paymentModeFilter : undefined,
+      focus: routeFocus || undefined,
+      filter: routeFilter || undefined,
+      range: routeRange || undefined,
+      status: statusFilter && statusFilter !== "all"
+        ? statusFilter
+        : statusParam && !["awaiting_signature", "funding_needed"].includes(statusParam)
+        ? statusParam
+        : undefined,
       _ts: Date.now(),
     },
     headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
   });
 
-  const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+  const normalized = normalizeAgreementListResponse(data, pageNumber, pageSize);
   const index = {};
   const mergeIntoIndex = (arr) => {
     if (!Array.isArray(arr)) return;
@@ -422,7 +470,7 @@ async function fetchAgreementListData(showArchived) {
     /* ignore */
   }
 
-  return { list, index };
+  return { list: normalized.list, index, pagination: normalized.pagination };
 }
 
 function fetchMilestoneStats(agreementId, isMsComplete) {
@@ -523,6 +571,17 @@ export default function AgreementList() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [pageSize, setPageSize] = useState(10);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pagination, setPagination] = useState({
+    isPaginated: false,
+    count: 0,
+    page: 1,
+    pageSize: 10,
+    totalPages: 1,
+    hasNext: false,
+    hasPrevious: false,
+  });
+  const [loadError, setLoadError] = useState("");
 
   const [busyDeleteRow, setBusyDeleteRow] = useState(null);
   const [busyAmendRow, setBusyAmendRow] = useState(null);
@@ -548,12 +607,14 @@ export default function AgreementList() {
   const msStatsRef = useRef({});
   const rowsRef = useRef(rows);
   const pageSizeRef = useRef(pageSize);
+  const pageNumberRef = useRef(pageNumber);
 
   console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} render`, {
     instanceId,
     path: location.pathname,
     rowsLength: rows.length,
     pageSize,
+    pageNumber,
     showArchived,
     loading,
     statusParam,
@@ -589,10 +650,34 @@ export default function AgreementList() {
   }, [pageSize]);
 
   useEffect(() => {
+    pageNumberRef.current = pageNumber;
+  }, [pageNumber]);
+
+  useEffect(() => {
+    const nextTotalPages = Math.max(1, Number(pagination?.totalPages || 1));
+    if (pageNumber > nextTotalPages) {
+      setPageNumber(nextTotalPages);
+    }
+  }, [pageNumber, pagination?.totalPages]);
+
+  useEffect(() => {
     if (activeRouteFilter) {
       setStatusFilter("all");
     }
   }, [activeRouteFilter]);
+
+  useEffect(() => {
+    setPageNumber(1);
+  }, [
+    routeFocus,
+    routeFilter,
+    routeRange,
+    statusParam,
+    projectClassFilter,
+    projectModeFilter,
+    paymentModeFilter,
+    paymentProtectionFilter,
+  ]);
 
   const updateFilters = useCallback(
     (updates) => {
@@ -601,6 +686,7 @@ export default function AgreementList() {
         if (!value || value === "all") next.delete(key);
         else next.set(key, value);
       });
+      setPageNumber(1);
       navigate(`${location.pathname}${next.toString() ? `?${next.toString()}` : ""}`, { replace: true });
     },
     [location.pathname, location.search, navigate]
@@ -693,7 +779,22 @@ export default function AgreementList() {
     const normalized = typeof options === "string" ? { source: options } : options === true ? { force: true } : options || {};
     const force = !!normalized?.force;
     const source = normalized?.source || "unknown";
-    const key = showArchived ? "archived:1" : "archived:0";
+    const effectivePage = Number(normalized?.pageNumber || pageNumberRef.current || 1);
+    const effectivePageSize = Number(normalized?.pageSize || pageSizeRef.current || pageSize || 10);
+    const key = JSON.stringify({
+      archived: showArchived ? 1 : 0,
+      page: effectivePage,
+      page_size: effectivePageSize,
+      search: q.trim(),
+      status: statusFilter,
+      project_class: projectClassFilter,
+      project_mode: projectModeFilter,
+      payment_mode: paymentModeFilter,
+      focus: routeFocus,
+      filter: routeFilter,
+      range: routeRange,
+      status_param: statusParam,
+    });
     const rowsBefore = rowsRef.current?.length || 0;
     let cacheUsed = false;
     let networkUsed = false;
@@ -724,6 +825,8 @@ export default function AgreementList() {
           if (seq !== loadSeqRef.current) return cached;
           setRows(cached.list);
           setHmIndex(cached.index);
+          setPagination(cached.pagination || normalizeAgreementListResponse(cached.list, effectivePage, effectivePageSize).pagination);
+          setLoadError("");
           console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:end`, {
             instanceId,
             seq,
@@ -746,7 +849,20 @@ export default function AgreementList() {
     let promise = sharedAgreementListLoad.key === key ? sharedAgreementListLoad.promise : null;
     if (!promise) {
       networkUsed = true;
-      promise = fetchAgreementListData(showArchived)
+      promise = fetchAgreementListData({
+        showArchived,
+        pageNumber: effectivePage,
+        pageSize: effectivePageSize,
+        search: q.trim(),
+        statusFilter,
+        projectClassFilter,
+        projectModeFilter,
+        paymentModeFilter,
+        routeFocus,
+        routeFilter,
+        routeRange,
+        statusParam,
+      })
         .then((data) => {
           setCachedAgreementList(key, data);
           return data;
@@ -779,10 +895,12 @@ export default function AgreementList() {
 
     setLoading(true);
     try {
-      const { list, index } = await promise;
+      const { list, index, pagination: nextPagination } = await promise;
       if (seq !== loadSeqRef.current) return;
       setRows(list);
       setHmIndex(index);
+      setPagination(nextPagination || normalizeAgreementListResponse(list, effectivePage, effectivePageSize).pagination);
+      setLoadError("");
       console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:end`, {
         instanceId,
         seq,
@@ -795,6 +913,7 @@ export default function AgreementList() {
       });
     } catch (e) {
       console.error(e);
+      setLoadError("Failed to load agreements.");
       toast.error("Failed to load agreements.");
     } finally {
       if (seq === loadSeqRef.current) {
@@ -802,7 +921,20 @@ export default function AgreementList() {
       }
     }
     return promise;
-  }, [showArchived]);
+  }, [
+    showArchived,
+    q,
+    statusFilter,
+    pageSize,
+    projectClassFilter,
+    projectModeFilter,
+    paymentModeFilter,
+    routeFocus,
+    routeFilter,
+    routeRange,
+    statusParam,
+    pageNumber,
+  ]);
 
   useEffect(() => {
     load({ source: "mount-effect" });
@@ -817,7 +949,9 @@ export default function AgreementList() {
   }, [load]);
 
   useEffect(() => {
-    const visibleIds = rows.slice(0, pageSize).map((r) => r.id);
+    const isBackendPage = Boolean(pagination?.isPaginated);
+    const visibleRows = isBackendPage ? rows : rows.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
+    const visibleIds = visibleRows.map((r) => r.id);
     const cachedIds = [];
     const fetchedIds = [];
     visibleIds.forEach((id) => {
@@ -835,8 +969,8 @@ export default function AgreementList() {
       cachedIds,
       fetchedIds,
     });
-    fetchStatsFor(rows.slice(0, pageSize));
-  }, [rows, pageSize, fetchStatsFor, instanceId]);
+    fetchStatsFor(visibleRows);
+  }, [rows, pageSize, pageNumber, pagination?.isPaginated, fetchStatsFor, instanceId]);
 
   const homeownerDisplay = useCallback(
     (r) => {
@@ -921,6 +1055,7 @@ export default function AgreementList() {
           r.status,
           r.project_title,
           r.title,
+          r.description,
           r.project_type,
           r.project_subtype,
           r.homeowner_name,
@@ -952,7 +1087,15 @@ export default function AgreementList() {
     paymentProtectionFilter,
   ]);
 
-  const page = filtered.slice(0, pageSize);
+  const serverPaginated = Boolean(pagination?.isPaginated);
+  const page = serverPaginated ? filtered : filtered.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
+  const totalCount = serverPaginated ? Number(pagination.count || 0) : filtered.length;
+  const totalPages = Math.max(
+    1,
+    serverPaginated ? Number(pagination.totalPages || 1) : Math.ceil(Math.max(filtered.length, 1) / Math.max(pageSize, 1))
+  );
+  const pageStart = totalCount === 0 ? 0 : (pageNumber - 1) * pageSize + 1;
+  const pageEnd = totalCount === 0 ? 0 : Math.min(pageStart + page.length - 1, totalCount);
 
   const toggle = (id) =>
     setSelected((old) => {
@@ -1073,20 +1216,20 @@ export default function AgreementList() {
   const SignatureBadge = ({ state, who }) => {
     if (state === "waived") {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
+        <span className="inline-flex items-center gap-1 rounded-full border border-slate-300/30 bg-slate-400/15 px-2 py-0.5 text-xs font-semibold text-slate-100">
           <MinusCircle size={14} /> {who}: Waived
         </span>
       );
     }
     if (state === "signed") {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-0.5 text-xs font-semibold text-emerald-100">
           <CheckCircle2 size={14} /> {who}
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-300/40 bg-rose-400/15 px-2 py-0.5 text-xs font-semibold text-rose-100">
         <XCircle size={14} /> {who}
       </span>
     );
@@ -1100,7 +1243,7 @@ export default function AgreementList() {
     ].filter(Boolean).length;
 
     if (required === 0) {
-      return { label: "Waived", detail: "No signatures required", tone: "text-slate-600" };
+      return { label: "Waived", detail: "No signatures required", tone: "text-sky-100/80" };
     }
 
     const waived = 2 - required;
@@ -1113,7 +1256,7 @@ export default function AgreementList() {
           : complete
           ? "Ready for funding or active work"
           : "Waiting on signatures",
-      tone: complete ? "text-emerald-700" : "text-slate-700",
+      tone: complete ? "text-emerald-100" : "text-sky-100",
     };
   };
 
@@ -1253,7 +1396,7 @@ export default function AgreementList() {
     const mode = getPaymentMode(r);
     if (mode === "direct") {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800">
+        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-300/40 bg-indigo-400/15 px-2.5 py-1 text-xs font-semibold text-indigo-100">
           <Zap size={14} /> Direct Pay
         </span>
       );
@@ -1276,7 +1419,7 @@ export default function AgreementList() {
     if (funded === null || total === null || total <= 0) {
       if (fundedFlag) {
         return (
-          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2.5 py-1 text-xs font-semibold text-emerald-100">
             <CheckCircle2 size={14} /> Funded
           </span>
         );
@@ -1290,7 +1433,7 @@ export default function AgreementList() {
     if (isFullyFunded) {
       return (
         <span
-          className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800"
+          className="inline-flex items-center gap-1 rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2.5 py-1 text-xs font-semibold text-emerald-100"
           title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
         >
           <CheckCircle2 size={14} /> Funded
@@ -1301,7 +1444,7 @@ export default function AgreementList() {
     if (isPartial) {
       return (
         <span
-          className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
+          className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-400/15 px-2.5 py-1 text-xs font-semibold text-amber-100"
           title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
         >
           <RefreshCw size={14} /> Partial
@@ -1311,7 +1454,7 @@ export default function AgreementList() {
 
     return (
       <span
-        className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
+        className="inline-flex items-center gap-1 rounded-full border border-amber-300/40 bg-amber-400/15 px-2.5 py-1 text-xs font-semibold text-amber-100"
           title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
       >
         <XCircle size={14} /> Funding needed
@@ -1379,7 +1522,7 @@ export default function AgreementList() {
       <div className="relative inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+          className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100 transition hover:border-white/30 hover:bg-white/15 hover:text-white"
           title="Open current PDF"
           onClick={(e) => {
             e.preventDefault();
@@ -1395,8 +1538,8 @@ export default function AgreementList() {
           type="button"
           className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border transition ${
             hasHistory
-              ? "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
-              : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-slate-100"
+              ? "border-white/15 bg-white/10 text-sky-100 hover:border-white/30 hover:bg-white/15 hover:text-white"
+              : "border-white/10 bg-white/5 text-sky-100/70 hover:border-white/20 hover:bg-white/10"
           }`}
           title="Show PDF history"
           onClick={async (e) => {
@@ -1560,6 +1703,41 @@ export default function AgreementList() {
 
   // --- existing actions & UI below (unchanged from your file) ---
 
+  const PaginationControls = ({ placement = "bottom" }) => (
+    <div
+      data-testid={`agreement-pagination-${placement}`}
+      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#061d42]/80 px-4 py-3 text-sm text-sky-100 shadow-[0_14px_34px_rgba(2,8,23,0.2)] md:flex-row md:items-center md:justify-between"
+    >
+      <div className="font-medium">
+        Showing <span className="font-bold text-white">{pageStart}</span>-
+        <span className="font-bold text-white">{pageEnd}</span> of{" "}
+        <span className="font-bold text-white">{totalCount}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setPageNumber((current) => Math.max(1, current - 1))}
+          disabled={pageNumber <= 1 || loading}
+          className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 font-semibold text-white transition hover:border-white/30 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Previous
+        </button>
+        <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sky-100">
+          Page <span className="font-bold text-white">{pageNumber}</span> of{" "}
+          <span className="font-bold text-white">{totalPages}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setPageNumber((current) => Math.min(totalPages, current + 1))}
+          disabled={pageNumber >= totalPages || loading}
+          className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 font-semibold text-white transition hover:border-white/30 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <ContractorPageSurface
       title="Agreements"
@@ -1568,18 +1746,28 @@ export default function AgreementList() {
       contentClassName="space-y-4"
     >
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 pb-4">
+      <div
+        data-testid="agreement-list-controls"
+        className="rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_24px_60px_rgba(2,8,23,0.24)] backdrop-blur md:p-5"
+      >
+      <div className="flex flex-wrap items-center gap-2.5">
         <input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setPageNumber(1);
+          }}
           placeholder="Search by project, customer, type, subtype, email, or ID"
-          className="min-w-[280px] flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400"
+          className="min-w-[280px] flex-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-medium text-white shadow-sm outline-none transition placeholder:text-sky-100/55 focus:border-sky-300/70 focus:bg-white/15"
         />
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPageNumber(1);
+          }}
+          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
         >
           <option value="all">All Status</option>
           <option value="draft">draft</option>
@@ -1593,7 +1781,7 @@ export default function AgreementList() {
         <select
           value={projectClassFilter}
           onChange={(e) => updateFilters({ project_class: e.target.value })}
-          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
+          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
           data-testid="agreement-list-project-class-filter"
         >
           <option value="all">All Projects</option>
@@ -1604,7 +1792,7 @@ export default function AgreementList() {
         <select
           value={projectModeFilter}
           onChange={(e) => updateFilters({ project_mode: e.target.value })}
-          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
+          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
           data-testid="agreement-list-project-mode-filter"
         >
           <option value="all">All Modes</option>
@@ -1615,12 +1803,13 @@ export default function AgreementList() {
           ))}
         </select>
 
-        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
+        <label className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm">
           <input
             type="checkbox"
             checked={showArchived}
             onChange={(e) => {
               setShowArchived(e.target.checked);
+              setPageNumber(1);
               setSelected(new Set());
               setPrimaryId(null);
             }}
@@ -1630,10 +1819,14 @@ export default function AgreementList() {
 
         <select
           value={pageSize}
-          onChange={(e) => setPageSize(Number(e.target.value))}
-          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
+          onChange={(e) => {
+            setPageSize(Number(e.target.value));
+            setPageNumber(1);
+          }}
+          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
+          data-testid="agreement-page-size-select"
         >
-          {[10, 20, 50, 100, 250].map((n) => (
+          {[10, 20, 50, 100].map((n) => (
             <option key={n} value={n}>
               {n} / page
             </option>
@@ -1642,7 +1835,7 @@ export default function AgreementList() {
 
         <button
           onClick={() => load({ force: true, source: "refresh-button" })}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-sky-50 shadow-sm transition hover:border-white/30 hover:bg-white/15"
           title="Refresh"
         >
           <RefreshCw size={16} />
@@ -1651,7 +1844,7 @@ export default function AgreementList() {
         <div className="flex-1" />
 
         <button
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+          className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm font-semibold text-[#082652] shadow-sm transition hover:bg-sky-50"
           title="New Agreement"
           onClick={() => navigate(`${BASE}/agreements/new/wizard?step=1`)}
         >
@@ -1662,8 +1855,8 @@ export default function AgreementList() {
           <button
             className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold shadow-sm transition ${
               selected.size >= 2
-                ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                : "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                ? "border border-white/15 bg-white/10 text-white hover:bg-white/15"
+                : "cursor-not-allowed border border-white/10 bg-white/5 text-sky-100/45"
             }`}
             disabled={selected.size < 2}
             onClick={mergeSelected}
@@ -1673,18 +1866,22 @@ export default function AgreementList() {
           </button>
         ) : null}
       </div>
+      </div>
 
       {activeRouteFilter ? (
         <div
           data-testid="agreement-list-filter-banner"
-          className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800"
+          className="rounded-2xl border border-sky-300/30 bg-sky-400/15 px-4 py-3 text-sm font-medium text-sky-50"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span>Filtered: {activeRouteFilter.label}</span>
             <button
               type="button"
-              onClick={() => navigate(`${BASE}/agreements`)}
-              className="text-sm font-semibold underline underline-offset-4 hover:no-underline"
+              onClick={() => {
+                setPageNumber(1);
+                navigate(`${BASE}/agreements`);
+              }}
+              className="text-sm font-semibold text-white underline underline-offset-4 hover:no-underline"
             >
               Clear filter
             </button>
@@ -1692,10 +1889,15 @@ export default function AgreementList() {
         </div>
       ) : null}
 
+      <PaginationControls placement="top" />
+
       {/* Table */}
-      <div className="min-h-[420px] overflow-x-auto border-y border-slate-200 bg-white">
+      <div
+        data-testid="agreement-list-table-shell"
+        className="min-h-[420px] overflow-x-auto rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)] backdrop-blur"
+      >
         <table className="min-w-full text-[14px] leading-5">
-          <thead className="bg-slate-50/85">
+          <thead className="bg-white/[0.07]">
             <tr>
               <th className="px-3 py-3 text-center">
                 <input
@@ -1704,29 +1906,37 @@ export default function AgreementList() {
                   checked={page.length > 0 && page.every((r) => selected.has(r.id))}
                 />
               </th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Primary</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Agreement</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Escrow</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Progress</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Signatures</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Total</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Invoices</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Actions</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Primary</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Agreement</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Status</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Escrow</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Progress</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Signatures</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Total</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Invoices</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Actions</th>
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-white/10">
             {loading ? (
               <tr>
-                <td className="px-6 py-14 text-center text-sm text-slate-500" colSpan={10}>
+                <td className="px-6 py-14 text-center text-sm text-sky-100/75" colSpan={10}>
                   Loading…
+                </td>
+              </tr>
+            ) : loadError ? (
+              <tr>
+                <td className="px-8 py-16 text-center" colSpan={10}>
+                  <div className="mx-auto max-w-md rounded-2xl border border-rose-300/30 bg-rose-500/10 px-6 py-10 text-sm font-medium text-rose-100">
+                    {loadError}
+                  </div>
                 </td>
               </tr>
             ) : page.length === 0 ? (
               <tr>
                 <td className="px-8 py-16 text-center" colSpan={10}>
-                  <div className="mx-auto max-w-md rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-sm text-slate-500">
+                  <div className="mx-auto max-w-md rounded-2xl border border-dashed border-white/20 bg-white/10 px-6 py-10 text-sm font-medium text-sky-100/75">
                     No agreements found.
                   </div>
                 </td>
@@ -1793,7 +2003,7 @@ export default function AgreementList() {
                       icon: busyArchiveRow === r.id ? RefreshCw : Undo2,
                       onClick: () => unarchiveAgreement(r),
                       disabled: busyArchiveRow === r.id,
-                      className: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
+                      className: "border border-white/15 bg-white text-[#082652] hover:bg-sky-50",
                     }
                   : canMarkComplete
                   ? {
@@ -1802,7 +2012,7 @@ export default function AgreementList() {
                       icon: busyCompleteRow === r.id ? RefreshCw : Check,
                       onClick: () => markComplete(r, stat),
                       disabled: busyCompleteRow === r.id,
-                      className: "border border-green-300 bg-green-50 text-green-800 hover:bg-green-100",
+                      className: "border border-emerald-300/50 bg-emerald-400/20 text-emerald-50 hover:bg-emerald-400/30",
                     }
                   : needsFundingAttention
                   ? {
@@ -1811,7 +2021,7 @@ export default function AgreementList() {
                       icon: Landmark,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100",
+                      className: "border border-amber-300/50 bg-amber-400/20 text-amber-50 hover:bg-amber-400/30",
                     }
                   : fullySigned
                   ? {
@@ -1820,7 +2030,7 @@ export default function AgreementList() {
                       icon: Layers,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "bg-slate-900 text-white hover:bg-slate-800",
+                      className: "bg-white text-[#082652] hover:bg-sky-50",
                     }
                   : isDraft
                   ? {
@@ -1829,7 +2039,7 @@ export default function AgreementList() {
                       icon: Pencil,
                       onClick: () => goEdit(r.id),
                       disabled: false,
-                      className: "bg-slate-900 text-white hover:bg-slate-800",
+                      className: "bg-white text-[#082652] hover:bg-sky-50",
                     }
                   : {
                       key: "status",
@@ -1837,14 +2047,14 @@ export default function AgreementList() {
                       icon: Eye,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "bg-slate-900 text-white hover:bg-slate-800",
+                      className: "bg-white text-[#082652] hover:bg-sky-50",
                     };
 
                 return (
                   <tr
                     key={r.id}
                     className={`cursor-pointer transition-colors ${
-                      needsFundingAttention ? "bg-amber-50/40 hover:bg-amber-50/70" : "bg-white hover:bg-sky-50/60"
+                      needsFundingAttention ? "bg-amber-400/[0.08] hover:bg-amber-400/[0.14]" : "bg-white/[0.035] hover:bg-white/[0.075]"
                     }`}
                     onClick={() => goView(r.id)}
                     title="Click to view agreement"
@@ -1871,9 +2081,9 @@ export default function AgreementList() {
                         className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
                           isChecked
                             ? isPrimary
-                              ? "border-yellow-300 bg-yellow-100 text-amber-800"
-                              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                            : "cursor-not-allowed border-slate-200 text-slate-400"
+                              ? "border-yellow-300/60 bg-yellow-400/15 text-yellow-100"
+                              : "border-white/15 bg-white/10 text-sky-50 hover:bg-white/15"
+                            : "cursor-not-allowed border-white/10 text-sky-100/45"
                         }`}
                         title={isChecked ? (isPrimary ? "Primary" : "Set as Primary") : "Select row first"}
                       >
@@ -1886,39 +2096,39 @@ export default function AgreementList() {
                       <div
                         className={`min-w-0 rounded-2xl border px-4 py-3 shadow-sm ${
                           needsFundingAttention
-                            ? "border-amber-200 bg-amber-50/70"
-                            : "border-slate-200 bg-slate-50/70"
+                            ? "border-amber-300/35 bg-amber-400/[0.09]"
+                            : "border-white/10 bg-white/[0.055]"
                         }`}
                       >
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <div className="truncate text-[15px] font-semibold text-slate-950">{renderProject(r)}</div>
+                            <div className="truncate text-[15px] font-semibold text-white">{renderProject(r)}</div>
                             <ProjectModeBadge
                               mode={r.project_mode}
                               dataTestId={`agreement-project-mode-${r.id}`}
                             />
                             <span
-                              className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                              className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-sky-50"
                               data-testid={`agreement-project-class-${r.id}`}
                             >
                               {projectClassLabel(r.project_class)}
                             </span>
-                            <span className="inline-flex items-center rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                            <span className="inline-flex items-center rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100 ring-1 ring-white/15">
                               #{r.id}
                             </span>
                             {needsFundingAttention ? (
-                              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-100/80 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                              <span className="inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
                                 Funding gap
                               </span>
                             ) : null}
                             {isArchived ? (
-                              <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700">
+                              <span className="inline-flex items-center rounded-full bg-slate-400/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-100">
                                 Archived
                               </span>
                             ) : null}
                           </div>
 
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-700">
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-sky-100/75">
                             {identityMeta.map((item) => (
                               <span key={`${r.id}-${item}`} className="truncate">
                                 {item}
@@ -1928,8 +2138,8 @@ export default function AgreementList() {
                         </div>
 
                         <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Next</span>
-                          <span className={`text-sm ${needsFundingAttention ? "font-medium text-amber-900" : "text-slate-700"}`}>
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-100/60">Next</span>
+                          <span className={`text-sm ${needsFundingAttention ? "font-medium text-amber-100" : "text-sky-100/80"}`}>
                             {nextStepLabel}
                           </span>
                         </div>
@@ -1958,9 +2168,9 @@ export default function AgreementList() {
                       <div className="min-w-[150px]">
                         <div className="flex items-center gap-2">
                           <Progress percent={stat.percent} tone={progressTone} />
-                          <span className="w-10 text-xs font-medium text-slate-600">{stat.percent}%</span>
+                          <span className="w-10 text-xs font-medium text-sky-100/75">{stat.percent}%</span>
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs text-sky-100/60">
                           {stat.total ? `${stat.complete} of ${stat.total} milestones complete` : "No milestones yet"}
                         </div>
                       </div>
@@ -1969,24 +2179,24 @@ export default function AgreementList() {
                     <td className="px-3 py-4 align-top">
                       <div className="min-w-[110px]">
                         <div className={`text-sm font-semibold ${signatures.tone}`}>{signatures.label}</div>
-                        <div className="mt-1 text-xs text-slate-500">{signatures.detail}</div>
+                        <div className="mt-1 text-xs text-sky-100/60">{signatures.detail}</div>
                       </div>
                     </td>
 
                     <td className="px-3 py-4 align-top text-right">
                       <div
-                        className={`text-base ${Number((r.display_total ?? r.total_cost) || 0) > 0 ? "font-semibold text-slate-950" : "font-medium text-slate-500"}`}
+                        className={`text-base ${Number((r.display_total ?? r.total_cost) || 0) > 0 ? "font-semibold text-white" : "font-medium text-sky-100/60"}`}
                       >
                         {amountValue}
                       </div>
-                      <div className={`mt-1 text-xs ${needsFundingAttention ? "font-medium text-amber-700" : "text-slate-500"}`}>
+                      <div className={`mt-1 text-xs ${needsFundingAttention ? "font-medium text-amber-100" : "text-sky-100/60"}`}>
                         {needsFundingAttention ? "Protected funding pending" : isDirectPay ? "Direct pay" : "Contract total"}
                       </div>
                     </td>
 
                     <td className="px-3 py-4 align-top text-right">
-                      <div className="text-sm font-medium text-slate-700">{Number(r.invoices_count || 0)}</div>
-                      <div className="mt-1 text-[11px] text-slate-400">Invoices</div>
+                      <div className="text-sm font-medium text-sky-50">{Number(r.invoices_count || 0)}</div>
+                      <div className="mt-1 text-[11px] text-sky-100/55">Invoices</div>
                     </td>
 
                     <td className="relative px-3 py-4 align-top text-right">
@@ -2013,10 +2223,10 @@ export default function AgreementList() {
                             goEdit(r.id);
                           }}
                           disabled={canAmend}
-                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border text-slate-700 shadow-sm transition ${
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border shadow-sm transition ${
                             canAmend
-                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
-                              : "border-slate-300 bg-white hover:bg-slate-50"
+                              ? "cursor-not-allowed border-white/10 bg-white/5 text-sky-100/35"
+                              : "border-white/15 bg-white/10 text-sky-50 hover:bg-white/15"
                           }`}
                           title={canAmend ? "Fully signed. Use Amend to modify." : "Edit agreement"}
                         >
@@ -2028,7 +2238,7 @@ export default function AgreementList() {
                             e.stopPropagation();
                             setActionMenuOpenForId((current) => (current === r.id ? null : r.id));
                           }}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-sky-50 shadow-sm transition hover:bg-white/15"
                           title="More actions"
                         >
                           <MoreHorizontal size={16} />
@@ -2107,9 +2317,11 @@ export default function AgreementList() {
         </table>
       </div>
 
-      <div className="mhb-helper-text rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-        Showing {Math.min(page.length, filtered.length)} of {filtered.length}. Select 2+ rows, choose a <b>Primary</b> (star), then click{" "}
-        <b>Merge Selected</b>. Fully executed agreements can no longer be edited directly; use <b>Amend</b> to create a new Amendment and re-sign.
+      <PaginationControls placement="bottom" />
+
+      <div className="rounded-2xl border border-white/10 bg-[#061d42]/80 px-4 py-3 text-sm text-sky-100/75">
+        Showing {pageStart}-{pageEnd} of {totalCount}. Select 2+ rows, choose a <b className="text-white">Primary</b> (star), then click{" "}
+        <b className="text-white">Merge Selected</b>. Fully executed agreements can no longer be edited directly; use <b className="text-white">Amend</b> to create a new Amendment and re-sign.
       </div>
     </ContractorPageSurface>
   );

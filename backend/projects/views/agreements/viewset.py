@@ -5,13 +5,16 @@ import sys
 import traceback
 import json
 
+from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
+from datetime import timedelta
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from core.pagination import DefaultPageNumberPagination
 from projects.models import Agreement, ProjectStatus
 from projects.serializers.agreement import (
     AgreementSerializer,
@@ -93,6 +96,7 @@ RETENTION_YEARS = 3
 class AgreementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = AgreementSerializer
+    pagination_class = DefaultPageNumberPagination
 
     queryset = Agreement.objects.select_related(
         "project", "contractor", "homeowner"
@@ -128,6 +132,139 @@ class AgreementViewSet(viewsets.ModelViewSet):
         )
         if not (include_archived_param or action_allows_archived):
             qs = qs.filter(is_archived=False)
+
+        qs = self._apply_dashboard_route_filters(qs)
+
+        search = (
+            self.request.query_params.get("search")
+            or self.request.query_params.get("q")
+            or ""
+        ).strip()
+        if search:
+            search_filter = (
+                Q(project__title__icontains=search)
+                | Q(description__icontains=search)
+                | Q(project_type__icontains=search)
+                | Q(project_subtype__icontains=search)
+                | Q(homeowner__full_name__icontains=search)
+                | Q(homeowner__email__icontains=search)
+                | Q(payment_mode__icontains=search)
+                | Q(project_mode__icontains=search)
+            )
+            if search.isdigit():
+                search_filter |= Q(id=int(search))
+            qs = qs.filter(search_filter)
+
+        status_filter = (
+            self.request.query_params.get("status") or ""
+        ).strip().lower()
+        if status_filter and status_filter != "all":
+            qs = qs.filter(status=status_filter)
+
+        project_class = (
+            self.request.query_params.get("project_class") or ""
+        ).strip().lower()
+        if project_class in ("residential", "commercial"):
+            qs = qs.filter(project_class=project_class)
+
+        project_mode = (
+            self.request.query_params.get("project_mode") or ""
+        ).strip().lower()
+        if project_mode and project_mode != "all":
+            qs = qs.filter(project_mode=project_mode)
+
+        payment_mode = (
+            self.request.query_params.get("payment_mode") or ""
+        ).strip().lower()
+        if payment_mode in ("escrow", "direct"):
+            qs = qs.filter(payment_mode=payment_mode)
+
+        return qs
+
+    def _signature_satisfied_q(self) -> Q:
+        contractor_ok = Q(require_contractor_signature=False) | Q(signed_by_contractor=True)
+        customer_ok = Q(require_customer_signature=False) | Q(signed_by_homeowner=True)
+        return contractor_ok & customer_ok
+
+    def _apply_dashboard_route_filters(self, qs):
+        focus = (self.request.query_params.get("focus") or "").strip().lower()
+        route_filter = (self.request.query_params.get("filter") or "").strip().lower()
+        route_range = (self.request.query_params.get("range") or "").strip().lower()
+
+        if focus == "draft":
+            return qs.filter(status=ProjectStatus.DRAFT)
+
+        if focus == "needs_attention":
+            if route_filter in ("awaiting_signature", "signature_needed", "signature-needed"):
+                missing_signature = (
+                    Q(require_contractor_signature=True, signed_by_contractor=False)
+                    | Q(require_customer_signature=True, signed_by_homeowner=False)
+                )
+                return qs.filter(missing_signature).exclude(
+                    status__in=[
+                        ProjectStatus.SIGNED,
+                        ProjectStatus.COMPLETED,
+                        ProjectStatus.CANCELLED,
+                    ]
+                )
+
+            if route_filter in ("awaiting_funding", "funding_needed", "funding-needed"):
+                return qs.filter(payment_mode="escrow", escrow_funded=False).filter(
+                    self._signature_satisfied_q() | Q(status=ProjectStatus.SIGNED)
+                )
+
+            if route_filter in ("pending_approval", "awaiting_review", "approval_pending"):
+                return qs.filter(
+                    status__in=[
+                        "pending_approval",
+                        "awaiting_approval",
+                        "approval_pending",
+                        "pending_review",
+                        "in_review",
+                        "review",
+                        "submitted",
+                    ]
+                )
+
+            if route_filter in ("disputed", "dispute", "issues"):
+                return qs.filter(status__icontains="dispute")
+
+        if focus == "schedule":
+            today = timezone.localdate()
+            tomorrow = today + timedelta(days=1)
+            week_end = today + timedelta(days=6)
+            active = qs.exclude(
+                status__in=[
+                    ProjectStatus.COMPLETED,
+                    ProjectStatus.CANCELLED,
+                    "approved",
+                    "paid",
+                    "earned",
+                    "released",
+                ]
+            )
+
+            date_fields = ["end", "start"]
+            if route_range == "late":
+                date_q = Q()
+                for field in date_fields:
+                    date_q |= Q(**{f"{field}__lt": today})
+                return active.filter(date_q)
+            if route_range == "today":
+                date_q = Q()
+                for field in date_fields:
+                    date_q |= Q(**{field: today})
+                return active.filter(date_q)
+            if route_range == "tomorrow":
+                date_q = Q()
+                for field in date_fields:
+                    date_q |= Q(**{field: tomorrow})
+                return active.filter(date_q)
+            if route_range == "week":
+                date_q = Q()
+                for field in date_fields:
+                    date_q |= Q(**{f"{field}__range": (today, week_end)})
+                return active.filter(date_q)
 
         return qs
 

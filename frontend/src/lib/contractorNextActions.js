@@ -212,10 +212,9 @@ export function getContractorNextActions({
 
   const awaitingSignature = agreementRows.filter(
     (agreement) =>
-      normalizeStatus(agreement?.status) !== "draft" &&
       !agreement?.signature_is_satisfied &&
       !agreement?.is_fully_signed &&
-      normalizeStatus(agreement?.status) !== "signed"
+      !["signed", "completed", "cancelled", "archived"].includes(normalizeStatus(agreement?.status))
   );
   if (awaitingSignature.length) {
     actions.push(

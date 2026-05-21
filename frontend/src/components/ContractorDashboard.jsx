@@ -2674,34 +2674,38 @@ export default function ContractorDashboard() {
                     </div>
                   </div>
                   <div className="grid gap-2.5 md:grid-cols-2">
-                    <button
-                      type="button"
-                      data-testid="dashboard-schedule-tomorrow"
-                      onClick={goAgreementScheduleTomorrow}
-                      className="flex items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
-                    >
-                      <div>
-                        <div className="text-sm font-semibold text-white">Due Tomorrow</div>
-                        <div className="mt-1 text-xs font-medium text-sky-100/75">
-                          {dueSchedule.tomorrow.count} items | {currency(dueSchedule.tomorrow.amount)}
+                    <div data-testid="dashboard-schedule-tomorrow">
+                      <button
+                        type="button"
+                        role="button"
+                        onClick={goAgreementScheduleTomorrow}
+                        className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
+                      >
+                        <div>
+                          <div className="text-sm font-semibold text-white">Due Tomorrow</div>
+                          <div className="mt-1 text-xs font-medium text-sky-100/75">
+                            {dueSchedule.tomorrow.count} items | {currency(dueSchedule.tomorrow.amount)}
+                          </div>
                         </div>
-                      </div>
-                      <ArrowRight className="h-4 w-4 text-sky-100/70" />
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="dashboard-schedule-week"
-                      onClick={goAgreementScheduleWeek}
-                      className="flex items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
-                    >
-                      <div>
-                        <div className="text-sm font-semibold text-white">This Week</div>
-                        <div className="mt-1 text-xs font-medium text-sky-100/75">
-                          {dueSchedule.week.count} items | {currency(dueSchedule.week.amount)}
+                        <ArrowRight className="h-4 w-4 text-sky-100/70" />
+                      </button>
+                    </div>
+                    <div data-testid="dashboard-schedule-week">
+                      <button
+                        type="button"
+                        role="button"
+                        onClick={goAgreementScheduleWeek}
+                        className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
+                      >
+                        <div>
+                          <div className="text-sm font-semibold text-white">This Week</div>
+                          <div className="mt-1 text-xs font-medium text-sky-100/75">
+                            {dueSchedule.week.count} items | {currency(dueSchedule.week.amount)}
+                          </div>
                         </div>
-                      </div>
-                      <ArrowRight className="h-4 w-4 text-sky-100/70" />
-                    </button>
+                        <ArrowRight className="h-4 w-4 text-sky-100/70" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
