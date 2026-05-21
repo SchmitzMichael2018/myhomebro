@@ -145,6 +145,7 @@ export default function ReviewerQueuePage() {
       title="Awaiting Review"
       subtitle="Review submitted milestone work assigned to you and send it back if it needs changes."
       className="max-w-[1320px]"
+      variant="operational"
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>

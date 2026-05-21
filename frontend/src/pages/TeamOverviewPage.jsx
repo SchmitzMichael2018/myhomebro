@@ -119,6 +119,7 @@ export default function TeamOverviewPage() {
       title="Team Overview"
       subtitle="A quick operational read on who is active, what needs attention, and what is moving this week."
       className="max-w-[1360px]"
+      variant="operational"
     >
       <div className="space-y-6">
         <section data-testid="team-overview-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 const ROLE_OPTIONS = [
   { value: "employee_readonly", label: "Read-only" },
@@ -241,13 +242,16 @@ export default function TeamPage() {
   const contractorName = identity?.email || "Contractor";
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <ContractorPageSurface
+      eyebrow="Team"
+      title="Your Team"
+      subtitle="Create employee logins, review workload, and keep the team connected to current jobs."
+      className="max-w-[1440px]"
+      variant="operational"
+    >
+    <div className="space-y-6">
       <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Your Team</h1>
-          <p className="mhb-helper-text mt-4">
-            Create employee logins, review workload, and keep the team connected to current jobs.
-          </p>
           <p className="mt-1 text-xs text-gray-400">
             Signed in as <span className="font-medium">{contractorName}</span>
           </p>
@@ -462,5 +466,6 @@ export default function TeamPage() {
         )}
       </section>
     </div>
+    </ContractorPageSurface>
   );
 }

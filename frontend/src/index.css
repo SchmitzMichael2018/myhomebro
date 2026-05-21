@@ -132,6 +132,90 @@
   .logo-spin {
     animation: logo-spin infinite 20s linear;
   }
+
+  .mhb-operational-surface {
+    color: #eff6ff;
+  }
+
+  .mhb-operational-surface .mhb-operational-panel {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(6, 29, 66, 0.95);
+    box-shadow: 0 24px 60px rgba(2, 8, 23, 0.28);
+    backdrop-filter: blur(14px);
+  }
+
+  .mhb-operational-surface .mhb-operational-inner {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(15, 42, 78, 0.72);
+  }
+
+  .mhb-operational-surface :is(.bg-white, .bg-slate-50, .bg-gray-50) {
+    background-color: rgba(15, 42, 78, 0.72) !important;
+  }
+
+  .mhb-operational-surface :is(.bg-slate-100, .bg-gray-100) {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .mhb-operational-surface :is(.border-slate-100, .border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300) {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+  }
+
+  .mhb-operational-surface :is(.text-slate-950, .text-slate-900, .text-gray-900, .text-gray-800) {
+    color: #f8fbff !important;
+  }
+
+  .mhb-operational-surface :is(.text-slate-800, .text-slate-700, .text-gray-700, .text-gray-600) {
+    color: rgba(224, 242, 254, 0.86) !important;
+  }
+
+  .mhb-operational-surface :is(.text-slate-600, .text-slate-500, .text-gray-500, .text-gray-400, .mhb-helper-text) {
+    color: rgba(186, 230, 253, 0.72) !important;
+  }
+
+  .mhb-operational-surface :is(.text-slate-400, .text-gray-400) {
+    color: rgba(186, 230, 253, 0.62) !important;
+  }
+
+  .mhb-operational-surface :is(input, select, textarea) {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    background-color: rgba(6, 29, 66, 0.85) !important;
+    color: #f8fbff !important;
+  }
+
+  .mhb-operational-surface :is(input, textarea)::placeholder {
+    color: rgba(186, 230, 253, 0.58);
+  }
+
+  .mhb-operational-surface option {
+    background-color: #061d42;
+    color: #f8fbff;
+  }
+
+  .mhb-operational-surface table {
+    color: #e0f2fe;
+  }
+
+  .mhb-operational-surface thead {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .mhb-operational-surface tbody tr {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .mhb-operational-surface tbody tr:hover {
+    background-color: rgba(37, 99, 235, 0.22) !important;
+  }
+
+  .mhb-operational-surface :is(button, a) {
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+
+  .mhb-operational-surface button:hover:not(:disabled),
+  .mhb-operational-surface a:hover {
+    box-shadow: 0 10px 24px rgba(14, 165, 233, 0.16);
+  }
 }
 
 /* === Responsive Typography Tweaks === */

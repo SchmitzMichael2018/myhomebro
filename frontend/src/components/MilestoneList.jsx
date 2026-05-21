@@ -11,6 +11,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { ProjectModeBadge, PROJECT_MODE_OPTIONS, normalizeProjectModeFilter, normalizeProjectMode } from "./projectMode.jsx";
 import { MilestoneRoleBadge, MilestoneSafetyBadges, InspectionStatusBadge, deriveMilestoneRoleLabel } from "./milestoneRole.jsx";
+import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 
 import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
@@ -719,9 +720,15 @@ export default function MilestoneList() {
   const isFiltering = tab !== "all" || q.trim().length > 0 || projectClassFilter !== "all";
 
   return (
-    <div className="p-4 md:p-6">
+    <ContractorPageSurface
+      eyebrow="Operations"
+      title="Milestones"
+      subtitle="Track work progress across agreements, review completion gates, and move milestones into invoices."
+      className="max-w-[1680px]"
+      variant="operational"
+    >
       {/* Header: filters + search */}
-      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_24px_60px_rgba(2,8,23,0.24)] backdrop-blur">
         <div className="flex flex-wrap gap-2">
           {filterTabs.map((t) => (
             <button
@@ -780,7 +787,7 @@ export default function MilestoneList() {
       </div>
 
       {/* Agreement-first table */}
-      <div className="rounded-xl overflow-hidden shadow border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)] backdrop-blur">
         <div className="overflow-x-auto">
           <table className="min-w-[860px] w-full text-sm">
             <thead className="bg-slate-100">
@@ -1198,6 +1205,6 @@ export default function MilestoneList() {
         preselectedMilestoneIds={refundPreselected}
         onRefunded={() => reload()}
       />
-    </div>
+    </ContractorPageSurface>
   );
 }

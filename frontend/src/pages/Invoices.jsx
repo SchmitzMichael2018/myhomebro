@@ -12,6 +12,7 @@ import {
   projectClassLabel,
   summarizePaymentRecords,
 } from "../utils/paymentRecords";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function useQuery() {
   const { search } = useLocation();
@@ -403,7 +404,14 @@ export default function Invoices() {
   };
 
   return (
-    <div className="p-4" data-testid="payments-page">
+    <ContractorPageSurface
+      eyebrow="Money"
+      title="Payments"
+      subtitle="One contractor-facing money view across invoices and draw requests, with filters to separate the underlying record types."
+      className="max-w-[1680px]"
+      variant="operational"
+    >
+    <div data-testid="payments-page">
       {milestoneId ? (
         <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-4 text-purple-900">
           <div className="font-semibold">Invoice creation requested for Milestone #{milestoneId}</div>
@@ -417,12 +425,8 @@ export default function Invoices() {
         </div>
       ) : null}
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_24px_60px_rgba(2,8,23,0.24)] backdrop-blur">
         <div>
-          <div className="text-2xl font-extrabold text-slate-900">Payments</div>
-          <div className="mt-1 text-sm text-slate-600">
-            One contractor-facing money view across invoices and draw requests, with filters to separate the underlying record types.
-          </div>
           <div className="mt-2 text-sm text-slate-500">
             {loading ? "Loading payment records…" : `${totals.count} records • ${money(totals.total)} total`}
           </div>
@@ -515,6 +519,7 @@ export default function Invoices() {
         </div>
       )}
     </div>
+    </ContractorPageSurface>
   );
 }
 

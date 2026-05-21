@@ -1526,6 +1526,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           : "Create reusable project setups to speed up your agreements."
       }
       actions={null}
+      variant="operational"
     >
 
       <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -1707,6 +1708,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
             <div className="mt-2 text-xs text-slate-500">
               Select a template to edit or create a new one.
             </div>
+            {creatingNew ? (
+              <div className="mt-2 text-xs font-semibold text-slate-500">
+                Start a new template
+              </div>
+            ) : null}
           </div>
 
           <div className="max-h-[70vh] overflow-auto">
