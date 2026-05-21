@@ -348,7 +348,7 @@ export default function AdminDashboard() {
   const [contractorQuery, setContractorQuery] = useState("");
   const [contractorFilter, setContractorFilter] = useState("newest");
 
-  // Support tools
+  // User tools
   const [pwResetEmail, setPwResetEmail] = useState("");
   const [pwResetMsg, setPwResetMsg] = useState("");
   const [agreementOpsMsg, setAgreementOpsMsg] = useState("");
@@ -738,7 +738,7 @@ export default function AdminDashboard() {
           ["disputes", "Disputes"],
           ["geo", "Geo"],
           ["fee_audit", "Fee Audit"],
-          ["support", "Support"],
+          ["support", "User Tools"],
         ].map(([key, label]) => (
           <button
             key={key}
@@ -790,7 +790,7 @@ export default function AdminDashboard() {
                     <div className="text-xs font-extrabold uppercase tracking-wide text-sky-100/65">Quick Actions</div>
                     <div className="mt-3 grid grid-cols-1 gap-2">
                       <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goToDisputes("active")} />
-                      <ActionItem icon="🛟" title="View Support" desc="Check support requests and tickets." onClick={() => goTo("support")} />
+                      <ActionItem icon="🛟" title="User Tools" desc="Send password reset emails for user accounts." onClick={() => goTo("support")} />
                       <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
                       <ActionItem
                         icon="🗺️"
@@ -1681,11 +1681,12 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* ===================== SUPPORT ===================== */}
+          {/* ===================== USER TOOLS ===================== */}
           {view === "support" && (
             <div className="mt-6 rounded-2xl border border-black/10 bg-white/70 p-5 shadow-sm">
-              <div className="text-lg font-extrabold text-slate-900">Support Tools</div>
-              <div className="mt-1 text-sm text-slate-700">Send a password reset email using Django’s standard reset flow.</div>
+              <h2 className="text-lg font-extrabold text-slate-900">User Tools</h2>
+              <div className="mt-4 text-sm font-extrabold text-slate-900">Password Reset</div>
+              <div className="mt-1 text-sm text-slate-700">Send a password reset email using Django's standard reset flow.</div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <input

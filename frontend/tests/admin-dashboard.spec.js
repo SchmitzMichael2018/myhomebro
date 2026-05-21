@@ -453,6 +453,10 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
+  await expect(page.getByText('Admin Home')).toHaveCount(0);
+  await expect(page.getByText('Support Tools')).toHaveCount(0);
+  await expect(page.getByText('Admin Dashboard')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'User Tools', exact: true })).toBeVisible();
   const attentionClass = await page.getByTestId('admin-needs-attention').getAttribute('class');
   expect(attentionClass).toContain('bg-[#061d42]/95');
   await expect(page.getByTestId('admin-quick-actions')).toBeVisible();
@@ -472,6 +476,14 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-stat-open-disputes')).toContainText('1');
   await expect(page.getByTestId('admin-growth-insights')).toBeVisible();
   await expect(page.getByTestId('admin-revenue-summary')).toBeVisible();
+
+  await page.goto('/app/admin?view=support', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: 'User Tools', exact: true })).toHaveClass(/bg-white/);
+  await expect(page.getByRole('heading', { name: 'User Tools' })).toBeVisible();
+  await expect(page.getByText('Password Reset', { exact: true })).toBeVisible();
+  await expect(page.getByText("Send a password reset email using Django's standard reset flow.")).toBeVisible();
+  await expect(page.getByPlaceholder('user@email.com')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send Reset Email' })).toBeVisible();
 
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText('Filter:')).toContainText('Escrow in flight');

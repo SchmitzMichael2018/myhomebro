@@ -311,7 +311,7 @@ export default function Sidebar({ variant = "desktop" }) {
     if (isAdmin) {
       return (
         <>
-          <Item to={`${APP_BASE}/admin`} label="Admin" icon={ShieldCheck} />
+          <Item to={`${APP_BASE}/admin`} label="Admin Dashboard" icon={ShieldCheck} />
           {isOnAdminRoute && (
             <div className="mt-2 space-y-1">
               <SubItem to="/app/admin" label="Overview" />
@@ -325,7 +325,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <SubItem to="/app/admin/disputes" label="Disputes" />
               <SubItem to="/app/admin?view=geo" label="Geo / Map" />
               <SubItem to="/app/admin?view=fee_audit" label="Fee Audit" />
-              <SubItem to="/app/admin?view=support" label="Support Tools" />
+              <SubItem to="/app/admin?view=support" label="User Tools" />
             </div>
           )}
         </>
@@ -384,7 +384,6 @@ export default function Sidebar({ variant = "desktop" }) {
     if (isAdmin) {
       return (
         <>
-          <Item to={`${APP_BASE}/admin`} label="Admin Home" icon={ShieldCheck} />
           <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
         </>
       );

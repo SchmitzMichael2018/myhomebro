@@ -92,7 +92,7 @@ export default function AdminSidebar({
 
           <Item
             active={activeTab === "support"}
-            label="Support Tools"
+            label="User Tools"
             onClick={() => setActiveTab("support")}
           />
         </div>
