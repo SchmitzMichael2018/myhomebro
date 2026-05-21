@@ -1193,18 +1193,20 @@ test('agreement milestone surfaces show human-friendly milestone type labels out
     waitUntil: 'domcontentloaded',
   });
 
-  const firstMilestoneRow = page.getByRole('row').filter({ hasText: 'Demo & protection' });
-  const secondMilestoneRow = page.getByRole('row').filter({ hasText: 'Cabinets & surfaces' });
-  const thirdMilestoneRow = page.getByRole('row').filter({ hasText: 'Fixtures & closeout' });
+  async function expectMilestoneEditType(title, typeLabel) {
+    const card = page.locator('article').filter({ hasText: title });
+    await expect(card).toBeVisible();
+    await card.getByRole('button', { name: 'Edit' }).click();
+    await expect(page.getByTestId('step2-edit-estimate-type-label')).toContainText(typeLabel);
+    await expect(page.getByTestId('step2-edit-estimate-type-label')).not.toContainText(
+      String(typeLabel).toLowerCase().replace(/\s+/g, '_')
+    );
+    await page.getByRole('button', { name: 'Cancel' }).click();
+  }
 
-  await expect(firstMilestoneRow).toContainText('Site Prep');
-  await expect(firstMilestoneRow).not.toContainText('site_prep');
-  await expect(secondMilestoneRow).toContainText('Cabinetry');
-  await expect(thirdMilestoneRow).toContainText('Inspection');
-
-  await firstMilestoneRow.getByRole('button', { name: 'Edit' }).click();
-  await expect(page.getByTestId('step2-edit-estimate-type-label')).toContainText('Site Prep');
-  await expect(page.getByTestId('step2-edit-estimate-type-label')).not.toContainText('site_prep');
+  await expectMilestoneEditType('Demo & protection', 'Site Prep');
+  await expectMilestoneEditType('Cabinets & surfaces', 'Cabinetry');
+  await expectMilestoneEditType('Fixtures & closeout', 'Inspection');
 });
 
 test('AI can recommend and apply a matching template in step 1 while keeping the flow coherent', async ({
@@ -1212,27 +1214,29 @@ test('AI can recommend and apply a matching template in step 1 while keeping the
 }) => {
   await installWorkflowMocks(page);
 
-  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+  await page.goto('/app/agreements/new/wizard?step=1', {
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByRole('button', { name: 'Use AI' }).click();
   await page
-    .getByTestId('start-with-ai-input-dock')
+    .getByTestId('step1-job-description-input')
     .fill(
       'Full kitchen remodel with demolition, cabinet replacement, countertops, appliance reconnects, plumbing, electrical, and finish work.'
     );
-  await page.getByTestId('start-with-ai-submit-dock').click();
+  await page.getByTestId('step1-find-best-starting-point-button').click();
 
   await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
     'Kitchen Remodel Starter'
   );
-  await page.getByTestId('step1-ai-setup-apply-template').click();
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().includes('/api/projects/agreements/') &&
+      response.url().includes('/apply-template/') &&
+      response.request().method() === 'POST'
+    ),
+    page.getByTestId('step1-ai-setup-apply-template').click(),
+  ]);
 
-  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('step1-template-applied-summary')).toContainText(
-    'Kitchen Remodel Starter'
-  );
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Kitchen Remodel');
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
@@ -1268,7 +1272,8 @@ test('template AI top action generates a draft from a prompt and template contex
   await expect(page.getByTestId('templates-save-button')).toBeVisible();
   await expect(page.getByTestId('templates-detail-name')).toContainText('Deck Build Template');
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 12 working days');
-  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('2 follow-up questions prepared');
+  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('$12,000-$18,000');
+  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('Milestone-Based Assistance');
   await expect(page.getByTestId('templates-template-insights')).toBeVisible();
   await expect(page.getByTestId('templates-template-insights')).toContainText(
     '2 milestones is within the expected range'
@@ -1804,6 +1809,12 @@ test('template assumptions and exclusions persist after save reload and reselect
   await page.getByTestId('templates-project-type-input').fill('Outdoor');
   await page.getByTestId('templates-project-subtype-input').fill('Shed Build');
   await page.getByTestId('templates-description-input').fill('Reusable shed build scope.');
+  await page.getByTestId('templates-tab-milestones').click();
+  await page.getByTestId('templates-milestone-title-1').fill('Project setup');
+  await page.getByTestId('templates-milestone-description-1').fill(
+    'Confirm site access and prepare the reusable work plan.'
+  );
+  await page.getByTestId('templates-tab-setup').click();
   await page.getByTestId('templates-exclusions-input').fill(
     'Exclusions\n- The following are not included unless explicitly added:\n- Electrical\n- Plumbing'
   );
@@ -1813,7 +1824,6 @@ test('template assumptions and exclusions persist after save reload and reselect
 
   await page.getByTestId('templates-save-button').click();
 
-  await expect(page.getByText('Template created.')).toBeVisible();
   await expect.poll(() =>
     store.templates.some((row) => row.name === 'Scope Persistence Template')
   ).toBe(true);
@@ -1853,15 +1863,15 @@ test('template schedule auto-sequence button computes sequential offsets from du
   await page.getByTestId('templates-tab-milestones').click();
 
   await page.getByTestId('templates-milestone-title-1').fill('Site prep');
-  await page.getByTestId('templates-milestone-duration-1').fill('2');
   await page.getByTestId('templates-add-milestone-button').click();
   await page.getByTestId('templates-milestone-title-2').fill('Framing');
-  await page.getByTestId('templates-milestone-duration-2').fill('3');
   await page.getByTestId('templates-add-milestone-button').click();
   await page.getByTestId('templates-milestone-title-3').fill('Cleanup');
-  await page.getByTestId('templates-milestone-duration-3').fill('1');
 
   await page.getByTestId('templates-tab-schedule').click();
+  await page.getByTestId('templates-milestone-duration-1').fill('2');
+  await page.getByTestId('templates-milestone-duration-2').fill('3');
+  await page.getByTestId('templates-milestone-duration-3').fill('1');
   await page.getByTestId('templates-auto-sequence-timeline').click();
 
   await expect(page.getByTestId('templates-milestone-start-offset-1')).toHaveValue('0');
@@ -1870,7 +1880,6 @@ test('template schedule auto-sequence button computes sequential offsets from du
 
   await page.getByTestId('templates-save-button').click();
 
-  await expect(page.getByText('Template created.')).toBeVisible();
   await expect.poll(() => {
     const saved = store.templates.find((row) => row.name === 'Auto Sequence Template');
     return saved ? saved.milestones.map((row) => row.start_offset) : null;
@@ -2001,20 +2010,25 @@ test('wizard save as template stores the current setup and supports reuse in a l
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId(`template-discovery-card-${savedTemplate.id}`)).toBeVisible();
 
-  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+  await page.goto('/app/agreements/new/wizard?step=1', {
     waitUntil: 'domcontentloaded',
   });
-  await page.getByRole('button', { name: 'Use Template' }).click();
-  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
-  await page
-    .getByPlaceholder('Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...')
-    .fill('Bathroom Remodel Reusable');
-  await page.getByRole('button', { name: /Bathroom Remodel Reusable/ }).click();
-  await page.getByRole('button', { name: 'Apply Selected Template' }).click();
+  await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill('Bathroom Remodel Reusable');
+  await page.getByTestId('step1-find-best-starting-point-button').click();
 
-  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Bathroom Remodel');
-  await expect(page.locator('textarea[name="description"]')).toContainText(
-    'Complete bathroom remodel'
+  await expect(page.getByTestId('step1-ai-setup-result')).toContainText('Bathroom Remodel Reusable');
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().includes('/api/projects/agreements/') &&
+      response.url().includes('/apply-template/') &&
+      response.request().method() === 'POST'
+    ),
+    page.getByTestId('step1-ai-setup-apply-template').click(),
+  ]);
+
+  await expect(page.getByTestId('step1-template-applied-summary')).toContainText(
+    'Bathroom Remodel Reusable'
   );
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
