@@ -1218,10 +1218,14 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody>
                     {homeownerRows.length === 0 ? (
-                      <tr><Td colSpan={6} className="text-slate-600">No results.</Td></tr>
+                      <tr><Td colSpan={6} className={adminEmptyText}>No results.</Td></tr>
                     ) : (
                       homeownerRows.map((h) => (
-                        <tr key={h.id} data-testid={`admin-homeowner-row-${h.id}`} className="border-b border-black/5">
+                        <tr
+                          key={h.id}
+                          data-testid={`admin-homeowner-row-${h.id}`}
+                          className="border-b border-white/10 [&_.text-slate-600]:text-sky-100/75 [&_.text-slate-700]:text-sky-100/75 [&_.text-slate-900]:text-sky-50"
+                        >
                           <Td>
                             <div className="font-extrabold text-slate-900">{h.name || "—"}</div>
                             <div className="text-xs text-slate-600">{h.email || "—"} • {h.phone || "—"}</div>

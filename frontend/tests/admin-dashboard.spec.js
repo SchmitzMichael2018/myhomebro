@@ -510,6 +510,10 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=homeowners', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-homeowners-view')).toBeVisible();
   await expect(page.getByTestId('admin-homeowner-row-701')).toContainText('Casey Prospect');
+  const homeownerRowClass = await page.getByTestId('admin-homeowner-row-701').getAttribute('class');
+  expect(homeownerRowClass).toContain('[&_.text-slate-600]:text-sky-100/75');
+  expect(homeownerRowClass).toContain('[&_.text-slate-700]:text-sky-100/75');
+  expect(homeownerRowClass).toContain('[&_.text-slate-900]:text-sky-50');
 
   await page.goto('/app/admin?view=disputes', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-disputes-view')).toBeVisible();
