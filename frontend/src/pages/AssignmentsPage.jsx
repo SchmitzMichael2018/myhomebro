@@ -679,7 +679,8 @@ export default function AssignmentsPage() {
       title="Assignments"
       subtitle="Assign project ownership and milestone work without leaving the operational console."
       variant="operational"
-      contentClassName="mx-auto max-w-[1120px]"
+      className="max-w-[1680px]"
+      contentClassName="w-full"
     >
       <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">

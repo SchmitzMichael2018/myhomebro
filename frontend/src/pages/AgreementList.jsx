@@ -1742,7 +1742,7 @@ export default function AgreementList() {
     <ContractorPageSurface
       title="Agreements"
       className="max-w-[1680px]"
-      surfaceClassName="rounded-none border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
+      variant="operational"
       contentClassName="space-y-4"
     >
       {/* Header */}
@@ -1844,7 +1844,7 @@ export default function AgreementList() {
         <div className="flex-1" />
 
         <button
-          className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-sm font-semibold text-[#082652] shadow-sm transition hover:bg-sky-50"
+          className="inline-flex items-center gap-2 rounded-xl border border-white/80 bg-white/95 px-3.5 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-sky-50"
           title="New Agreement"
           onClick={() => navigate(`${BASE}/agreements/new/wizard?step=1`)}
         >
@@ -2003,7 +2003,7 @@ export default function AgreementList() {
                       icon: busyArchiveRow === r.id ? RefreshCw : Undo2,
                       onClick: () => unarchiveAgreement(r),
                       disabled: busyArchiveRow === r.id,
-                      className: "border border-white/15 bg-white text-[#082652] hover:bg-sky-50",
+                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
                     }
                   : canMarkComplete
                   ? {
@@ -2030,7 +2030,7 @@ export default function AgreementList() {
                       icon: Layers,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "bg-white text-[#082652] hover:bg-sky-50",
+                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
                     }
                   : isDraft
                   ? {
@@ -2039,7 +2039,7 @@ export default function AgreementList() {
                       icon: Pencil,
                       onClick: () => goEdit(r.id),
                       disabled: false,
-                      className: "bg-white text-[#082652] hover:bg-sky-50",
+                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
                     }
                   : {
                       key: "status",
@@ -2047,7 +2047,7 @@ export default function AgreementList() {
                       icon: Eye,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "bg-white text-[#082652] hover:bg-sky-50",
+                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
                     };
 
                 return (
@@ -2248,7 +2248,7 @@ export default function AgreementList() {
                       {menuOpen ? (
                         <div
                           ref={actionMenuRef}
-                          className="absolute right-3 top-14 z-20 min-w-[180px] rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
+                          className="absolute right-3 top-14 z-20 min-w-[180px] rounded-xl border border-white/15 bg-[#071f46] p-1.5 text-left shadow-[0_16px_40px_rgba(2,8,23,0.34)]"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {!["manage", "status"].includes(primaryAction.key) ? (
@@ -2258,7 +2258,7 @@ export default function AgreementList() {
                                 setActionMenuOpenForId(null);
                                 goView(r.id);
                               }}
-                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sky-100 hover:bg-white/10"
                             >
                               <Eye size={14} /> View agreement
                             </button>
@@ -2273,7 +2273,7 @@ export default function AgreementList() {
                               }
                             }}
                             disabled={!canMarkComplete || primaryAction.key === "complete" || busyCompleteRow === r.id}
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sky-100 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-sky-100/35 disabled:hover:bg-transparent"
                           >
                             <Check size={14} /> Mark complete
                           </button>
@@ -2289,7 +2289,7 @@ export default function AgreementList() {
                               }
                             }}
                             disabled={(canUnarchive && primaryAction.key === "restore") || (!canUnarchive && !canArchive) || busyArchiveRow === r.id}
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sky-100 hover:bg-white/10 disabled:cursor-not-allowed disabled:text-sky-100/35 disabled:hover:bg-transparent"
                           >
                             {canUnarchive ? <Undo2 size={14} /> : <Archive size={14} />}
                             {canUnarchive ? "Restore agreement" : "Archive agreement"}
@@ -2302,7 +2302,7 @@ export default function AgreementList() {
                               if (isDraft) deleteDraft(r);
                             }}
                             disabled={!isDraft || busyDeleteRow === r.id}
-                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-rose-100 hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:text-sky-100/35 disabled:hover:bg-transparent"
                           >
                             <Trash2 size={14} /> Delete draft
                           </button>
