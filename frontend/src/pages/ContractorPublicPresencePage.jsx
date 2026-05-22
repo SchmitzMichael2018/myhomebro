@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 
 import api from '../api';
 import Modal from '../components/Modal.jsx';
+import ContractorPageSurface from '../components/dashboard/ContractorPageSurface.jsx';
 import QuickAddLeadModal from '../components/QuickAddLeadModal.jsx';
 import { StartWithAIEntry } from '../components/StartWithAIAssistant.jsx';
 import { WorkflowHint } from '../components/WorkflowHint.jsx';
@@ -1023,7 +1024,11 @@ export default function ContractorPublicPresencePage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+    <ContractorPageSurface
+      variant="operational"
+      contentClassName="mx-auto max-w-7xl"
+    >
+      <div className="space-y-6">
       <ContractorContextualGuideModal
         guide={publicLeadsGuide}
         onDismiss={dismissActivationSection}
@@ -2010,6 +2015,7 @@ export default function ContractorPublicPresencePage() {
           ) : null}
         </aside>
       </section>
-    </div>
+      </div>
+    </ContractorPageSurface>
   );
 }

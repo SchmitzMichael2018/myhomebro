@@ -6,6 +6,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import api from "../api";
 import toast from "react-hot-toast";
+import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import MilestoneEditModal from "./MilestoneEditModal";
 
 import "../styles/fullcalendar-core.css";
@@ -357,13 +358,12 @@ export default function Calendar() {
   );
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold text-slate-900">Calendar</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Review milestone timing, assignments, and due dates in one schedule view.
-        </p>
-      </div>
+    <ContractorPageSurface
+      eyebrow="Schedule"
+      title="Calendar"
+      subtitle="Review milestone timing, assignments, and due dates in one schedule view."
+      variant="operational"
+    >
 
       {loading ? (
         <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
@@ -404,6 +404,6 @@ export default function Calendar() {
           onSaved={loadEvents}
         />
       )}
-    </div>
+    </ContractorPageSurface>
   );
 }

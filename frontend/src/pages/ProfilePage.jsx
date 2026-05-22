@@ -11,6 +11,7 @@ export default function ProfilePage() {
       title="Profile & Billing"
       subtitle="Manage your business profile, plan details, Stripe status, and account settings from a consistent account surface."
       className="max-w-[1180px]"
+      variant="operational"
     >
       <ContractorProfile />
       <ProfileDangerZone />

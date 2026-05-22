@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 import api from "../api.js";
-import PageShell from "../components/PageShell.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
 import { produceStructuredAssistantPlan } from "../lib/assistantReasoning.js";
@@ -415,12 +415,13 @@ export default function AIAssistantPage() {
   }
 
   return (
-    <PageShell
+    <ContractorPageSurface
+      eyebrow="AI Workspace"
       title="AI Workspace"
       subtitle="Start work, launch the right flow, and keep the next move clear."
-      showLogo
+      variant="operational"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 pb-10 pt-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
           <div
             className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8"
@@ -726,6 +727,6 @@ export default function AIAssistantPage() {
           </div>
         </section>
       </div>
-    </PageShell>
+    </ContractorPageSurface>
   );
 }

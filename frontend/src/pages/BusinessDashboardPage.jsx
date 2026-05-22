@@ -5,7 +5,7 @@ import BusinessDashboard from "../components/BusinessDashboard";
 
 export default function BusinessDashboardPage() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-transparent">
       <BusinessDashboard />
     </div>
   );

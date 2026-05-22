@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 import { listSubaccounts } from "../api/subaccounts";
 import {
@@ -673,10 +674,16 @@ export default function AssignmentsPage() {
      Render
   ----------------------------- */
   return (
-    <div className="mx-auto max-w-[1120px] space-y-5 p-6">
+    <ContractorPageSurface
+      eyebrow="Team"
+      title="Assignments"
+      subtitle="Assign project ownership and milestone work without leaving the operational console."
+      variant="operational"
+      contentClassName="mx-auto max-w-[1120px]"
+    >
+      <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Assignments</h1>
           <div className="mhb-helper-text mt-4">
             All projects stay visible here. Use the owner controls for project supervision and the drawer for milestone work.
           </div>
@@ -965,7 +972,8 @@ export default function AssignmentsPage() {
         onAssignSelected={bulkAssignMilestoneOverrides}
         onClearOverrides={bulkClearOverrides}
       />
-    </div>
+      </div>
+    </ContractorPageSurface>
   );
 }
 

@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { CircleAlert, MessageSquareReply, RefreshCw, Send, Ticket } from "lucide-react";
 
 import { getSupportTicket, listSupportTickets, replyToSupportTicket } from "../api";
-import PageShell from "../components/PageShell.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import SupportRequestModal from "../components/SupportRequestModal.jsx";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
 
@@ -256,11 +256,13 @@ export default function SupportTicketsPage() {
   };
 
   return (
-    <PageShell
+    <ContractorPageSurface
+      eyebrow="Support"
       title="Support"
       subtitle="Send a support request and review your past tickets in one place."
+      variant="operational"
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 pb-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
           <div className="space-y-1">
             <div className="text-sm font-semibold text-slate-900">Need help?</div>
@@ -438,7 +440,7 @@ export default function SupportTicketsPage() {
           setSelectedTicket(ticket);
         }}
       />
-    </PageShell>
+    </ContractorPageSurface>
   );
 }
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function formatMoney(value) {
   const number = Number(value || 0);
@@ -73,17 +74,26 @@ export default function PayoutDetailPage() {
   }, [id]);
 
   if (loading) {
-    return <div className="p-6 text-sm text-slate-500">Loading payout detail...</div>;
+    return (
+      <ContractorPageSurface variant="operational">
+        <div className="text-sm text-sky-100/75">Loading payout detail...</div>
+      </ContractorPageSurface>
+    );
   }
 
   if (error) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4 p-6">
+      <ContractorPageSurface
+        eyebrow="Finance"
+        title="Payout Detail"
+        subtitle="Review payout status, payee context, transfer history, and related agreement references."
+        variant="operational"
+        contentClassName="mx-auto max-w-4xl"
+      >
         <div
           data-testid="payout-detail-missing"
           className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
         >
-          <h1 className="text-2xl font-bold text-slate-900">Payout Detail</h1>
           <p className="mt-3 text-sm text-slate-600">{error}</p>
           <a
             href="/app/payouts/history"
@@ -92,7 +102,7 @@ export default function PayoutDetailPage() {
             Back to Payout History
           </a>
         </div>
-      </div>
+      </ContractorPageSurface>
     );
   }
 
@@ -106,23 +116,24 @@ export default function PayoutDetailPage() {
       : "slate";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 data-testid="payout-detail-title" className="text-2xl font-bold text-slate-900">
-            Payout Detail
-          </h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Review payout status, payee context, transfer history, and related agreement references.
-          </p>
-        </div>
+    <ContractorPageSurface
+      eyebrow="Finance"
+      title="Payout Detail"
+      subtitle="Review payout status, payee context, transfer history, and related agreement references."
+      variant="operational"
+      contentClassName="mx-auto max-w-5xl"
+      actions={
         <a
           href="/app/payouts/history"
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="rounded-lg border border-white/20 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-50"
         >
           Back to Payout History
         </a>
-      </div>
+      }
+    >
+      <h1 data-testid="payout-detail-title" className="sr-only">
+        Payout Detail
+      </h1>
 
       <section className="grid gap-4 md:grid-cols-3">
         <SummaryCard
@@ -235,6 +246,6 @@ export default function PayoutDetailPage() {
           </div>
         ) : null}
       </section>
-    </div>
+    </ContractorPageSurface>
   );
 }

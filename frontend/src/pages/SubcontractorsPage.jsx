@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 
 import api from "../api";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { WorkflowHint } from "../components/WorkflowHint.jsx";
 import { getSubcontractorHubHint } from "../lib/workflowHints.js";
 
@@ -391,22 +392,19 @@ export default function SubcontractorsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 data-testid="subcontractors-page-title" className="text-2xl font-bold text-slate-900">
-            Subcontractors
-          </h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Manage invitations, assignments, and submitted work in one place.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <ContractorPageSurface
+      eyebrow="Team"
+      title="Subcontractors"
+      subtitle="Manage invitations, assignments, and submitted work in one place."
+      variant="operational"
+      contentClassName="mx-auto max-w-7xl"
+      actions={
+        <>
           <button
             type="button"
             data-testid="subcontractors-new-assignment-button"
             onClick={() => setAssignOpen(true)}
-            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-500"
           >
             Assign Work
           </button>
@@ -414,12 +412,16 @@ export default function SubcontractorsPage() {
             type="button"
             data-testid="subcontractors-invite-button"
             onClick={() => setInviteOpen(true)}
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="rounded-xl border border-white/20 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-50"
           >
             Invite Subcontractor
           </button>
-        </div>
-      </header>
+        </>
+      }
+    >
+      <h1 data-testid="subcontractors-page-title" className="sr-only">
+        Subcontractors
+      </h1>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Awaiting Review" value={submittedForReviewCount} />
@@ -1023,6 +1025,6 @@ export default function SubcontractorsPage() {
           </div>
         </ModalShell>
       ) : null}
-    </div>
+    </ContractorPageSurface>
   );
 }

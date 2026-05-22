@@ -4,6 +4,7 @@ import { ArrowRight, ClipboardList, Copy, ExternalLink, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
 import ConvertToAgreementPanel from "../components/ConvertToAgreementPanel.jsx";
 import {
@@ -755,7 +756,11 @@ export default function ContractorBidsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6" data-testid="leads-and-bids-page">
+    <ContractorPageSurface
+      variant="operational"
+      contentClassName="mx-auto max-w-7xl"
+    >
+      <div className="space-y-6" data-testid="leads-and-bids-page">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -1462,6 +1467,7 @@ export default function ContractorBidsPage() {
         row={selectedRow}
         onClose={() => setConvertPanelOpen(false)}
       />
-    </div>
+      </div>
+    </ContractorPageSurface>
   );
 }

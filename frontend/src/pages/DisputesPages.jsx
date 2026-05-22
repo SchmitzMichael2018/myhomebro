@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import { toast } from "react-hot-toast";
 import PageShell from "../components/PageShell.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import DisputesCreateModal from "../components/DisputesCreateModal.jsx";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import { useNavigate } from "react-router-dom";
@@ -1440,9 +1441,13 @@ export default function DisputesPages() {
     : "Initiate disputes, pay fee to freeze escrow, propose resolutions, and manage evidence.";
 
   const showNewButton = supportsDisputesApi && !isAdmin;
+  const ShellComponent = isAdmin ? PageShell : ContractorPageSurface;
+  const shellProps = isAdmin
+    ? { title: pageTitle, subtitle: pageSubtitle, showLogo: true }
+    : { eyebrow: "Operations", title: pageTitle, subtitle: pageSubtitle, variant: "operational" };
 
   return (
-    <PageShell title={pageTitle} subtitle={pageSubtitle} showLogo>
+    <ShellComponent {...shellProps}>
       {supportsDisputesApi ? (
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
@@ -1528,6 +1533,6 @@ export default function DisputesPages() {
       <RespondModal open={respondOpen} dispute={activeDispute} onClose={() => setRespondOpen(false)} onSubmitted={refreshAll} />
 
       <ResolveModal open={resolveOpen} dispute={activeDispute} onClose={() => setResolveOpen(false)} onResolved={refreshAll} />
-    </PageShell>
+    </ShellComponent>
   );
 }

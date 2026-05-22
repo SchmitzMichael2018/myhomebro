@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import api from "../../api";
 import { getStripePublishableKey } from "../../lib/runtimeConfig";
+import ContractorPageSurface from "../dashboard/ContractorPageSurface.jsx";
 import StripeOnboardingButton from "../StripeOnboardingButton.jsx";
 
 const CONNECT_SCRIPT_SRC = "https://connect-js.stripe.com/v1.0/connect.js";
@@ -182,8 +183,14 @@ export default function EmbeddedStripeOnboarding() {
   const progressValue = completed ? 100 : embedding ? 66 : loading ? 33 : 50;
 
   return (
-    <div className="min-h-full px-4 py-6" data-testid="embedded-stripe-onboarding-page">
-      <div className="mx-auto max-w-5xl">
+    <ContractorPageSurface
+      eyebrow="Payments"
+      title="Stripe Onboarding"
+      subtitle="Finish payment setup without leaving MyHomeBro."
+      variant="operational"
+      contentClassName="mx-auto max-w-5xl"
+    >
+      <div data-testid="embedded-stripe-onboarding-page">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
@@ -346,6 +353,6 @@ export default function EmbeddedStripeOnboarding() {
           </div>
         </div>
       </div>
-    </div>
+    </ContractorPageSurface>
   );
 }

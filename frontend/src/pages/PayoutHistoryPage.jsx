@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function formatMoney(value) {
   const number = Number(value || 0);
@@ -115,26 +116,27 @@ export default function PayoutHistoryPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 data-testid="payout-history-title" className="text-2xl font-bold text-slate-900">
-            Payout History
-          </h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Drill into subcontractor payout status, failures, and paid history for bookkeeping and operations.
-          </p>
-        </div>
+    <ContractorPageSurface
+      eyebrow="Finance"
+      title="Payout History"
+      subtitle="Drill into subcontractor payout status, failures, and paid history for bookkeeping and operations."
+      variant="operational"
+      contentClassName="mx-auto max-w-7xl"
+      actions={
         <button
           type="button"
           data-testid="payout-history-export"
           onClick={exportCsv}
           disabled={exporting}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className="rounded-lg border border-white/20 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-50 disabled:opacity-60"
         >
           {exporting ? "Exporting..." : "Export CSV"}
         </button>
-      </div>
+      }
+    >
+      <h1 data-testid="payout-history-title" className="sr-only">
+        Payout History
+      </h1>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 md:grid-cols-4">
@@ -313,6 +315,6 @@ export default function PayoutHistoryPage() {
           </div>
         )}
       </section>
-    </div>
+    </ContractorPageSurface>
   );
 }

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
+import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import {
   normalizeProjectFamilyContext,
   useWorkspaceProjectFamilyContext,
@@ -440,8 +441,8 @@ export default function ContractorOnboardingForm() {
   const milestoneRows = safeArray(setup.milestone_tendencies);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-amber-50 px-4 py-8 text-slate-900">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <ContractorPageSurface variant="operational">
+      <div data-testid="contractor-onboarding-page" className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <div className="relative overflow-hidden rounded-3xl border border-blue-200 bg-gradient-to-br from-blue-800 via-sky-600 to-amber-300 px-6 py-6 text-white shadow-xl">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,255,255,0.14),transparent_24%)]" />
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1074,6 +1075,6 @@ export default function ContractorOnboardingForm() {
           </main>
         </div>
       </div>
-    </div>
+    </ContractorPageSurface>
   );
 }

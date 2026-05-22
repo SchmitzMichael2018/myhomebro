@@ -48,7 +48,7 @@ import CustomerForm from "../components/CustomerForm.jsx";
 import CustomerEdit from "../components/CustomerEdit.jsx";
 
 /* Other sections */
-import ContractorProfile from "../components/ContractorProfile.jsx";
+import ProfilePage from "../pages/ProfilePage.jsx";
 import ContractorOnboardingForm from "../components/ContractorOnboardingForm.jsx";
 import EmbeddedStripeOnboarding from "../components/Stripe/EmbeddedStripeOnboarding.jsx";
 import BusinessDashboard from "../components/BusinessDashboard.jsx";
@@ -206,7 +206,7 @@ export function protectedRoutes() {
           <Route path="expenses" element={<Expenses />} />
           <Route path="disputes" element={<Disputes />} />
 
-          <Route path="profile" element={<ContractorProfile />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="onboarding" element={<ContractorOnboardingForm />} />
           <Route path="onboarding/stripe" element={<EmbeddedStripeOnboarding />} />
         </Route>
