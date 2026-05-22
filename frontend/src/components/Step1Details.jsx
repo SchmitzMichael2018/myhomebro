@@ -162,6 +162,18 @@ function buildDescriptionRequestContext(baseDescription = "", clarificationLines
   return trimmedBase ? `${trimmedBase}\n\n${clarificationBlock}` : clarificationBlock;
 }
 
+function extractAiScopeText(data = {}) {
+  const candidates = [
+    data?.description,
+    data?.scope_of_work,
+    data?.scopeOfWork,
+    data?.normalized_description,
+    data?.normalizedDescription,
+    data?.proposal_draft?.text,
+  ];
+  return candidates.map(safeTrim).find(Boolean) || "";
+}
+
 const MATCH_STOP_WORDS = new Set([
   "a",
   "an",
@@ -1530,6 +1542,48 @@ function buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate } = {}) {
   return `Work includes ${focus.toLowerCase()} services, project setup, coordination of agreed materials and labor, completion of the planned scope, site protection, and cleanup. Review and edit this scope before sending.`;
 }
 
+function buildLocalAiScopeDraft({ mode, context, agreement, dLocal, selectedTemplate } = {}) {
+  const baseContext = cleanScopeFallbackCandidate(context) ||
+    buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate });
+  const title = cleanScopeFallbackCandidate(
+    dLocal?.project_title || agreement?.project_title || agreement?.title
+  );
+  const subtype = cleanScopeFallbackCandidate(dLocal?.project_subtype || agreement?.project_subtype);
+  const type = cleanScopeFallbackCandidate(dLocal?.project_type || agreement?.project_type);
+  const projectLabel = title || subtype || type || "the project";
+  const scopeIntro =
+    mode === "improve" && baseContext
+      ? baseContext
+      : `Work includes ${String(projectLabel).toLowerCase()} services based on the current agreement details.`;
+
+  return [
+    scopeIntro,
+    "Contractor will verify site conditions, access, measurements, and material selections before work begins.",
+    "The work includes coordination of agreed labor, materials, installation or construction activities, cleanup, and closeout for the described scope.",
+    "Items not specifically listed in this scope, including hidden condition repairs, engineering, permits, utility relocation, or specialty upgrades, are excluded unless added in writing.",
+  ].join("\n");
+}
+
+function buildMilestoneScopeContext(agreement) {
+  const source = Array.isArray(agreement?.milestones)
+    ? agreement.milestones
+    : Array.isArray(agreement?.milestone_set)
+    ? agreement.milestone_set
+    : [];
+  return source
+    .slice(0, 8)
+    .map((milestone, index) => {
+      const title = cleanScopeFallbackCandidate(milestone?.title || milestone?.name);
+      const description = cleanScopeFallbackCandidate(
+        milestone?.description || milestone?.scope || milestone?.scope_of_work
+      );
+      const label = title || description;
+      if (!label) return "";
+      return `${index + 1}. ${[title, description && description !== title ? description : ""].filter(Boolean).join(" - ")}`;
+    })
+    .filter(Boolean);
+}
+
 function normalizeTemplateConfidenceLevel(value) {
   const normalized = safeTrim(value).toLowerCase();
   if (normalized === "high" || normalized === "recommended") return "high";
@@ -2645,9 +2699,22 @@ export default function Step1Details({
     setAiPreview("");
     setAiBusy(true);
 
+    const actionContext = getScopeActionContext() || "";
+    const templateScope = cleanScopeFallbackCandidate(
+      selectedTemplate?.scope_of_work ||
+        selectedTemplate?.default_scope ||
+        selectedTemplate?.scope_description ||
+        selectedTemplate?.description ||
+        agreement?.selected_template?.scope_of_work ||
+        agreement?.selected_template?.default_scope ||
+        agreement?.selected_template?.scope_description ||
+        agreement?.selected_template?.description
+    );
+    const milestoneContext = buildMilestoneScopeContext(agreement);
+
     try {
       const clarificationContext = buildDescriptionRequestContext(
-        getScopeActionContext() || "",
+        actionContext,
         clarificationSummaryLines
       );
       const payload = {
@@ -2656,11 +2723,30 @@ export default function Step1Details({
         project_title: dLocal.project_title || "",
         project_type: dLocal.project_type || "",
         project_subtype: dLocal.project_subtype || "",
+        description: actionContext,
+        scope_of_work: actionContext,
+        template_scope: templateScope,
+        default_scope: templateScope,
+        milestones: milestoneContext,
+        milestone_count: agreement?.milestone_count ?? agreement?.milestones?.length ?? null,
         current_description: clarificationContext,
       };
 
+      if (!agreementId) {
+        const fallbackDraft = buildLocalAiScopeDraft({
+          mode,
+          context: clarificationContext,
+          agreement,
+          dLocal,
+          selectedTemplate,
+        });
+        setAiPreview(fallbackDraft);
+        setAiErr("AI drafting needs a saved agreement, so MyHomeBro prepared a structured scope draft from the current project details.");
+        return;
+      }
+
       const res = await api.post(`/projects/agreements/ai/description/`, payload);
-      const text = res?.data?.description || "";
+      const text = extractAiScopeText(res?.data || {});
 
       if (!safeTrim(text)) {
         throw new Error("AI returned an empty description.");
@@ -2683,7 +2769,23 @@ export default function Step1Details({
         setStep1ValidationMessage(getStep1FriendlyErrorMessage(payload, fieldErrors));
         focusFirstStep1FieldError(fieldErrors);
       }
-      setAiErr(getStep1FriendlyErrorMessage(payload, fieldErrors) || e?.message || "AI description request failed.");
+      const fallbackDraft = buildLocalAiScopeDraft({
+        mode,
+        context: actionContext,
+        agreement,
+        dLocal,
+        selectedTemplate,
+      });
+      if (safeTrim(fallbackDraft)) {
+        setAiPreview(fallbackDraft);
+        setAiErr("AI scope assist is using the project details available. Review the draft below before applying it.");
+      } else {
+        setAiErr(
+          getStep1FriendlyErrorMessage(payload, fieldErrors) ||
+            e?.message ||
+            "AI scope assist is temporarily unavailable. You can keep editing this scope manually."
+        );
+      }
     } finally {
       setAiBusy(false);
     }
@@ -4484,7 +4586,7 @@ export default function Step1Details({
       };
 
       const refineRes = await api.post(`/projects/agreements/ai/description/`, refinePayload);
-      refinedDescription = safeTrim(refineRes?.data?.description || "");
+      refinedDescription = extractAiScopeText(refineRes?.data || {});
 
       if (!refinedDescription) {
         throw new Error("AI returned an empty description.");
@@ -5271,7 +5373,7 @@ export default function Step1Details({
             <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-900">
-                  Job description <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Required</span>
+                  Job description <span className="mhb-required-badge ml-1">Required</span>
                 </label>
                 <input
                   ref={step1JobDescriptionInputRef}
@@ -5778,7 +5880,7 @@ export default function Step1Details({
               <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-900">
-                    Job description <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Required</span>
+                    Job description <span className="mhb-required-badge ml-1">Required</span>
                   </label>
                   <input
                     ref={step1JobDescriptionInputRef}
@@ -6731,7 +6833,7 @@ export default function Step1Details({
                     <div className="flex items-center gap-2">
                       <label className="block text-sm font-medium text-slate-900">
                         Project Type{" "}
-                        <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                        <span className="mhb-required-badge ml-1">
                           Required
                         </span>
                       </label>
@@ -6952,7 +7054,7 @@ export default function Step1Details({
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-900">
                   Scope of Work{" "}
-                  <span className="ml-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                  <span className="mhb-required-badge ml-1">
                     Required
                   </span>
                 </label>
@@ -7042,7 +7144,11 @@ export default function Step1Details({
                     : "Review and edit the final scope so it accurately reflects the work you are agreeing to perform."}
                 </div>
 
-                {aiErr ? <div className="mt-2 text-xs text-red-600">{aiErr}</div> : null}
+                {aiErr ? (
+                  <div className="mt-2 rounded-xl border border-amber-300/35 bg-amber-500/12 px-3 py-2 text-xs font-medium text-amber-100">
+                    {aiErr}
+                  </div>
+                ) : null}
 
                 {aiPreview ? (
                   <div className="mt-3 rounded-md border bg-indigo-50 p-3">

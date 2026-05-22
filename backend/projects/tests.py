@@ -5366,6 +5366,39 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertTrue(payload["ai_unlimited"])
         self.assertIn("classification", payload)
 
+    def test_ai_agreement_description_includes_scope_template_and_milestones(self):
+        with patch(
+            "projects.api.ai_agreement_views.generate_or_improve_description",
+            return_value={
+                "description": "AI-generated scope",
+                "_mode": "generate",
+                "_model": "test-model",
+            },
+        ) as writer:
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": self.agreement.id,
+                    "mode": "generate",
+                    "project_title": "Deck Refresh",
+                    "scope_of_work": "Replace deck boards and railings.",
+                    "template_scope": "Default deck scope with framing, decking, rails, and cleanup.",
+                    "milestones": [
+                        {"title": "Demo", "description": "Remove damaged boards."},
+                        {"title": "Install", "description": "Install replacement decking."},
+                    ],
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        current_description = writer.call_args.kwargs["current_description"]
+        self.assertIn("Replace deck boards and railings.", current_description)
+        self.assertIn("Template/default scope", current_description)
+        self.assertIn("Default deck scope", current_description)
+        self.assertIn("Existing milestones", current_description)
+        self.assertIn("Demo - Remove damaged boards.", current_description)
+
     def test_ai_agreement_description_falls_back_when_ai_fails(self):
         with patch(
             "projects.api.ai_agreement_views.generate_or_improve_description",

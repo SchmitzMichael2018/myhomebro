@@ -59,6 +59,53 @@ def _ai_access_payload() -> dict:
     }
 
 
+def _safe_text(value) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
+def _milestone_context(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    rows: list[str] = []
+    for idx, item in enumerate(value[:8], start=1):
+        if isinstance(item, str):
+            text = _safe_text(item)
+        elif isinstance(item, dict):
+            title = _safe_text(item.get("title") or item.get("name"))
+            description = _safe_text(
+                item.get("description") or item.get("scope") or item.get("scope_of_work")
+            )
+            text = " - ".join(part for part in [title, description] if part)
+        else:
+            text = ""
+        if text:
+            rows.append(f"{idx}. {text}")
+    return rows
+
+
+def _compose_description_context(data) -> str:
+    direct_context = _safe_text(data.get("current_description"))
+    scope_context = _safe_text(data.get("scope_of_work") or data.get("scopeOfWork"))
+    description_context = _safe_text(data.get("description"))
+    template_context = _safe_text(
+        data.get("template_scope")
+        or data.get("default_scope")
+        or data.get("template_default_scope")
+        or data.get("defaultScope")
+    )
+    milestone_rows = _milestone_context(data.get("milestones"))
+
+    sections: list[str] = []
+    for text in [direct_context, scope_context, description_context]:
+        if text and text not in sections:
+            sections.append(text)
+    if template_context:
+        sections.append(f"Template/default scope:\n{template_context}")
+    if milestone_rows:
+        sections.append("Existing milestones:\n" + "\n".join(milestone_rows))
+    return "\n\n".join(sections).strip()
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_agreement_description(request):
@@ -85,10 +132,10 @@ def ai_agreement_description(request):
         if agreement.contractor_id and agreement.contractor_id != contractor.id:
             return _deny("Not your agreement.", "FORBIDDEN")
 
-    raw_project_title = (request.data.get("project_title") or "").strip()
-    raw_project_type = (request.data.get("project_type") or "").strip()
-    raw_project_subtype = (request.data.get("project_subtype") or "").strip()
-    raw_description = (request.data.get("current_description") or "").strip()
+    raw_project_title = _safe_text(request.data.get("project_title"))
+    raw_project_type = _safe_text(request.data.get("project_type"))
+    raw_project_subtype = _safe_text(request.data.get("project_subtype"))
+    raw_description = _compose_description_context(request.data)
 
     if not any([raw_project_title, raw_project_type, raw_project_subtype, raw_description]):
         return _validation_error(

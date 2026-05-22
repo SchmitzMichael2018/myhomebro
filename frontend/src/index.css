@@ -325,6 +325,28 @@
     background-color: rgba(37, 99, 235, 0.18) !important;
   }
 
+  .mhb-agreement-wizard .mhb-required-badge,
+  .mhb-required-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    border: 1px solid rgba(253, 164, 175, 0.88);
+    background:
+      linear-gradient(135deg, rgba(159, 18, 57, 0.98), rgba(225, 29, 72, 0.92));
+    padding: 0.125rem 0.5rem;
+    color: #fff7f8;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    text-shadow: 0 1px 1px rgba(76, 5, 25, 0.5);
+    box-shadow:
+      0 0 0 1px rgba(254, 205, 211, 0.22),
+      0 0 14px rgba(244, 63, 94, 0.2),
+      0 8px 20px rgba(159, 18, 57, 0.32);
+  }
+
   .mhb-agreement-wizard :is(button, a)[class*="bg-indigo-600"],
   .mhb-agreement-wizard :is(button, a)[class*="bg-blue-600"],
   .mhb-agreement-wizard :is(button, a)[class*="bg-sky-600"],
