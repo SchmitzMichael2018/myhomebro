@@ -32,6 +32,58 @@ function normalizeListResponse(data) {
   return [];
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isDraftOrPlanningItem(item) {
+  const statusText = [
+    item?.status,
+    item?.agreement_status,
+    item?.project_status,
+    item?.signature_status,
+    item?.workflow_status,
+  ]
+    .map(normalizeText)
+    .join(" ");
+
+  if (item?.is_draft || item?.is_archived) return true;
+  if (statusText.includes("draft") || statusText.includes("unsigned") || statusText.includes("planning")) return true;
+  if (statusText.includes("not_sent") || statusText.includes("not sent")) return true;
+  return false;
+}
+
+function itemHasAssignedTeamSignal(item, teamRows = []) {
+  if (
+    item?.assigned_subaccount_id ||
+    item?.subaccount_id ||
+    item?.assigned_worker_id ||
+    item?.assigned_worker?.subaccount_id ||
+    item?.assigned_subcontractor?.subaccount_id ||
+    item?.delegated_reviewer_subaccount?.id
+  ) {
+    return true;
+  }
+
+  const itemText = normalizeText(
+    [
+      item?.title,
+      item?.subtitle,
+      item?.assigned_worker_display,
+      item?.assigned_subcontractor_display,
+      item?.employee_name,
+      item?.subcontractor_display_name,
+      item?.assignee_name,
+    ].join(" ")
+  );
+
+  return teamRows.some((row) => {
+    const name = normalizeText(row?.display_name);
+    const email = normalizeText(row?.email);
+    return (name && itemText.includes(name)) || (email && itemText.includes(email));
+  });
+}
+
 export default function TeamOverviewPage() {
   const navigate = useNavigate();
   const { data: identity, loading: whoLoading } = useWhoAmI();
@@ -84,17 +136,37 @@ export default function TeamOverviewPage() {
     const today = Array.isArray(operations?.today) ? operations.today : [];
     return today.filter((item) => {
       const type = String(item?.item_type || "").toLowerCase();
-      return type.includes("review") || type.includes("overdue") || type.includes("needs_changes");
+      const isActionable =
+        type.includes("review") ||
+        type.includes("overdue") ||
+        type.includes("needs_changes") ||
+        type.includes("submitted");
+      return isActionable && !isDraftOrPlanningItem(item) && itemHasAssignedTeamSignal(item, teamRows);
     });
-  }, [operations]);
+  }, [operations, teamRows]);
 
   const weekItems = useMemo(() => {
     const items = [
       ...(Array.isArray(operations?.tomorrow) ? operations.tomorrow : []),
       ...(Array.isArray(operations?.this_week) ? operations.this_week : []),
     ];
-    return items.slice(0, 6);
-  }, [operations]);
+    return items.filter((item) => !isDraftOrPlanningItem(item) && itemHasAssignedTeamSignal(item, teamRows)).slice(0, 6);
+  }, [operations, teamRows]);
+
+  const summaryCounts = useMemo(() => {
+    const activeRows = teamRows.filter((row) => row.is_active);
+    const subcontractors = activeRows.filter((row) => normalizeText(row.role).includes("subcontractor"));
+    return {
+      activeTeam: attentionCounts.active_subcontractor_count || activeRows.length,
+      subcontractors: subcontractors.length,
+      assignedWork:
+        attentionCounts.assigned_work_count ||
+        activeRows.reduce((total, row) => total + Number(row.active_assignment_count || 0), 0),
+      unassignedWork: attentionCounts.unassigned_assignment_count || 0,
+      awaitingReview: attentionCounts.awaiting_review_count || attentionCounts.submitted_for_review_count || 0,
+      upcomingSchedule: weekItems.length,
+    };
+  }, [attentionCounts, teamRows, weekItems.length]);
 
   const quickActionButton = (label, to, testId, tone = "primary") => (
     <button
@@ -105,8 +177,8 @@ export default function TeamOverviewPage() {
       className={[
         "rounded-xl px-4 py-3 text-sm font-semibold transition",
         tone === "primary"
-          ? "bg-slate-900 text-white hover:bg-slate-800"
-          : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+          ? "mhb-operational-filter-chip is-active"
+          : "mhb-operational-filter-chip",
       ].join(" ")}
     >
       {label}
@@ -122,35 +194,12 @@ export default function TeamOverviewPage() {
       variant="operational"
     >
       <div className="space-y-6">
-        <section data-testid="team-overview-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard
-            label="Active Team"
-            value={attentionCounts.active_subcontractor_count || teamRows.filter((row) => row.is_active).length}
-            sub="Employees and active subcontractors"
-          />
-          <SummaryCard
-            label="Unassigned Work"
-            value={attentionCounts.unassigned_assignment_count || 0}
-            sub="Needs an owner"
-          />
-          <SummaryCard
-            label="Awaiting Review"
-            value={attentionCounts.awaiting_review_count || 0}
-            sub="Submitted work waiting on action"
-          />
-          <SummaryCard
-            label="Overdue"
-            value={attentionCounts.overdue_milestone_count || 0}
-            sub="Work that has slipped past due date"
-          />
-        </section>
-
-        <section data-testid="team-overview-actions" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section data-testid="team-overview-actions" className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-base font-bold text-slate-900">Quick Actions</div>
-              <div className="mt-1 text-sm text-slate-600">
-                The shortest path to clear the queue and keep the team moving.
+              <div className="text-base font-bold text-white">Quick Actions</div>
+              <div className="mt-1 text-sm text-sky-100/70">
+                The shortest path to assign work, invite help, and clear submitted items.
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -162,13 +211,46 @@ export default function TeamOverviewPage() {
           </div>
         </section>
 
+        <section data-testid="team-overview-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <SummaryCard
+            label="Team Members"
+            value={summaryCounts.activeTeam}
+            sub="Active employees and crews"
+          />
+          <SummaryCard
+            label="Subcontractors"
+            value={summaryCounts.subcontractors}
+            sub="Active external partners"
+          />
+          <SummaryCard
+            label="Assigned Work"
+            value={summaryCounts.assignedWork}
+            sub="Currently routed to the team"
+          />
+          <SummaryCard
+            label="Unassigned Work"
+            value={summaryCounts.unassignedWork}
+            sub="Use Assignments to route"
+          />
+          <SummaryCard
+            label="Awaiting Review"
+            value={summaryCounts.awaitingReview}
+            sub="Submitted work waiting on action"
+          />
+          <SummaryCard
+            label="Upcoming Schedule"
+            value={summaryCounts.upcomingSchedule}
+            sub="Assigned items this week"
+          />
+        </section>
+
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <section data-testid="team-overview-attention" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-base font-bold text-slate-900">Needs Attention</div>
                 <div className="mt-1 text-sm text-slate-600">
-                  Items currently asking for a decision or follow-up.
+                  Assigned team work currently asking for a decision or follow-up.
                 </div>
               </div>
               <button
@@ -184,9 +266,9 @@ export default function TeamOverviewPage() {
               <div className="mt-4 text-sm text-slate-500">Loading team overview…</div>
             ) : attentionItems.length === 0 ? (
               <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center">
-                <div className="text-sm font-semibold text-slate-900">No attention items right now</div>
+                <div className="text-sm font-semibold text-slate-900">No assigned team items need attention right now.</div>
                 <div className="mt-1 text-sm text-slate-700">
-                  Once work is submitted or overdue, it will show here automatically.
+                  Use Assignments to assign work and Team Schedule to review timing.
                 </div>
               </div>
             ) : (

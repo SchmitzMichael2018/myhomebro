@@ -332,12 +332,13 @@ async function installTeamRoutes(page) {
             id: "due-202",
             item_type: "due_this_week",
             title: "Commercial Buildout is due later this week",
-            subtitle: "The schedule is ready for the next handoff.",
+            subtitle: "Taylor Crew has the next scheduled handoff.",
             agreement_id: 202,
             agreement_title: "Commercial Buildout",
             project_title: "Commercial Buildout",
             milestone_id: 2001,
             milestone_title: "Cabinet Install",
+            assigned_subaccount_id: 1,
             status: "pending",
             actions: [{ label: "View Work", type: "route", target: "/app/assignments" }],
             occurred_at: "2026-04-23T10:00:00Z",
@@ -490,9 +491,12 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.locator("aside a[href='/app/assignments']").locator("span").last()).toHaveText("4");
   await expect(page.locator("aside a[href='/app/subcontractors']").locator("span").last()).toHaveText("1");
 
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Active Team");
+  await expect(page.getByTestId("team-overview-actions")).toContainText("Assign Work");
+  await expect(page.getByTestId("team-overview-summary")).toContainText("Team Members");
+  await expect(page.getByTestId("team-overview-summary")).toContainText("Assigned Work");
   await expect(page.getByTestId("team-overview-summary")).toContainText("Awaiting Review");
   await expect(page.getByTestId("team-overview-attention")).toContainText("Cabinet Install is awaiting your review");
+  await expect(page.getByTestId("team-overview-attention")).not.toContainText("Demo Prep");
   await expect(page.getByTestId("team-overview-upcoming")).toContainText("Commercial Buildout is due later this week");
   await expect(page.getByTestId("team-overview-members")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-overview-assign-work")).toBeVisible();
