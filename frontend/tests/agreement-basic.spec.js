@@ -742,6 +742,9 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue('Concrete Slab');
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
   await expect(page.getByTestId('proposal-draft-textarea')).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).not.toHaveValue('');
+  await expect(page.getByTestId('agreement-ai-improve-scope-button')).toBeEnabled();
+  await expect(page.getByTestId('agreement-ai-generate-scope-button')).toBeEnabled();
   await expect(page.locator('input[name="address_line1"]')).toBeVisible();
   await expect(page.getByTestId('agreement-project-class-residential')).toBeVisible();
   await expect(page.getByTestId('agreement-payment-structure-simple')).toBeVisible();
@@ -3646,18 +3649,12 @@ test('agreement wizard step 1 shows clarifications after template application an
 
   await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
   await page.getByRole('button', { name: /Kitchen Remodel Template/ }).click();
-  await expect(page.getByTestId('step1-template-detail-name')).toContainText(
-    'Kitchen Remodel Template'
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(
+    /reusable kitchen remodel starting point/i
   );
-  await expect(page.getByTestId('step1-template-insights-card')).toBeVisible();
-  await page.getByTestId('step1-continue-to-step2-button').click();
-
-  await expect(page.getByTestId('step1-template-insights-card')).toContainText(
-    '5 milestones is within the expected range for this template.'
-  );
-  await expect(page.getByTestId('step1-template-insights-card')).toContainText(
-    'Pricing guidance could benefit from review.'
-  );
+  await expect(page.getByTestId('agreement-ai-improve-scope-button')).toBeEnabled();
+  await expect(page.getByTestId('agreement-ai-generate-scope-button')).toBeEnabled();
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue('');
   await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
   expect(patchPayloads.length).toBeGreaterThanOrEqual(0);
@@ -3914,12 +3911,12 @@ test('agreement wizard step 1 can find the best starting point and open the deta
   await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
   await page.getByRole('button', { name: /Kitchen Remodel Template/ }).click();
 
-  await expect(page.getByTestId('step1-template-detail-name')).toContainText(
-    'Kitchen Remodel Template'
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(
+    /reusable kitchen remodel starting point/i
   );
-  await expect(page.getByTestId('step1-template-insights-card')).toBeVisible();
-  await page.getByTestId('step1-continue-to-step2-button').click();
-
+  await expect(page.getByTestId('agreement-ai-improve-scope-button')).toBeEnabled();
+  await expect(page.getByTestId('agreement-ai-generate-scope-button')).toBeEnabled();
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue('');
   await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
 });

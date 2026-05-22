@@ -1476,6 +1476,60 @@ function hasMeaningfulStep1DraftState({ agreement, dLocal }) {
   );
 }
 
+function cleanScopeFallbackCandidate(value) {
+  const cleaned = normalizeStep1FieldValue(value);
+  if (!cleaned) return "";
+  const normalized = cleaned.toLowerCase();
+  if (
+    normalized === "custom project" ||
+    normalized === "not available" ||
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "none"
+  ) {
+    return "";
+  }
+  return cleaned;
+}
+
+function buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate } = {}) {
+  const directScope = [
+    dLocal?.description,
+    dLocal?.scope_of_work,
+    agreement?.description,
+    agreement?.scope_of_work,
+  ]
+    .map(cleanScopeFallbackCandidate)
+    .find(Boolean);
+  if (directScope) return directScope;
+
+  const templateScope = [
+    selectedTemplate?.scope_of_work,
+    selectedTemplate?.scopeOfWork,
+    selectedTemplate?.description,
+    selectedTemplate?.summary,
+    agreement?.selected_template?.scope_of_work,
+    agreement?.selected_template?.description,
+    agreement?.selectedTemplate?.scope_of_work,
+    agreement?.selectedTemplate?.description,
+    agreement?.template_scope,
+    agreement?.template_description,
+  ]
+    .map(cleanScopeFallbackCandidate)
+    .find(Boolean);
+  if (templateScope) return templateScope;
+
+  const title = cleanScopeFallbackCandidate(
+    dLocal?.project_title || agreement?.project_title || agreement?.title
+  );
+  const subtype = cleanScopeFallbackCandidate(dLocal?.project_subtype || agreement?.project_subtype);
+  const type = cleanScopeFallbackCandidate(dLocal?.project_type || agreement?.project_type);
+  const focus = title || [subtype, type].filter(Boolean).join(" ");
+  if (!focus) return "";
+
+  return `Work includes ${focus.toLowerCase()} services, project setup, coordination of agreed materials and labor, completion of the planned scope, site protection, and cleanup. Review and edit this scope before sending.`;
+}
+
 function normalizeTemplateConfidenceLevel(value) {
   const normalized = safeTrim(value).toLowerCase();
   if (normalized === "high" || normalized === "recommended") return "high";
@@ -1843,11 +1897,15 @@ export default function Step1Details({
 
   function validateStep1ForAi(action = "description") {
     const errors = {};
-    const description = safeTrim(dLocal?.description || step1JobDescriptionPrompt);
+    const description = safeTrim(getScopeActionContext() || step1JobDescriptionPrompt);
     if ((action === "generate" || action === "description" || action === "refine") && !description) {
       errors.description = "Add a description before using AI.";
     }
     return errors;
+  }
+
+  function getScopeActionContext() {
+    return buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate });
   }
 
   async function handleStep1Save(goNext = false) {
@@ -2589,7 +2647,7 @@ export default function Step1Details({
 
     try {
       const clarificationContext = buildDescriptionRequestContext(
-        dLocal.description || "",
+        getScopeActionContext() || "",
         clarificationSummaryLines
       );
       const payload = {
@@ -2641,12 +2699,12 @@ export default function Step1Details({
     const nextDescription =
       action === "append" && cur ? `${cur}\n\n${suggestion}` : suggestion;
 
-    setDLocal((s) => ({ ...s, description: nextDescription }));
+    setDLocal((s) => ({ ...s, description: nextDescription, scope_of_work: nextDescription }));
     if (!isNewAgreement) {
-      writeCache({ description: nextDescription });
+      writeCache({ description: nextDescription, scope_of_work: nextDescription });
     }
 
-    await patchAgreement({ description: nextDescription }, { silent: true });
+    await patchAgreement({ description: nextDescription, scope_of_work: nextDescription }, { silent: true });
     setAiPreview("");
   }
 
@@ -5112,7 +5170,43 @@ export default function Step1Details({
   const displayedProjectType = normalizeStep1FieldValue(dLocal?.project_type);
   const displayedProjectSubtype = normalizeStep1FieldValue(dLocal?.project_subtype);
   const displayedProjectTitle = dLocal?.project_title ?? "";
-  const displayedScopeOfWork = normalizeStep1FieldValue(dLocal?.description || dLocal?.scope_of_work);
+  const displayedScopeOfWork = buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate });
+  const scopeActionContext = safeTrim(displayedScopeOfWork || step1JobDescriptionPrompt);
+  const canImproveScope = !locked && !aiBusy && Boolean(scopeActionContext);
+  const canGenerateScope = !locked && !aiBusy && Boolean(scopeActionContext || hasSomeContext);
+  const scopeActionDisabledReason = locked
+    ? "This agreement is locked, so scope changes are disabled."
+    : aiBusy
+    ? "AI is already working on this scope."
+    : !scopeActionContext && !hasSomeContext
+    ? "Add a project title, type, or description before generating scope."
+    : "";
+
+  useEffect(() => {
+    if (locked || !displayedScopeOfWork) return;
+    if (cleanScopeFallbackCandidate(dLocal?.description || dLocal?.scope_of_work)) return;
+
+    setDLocal((prev) => {
+      if (cleanScopeFallbackCandidate(prev?.description || prev?.scope_of_work)) return prev;
+      return {
+        ...prev,
+        description: displayedScopeOfWork,
+        scope_of_work: displayedScopeOfWork,
+      };
+    });
+
+    if (!isNewAgreement) {
+      writeCache({ description: displayedScopeOfWork, scope_of_work: displayedScopeOfWork });
+    }
+  }, [
+    displayedScopeOfWork,
+    dLocal?.description,
+    dLocal?.scope_of_work,
+    isNewAgreement,
+    locked,
+    setDLocal,
+    writeCache,
+  ]);
   useEffect(() => {
     if (shouldShowProjectDetails) return;
     projectDetailsAutoScrolledRef.current = false;
@@ -6920,8 +7014,9 @@ export default function Step1Details({
                   <button
                     type="button"
                     onClick={() => runAiDescription("improve")}
-                    disabled={locked || aiBusy || !safeTrim(dLocal.description) || Boolean(appliedTemplateId)}
-                    className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                    disabled={!canImproveScope}
+                    title={!canImproveScope ? scopeActionDisabledReason : "Improve the current scope draft with AI."}
+                    className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
                     data-testid="agreement-ai-improve-scope-button"
                   >
                     {aiBusy ? "Working..." : "Improve Existing Scope"}
@@ -6930,8 +7025,9 @@ export default function Step1Details({
                   <button
                     type="button"
                     onClick={() => runAiDescription("generate")}
-                    disabled={locked || aiBusy || !hasSomeContext || Boolean(appliedTemplateId)}
-                    className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                    disabled={!canGenerateScope}
+                    title={!canGenerateScope ? scopeActionDisabledReason : "Generate a scope draft from the current project details."}
+                    className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
                     data-testid="agreement-ai-generate-scope-button"
                   >
                     {aiBusy ? "Working..." : "Generate Scope Draft"}
@@ -6939,8 +7035,10 @@ export default function Step1Details({
                 </div>
 
                 <div className="mt-2 text-[11px] text-slate-500">
-                  {appliedTemplateId
-                    ? "A template is applied. Use the template-driven scope, milestones, and clarification flow instead of generating a new AI structure here."
+                  {scopeActionDisabledReason
+                    ? scopeActionDisabledReason
+                    : appliedTemplateId
+                    ? "A template is applied. You can still improve or regenerate this scope before sending."
                     : "Review and edit the final scope so it accurately reflects the work you are agreeing to perform."}
                 </div>
 

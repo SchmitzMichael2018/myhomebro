@@ -6311,17 +6311,17 @@ export default function Step2Milestones({
         </div>
 
         <div
-          className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4 shadow-sm"
+          className="mt-4 rounded-2xl border border-sky-300/25 bg-slate-950/45 p-4 shadow-sm shadow-slate-950/20 ring-1 ring-white/5"
           data-testid="step2-project-start-date-card"
         >
           <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-sm font-semibold text-slate-950">Project Start Date</div>
-              <div className="mt-1 text-xs text-slate-600">
+              <div className="text-sm font-semibold text-sky-50">Project Start Date</div>
+              <div className="mt-1 text-xs text-sky-100/75">
                 Used to schedule milestone dates. You can adjust dates later.
               </div>
             </div>
-            <div className="text-xs font-medium text-sky-700">
+            <div className="text-xs font-medium text-sky-100/80">
               {agreementProjectStartDate
                 ? `Current saved date: ${friendly(agreementProjectStartDate)}`
                 : "No saved start date yet"}
@@ -6330,7 +6330,7 @@ export default function Step2Milestones({
 
           <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-sky-100/75">
                 Project Start Date
               </label>
               <input
@@ -6338,7 +6338,7 @@ export default function Step2Milestones({
                 value={projectStartDateDraft || ""}
                 onChange={(e) => setProjectStartDateDraft(e.target.value)}
                 disabled={projectStartDateBusy || milestonesLocked}
-                className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+                className="w-full rounded-xl border border-sky-300/25 bg-slate-950/60 px-3 py-2 text-sm text-sky-50 shadow-inner shadow-slate-950/20 outline-none transition [color-scheme:dark] placeholder:text-sky-100/40 focus:border-amber-300/60 focus:ring-2 focus:ring-amber-300/20 disabled:bg-slate-900/60 disabled:text-sky-100/40"
                 data-testid="step2-project-start-date-input"
               />
             </div>
@@ -6347,7 +6347,7 @@ export default function Step2Milestones({
                 type="button"
                 onClick={requestProjectStartDateSave}
                 disabled={projectStartDateBusy || milestonesLocked}
-                className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
                 data-testid="step2-project-start-date-save"
               >
                 {projectStartDateBusy ? "Saving..." : "Save Start Date"}
@@ -6356,7 +6356,7 @@ export default function Step2Milestones({
                 type="button"
                 onClick={() => setProjectStartDateDraft(agreementProjectStartDate || "")}
                 disabled={projectStartDateBusy || milestonesLocked}
-                className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-60"
+                className="rounded-xl border border-sky-300/25 bg-white/10 px-3 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-200/50 hover:bg-sky-400/15 focus:outline-none focus:ring-2 focus:ring-sky-300/30 disabled:cursor-not-allowed disabled:opacity-60"
                 data-testid="step2-project-start-date-reset"
               >
                 Reset
