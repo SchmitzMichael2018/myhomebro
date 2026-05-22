@@ -46,7 +46,7 @@ function pct(v, digits = 1) {
 
 function Empty({ text }) {
   return (
-    <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+    <div className="rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-6 text-center text-sm text-sky-100/70">
       {text}
     </div>
   );
@@ -55,28 +55,28 @@ function Empty({ text }) {
 function Stat({ label, value, sub, tone = "default" }) {
   const toneClass =
     tone === "good"
-      ? "border-green-200 bg-green-50"
+      ? "border-emerald-300/35 bg-emerald-400/15"
       : tone === "warn"
-      ? "border-yellow-200 bg-yellow-50"
+      ? "border-amber-300/35 bg-amber-400/15"
       : tone === "bad"
-      ? "border-red-200 bg-red-50"
-      : "border-gray-200 bg-white";
+      ? "border-rose-300/35 bg-rose-400/15"
+      : "border-white/12 bg-slate-950/40";
 
   return (
     <div className={`rounded-xl border p-4 shadow-sm ${toneClass}`}>
-      <div className="text-sm font-semibold text-gray-600">{label}</div>
-      <div className="mt-2 text-2xl font-extrabold text-gray-900">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-gray-600">{sub}</div> : null}
+      <div className="text-sm font-semibold text-sky-100/70">{label}</div>
+      <div className="mt-2 text-2xl font-extrabold text-white">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-sky-100/60">{sub}</div> : null}
     </div>
   );
 }
 
 function dashboardToneClass(tone) {
-  if (tone === "good") return "border-emerald-200 bg-emerald-50/70";
-  if (tone === "warn") return "border-amber-200 bg-amber-50/70";
-  if (tone === "bad") return "border-rose-200 bg-rose-50/70";
-  if (tone === "info") return "border-sky-200 bg-sky-50/70";
-  return "border-slate-200 bg-white";
+  if (tone === "good") return "border-emerald-300/35 bg-emerald-400/15";
+  if (tone === "warn") return "border-amber-300/35 bg-amber-400/15";
+  if (tone === "bad") return "border-rose-300/35 bg-rose-400/15";
+  if (tone === "info") return "border-sky-300/35 bg-sky-400/15";
+  return "border-white/12 bg-slate-950/40";
 }
 
 function KpiCard({ label, value, sub, tone = "default", testId }) {
@@ -85,9 +85,9 @@ function KpiCard({ label, value, sub, tone = "default", testId }) {
       data-testid={testId}
       className={`rounded-2xl border p-5 shadow-sm ${dashboardToneClass(tone)}`}
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
-      <div className="mt-2 text-3xl font-bold leading-none text-slate-900">{value}</div>
-      {sub ? <div className="mt-2 text-sm leading-5 text-slate-600">{sub}</div> : null}
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{label}</div>
+      <div className="mt-2 text-3xl font-bold leading-none text-white">{value}</div>
+      {sub ? <div className="mt-2 text-sm leading-5 text-sky-100/70">{sub}</div> : null}
     </div>
   );
 }
@@ -98,26 +98,26 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
     <Wrapper
       data-testid={testId}
       href={href || undefined}
-      className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-px hover:border-slate-300 hover:shadow-sm ${dashboardToneClass(
+      className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-px hover:border-sky-300/35 hover:bg-sky-500/10 hover:shadow-sm ${dashboardToneClass(
         tone
       )} ${href ? "cursor-pointer" : ""}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{label}</div>
           <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-1">
-            <span className="text-3xl font-bold leading-none text-slate-900">{int(count)}</span>
-            <span className="pb-0.5 text-sm font-medium text-slate-500">items</span>
+            <span className="text-3xl font-bold leading-none text-white">{int(count)}</span>
+            <span className="pb-0.5 text-sm font-medium text-sky-100/60">items</span>
             {amount ? (
-              <span className="ml-auto text-2xl font-semibold leading-none text-slate-800">{amount}</span>
+              <span className="ml-auto text-2xl font-semibold leading-none text-white">{amount}</span>
             ) : null}
           </div>
-          <div className="mt-3 text-sm leading-5 text-slate-600">{description}</div>
+          <div className="mt-3 text-sm leading-5 text-sky-100/70">{description}</div>
         </div>
         {href ? (
           <span
             aria-hidden="true"
-            className="mt-1 text-lg font-semibold leading-none text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-600"
+            className="mt-1 text-lg font-semibold leading-none text-sky-100/55 transition group-hover:translate-x-0.5 group-hover:text-white"
           >
             →
           </span>
@@ -136,22 +136,22 @@ function ViewSelectorCard({ title, subtitle, preview, selected, onClick, testId 
       onClick={onClick}
       className={`group min-h-[126px] rounded-2xl border p-4 text-left shadow-sm transition ${
         selected
-          ? "border-slate-900 bg-slate-900 text-white shadow-md"
-          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+          ? "border-sky-300/45 bg-sky-500/20 text-white shadow-md"
+          : "border-white/12 bg-slate-950/45 text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/10 hover:shadow-sm"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div
             className={`text-sm font-semibold ${
-              selected ? "text-white/70" : "text-slate-500"
+              selected ? "text-white/75" : "text-sky-100/60"
             }`}
           >
             {title}
           </div>
           <div
             className={`mt-1 text-lg font-bold leading-tight ${
-              selected ? "text-white" : "text-slate-900"
+              selected ? "text-white" : "text-white"
             }`}
           >
             {subtitle}
@@ -161,13 +161,13 @@ function ViewSelectorCard({ title, subtitle, preview, selected, onClick, testId 
           className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
             selected
               ? "border-white/20 bg-white/10 text-white"
-              : "border-slate-200 bg-slate-50 text-slate-600"
+              : "border-white/12 bg-slate-900/60 text-sky-100/70"
           }`}
         >
           {selected ? "Selected" : "View"}
         </span>
       </div>
-      <div className={`mt-3 text-sm leading-5 ${selected ? "text-slate-200" : "text-slate-600"}`}>
+      <div className={`mt-3 text-sm leading-5 ${selected ? "text-sky-100/85" : "text-sky-100/70"}`}>
         {preview}
       </div>
     </button>
@@ -190,46 +190,46 @@ function SummaryActionCard({
     <Wrapper
       data-testid={testId}
       href={href || undefined}
-      className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-px hover:border-slate-300 hover:shadow-sm ${dashboardToneClass(
+      className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-px hover:border-sky-300/35 hover:bg-sky-500/10 hover:shadow-sm ${dashboardToneClass(
         tone
       )} ${href ? "cursor-pointer" : ""}`}
     >
       <div className="flex flex-col gap-3">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{title}</div>
-            <div className="mt-1 text-sm leading-5 text-slate-600">{subtitle}</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{title}</div>
+            <div className="mt-1 text-sm leading-5 text-sky-100/70">{subtitle}</div>
           </div>
           {href ? (
-            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition group-hover:border-slate-300 group-hover:text-slate-800">
+            <span className="rounded-full border border-white/12 bg-white/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-100/75 transition group-hover:border-sky-300/35 group-hover:text-white">
               View Details
             </span>
           ) : null}
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+        <div className="rounded-xl border border-white/10 bg-slate-950/35 p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">
             {headlineLabel || "Total"}
           </div>
-          <div className="mt-2 text-3xl font-bold leading-none text-slate-900">{headline}</div>
+          <div className="mt-2 text-3xl font-bold leading-none text-white">{headline}</div>
         </div>
 
         {metrics.length > 0 ? (
           <div className={`grid grid-cols-1 gap-3 ${metrics.length > 1 ? "sm:grid-cols-2" : ""}`}>
             {metrics.map((metric) => (
-              <div key={`${title}-${metric.label}`} className="rounded-xl border border-slate-200 bg-white p-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <div key={`${title}-${metric.label}`} className="rounded-xl border border-white/10 bg-slate-950/35 p-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">
                   {metric.label}
                 </div>
                 <div className="mt-2 flex items-end justify-between gap-3">
                   <div>
-                    <div className="text-2xl font-bold leading-none text-slate-900">
+                    <div className="text-2xl font-bold leading-none text-white">
                       {int(metric.count)}
                     </div>
-                    <div className="mt-1 text-xs text-slate-500">items</div>
+                    <div className="mt-1 text-xs text-sky-100/55">items</div>
                   </div>
                   {metric.amount ? (
-                    <div className="text-lg font-semibold text-slate-800">{metric.amount}</div>
+                    <div className="text-lg font-semibold text-white">{metric.amount}</div>
                   ) : null}
                 </div>
               </div>
@@ -239,7 +239,7 @@ function SummaryActionCard({
 
         {href ? (
           <div className="pt-1">
-            <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <div className="inline-flex items-center gap-2 text-sm font-semibold text-sky-100">
               <span>{actionLabel}</span>
               <span aria-hidden="true" className="transition group-hover:translate-x-0.5">
                 â†’
@@ -254,12 +254,12 @@ function SummaryActionCard({
 
 function insightTone(severity) {
   if (severity === "high") {
-    return "border-rose-200 bg-rose-50 text-rose-900";
+    return "border-rose-300/35 bg-rose-400/15 text-rose-100";
   }
   if (severity === "medium") {
-    return "border-amber-200 bg-amber-50 text-amber-900";
+    return "border-amber-300/35 bg-amber-400/15 text-amber-100";
   }
-  return "border-slate-200 bg-white text-slate-900";
+  return "border-white/12 bg-slate-950/40 text-sky-100";
 }
 
 function formatDateTime(value) {
@@ -321,7 +321,7 @@ function hasSeriesValue(rows, keys) {
 
 function ChartEmptyState({ text }) {
   return (
-    <div className="flex h-72 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500">
+    <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-white/14 bg-slate-950/35 px-6 text-center text-sm text-sky-100/70">
       {text}
     </div>
   );
@@ -331,11 +331,11 @@ function ChartCard({ title, description, testId, children }) {
   return (
     <div
       data-testid={testId}
-      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      className="rounded-xl border border-white/12 bg-slate-950/40 p-4 shadow-sm"
     >
       <div className="mb-3">
-        <div className="text-base font-bold text-slate-900">{title}</div>
-        <div className="mt-1 text-sm text-slate-600">{description}</div>
+        <div className="text-base font-bold text-white">{title}</div>
+        <div className="mt-1 text-sm text-sky-100/70">{description}</div>
       </div>
       {children}
     </div>
@@ -344,17 +344,17 @@ function ChartCard({ title, description, testId, children }) {
 
 function FunnelStep({ label, value, sub, fillPct, testId }) {
   return (
-    <div data-testid={testId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div data-testid={testId} className="rounded-xl border border-white/12 bg-slate-950/40 p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-600">{label}</div>
-          <div className="mt-1 text-2xl font-extrabold text-slate-900">{int(value)}</div>
+          <div className="text-sm font-semibold text-sky-100/70">{label}</div>
+          <div className="mt-1 text-2xl font-extrabold text-white">{int(value)}</div>
         </div>
-        <div className="text-right text-xs font-semibold text-slate-500">{sub}</div>
+        <div className="text-right text-xs font-semibold text-sky-100/55">{sub}</div>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-900/70">
         <div
-          className="h-full rounded-full bg-slate-900"
+          className="h-full rounded-full bg-sky-300"
           style={{ width: `${Math.max(6, Math.min(Number(fillPct || 0), 100))}%` }}
         />
       </div>
@@ -1261,24 +1261,26 @@ export default function BusinessDashboard() {
   }, [payoutQuery]);
 
   if (loading) {
-    return <div className="p-6 text-center text-slate-700">Loading dashboard...</div>;
+    return <div className="p-6 text-center text-sky-100/70">Loading dashboard...</div>;
   }
 
   if (error) {
-    return <div className="p-6 text-center font-semibold text-red-600">{error}</div>;
+    return <div className="p-6 text-center font-semibold text-rose-200">{error}</div>;
   }
   return (
     <ContractorPageSurface
       eyebrow="Business"
       title="Business Dashboard"
       subtitle="Track revenue, payouts, project health, and risks."
+      variant="operational"
+      className="mhb-business-dashboard"
       actions={
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-slate-700">Range</label>
+          <label className="text-xs font-semibold text-sky-100/75">Range</label>
           <select
             value={range}
             onChange={(e) => setRange(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
+            className="rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 shadow-sm outline-none focus:border-sky-300/60"
           >
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
@@ -1288,7 +1290,7 @@ export default function BusinessDashboard() {
 
           <button
             onClick={fetchData}
-            className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+            className="rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 shadow-sm hover:bg-sky-50"
           >
             Refresh
           </button>

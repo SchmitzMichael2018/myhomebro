@@ -58,12 +58,12 @@ function statusLabel(s) {
 
 function statusPillClasses(status) {
   const s = String(status || "").toLowerCase();
-  if (s.includes("sent")) return "bg-amber-100 text-amber-900 border-amber-200";
+  if (s.includes("sent")) return "border-amber-300/35 bg-amber-400/15 text-amber-100";
   if (s.includes("accepted") || s.includes("approved") || s.includes("paid"))
-    return "bg-green-100 text-green-900 border-green-200";
-  if (s.includes("draft")) return "bg-slate-100 text-slate-900 border-slate-200";
-  if (s.includes("reject")) return "bg-red-100 text-red-900 border-red-200";
-  return "bg-slate-100 text-slate-900 border-slate-200";
+    return "border-emerald-300/35 bg-emerald-400/15 text-emerald-100";
+  if (s.includes("draft")) return "border-slate-300/25 bg-slate-400/15 text-sky-100";
+  if (s.includes("reject")) return "border-rose-300/35 bg-rose-400/15 text-rose-100";
+  return "border-slate-300/25 bg-slate-400/15 text-sky-100";
 }
 
 function isImageUrl(url) {
@@ -234,6 +234,9 @@ function SimpleModal({
 // ---------- add expense form ----------
 const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
   const fileRef = useRef(null);
+  const inputClass =
+    "min-h-[46px] w-full rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/45 focus:border-sky-300/60 focus:bg-slate-950/75";
+  const labelClass = "mb-1.5 block text-sm font-semibold text-sky-100/85";
 
   const [form, setForm] = useState({
     agreement: "",
@@ -287,15 +290,15 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
   return (
     <form
       onSubmit={onSubmit}
-      className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 md:grid-cols-12"
+      className="grid grid-cols-1 gap-4 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm sm:grid-cols-2 md:grid-cols-12"
     >
       <div className="md:col-span-4">
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Agreement</label>
+        <label className={labelClass}>Agreement</label>
         <select
           name="agreement"
           value={form.agreement}
           onChange={onChange}
-          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
+          className={inputClass}
           required
         >
           <option value="">— Select Agreement —</option>
@@ -308,19 +311,19 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-3">
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Description</label>
+        <label className={labelClass}>Description</label>
         <input
           name="description"
           placeholder="Expense title (e.g., Nails, Dumpster fee)"
           value={form.description}
           onChange={onChange}
-          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
+          className={inputClass}
           required
         />
       </div>
 
       <div className="md:col-span-2">
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Amount</label>
+        <label className={labelClass}>Amount</label>
         <input
           name="amount"
           type="number"
@@ -328,56 +331,56 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
           placeholder="Amount"
           value={form.amount}
           onChange={onChange}
-          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
+          className={inputClass}
           required
         />
       </div>
 
       <div className="md:col-span-3">
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Expense Date</label>
+        <label className={labelClass}>Expense Date</label>
         <input
           name="incurred_date"
           type="date"
           value={form.incurred_date}
           onChange={onChange}
-          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
+          className={inputClass}
           required
         />
       </div>
 
       <div className="md:col-span-8">
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Customer Note</label>
+        <label className={labelClass}>Customer Note</label>
         <input
           name="note"
           placeholder="Details for customer: store/vendor + what was purchased + why (optional)"
           value={form.note}
           onChange={onChange}
-          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
+          className={inputClass}
         />
-        <div className="mt-2 text-[11px] text-gray-500">
+        <div className="mt-2 text-[11px] text-sky-100/60">
           Example: “Home Depot — roofing nails + sealant. Needed to complete flashing.”
         </div>
       </div>
 
       <div className="md:col-span-4">
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Receipts / Files</label>
+        <label className={labelClass}>Receipts / Files</label>
         <input
           type="file"
           multiple
           onChange={onFiles}
-          className="form-input min-h-[46px] w-full rounded-xl border-slate-200 bg-white"
+          className={inputClass}
           accept="image/*,.pdf"
         />
         {form.files?.length ? (
-          <div className="mt-2 text-xs text-gray-600">
+          <div className="mt-2 text-xs text-sky-100/70">
             Selected: <span className="font-semibold">{form.files.length}</span>{" "}
             file{form.files.length === 1 ? "" : "s"}
           </div>
         ) : null}
       </div>
 
-      <div className="md:col-span-12 flex flex-col items-start justify-between gap-4 border-t border-slate-200 pt-4 sm:flex-row sm:items-center">
-        <label className="inline-flex min-h-[46px] items-center gap-2 rounded-xl bg-slate-50 px-3 text-sm text-gray-700">
+      <div className="md:col-span-12 flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-4 sm:flex-row sm:items-center">
+        <label className="inline-flex min-h-[46px] items-center gap-2 rounded-xl border border-white/10 bg-slate-900/55 px-3 text-sm font-semibold text-sky-100/80">
           <input
             type="checkbox"
             name="send_to_homeowner"
@@ -390,7 +393,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:bg-gray-400 sm:w-auto"
+          className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl border border-white/70 bg-white px-5 py-3 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:border-white/20 disabled:bg-slate-700 disabled:text-sky-100/45 sm:w-auto"
         >
           {submitting ? "Adding…" : "+ Add Expense"}
         </button>
@@ -805,15 +808,16 @@ export default function ExpensesPage() {
       eyebrow="Business"
       title="Expenses"
       subtitle="Track customer-facing expense requests, receipts, and resend status from one cleaner workspace."
+      variant="operational"
       actions={
-        <div className="text-sm text-gray-700">
+        <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1.5 text-sm font-semibold text-sky-100/80">
           Total:&nbsp;<span className="font-semibold">{toMoney(totalAmount)}</span>
         </div>
       }
     >
       <div className="space-y-6">
       <div>
-        <div className="text-sm text-gray-600">
+        <div className="text-sm text-sky-100/70">
           Unified on Expense Requests with multiple receipts/photos. Resend supported.
         </div>
       </div>
@@ -822,18 +826,18 @@ export default function ExpensesPage() {
         <AddExpenseForm agreements={agreements} onAdd={handleAddExpenseRequest} submitting={submitting} />
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm text-gray-700">
-          Showing <span className="font-semibold">{filtered.length}</span> expense{filtered.length === 1 ? "" : "s"}
+        <div className="text-sm text-sky-100/75">
+          Showing <span className="font-semibold text-white">{filtered.length}</span> expense{filtered.length === 1 ? "" : "s"}
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Filter:</label>
+          <label className="text-sm font-semibold text-sky-100/75">Filter:</label>
           <select
             value={agreementFilter}
             onChange={(e) => setAgreementFilter(e.target.value)}
-            className="form-input min-h-[42px] rounded-xl border-slate-200 bg-white"
+            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
           >
             <option value="">All agreements</option>
             {agreements.map((a) => (
@@ -846,16 +850,16 @@ export default function ExpensesPage() {
           <button
             type="button"
             onClick={fetchExpenseRequests}
-            className="min-h-[42px] rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="min-h-[42px] rounded-xl border border-white/16 bg-slate-900/70 px-3.5 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15"
           >
             Refresh
           </button>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-xl border border-white/10 bg-slate-950/35">
         <table className="min-w-[1150px] w-full text-sm">
-          <thead className="bg-slate-50 text-gray-600">
+          <thead className="bg-white/8 text-sky-100/75">
             <tr>
               <th className="px-3 py-2 text-left">Created</th>
               <th className="px-3 py-2 text-left">Agreement</th>
@@ -869,17 +873,17 @@ export default function ExpensesPage() {
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-white/10">
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
+                <td colSpan={9} className="px-3 py-6 text-center text-sky-100/65">
                   Loading…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                  <td colSpan={9} className="px-3 py-12 text-center text-gray-500">
-                    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-sm text-slate-500">
+                  <td colSpan={9} className="px-3 py-12 text-center text-sky-100/70">
+                    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-white/14 bg-slate-950/35 px-6 py-8 text-sm text-sky-100/70">
                       No expenses recorded.
                     </div>
                   </td>
@@ -896,24 +900,24 @@ export default function ExpensesPage() {
                 const receiptUrl = er.receipt_url || null;
 
                 return (
-                  <tr key={er.id || idx} className="hover:bg-gray-50/80">
-                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{prettyDT(created)}</td>
+                  <tr key={er.id || idx} className="text-sky-100/78 transition hover:bg-sky-500/10">
+                    <td className="px-3 py-3 whitespace-nowrap text-sky-100/70">{prettyDT(created)}</td>
 
                     <td className="px-3 py-3">
-                      <div className="font-medium text-gray-900">{agreementText}</div>
-                      {aId ? <div className="text-xs text-gray-500">Agreement ID: {aId}</div> : null}
+                      <div className="font-semibold text-white">{agreementText}</div>
+                      {aId ? <div className="text-xs text-sky-100/55">Agreement ID: {aId}</div> : null}
                     </td>
 
                     <td className="px-3 py-3">{projectFromExpenseRequest(er, agreementsMap)}</td>
 
                     <td className="px-3 py-3">
-                      <div className="text-gray-900 font-medium">{er.description || "—"}</div>
+                      <div className="font-semibold text-white">{er.description || "—"}</div>
                       {er.notes_to_homeowner ? (
-                        <div className="text-xs text-gray-500 mt-1 line-clamp-1">{er.notes_to_homeowner}</div>
+                        <div className="text-xs text-sky-100/55 mt-1 line-clamp-1">{er.notes_to_homeowner}</div>
                       ) : null}
                     </td>
 
-                    <td className="px-3 py-3 text-right font-semibold">{toMoney(er.amount)}</td>
+                    <td className="px-3 py-3 text-right font-bold text-white">{toMoney(er.amount)}</td>
 
                     <td className="px-3 py-3 whitespace-nowrap">{expenseDate}</td>
 
@@ -925,17 +929,17 @@ export default function ExpensesPage() {
 
                     <td className="px-3 py-3 whitespace-nowrap">
                       {receiptUrl ? (
-                        <a className="text-blue-700 underline font-medium" href={receiptUrl} target="_blank" rel="noreferrer">
+                        <a className="font-semibold text-sky-200 underline decoration-sky-300/50 underline-offset-2" href={receiptUrl} target="_blank" rel="noreferrer">
                           Open
                         </a>
                       ) : (
-                        <span className="text-gray-500">—</span>
+                        <span className="text-sky-100/45">—</span>
                       )}
                     </td>
 
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        <label className="cursor-pointer rounded-lg border border-white/16 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/15">
                           Upload
                           <input
                             type="file"
@@ -949,7 +953,7 @@ export default function ExpensesPage() {
                         <button
                           type="button"
                           onClick={() => openModal(er)}
-                           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                           className="rounded-lg border border-white/16 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/15"
                         >
                           View
                         </button>
@@ -962,7 +966,7 @@ export default function ExpensesPage() {
                             setTimeout(() => handleSendOrResend(er), 0);
                           }}
                            className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${
-                             canSend(status) ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
+                             canSend(status) ? "border border-sky-300/40 bg-sky-500/80 hover:bg-sky-400/80" : "cursor-not-allowed border border-white/10 bg-slate-700 text-sky-100/45"
                            }`}
                         >
                           {sendButtonLabel(status)}
@@ -971,7 +975,7 @@ export default function ExpensesPage() {
                         <button
                           type="button"
                           onClick={() => handleDeleteExpenseRequest(er.id)}
-                           className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                           className="rounded-lg border border-rose-300/35 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/18"
                         >
                           Delete
                         </button>

@@ -20,16 +20,16 @@ function useDebouncedValue(value, delay = 400) {
 
 const StatusBadge = ({ status }) => {
   const statusStyles = {
-    active: "border border-emerald-200 bg-emerald-50 text-emerald-700",
-    prospect: "border border-sky-200 bg-sky-50 text-sky-700",
-    archived: "border border-slate-200 bg-slate-100 text-slate-700",
-    inactive: "border border-slate-200 bg-slate-100 text-slate-700",
+    active: "border border-emerald-300/35 bg-emerald-400/15 text-emerald-100",
+    prospect: "border border-sky-300/35 bg-sky-400/15 text-sky-100",
+    archived: "border border-slate-300/25 bg-slate-400/15 text-sky-100/75",
+    inactive: "border border-slate-300/25 bg-slate-400/15 text-sky-100/75",
   };
   const key = String(status || "").toLowerCase();
   return (
     <span
       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
-        statusStyles[key] || "border border-slate-200 bg-slate-100 text-slate-700"
+        statusStyles[key] || "border border-slate-300/25 bg-slate-400/15 text-sky-100/75"
       }`}
     >
       {status || "—"}
@@ -38,7 +38,7 @@ const StatusBadge = ({ status }) => {
 };
 
 const NewBadge = () => (
-  <span className="ml-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+  <span className="ml-2 inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold text-amber-100">
     NEW
   </span>
 );
@@ -234,17 +234,18 @@ export default function Customers() {
       eyebrow="Business"
       title="My Customers"
       subtitle="Track customer relationships, keep contact details close, and move from lead to active project with less friction."
+      variant="operational"
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to="/app/customer-records"
-            className="inline-flex min-h-[42px] items-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex min-h-[42px] items-center rounded-xl border border-white/16 bg-slate-900/70 px-4 py-2.5 text-sm font-semibold text-sky-100 shadow-sm transition hover:border-sky-300/35 hover:bg-sky-500/15"
           >
             Records
           </Link>
           <Link
             to={CUSTOMER_NEW_ROUTE}
-            className="inline-flex min-h-[42px] items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            className="inline-flex min-h-[42px] items-center rounded-xl border border-white/70 bg-white px-4 py-2.5 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
           >
             + Add New Customer
           </Link>
@@ -259,22 +260,22 @@ export default function Customers() {
         ].map((item) => (
           <div
             key={item.label}
-            className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm"
+            className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm"
           >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100/60">
               {item.label}
             </div>
-            <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+            <div className="mt-2 text-2xl font-semibold tracking-tight text-white">
               {item.value}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
-            className="min-h-[42px] rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/45 focus:border-sky-300/60"
             placeholder="Search name, company, email, phone…"
             value={q}
             onChange={(e) => {
@@ -284,7 +285,7 @@ export default function Customers() {
             style={{ minWidth: 260 }}
           />
           <select
-            className="min-h-[42px] rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
             value={status}
             onChange={(e) => {
               setStatus(e.target.value);
@@ -297,7 +298,7 @@ export default function Customers() {
             <option value="archived">Archived</option>
           </select>
           <select
-            className="min-h-[42px] rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
             value={ordering}
             onChange={(e) => {
               setOrdering(e.target.value);
@@ -312,7 +313,7 @@ export default function Customers() {
             <option value="-name">Name Z→A (name)</option>
           </select>
           <select
-            className="min-h-[42px] rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value));
@@ -326,18 +327,18 @@ export default function Customers() {
           </select>
         </div>
 
-        {loading && <p className="py-10 text-center text-gray-500">Loading customers...</p>}
-        {!loading && error && <p className="py-10 text-center text-red-500">{error}</p>}
+        {loading && <p className="py-10 text-center text-sky-100/65">Loading customers...</p>}
+        {!loading && error && <p className="py-10 text-center text-rose-200">{error}</p>}
 
         {!loading && !error && customers.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-12 text-center">
-            <h3 className="text-lg font-semibold text-slate-900">No customers yet</h3>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
+          <div className="rounded-2xl border border-dashed border-white/14 bg-slate-950/35 px-6 py-12 text-center">
+            <h3 className="text-lg font-semibold text-white">No customers yet</h3>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-sky-100/70">
               Add your first customer to start tracking relationships, job history, and project-ready contact details in one place.
             </p>
             <Link
               to={CUSTOMER_NEW_ROUTE}
-              className="mt-5 inline-flex min-h-[42px] items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+              className="mt-5 inline-flex min-h-[42px] items-center rounded-xl border border-white/70 bg-white px-4 py-2.5 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
             >
               + Add Your First Customer
             </Link>
@@ -345,22 +346,22 @@ export default function Customers() {
         )}
 
         {!loading && !error && customers.length > 0 && (
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/35 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/8 px-4 py-3">
               <div>
-                <div className="text-sm font-semibold text-slate-900">Customer directory</div>
-                <div className="text-sm text-slate-600">
+                <div className="text-sm font-semibold text-white">Customer directory</div>
+                <div className="text-sm text-sky-100/65">
                   {count} total customer{count === 1 ? "" : "s"} across your account
                 </div>
               </div>
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-sky-100/60">
                 Page {page} of {totalPages}
               </div>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50 text-slate-600">
+              <table className="min-w-full divide-y divide-white/10">
+                <thead className="bg-white/8 text-sky-100/75">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Customer</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
@@ -370,7 +371,7 @@ export default function Customers() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="divide-y divide-white/10">
                   {customers.map((customer) => {
                     const cid = String(customer.id ?? customer.uuid ?? customer.pk ?? "");
                     const isNew = newCustomerId && cid && String(newCustomerId) === cid;
@@ -379,26 +380,26 @@ export default function Customers() {
                     return (
                       <tr
                         key={customer.id ?? customer.uuid ?? customer.pk ?? `${customer.email}-${customer.phone}`}
-                        className="transition-colors hover:bg-slate-50/80"
+                        className="text-sky-100/78 transition-colors hover:bg-sky-500/10"
                       >
                         <td className="whitespace-nowrap px-6 py-5">
-                          <div className="font-semibold text-slate-900">
+                          <div className="font-semibold text-white">
                             {primary}
                             {isNew ? <NewBadge /> : null}
                           </div>
 
                           {hasCompany && secondary ? (
-                            <div className="text-sm text-slate-600">Contact: {secondary}</div>
+                            <div className="text-sm text-sky-100/65">Contact: {secondary}</div>
                           ) : null}
 
-                          <div className="text-sm text-slate-500">{customer.email || "—"}</div>
+                          <div className="text-sm text-sky-100/60">{customer.email || "—"}</div>
 
-                          <div className="mt-1 flex items-center text-sm text-slate-500">
+                          <div className="mt-1 flex items-center text-sm text-sky-100/60">
                             <Phone size={12} className="mr-1.5" />{" "}
                             {formatPhoneNumber(customer.phone_number || customer.phone)}
                           </div>
 
-                          <div className="mt-1 flex items-center text-sm text-slate-500">
+                          <div className="mt-1 flex items-center text-sm text-sky-100/60">
                             <Home size={12} className="mr-1.5" /> {formatAddress(customer)}
                           </div>
                         </td>
@@ -407,11 +408,11 @@ export default function Customers() {
                           <StatusBadge status={customer.status} />
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-medium text-slate-700">
+                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-white">
                           {customer.active_projects_count ?? 0}
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-sm text-slate-500">
+                        <td className="whitespace-nowrap px-6 py-5 text-sm text-sky-100/60">
                           {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "—"}
                         </td>
 
@@ -419,7 +420,7 @@ export default function Customers() {
                           <div className="flex items-center justify-end gap-3">
                             <button
                               onClick={() => navigate(customerEditRoute(customer.id))}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/16 bg-slate-900/70 text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 hover:text-white"
                               title="Edit Customer"
                               type="button"
                             >
@@ -428,7 +429,7 @@ export default function Customers() {
 
                             <button
                               onClick={() => handleDelete(customer.id)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 hover:text-rose-700"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300/35 bg-rose-500/10 text-rose-100 transition hover:bg-rose-500/18"
                               title="Delete Customer"
                               type="button"
                             >
@@ -443,13 +444,13 @@ export default function Customers() {
               </table>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/70 px-4 py-3">
-              <div className="text-sm text-slate-600">
+            <div className="flex items-center justify-between border-t border-white/10 bg-white/8 px-4 py-3">
+              <div className="text-sm text-sky-100/65">
                 Showing {count === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, count)} of {count}
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-50"
+                  className="rounded-xl border border-white/16 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1 || loading}
                   type="button"
@@ -457,12 +458,12 @@ export default function Customers() {
                   ‹ Prev
                 </button>
 
-                <span className="text-sm text-slate-600">
+                <span className="text-sm text-sky-100/65">
                   Page {page} of {totalPages}
                 </span>
 
                 <button
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 disabled:opacity-50"
+                  className="rounded-xl border border-white/16 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages || loading}
                   type="button"

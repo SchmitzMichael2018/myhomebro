@@ -728,17 +728,15 @@ export default function MilestoneList() {
       variant="operational"
     >
       {/* Header: filters + search */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_24px_60px_rgba(2,8,23,0.24)] backdrop-blur">
+      <div className="mhb-operational-toolbar mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] p-4">
         <div className="flex flex-wrap gap-2">
           {filterTabs.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`px-3 py-1 rounded text-sm border ${
-                tab === t.key
-                  ? "bg-white/80 text-gray-900 border-white/60 shadow"
-                  : "bg-white/10 text-white/90 border-white/20 hover:bg-white/20"
+              className={`mhb-operational-filter-chip rounded-xl px-3 py-2 text-sm font-extrabold ${
+                tab === t.key ? "is-active" : ""
               }`}
             >
               {t.label}
@@ -751,12 +749,12 @@ export default function MilestoneList() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search title, project, customer."
-            className="px-3 py-2 rounded border border-white/30 bg-white/90 text-gray-900 w-72 max-w-full"
+            className="mhb-operational-control w-72 max-w-full rounded-xl px-3 py-2 text-sm font-semibold"
           />
           <select
             value={projectClassFilter}
             onChange={(e) => updateQueryParam("project_class", e.target.value)}
-            className="rounded border border-white/30 bg-white/90 px-3 py-2 text-sm text-gray-900"
+            className="mhb-operational-control rounded-xl px-3 py-2 text-sm font-semibold"
             data-testid="milestone-list-project-class-filter"
           >
             <option value="all">All Projects</option>
@@ -766,7 +764,7 @@ export default function MilestoneList() {
           <select
             value={projectModeFilter}
             onChange={(e) => updateQueryParam("project_mode", e.target.value)}
-            className="rounded border border-white/30 bg-white/90 px-3 py-2 text-sm text-gray-900"
+            className="mhb-operational-control rounded-xl px-3 py-2 text-sm font-semibold"
             data-testid="milestone-list-project-mode-filter"
           >
             <option value="all">All Modes</option>
@@ -779,7 +777,7 @@ export default function MilestoneList() {
           <button
             type="button"
             onClick={() => reload()}
-            className="px-3 py-2 rounded bg-white/80 text-gray-900 border border-white/60"
+            className="mhb-operational-filter-chip rounded-xl px-4 py-2 text-sm font-extrabold"
           >
             Refresh
           </button>
@@ -857,7 +855,7 @@ export default function MilestoneList() {
                         </td>
 
                         <td className={`${tdBase} text-center`}>
-                          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-700 font-extrabold shadow-sm">
+                          <span className={`mhb-operational-filter-chip inline-flex h-9 w-9 items-center justify-center rounded-lg font-extrabold ${isOpen ? "is-active" : ""}`}>
                             {isOpen ? "▾" : "▸"}
                           </span>
                         </td>

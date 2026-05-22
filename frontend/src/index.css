@@ -196,6 +196,121 @@
     color: #e0f2fe;
   }
 
+  .mhb-operational-surface .mhb-glass {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    background: rgba(6, 29, 66, 0.92) !important;
+    color: #e0f2fe;
+    box-shadow: 0 18px 46px rgba(2, 8, 23, 0.24);
+    backdrop-filter: blur(14px);
+  }
+
+  .mhb-operational-surface .mhb-btn {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    background: rgba(15, 42, 78, 0.82) !important;
+    color: #e0f2fe !important;
+    box-shadow: none;
+  }
+
+  .mhb-operational-surface .mhb-btn.primary {
+    border-color: rgba(255, 255, 255, 0.78) !important;
+    background: rgba(248, 251, 255, 0.96) !important;
+    color: #0f172a !important;
+  }
+
+  .mhb-operational-surface .mhb-btn:disabled {
+    opacity: 0.48;
+  }
+
+  .mhb-operational-toolbar {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background:
+      radial-gradient(circle at 14% 0%, rgba(96, 165, 250, 0.2), transparent 34%),
+      linear-gradient(135deg, rgba(6, 29, 66, 0.96), rgba(10, 42, 86, 0.9));
+    box-shadow: 0 24px 60px rgba(2, 8, 23, 0.24);
+    backdrop-filter: blur(14px);
+  }
+
+  .mhb-operational-filter-chip {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(15, 42, 78, 0.72);
+    color: rgba(224, 242, 254, 0.86);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease, color 160ms ease;
+  }
+
+  .mhb-operational-filter-chip:hover {
+    border-color: rgba(125, 211, 252, 0.42);
+    background: rgba(37, 99, 235, 0.18);
+    color: #fff;
+    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.12), 0 10px 28px rgba(37, 99, 235, 0.12);
+  }
+
+  .mhb-operational-filter-chip.is-active {
+    border-color: rgba(191, 219, 254, 0.78);
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.9), rgba(124, 58, 237, 0.72));
+    color: #fff;
+    box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.18), 0 14px 34px rgba(37, 99, 235, 0.28);
+  }
+
+  .mhb-operational-control {
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(2, 22, 50, 0.62);
+    color: #e0f2fe;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    outline: none;
+  }
+
+  .mhb-operational-control::placeholder {
+    color: rgba(224, 242, 254, 0.5);
+  }
+
+  .mhb-operational-control:focus,
+  .mhb-operational-filter-chip:focus-visible {
+    border-color: rgba(125, 211, 252, 0.72);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+  }
+
+  .mhb-business-dashboard [class*="border-slate-200"][class*="bg-white"],
+  .mhb-business-dashboard [class*="border-gray-200"][class*="bg-white"],
+  .mhb-business-dashboard [class*="bg-white/95"],
+  .mhb-business-dashboard [class*="bg-slate-50"],
+  .mhb-business-dashboard [class*="bg-indigo-50"] {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    background-color: rgba(2, 22, 50, 0.42) !important;
+    color: #e0f2fe;
+  }
+
+  .mhb-business-dashboard [class*="text-slate-900"],
+  .mhb-business-dashboard [class*="text-gray-900"],
+  .mhb-business-dashboard [class*="text-[#19395f]"] {
+    color: #f8fafc !important;
+  }
+
+  .mhb-business-dashboard [class*="text-slate-800"],
+  .mhb-business-dashboard [class*="text-gray-800"],
+  .mhb-business-dashboard [class*="text-slate-700"],
+  .mhb-business-dashboard [class*="text-gray-700"] {
+    color: rgba(224, 242, 254, 0.82) !important;
+  }
+
+  .mhb-business-dashboard [class*="text-slate-600"],
+  .mhb-business-dashboard [class*="text-gray-600"],
+  .mhb-business-dashboard [class*="text-slate-500"],
+  .mhb-business-dashboard [class*="text-gray-500"],
+  .mhb-business-dashboard [class*="text-[#40618e]"] {
+    color: rgba(224, 242, 254, 0.68) !important;
+  }
+
+  .mhb-business-dashboard [class*="divide-slate-100"] > :not([hidden]) ~ :not([hidden]),
+  .mhb-business-dashboard [class*="divide-gray-100"] > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  .mhb-business-dashboard [class*="border-b"][class*="border-slate-200"],
+  .mhb-business-dashboard [class*="border-b"][class*="border-gray-200"] {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
   .mhb-operational-surface thead {
     background-color: rgba(255, 255, 255, 0.08) !important;
   }

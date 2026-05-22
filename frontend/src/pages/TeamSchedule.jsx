@@ -19,10 +19,10 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 function Chip({ children, tone = "neutral" }) {
   const cls =
     tone === "danger"
-      ? "border-rose-200 bg-rose-50 text-rose-800"
+      ? "border-rose-300/35 bg-rose-400/15 text-rose-100"
       : tone === "warn"
-      ? "border-amber-200 bg-amber-50 text-amber-800"
-      : "border-gray-200 bg-gray-50 text-gray-700";
+      ? "border-amber-300/35 bg-amber-400/15 text-amber-100"
+      : "border-white/12 bg-slate-400/15 text-sky-100/75";
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${cls}`}>
       {children}
@@ -282,12 +282,13 @@ export default function TeamSchedule() {
       eyebrow="Work"
       title="Team Schedule"
       subtitle="Set weekly work days and exception dates so contractor scheduling stays predictable and easy to review."
-      className="max-w-[1360px]"
+      className="max-w-[1680px]"
+      variant="operational"
     >
       <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="mhb-operational-toolbar flex flex-wrap items-end justify-between gap-3 rounded-[24px] p-4">
         <div>
-          <div className="text-sm text-slate-700">
+          <div className="text-sm font-semibold text-sky-100/75">
             Set weekly work days (Sun–Sat), add exceptions, and see the assigned work tied to the selected employee.
           </div>
         </div>
@@ -295,26 +296,26 @@ export default function TeamSchedule() {
           <button
             onClick={() => navigate("/app/assignments")}
             disabled={saving}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold hover:bg-slate-50 disabled:opacity-60"
+            className="mhb-operational-filter-chip is-active rounded-xl px-4 py-2 font-extrabold disabled:opacity-60"
           >
             View Assignments
           </button>
           <button
             onClick={loadEmployees}
             disabled={saving}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"
+            className="mhb-operational-filter-chip rounded-xl px-4 py-2 font-extrabold disabled:opacity-60"
           >
             Refresh employees
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <label className="block text-sm font-semibold text-gray-700 mb-2">Select employee</label>
+      <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+        <label className="block text-sm font-semibold text-sky-100/80 mb-2">Select employee</label>
         <select
           value={selectedId}
           onChange={(e) => updateSelectedEmployee(e.target.value)}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2"
+          className="mhb-operational-control w-full rounded-lg px-3 py-2"
           disabled={loading || saving}
         >
           <option value="">{loading ? "Loading…" : "— Choose —"}</option>
@@ -343,47 +344,47 @@ export default function TeamSchedule() {
       </div>
 
       {!selectedId ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-12 text-center shadow-sm">
-          <div className="text-base font-semibold text-slate-900">Select an employee to review their schedule and active work.</div>
-          <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-700">
+        <div className="rounded-2xl border border-dashed border-white/14 bg-slate-950/45 px-6 py-12 text-center shadow-sm">
+          <div className="text-base font-semibold text-white">Select an employee to review their schedule and active work.</div>
+          <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-sky-100/70">
             Weekly availability, exceptions, and the related assignments list will appear here once you choose a team member.
           </div>
         </div>
       ) : !schedule ? (
-        <div className="text-gray-500">Loading schedule…</div>
+        <div className="rounded-2xl border border-white/12 bg-slate-950/45 px-6 py-10 text-center text-sm font-semibold text-sky-100/70 shadow-sm">Loading schedule…</div>
       ) : (
         <div className="space-y-4">
           <div data-testid="team-schedule-summary" className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Working Days</div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{scheduleSummary.workingDays}</div>
+            <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">Working Days</div>
+              <div className="mt-2 text-2xl font-bold text-white">{scheduleSummary.workingDays}</div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Assignments</div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{scheduleSummary.assignmentCount}</div>
+            <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">Assignments</div>
+              <div className="mt-2 text-2xl font-bold text-white">{scheduleSummary.assignmentCount}</div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Milestone Links</div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{scheduleSummary.milestoneCount}</div>
+            <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">Milestone Links</div>
+              <div className="mt-2 text-2xl font-bold text-white">{scheduleSummary.milestoneCount}</div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Upcoming Items</div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{operationalEvents.length}</div>
+            <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">Upcoming Items</div>
+              <div className="mt-2 text-2xl font-bold text-white">{operationalEvents.length}</div>
             </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="team-schedule-editor">
+          <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm" data-testid="team-schedule-editor">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="font-bold text-slate-950">Weekly work days</div>
-                <div className="mt-1 text-sm text-slate-700">Toggle which days they typically work.</div>
+                <div className="font-bold text-white">Weekly work days</div>
+                <div className="mt-1 text-sm text-sky-100/70">Toggle which days they typically work.</div>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={saveSchedule}
                   disabled={saving}
-                  className="rounded-lg bg-blue-600 text-white px-4 py-2 font-semibold hover:bg-blue-700 disabled:opacity-60"
+                  className="mhb-operational-filter-chip is-active rounded-lg px-4 py-2 font-semibold disabled:opacity-60"
                 >
                   {saving ? "Saving…" : "Save schedule"}
                 </button>
@@ -395,10 +396,9 @@ export default function TeamSchedule() {
               {DAY_FIELDS.map((f) => {
                 const on = !!schedule[f];
 
-                // Selected day: MyHomeBro blue
                 const cls = on
-                  ? "bg-blue-600 border-blue-700 text-white hover:bg-blue-700"
-                  : "bg-white border-slate-200 text-slate-800 hover:bg-slate-50";
+                  ? "mhb-operational-filter-chip is-active"
+                  : "mhb-operational-filter-chip";
 
                 return (
                   <button
@@ -417,52 +417,52 @@ export default function TeamSchedule() {
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Timezone</label>
+                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Timezone</label>
                 <input
                   value={schedule.timezone || "America/Chicago"}
                   onChange={(e) => setSchedule((prev) => ({ ...prev, timezone: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mhb-operational-control w-full rounded-lg px-3 py-2"
                   disabled={saving}
                 />
-                <div className="mt-1 text-xs text-slate-600">Default: America/Chicago</div>
+                <div className="mt-1 text-xs text-sky-100/60">Default: America/Chicago</div>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Work start (optional)</label>
+                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Work start (optional)</label>
                 <input
                   type="time"
                   value={schedule.start_time || ""}
                   onChange={(e) => setTime("start_time", e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mhb-operational-control w-full rounded-lg px-3 py-2"
                   disabled={saving}
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Work end (optional)</label>
+                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Work end (optional)</label>
                 <input
                   type="time"
                   value={schedule.end_time || ""}
                   onChange={(e) => setTime("end_time", e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mhb-operational-control w-full rounded-lg px-3 py-2"
                   disabled={saving}
                 />
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="team-schedule-operational-view">
+          <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm" data-testid="team-schedule-operational-view">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="font-bold text-slate-950">Operational work view</div>
-                <div className="mt-1 text-sm text-slate-700">
+                <div className="font-bold text-white">Operational work view</div>
+                <div className="mt-1 text-sm text-sky-100/70">
                   Work items currently tied to this employee.
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => navigate(`/app/assignments?subaccount=${selectedId}`)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="mhb-operational-filter-chip rounded-lg px-3 py-2 text-sm font-semibold"
               >
                 Open Assignments
               </button>
@@ -471,28 +471,28 @@ export default function TeamSchedule() {
             {calendarLoading ? (
               <div className="mt-4 text-sm text-slate-500">Loading assignments…</div>
             ) : operationalEvents.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-7 text-center">
-                <div className="text-sm font-semibold text-slate-900">No active work items yet</div>
-                <div className="mt-1 text-sm text-slate-700">
+              <div className="mt-4 rounded-2xl border border-dashed border-white/14 bg-slate-900/45 px-5 py-7 text-center">
+                <div className="text-sm font-semibold text-white">No active work items yet</div>
+                <div className="mt-1 text-sm text-sky-100/70">
                   Assign a project or milestone to this employee and their work will appear here.
                 </div>
               </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {operationalEvents.map((event) => (
-                  <div key={event.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div key={event.id} className="rounded-xl border border-white/12 bg-slate-900/45 p-4">
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div>
-                        <div className="text-sm font-semibold text-slate-900">{event.title}</div>
-                        <div className="mt-1 text-sm text-slate-600">
+                        <div className="text-sm font-semibold text-white">{event.title}</div>
+                        <div className="mt-1 text-sm text-sky-100/70">
                           {event.extendedProps?.project_title || "Project"} · {event.extendedProps?.type === "milestone_override" ? "Milestone override" : "Agreement assignment"}
                         </div>
                       </div>
-                      <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      <span className="inline-flex rounded-full border border-white/12 bg-slate-950/55 px-2.5 py-1 text-xs font-semibold text-sky-100/80">
                         {formatRangeDate(event.start)}
                       </span>
                     </div>
-                    <div className="mt-2 text-xs text-slate-500">
+                    <div className="mt-2 text-xs text-sky-100/60">
                       {formatRangeDateTime(event.start)} {event.end ? `→ ${formatRangeDateTime(event.end)}` : ""}
                     </div>
                   </div>
@@ -502,11 +502,11 @@ export default function TeamSchedule() {
           </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3">
               <div>
-                <div className="font-bold text-slate-950">Schedule exceptions</div>
-                <div className="mt-1 text-sm text-slate-700">
+                <div className="font-bold text-white">Schedule exceptions</div>
+                <div className="mt-1 text-sm text-sky-100/70">
                   Add day-specific overrides (vacation/day off or extra work day).
                 </div>
               </div>
@@ -514,18 +514,18 @@ export default function TeamSchedule() {
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
               <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Date</label>
+                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Date</label>
                 <input
                   type="date"
                   value={exDate}
                   onChange={(e) => setExDate(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mhb-operational-control w-full rounded-lg px-3 py-2"
                   disabled={saving}
                 />
               </div>
 
               <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <label className="flex items-center gap-2 text-sm font-semibold text-sky-100/80">
                   <input
                     type="checkbox"
                     checked={exIsWorking}
@@ -537,12 +537,12 @@ export default function TeamSchedule() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Note</label>
+                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Note</label>
                 <input
                   value={exNote}
                   onChange={(e) => setExNote(e.target.value)}
                   placeholder="e.g., Vacation / Half day / Site visit"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="mhb-operational-control w-full rounded-lg px-3 py-2"
                   disabled={saving}
                 />
               </div>
@@ -551,7 +551,7 @@ export default function TeamSchedule() {
                 <button
                   onClick={addException}
                   disabled={saving || !exDate}
-                  className="w-full rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold hover:bg-slate-800 disabled:opacity-60"
+                  className="mhb-operational-filter-chip is-active w-full rounded-lg px-4 py-2 font-semibold disabled:opacity-60"
                 >
                   Add exception
                 </button>
@@ -560,16 +560,16 @@ export default function TeamSchedule() {
 
             <div className="mt-4">
               {exceptions.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-7 text-center">
-                  <div className="text-sm font-semibold text-slate-900">No exceptions yet</div>
-                  <div className="mt-1 text-sm text-slate-700">
+                <div className="rounded-2xl border border-dashed border-white/14 bg-slate-900/45 px-5 py-7 text-center">
+                  <div className="text-sm font-semibold text-white">No exceptions yet</div>
+                  <div className="mt-1 text-sm text-sky-100/70">
                     Add a day off or extra work day here when the schedule needs a one-time change.
                   </div>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="border-b text-left text-slate-600">
+                    <thead className="border-b border-white/12 text-left text-sky-100/70">
                       <tr>
                         <th className="py-2 pr-3">DATE</th>
                         <th className="py-2 pr-3">TYPE</th>
@@ -579,7 +579,7 @@ export default function TeamSchedule() {
                     </thead>
                     <tbody>
                       {exceptions.map((ex) => (
-                        <tr key={ex.id} className="border-b last:border-b-0">
+                        <tr key={ex.id} className="border-b border-white/10 last:border-b-0">
                           <td className="py-2 pr-3">{ex.date}</td>
                           <td className="py-2 pr-3">
                             {ex.is_working ? (
@@ -593,7 +593,7 @@ export default function TeamSchedule() {
                             <button
                               onClick={() => removeException(ex.id)}
                               disabled={saving}
-                              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-60"
+                              className="rounded-lg border border-rose-300/35 bg-rose-500/10 px-3 py-1.5 text-sm font-semibold text-rose-100 hover:bg-rose-500/18 disabled:opacity-60"
                             >
                               Delete
                             </button>

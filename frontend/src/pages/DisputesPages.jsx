@@ -254,11 +254,18 @@ function matchesSearch(d, q) {
   return parts.every((p) => hay.includes(p));
 }
 
-function SearchBox({ value, onChange, onClear }) {
+function SearchBox({ value, onChange, onClear, operational = false }) {
+  const inputClass = operational
+    ? "w-full rounded-xl border border-white/15 bg-slate-950/60 px-3 py-2 pr-10 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/50 focus:border-sky-300/60 focus:bg-slate-950/80"
+    : "w-full rounded-xl border border-black/10 bg-white/70 px-3 py-2 pr-10 text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-400 focus:bg-white";
+  const clearClass = operational
+    ? "absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-extrabold text-sky-100/75 hover:bg-white/10 hover:text-white"
+    : "absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-extrabold text-slate-500 hover:bg-slate-100";
+
   return (
     <div className="relative w-full md:w-[360px]">
       <input
-        className="w-full rounded-xl border border-black/10 bg-white/70 px-3 py-2 pr-10 text-sm font-semibold text-slate-800 outline-none focus:bg-white"
+        className={inputClass}
         placeholder="Search disputes… (agreement #, milestone, reason, response)"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -267,7 +274,7 @@ function SearchBox({ value, onChange, onClear }) {
         <button
           type="button"
           onClick={onClear}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-extrabold text-slate-600 hover:bg-slate-100"
+          className={clearClass}
           title="Clear search"
         >
           ✕
@@ -394,7 +401,7 @@ function sortAdminUrgency(rows, now) {
   });
 }
 
-function FilterBar({ rows, selected, onChange, filters, isAdmin, now }) {
+function FilterBar({ rows, selected, onChange, filters, isAdmin, now, operational = false }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(filters.map((f) => [f.key, 0]));
     c.all = rows.length;
@@ -429,17 +436,23 @@ function FilterBar({ rows, selected, onChange, filters, isAdmin, now }) {
           <button
             key={f.key}
             className={[
-              "rounded-full px-3 py-1 text-xs font-extrabold border transition",
+              "rounded-full border px-3 py-1.5 text-xs font-extrabold transition",
               active
-                ? "bg-slate-900 text-white border-black/10"
-                : "bg-white/60 text-slate-800 border-black/10 hover:bg-white hover:text-slate-900",
+                ? operational
+                  ? "border-sky-300/50 bg-sky-500/25 text-white shadow-sm"
+                  : "border-slate-900 bg-slate-900 text-white shadow-sm"
+                : operational
+                  ? "border-white/12 bg-slate-900/45 text-sky-100/78 hover:border-sky-300/35 hover:bg-sky-500/15 hover:text-white"
+                  : "border-black/10 bg-white/60 text-slate-800 hover:bg-white",
             ].join(" ")}
             onClick={() => onChange(f.key)}
             title={`Show: ${f.label}`}
             type="button"
           >
             {f.label}{" "}
-            <span className={active ? "text-white/80" : "text-slate-500"}>({count})</span>
+            <span className={active ? "text-white/80" : operational ? "text-sky-100/55" : "text-slate-500"}>
+              ({count})
+            </span>
           </button>
         );
       })}
@@ -1210,7 +1223,13 @@ export default function DisputesPages() {
               Archive
             </button>
           ) : (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700">
+            <span
+              className={
+                operationalDisputes
+                  ? "rounded-full border border-white/12 bg-white/10 px-2 py-0.5 text-[10px] font-extrabold text-sky-100/75"
+                  : "rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700"
+              }
+            >
               Archived
             </span>
           )}
@@ -1247,10 +1266,10 @@ export default function DisputesPages() {
               Pay Fee
             </button>
           ) : (
-            <span className="text-emerald-700 font-bold text-sm">Fee Paid</span>
+            <span className={`font-bold text-sm ${operationalDisputes ? "text-emerald-300" : "text-emerald-700"}`}>Fee Paid</span>
           )
         ) : (
-          <span className="text-slate-500 font-bold text-sm">Read only</span>
+          <span className={`font-bold text-sm ${operationalDisputes ? "text-sky-100/55" : "text-slate-500"}`}>Read only</span>
         )}
 
         <button
@@ -1318,7 +1337,11 @@ export default function DisputesPages() {
 
         {hasAnyResponse(d) && !isClosed(d) && (
           <span
-            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
+            className={
+              operationalDisputes
+                ? "inline-flex items-center gap-1 rounded-full border border-emerald-300/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-200"
+                : "inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
+            }
             title="At least one response has been submitted"
           >
             Response received
@@ -1339,22 +1362,54 @@ export default function DisputesPages() {
           </button>
         )}
 
-        {isClosed(d) ? <span className="text-xs text-slate-500 self-center">Read only</span> : null}
+        {isClosed(d) ? (
+          <span className={`self-center text-xs ${operationalDisputes ? "text-sky-100/55" : "text-slate-500"}`}>
+            Read only
+          </span>
+        ) : null}
       </div>
     );
   };
 
+  const operationalDisputes = !isAdmin;
+
   const Section = ({ title, items }) => (
-    <div className="mhb-glass" style={{ padding: 16 }}>
-      <div className="mb-2 font-extrabold text-slate-800">{title}</div>
+    <section
+      className={operationalDisputes ? "mhb-glass overflow-hidden rounded-2xl p-4 md:p-5" : "mhb-glass"}
+      style={operationalDisputes ? undefined : { padding: 16 }}
+    >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className={`text-lg font-extrabold ${operationalDisputes ? "text-white" : "text-slate-900"}`}>{title}</h2>
+        <span
+          className={
+            operationalDisputes
+              ? "rounded-full border border-white/12 bg-white/10 px-2.5 py-1 text-xs font-bold text-sky-100/75"
+              : "rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600"
+          }
+        >
+          {items.length} total
+        </span>
+      </div>
       {loading ? (
         <div>Loading…</div>
       ) : items.length === 0 ? (
-        <div className="text-slate-500 text-sm">No disputes found.</div>
+        <div
+          className={
+            operationalDisputes
+              ? "rounded-2xl border border-dashed border-white/14 bg-slate-950/35 px-4 py-6 text-sm text-sky-100/75"
+              : "text-slate-500 text-sm"
+          }
+        >
+          <div className={operationalDisputes ? "font-semibold text-sky-50" : "font-semibold text-slate-700"}>No disputes found.</div>
+          <div className="mt-1">
+            Disputes will appear here when escrow or project issues are opened.
+          </div>
+        </div>
       ) : (
+        <div className={operationalDisputes ? "overflow-x-auto rounded-2xl border border-white/10" : "overflow-x-auto"}>
         <table className="w-full text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-          <thead>
-            <tr className="bg-slate-50">
+          <thead className={operationalDisputes ? "bg-white/8 text-sky-100/75" : "text-slate-500"}>
+            <tr>
               <th className="text-left p-2">ID</th>
               <th className="text-left p-2">Agreement #</th>
               <th className="text-left p-2">Milestone</th>
@@ -1367,9 +1422,12 @@ export default function DisputesPages() {
           </thead>
           <tbody>
             {items.map((d) => (
-              <tr key={d.id} className={`border-t align-top ${isClosed(d) ? "opacity-85" : ""}`}>
-                <td className="p-2 font-bold">#{d.id}</td>
-                <td className="p-2">{d.agreement_number || d.agreement}</td>
+              <tr
+                key={d.id}
+                className={`${operationalDisputes ? "border-t border-white/10 text-sky-100/80" : "border-t border-black/10"} align-top ${isClosed(d) ? "opacity-85" : ""}`}
+              >
+                <td className={`p-2 font-bold ${operationalDisputes ? "text-white" : "text-slate-900"}`}>#{d.id}</td>
+                <td className={`p-2 ${operationalDisputes ? "text-sky-100/80" : ""}`}>{d.agreement_number || d.agreement}</td>
                 <td className="p-2">{d.milestone_title || "—"}</td>
                 <td className="p-2">
                   <Badge tone={isClosed(d) ? "danger" : toneFor(d.status)}>
@@ -1378,11 +1436,11 @@ export default function DisputesPages() {
                 </td>
                 <td className="p-2">
                   {isClosed(d) ? (
-                    <span className="text-slate-500">—</span>
+                    <span className={operationalDisputes ? "text-sky-100/45" : "text-slate-500"}>—</span>
                   ) : d.fee_paid ? (
-                    <span className="text-emerald-700 font-bold">Paid</span>
+                    <span className="font-bold text-emerald-300">Paid</span>
                   ) : (
-                    <span className="text-slate-700">{money(d.fee_amount || 0)}</span>
+                    <span className={operationalDisputes ? "text-sky-100/80" : "text-slate-700"}>{money(d.fee_amount || 0)}</span>
                   )}
                 </td>
                 <td className="p-2">{d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}</td>
@@ -1394,19 +1452,34 @@ export default function DisputesPages() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
-    </div>
+    </section>
   );
 
   const Fallback = ({ rows }) => (
-    <div className="mhb-glass" style={{ padding: 16 }}>
-      <div className="mb-2 font-extrabold text-slate-800">Disputed Invoices</div>
+    <section
+      className={operationalDisputes ? "mhb-glass overflow-hidden rounded-2xl p-4 md:p-5" : "mhb-glass"}
+      style={operationalDisputes ? undefined : { padding: 16 }}
+    >
+      <h2 className={`mb-3 text-lg font-extrabold ${operationalDisputes ? "text-white" : "text-slate-900"}`}>
+        Disputed Invoices
+      </h2>
       {rows.length === 0 ? (
-        <div className="text-slate-500 text-sm">🎉 No disputed invoices found.</div>
+        <div
+          className={
+            operationalDisputes
+              ? "rounded-2xl border border-dashed border-white/14 bg-slate-950/35 px-4 py-6 text-sm text-sky-100/75"
+              : "text-slate-500 text-sm"
+          }
+        >
+          No disputed invoices found.
+        </div>
       ) : (
+        <div className={operationalDisputes ? "overflow-x-auto rounded-2xl border border-white/10" : "overflow-x-auto"}>
         <table className="w-full text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-          <thead>
-            <tr className="bg-slate-50">
+          <thead className={operationalDisputes ? "bg-white/8 text-sky-100/75" : "text-slate-500"}>
+            <tr>
               <th className="text-left p-2">Invoice #</th>
               <th className="text-left p-2">Project</th>
               <th className="text-left p-2">Homeowner</th>
@@ -1419,8 +1492,13 @@ export default function DisputesPages() {
             {rows.map((inv) => {
               const disputedAt = inv.disputed_at || inv.updated_at || inv.created_at || null;
               return (
-                <tr key={inv.id} className="border-t">
-                  <td className="p-2 font-mono">#{inv.invoice_number || inv.id}</td>
+                <tr
+                  key={inv.id}
+                  className={operationalDisputes ? "border-t border-white/10 text-sky-100/80" : "border-t border-black/10"}
+                >
+                  <td className={`p-2 font-mono ${operationalDisputes ? "text-white" : "text-slate-900"}`}>
+                    #{inv.invoice_number || inv.id}
+                  </td>
                   <td className="p-2">{inv.project_title || inv.agreement_title || "-"}</td>
                   <td className="p-2">{inv.homeowner_name || "-"}</td>
                   <td className="p-2">{String(inv.status || "-").replace("_", " ")}</td>
@@ -1431,8 +1509,9 @@ export default function DisputesPages() {
             })}
           </tbody>
         </table>
+        </div>
       )}
-    </div>
+    </section>
   );
 
   const pageTitle = isAdmin ? "Admin Dispute Center" : "Dispute Center";
@@ -1449,7 +1528,13 @@ export default function DisputesPages() {
   return (
     <ShellComponent {...shellProps}>
       {supportsDisputesApi ? (
-        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div
+          className={
+            operationalDisputes
+              ? "mb-4 flex flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/35 p-3 shadow-sm md:flex-row md:items-center md:justify-between"
+              : "mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
+          }
+        >
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
             <FilterBar
               rows={filterRowsSource}
@@ -1458,8 +1543,14 @@ export default function DisputesPages() {
               filters={filtersForRole}
               isAdmin={isAdmin}
               now={now}
+              operational={operationalDisputes}
             />
-            <SearchBox value={searchQuery} onChange={setSearchQuery} onClear={() => setSearchQuery("")} />
+            <SearchBox
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onClear={() => setSearchQuery("")}
+              operational={operationalDisputes}
+            />
             <button
               type="button"
               className={`mhb-btn ${showArchived ? "primary" : ""}`}
