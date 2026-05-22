@@ -53,8 +53,8 @@ export default function SaveTemplateModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
-        <div className="border-b px-5 py-4">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="shrink-0 border-b px-5 py-4">
           <div className="text-base font-semibold text-gray-900">Save Agreement as Template</div>
           <div className="mt-1 text-sm text-gray-600">
             Save this agreement as a reusable contractor template for future jobs. This is the first
@@ -62,7 +62,7 @@ export default function SaveTemplateModal({
           </div>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
               Template context
@@ -191,7 +191,7 @@ export default function SaveTemplateModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
+        <div className="shrink-0 flex items-center justify-end gap-2 border-t px-5 py-4">
           <button
             type="button"
             onClick={onClose}

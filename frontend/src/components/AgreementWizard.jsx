@@ -1958,6 +1958,9 @@ export default function AgreementWizard() {
       eyebrow="Core"
       title="Agreement Wizard"
       subtitle={`${agreementId ? `Agreement #${agreementId}` : "Draft agreement"} · Step ${step} of 4`}
+      variant="operational"
+      className="max-w-[1680px]"
+      contentClassName="mhb-agreement-wizard space-y-5"
       actions={
         <div className="flex items-center gap-2">
           <button
@@ -1970,7 +1973,7 @@ export default function AgreementWizard() {
                 onAction: handleAssistantAction,
               })
             }
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="mhb-operational-filter-chip is-active rounded-xl px-3 py-2 text-sm font-semibold"
           >
             Ask AI
           </button>
@@ -1980,7 +1983,7 @@ export default function AgreementWizard() {
                 type="button"
                 data-testid="agreement-wizard-view-pdf-button"
                 onClick={handleViewAgreementPdf}
-                className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-100"
+                className="mhb-operational-filter-chip rounded-xl px-3 py-2 text-sm font-semibold"
               >
                 View Agreement PDF
               </button>
@@ -1989,7 +1992,7 @@ export default function AgreementWizard() {
                   type="button"
                   data-testid="agreement-wizard-open-workspace-button"
                   onClick={() => navigate(`/app/agreements/${agreementId}`)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm hover:bg-slate-50"
+                  className="mhb-operational-filter-chip rounded-xl px-3 py-2 text-sm font-semibold"
                 >
                   Open Contract Workspace
                 </button>
@@ -2022,16 +2025,14 @@ export default function AgreementWizard() {
         <div className="flex items-center gap-2" />
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mhb-operational-toolbar mt-4 flex flex-wrap gap-2 rounded-[24px] p-3">
         {stepTabs.map(({ n, label }) => (
           <button
             key={n}
             type="button"
             onClick={() => goStep(n)}
-            className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
-              step === n
-                ? "border-indigo-600 bg-indigo-600 text-white"
-                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            className={`mhb-operational-filter-chip rounded-full px-3 py-2 text-xs font-semibold ${
+              step === n ? "is-active" : n < step ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" : ""
             }`}
           >
             {label}
@@ -2050,29 +2051,29 @@ export default function AgreementWizard() {
         wizardSummary.milestoneCount > 0 ||
         wizardSummary.totalLabel ||
         wizardSummary.paymentModeLabel) ? (
-        <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-white/12 bg-slate-950/45 px-4 py-3 shadow-sm">
           {wizardSummary.projectTitle ? (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-800">
+            <span className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-sm font-medium text-sky-50">
               {wizardSummary.projectTitle}
             </span>
           ) : null}
           {wizardSummary.customerLabel ? (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+            <span className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-sm font-medium text-sky-100/85">
               Customer: {wizardSummary.customerLabel}
             </span>
           ) : null}
           {wizardSummary.milestoneCount > 0 ? (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+            <span className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-sm font-medium text-sky-100/85">
               {wizardSummary.milestoneCount} milestone{wizardSummary.milestoneCount === 1 ? "" : "s"}
             </span>
           ) : null}
           {wizardSummary.totalLabel ? (
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-800">
+            <span className="rounded-full border border-emerald-300/30 bg-emerald-400/15 px-3 py-1 text-sm font-semibold text-emerald-100">
               {wizardSummary.totalLabel}
             </span>
           ) : null}
           {wizardSummary.paymentModeLabel ? (
-            <span className="rounded-full bg-sky-50 px-3 py-1 text-sm font-medium text-sky-800">
+            <span className="rounded-full border border-sky-300/30 bg-sky-400/15 px-3 py-1 text-sm font-medium text-sky-100">
               {wizardSummary.paymentModeLabel}
             </span>
           ) : null}
@@ -2082,7 +2083,7 @@ export default function AgreementWizard() {
       {assistantAppliedSummary ? (
         <div
           data-testid="agreement-assistant-prefill-banner"
-          className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+          className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/15 px-4 py-3 text-sm text-sky-50"
         >
           {assistantAppliedSummary}
         </div>
@@ -2091,7 +2092,7 @@ export default function AgreementWizard() {
       {activationJourney && agreementId ? (
         <div
           data-testid="first-agreement-success-banner"
-          className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+          className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-400/15 px-4 py-3 text-sm text-emerald-50"
         >
           <div className="font-semibold">Your first agreement is ready.</div>
           <div className="mt-1">
@@ -2103,7 +2104,7 @@ export default function AgreementWizard() {
       {showOpportunityDraftBanner ? (
         <div
           data-testid="contractor-activation-draft-banner"
-          className="mt-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+          className="mt-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-indigo-300/30 bg-indigo-400/15 px-4 py-3 text-sm text-indigo-50"
         >
           <div>
             <div className="font-semibold">This draft agreement was prepared from a homeowner request.</div>
@@ -2112,7 +2113,7 @@ export default function AgreementWizard() {
           <button
             type="button"
             onClick={dismissOpportunityDraftBanner}
-            className="rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100"
+            className="mhb-operational-filter-chip rounded-lg px-3 py-1.5 text-xs font-semibold"
             data-testid="contractor-activation-draft-dismiss"
           >
             Dismiss

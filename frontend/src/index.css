@@ -270,6 +270,42 @@
     box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
   }
 
+  .mhb-agreement-wizard :is(.bg-indigo-50, .bg-indigo-100, .bg-sky-50, .bg-sky-100) {
+    border-color: rgba(125, 211, 252, 0.28) !important;
+    background-color: rgba(37, 99, 235, 0.16) !important;
+  }
+
+  .mhb-agreement-wizard :is(.bg-amber-50, .bg-amber-100) {
+    border-color: rgba(252, 211, 77, 0.3) !important;
+    background-color: rgba(245, 158, 11, 0.14) !important;
+  }
+
+  .mhb-agreement-wizard :is(.bg-emerald-50, .bg-emerald-100) {
+    border-color: rgba(110, 231, 183, 0.3) !important;
+    background-color: rgba(16, 185, 129, 0.14) !important;
+  }
+
+  .mhb-agreement-wizard :is(.bg-red-50, .bg-rose-50) {
+    border-color: rgba(253, 164, 175, 0.3) !important;
+    background-color: rgba(244, 63, 94, 0.14) !important;
+  }
+
+  .mhb-agreement-wizard :is(.text-indigo-900, .text-indigo-800, .text-indigo-700, .text-sky-900, .text-sky-800, .text-sky-700) {
+    color: rgba(224, 242, 254, 0.92) !important;
+  }
+
+  .mhb-agreement-wizard :is(.text-amber-900, .text-amber-800, .text-amber-700) {
+    color: rgba(254, 243, 199, 0.92) !important;
+  }
+
+  .mhb-agreement-wizard :is(.text-emerald-900, .text-emerald-800, .text-emerald-700) {
+    color: rgba(209, 250, 229, 0.92) !important;
+  }
+
+  .mhb-agreement-wizard :is(.text-red-800, .text-red-700, .text-red-600, .text-rose-800, .text-rose-700, .text-rose-600) {
+    color: rgba(254, 205, 211, 0.92) !important;
+  }
+
   .mhb-business-dashboard [class*="border-slate-200"][class*="bg-white"],
   .mhb-business-dashboard [class*="border-gray-200"][class*="bg-white"],
   .mhb-business-dashboard [class*="bg-white/95"],
