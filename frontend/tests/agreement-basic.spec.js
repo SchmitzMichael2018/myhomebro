@@ -5428,6 +5428,14 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByRole('heading', { name: 'Project Context' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Review Scope Clarifications' })).toBeVisible();
   await expect(page.getByTestId('step4-header-actions')).toContainText('Review Scope Clarifications');
+  const clarificationSection = page.getByTestId('step4-scope-clarifications-section');
+  await expect(clarificationSection).toContainText('View details');
+  await expect(clarificationSection).toContainText(
+    'These answers help define project scope, pricing, responsibilities, and signing expectations before finalizing the agreement.'
+  );
+  await clarificationSection.getByTestId('step4-scope-clarifications-header').click();
+  await expect(clarificationSection).toContainText('Collapse');
+  await expect(clarificationSection).toContainText('No scope clarifications have been saved yet.');
   await expect(page.getByTestId('agreement-wizard-view-pdf-button')).toBeVisible();
   await expect(page.getByTestId('agreement-wizard-view-pdf-button')).toContainText('View Agreement PDF');
   await expect(page.getByTestId('agreement-wizard-open-workspace-button')).toHaveCount(0);
