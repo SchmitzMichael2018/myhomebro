@@ -432,7 +432,7 @@ function VideoPreview() {
 
 function AudienceCards({ navigate }) {
   return (
-    <section className="mx-auto grid max-w-7xl gap-6 px-4 pb-8 sm:px-6 lg:grid-cols-2 lg:px-8">
+    <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-8 sm:px-6 lg:grid-cols-2 lg:px-8">
       <AudienceCard
         id="for-homeowners"
         eyebrow="For Homeowners"
@@ -476,18 +476,18 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
       id={id}
       data-testid={`landing-${tone}-card`}
       className={`overflow-hidden rounded-3xl border bg-white/[0.055] shadow-2xl shadow-slate-950/20 backdrop-blur ${
-        isHomeowner ? "border-blue-300/24" : "border-amber-300/24"
+        isHomeowner ? "border-blue-300/28" : "border-amber-300/30"
       }`}
     >
-      <div className="grid h-full md:grid-cols-[0.98fr_0.88fr]">
-        <div className="p-5 sm:p-7">
+      <div className="grid h-full md:grid-cols-[0.86fr_1.08fr]">
+        <div className="p-5 sm:p-6">
           <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>
             {eyebrow}
           </div>
           <h2 className="mt-4 whitespace-pre-line text-3xl font-semibold leading-tight text-white">
             {title.replace(". ", ".\n")}
           </h2>
-          <div className="mt-5 space-y-2.5">
+          <div className="mt-4 space-y-2">
             {bullets.map((bullet) => (
               <div key={bullet} className="flex items-start gap-3 text-sm leading-6 text-sky-50/76">
                 <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${isHomeowner ? "text-sky-300" : "text-amber-300"}`} aria-hidden="true" />
@@ -495,7 +495,7 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
               </div>
             ))}
           </div>
-          <div className="mt-6 flex flex-col items-start gap-3">
+          <div className="mt-5 flex flex-col items-start gap-3">
             <button
               type="button"
               onClick={onPrimary}
@@ -513,39 +513,50 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
             </button>
           </div>
         </div>
-        <div className={`min-h-64 border-t border-white/10 p-4 md:border-l md:border-t-0 ${isHomeowner ? "bg-blue-500/5" : "bg-amber-300/5"}`}>
+        <div className={`min-h-60 border-t border-white/10 p-3.5 md:border-l md:border-t-0 ${isHomeowner ? "bg-blue-500/5" : "bg-amber-300/5"}`}>
           <div
-            className={`relative flex h-full min-h-56 items-center justify-center overflow-hidden rounded-[1.5rem] border p-5 ${
+            className={`relative flex h-full min-h-56 items-center justify-center overflow-hidden rounded-[1.5rem] border p-4 ${
               isHomeowner
-                ? "border-blue-300/20 bg-[radial-gradient(circle_at_82%_14%,rgba(96,165,250,0.33),transparent_26%),radial-gradient(circle_at_22%_20%,rgba(251,191,36,0.22),transparent_24%),linear-gradient(160deg,#0f172a_0%,#1e3a8a_54%,#78350f_100%)]"
-                : "border-amber-300/24 bg-[radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.28),transparent_24%),radial-gradient(circle_at_18%_18%,rgba(37,99,235,0.25),transparent_22%),linear-gradient(160deg,#111827_0%,#1e3a8a_48%,#451a03_100%)]"
+                ? "border-blue-300/22 bg-[radial-gradient(circle_at_84%_16%,rgba(96,165,250,0.34),transparent_25%),radial-gradient(circle_at_18%_18%,rgba(251,191,36,0.22),transparent_22%),linear-gradient(160deg,#06142d_0%,#12306b_54%,#7c3b08_100%)]"
+                : "border-amber-300/26 bg-[radial-gradient(circle_at_78%_18%,rgba(251,191,36,0.30),transparent_24%),radial-gradient(circle_at_18%_18%,rgba(37,99,235,0.26),transparent_22%),linear-gradient(160deg,#071121_0%,#10285c_48%,#4a1d04_100%)]"
             }`}
           >
-            <div className={`absolute inset-y-0 w-36 rounded-full blur-2xl ${isHomeowner ? "-right-10 bg-blue-400/18" : "right-0 bg-amber-300/16"}`} />
-            <div className={`absolute bottom-0 h-44 w-44 rounded-full border ${isHomeowner ? "-right-16 border-blue-200/28" : "-right-12 border-amber-200/28"}`} />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_36%,rgba(2,6,23,0.46)_100%)]" />
+            <div className={`absolute inset-y-0 w-44 rounded-full blur-2xl ${isHomeowner ? "-right-10 bg-blue-400/18" : "right-0 bg-amber-300/18"}`} />
+            <div className={`absolute h-72 w-72 rounded-full border ${isHomeowner ? "-right-24 bottom-[-7rem] border-amber-200/36" : "-right-20 bottom-[-6rem] border-amber-200/34"}`} />
+            <div className={`absolute h-80 w-80 rounded-full border ${isHomeowner ? "-right-28 bottom-[-7.75rem] border-blue-200/22" : "-right-24 bottom-[-7.25rem] border-blue-200/22"}`} />
             {isHomeowner ? (
-              <div data-testid="landing-homeowner-image-panel" className="relative h-48 w-full max-w-sm">
+              <div data-testid="landing-homeowner-image-panel" className="relative h-52 w-full max-w-md">
                 <div className="absolute bottom-0 left-1/2 h-10 w-[88%] -translate-x-1/2 rounded-[50%] bg-slate-950/45 blur-sm" />
-                <div className="absolute bottom-8 left-8 right-8 h-24 rounded-t-3xl border border-blue-100/25 bg-slate-950/56 shadow-2xl shadow-slate-950/30" />
-                <div className="absolute bottom-[7.2rem] left-12 right-12 h-20 rotate-[-3deg] rounded-t-3xl border border-amber-200/28 bg-amber-300/14" />
-                <div className="absolute bottom-8 left-16 h-14 w-12 rounded-t-xl bg-blue-500/28" />
-                <div className="absolute bottom-12 right-16 h-10 w-16 rounded-lg bg-amber-200/20" />
-                <div className="absolute bottom-0 left-2 h-16 w-12 rounded-t-full bg-emerald-300/18 blur-[1px]" />
-                <div className="absolute bottom-0 right-4 h-20 w-14 rounded-t-full bg-emerald-300/14 blur-[1px]" />
-                <Home className="absolute bottom-[4.35rem] left-1/2 h-11 w-11 -translate-x-1/2 text-sky-50" aria-hidden="true" />
+                <div className="absolute bottom-6 left-4 right-4 h-28 rounded-t-[2rem] border border-blue-100/25 bg-slate-950/60 shadow-2xl shadow-slate-950/35" />
+                <div className="absolute bottom-[8.15rem] left-8 right-8 h-20 rotate-[-3deg] rounded-t-[2.25rem] border border-amber-200/30 bg-amber-300/14" />
+                <div className="absolute bottom-[8.65rem] left-10 right-10 h-8 rotate-[-3deg] rounded-t-full bg-amber-200/12 blur-sm" />
+                <div className="absolute bottom-6 left-12 h-20 w-14 rounded-t-xl border border-blue-100/12 bg-blue-500/24" />
+                <div className="absolute bottom-[4.2rem] right-12 grid grid-cols-2 gap-2">
+                  <div className="h-9 w-10 rounded-lg bg-amber-200/38 shadow-[0_0_24px_rgba(251,191,36,0.42)]" />
+                  <div className="h-9 w-10 rounded-lg bg-amber-200/32 shadow-[0_0_20px_rgba(251,191,36,0.36)]" />
+                </div>
+                <div className="absolute bottom-1 left-1 h-16 w-14 rounded-t-full bg-emerald-300/20 blur-[1px]" />
+                <div className="absolute bottom-1 right-2 h-20 w-16 rounded-t-full bg-emerald-300/16 blur-[1px]" />
+                <div className="absolute bottom-[1.2rem] left-1/2 h-8 w-[78%] -translate-x-1/2 rounded-[50%] border-t border-amber-200/20 bg-amber-300/8" />
+                <Home className="absolute bottom-[5.1rem] left-1/2 h-12 w-12 -translate-x-1/2 text-sky-50 drop-shadow-[0_0_18px_rgba(186,230,253,0.25)]" aria-hidden="true" />
               </div>
             ) : (
-              <div data-testid="landing-contractor-image-panel" className="relative flex h-56 w-full max-w-sm items-center justify-center">
+              <div data-testid="landing-contractor-image-panel" className="relative flex h-56 w-full max-w-md items-center justify-center">
                 <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-slate-950/65 to-transparent" />
-                <div className="absolute bottom-1 h-44 w-32 rounded-t-[3rem] border border-amber-200/20 bg-slate-950/62 shadow-2xl shadow-slate-950/40" />
-                <div className="absolute top-5 h-16 w-16 rounded-full border border-amber-200/25 bg-amber-300/14" />
-                <div className="absolute top-10 h-8 w-24 rounded-t-full border border-amber-200/20 bg-slate-950/70" />
-                <div className="absolute bottom-8 rounded-2xl border border-amber-200/24 bg-blue-950/78 px-5 py-4 text-center shadow-xl shadow-slate-950/40">
-                  <img src={logo} alt="" className="mx-auto h-10 w-10 rounded-lg object-cover" />
+                <div className="absolute bottom-0 left-1/2 h-12 w-[72%] -translate-x-1/2 rounded-[50%] bg-slate-950/55 blur-sm" />
+                <div className="absolute bottom-1 h-46 w-36 rounded-t-[3.2rem] border border-amber-200/22 bg-slate-950/68 shadow-2xl shadow-slate-950/45" />
+                <div className="absolute top-3 h-17 w-17 rounded-full border border-amber-200/25 bg-amber-300/14" />
+                <div className="absolute top-9 h-8 w-28 rounded-t-full border border-amber-200/22 bg-slate-950/78" />
+                <div className="absolute bottom-9 rounded-2xl border border-amber-200/26 bg-blue-950/82 px-6 py-4 text-center shadow-xl shadow-slate-950/45">
+                  <img src={logo} alt="" className="mx-auto h-10 w-10 rounded-lg object-cover drop-shadow-[0_0_14px_rgba(251,191,36,0.25)]" />
                   <div className="mt-2 text-sm font-bold text-white">MyHome<span className="text-amber-300">Bro</span></div>
                 </div>
-                <div className="absolute bottom-5 left-12 h-16 w-5 rotate-12 rounded-full bg-amber-300/18" />
-                <div className="absolute bottom-5 right-12 h-16 w-5 -rotate-12 rounded-full bg-amber-300/18" />
+                <div className="absolute bottom-4 left-12 h-18 w-5 rotate-12 rounded-full bg-amber-300/20" />
+                <div className="absolute bottom-4 right-12 h-18 w-5 -rotate-12 rounded-full bg-amber-300/20" />
+                <div className="absolute bottom-6 left-[4.2rem] h-9 w-11 rounded-lg border border-amber-200/18 bg-amber-900/35" />
+                <div className="absolute bottom-6 right-[4.2rem] h-9 w-11 rounded-lg border border-amber-200/18 bg-amber-900/35" />
+                <div className="absolute bottom-[1.4rem] left-1/2 h-8 w-[84%] -translate-x-1/2 rounded-[50%] border-t border-amber-200/22 bg-amber-300/8" />
               </div>
             )}
           </div>
