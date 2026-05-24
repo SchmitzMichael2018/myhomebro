@@ -576,12 +576,12 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
                 <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.08),rgba(2,6,23,0.04)_52%,rgba(2,6,23,0.56)),radial-gradient(circle_at_75%_24%,rgba(251,191,36,0.15),transparent_32%)]" />
                 <div
                   data-testid="landing-contractor-sweatshirt-logo"
-                  className="pointer-events-none absolute left-[34%] top-[43%] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-slate-950/12 p-1.5 shadow-[0_0_22px_rgba(251,191,36,0.18)]"
+                  className="pointer-events-none absolute left-[34%] top-[35%] -translate-x-1/2 -translate-y-1/2 rotate-[-2deg]"
                 >
                   <img
                     src={logo}
                     alt=""
-                    className="h-16 w-16 object-contain opacity-95 mix-blend-screen contrast-125 saturate-125 sm:h-20 sm:w-20"
+                    className="h-10 w-10 object-contain opacity-90 mix-blend-screen contrast-110 saturate-110 drop-shadow-[0_1px_5px_rgba(251,191,36,0.22)] sm:h-12 sm:w-12"
                   />
                 </div>
                 <div className="absolute -right-20 bottom-[-6.25rem] h-64 w-64 rounded-full border border-amber-200/38" />
