@@ -288,10 +288,13 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByText("Project Intake", { exact: true })).toBeVisible();
   await expect(page.getByText("Status: draft")).toBeVisible();
   await expect(page.getByTestId("public-intake-step-rail")).toBeVisible();
-  await expect(page.getByTestId("public-intake-step-rail")).toHaveClass(/bg-slate-950\/35/);
+  await expect(page.getByTestId("public-intake-step-rail")).toHaveClass(/bg-slate-950\/45/);
+  await expect(page.getByTestId("public-intake-main-card")).toHaveClass(/bg-white/);
 
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
   await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need a bid-ready commercial scope.");
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveCSS("color", "rgb(2, 6, 23)");
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(page.getByTestId("public-intake-generate-structure")).toBeEnabled({ timeout: 15000 });
   await expect(page.getByTestId("public-intake-generate-structure")).toHaveClass(/bg-gradient-to-r/);
   await page.getByTestId("public-intake-generate-structure").click();

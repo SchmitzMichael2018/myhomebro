@@ -6,7 +6,7 @@ import { ProjectModeBadge, normalizeProjectMode, projectModeLabel } from "../pro
 import { contractorMatchTierClass, contractorMatchTierLabel } from "../../lib/contractorMatching.js";
 
 const intakePrimaryButtonClass =
-  "rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-400/30 disabled:from-slate-600 disabled:via-slate-600 disabled:to-slate-600 disabled:text-slate-200 disabled:shadow-none disabled:opacity-70";
+  "rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/70 hover:from-blue-500 hover:to-purple-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-400/30 disabled:from-slate-600 disabled:via-slate-600 disabled:to-slate-600 disabled:text-slate-200 disabled:shadow-none disabled:opacity-70";
 
 function safeText(value) {
   return String(value ?? "").trim();
@@ -479,7 +479,7 @@ export default function ContractorDiscoveryStep({
   }
 
   return (
-    <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7" data-testid="public-intake-contractor-discovery-step">
+    <div className="rounded-3xl border border-slate-200/80 bg-white p-6 text-slate-950 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7" data-testid="public-intake-contractor-discovery-step">
       <div className="max-w-3xl">
         <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
           Local contractor review
@@ -638,7 +638,7 @@ export default function ContractorDiscoveryStep({
                     onClick={() => toggleSelection(card)}
                     className={`rounded-full px-4 py-2 text-sm font-semibold ${
                       selected
-                        ? "border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white shadow-sm"
+                        ? "border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white shadow-sm"
                         : "border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
                     }`}
                     data-testid={`public-intake-contractor-select-${cardSelectionKey(card)}`}

@@ -96,11 +96,11 @@ function getFriendlyBudgetLabel(value) {
 }
 
 const intakeLightCardClass =
-  "rounded-3xl border border-slate-200/80 bg-white p-6 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7";
+  "rounded-3xl border border-slate-200/80 bg-white p-6 text-slate-950 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7";
 const intakePanelClass =
-  "rounded-3xl border border-white/12 bg-slate-950/35 p-4 shadow-2xl shadow-slate-950/25 backdrop-blur";
+  "rounded-3xl border border-white/15 bg-slate-950/45 p-4 shadow-2xl shadow-slate-950/30 backdrop-blur";
 const intakePrimaryButtonClass =
-  "rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-400/30 disabled:from-slate-600 disabled:via-slate-600 disabled:to-slate-600 disabled:text-slate-200 disabled:shadow-none disabled:opacity-70";
+  "rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/70 hover:from-blue-500 hover:to-purple-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-400/30 disabled:from-slate-600 disabled:via-slate-600 disabled:to-slate-600 disabled:text-slate-200 disabled:shadow-none disabled:opacity-70";
 const intakeSecondaryButtonClass =
   "rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60";
 
@@ -378,15 +378,15 @@ function StepPill({ active, complete, label, index }) {
     <div
       className={`flex min-h-10 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold shadow-sm transition ${
         active
-          ? "border-amber-300/60 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white shadow-blue-950/25"
+          ? "border-blue-300/40 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white shadow-blue-950/25"
           : complete
-            ? "border-emerald-300/45 bg-emerald-400/15 text-emerald-50"
-            : "border-white/12 bg-slate-950/35 text-sky-100/70 hover:border-sky-300/35 hover:bg-sky-400/10"
+            ? "border-blue-300/35 bg-blue-500/20 text-blue-50"
+            : "border-white/15 bg-slate-950/35 text-sky-50/85 hover:border-sky-300/35 hover:bg-sky-400/10"
       }`}
     >
       <span
         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-          active ? "bg-white/20 text-white" : complete ? "bg-emerald-300 text-emerald-950" : "bg-white/10 text-sky-100"
+          active ? "bg-white text-blue-700" : complete ? "bg-blue-500 text-white" : "bg-white/10 text-sky-100"
         }`}
       >
         {complete ? "✓" : index + 1}
@@ -1157,14 +1157,14 @@ export default function PublicIntakeWizard() {
   const renderStep = () => {
     if (currentStep === 0) {
       return (
-        <div className={intakeLightCardClass}>
+        <div className={intakeLightCardClass} data-testid="public-intake-main-card">
           <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Tell us about the project</h2>
           <p className="mt-2 text-base text-gray-600">
             Tell us what you&apos;d like to get done. We&apos;ll help organize it for contractor review.
           </p>
           <textarea
             data-testid="public-intake-accomplishment-text"
-            className="mt-5 w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            className="mt-5 w-full rounded-2xl border border-blue-200/80 bg-white px-4 py-4 text-base text-slate-950 shadow-sm outline-none transition placeholder:text-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
             rows={10}
             value={form.accomplishment_text}
             onChange={(e) => handleAccomplishmentChange(e.target.value)}
@@ -1184,7 +1184,7 @@ export default function PublicIntakeWizard() {
                 data-testid="public-intake-improve-description-button"
                 onClick={handleImproveDescription}
                 disabled={saving || !String(form.accomplishment_text || "").trim() || descriptionRefinement.status === "loading"}
-                className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:text-slate-500 disabled:opacity-70"
               >
                 {descriptionRefinement.status === "loading" ? "Improving..." : "Improve my description"}
               </button>
@@ -2639,25 +2639,21 @@ export default function PublicIntakeWizard() {
   return (
     <div className="w-full">
       <div className="space-y-6">
-        <div className="rounded-[1.6rem] border border-white/12 bg-slate-950/45 p-5 shadow-2xl shadow-slate-950/25 backdrop-blur sm:p-6">
-          <div className="max-w-3xl">
+        <div data-testid="public-intake-step-rail" className={`${intakePanelClass} relative overflow-hidden`}>
+          <div className="absolute inset-x-6 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-amber-300 to-blue-500 shadow-[0_0_18px_rgba(251,191,36,0.75)]" />
+          <div className="mb-4 flex flex-wrap items-center gap-3 pt-3">
             <div className="inline-flex rounded-full border border-amber-300/40 bg-amber-300/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
               Project Intake
             </div>
-            <div className="mt-3 text-2xl font-semibold tracking-tight text-white">Start a Project</div>
-            <div className="mt-2 text-sm font-medium text-sky-100">{confidenceMessage}</div>
-            <div className="mt-2 text-sm text-sky-100/75">
-              {contractorName} has asked you to complete a project intake so they can prepare your agreement.
-            </div>
             {statusText ? (
-              <div className="mt-3 inline-flex rounded-full border border-white/12 bg-slate-950/35 px-3 py-1 text-xs font-semibold text-sky-100">
+              <div className="inline-flex rounded-full border border-white/15 bg-slate-950/45 px-3 py-1 text-xs font-semibold text-sky-50">
                 Status: {statusText}
               </div>
             ) : null}
+            <div className="text-xs font-medium text-sky-50/70">
+              {contractorName} can review your request once you finish. {confidenceMessage}
+            </div>
           </div>
-        </div>
-
-        <div data-testid="public-intake-step-rail" className={intakePanelClass}>
           <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
             {stepLabels.map((label, index) => (
               <button key={label} type="button" onClick={() => setCurrentStep(index)} className="shrink-0">

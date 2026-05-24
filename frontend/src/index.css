@@ -49,6 +49,19 @@
     @apply rounded-lg px-4 py-2 font-semibold text-blue-600 bg-white border border-blue-600 hover:bg-blue-600 hover:text-white transition duration-300;
   }
 
+  [data-testid="public-intake-shell"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  [data-testid="public-intake-shell"] textarea,
+  [data-testid="public-intake-shell"] select {
+    @apply bg-white text-slate-950 placeholder:text-slate-500 caret-blue-700;
+    color-scheme: light;
+  }
+
+  [data-testid="public-intake-shell"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+  [data-testid="public-intake-shell"] textarea:focus,
+  [data-testid="public-intake-shell"] select:focus {
+    @apply border-blue-400 ring-2 ring-blue-200;
+  }
+
   .button-group {
     @apply flex justify-center space-x-4 mt-4;
   }
