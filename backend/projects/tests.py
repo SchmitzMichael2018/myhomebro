@@ -18019,6 +18019,126 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(PropertyDocument.objects.filter(title="warranty").exists())
 
+    def test_customer_portal_can_mark_own_notification_read(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        own_notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.customer_email,
+            title="Request submitted",
+            message="Your request was saved.",
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.customer_email)[0],
+        )
+        other_notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.other_homeowner.email,
+            title="Other request",
+            message="This should remain scoped away.",
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.other_homeowner.email)[0],
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/notifications/{own_notification.id}/read/"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        own_notification.refresh_from_db()
+        other_notification.refresh_from_db()
+        self.assertEqual(own_notification.status, SmartNotification.STATUS_READ)
+        self.assertIsNotNone(own_notification.read_at)
+        self.assertEqual(other_notification.status, SmartNotification.STATUS_UNREAD)
+        payload_notification = next(row for row in response.data["notifications"] if row["id"] == own_notification.id)
+        self.assertEqual(payload_notification["status"], SmartNotification.STATUS_READ)
+
+    def test_customer_portal_cannot_mark_other_customer_notification_read(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.other_homeowner.email,
+            title="Other request",
+            message="This should remain scoped away.",
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.other_homeowner.email)[0],
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/notifications/{other_notification.id}/read/"
+        )
+
+        self.assertEqual(response.status_code, 404)
+        other_notification.refresh_from_db()
+        self.assertEqual(other_notification.status, SmartNotification.STATUS_UNREAD)
+
+    def test_customer_portal_creates_rule_based_workflow_notifications_once(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        unsigned_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Bathroom Repair",
+            description="Unsigned agreement project",
+        )
+        unsigned_agreement = Agreement.objects.create(
+            project=unsigned_project,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            project_class=AgreementProjectClass.RESIDENTIAL,
+            total_cost=Decimal("3200.00"),
+            description="Needs customer signature",
+            signed_by_contractor=True,
+            signed_by_homeowner=False,
+        )
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            title="Final walkthrough",
+            description="Ready for customer approval.",
+            amount=Decimal("500.00"),
+            order=1,
+            subcontractor_completion_status="submitted_for_review",
+        )
+        marketplace_request = CustomerRequest.objects.create(
+            homeowner=self.customer_homeowner,
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.customer_email)[0],
+            customer_email=self.customer_email,
+            request_type=CustomerRequest.TYPE_REPAIR,
+            status=CustomerRequest.STATUS_MARKETPLACE_READY,
+            title="Fence repair",
+            description="Ready to route.",
+        )
+
+        first_response = self.client.get(f"/api/projects/customer-portal/{token}/")
+        second_response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        event_types = {row["event_type"] for row in first_response.data["notifications"]}
+        self.assertIn(SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE, event_types)
+        self.assertIn(SmartNotificationEvent.ESCROW_NEEDS_FUNDING, event_types)
+        self.assertIn(SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL, event_types)
+        self.assertIn(SmartNotificationEvent.PAYMENT_RECEIVED, event_types)
+        self.assertIn(SmartNotificationEvent.REQUEST_MARKETPLACE_READY, event_types)
+        self.assertEqual(
+            SmartNotification.objects.filter(
+                event_type=SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE,
+                agreement=unsigned_agreement,
+                recipient_email=self.customer_email,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            SmartNotification.objects.filter(
+                event_type=SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL,
+                milestone=milestone,
+                recipient_email=self.customer_email,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            SmartNotification.objects.filter(
+                event_type=SmartNotificationEvent.REQUEST_MARKETPLACE_READY,
+                customer_request=marketplace_request,
+                recipient_email=self.customer_email,
+            ).count(),
+            1,
+        )
+
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_comparison_accepts_bid_and_reuses_agreement(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

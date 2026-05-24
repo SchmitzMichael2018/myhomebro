@@ -9,6 +9,7 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny
@@ -30,7 +31,7 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
-from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotificationEvent
+from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
 from projects.models_project_intake import ProjectIntake
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
@@ -913,6 +914,7 @@ def _customer_name(email: str) -> str:
 
 
 def _build_customer_portal_payload(email: str, request=None) -> dict:
+    _ensure_portal_workflow_notifications(email)
     bid_rows = _bid_rows(email)
     request_rows = _request_rows(email, bid_rows=bid_rows)
     project_rows = _projects(email)
@@ -948,8 +950,6 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
 
 
 def _smart_notification_rows(email: str) -> list[dict]:
-    from projects.models_customer_portal import SmartNotification
-
     return [
         {
             "id": row.id,
@@ -963,6 +963,146 @@ def _smart_notification_rows(email: str) -> list[dict]:
         }
         for row in SmartNotification.objects.filter(recipient_email__iexact=email).order_by("-created_at", "-id")[:20]
     ]
+
+
+def _smart_notification_belongs_to_email(notification: SmartNotification, email: str) -> bool:
+    normalized_email = email.lower().strip()
+    if _safe_text(notification.recipient_email).lower() != normalized_email:
+        return False
+    if notification.property_profile_id and _safe_text(getattr(notification.property_profile, "customer_email", "")).lower() != normalized_email:
+        return False
+    if notification.customer_request_id and _safe_text(getattr(notification.customer_request, "customer_email", "")).lower() != normalized_email:
+        return False
+    linked_project = getattr(notification, "project", None)
+    linked_agreement = getattr(notification, "agreement", None)
+    linked_invoice = getattr(notification, "invoice", None)
+    linked_milestone = getattr(notification, "milestone", None)
+    linked_draw = getattr(notification, "draw_request", None)
+    if linked_invoice is not None:
+        linked_agreement = getattr(linked_invoice, "agreement", None) or linked_agreement
+    if linked_milestone is not None:
+        linked_agreement = getattr(linked_milestone, "agreement", None) or linked_agreement
+    if linked_draw is not None:
+        linked_agreement = getattr(linked_draw, "agreement", None) or linked_agreement
+    if linked_agreement is not None:
+        return _agreement_customer_email(linked_agreement) == normalized_email
+    if linked_project is not None:
+        return _project_customer_email(linked_project) == normalized_email
+    return True
+
+
+def _ensure_portal_workflow_notifications(email: str) -> None:
+    normalized_email = email.lower().strip()
+    profile = _get_or_create_property_profile(normalized_email)
+    homeowner = _primary_homeowner_for_email(normalized_email)
+    agreements = list(
+        Agreement.objects.select_related("project", "contractor", "homeowner").filter(
+            Q(homeowner__email__iexact=normalized_email) | Q(project__homeowner__email__iexact=normalized_email)
+        )
+    )
+
+    for agreement in agreements:
+        project = getattr(agreement, "project", None)
+        project_title = _agreement_title(agreement)
+        if getattr(agreement, "signed_by_contractor", False) and not getattr(agreement, "signed_by_homeowner", False):
+            create_smart_notification(
+                event_type=SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE,
+                recipient_email=normalized_email,
+                homeowner=getattr(agreement, "homeowner", None) or homeowner,
+                contractor=getattr(agreement, "contractor", None),
+                project=project,
+                agreement=agreement,
+                property_profile=profile,
+                action_url=f"/agreements/magic/{agreement.homeowner_access_token}",
+                context={
+                    "project_title": project_title,
+                    "dedupe_key": f"agreement_needs_signature:{agreement.id}",
+                },
+            )
+        if (
+            getattr(agreement, "signed_by_contractor", False)
+            and getattr(agreement, "signed_by_homeowner", False)
+            and not getattr(agreement, "escrow_funded", False)
+            and _safe_text(getattr(agreement, "payment_mode", "")).lower() != "direct"
+        ):
+            create_smart_notification(
+                event_type=SmartNotificationEvent.ESCROW_NEEDS_FUNDING,
+                recipient_email=normalized_email,
+                homeowner=getattr(agreement, "homeowner", None) or homeowner,
+                contractor=getattr(agreement, "contractor", None),
+                project=project,
+                agreement=agreement,
+                property_profile=profile,
+                action_url=f"/agreements/magic/{agreement.homeowner_access_token}",
+                context={
+                    "project_title": project_title,
+                    "dedupe_key": f"escrow_needs_funding:{agreement.id}",
+                },
+            )
+
+    milestones = Milestone.objects.select_related("agreement", "agreement__project", "agreement__homeowner").filter(
+        Q(agreement__homeowner__email__iexact=normalized_email) | Q(agreement__project__homeowner__email__iexact=normalized_email)
+    )
+    for milestone in milestones:
+        if _safe_text(getattr(milestone, "subcontractor_completion_status", "")).lower() != "submitted_for_review":
+            continue
+        agreement = getattr(milestone, "agreement", None)
+        create_smart_notification(
+            event_type=SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL,
+            recipient_email=normalized_email,
+            homeowner=getattr(agreement, "homeowner", None) or homeowner,
+            contractor=getattr(agreement, "contractor", None),
+            project=getattr(agreement, "project", None),
+            agreement=agreement,
+            milestone=milestone,
+            property_profile=profile,
+            action_url=f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
+            context={
+                "project_title": _agreement_title(agreement) if agreement else "",
+                "milestone_title": _safe_text(getattr(milestone, "title", "")) or f"Milestone {getattr(milestone, 'order', '')}",
+                "dedupe_key": f"milestone_needs_approval:{milestone.id}",
+            },
+        )
+
+    invoices = Invoice.objects.select_related("agreement", "agreement__project", "agreement__homeowner").filter(
+        Q(agreement__homeowner__email__iexact=normalized_email) | Q(agreement__project__homeowner__email__iexact=normalized_email)
+    )
+    for invoice in invoices:
+        paid_at = getattr(invoice, "direct_pay_paid_at", None) or getattr(invoice, "escrow_released_at", None) or getattr(invoice, "approved_at", None)
+        if _safe_text(getattr(invoice, "status", "")).lower() != "paid" and not paid_at:
+            continue
+        agreement = getattr(invoice, "agreement", None)
+        create_smart_notification(
+            event_type=SmartNotificationEvent.PAYMENT_RECEIVED,
+            recipient_email=normalized_email,
+            homeowner=getattr(agreement, "homeowner", None) or homeowner,
+            contractor=getattr(agreement, "contractor", None),
+            project=getattr(agreement, "project", None),
+            agreement=agreement,
+            invoice=invoice,
+            property_profile=profile,
+            action_url=f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
+            context={
+                "project_title": _agreement_title(agreement) if agreement else "",
+                "dedupe_key": f"payment_received:invoice:{invoice.id}",
+            },
+        )
+
+    for customer_request in CustomerRequest.objects.select_related("homeowner", "property_profile").filter(
+        customer_email__iexact=normalized_email,
+        status=CustomerRequest.STATUS_MARKETPLACE_READY,
+    ):
+        create_smart_notification(
+            event_type=SmartNotificationEvent.REQUEST_MARKETPLACE_READY,
+            recipient_email=normalized_email,
+            homeowner=getattr(customer_request, "homeowner", None) or homeowner,
+            customer_request=customer_request,
+            property_profile=getattr(customer_request, "property_profile", None) or profile,
+            context={
+                "request_title": customer_request.title,
+                "dedupe_key": f"request_marketplace_ready:{customer_request.id}",
+            },
+        )
 
 
 def _project_customer_email(project, agreement=None) -> str:
@@ -1595,6 +1735,56 @@ class CustomerPortalView(APIView):
             return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
         except signing.BadSignature:
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalNotificationMarkReadView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, notification_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        notification = get_object_or_404(
+            SmartNotification.objects.select_related(
+                "property_profile",
+                "customer_request",
+                "project",
+                "project__homeowner",
+                "agreement",
+                "agreement__homeowner",
+                "agreement__project",
+                "agreement__project__homeowner",
+                "invoice",
+                "invoice__agreement",
+                "invoice__agreement__homeowner",
+                "invoice__agreement__project",
+                "invoice__agreement__project__homeowner",
+                "milestone",
+                "milestone__agreement",
+                "milestone__agreement__homeowner",
+                "milestone__agreement__project",
+                "milestone__agreement__project__homeowner",
+                "draw_request",
+                "draw_request__agreement",
+                "draw_request__agreement__homeowner",
+                "draw_request__agreement__project",
+                "draw_request__agreement__project__homeowner",
+            ),
+            pk=notification_id,
+        )
+        if not _smart_notification_belongs_to_email(notification, email):
+            return Response({"detail": "Notification not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if notification.status != SmartNotification.STATUS_READ:
+            notification.status = SmartNotification.STATUS_READ
+            notification.read_at = timezone.now()
+            notification.save(update_fields=["status", "read_at"])
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 

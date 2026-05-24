@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { CreditCard, FileText, FolderKanban, Home, Inbox, LayoutDashboard } from "lucide-react";
+import { Bell, CreditCard, FileText, FolderKanban, Home, Inbox, LayoutDashboard } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
@@ -114,14 +114,96 @@ function OverviewPanel({ portal }) {
   );
 }
 
+function eventLabel(eventType = "") {
+  return String(eventType || "notification").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", onMarkRead }) {
+  const recent = notifications.slice(0, 4);
+
+  return (
+    <section data-testid="customer-notifications-panel" className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/70 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Bell size={18} className="text-sky-200" />
+            <h2 className="text-lg font-semibold text-white">Updates</h2>
+          </div>
+          <p className="mt-1 text-sm text-slate-300">Recent project, payment, request, and property notifications.</p>
+        </div>
+        <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-rose-300/40 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 shadow-[0_0_18px_rgba(244,63,94,0.16)]">
+          {unreadCount} unread
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {recent.length ? (
+          recent.map((notification) => {
+            const isUnread = notification.status !== "read";
+            return (
+              <article
+                key={notification.id}
+                data-testid={`customer-notification-${notification.id}`}
+                className={`rounded-xl border p-4 ${
+                  isUnread
+                    ? "border-sky-300/40 bg-sky-400/10"
+                    : "border-slate-700 bg-slate-900/60"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white">{notification.title || "Update"}</h3>
+                      <span className="rounded-full border border-slate-600 bg-slate-950/70 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+                        {eventLabel(notification.event_type)}
+                      </span>
+                      {isUnread ? (
+                        <span className="rounded-full border border-sky-300/40 bg-sky-400/15 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
+                          Unread
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-sm leading-5 text-slate-300">{notification.message || "A workspace update is available."}</p>
+                    <div className="mt-2 text-xs text-slate-500">
+                      {notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}
+                    </div>
+                  </div>
+                  {isUnread ? (
+                    <button
+                      type="button"
+                      data-testid={`customer-notification-mark-read-${notification.id}`}
+                      disabled={markingId === String(notification.id)}
+                      onClick={() => onMarkRead?.(notification)}
+                      className="shrink-0 rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white disabled:opacity-50"
+                    >
+                      {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })
+        ) : (
+          <div className="lg:col-span-2 rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+            Workspace updates will appear here as projects, requests, payments, and documents move forward.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
   const [uploadingPropertyFile, setUploadingPropertyFile] = useState(false);
   const [acceptingBidId, setAcceptingBidId] = useState("");
+  const [markingNotificationId, setMarkingNotificationId] = useState("");
 
   const customerName = portal?.customer?.name || "Customer";
+  const notifications = portal?.notifications || [];
+  const unreadCount = notifications.filter((notification) => notification.status !== "read").length;
   const tabContent = useMemo(() => {
     if (activeTab === "overview") return <OverviewPanel portal={portal} />;
     if (activeTab === "projects") return <CustomerProjectWorkspace projects={portal?.projects || []} agreements={portal?.agreements || []} />;
@@ -250,7 +332,11 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               </p>
             </div>
             <div className="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">
-              Secure access verified for <span className="font-semibold text-white">{portal?.customer?.email}</span>
+              <div>Secure access verified for <span className="font-semibold text-white">{portal?.customer?.email}</span></div>
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-rose-300/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-100">
+                <Bell size={13} />
+                {unreadCount} unread updates
+              </div>
             </div>
           </div>
 
@@ -273,6 +359,27 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             ))}
           </nav>
         </header>
+
+        <NotificationPanel
+          notifications={notifications}
+          unreadCount={unreadCount}
+          markingId={markingNotificationId}
+          onMarkRead={async (notification) => {
+            if (!notification?.id) return;
+            setMarkingNotificationId(String(notification.id));
+            try {
+              const { data } = await api.post(
+                `/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/read/`
+              );
+              onPortalUpdate?.(data);
+              toast.success("Update marked as read.");
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not update that notification.");
+            } finally {
+              setMarkingNotificationId("");
+            }
+          }}
+        />
 
         <main className="mt-5">
           {tabContent}

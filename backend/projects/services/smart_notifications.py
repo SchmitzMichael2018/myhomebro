@@ -90,6 +90,7 @@ def create_smart_notification(
 ) -> SmartNotification | None:
     normalized_email = str(recipient_email or "").strip().lower()
     rule = _default_rule(event_type, channel=channel, audience=audience)
+    dedupe_key = str((context or {}).get("dedupe_key") or "").strip()
     log_metadata = {
         "context": context or {},
         "audience": audience,
@@ -107,6 +108,30 @@ def create_smart_notification(
             metadata=log_metadata,
         )
         return None
+
+    if dedupe_key:
+        existing = (
+            SmartNotification.objects.filter(
+                event_type=event_type,
+                channel=channel,
+                recipient_email__iexact=normalized_email,
+                metadata__dedupe_key=dedupe_key,
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        if existing:
+            NotificationLog.objects.create(
+                smart_notification=existing,
+                notification_rule=rule,
+                event_type=event_type,
+                channel=channel,
+                status=NotificationLog.STATUS_SKIPPED,
+                recipient_email=normalized_email,
+                message="Duplicate notification suppressed.",
+                metadata=log_metadata,
+            )
+            return existing
 
     title = _render(rule.title_template, context)
     message = _render(rule.message_template, context)

@@ -182,6 +182,35 @@ const portalPayload = {
       url: "/files/scope-addendum.txt",
     },
   ],
+  notifications: [
+    {
+      id: 101,
+      event_type: "agreement_needs_signature",
+      channel: "in_app",
+      status: "unread",
+      title: "Agreement needs signature",
+      message: "Kitchen Remodel is waiting for a customer signature.",
+      action_url: "/agreements/magic/portal-token",
+      created_at: "2026-04-15T18:00:00Z",
+    },
+    {
+      id: 102,
+      event_type: "payment_received",
+      channel: "in_app",
+      status: "read",
+      title: "Payment received",
+      message: "A payment was received for Kitchen Remodel.",
+      action_url: "/agreements/magic/portal-token",
+      created_at: "2026-04-15T17:00:00Z",
+    },
+  ],
+};
+
+const notificationReadPortalPayload = {
+  ...portalPayload,
+  notifications: portalPayload.notifications.map((notification) =>
+    notification.id === 101 ? { ...notification, status: "read" } : notification
+  ),
 };
 
 const acceptedPortalPayload = {
@@ -266,6 +295,15 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/notifications/101/read/") && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationReadPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/bids/") && requestUrl.endsWith("/accept/") && method === "POST") {
       await route.fulfill({
         status: 200,
@@ -317,6 +355,12 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("2");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("1");
+  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Agreement needs signature");
+  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Payment received");
+  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("1 unread");
+  await page.getByTestId("customer-notification-mark-read-101").click();
+  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("0 unread");
+  await expect(page.getByTestId("customer-notification-101")).not.toContainText("Unread");
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
