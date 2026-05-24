@@ -4,6 +4,7 @@ import { ExternalLink, FileText, Mail, ShieldCheck } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
+import CustomerDashboard from "../components/CustomerDashboard.jsx";
 import Modal from "../components/Modal.jsx";
 
 function formatDate(value) {
@@ -627,6 +628,18 @@ export default function CustomerPortalPage() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  if (portal) {
+    return (
+      <CustomerDashboard
+        portal={portal}
+        token={token}
+        onPortalUpdate={(nextPortal) => {
+          if (nextPortal) setPortal(nextPortal);
+        }}
+      />
     );
   }
 

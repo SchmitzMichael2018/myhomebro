@@ -2554,6 +2554,7 @@ from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # 
 from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
 from .models_expense_request import ExpenseRequest  # noqa: E402,F401
 from .models_templates import ProjectTemplate, ProjectTemplateMilestone, SeedBenchmarkProfile  # noqa: E402,F401
+from .models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile  # noqa: E402,F401
 from .models_amendment_request import AmendmentRequest  # noqa: E402,F401
 from .models_learning import (
     ProjectOutcomeSnapshot,

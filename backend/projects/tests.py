@@ -46,6 +46,7 @@ from projects.models import (
     ContractorReview,
     ContractorSubAccount,
     ContractorInvite,
+    CustomerRequest,
     ExpenseRequest,
     DrawRequest,
     DrawRequestStatus,
@@ -67,6 +68,7 @@ from projects.models import (
     ContractorBenchmarkAggregate,
     Notification,
     Project,
+    PropertyProfile,
     ProjectBenchmarkAggregate,
     RegionalBenchmarkAggregate,
     ProjectEmailReportLog,
@@ -17845,10 +17847,13 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["customer"]["email"], self.customer_email)
         self.assertEqual(response.data["summary"]["active_requests"], 2)
+        self.assertEqual(response.data["summary"]["active_projects"], 1)
         self.assertEqual(response.data["summary"]["bids_received"], 3)
         self.assertEqual(response.data["summary"]["active_agreements"], 1)
         self.assertEqual(response.data["summary"]["payments"], 2)
         self.assertEqual(response.data["summary"]["documents"], 1)
+        self.assertEqual(response.data["property_profile"]["customer_email"], self.customer_email)
+        self.assertEqual(len(response.data["projects"]), 1)
 
         request_titles = [row["project_title"] for row in response.data["requests"]]
         bid_titles = [row["project_title"] for row in response.data["bids"]]
@@ -17876,6 +17881,54 @@ class CustomerPortalAccessTests(TestCase):
         agreement_row = response.data["agreements"][0]
         self.assertNotIn("detail", agreement_row)
         self.assertNotIn("stripe_account_id", agreement_row)
+
+    def test_customer_portal_can_save_internal_customer_request(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/",
+            {
+                "request_type": "repair",
+                "title": "Leaking sink",
+                "description": "Kitchen sink is leaking under the cabinet.",
+                "urgency": "soon",
+                "preferred_timeline": "This week",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        saved = CustomerRequest.objects.get(title="Leaking sink")
+        self.assertEqual(saved.customer_email, self.customer_email)
+        self.assertEqual(saved.status, "submitted")
+        self.assertEqual(saved.request_type, "repair")
+        self.assertEqual(saved.address_line1, "123 Main St")
+        self.assertTrue(
+            any(row["source_kind"] == "customer_request" and row["project_title"] == "Leaking sink" for row in response.data["requests"])
+        )
+
+    def test_customer_portal_property_profile_is_token_scoped(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/property/",
+            {
+                "display_name": "Main House",
+                "property_type": "single_family",
+                "year_built": 1988,
+                "notes": "Gate code is saved with the customer.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        profile = PropertyProfile.objects.get(customer_email=self.customer_email)
+        self.assertEqual(profile.display_name, "Main House")
+        self.assertEqual(profile.year_built, 1988)
+
+        other_response = self.client.get(f"/api/projects/customer-portal/{other_token}/")
+        self.assertEqual(other_response.status_code, 200)
+        self.assertNotEqual(other_response.data["property_profile"]["display_name"], "Main House")
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_comparison_accepts_bid_and_reuses_agreement(self):

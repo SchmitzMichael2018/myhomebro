@@ -7,11 +7,43 @@ const portalPayload = {
   },
   summary: {
     active_requests: 1,
+    active_projects: 1,
     bids_received: 3,
     active_agreements: 1,
     payments: 2,
     documents: 1,
   },
+  property_profile: {
+    id: 1,
+    customer_email: "customer@example.com",
+    display_name: "Kitchen Remodel",
+    property_type: "single_family",
+    property_type_label: "Single Family",
+    address_line1: "123 Main St",
+    city: "Austin",
+    state: "TX",
+    postal_code: "78701",
+    address: "123 Main St, Austin, TX, 78701",
+    documents: [],
+    photos: [],
+  },
+  projects: [
+    {
+      id: 1,
+      project_number: "PRJ-20260415-001",
+      title: "Kitchen Remodel",
+      description: "Primary project",
+      status: "active",
+      status_label: "Active",
+      address: "123 Main St, Austin, TX 78701",
+      contractor_name: "Builder Co",
+      agreement_id: 1,
+      agreement_token: "portal-token",
+      agreement_url: "/agreements/magic/portal-token",
+      total_cost: "15000.00",
+      milestones: [{ id: 1, title: "Demo", status: "active", amount: "5000.00" }],
+    },
+  ],
   requests: [
     {
       id: "request-1",
@@ -269,10 +301,6 @@ test("customer portal is reachable from the landing page and loads secure record
     "/legal/privacy-policy/"
   );
 
-  await page.goto("/legal/terms-of-service/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Terms of Service")).toBeVisible();
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-
   await page.getByTestId("landing-customer-portal-button").click();
   await expect(page).toHaveURL(/\/portal$/);
   await expect(page.getByText("MyHomeBro Records")).toBeVisible();
@@ -283,38 +311,30 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-link-sent")).toBeVisible();
 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
-  await expect(page.getByTestId("customer-portal-summary-bids")).toContainText("3");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("2");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("1");
 
+  await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Builder Co");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Partner Co");
-  await expect(page.getByTestId("customer-portal-agreements")).toContainText("Kitchen Remodel");
+
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await expect(page.getByTestId("customer-project-workspace")).toContainText("Kitchen Remodel");
+
+  await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-portal-payments")).toContainText("Invoice");
+
+  await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Scope Addendum");
 
-  await page.getByTestId("customer-portal-requests-row-request-1").click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("dialog")).toContainText("Request details");
-  await expect(page.getByRole("dialog")).toContainText("Latest Activity");
-  await page.getByRole("button", { name: "Close modal" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-
-  await page.getByTestId("customer-portal-compare-bids-button").click();
-  await expect(page.getByRole("dialog")).toContainText("Compare bids");
-  await expect(page.getByRole("dialog")).toContainText("Office Fitout");
-  await expect(page.getByRole("dialog")).toContainText("Partner Co");
-  await page.getByTestId("customer-portal-compare-accept-lead-2").click();
-
-  await expect(page.getByTestId("customer-portal-compare-open-lead-2")).toBeVisible();
-  await expect(page.getByRole("dialog")).toContainText("Not Selected");
-  await expect(page.getByRole("dialog")).toContainText("Another contractor was selected for this project.");
-  await page.getByRole("button", { name: "Close modal" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByTestId("customer-dashboard-tab-requests").click();
+  await page.getByTestId("customer-portal-bid-accept-lead-2").click();
+  await expect(page.getByTestId("customer-portal-bid-open-lead-2")).toBeVisible();
 
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
 

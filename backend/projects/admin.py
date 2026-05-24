@@ -94,6 +94,11 @@ except Exception:  # pragma: no cover
     ProjectIntake = None  # type: ignore
 
 try:
+    from .models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile  # type: ignore
+except Exception:  # pragma: no cover
+    CustomerRequest = PropertyDocument = PropertyPhoto = PropertyProfile = None  # type: ignore
+
+try:
     from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent  # type: ignore
 except Exception:  # pragma: no cover
     DeferredSMSAutomation = None  # type: ignore
@@ -420,6 +425,36 @@ if ProjectIntake is not None:
 # ─────────────────────────────────────────────────────────────
 # Project
 # ─────────────────────────────────────────────────────────────
+if PropertyProfile is not None:
+    @admin.register(PropertyProfile)
+    class PropertyProfileAdmin(admin.ModelAdmin):
+        list_display = ("customer_email", "display_name", "property_type", "city", "state", "updated_at")
+        search_fields = ("customer_email", "display_name", "address_line1", "city", "state")
+        list_filter = ("property_type", "state")
+
+
+if CustomerRequest is not None:
+    @admin.register(CustomerRequest)
+    class CustomerRequestAdmin(admin.ModelAdmin):
+        list_display = ("title", "customer_email", "request_type", "status", "urgency", "created_at")
+        search_fields = ("title", "customer_email", "description", "address_line1", "city")
+        list_filter = ("request_type", "status", "urgency")
+
+
+if PropertyDocument is not None:
+    @admin.register(PropertyDocument)
+    class PropertyDocumentAdmin(admin.ModelAdmin):
+        list_display = ("title", "property_profile", "document_type", "uploaded_at")
+        search_fields = ("title", "document_type", "property_profile__customer_email")
+
+
+if PropertyPhoto is not None:
+    @admin.register(PropertyPhoto)
+    class PropertyPhotoAdmin(admin.ModelAdmin):
+        list_display = ("title", "property_profile", "uploaded_at")
+        search_fields = ("title", "property_profile__customer_email")
+
+
 if Project is not None:
     @admin.register(Project)
     class ProjectAdmin(admin.ModelAdmin):

@@ -30,6 +30,7 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
+from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile
 from projects.models_project_intake import ProjectIntake
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
@@ -255,12 +256,164 @@ def _request_has_records(email: str) -> bool:
             Agreement.objects.filter(Q(homeowner__email__iexact=email) | Q(project__homeowner__email__iexact=email)).exists(),
             Invoice.objects.filter(Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email)).exists(),
             DrawRequest.objects.filter(Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email)).exists(),
+            CustomerRequest.objects.filter(customer_email__iexact=email).exists(),
+            PropertyProfile.objects.filter(customer_email__iexact=email).exists(),
         ]
     )
 
 
-def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dict]:
+def _primary_homeowner_for_email(email: str):
+    return Homeowner.objects.filter(email__iexact=email).order_by("-updated_at", "-created_at").first()
+
+
+def _profile_address_from_homeowner(homeowner) -> dict:
+    if not homeowner:
+        return {}
+    return {
+        "address_line1": _safe_text(getattr(homeowner, "street_address", "")),
+        "address_line2": _safe_text(getattr(homeowner, "address_line_2", "")),
+        "city": _safe_text(getattr(homeowner, "city", "")),
+        "state": _safe_text(getattr(homeowner, "state", "")),
+        "postal_code": _safe_text(getattr(homeowner, "zip_code", "")),
+    }
+
+
+def _profile_address_from_project(project) -> dict:
+    if not project:
+        return {}
+    return {
+        "address_line1": _safe_text(getattr(project, "project_street_address", "")),
+        "address_line2": _safe_text(getattr(project, "project_address_line_2", "")),
+        "city": _safe_text(getattr(project, "project_city", "")),
+        "state": _safe_text(getattr(project, "project_state", "")),
+        "postal_code": _safe_text(getattr(project, "project_zip_code", "")),
+    }
+
+
+def _get_or_create_property_profile(email: str) -> PropertyProfile:
+    normalized_email = email.lower().strip()
+    profile = PropertyProfile.objects.filter(customer_email__iexact=normalized_email).order_by("-updated_at", "-id").first()
+    if profile:
+        return profile
+
+    homeowner = _primary_homeowner_for_email(normalized_email)
+    project = (
+        Project.objects.select_related("homeowner")
+        .filter(homeowner__email__iexact=normalized_email)
+        .order_by("-updated_at", "-id")
+        .first()
+    )
+    address = _profile_address_from_project(project) or _profile_address_from_homeowner(homeowner)
+    display_name = _safe_text(getattr(project, "title", "")) or "Primary Property"
+    return PropertyProfile.objects.create(
+        homeowner=homeowner,
+        customer_email=normalized_email,
+        display_name=display_name,
+        **address,
+    )
+
+
+def _property_profile_payload(email: str) -> dict:
+    profile = _get_or_create_property_profile(email)
+    address = ", ".join(
+        part
+        for part in [
+            _safe_text(profile.address_line1),
+            _safe_text(profile.address_line2),
+            _safe_text(profile.city),
+            _safe_text(profile.state),
+            _safe_text(profile.postal_code),
+        ]
+        if part
+    )
+    documents = [
+        {
+            "id": f"property-document-{row.id}",
+            "title": _safe_text(row.title) or "Property document",
+            "type_label": _safe_text(row.document_type) or "Property Document",
+            "date": _safe_dt(row.uploaded_at),
+            "url": _safe_text(getattr(getattr(row, "file", None), "url", "")),
+        }
+        for row in PropertyDocument.objects.filter(property_profile=profile).order_by("-uploaded_at", "-id")
+    ]
+    photos = [
+        {
+            "id": f"property-photo-{row.id}",
+            "title": _safe_text(row.title) or "Property photo",
+            "date": _safe_dt(row.uploaded_at),
+            "url": _safe_text(getattr(getattr(row, "photo", None), "url", "")),
+        }
+        for row in PropertyPhoto.objects.filter(property_profile=profile).order_by("-uploaded_at", "-id")
+    ]
+    return {
+        "id": profile.id,
+        "customer_email": _safe_text(profile.customer_email),
+        "display_name": _safe_text(profile.display_name),
+        "property_type": _safe_text(profile.property_type),
+        "property_type_label": profile.get_property_type_display(),
+        "address_line1": _safe_text(profile.address_line1),
+        "address_line2": _safe_text(profile.address_line2),
+        "city": _safe_text(profile.city),
+        "state": _safe_text(profile.state),
+        "postal_code": _safe_text(profile.postal_code),
+        "address": address,
+        "year_built": profile.year_built,
+        "square_feet": profile.square_feet,
+        "notes": _safe_text(profile.notes),
+        "documents": documents,
+        "photos": photos,
+        "updated_at": _safe_dt(profile.updated_at),
+    }
+
+
+def _customer_request_status_label(value: str) -> str:
+    return _safe_text(value).replace("_", " ").title() or "Submitted"
+
+
+def _customer_request_rows(email: str) -> list[dict]:
     rows = []
+    for request_row in CustomerRequest.objects.select_related("converted_project", "property_profile").filter(
+        customer_email__iexact=email
+    ).order_by("-created_at", "-id"):
+        rows.append(
+            {
+                "id": f"customer-request-{request_row.id}",
+                "request_id": request_row.id,
+                "source_kind": "customer_request",
+                "project_title": _safe_text(request_row.title),
+                "project_address": ", ".join(
+                    part
+                    for part in [
+                        _safe_text(request_row.address_line1),
+                        _safe_text(request_row.address_line2),
+                        _safe_text(request_row.city),
+                        _safe_text(request_row.state),
+                        _safe_text(request_row.postal_code),
+                    ]
+                    if part
+                ),
+                "request_type": _safe_text(request_row.request_type),
+                "request_type_label": request_row.get_request_type_display(),
+                "status": _safe_text(request_row.status),
+                "status_label": _customer_request_status_label(request_row.status),
+                "latest_activity": _safe_dt(request_row.updated_at or request_row.created_at),
+                "latest_activity_label": "Updated",
+                "bids_count": 0,
+                "agreement_id": None,
+                "agreement_token": "",
+                "action_label": "View Request",
+                "action_target": "",
+                "notes": _safe_text(request_row.description),
+                "urgency": _safe_text(request_row.urgency),
+                "preferred_timeline": _safe_text(request_row.preferred_timeline),
+                "converted_project_id": getattr(request_row.converted_project, "id", None),
+            }
+        )
+    return rows
+
+
+def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dict]:
+    rows = _customer_request_rows(email)
     bid_counts: dict[str, int] = {}
     agreement_by_key: dict[str, dict[str, str | int]] = {}
     if bid_rows:
@@ -495,6 +648,64 @@ def _agreements(email: str, request=None) -> list[dict]:
     return rows
 
 
+def _projects(email: str) -> list[dict]:
+    projects = list(
+        Project.objects.select_related("homeowner", "contractor").filter(
+            homeowner__email__iexact=email
+        ).order_by("-updated_at", "-id")
+    )
+    agreements_by_project = {
+        agreement.project_id: agreement
+        for agreement in Agreement.objects.select_related("project", "contractor", "homeowner").filter(
+            Q(homeowner__email__iexact=email) | Q(project__homeowner__email__iexact=email)
+        )
+    }
+    rows = []
+    for project in projects:
+        agreement = agreements_by_project.get(project.id)
+        milestone_rows = []
+        if agreement:
+            milestone_rows = [
+                {
+                    "id": milestone.id,
+                    "title": _safe_text(getattr(milestone, "title", "")),
+                    "status": "completed" if getattr(milestone, "completed", False) else "active",
+                    "amount": _safe_text(getattr(milestone, "amount", "")),
+                    "due_date": _safe_dt(getattr(milestone, "due_date", None) or getattr(milestone, "completion_date", None)),
+                }
+                for milestone in Milestone.objects.filter(agreement=agreement).order_by("order", "id")[:8]
+            ]
+        rows.append(
+            {
+                "id": project.id,
+                "project_number": _safe_text(project.number),
+                "title": _safe_text(project.title),
+                "description": _safe_text(project.description),
+                "status": _safe_text(project.status),
+                "status_label": _safe_text(project.status).replace("_", " ").title() or "Project",
+                "address": ", ".join(
+                    part
+                    for part in [
+                        _safe_text(project.project_street_address),
+                        _safe_text(project.project_address_line_2),
+                        _safe_text(project.project_city),
+                        _safe_text(project.project_state),
+                        _safe_text(project.project_zip_code),
+                    ]
+                    if part
+                ),
+                "contractor_name": _contractor_name(getattr(project, "contractor", None)),
+                "agreement_id": getattr(agreement, "id", None),
+                "agreement_token": _safe_text(getattr(agreement, "homeowner_access_token", "")) if agreement else "",
+                "agreement_url": f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
+                "total_cost": _safe_text(getattr(agreement, "total_cost", "")) if agreement else "",
+                "milestones": milestone_rows,
+                "updated_at": _safe_dt(getattr(project, "updated_at", None) or getattr(project, "created_at", None)),
+            }
+        )
+    return rows
+
+
 def _payments(email: str, request=None) -> list[dict]:
     rows = []
     invoices = list(
@@ -577,6 +788,31 @@ def _payments(email: str, request=None) -> list[dict]:
 
 def _documents(email: str, request=None) -> list[dict]:
     rows = []
+    profile = _get_or_create_property_profile(email)
+    for document in PropertyDocument.objects.filter(property_profile=profile).order_by("-uploaded_at", "-id"):
+        rows.append(
+            {
+                "id": f"property-document-{document.id}",
+                "title": _safe_text(document.title) or "Property document",
+                "type_label": _safe_text(document.document_type) or "Property Document",
+                "project_title": _safe_text(profile.display_name) or "Property Profile",
+                "date": _safe_dt(document.uploaded_at),
+                "url": _safe_text(getattr(getattr(document, "file", None), "url", "")),
+                "agreement_id": None,
+            }
+        )
+    for photo in PropertyPhoto.objects.filter(property_profile=profile).order_by("-uploaded_at", "-id"):
+        rows.append(
+            {
+                "id": f"property-photo-{photo.id}",
+                "title": _safe_text(photo.title) or "Property photo",
+                "type_label": "Property Photo",
+                "project_title": _safe_text(profile.display_name) or "Property Profile",
+                "date": _safe_dt(photo.uploaded_at),
+                "url": _safe_text(getattr(getattr(photo, "photo", None), "url", "")),
+                "agreement_id": None,
+            }
+        )
     agreements = Agreement.objects.select_related("project", "contractor", "homeowner").filter(
         Q(homeowner__email__iexact=email) | Q(project__homeowner__email__iexact=email)
     )
@@ -678,12 +914,15 @@ def _customer_name(email: str) -> str:
 def _build_customer_portal_payload(email: str, request=None) -> dict:
     bid_rows = _bid_rows(email)
     request_rows = _request_rows(email, bid_rows=bid_rows)
+    project_rows = _projects(email)
     agreement_rows = _agreements(email, request=request)
     payment_rows = _payments(email, request=request)
     document_rows = _documents(email, request=request)
+    property_profile = _property_profile_payload(email)
 
     summary = {
-        "active_requests": sum(1 for row in request_rows if row.get("status") not in {"converted", "archived"}),
+        "active_requests": sum(1 for row in request_rows if row.get("status") not in {"converted", "converted_to_project", "archived", "closed"}),
+        "active_projects": len(project_rows),
         "bids_received": len(bid_rows),
         "active_agreements": sum(1 for row in agreement_rows if row.get("status") not in {"archived", "cancelled"}),
         "payments": len(payment_rows),
@@ -697,10 +936,12 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         },
         "summary": summary,
         "requests": request_rows,
+        "projects": project_rows,
         "bids": bid_rows,
         "agreements": agreement_rows,
         "payments": payment_rows,
         "documents": document_rows,
+        "property_profile": property_profile,
     }
 
 
@@ -1335,6 +1576,97 @@ class CustomerPortalView(APIView):
         except signing.BadSignature:
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalRequestSerializer(serializers.Serializer):
+    request_type = serializers.ChoiceField(choices=[choice[0] for choice in CustomerRequest.REQUEST_TYPE_CHOICES])
+    title = serializers.CharField(max_length=200)
+    description = serializers.CharField()
+    urgency = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    preferred_timeline = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    state = serializers.CharField(max_length=60, required=False, allow_blank=True)
+    postal_code = serializers.CharField(max_length=24, required=False, allow_blank=True)
+    status = serializers.ChoiceField(
+        choices=[CustomerRequest.STATUS_DRAFT, CustomerRequest.STATUS_SUBMITTED],
+        required=False,
+    )
+
+
+class CustomerPortalRequestCreateView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        profile = _get_or_create_property_profile(email)
+        homeowner = _primary_homeowner_for_email(email)
+        address_defaults = {
+            "address_line1": data.get("address_line1") or profile.address_line1,
+            "address_line2": data.get("address_line2") or profile.address_line2,
+            "city": data.get("city") or profile.city,
+            "state": data.get("state") or profile.state,
+            "postal_code": data.get("postal_code") or profile.postal_code,
+        }
+        CustomerRequest.objects.create(
+            homeowner=homeowner,
+            property_profile=profile,
+            customer_email=email.lower().strip(),
+            request_type=data["request_type"],
+            status=data.get("status") or CustomerRequest.STATUS_SUBMITTED,
+            title=data["title"],
+            description=data["description"],
+            urgency=data.get("urgency", ""),
+            preferred_timeline=data.get("preferred_timeline", ""),
+            **address_defaults,
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalPropertyProfileSerializer(serializers.Serializer):
+    display_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    property_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyProfile.PROPERTY_TYPE_CHOICES],
+        required=False,
+    )
+    address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    state = serializers.CharField(max_length=60, required=False, allow_blank=True)
+    postal_code = serializers.CharField(max_length=24, required=False, allow_blank=True)
+    year_built = serializers.IntegerField(required=False, allow_null=True, min_value=1600, max_value=2200)
+    square_feet = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=1000000)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
+class CustomerPortalPropertyProfileView(APIView):
+    permission_classes = [AllowAny]
+
+    def patch(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalPropertyProfileSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        profile = _get_or_create_property_profile(email)
+        for field, value in serializer.validated_data.items():
+            setattr(profile, field, value if value is not None else None)
+        profile.save()
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 
