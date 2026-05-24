@@ -274,13 +274,18 @@ test("landing page drives into intake and public intake shows branching choices 
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("landing-hero-heading")).toContainText("Start your project with MyHomeBro");
-  await expect(page.getByTestId("landing-start-project-intake-button")).toHaveText("Start Your Project");
-  await expect(page.getByTestId("landing-customer-portal-button")).toHaveText("View Your Project");
-  await expect(page.getByText("For Contractors")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Join MyHomeBro" })).toBeVisible();
-  await expect(page.getByTestId("landing-sign-in-button")).toHaveText("Contractor Sign In");
-  await expect(page.getByText("After you submit your request, you can either invite one contractor or request multiple bids.")).toBeVisible();
+  await expect(page.getByTestId("landing-hero-heading")).toContainText("Everything you need to plan, hire, and manage your project.");
+  await expect(page.getByTestId("landing-start-project-intake-button")).toHaveText("Start a Project");
+  await expect(page.getByTestId("landing-customer-portal-button")).toContainText("View Your Project");
+  await expect(page.getByRole("button", { name: "For Contractors" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Contractor Sign Up" })).toBeVisible();
+  await expect(page.getByTestId("landing-sign-in-button")).toHaveText("Log In");
+  await page.getByTestId("landing-sign-in-button").click();
+  const loginMenu = page.getByRole("menu", { name: "Log in options" });
+  await expect(loginMenu).toBeVisible();
+  await expect(loginMenu.getByRole("button", { name: "Homeowner Log In" })).toBeVisible();
+  await expect(loginMenu.getByRole("button", { name: "Contractor Log In" })).toBeVisible();
+  await expect(loginMenu.getByRole("button", { name: "Contractors: Sign Up" })).toBeVisible();
 
   await page.getByTestId("landing-start-project-intake-button").click();
   await expect(page).toHaveURL(/\/start-project\/landing-token$/);

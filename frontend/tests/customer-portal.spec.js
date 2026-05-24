@@ -412,10 +412,10 @@ test("customer portal is reachable from the landing page and loads secure record
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("landing-hero-heading")).toContainText("Start your project with MyHomeBro");
-  await expect(page.getByTestId("landing-customer-portal-button")).toHaveText("View Your Project");
-  await expect(page.getByRole("button", { name: "Join MyHomeBro" })).toBeVisible();
-  await expect(page.getByText("For Contractors")).toBeVisible();
+  await expect(page.getByTestId("landing-hero-heading")).toContainText("Everything you need to plan, hire, and manage your project.");
+  await expect(page.getByTestId("landing-customer-portal-button")).toContainText("View Your Project");
+  await expect(page.getByRole("button", { name: "Contractor Sign Up" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "For Contractors" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Terms of Service" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
