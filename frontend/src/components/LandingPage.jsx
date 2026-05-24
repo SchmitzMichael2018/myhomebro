@@ -104,7 +104,7 @@ export default function LandingPage() {
   return (
     <div
       data-testid="landing-page"
-      className="min-h-screen overflow-x-hidden bg-[linear-gradient(135deg,#020617_0%,#061d3d_48%,#0f172a_100%)] text-white"
+      className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_50%_13%,rgba(37,99,235,0.22),transparent_26%),linear-gradient(135deg,#020617_0%,#061d3d_48%,#0f172a_100%)] text-white"
     >
       <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/82 backdrop-blur-xl">
         <nav className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
@@ -130,8 +130,9 @@ export default function LandingPage() {
             <button type="button" onClick={() => scrollTo("for-contractors")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
               For Contractors
             </button>
-            <button type="button" onClick={() => scrollTo("resources")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
+            <button type="button" onClick={() => scrollTo("resources")} className="inline-flex items-center gap-1 rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
               Resources
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
             <button type="button" onClick={() => scrollTo("about")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
               About Us
@@ -153,8 +154,9 @@ export default function LandingPage() {
             <button
               type="button"
               onClick={() => navigate("/start-project")}
-              className="rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+              className="inline-flex items-center gap-2 rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
               Start a Project
             </button>
 
@@ -170,16 +172,19 @@ export default function LandingPage() {
           <div className="mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 py-2.5 text-center text-sm text-sky-50/78 sm:px-6 lg:px-8">
             <ShieldCheck className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
             <span className="font-semibold text-white">We&apos;re making improvements to serve you better.</span>
+            <span className="hidden text-xs text-sky-100/55 sm:inline">Some features may be temporarily unavailable while updates are in progress.</span>
+            <a href="/legal/terms-of-service/" className="hidden text-xs font-semibold text-sky-300 hover:text-sky-200 sm:inline">Learn more</a>
+            <X className="ml-auto hidden h-4 w-4 text-sky-100/65 md:block" aria-hidden="true" />
           </div>
         </div>
 
-        <section className="mx-auto max-w-6xl px-4 pb-16 pt-16 text-center sm:px-6 sm:pb-20 sm:pt-20 lg:px-8 lg:pb-24 lg:pt-24">
-          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-amber-300/28 bg-amber-300/8 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">
+        <section className="mx-auto max-w-6xl px-4 pb-14 pt-12 text-center sm:px-6 sm:pb-16 sm:pt-16 lg:px-8 lg:pb-18 lg:pt-18">
+          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-amber-300/55 bg-amber-300/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-200 shadow-[0_0_22px_rgba(251,191,36,0.12)]">
             <Sparkles className="h-4 w-4" aria-hidden="true" />
-            Residential, commercial, and contractor-ready
+            The smarter way to build, remodel & manage
           </div>
 
-          <h1 data-testid="landing-hero-heading" className="mx-auto mt-7 max-w-5xl text-4xl font-semibold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 data-testid="landing-hero-heading" className="mx-auto mt-6 max-w-5xl text-4xl font-semibold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
             Everything you need to plan, hire, and manage your project.
             <span className="block text-amber-300">All in one place.</span>
           </h1>
@@ -192,10 +197,13 @@ export default function LandingPage() {
               type="button"
               data-testid="landing-start-project-intake-button"
               onClick={() => navigate("/start-project")}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-6 py-4 text-base font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+              className="inline-flex min-w-60 items-center justify-center gap-3 rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
               <Sparkles className="h-5 w-5" aria-hidden="true" />
-              Start a Project
+              <span className="text-left leading-tight">
+                <span className="block">Start a Project</span>
+                <span className="block text-xs font-medium text-white/78">It&apos;s free to get started</span>
+              </span>
             </button>
             <button
               type="button"
@@ -225,7 +233,15 @@ export default function LandingPage() {
       </main>
 
       <footer className="border-t border-white/10 px-4 py-6 text-center text-sm text-sky-50/62">
-        &copy; {new Date().getFullYear()} MyHomeBro
+        <div>&copy; {new Date().getFullYear()} MyHomeBro</div>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 font-semibold">
+          <a href="/legal/terms-of-service/" className="text-sky-300 hover:text-sky-200">
+            Terms of Service
+          </a>
+          <a href="/legal/privacy-policy/" className="text-sky-300 hover:text-sky-200">
+            Privacy Policy
+          </a>
+        </div>
       </footer>
     </div>
   );
@@ -288,13 +304,13 @@ function LoginDropdown({ navigate }) {
 function PlatformStrip() {
   return (
     <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-      <div className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-4">
+      <div className="overflow-hidden rounded-3xl border border-white/16 bg-slate-950/18 shadow-2xl shadow-slate-950/18 backdrop-blur">
+        <div className="grid gap-0 divide-y divide-white/10 md:grid-cols-4 md:divide-x md:divide-y-0">
           {platformRowOne.map((item) => (
             <InfoCard key={item.title} {...item} />
           ))}
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-0 border-t border-white/10 md:grid-cols-2 md:divide-x md:divide-white/10">
           {platformRowTwo.map((item) => (
             <InfoCard key={item.title} {...item} wide />
           ))}
@@ -306,9 +322,9 @@ function PlatformStrip() {
 
 function InfoCard({ icon: Icon, title, text, wide = false }) {
   return (
-    <div className={`rounded-3xl border border-white/10 bg-slate-950/28 p-5 shadow-xl shadow-slate-950/12 ${wide ? "md:p-6" : ""}`}>
+    <div className={`bg-slate-950/18 p-5 ${wide ? "md:p-6" : ""}`}>
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-blue-300/22 bg-blue-500/8 text-blue-200">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-blue-300/35 bg-blue-500/10 text-blue-200 shadow-[0_0_24px_rgba(37,99,235,0.12)]">
           <Icon className="h-5 w-5" aria-hidden="true" />
         </div>
         <div className="font-semibold text-white">{title}</div>
@@ -320,15 +336,19 @@ function InfoCard({ icon: Icon, title, text, wide = false }) {
 
 function HowItWorks() {
   return (
-    <section id="how-it-works" className="mx-auto max-w-7xl px-4 py-18 sm:px-6 sm:py-20 lg:px-8">
-      <h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">How It Works</h2>
-      <div className="mt-12 grid gap-7 md:grid-cols-5">
+    <section id="how-it-works" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
+      <div className="flex items-center justify-center gap-6">
+        <div className="hidden h-px w-24 bg-gradient-to-r from-transparent to-amber-300/70 sm:block" />
+        <h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">How It Works</h2>
+        <div className="hidden h-px w-24 bg-gradient-to-l from-transparent to-amber-300/70 sm:block" />
+      </div>
+      <div className="mt-10 grid gap-7 md:grid-cols-5">
         {howItWorks.map(({ icon: Icon, title, text }, index) => (
           <div key={title} className="relative text-center">
             {index < howItWorks.length - 1 ? (
-              <div className="absolute left-[calc(50%+2.5rem)] top-9 hidden w-[calc(100%-5rem)] border-t border-dashed border-sky-200/18 md:block" />
+              <div className="absolute left-[calc(50%+2.5rem)] top-8 hidden w-[calc(100%-5rem)] border-t border-dashed border-sky-200/28 md:block" />
             ) : null}
-            <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-blue-300/20 bg-blue-500/8 text-blue-250">
+            <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-blue-300/24 bg-blue-500/8 text-blue-250 shadow-[0_0_26px_rgba(37,99,235,0.12)]">
               <div className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-amber-300 text-xs font-bold text-slate-950">
                 {index + 1}
               </div>
@@ -368,12 +388,13 @@ function VideoPreview() {
           <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-[linear-gradient(135deg,rgba(3,7,18,0.18),rgba(15,23,42,0.76)),radial-gradient(circle_at_22%_20%,rgba(251,191,36,0.38),transparent_24%),radial-gradient(circle_at_78%_20%,rgba(37,99,235,0.35),transparent_25%),linear-gradient(150deg,#2f1f12_0%,#0f172a_42%,#082f63_100%)] shadow-xl shadow-slate-950/22">
           <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/18 blur-2xl" />
           <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950/88 to-transparent" />
-          <div className="absolute left-8 right-8 top-10 grid grid-cols-5 gap-3 opacity-65">
-            {Array.from({ length: 10 }).map((_, index) => (
-              <div key={index} className="h-20 rounded-t-xl border border-amber-100/10 bg-amber-100/8" />
+          <div className="absolute left-8 right-8 top-8 grid grid-cols-6 gap-2 opacity-75">
+            {Array.from({ length: 18 }).map((_, index) => (
+              <div key={index} className="h-16 rounded-t-xl border border-amber-100/10 bg-amber-100/8 shadow-[0_0_18px_rgba(251,191,36,0.08)]" />
             ))}
           </div>
-          <div className="absolute bottom-14 left-10 right-10 h-20 rounded-[50%] border border-amber-200/20 bg-amber-300/10" />
+          <div className="absolute bottom-16 left-10 right-10 h-20 rounded-[50%] border border-amber-200/20 bg-amber-300/10" />
+          <div className="absolute bottom-24 left-10 right-10 h-2 rounded-full bg-amber-200/25 blur-sm" />
           <div className="absolute inset-0 flex items-center justify-center">
             <button
               type="button"
@@ -573,7 +594,7 @@ function TrustBand() {
         <div className="grid gap-0 divide-y divide-white/10 p-6 md:grid-cols-4 md:divide-x md:divide-y-0">
         <div className="pb-5 md:pb-0 md:pr-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-300/28 bg-amber-300/8 text-amber-200">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/35 bg-amber-300/10 text-amber-200 shadow-[0_0_24px_rgba(251,191,36,0.12)]">
               <ShieldCheck className="h-6 w-6" aria-hidden="true" />
             </div>
             <div>
@@ -582,9 +603,9 @@ function TrustBand() {
             </div>
           </div>
         </div>
-        <TrustNote icon={UsersRound} title="Homeowners and growing" text="A platform built for clearer projects and better contractor communication." />
-        <TrustNote icon={Star} title="Average homeowner rating" text="Verified customer feedback will appear here as the network grows." />
-        <TrustNote icon={Globe2} title="Projects across the U.S. and Canada" text="Supporting residential and commercial planning in more communities." />
+        <TrustMetric icon={UsersRound} value="10K+" label="Homeowners and growing" tone="blue" />
+        <TrustMetric icon={Star} value="4.9" label="Average homeowner rating" tone="amber" stars />
+        <TrustMetric icon={Globe2} value="Thousands" label="of projects started across the U.S. and Canada" tone="blue" />
         </div>
         <div id="resources" className="border-t border-white/10 px-6 py-4 text-sm font-semibold">
           <a href="/legal/terms-of-service/" className="mr-4 text-sky-300 hover:text-sky-200">Terms of Service</a>
@@ -595,12 +616,19 @@ function TrustBand() {
   );
 }
 
-function TrustNote({ icon: Icon, title, text }) {
+function TrustMetric({ icon: Icon, value, label, tone = "blue", stars = false }) {
   return (
     <div className="px-0 py-5 md:px-6 md:py-0">
-      <Icon className="h-6 w-6 text-blue-300" aria-hidden="true" />
-      <div className="mt-3 font-semibold text-white">{title}</div>
-      <p className="mt-2 text-sm leading-6 text-sky-50/66">{text}</p>
+      <div className="flex items-center gap-4">
+        <Icon className={`h-9 w-9 ${tone === "amber" ? "text-amber-300" : "text-blue-300"}`} aria-hidden="true" />
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="text-3xl font-semibold text-white">{value}</div>
+            {stars ? <div className="text-amber-300">★★★★★</div> : null}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-sky-50/70">{label}</p>
+        </div>
+      </div>
     </div>
   );
 }

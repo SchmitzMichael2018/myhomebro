@@ -22,8 +22,9 @@ test('landing page smoke renders core entry points', async ({ page }) => {
   await expect(page.getByTestId('landing-video-preview')).toBeVisible();
   await expect(page.getByTestId('landing-homeowner-image-panel')).toBeVisible();
   await expect(page.getByTestId('landing-contractor-image-panel')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
+  const footer = page.getByRole('contentinfo');
+  await expect(footer.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
+  await expect(footer.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
 });
 
 test('landing page mobile layout does not horizontally overflow', async ({ page }) => {
