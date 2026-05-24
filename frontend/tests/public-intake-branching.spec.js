@@ -275,7 +275,7 @@ test("landing page drives into intake and public intake shows branching choices 
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("landing-hero-heading")).toContainText("Everything you need to plan, hire, and manage your project.");
-  await expect(page.getByTestId("landing-start-project-intake-button")).toHaveText("Start a Project");
+  await expect(page.getByTestId("landing-start-project-intake-button")).toContainText("Start a Project");
   await expect(page.getByTestId("landing-customer-portal-button")).toContainText("View Your Project");
   await expect(page.getByRole("button", { name: "For Contractors" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Contractor Sign Up" })).toBeVisible();

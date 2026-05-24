@@ -20,6 +20,9 @@ import {
   X,
 } from "lucide-react";
 import logo from "../assets/myhomebro_logo.png";
+import homeownerCardImage from "../assets/homeowner-card.jpg";
+import contractorCardImage from "../assets/contractor-card.jpg";
+import kitchenPreviewImage from "../assets/kitchen-preview.jpg";
 
 const platformRowOne = [
   {
@@ -385,16 +388,16 @@ function VideoPreview() {
 
       <div data-testid="landing-video-preview" className="relative">
         <div className="grid gap-3 md:grid-cols-[1fr_13rem]">
-          <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-[linear-gradient(135deg,rgba(3,7,18,0.18),rgba(15,23,42,0.76)),radial-gradient(circle_at_22%_20%,rgba(251,191,36,0.38),transparent_24%),radial-gradient(circle_at_78%_20%,rgba(37,99,235,0.35),transparent_25%),linear-gradient(150deg,#2f1f12_0%,#0f172a_42%,#082f63_100%)] shadow-xl shadow-slate-950/22">
-          <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/18 blur-2xl" />
-          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950/88 to-transparent" />
-          <div className="absolute left-8 right-8 top-8 grid grid-cols-6 gap-2 opacity-75">
-            {Array.from({ length: 18 }).map((_, index) => (
-              <div key={index} className="h-16 rounded-t-xl border border-amber-100/10 bg-amber-100/8 shadow-[0_0_18px_rgba(251,191,36,0.08)]" />
-            ))}
-          </div>
-          <div className="absolute bottom-16 left-10 right-10 h-20 rounded-[50%] border border-amber-200/20 bg-amber-300/10" />
-          <div className="absolute bottom-24 left-10 right-10 h-2 rounded-full bg-amber-200/25 blur-sm" />
+          <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22">
+          <img
+            src={kitchenPreviewImage}
+            alt="Warm kitchen remodel planning preview"
+            data-testid="landing-video-preview-asset"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.18),rgba(2,6,23,0.02)_44%,rgba(2,6,23,0.30)),radial-gradient(circle_at_50%_50%,transparent_38%,rgba(2,6,23,0.34)_100%)]" />
+          <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/16 blur-2xl" />
+          <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-slate-950/90 via-slate-950/28 to-transparent" />
           <div className="absolute inset-0 flex items-center justify-center">
             <button
               type="button"
@@ -547,37 +550,49 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
             <div className={`absolute h-72 w-72 rounded-full border ${isHomeowner ? "-right-24 bottom-[-7rem] border-amber-200/36" : "-right-20 bottom-[-6rem] border-amber-200/34"}`} />
             <div className={`absolute h-80 w-80 rounded-full border ${isHomeowner ? "-right-28 bottom-[-7.75rem] border-blue-200/22" : "-right-24 bottom-[-7.25rem] border-blue-200/22"}`} />
             {isHomeowner ? (
-              <div data-testid="landing-homeowner-image-panel" className="relative h-52 w-full max-w-md">
-                <div className="absolute bottom-0 left-1/2 h-10 w-[88%] -translate-x-1/2 rounded-[50%] bg-slate-950/45 blur-sm" />
-                <div className="absolute bottom-6 left-4 right-4 h-28 rounded-t-[2rem] border border-blue-100/25 bg-slate-950/60 shadow-2xl shadow-slate-950/35" />
-                <div className="absolute bottom-[8.15rem] left-8 right-8 h-20 rotate-[-3deg] rounded-t-[2.25rem] border border-amber-200/30 bg-amber-300/14" />
-                <div className="absolute bottom-[8.65rem] left-10 right-10 h-8 rotate-[-3deg] rounded-t-full bg-amber-200/12 blur-sm" />
-                <div className="absolute bottom-6 left-12 h-20 w-14 rounded-t-xl border border-blue-100/12 bg-blue-500/24" />
-                <div className="absolute bottom-[4.2rem] right-12 grid grid-cols-2 gap-2">
-                  <div className="h-9 w-10 rounded-lg bg-amber-200/38 shadow-[0_0_24px_rgba(251,191,36,0.42)]" />
-                  <div className="h-9 w-10 rounded-lg bg-amber-200/32 shadow-[0_0_20px_rgba(251,191,36,0.36)]" />
+              <div data-testid="landing-homeowner-image-panel" className="relative h-56 w-full max-w-md overflow-hidden rounded-[1.25rem] border border-blue-200/20 shadow-2xl shadow-slate-950/35">
+                <img
+                  src={homeownerCardImage}
+                  alt="Upscale residential project exterior at dusk"
+                  data-testid="landing-homeowner-visual-asset"
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.04),rgba(2,6,23,0.10)_48%,rgba(2,6,23,0.50)),radial-gradient(circle_at_78%_28%,rgba(251,191,36,0.16),transparent_32%)]" />
+                <div className="absolute -right-20 bottom-[-6.25rem] h-64 w-64 rounded-full border border-amber-200/38" />
+                <div className="absolute -right-24 bottom-[-6.8rem] h-72 w-72 rounded-full border border-blue-200/18" />
+                <div className="absolute bottom-4 left-4 rounded-2xl border border-white/14 bg-slate-950/54 px-4 py-3 shadow-xl shadow-slate-950/25 backdrop-blur">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-200">Project ready</div>
+                  <div className="mt-1 text-sm font-semibold text-white">Organized for local pros</div>
                 </div>
-                <div className="absolute bottom-1 left-1 h-16 w-14 rounded-t-full bg-emerald-300/20 blur-[1px]" />
-                <div className="absolute bottom-1 right-2 h-20 w-16 rounded-t-full bg-emerald-300/16 blur-[1px]" />
-                <div className="absolute bottom-[1.2rem] left-1/2 h-8 w-[78%] -translate-x-1/2 rounded-[50%] border-t border-amber-200/20 bg-amber-300/8" />
-                <Home className="absolute bottom-[5.1rem] left-1/2 h-12 w-12 -translate-x-1/2 text-sky-50 drop-shadow-[0_0_18px_rgba(186,230,253,0.25)]" aria-hidden="true" />
               </div>
             ) : (
-              <div data-testid="landing-contractor-image-panel" className="relative flex h-56 w-full max-w-md items-center justify-center">
-                <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-slate-950/65 to-transparent" />
-                <div className="absolute bottom-0 left-1/2 h-12 w-[72%] -translate-x-1/2 rounded-[50%] bg-slate-950/55 blur-sm" />
-                <div className="absolute bottom-1 h-46 w-36 rounded-t-[3.2rem] border border-amber-200/22 bg-slate-950/68 shadow-2xl shadow-slate-950/45" />
-                <div className="absolute top-3 h-17 w-17 rounded-full border border-amber-200/25 bg-amber-300/14" />
-                <div className="absolute top-9 h-8 w-28 rounded-t-full border border-amber-200/22 bg-slate-950/78" />
-                <div className="absolute bottom-9 rounded-2xl border border-amber-200/26 bg-blue-950/82 px-6 py-4 text-center shadow-xl shadow-slate-950/45">
-                  <img src={logo} alt="" className="mx-auto h-10 w-10 rounded-lg object-cover drop-shadow-[0_0_14px_rgba(251,191,36,0.25)]" />
-                  <div className="mt-2 text-sm font-bold text-white">MyHome<span className="text-amber-300">Bro</span></div>
+              <div data-testid="landing-contractor-image-panel" className="relative h-56 w-full max-w-md overflow-hidden rounded-[1.25rem] border border-amber-200/22 shadow-2xl shadow-slate-950/38">
+                <img
+                  src={contractorCardImage}
+                  alt="Professional contractor reviewing a home project"
+                  data-testid="landing-contractor-visual-asset"
+                  className="h-full w-full object-cover"
+                />
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.08),rgba(2,6,23,0.04)_52%,rgba(2,6,23,0.56)),radial-gradient(circle_at_75%_24%,rgba(251,191,36,0.15),transparent_32%)]" />
+                <div
+                  data-testid="landing-contractor-sweatshirt-logo"
+                  className="pointer-events-none absolute left-[34%] top-[43%] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-slate-950/12 p-1.5 shadow-[0_0_22px_rgba(251,191,36,0.18)]"
+                >
+                  <img
+                    src={logo}
+                    alt=""
+                    className="h-16 w-16 object-contain opacity-95 mix-blend-screen contrast-125 saturate-125 sm:h-20 sm:w-20"
+                  />
                 </div>
-                <div className="absolute bottom-4 left-12 h-18 w-5 rotate-12 rounded-full bg-amber-300/20" />
-                <div className="absolute bottom-4 right-12 h-18 w-5 -rotate-12 rounded-full bg-amber-300/20" />
-                <div className="absolute bottom-6 left-[4.2rem] h-9 w-11 rounded-lg border border-amber-200/18 bg-amber-900/35" />
-                <div className="absolute bottom-6 right-[4.2rem] h-9 w-11 rounded-lg border border-amber-200/18 bg-amber-900/35" />
-                <div className="absolute bottom-[1.4rem] left-1/2 h-8 w-[84%] -translate-x-1/2 rounded-[50%] border-t border-amber-200/22 bg-amber-300/8" />
+                <div className="absolute -right-20 bottom-[-6.25rem] h-64 w-64 rounded-full border border-amber-200/38" />
+                <div className="absolute -right-24 bottom-[-6.8rem] h-72 w-72 rounded-full border border-blue-200/18" />
+                <div className="absolute bottom-4 right-4 rounded-2xl border border-amber-200/18 bg-slate-950/58 px-4 py-3 shadow-xl shadow-slate-950/28 backdrop-blur">
+                  <div className="flex items-center gap-2 text-sm font-bold text-white">
+                    <img src={logo} alt="" className="h-7 w-7 rounded-lg object-cover" />
+                    MyHome<span className="text-amber-300">Bro</span>
+                  </div>
+                  <div className="mt-1 text-xs font-semibold text-sky-100/72">Contractor workspace</div>
+                </div>
               </div>
             )}
           </div>

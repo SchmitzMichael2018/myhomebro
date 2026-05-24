@@ -416,13 +416,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("landing-customer-portal-button")).toContainText("View Your Project");
   await expect(page.getByRole("button", { name: "Contractor Sign Up" })).toBeVisible();
   await expect(page.getByRole("button", { name: "For Contractors" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Terms of Service" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
+  const footer = page.getByRole("contentinfo");
+  await expect(footer.getByRole("link", { name: "Terms of Service" })).toBeVisible();
+  await expect(footer.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
+  await expect(footer.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
     "href",
     "/legal/terms-of-service/"
   );
-  await expect(page.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute(
+  await expect(footer.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute(
     "href",
     "/legal/privacy-policy/"
   );
