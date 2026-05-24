@@ -17,6 +17,15 @@ function Badge({ children }) {
   );
 }
 
+function EmptyState({ title, children, testId }) {
+  return (
+    <div data-testid={testId} className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-300">
+      <div className="font-semibold text-white">{title}</div>
+      <p className="mt-1 leading-6 text-slate-400">{children}</p>
+    </div>
+  );
+}
+
 export default function CustomerRequests({
   requests = [],
   bids = [],
@@ -66,7 +75,7 @@ export default function CustomerRequests({
           <div>
             <h2 className="text-xl font-semibold text-white">Requests</h2>
             <p className="mt-1 text-sm text-slate-300">
-              Repair, maintenance, new project, DIY assistance, inspection, and emergency requests stay internal until MyHomeBro routes them.
+              Requests are saved internally first. When you are ready, MyHomeBro can help route them to contractors without publishing anything automatically.
             </p>
           </div>
           <Badge>{requests.length} total</Badge>
@@ -89,17 +98,17 @@ export default function CustomerRequests({
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-400">
-              Requests you submit through this portal will appear here.
-            </div>
+            <EmptyState title="No saved requests yet" testId="customer-requests-empty">
+              Start with a repair, maintenance task, inspection, DIY help request, emergency, or new project idea. It stays private in your workspace until routing is needed.
+            </EmptyState>
           )}
         </div>
 
-        {internalRequests.length ? (
-          <div className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
-            New portal requests are saved internally and are not published to the marketplace yet.
-          </div>
-        ) : null}
+        <div className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+          {internalRequests.length
+            ? "New portal requests are saved internally and are not published to the marketplace yet."
+            : "Saved requests stay internal here first. They can later be prepared for contractor routing when you choose the next step."}
+        </div>
 
         <div data-testid="customer-portal-bids" className="mt-6 border-t border-slate-700 pt-5">
           <div className="flex items-center justify-between gap-3">
@@ -141,9 +150,9 @@ export default function CustomerRequests({
                 </div>
               ))
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-400">
-                Bids from contractors will appear here when available.
-              </div>
+              <EmptyState title="No bids yet" testId="customer-bids-empty">
+                Contractor bids will appear here after a request is routed or an agreement flow brings contractor proposals back to this portal.
+              </EmptyState>
             )}
           </div>
         </div>

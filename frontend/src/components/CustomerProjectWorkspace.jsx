@@ -28,7 +28,10 @@ export default function CustomerProjectWorkspace({ projects = [], agreements = [
   if (!projects.length && !agreements.length) {
     return (
       <div data-testid="customer-project-workspace-empty" className="rounded-2xl border border-dashed border-slate-600 bg-slate-900/60 p-6 text-sm text-slate-300">
-        Active projects will appear here after an agreement or project is connected to this portal.
+        <div className="font-semibold text-white">No projects connected yet</div>
+        <p className="mt-1 leading-6 text-slate-400">
+          Active projects will appear here after an agreement, accepted bid, or contractor project record is connected to your secure customer email.
+        </p>
       </div>
     );
   }

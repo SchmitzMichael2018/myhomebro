@@ -178,6 +178,7 @@ const portalPayload = {
       title: "Scope Addendum",
       type_label: "Addendum",
       project_title: "Kitchen Remodel",
+      filename: "scope-addendum.txt",
       date: "2026-04-15T16:45:00Z",
       url: "/files/scope-addendum.txt",
     },
@@ -206,11 +207,80 @@ const portalPayload = {
   ],
 };
 
+const uploadedPortalPayload = {
+  ...portalPayload,
+  summary: {
+    ...portalPayload.summary,
+    documents: 2,
+  },
+  documents: [
+    {
+      id: "property-document-9",
+      title: "Water heater warranty",
+      type_label: "Warranty",
+      project_title: "Kitchen Remodel",
+      filename: "water-heater-warranty.pdf",
+      date: "2026-04-16T12:00:00Z",
+      url: "/files/water-heater-warranty.pdf",
+    },
+    ...portalPayload.documents,
+  ],
+  property_profile: {
+    ...portalPayload.property_profile,
+    documents: [
+      {
+        id: "property-document-9",
+        title: "Water heater warranty",
+        type_label: "Warranty",
+        filename: "water-heater-warranty.pdf",
+        date: "2026-04-16T12:00:00Z",
+        url: "/files/water-heater-warranty.pdf",
+      },
+    ],
+  },
+};
+
 const notificationReadPortalPayload = {
   ...portalPayload,
   notifications: portalPayload.notifications.map((notification) =>
     notification.id === 101 ? { ...notification, status: "read" } : notification
   ),
+};
+
+const emptyPortalPayload = {
+  customer: {
+    name: "Empty Customer",
+    email: "empty@example.com",
+  },
+  summary: {
+    active_requests: 0,
+    active_projects: 0,
+    bids_received: 0,
+    active_agreements: 0,
+    payments: 0,
+    documents: 0,
+  },
+  property_profile: {
+    id: 2,
+    customer_email: "empty@example.com",
+    display_name: "",
+    property_type: "single_family",
+    property_type_label: "Single Family",
+    address_line1: "",
+    city: "",
+    state: "",
+    postal_code: "",
+    address: "",
+    documents: [],
+    photos: [],
+  },
+  projects: [],
+  requests: [],
+  bids: [],
+  agreements: [],
+  payments: [],
+  documents: [],
+  notifications: [],
 };
 
 const acceptedPortalPayload = {
@@ -295,6 +365,24 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (method === "GET" && requestUrl.includes("/customer-portal/empty-token/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(emptyPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/documents/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(uploadedPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/notifications/101/read/") && method === "POST") {
       await route.fulfill({
         status: 200,
@@ -350,6 +438,8 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await expect(page.getByText("MyHomeBro Records")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer Workspace" })).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
@@ -375,6 +465,17 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Scope Addendum");
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("scope-addendum.txt");
+  await page.getByLabel("Title").fill("Water heater warranty");
+  await page.getByLabel("Document type").fill("Warranty");
+  await page.getByTestId("customer-documents-upload-file").setInputFiles({
+    name: "water-heater-warranty.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("warranty"),
+  });
+  await page.getByRole("button", { name: "Upload" }).click();
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Water heater warranty");
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("water-heater-warranty.pdf");
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await page.getByTestId("customer-portal-bid-accept-lead-2").click();
@@ -383,4 +484,42 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("We could not open that portal link"))).toHaveLength(0);
+});
+
+test("customer portal shows friendly empty states", async ({ page }) => {
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    if (route.request().method() === "GET" && requestUrl.includes("/customer-portal/empty-token/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(emptyPortalPayload),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/empty-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No updates yet");
+  await expect(page.getByTestId("customer-overview-projects-empty")).toContainText("No active projects yet");
+  await expect(page.getByTestId("customer-overview-requests-empty")).toContainText("No requests yet");
+
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await expect(page.getByTestId("customer-project-workspace-empty")).toContainText("No projects connected yet");
+
+  await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("customer-requests-empty")).toContainText("No saved requests yet");
+  await expect(page.getByText("Saved requests stay internal here first")).toBeVisible();
+  await expect(page.getByTestId("customer-bids-empty")).toContainText("No bids yet");
+
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("customer-property-files-empty")).toContainText("No property files yet");
+
+  await page.getByTestId("customer-dashboard-tab-payments").click();
+  await expect(page.getByTestId("customer-payments-empty")).toContainText("No payment records yet");
+
+  await page.getByTestId("customer-dashboard-tab-documents").click();
+  await expect(page.getByTestId("customer-documents-empty")).toContainText("No documents yet");
 });

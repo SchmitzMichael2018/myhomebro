@@ -34,6 +34,15 @@ function Badge({ children }) {
   );
 }
 
+function EmptyState({ title, children, testId }) {
+  return (
+    <div data-testid={testId} className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-300">
+      <div className="font-semibold text-white">{title}</div>
+      <p className="mt-1 leading-6 text-slate-400">{children}</p>
+    </div>
+  );
+}
+
 function PaymentsPanel({ payments = [] }) {
   return (
     <div data-testid="customer-portal-payments" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -53,9 +62,9 @@ function PaymentsPanel({ payments = [] }) {
             </div>
           ))
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
-            Payment records will appear here after invoices, draw requests, or receipts are connected.
-          </div>
+          <EmptyState title="No payment records yet" testId="customer-payments-empty">
+            Invoices, escrow funding, draw releases, and receipts will appear here when they are connected to this secure customer record.
+          </EmptyState>
         )}
       </div>
     </div>
@@ -87,9 +96,9 @@ function OverviewPanel({ portal }) {
                 <div className="mt-1 text-xs text-slate-500">{project.status_label || "Project"} - {project.contractor_name || "Contractor"}</div>
               </div>
             )) : (
-              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                Projects connected to this portal will appear here.
-              </div>
+              <EmptyState title="No active projects yet" testId="customer-overview-projects-empty">
+                Projects will appear here after a request becomes an agreement or a contractor connects project records to your email.
+              </EmptyState>
             )}
           </div>
         </section>
@@ -103,9 +112,9 @@ function OverviewPanel({ portal }) {
                 <div className="mt-1 text-xs text-slate-500">{request.status_label || "Submitted"}</div>
               </div>
             )) : (
-              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                Start a repair, maintenance, DIY, inspection, emergency, or new project request.
-              </div>
+              <EmptyState title="No requests yet" testId="customer-overview-requests-empty">
+                You can save repair, maintenance, DIY, inspection, emergency, or new project requests here. They stay internal until they are ready to route.
+              </EmptyState>
             )}
           </div>
         </section>
@@ -122,7 +131,7 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
   const recent = notifications.slice(0, 4);
 
   return (
-    <section data-testid="customer-notifications-panel" className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/70 p-5">
+    <section data-testid="customer-notifications-panel" className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -131,7 +140,7 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
           </div>
           <p className="mt-1 text-sm text-slate-300">Recent project, payment, request, and property notifications.</p>
         </div>
-        <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-rose-300/40 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-100 shadow-[0_0_18px_rgba(244,63,94,0.16)]">
+        <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-[0_0_16px_rgba(56,189,248,0.12)]">
           {unreadCount} unread
         </span>
       </div>
@@ -146,11 +155,11 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
                 data-testid={`customer-notification-${notification.id}`}
                 className={`rounded-xl border p-4 ${
                   isUnread
-                    ? "border-sky-300/40 bg-sky-400/10"
+                    ? "border-sky-300/45 bg-sky-400/10 shadow-[inset_3px_0_0_rgba(56,189,248,0.55)]"
                     : "border-slate-700 bg-slate-900/60"
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm font-semibold text-white">{notification.title || "Update"}</h3>
@@ -184,8 +193,10 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
             );
           })
         ) : (
-          <div className="lg:col-span-2 rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-            Workspace updates will appear here as projects, requests, payments, and documents move forward.
+          <div className="lg:col-span-2">
+            <EmptyState title="No updates yet" testId="customer-notifications-empty">
+              Project, request, payment, document, and signing updates will appear here when there is something useful to review.
+            </EmptyState>
           </div>
         )}
       </div>
@@ -198,12 +209,39 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
   const [uploadingPropertyFile, setUploadingPropertyFile] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [acceptingBidId, setAcceptingBidId] = useState("");
   const [markingNotificationId, setMarkingNotificationId] = useState("");
 
   const customerName = portal?.customer?.name || "Customer";
   const notifications = portal?.notifications || [];
   const unreadCount = notifications.filter((notification) => notification.status !== "read").length;
+  const uploadPropertyFile = async ({ file, title, documentType, kind }) => {
+    if (!file) return false;
+    setUploadError("");
+    setUploadingPropertyFile(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", title || file.name || "Property file");
+      if (documentType) formData.append("document_type", documentType);
+      const uploadKind = kind === "photo" ? "photos" : "documents";
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`,
+        formData
+      );
+      onPortalUpdate?.(data);
+      toast.success(uploadKind === "photos" ? "Photo uploaded." : "Document uploaded.");
+      return true;
+    } catch (error) {
+      const message = error?.response?.data?.detail || "Could not upload that file.";
+      setUploadError(message);
+      toast.error(message);
+      return false;
+    } finally {
+      setUploadingPropertyFile(false);
+    }
+  };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") return <OverviewPanel portal={portal} />;
     if (activeTab === "projects") return <CustomerProjectWorkspace projects={portal?.projects || []} agreements={portal?.agreements || []} />;
@@ -252,6 +290,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           profile={portal?.property_profile || {}}
           saving={savingProperty}
           uploading={uploadingPropertyFile}
+          uploadError={uploadError}
           onSave={async (payload) => {
             setSavingProperty(true);
             try {
@@ -264,27 +303,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               setSavingProperty(false);
             }
           }}
-          onUpload={async ({ file, title, documentType, kind }) => {
-            if (!file) return;
-            setUploadingPropertyFile(true);
-            try {
-              const formData = new FormData();
-              formData.append("file", file);
-              formData.append("title", title || file.name || "Property file");
-              if (documentType) formData.append("document_type", documentType);
-              const uploadKind = kind === "photo" ? "photos" : "documents";
-              const { data } = await api.post(
-                `/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`,
-                formData
-              );
-              onPortalUpdate?.(data);
-              toast.success(uploadKind === "photos" ? "Photo uploaded." : "Document uploaded.");
-            } catch (error) {
-              toast.error(error?.response?.data?.detail || "Could not upload that file.");
-            } finally {
-              setUploadingPropertyFile(false);
-            }
-          }}
+          onUpload={uploadPropertyFile}
         />
       );
     }
@@ -294,46 +313,27 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         documents={portal?.documents || []}
         propertyProfile={portal?.property_profile || {}}
         uploading={uploadingPropertyFile}
-        onUpload={async ({ file, title, documentType, kind }) => {
-          if (!file) return;
-          setUploadingPropertyFile(true);
-          try {
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("title", title || file.name || "Property file");
-            if (documentType) formData.append("document_type", documentType);
-            const uploadKind = kind === "photo" ? "photos" : "documents";
-            const { data } = await api.post(
-              `/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`,
-              formData
-            );
-            onPortalUpdate?.(data);
-            toast.success(uploadKind === "photos" ? "Photo uploaded." : "Document uploaded.");
-          } catch (error) {
-            toast.error(error?.response?.data?.detail || "Could not upload that file.");
-          } finally {
-            setUploadingPropertyFile(false);
-          }
-        }}
+        uploadError={uploadError}
+        onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, uploadingPropertyFile, token, onPortalUpdate]);
+  }, [activeTab, portal, creatingRequest, savingProperty, uploadingPropertyFile, uploadError, token, onPortalUpdate]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100">
       <div className="mx-auto max-w-7xl">
-        <header className="rounded-3xl border border-slate-700 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/40 md:p-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <header className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5 shadow-2xl shadow-slate-950/40 sm:p-6 md:p-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Customer Workspace</div>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">{customerName}</h1>
+              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">MyHomeBro Records</div>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Customer Workspace</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-                Review projects, submit internal requests, maintain property details, and keep payments and documents in one secure workspace.
+                {customerName ? `${customerName}, you can ` : "You can "}review projects, save internal requests, maintain property details, and keep payments and documents in one secure workspace.
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">
+            <div className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300 lg:w-auto">
               <div>Secure access verified for <span className="font-semibold text-white">{portal?.customer?.email}</span></div>
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-rose-300/40 bg-rose-500/15 px-2.5 py-1 text-xs font-semibold text-rose-100">
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
                 <Bell size={13} />
                 {unreadCount} unread updates
               </div>

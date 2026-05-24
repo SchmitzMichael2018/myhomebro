@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ExternalLink, FileText } from "lucide-react";
 
-export default function CustomerDocuments({ documents = [], propertyProfile = {}, onUpload, uploading = false }) {
+export default function CustomerDocuments({ documents = [], propertyProfile = {}, onUpload, uploading = false, uploadError = "" }) {
   const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
   const propertyDocuments = [
     ...(propertyProfile?.documents || []),
@@ -23,13 +23,15 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
 
       <form
         data-testid="customer-documents-upload-form"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          onUpload?.(uploadForm);
-          setUploadForm((prev) => ({ ...prev, title: "", documentType: "", file: null }));
-          event.currentTarget.reset();
+          const ok = await onUpload?.(uploadForm);
+          if (ok !== false) {
+            setUploadForm((prev) => ({ ...prev, title: "", documentType: "", file: null }));
+            event.currentTarget.reset();
+          }
         }}
-        className="mt-5 grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+        className="mt-5 grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:grid-cols-2 xl:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
       >
         <label className="block text-sm font-medium text-slate-200">
           Type
@@ -76,6 +78,11 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
         >
           {uploading ? "Uploading..." : "Upload"}
         </button>
+        {uploadError ? (
+          <div data-testid="customer-documents-upload-error" className="rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100 md:col-span-2 xl:col-span-5">
+            {uploadError}
+          </div>
+        ) : null}
       </form>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -90,6 +97,7 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
                   <div className="truncate text-sm font-semibold text-white">{document.title}</div>
                   <div className="mt-1 text-xs text-slate-500">{document.type_label || "Document"} - {document.project_title || "Property"}</div>
                   <div className="mt-1 text-xs text-slate-500">{document.date ? new Date(document.date).toLocaleDateString() : "No date"}</div>
+                  <div className="mt-1 truncate text-xs text-slate-400">{document.filename || "Filename pending"}</div>
                 </div>
               </div>
               {document.url ? (
@@ -106,8 +114,11 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
             </div>
           ))
         ) : (
-          <div className="md:col-span-2 xl:col-span-3 rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
-            Documents shared with you will appear here.
+          <div data-testid="customer-documents-empty" className="md:col-span-2 xl:col-span-3 rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-300">
+            <div className="font-semibold text-white">No documents yet</div>
+            <p className="mt-1 leading-6 text-slate-400">
+              Upload property files here, or return later to find agreement PDFs, receipts, shared attachments, and photos.
+            </p>
           </div>
         )}
       </div>

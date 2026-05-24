@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-export default function CustomerPropertyProfile({ profile = {}, onSave, onUpload, saving = false, uploading = false }) {
+export default function CustomerPropertyProfile({ profile = {}, onSave, onUpload, saving = false, uploading = false, uploadError = "" }) {
   const [form, setForm] = useState(profile || {});
   const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
 
@@ -130,11 +130,13 @@ export default function CustomerPropertyProfile({ profile = {}, onSave, onUpload
         <h3 className="text-lg font-semibold text-white">Property files</h3>
         <form
           data-testid="customer-property-upload-form"
-          onSubmit={(event) => {
+          onSubmit={async (event) => {
             event.preventDefault();
-            onUpload?.(uploadForm);
-            setUploadForm((prev) => ({ ...prev, title: "", documentType: "", file: null }));
-            event.currentTarget.reset();
+            const ok = await onUpload?.(uploadForm);
+            if (ok !== false) {
+              setUploadForm((prev) => ({ ...prev, title: "", documentType: "", file: null }));
+              event.currentTarget.reset();
+            }
           }}
           className="mt-4 rounded-xl border border-slate-700 bg-slate-900/70 p-3"
         >
@@ -187,6 +189,11 @@ export default function CustomerPropertyProfile({ profile = {}, onSave, onUpload
             >
               {uploading ? "Uploading..." : "Upload property file"}
             </button>
+            {uploadError ? (
+              <div data-testid="customer-property-upload-error" className="rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                {uploadError}
+              </div>
+            ) : null}
           </div>
         </form>
         <div className="mt-4 space-y-3">
@@ -200,12 +207,18 @@ export default function CustomerPropertyProfile({ profile = {}, onSave, onUpload
                 className="block rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3 text-sm text-slate-200 hover:border-sky-400/50"
               >
                 <div className="font-semibold">{item.title}</div>
-                <div className="mt-1 text-xs text-slate-500">{item.date ? new Date(item.date).toLocaleDateString() : "Property record"}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {item.type_label || "Property file"} - {item.date ? new Date(item.date).toLocaleDateString() : "No date"}
+                </div>
+                <div className="mt-1 truncate text-xs text-slate-400">{item.filename || "Filename pending"}</div>
               </a>
             ))
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-              Property documents and photos can be connected here as the workspace expands.
+            <div data-testid="customer-property-files-empty" className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-300">
+              <div className="font-semibold text-white">No property files yet</div>
+              <p className="mt-1 leading-6 text-slate-400">
+                Add warranties, inspection notes, receipts, permits, and photos so future requests have better context.
+              </p>
             </div>
           )}
         </div>

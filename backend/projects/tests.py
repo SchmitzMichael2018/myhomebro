@@ -18000,8 +18000,10 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(photo.property_profile, profile)
         self.assertEqual(document.document_type, "Warranty")
         self.assertEqual(document_response.data["summary"]["documents"], 2)
-        self.assertTrue(any(row["title"] == "Water heater warranty" for row in document_response.data["documents"]))
-        self.assertTrue(any(row["title"] == "Roof condition" for row in photo_response.data["documents"]))
+        document_payload = next(row for row in document_response.data["documents"] if row["title"] == "Water heater warranty")
+        photo_payload = next(row for row in photo_response.data["documents"] if row["title"] == "Roof condition")
+        self.assertIn("warranty", document_payload["filename"])
+        self.assertIn("roof", photo_payload["filename"])
 
         other_response = self.client.get(f"/api/projects/customer-portal/{other_token}/")
         self.assertEqual(other_response.status_code, 200)
