@@ -95,6 +95,15 @@ function getFriendlyBudgetLabel(value) {
   }).format(amount);
 }
 
+const intakeLightCardClass =
+  "rounded-3xl border border-slate-200/80 bg-white p-6 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7";
+const intakePanelClass =
+  "rounded-3xl border border-white/12 bg-slate-950/35 p-4 shadow-2xl shadow-slate-950/25 backdrop-blur";
+const intakePrimaryButtonClass =
+  "rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-400/30 disabled:from-slate-600 disabled:via-slate-600 disabled:to-slate-600 disabled:text-slate-200 disabled:shadow-none disabled:opacity-70";
+const intakeSecondaryButtonClass =
+  "rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60";
+
 function getFriendlyClarificationLabel(question) {
   const text = [question?.label, question?.question, question?.key].filter(Boolean).join(" ").toLowerCase();
   if (/(material|materials|suppl|who provides)/.test(text)) return "Materials";
@@ -367,18 +376,22 @@ const blankForm = {
 function StepPill({ active, complete, label, index }) {
   return (
     <div
-      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+      className={`flex min-h-10 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold shadow-sm transition ${
         active
-          ? "border-indigo-500 bg-indigo-600 text-white"
+          ? "border-amber-300/60 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 text-white shadow-blue-950/25"
           : complete
-            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-            : "border-slate-200 bg-white text-slate-500"
+            ? "border-emerald-300/45 bg-emerald-400/15 text-emerald-50"
+            : "border-white/12 bg-slate-950/35 text-sky-100/70 hover:border-sky-300/35 hover:bg-sky-400/10"
       }`}
     >
-      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-[11px] font-bold">
-        {index + 1}
+      <span
+        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+          active ? "bg-white/20 text-white" : complete ? "bg-emerald-300 text-emerald-950" : "bg-white/10 text-sky-100"
+        }`}
+      >
+        {complete ? "✓" : index + 1}
       </span>
-      {label}
+      <span className="whitespace-nowrap">{label}</span>
     </div>
   );
 }
@@ -1144,7 +1157,7 @@ export default function PublicIntakeWizard() {
   const renderStep = () => {
     if (currentStep === 0) {
       return (
-        <div className="rounded-3xl border border-white/70 bg-white/95 p-8 shadow-2xl shadow-black/10 backdrop-blur">
+        <div className={intakeLightCardClass}>
           <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Tell us about the project</h2>
           <p className="mt-2 text-base text-gray-600">
             Tell us what you&apos;d like to get done. We&apos;ll help organize it for contractor review.
@@ -1171,7 +1184,7 @@ export default function PublicIntakeWizard() {
                 data-testid="public-intake-improve-description-button"
                 onClick={handleImproveDescription}
                 disabled={saving || !String(form.accomplishment_text || "").trim() || descriptionRefinement.status === "loading"}
-                className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {descriptionRefinement.status === "loading" ? "Improving..." : "Improve my description"}
               </button>
@@ -1197,7 +1210,7 @@ export default function PublicIntakeWizard() {
                     type="button"
                     data-testid="public-intake-description-use-version"
                     onClick={acceptDescriptionSuggestion}
-                    className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                    className={intakePrimaryButtonClass}
                   >
                     Use this version
                   </button>
@@ -1254,7 +1267,7 @@ export default function PublicIntakeWizard() {
               data-testid="public-intake-generate-structure"
               onClick={handleGenerateStructure}
               disabled={saving || !canGenerateStructure}
-              className="rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:opacity-60"
+              className={intakePrimaryButtonClass}
             >
               {saving ? "Generating..." : "Build Project Summary"}
             </button>
@@ -1274,7 +1287,7 @@ export default function PublicIntakeWizard() {
       return (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.28fr)_minmax(300px,0.72fr)]">
           <div className="space-y-5">
-            <div className="rounded-3xl border border-white/70 bg-white p-7 shadow-2xl shadow-black/10" data-testid="public-intake-clarification-step">
+            <div className={intakeLightCardClass} data-testid="public-intake-clarification-step">
               <div className="max-w-2xl">
                 <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Refine Your Project</h2>
                 <p className="mt-2 text-base text-gray-600">
@@ -1295,7 +1308,7 @@ export default function PublicIntakeWizard() {
                     </div>
                     <div className="text-xs text-slate-500">Even one clear photo can be useful.</div>
                   </div>
-                  <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700">
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600">
                     {clarificationUploading ? "Uploading..." : "Upload photo(s)"}
                     <input
                       type="file"
@@ -1411,7 +1424,7 @@ export default function PublicIntakeWizard() {
                                   .replace(/^-+|-+$/g, "")}`}
                                 className={`rounded-full border px-3 py-2 text-sm font-semibold ${
                                   String(activeClarificationAnswer) === String(opt)
-                                    ? "border-indigo-500 bg-indigo-600 text-white"
+                                    ? "border-blue-700 bg-blue-700 text-white"
                                     : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                                 }`}
                               >
@@ -1469,7 +1482,7 @@ export default function PublicIntakeWizard() {
                           type="button"
                           onClick={() => handleClarificationAdvance()}
                           data-testid="public-intake-clarification-next"
-                          className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
+                          className={intakePrimaryButtonClass}
                         >
                           {isLastQuestion ? "Continue to Project Details" : "Next"}
                         </button>
@@ -1483,7 +1496,7 @@ export default function PublicIntakeWizard() {
 
           <aside className="self-start lg:sticky lg:top-6">
             <div
-              className="rounded-3xl border border-white/70 bg-white p-5 shadow-xl shadow-black/10"
+              className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-xl shadow-slate-950/15 ring-1 ring-white/80"
               data-testid="public-intake-project-summary"
             >
               <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
@@ -1529,7 +1542,7 @@ export default function PublicIntakeWizard() {
                   type="button"
                   onClick={() => handleClarificationAdvance()}
                   data-testid="public-intake-clarification-next"
-                  className="mt-5 w-full rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
+                  className={`mt-5 w-full ${intakePrimaryButtonClass}`}
                 >
                   Continue to Project Details
                 </button>
@@ -1597,7 +1610,7 @@ export default function PublicIntakeWizard() {
         },
       ];
       return (
-        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-structured-output-step">
+        <div className={intakeLightCardClass} data-testid="public-intake-structured-output-step">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
               Project Summary
@@ -1635,7 +1648,7 @@ export default function PublicIntakeWizard() {
     }
     if (currentStep === 2) {
       return (
-        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-project-details-step">
+        <div className={intakeLightCardClass} data-testid="public-intake-project-details-step">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
               Refine the plan
@@ -2226,7 +2239,7 @@ export default function PublicIntakeWizard() {
 
     if (currentStep === 4) {
       return (
-        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-contact-step">
+        <div className={intakeLightCardClass} data-testid="public-intake-contact-step">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
               Stay in touch
@@ -2306,7 +2319,7 @@ export default function PublicIntakeWizard() {
 
     if (currentStep === 6) {
       return (
-        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-branching-section">
+        <div className={intakeLightCardClass} data-testid="public-intake-branching-section">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
               Choose your path
@@ -2421,7 +2434,7 @@ export default function PublicIntakeWizard() {
 
     if (currentStep === 7) {
       return (
-        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-review-step">
+        <div className={intakeLightCardClass} data-testid="public-intake-review-step">
           <div className="max-w-3xl">
             <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
               Final review
@@ -2565,7 +2578,7 @@ export default function PublicIntakeWizard() {
     return (
       <div className="w-full">
         <div
-          className="rounded-2xl border border-white/70 bg-white p-8 shadow-2xl shadow-black/10"
+          className={intakeLightCardClass}
           data-testid="public-intake-submit-confirmation"
         >
           <div className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
@@ -2601,7 +2614,7 @@ export default function PublicIntakeWizard() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <a href="/" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
+            <a href="/" className={intakePrimaryButtonClass}>
               Return Home
             </a>
             <button
@@ -2626,28 +2639,28 @@ export default function PublicIntakeWizard() {
   return (
     <div className="w-full">
       <div className="space-y-6">
-        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10">
+        <div className="rounded-[1.6rem] border border-white/12 bg-slate-950/45 p-5 shadow-2xl shadow-slate-950/25 backdrop-blur sm:p-6">
           <div className="max-w-3xl">
-            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-              Project intake
+            <div className="inline-flex rounded-full border border-amber-300/40 bg-amber-300/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
+              Project Intake
             </div>
-            <div className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Project Intake</div>
-            <div className="mt-2 text-sm font-medium text-indigo-700">{confidenceMessage}</div>
-            <div className="mt-2 text-sm text-slate-600">
+            <div className="mt-3 text-2xl font-semibold tracking-tight text-white">Start a Project</div>
+            <div className="mt-2 text-sm font-medium text-sky-100">{confidenceMessage}</div>
+            <div className="mt-2 text-sm text-sky-100/75">
               {contractorName} has asked you to complete a project intake so they can prepare your agreement.
             </div>
             {statusText ? (
-              <div className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              <div className="mt-3 inline-flex rounded-full border border-white/12 bg-slate-950/35 px-3 py-1 text-xs font-semibold text-sky-100">
                 Status: {statusText}
               </div>
             ) : null}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/70 bg-white p-4 shadow-2xl shadow-black/10">
-          <div className="flex flex-wrap gap-2">
+        <div data-testid="public-intake-step-rail" className={intakePanelClass}>
+          <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
             {stepLabels.map((label, index) => (
-              <button key={label} type="button" onClick={() => setCurrentStep(index)}>
+              <button key={label} type="button" onClick={() => setCurrentStep(index)} className="shrink-0">
                 <StepPill active={currentStep === index} complete={currentStep > index} label={label} index={index} />
               </button>
             ))}
@@ -2656,13 +2669,13 @@ export default function PublicIntakeWizard() {
 
         {renderStep()}
 
-        <div className="flex flex-col gap-3 rounded-2xl border border-white/70 bg-white p-4 shadow-xl shadow-black/10 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-3xl border border-white/12 bg-slate-950/45 p-4 shadow-xl shadow-slate-950/25 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={handleBack}
             disabled={currentStep === 0 || saving || branchSubmitting}
             data-testid={currentStep === 3 ? "public-intake-structured-back" : undefined}
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-sky-50 transition hover:border-sky-200/35 hover:bg-sky-400/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Back
           </button>
@@ -2674,32 +2687,32 @@ export default function PublicIntakeWizard() {
                 onClick={() => setCurrentStep(6)}
                 disabled={saving || branchSubmitting}
                 data-testid="public-intake-discovery-continue"
-                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                className={intakePrimaryButtonClass}
               >
                 Continue to Choose Path
               </button>
             ) : currentStep === 6 ? (
               <>
-                <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save and Review"}</button>
+                <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className={intakePrimaryButtonClass}>{branchSubmitting ? "Saving..." : "Save and Review"}</button>
                 <button
                   type="button"
                   onClick={handleSkipContractorBranch}
                   disabled={branchSubmitting || saving}
                   data-testid="public-intake-branch-skip"
-                  className="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  className={intakeSecondaryButtonClass}
                 >
                   Skip for now
                 </button>
               </>
             ) : currentStep === 7 ? (
-              <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Project Request"}</button>
+              <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className={intakePrimaryButtonClass}>{saving ? "Submitting..." : "Submit Project Request"}</button>
             ) : currentStep === 3 ? (
               <button
                 type="button"
                 onClick={handleNext}
                 disabled={saving || branchSubmitting}
                 data-testid="public-intake-structured-continue"
-                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                className={intakePrimaryButtonClass}
               >
                 Continue to Contact Info
               </button>
@@ -2709,7 +2722,7 @@ export default function PublicIntakeWizard() {
                 onClick={handleNext}
                 disabled={saving || branchSubmitting}
                 data-testid="public-intake-project-details-continue"
-                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                className={intakePrimaryButtonClass}
               >
                 Continue to Project Summary
               </button>
@@ -2719,22 +2732,22 @@ export default function PublicIntakeWizard() {
                 onClick={handleNext}
                 disabled={saving || branchSubmitting}
                 data-testid="public-intake-contact-continue"
-                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                className={intakePrimaryButtonClass}
               >
                 Continue to Local Contractors
               </button>
             ) : currentStep === 1 ? (
-              <div className="text-xs text-gray-500">Use the question card above to continue your clarification.</div>
+              <div className="text-xs text-sky-100/70">Use the question card above to continue your clarification.</div>
             ) : currentStep === 0 ? (
-              <div className="text-xs text-gray-500">Use the button above to begin shaping your plan.</div>
+              <div className="text-xs text-sky-100/70">Use the button above to begin shaping your plan.</div>
             ) : (
-              <button type="button" onClick={handleNext} disabled={saving || branchSubmitting || (currentStep === 0 && !canGenerateStructure)} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">Continue</button>
+              <button type="button" onClick={handleNext} disabled={saving || branchSubmitting || (currentStep === 0 && !canGenerateStructure)} className={intakePrimaryButtonClass}>Continue</button>
             )}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-xl shadow-black/10">
-          <div className="text-sm text-slate-600">
+        <div className="rounded-3xl border border-white/12 bg-slate-950/35 p-5 shadow-xl shadow-slate-950/20 backdrop-blur">
+          <div className="text-sm text-sky-100/75">
             Once you submit this project request, your contractor can review it and prepare the agreement.
           </div>
         </div>

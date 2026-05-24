@@ -118,22 +118,27 @@ export default function StartProjectIntake() {
   }, [navigate, searchParams]);
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
-      <div className="mx-auto max-w-2xl rounded-xl border bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-gray-900">Starting your project request</h1>
-        {starting ? (
-          <p className="mt-2 text-sm text-gray-600">
-            Opening your single project request form...
-          </p>
-        ) : startError ? (
-          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {startError}
+    <div className="min-h-screen bg-[linear-gradient(135deg,#020617_0%,#082f63_52%,#0f172a_100%)] px-4 py-10 text-white">
+      <div className="mx-auto max-w-2xl rounded-3xl border border-white/15 bg-white/10 p-2 shadow-2xl shadow-slate-950/35 backdrop-blur">
+        <div className="rounded-[1.35rem] border border-slate-200/80 bg-white p-6 text-slate-900 shadow-xl">
+          <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+            MyHomeBro Records
           </div>
-        ) : (
-          <p className="mt-2 text-sm text-gray-600">
-            Redirecting to your project request...
-          </p>
-        )}
+          <h1 className="mt-3 text-2xl font-bold text-gray-900">Starting your project request</h1>
+          {starting ? (
+            <p className="mt-2 text-sm text-gray-600">
+              Opening your single project request form...
+            </p>
+          ) : startError ? (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {startError}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-gray-600">
+              Redirecting to your project request...
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

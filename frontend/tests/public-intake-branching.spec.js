@@ -284,16 +284,20 @@ test("landing page drives into intake and public intake shows branching choices 
 
   await page.getByTestId("landing-start-project-intake-button").click();
   await expect(page).toHaveURL(/\/start-project\/landing-token$/);
+  await expect(page.getByTestId("public-intake-shell")).toBeVisible();
   await expect(page.getByText("Project Intake", { exact: true })).toBeVisible();
   await expect(page.getByText("Status: draft")).toBeVisible();
+  await expect(page.getByTestId("public-intake-step-rail")).toBeVisible();
+  await expect(page.getByTestId("public-intake-step-rail")).toHaveClass(/bg-slate-950\/35/);
 
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
   await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need a bid-ready commercial scope.");
   await expect(page.getByTestId("public-intake-generate-structure")).toBeEnabled({ timeout: 15000 });
+  await expect(page.getByTestId("public-intake-generate-structure")).toHaveClass(/bg-gradient-to-r/);
   await page.getByTestId("public-intake-generate-structure").click();
   await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
   await expect(page.getByTestId("public-intake-project-summary-title")).toContainText("Your Project So Far");
-  await expect(page.getByText("Refine Your Project", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Refine Your Project" })).toBeVisible();
   await expect(page.getByTestId("public-intake-clarification-photo-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-measurement-provided")).toHaveCount(0);
   await expect(page.getByText("No clarification questions are needed for this project.")).toHaveCount(0);
