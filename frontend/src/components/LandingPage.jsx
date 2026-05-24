@@ -6,15 +6,15 @@ import {
   Building2,
   CheckCircle2,
   ChevronDown,
-  CircleDollarSign,
   ClipboardList,
-  FileText,
+  Globe2,
   Home,
   Lock,
   MessageSquareText,
   Play,
   ShieldCheck,
   Sparkles,
+  Star,
   UsersRound,
   Wrench,
   X,
@@ -345,8 +345,9 @@ function HowItWorks() {
 
 function VideoPreview() {
   return (
-    <section className="mx-auto grid max-w-7xl gap-8 px-4 pb-16 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:px-8">
-      <div>
+    <section className="mx-auto px-4 pb-16 sm:px-6 lg:px-8">
+      <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
+      <div className="p-3 sm:p-4">
         <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Platform Preview</div>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">See MyHomeBro in Action</h2>
         <p className="mt-4 max-w-xl text-base leading-7 text-sky-50/72">
@@ -362,14 +363,22 @@ function VideoPreview() {
         </div>
       </div>
 
-      <div data-testid="landing-video-preview" className="rounded-[2rem] border border-white/12 bg-slate-950/34 p-3 shadow-2xl shadow-slate-950/24">
-        <div className="relative min-h-[22rem] overflow-hidden rounded-[1.55rem] bg-[linear-gradient(135deg,rgba(3,7,18,0.40),rgba(15,23,42,0.88)),linear-gradient(135deg,#1e3a8a_0%,#0f172a_52%,#92400e_100%)]">
-          <div className="absolute inset-6 rounded-[1.25rem] border border-white/10 bg-white/[0.04]" />
+      <div data-testid="landing-video-preview" className="relative">
+        <div className="grid gap-3 md:grid-cols-[1fr_13rem]">
+          <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-[linear-gradient(135deg,rgba(3,7,18,0.18),rgba(15,23,42,0.76)),radial-gradient(circle_at_22%_20%,rgba(251,191,36,0.38),transparent_24%),radial-gradient(circle_at_78%_20%,rgba(37,99,235,0.35),transparent_25%),linear-gradient(150deg,#2f1f12_0%,#0f172a_42%,#082f63_100%)] shadow-xl shadow-slate-950/22">
+          <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/18 blur-2xl" />
+          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-slate-950/88 to-transparent" />
+          <div className="absolute left-8 right-8 top-10 grid grid-cols-5 gap-3 opacity-65">
+            {Array.from({ length: 10 }).map((_, index) => (
+              <div key={index} className="h-20 rounded-t-xl border border-amber-100/10 bg-amber-100/8" />
+            ))}
+          </div>
+          <div className="absolute bottom-14 left-10 right-10 h-20 rounded-[50%] border border-amber-200/20 bg-amber-300/10" />
           <div className="absolute inset-0 flex items-center justify-center">
             <button
               type="button"
               aria-label="Play MyHomeBro preview"
-              className="flex h-20 w-20 items-center justify-center rounded-full border border-white/20 bg-white/12 text-white shadow-2xl shadow-slate-950/40 backdrop-blur transition hover:bg-white/18 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+              className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-blue-700 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
               <Play className="ml-1 h-9 w-9" aria-hidden="true" />
             </button>
@@ -390,13 +399,32 @@ function VideoPreview() {
             </div>
           </div>
         </div>
+          <div className="hidden overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950/65 p-3 md:block">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-white">
+                <img src={logo} alt="" className="h-5 w-5 rounded object-cover" />
+                MyHome<span className="text-amber-300">Bro</span>
+              </div>
+              <div className="h-2 w-2 rounded-full bg-emerald-300" />
+            </div>
+            <div className="space-y-2 text-xs font-semibold text-sky-50/72">
+              {["Overview", "Tasks", "Messages", "Documents", "Schedule", "Budgets"].map((item, index) => (
+                <div key={item} className={`rounded-lg px-3 py-2 ${index === 0 ? "bg-blue-600/55 text-white" : "bg-white/[0.04]"}`}>
+                  {item}
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 min-h-28 rounded-xl border border-white/10 bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(37,99,235,0.20)),linear-gradient(150deg,#0f172a,#78350f)]" />
+          </div>
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {featureChips.map((chip) => (
-            <span key={chip} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-sky-50/76">
+            <span key={chip} className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5 text-xs font-semibold text-sky-50/78">
               {chip}
             </span>
           ))}
         </div>
+      </div>
       </div>
     </section>
   );
@@ -451,15 +479,15 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
         isHomeowner ? "border-blue-300/24" : "border-amber-300/24"
       }`}
     >
-      <div className="grid h-full md:grid-cols-[1.05fr_0.95fr]">
-        <div className="p-6 sm:p-8">
+      <div className="grid h-full md:grid-cols-[0.98fr_0.88fr]">
+        <div className="p-5 sm:p-7">
           <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>
             {eyebrow}
           </div>
           <h2 className="mt-4 whitespace-pre-line text-3xl font-semibold leading-tight text-white">
             {title.replace(". ", ".\n")}
           </h2>
-          <div className="mt-6 space-y-3">
+          <div className="mt-5 space-y-2.5">
             {bullets.map((bullet) => (
               <div key={bullet} className="flex items-start gap-3 text-sm leading-6 text-sky-50/76">
                 <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${isHomeowner ? "text-sky-300" : "text-amber-300"}`} aria-hidden="true" />
@@ -467,7 +495,7 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
               </div>
             ))}
           </div>
-          <div className="mt-7 flex flex-col items-start gap-3">
+          <div className="mt-6 flex flex-col items-start gap-3">
             <button
               type="button"
               onClick={onPrimary}
@@ -485,29 +513,39 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
             </button>
           </div>
         </div>
-        <div className={`min-h-72 border-t border-white/10 p-6 md:border-l md:border-t-0 ${isHomeowner ? "bg-blue-500/5" : "bg-amber-300/5"}`}>
+        <div className={`min-h-64 border-t border-white/10 p-4 md:border-l md:border-t-0 ${isHomeowner ? "bg-blue-500/5" : "bg-amber-300/5"}`}>
           <div
-            className={`flex h-full min-h-64 items-center justify-center overflow-hidden rounded-[1.5rem] border p-6 ${
+            className={`relative flex h-full min-h-56 items-center justify-center overflow-hidden rounded-[1.5rem] border p-5 ${
               isHomeowner
-                ? "border-blue-300/18 bg-[linear-gradient(135deg,rgba(37,99,235,0.16),rgba(15,23,42,0.70)),linear-gradient(160deg,#0f172a_0%,#1e3a8a_55%,#78350f_100%)]"
-                : "border-amber-300/18 bg-[linear-gradient(135deg,rgba(245,158,11,0.13),rgba(15,23,42,0.76)),linear-gradient(160deg,#111827_0%,#1e3a8a_48%,#451a03_100%)]"
+                ? "border-blue-300/20 bg-[radial-gradient(circle_at_82%_14%,rgba(96,165,250,0.33),transparent_26%),radial-gradient(circle_at_22%_20%,rgba(251,191,36,0.22),transparent_24%),linear-gradient(160deg,#0f172a_0%,#1e3a8a_54%,#78350f_100%)]"
+                : "border-amber-300/24 bg-[radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.28),transparent_24%),radial-gradient(circle_at_18%_18%,rgba(37,99,235,0.25),transparent_22%),linear-gradient(160deg,#111827_0%,#1e3a8a_48%,#451a03_100%)]"
             }`}
           >
+            <div className={`absolute inset-y-0 w-36 rounded-full blur-2xl ${isHomeowner ? "-right-10 bg-blue-400/18" : "right-0 bg-amber-300/16"}`} />
+            <div className={`absolute bottom-0 h-44 w-44 rounded-full border ${isHomeowner ? "-right-16 border-blue-200/28" : "-right-12 border-amber-200/28"}`} />
             {isHomeowner ? (
-              <div className="relative h-44 w-56">
-                <div className="absolute bottom-0 left-4 right-4 h-24 rounded-t-3xl border border-blue-200/25 bg-slate-950/50" />
-                <div className="absolute bottom-20 left-8 h-20 w-40 rotate-[-4deg] rounded-t-3xl border border-amber-200/28 bg-amber-300/12" />
-                <div className="absolute bottom-6 left-20 h-16 w-16 rounded-t-2xl bg-blue-500/25" />
-                <Home className="absolute bottom-9 left-[5.75rem] h-10 w-10 text-sky-100" aria-hidden="true" />
+              <div data-testid="landing-homeowner-image-panel" className="relative h-48 w-full max-w-sm">
+                <div className="absolute bottom-0 left-1/2 h-10 w-[88%] -translate-x-1/2 rounded-[50%] bg-slate-950/45 blur-sm" />
+                <div className="absolute bottom-8 left-8 right-8 h-24 rounded-t-3xl border border-blue-100/25 bg-slate-950/56 shadow-2xl shadow-slate-950/30" />
+                <div className="absolute bottom-[7.2rem] left-12 right-12 h-20 rotate-[-3deg] rounded-t-3xl border border-amber-200/28 bg-amber-300/14" />
+                <div className="absolute bottom-8 left-16 h-14 w-12 rounded-t-xl bg-blue-500/28" />
+                <div className="absolute bottom-12 right-16 h-10 w-16 rounded-lg bg-amber-200/20" />
+                <div className="absolute bottom-0 left-2 h-16 w-12 rounded-t-full bg-emerald-300/18 blur-[1px]" />
+                <div className="absolute bottom-0 right-4 h-20 w-14 rounded-t-full bg-emerald-300/14 blur-[1px]" />
+                <Home className="absolute bottom-[4.35rem] left-1/2 h-11 w-11 -translate-x-1/2 text-sky-50" aria-hidden="true" />
               </div>
             ) : (
-              <div className="relative flex h-48 w-48 items-center justify-center">
-                <div className="absolute h-44 w-32 rounded-[2.5rem] border border-amber-200/22 bg-slate-950/55" />
-                <div className="absolute top-5 h-16 w-16 rounded-full border border-amber-200/25 bg-amber-300/12" />
-                <div className="absolute bottom-10 rounded-2xl border border-amber-200/22 bg-blue-950/70 px-5 py-4 text-center shadow-xl shadow-slate-950/40">
+              <div data-testid="landing-contractor-image-panel" className="relative flex h-56 w-full max-w-sm items-center justify-center">
+                <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-slate-950/65 to-transparent" />
+                <div className="absolute bottom-1 h-44 w-32 rounded-t-[3rem] border border-amber-200/20 bg-slate-950/62 shadow-2xl shadow-slate-950/40" />
+                <div className="absolute top-5 h-16 w-16 rounded-full border border-amber-200/25 bg-amber-300/14" />
+                <div className="absolute top-10 h-8 w-24 rounded-t-full border border-amber-200/20 bg-slate-950/70" />
+                <div className="absolute bottom-8 rounded-2xl border border-amber-200/24 bg-blue-950/78 px-5 py-4 text-center shadow-xl shadow-slate-950/40">
                   <img src={logo} alt="" className="mx-auto h-10 w-10 rounded-lg object-cover" />
                   <div className="mt-2 text-sm font-bold text-white">MyHome<span className="text-amber-300">Bro</span></div>
                 </div>
+                <div className="absolute bottom-5 left-12 h-16 w-5 rotate-12 rounded-full bg-amber-300/18" />
+                <div className="absolute bottom-5 right-12 h-16 w-5 -rotate-12 rounded-full bg-amber-300/18" />
               </div>
             )}
           </div>
@@ -520,8 +558,9 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
 function TrustBand() {
   return (
     <section id="about" className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-      <div className="grid gap-6 rounded-3xl border border-white/12 bg-white/[0.052] p-6 shadow-2xl shadow-slate-950/18 backdrop-blur md:grid-cols-4">
-        <div>
+      <div className="rounded-3xl border border-white/12 bg-white/[0.052] shadow-2xl shadow-slate-950/18 backdrop-blur">
+        <div className="grid gap-0 divide-y divide-white/10 p-6 md:grid-cols-4 md:divide-x md:divide-y-0">
+        <div className="pb-5 md:pb-0 md:pr-6">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-300/28 bg-amber-300/8 text-amber-200">
               <ShieldCheck className="h-6 w-6" aria-hidden="true" />
@@ -532,10 +571,11 @@ function TrustBand() {
             </div>
           </div>
         </div>
-        <TrustNote icon={UsersRound} title="Homeowners and growing" text="Built for people who want clearer project records and contractor communication." />
-        <TrustNote icon={CircleDollarSign} title="Average homeowner rating" text="Trust signals and reviews will appear as verified customer data grows." />
-        <TrustNote icon={FileText} title="Projects started across the U.S. and Canada" text="Supporting residential and commercial planning without overpromising fake metrics." />
-        <div id="resources" className="md:col-span-4 border-t border-white/10 pt-4 text-sm font-semibold">
+        <TrustNote icon={UsersRound} title="Homeowners and growing" text="A platform built for clearer projects and better contractor communication." />
+        <TrustNote icon={Star} title="Average homeowner rating" text="Verified customer feedback will appear here as the network grows." />
+        <TrustNote icon={Globe2} title="Projects across the U.S. and Canada" text="Supporting residential and commercial planning in more communities." />
+        </div>
+        <div id="resources" className="border-t border-white/10 px-6 py-4 text-sm font-semibold">
           <a href="/legal/terms-of-service/" className="mr-4 text-sky-300 hover:text-sky-200">Terms of Service</a>
           <a href="/legal/privacy-policy/" className="text-sky-300 hover:text-sky-200">Privacy Policy</a>
         </div>
@@ -546,7 +586,7 @@ function TrustBand() {
 
 function TrustNote({ icon: Icon, title, text }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-slate-950/22 p-4">
+    <div className="px-0 py-5 md:px-6 md:py-0">
       <Icon className="h-6 w-6 text-blue-300" aria-hidden="true" />
       <div className="mt-3 font-semibold text-white">{title}</div>
       <p className="mt-2 text-sm leading-6 text-sky-50/66">{text}</p>
