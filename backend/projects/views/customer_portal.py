@@ -30,7 +30,7 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
-from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile
+from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotificationEvent
 from projects.models_project_intake import ProjectIntake
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
@@ -45,6 +45,7 @@ from projects.services.bid_workflow import (
     promote_public_lead_to_agreement,
 )
 from projects.services.bid_notifications import create_bid_outcome_notifications
+from projects.services.smart_notifications import create_smart_notification
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -942,7 +943,26 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "payments": payment_rows,
         "documents": document_rows,
         "property_profile": property_profile,
+        "notifications": _smart_notification_rows(email),
     }
+
+
+def _smart_notification_rows(email: str) -> list[dict]:
+    from projects.models_customer_portal import SmartNotification
+
+    return [
+        {
+            "id": row.id,
+            "event_type": _safe_text(row.event_type),
+            "channel": _safe_text(row.channel),
+            "status": _safe_text(row.status),
+            "title": _safe_text(row.title),
+            "message": _safe_text(row.message),
+            "action_url": _safe_text(row.action_url),
+            "created_at": _safe_dt(row.created_at),
+        }
+        for row in SmartNotification.objects.filter(recipient_email__iexact=email).order_by("-created_at", "-id")[:20]
+    ]
 
 
 def _project_customer_email(project, agreement=None) -> str:
@@ -1619,7 +1639,7 @@ class CustomerPortalRequestCreateView(APIView):
             "state": data.get("state") or profile.state,
             "postal_code": data.get("postal_code") or profile.postal_code,
         }
-        CustomerRequest.objects.create(
+        customer_request = CustomerRequest.objects.create(
             homeowner=homeowner,
             property_profile=profile,
             customer_email=email.lower().strip(),
@@ -1630,6 +1650,18 @@ class CustomerPortalRequestCreateView(APIView):
             urgency=data.get("urgency", ""),
             preferred_timeline=data.get("preferred_timeline", ""),
             **address_defaults,
+        )
+        create_smart_notification(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=email,
+            homeowner=homeowner,
+            customer_request=customer_request,
+            property_profile=profile,
+            context={
+                "request_title": customer_request.title,
+                "request_type": customer_request.get_request_type_display(),
+                "status": customer_request.status,
+            },
         )
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
 
@@ -1667,7 +1699,62 @@ class CustomerPortalPropertyProfileView(APIView):
         for field, value in serializer.validated_data.items():
             setattr(profile, field, value if value is not None else None)
         profile.save()
+        create_smart_notification(
+            event_type=SmartNotificationEvent.PROPERTY_PROFILE_UPDATED,
+            recipient_email=email,
+            homeowner=profile.homeowner,
+            property_profile=profile,
+            context={
+                "property_name": profile.display_name or "Property profile",
+                "property_address": ", ".join(
+                    part
+                    for part in [profile.address_line1, profile.city, profile.state, profile.postal_code]
+                    if _safe_text(part)
+                ),
+            },
+        )
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalPropertyUploadView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, token: str, upload_kind: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        if upload_kind not in {"documents", "photos"}:
+            return Response({"detail": "Unsupported upload type."}, status=status.HTTP_404_NOT_FOUND)
+
+        uploaded_file = request.FILES.get("file")
+        if uploaded_file is None:
+            files = list(request.FILES.values())
+            uploaded_file = files[0] if files else None
+        if uploaded_file is None:
+            return Response({"detail": "Please attach a file."}, status=status.HTTP_400_BAD_REQUEST)
+
+        profile = _get_or_create_property_profile(email)
+        title = _safe_text(request.data.get("title")) or _safe_text(getattr(uploaded_file, "name", "")) or "Property file"
+        if upload_kind == "photos":
+            PropertyPhoto.objects.create(
+                property_profile=profile,
+                title=title,
+                photo=uploaded_file,
+            )
+        else:
+            PropertyDocument.objects.create(
+                property_profile=profile,
+                title=title,
+                document_type=_safe_text(request.data.get("document_type")) or "Property Document",
+                file=uploaded_file,
+            )
+
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
 
 
 class CustomerProjectDashboardView(APIView):

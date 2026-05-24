@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 
-export default function CustomerPropertyProfile({ profile = {}, onSave, saving = false }) {
+export default function CustomerPropertyProfile({ profile = {}, onSave, onUpload, saving = false, uploading = false }) {
   const [form, setForm] = useState(profile || {});
+  const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
 
   useEffect(() => {
     setForm(profile || {});
@@ -127,6 +128,67 @@ export default function CustomerPropertyProfile({ profile = {}, onSave, saving =
 
       <aside className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <h3 className="text-lg font-semibold text-white">Property files</h3>
+        <form
+          data-testid="customer-property-upload-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onUpload?.(uploadForm);
+            setUploadForm((prev) => ({ ...prev, title: "", documentType: "", file: null }));
+            event.currentTarget.reset();
+          }}
+          className="mt-4 rounded-xl border border-slate-700 bg-slate-900/70 p-3"
+        >
+          <div className="grid gap-3">
+            <label className="block text-sm font-medium text-slate-200">
+              File type
+              <select
+                value={uploadForm.kind}
+                onChange={(event) => setUploadForm((prev) => ({ ...prev, kind: event.target.value }))}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              >
+                <option value="document">Document</option>
+                <option value="photo">Photo</option>
+              </select>
+            </label>
+            <label className="block text-sm font-medium text-slate-200">
+              Title
+              <input
+                value={uploadForm.title}
+                onChange={(event) => setUploadForm((prev) => ({ ...prev, title: event.target.value }))}
+                placeholder="Warranty, inspection, roof photo..."
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              />
+            </label>
+            {uploadForm.kind === "document" ? (
+              <label className="block text-sm font-medium text-slate-200">
+                Document type
+                <input
+                  value={uploadForm.documentType}
+                  onChange={(event) => setUploadForm((prev) => ({ ...prev, documentType: event.target.value }))}
+                  placeholder="Warranty, permit, receipt"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+            ) : null}
+            <label className="block text-sm font-medium text-slate-200">
+              Upload
+              <input
+                type="file"
+                data-testid="customer-property-upload-file"
+                onChange={(event) => setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
+                accept={uploadForm.kind === "photo" ? "image/*" : undefined}
+                className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-400 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-950 hover:file:bg-sky-300"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={uploading || !uploadForm.file}
+              className="rounded-xl border border-sky-300/40 bg-sky-400/15 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {uploading ? "Uploading..." : "Upload property file"}
+            </button>
+          </div>
+        </form>
         <div className="mt-4 space-y-3">
           {(profile?.photos || []).length || (profile?.documents || []).length ? (
             [...(profile?.photos || []), ...(profile?.documents || [])].map((item) => (

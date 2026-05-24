@@ -67,8 +67,14 @@ from projects.models import (
     MilestoneBenchmarkAggregate,
     ContractorBenchmarkAggregate,
     Notification,
+    NotificationLog,
+    NotificationRule,
     Project,
     PropertyProfile,
+    PropertyDocument,
+    PropertyPhoto,
+    SmartNotification,
+    SmartNotificationEvent,
     ProjectBenchmarkAggregate,
     RegionalBenchmarkAggregate,
     ProjectEmailReportLog,
@@ -17905,6 +17911,24 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(
             any(row["source_kind"] == "customer_request" and row["project_title"] == "Leaking sink" for row in response.data["requests"])
         )
+        notification = SmartNotification.objects.get(customer_request=saved)
+        self.assertEqual(notification.event_type, SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED)
+        self.assertEqual(notification.recipient_email, self.customer_email)
+        self.assertEqual(notification.status, SmartNotification.STATUS_UNREAD)
+        self.assertTrue(
+            NotificationLog.objects.filter(
+                smart_notification=notification,
+                event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+                status=NotificationLog.STATUS_CREATED,
+            ).exists()
+        )
+        self.assertTrue(
+            NotificationRule.objects.filter(
+                event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+                channel=NotificationRule.CHANNEL_IN_APP,
+                is_active=True,
+            ).exists()
+        )
 
     def test_customer_portal_property_profile_is_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
@@ -17925,10 +17949,75 @@ class CustomerPortalAccessTests(TestCase):
         profile = PropertyProfile.objects.get(customer_email=self.customer_email)
         self.assertEqual(profile.display_name, "Main House")
         self.assertEqual(profile.year_built, 1988)
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                property_profile=profile,
+                event_type=SmartNotificationEvent.PROPERTY_PROFILE_UPDATED,
+                recipient_email=self.customer_email,
+            ).exists()
+        )
+        self.assertTrue(
+            NotificationLog.objects.filter(
+                event_type=SmartNotificationEvent.PROPERTY_PROFILE_UPDATED,
+                recipient_email=self.customer_email,
+                status=NotificationLog.STATUS_CREATED,
+            ).exists()
+        )
 
         other_response = self.client.get(f"/api/projects/customer-portal/{other_token}/")
         self.assertEqual(other_response.status_code, 200)
         self.assertNotEqual(other_response.data["property_profile"]["display_name"], "Main House")
+
+    def test_customer_portal_property_uploads_are_token_scoped(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)
+
+        with self.settings(MEDIA_ROOT=tempfile.mkdtemp()):
+            document_response = self.client.post(
+                f"/api/projects/customer-portal/{token}/property/documents/",
+                {
+                    "title": "Water heater warranty",
+                    "document_type": "Warranty",
+                    "file": SimpleUploadedFile("warranty.txt", b"warranty details", content_type="text/plain"),
+                },
+                format="multipart",
+            )
+            photo_response = self.client.post(
+                f"/api/projects/customer-portal/{token}/property/photos/",
+                {
+                    "title": "Roof condition",
+                    "file": SimpleUploadedFile("roof.jpg", b"fake-image", content_type="image/jpeg"),
+                },
+                format="multipart",
+            )
+
+        self.assertEqual(document_response.status_code, 201, document_response.data)
+        self.assertEqual(photo_response.status_code, 201, photo_response.data)
+        profile = PropertyProfile.objects.get(customer_email=self.customer_email)
+        document = PropertyDocument.objects.get(title="Water heater warranty")
+        photo = PropertyPhoto.objects.get(title="Roof condition")
+        self.assertEqual(document.property_profile, profile)
+        self.assertEqual(photo.property_profile, profile)
+        self.assertEqual(document.document_type, "Warranty")
+        self.assertEqual(document_response.data["summary"]["documents"], 2)
+        self.assertTrue(any(row["title"] == "Water heater warranty" for row in document_response.data["documents"]))
+        self.assertTrue(any(row["title"] == "Roof condition" for row in photo_response.data["documents"]))
+
+        other_response = self.client.get(f"/api/projects/customer-portal/{other_token}/")
+        self.assertEqual(other_response.status_code, 200)
+        other_titles = [row["title"] for row in other_response.data["documents"]]
+        self.assertNotIn("Water heater warranty", other_titles)
+        self.assertNotIn("Roof condition", other_titles)
+
+    def test_customer_portal_property_upload_rejects_invalid_token(self):
+        response = self.client.post(
+            "/api/projects/customer-portal/not-a-valid-token/property/documents/",
+            {"file": SimpleUploadedFile("warranty.txt", b"warranty details", content_type="text/plain")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(PropertyDocument.objects.filter(title="warranty").exists())
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_comparison_accepts_bid_and_reuses_agreement(self):

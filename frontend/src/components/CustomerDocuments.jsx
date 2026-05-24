@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { ExternalLink, FileText } from "lucide-react";
 
-export default function CustomerDocuments({ documents = [], propertyProfile = {} }) {
+export default function CustomerDocuments({ documents = [], propertyProfile = {}, onUpload, uploading = false }) {
+  const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
   const propertyDocuments = [
     ...(propertyProfile?.documents || []),
     ...(propertyProfile?.photos || []).map((photo) => ({ ...photo, type_label: "Property Photo" })),
@@ -19,6 +20,63 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
           {allDocuments.length} files
         </span>
       </div>
+
+      <form
+        data-testid="customer-documents-upload-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onUpload?.(uploadForm);
+          setUploadForm((prev) => ({ ...prev, title: "", documentType: "", file: null }));
+          event.currentTarget.reset();
+        }}
+        className="mt-5 grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 lg:grid-cols-[160px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+      >
+        <label className="block text-sm font-medium text-slate-200">
+          Type
+          <select
+            value={uploadForm.kind}
+            onChange={(event) => setUploadForm((prev) => ({ ...prev, kind: event.target.value }))}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          >
+            <option value="document">Document</option>
+            <option value="photo">Photo</option>
+          </select>
+        </label>
+        <label className="block text-sm font-medium text-slate-200">
+          Title
+          <input
+            value={uploadForm.title}
+            onChange={(event) => setUploadForm((prev) => ({ ...prev, title: event.target.value }))}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-200">
+          Document type
+          <input
+            value={uploadForm.documentType}
+            onChange={(event) => setUploadForm((prev) => ({ ...prev, documentType: event.target.value }))}
+            disabled={uploadForm.kind === "photo"}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400 disabled:opacity-50"
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-200">
+          File
+          <input
+            type="file"
+            data-testid="customer-documents-upload-file"
+            onChange={(event) => setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
+            accept={uploadForm.kind === "photo" ? "image/*" : undefined}
+            className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-400 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-950 hover:file:bg-sky-300"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={uploading || !uploadForm.file}
+          className="self-end rounded-xl border border-sky-300/40 bg-sky-400/15 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {uploading ? "Uploading..." : "Upload"}
+        </button>
+      </form>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {allDocuments.length ? (

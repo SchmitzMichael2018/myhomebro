@@ -94,9 +94,17 @@ except Exception:  # pragma: no cover
     ProjectIntake = None  # type: ignore
 
 try:
-    from .models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile  # type: ignore
+    from .models_customer_portal import (  # type: ignore
+        CustomerRequest,
+        NotificationLog,
+        NotificationRule,
+        PropertyDocument,
+        PropertyPhoto,
+        PropertyProfile,
+        SmartNotification,
+    )
 except Exception:  # pragma: no cover
-    CustomerRequest = PropertyDocument = PropertyPhoto = PropertyProfile = None  # type: ignore
+    CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
 
 try:
     from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent  # type: ignore
@@ -453,6 +461,32 @@ if PropertyPhoto is not None:
     class PropertyPhotoAdmin(admin.ModelAdmin):
         list_display = ("title", "property_profile", "uploaded_at")
         search_fields = ("title", "property_profile__customer_email")
+
+
+if NotificationRule is not None:
+    @admin.register(NotificationRule)
+    class NotificationRuleAdmin(admin.ModelAdmin):
+        list_display = ("name", "event_type", "channel", "audience", "is_active", "updated_at")
+        search_fields = ("name", "event_type", "title_template", "message_template")
+        list_filter = ("event_type", "channel", "audience", "is_active")
+
+
+if SmartNotification is not None:
+    @admin.register(SmartNotification)
+    class SmartNotificationAdmin(admin.ModelAdmin):
+        list_display = ("title", "recipient_email", "event_type", "channel", "status", "created_at")
+        search_fields = ("title", "recipient_email", "message")
+        list_filter = ("event_type", "channel", "status")
+        readonly_fields = ("created_at", "read_at")
+
+
+if NotificationLog is not None:
+    @admin.register(NotificationLog)
+    class NotificationLogAdmin(admin.ModelAdmin):
+        list_display = ("event_type", "channel", "status", "recipient_email", "created_at")
+        search_fields = ("event_type", "recipient_email", "message")
+        list_filter = ("event_type", "channel", "status")
+        readonly_fields = ("created_at",)
 
 
 if Project is not None:

@@ -118,6 +118,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
+  const [uploadingPropertyFile, setUploadingPropertyFile] = useState(false);
   const [acceptingBidId, setAcceptingBidId] = useState("");
 
   const customerName = portal?.customer?.name || "Customer";
@@ -168,6 +169,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         <CustomerPropertyProfile
           profile={portal?.property_profile || {}}
           saving={savingProperty}
+          uploading={uploadingPropertyFile}
           onSave={async (payload) => {
             setSavingProperty(true);
             try {
@@ -180,12 +182,60 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               setSavingProperty(false);
             }
           }}
+          onUpload={async ({ file, title, documentType, kind }) => {
+            if (!file) return;
+            setUploadingPropertyFile(true);
+            try {
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("title", title || file.name || "Property file");
+              if (documentType) formData.append("document_type", documentType);
+              const uploadKind = kind === "photo" ? "photos" : "documents";
+              const { data } = await api.post(
+                `/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`,
+                formData
+              );
+              onPortalUpdate?.(data);
+              toast.success(uploadKind === "photos" ? "Photo uploaded." : "Document uploaded.");
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not upload that file.");
+            } finally {
+              setUploadingPropertyFile(false);
+            }
+          }}
         />
       );
     }
     if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} />;
-    return <CustomerDocuments documents={portal?.documents || []} propertyProfile={portal?.property_profile || {}} />;
-  }, [activeTab, portal, creatingRequest, savingProperty, token, onPortalUpdate]);
+    return (
+      <CustomerDocuments
+        documents={portal?.documents || []}
+        propertyProfile={portal?.property_profile || {}}
+        uploading={uploadingPropertyFile}
+        onUpload={async ({ file, title, documentType, kind }) => {
+          if (!file) return;
+          setUploadingPropertyFile(true);
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("title", title || file.name || "Property file");
+            if (documentType) formData.append("document_type", documentType);
+            const uploadKind = kind === "photo" ? "photos" : "documents";
+            const { data } = await api.post(
+              `/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`,
+              formData
+            );
+            onPortalUpdate?.(data);
+            toast.success(uploadKind === "photos" ? "Photo uploaded." : "Document uploaded.");
+          } catch (error) {
+            toast.error(error?.response?.data?.detail || "Could not upload that file.");
+          } finally {
+            setUploadingPropertyFile(false);
+          }
+        }}
+      />
+    );
+  }, [activeTab, portal, creatingRequest, savingProperty, uploadingPropertyFile, token, onPortalUpdate]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100">

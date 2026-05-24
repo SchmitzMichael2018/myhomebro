@@ -196,3 +196,190 @@ class CustomerRequest(models.Model):
 
     def __str__(self):
         return f"{self.customer_email} - {self.title}"
+
+
+class SmartNotificationEvent(models.TextChoices):
+    CUSTOMER_REQUEST_SUBMITTED = "customer_request_submitted", "Customer Request Submitted"
+    PROPERTY_PROFILE_UPDATED = "property_profile_updated", "Property Profile Updated"
+    AGREEMENT_NEEDS_SIGNATURE = "agreement_needs_signature", "Agreement Needs Signature"
+    ESCROW_NEEDS_FUNDING = "escrow_needs_funding", "Escrow Needs Funding"
+    MILESTONE_NEEDS_APPROVAL = "milestone_needs_approval", "Milestone Needs Approval"
+    PAYMENT_RECEIVED = "payment_received", "Payment Received"
+    REQUEST_MARKETPLACE_READY = "request_marketplace_ready", "Request Marketplace Ready"
+
+
+class NotificationRule(models.Model):
+    CHANNEL_IN_APP = "in_app"
+    CHANNEL_EMAIL_STUB = "email_stub"
+    CHANNEL_SMS_STUB = "sms_stub"
+    CHANNEL_CHOICES = [
+        (CHANNEL_IN_APP, "In App"),
+        (CHANNEL_EMAIL_STUB, "Email Stub"),
+        (CHANNEL_SMS_STUB, "SMS Stub"),
+    ]
+
+    AUDIENCE_CUSTOMER = "customer"
+    AUDIENCE_CONTRACTOR = "contractor"
+    AUDIENCE_INTERNAL = "internal"
+    AUDIENCE_CHOICES = [
+        (AUDIENCE_CUSTOMER, "Customer"),
+        (AUDIENCE_CONTRACTOR, "Contractor"),
+        (AUDIENCE_INTERNAL, "Internal"),
+    ]
+
+    name = models.CharField(max_length=160)
+    event_type = models.CharField(max_length=64, choices=SmartNotificationEvent.choices, db_index=True)
+    channel = models.CharField(max_length=24, choices=CHANNEL_CHOICES, default=CHANNEL_IN_APP, db_index=True)
+    audience = models.CharField(max_length=24, choices=AUDIENCE_CHOICES, default=AUDIENCE_CUSTOMER, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    title_template = models.CharField(max_length=255)
+    message_template = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["event_type", "channel", "name"]
+        unique_together = [("event_type", "channel", "audience")]
+
+    def __str__(self):
+        return f"{self.event_type}:{self.channel}:{self.audience}"
+
+
+class SmartNotification(models.Model):
+    STATUS_UNREAD = "unread"
+    STATUS_READ = "read"
+    STATUS_DISMISSED = "dismissed"
+    STATUS_CHOICES = [
+        (STATUS_UNREAD, "Unread"),
+        (STATUS_READ, "Read"),
+        (STATUS_DISMISSED, "Dismissed"),
+    ]
+
+    event_type = models.CharField(max_length=64, choices=SmartNotificationEvent.choices, db_index=True)
+    channel = models.CharField(max_length=24, choices=NotificationRule.CHANNEL_CHOICES, default=NotificationRule.CHANNEL_IN_APP, db_index=True)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_UNREAD, db_index=True)
+    recipient_email = models.EmailField(db_index=True)
+    homeowner = models.ForeignKey(
+        "projects.Homeowner",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    project = models.ForeignKey(
+        "projects.Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    invoice = models.ForeignKey(
+        "projects.Invoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    draw_request = models.ForeignKey(
+        "projects.DrawRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    customer_request = models.ForeignKey(
+        CustomerRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_notifications",
+    )
+    title = models.CharField(max_length=255)
+    message = models.TextField(blank=True, default="")
+    action_url = models.CharField(max_length=500, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["recipient_email", "status"]),
+            models.Index(fields=["event_type", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.recipient_email}:{self.event_type}:{self.title}"
+
+
+class NotificationLog(models.Model):
+    STATUS_CREATED = "created"
+    STATUS_SKIPPED = "skipped"
+    STATUS_STUBBED = "stubbed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_CREATED, "Created"),
+        (STATUS_SKIPPED, "Skipped"),
+        (STATUS_STUBBED, "Stubbed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    smart_notification = models.ForeignKey(
+        SmartNotification,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="logs",
+    )
+    notification_rule = models.ForeignKey(
+        NotificationRule,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="logs",
+    )
+    event_type = models.CharField(max_length=64, choices=SmartNotificationEvent.choices, db_index=True)
+    channel = models.CharField(max_length=24, choices=NotificationRule.CHANNEL_CHOICES, default=NotificationRule.CHANNEL_IN_APP, db_index=True)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_CREATED, db_index=True)
+    recipient_email = models.EmailField(blank=True, default="", db_index=True)
+    message = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["event_type", "status"]),
+            models.Index(fields=["recipient_email", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.event_type}:{self.channel}:{self.status}"
