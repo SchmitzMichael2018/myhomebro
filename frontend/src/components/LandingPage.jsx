@@ -576,22 +576,22 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
                 <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.08),rgba(2,6,23,0.04)_52%,rgba(2,6,23,0.56)),radial-gradient(circle_at_75%_24%,rgba(251,191,36,0.15),transparent_32%)]" />
                 <div
                   data-testid="landing-contractor-sweatshirt-logo"
-                  className="pointer-events-none absolute left-[34%] top-[35%] -translate-x-1/2 -translate-y-1/2 rotate-[-2deg]"
+                  className="pointer-events-none absolute left-[34%] top-[45%] -translate-x-1/2 -translate-y-1/2 rotate-[-2deg]"
                 >
                   <img
                     src={logo}
                     alt=""
-                    className="h-10 w-10 object-contain opacity-90 mix-blend-screen contrast-110 saturate-110 drop-shadow-[0_1px_5px_rgba(251,191,36,0.22)] sm:h-12 sm:w-12"
+                    className="h-20 w-20 object-contain opacity-90 mix-blend-screen contrast-110 saturate-110 drop-shadow-[0_2px_8px_rgba(251,191,36,0.24)] sm:h-24 sm:w-24 lg:h-28 lg:w-28"
                   />
                 </div>
                 <div className="absolute -right-20 bottom-[-6.25rem] h-64 w-64 rounded-full border border-amber-200/38" />
                 <div className="absolute -right-24 bottom-[-6.8rem] h-72 w-72 rounded-full border border-blue-200/18" />
-                <div className="absolute bottom-4 right-4 rounded-2xl border border-amber-200/18 bg-slate-950/58 px-4 py-3 shadow-xl shadow-slate-950/28 backdrop-blur">
-                  <div className="flex items-center gap-2 text-sm font-bold text-white">
-                    <img src={logo} alt="" className="h-7 w-7 rounded-lg object-cover" />
+                <div className="absolute bottom-3 right-3 rounded-xl border border-amber-200/14 bg-slate-950/42 px-3 py-2 shadow-xl shadow-slate-950/22 backdrop-blur-sm">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-white">
+                    <img src={logo} alt="" className="h-5 w-5 rounded-md object-cover opacity-90" />
                     MyHome<span className="text-amber-300">Bro</span>
                   </div>
-                  <div className="mt-1 text-xs font-semibold text-sky-100/72">Contractor workspace</div>
+                  <div className="mt-0.5 text-[10px] font-semibold text-sky-100/58">Contractor workspace</div>
                 </div>
               </div>
             )}
