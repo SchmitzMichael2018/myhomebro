@@ -495,16 +495,38 @@ function AudienceCards({ navigate }) {
 
 function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabel, onPrimary, onSecondary, tone }) {
   const isHomeowner = tone === "homeowner";
+  const cardImage = isHomeowner ? homeownerCardImage : contractorCardImage;
   return (
     <div
       id={id}
       data-testid={`landing-${tone}-card`}
-      className={`overflow-hidden rounded-2xl border bg-white/[0.055] shadow-2xl shadow-slate-950/20 backdrop-blur ${
-        isHomeowner ? "border-blue-300/28" : "border-amber-300/30"
+      className={`relative min-h-[17rem] overflow-hidden rounded-2xl border bg-slate-950 shadow-2xl shadow-slate-950/24 ${
+        isHomeowner
+          ? "border-blue-300/34 shadow-blue-950/20"
+          : "border-amber-300/34 shadow-amber-950/16"
       }`}
     >
-      <div className="grid h-full md:grid-cols-[0.92fr_1.18fr]">
-        <div className="p-3.5 sm:p-4">
+      <img
+        src={cardImage}
+        alt={isHomeowner ? "MyHomeBro homeowner project visual" : "MyHomeBro contractor platform visual"}
+        data-testid={isHomeowner ? "landing-homeowner-visual-asset" : "landing-contractor-visual-asset"}
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/75 to-slate-950/10" />
+      <div
+        className={`absolute inset-0 ${
+          isHomeowner
+            ? "bg-[radial-gradient(circle_at_78%_22%,rgba(59,130,246,0.18),transparent_34%)]"
+            : "bg-[radial-gradient(circle_at_78%_22%,rgba(251,191,36,0.16),transparent_34%)]"
+        }`}
+      />
+      <div
+        data-testid={isHomeowner ? "landing-homeowner-image-panel" : "landing-contractor-image-panel"}
+        className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+      />
+      <div className="relative z-10 flex min-h-[17rem] items-center">
+        <div className="w-full max-w-[17rem] p-4 sm:p-5">
           <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>
             {eyebrow}
           </div>
@@ -536,29 +558,6 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
               {secondaryLabel} →
             </button>
           </div>
-        </div>
-        <div className={`border-t border-white/10 p-2.5 md:border-l md:border-t-0 ${isHomeowner ? "bg-blue-500/5" : "bg-amber-300/5"}`}>
-            {isHomeowner ? (
-              <div data-testid="landing-homeowner-image-panel" className="relative h-40 w-full overflow-hidden rounded-xl border border-blue-200/20 shadow-2xl shadow-slate-950/35 sm:h-44 lg:h-full lg:min-h-40">
-                <img
-                  src={homeownerCardImage}
-                  alt="MyHomeBro homeowner project visual"
-                  data-testid="landing-homeowner-visual-asset"
-                  className="h-full w-full object-cover object-center"
-                />
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.02),rgba(2,6,23,0.06)_52%,rgba(2,6,23,0.18)),radial-gradient(circle_at_80%_26%,rgba(59,130,246,0.10),transparent_34%)]" />
-              </div>
-            ) : (
-              <div data-testid="landing-contractor-image-panel" className="relative h-40 w-full overflow-hidden rounded-xl border border-amber-200/22 shadow-2xl shadow-slate-950/38 sm:h-44 lg:h-full lg:min-h-40">
-                <img
-                  src={contractorCardImage}
-                  alt="MyHomeBro contractor platform visual"
-                  data-testid="landing-contractor-visual-asset"
-                  className="h-full w-full object-cover object-center"
-                />
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.04),rgba(2,6,23,0.04)_52%,rgba(2,6,23,0.16)),radial-gradient(circle_at_78%_24%,rgba(251,191,36,0.10),transparent_34%)]" />
-              </div>
-            )}
         </div>
       </div>
     </div>
