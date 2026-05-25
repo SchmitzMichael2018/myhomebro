@@ -25,7 +25,6 @@ test('landing page smoke renders core entry points', async ({ page }) => {
   await expect(page.getByTestId('landing-video-preview-asset')).toBeVisible();
   await expect(page.getByTestId('landing-homeowner-visual-asset')).toBeVisible();
   await expect(page.getByTestId('landing-contractor-visual-asset')).toBeVisible();
-  await expect(page.getByTestId('landing-contractor-sweatshirt-logo')).toBeVisible();
   const footer = page.getByRole('contentinfo');
   await expect(footer.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
   await expect(footer.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();

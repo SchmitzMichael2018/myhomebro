@@ -20,8 +20,8 @@ import {
   X,
 } from "lucide-react";
 import logo from "../assets/myhomebro_logo.png";
-import homeownerCardImage from "../assets/homeowner-card.jpg";
-import contractorCardImage from "../assets/contractor-card.jpg";
+import homeownerCardImage from "../assets/landing/homeowner-card.png";
+import contractorCardImage from "../assets/landing/contractor-card.png";
 import kitchenPreviewImage from "../assets/kitchen-preview.jpg";
 
 const platformRowOne = [
@@ -553,46 +553,21 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
               <div data-testid="landing-homeowner-image-panel" className="relative h-56 w-full max-w-md overflow-hidden rounded-[1.25rem] border border-blue-200/20 shadow-2xl shadow-slate-950/35">
                 <img
                   src={homeownerCardImage}
-                  alt="Upscale residential project exterior at dusk"
+                  alt="MyHomeBro homeowner project visual"
                   data-testid="landing-homeowner-visual-asset"
                   className="h-full w-full object-cover"
                 />
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.04),rgba(2,6,23,0.10)_48%,rgba(2,6,23,0.50)),radial-gradient(circle_at_78%_28%,rgba(251,191,36,0.16),transparent_32%)]" />
-                <div className="absolute -right-20 bottom-[-6.25rem] h-64 w-64 rounded-full border border-amber-200/38" />
-                <div className="absolute -right-24 bottom-[-6.8rem] h-72 w-72 rounded-full border border-blue-200/18" />
-                <div className="absolute bottom-4 left-4 rounded-2xl border border-white/14 bg-slate-950/54 px-4 py-3 shadow-xl shadow-slate-950/25 backdrop-blur">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-200">Project ready</div>
-                  <div className="mt-1 text-sm font-semibold text-white">Organized for local pros</div>
-                </div>
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.02),rgba(2,6,23,0.06)_52%,rgba(2,6,23,0.18)),radial-gradient(circle_at_80%_26%,rgba(59,130,246,0.10),transparent_34%)]" />
               </div>
             ) : (
               <div data-testid="landing-contractor-image-panel" className="relative h-56 w-full max-w-md overflow-hidden rounded-[1.25rem] border border-amber-200/22 shadow-2xl shadow-slate-950/38">
                 <img
                   src={contractorCardImage}
-                  alt="Professional contractor reviewing a home project"
+                  alt="MyHomeBro contractor platform visual"
                   data-testid="landing-contractor-visual-asset"
                   className="h-full w-full object-cover"
                 />
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.08),rgba(2,6,23,0.04)_52%,rgba(2,6,23,0.56)),radial-gradient(circle_at_75%_24%,rgba(251,191,36,0.15),transparent_32%)]" />
-                <div
-                  data-testid="landing-contractor-sweatshirt-logo"
-                  className="pointer-events-none absolute left-[34%] top-[45%] -translate-x-1/2 -translate-y-1/2 rotate-[-2deg]"
-                >
-                  <img
-                    src={logo}
-                    alt=""
-                    className="h-20 w-20 object-contain opacity-90 mix-blend-screen contrast-110 saturate-110 drop-shadow-[0_2px_8px_rgba(251,191,36,0.24)] sm:h-24 sm:w-24 lg:h-28 lg:w-28"
-                  />
-                </div>
-                <div className="absolute -right-20 bottom-[-6.25rem] h-64 w-64 rounded-full border border-amber-200/38" />
-                <div className="absolute -right-24 bottom-[-6.8rem] h-72 w-72 rounded-full border border-blue-200/18" />
-                <div className="absolute bottom-3 right-3 rounded-xl border border-amber-200/14 bg-slate-950/42 px-3 py-2 shadow-xl shadow-slate-950/22 backdrop-blur-sm">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-white">
-                    <img src={logo} alt="" className="h-5 w-5 rounded-md object-cover opacity-90" />
-                    MyHome<span className="text-amber-300">Bro</span>
-                  </div>
-                  <div className="mt-0.5 text-[10px] font-semibold text-sky-100/58">Contractor workspace</div>
-                </div>
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.04),rgba(2,6,23,0.04)_52%,rgba(2,6,23,0.16)),radial-gradient(circle_at_78%_24%,rgba(251,191,36,0.10),transparent_34%)]" />
               </div>
             )}
           </div>
