@@ -387,8 +387,8 @@ function VideoPreview() {
       </div>
 
       <div data-testid="landing-video-preview" className="relative">
-        <div className="grid gap-3 md:grid-cols-[1fr_13rem]">
-          <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22">
+        <div className="grid gap-3">
+          <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22 lg:min-h-[22rem]">
           <img
             src={kitchenPreviewImage}
             alt="Warm kitchen remodel planning preview"
@@ -423,23 +423,6 @@ function VideoPreview() {
             </div>
           </div>
         </div>
-          <div className="hidden overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950/65 p-3 md:block">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                <img src={logo} alt="" className="h-5 w-5 rounded object-cover" />
-                MyHome<span className="text-amber-300">Bro</span>
-              </div>
-              <div className="h-2 w-2 rounded-full bg-emerald-300" />
-            </div>
-            <div className="space-y-2 text-xs font-semibold text-sky-50/72">
-              {["Overview", "Tasks", "Messages", "Documents", "Schedule", "Budgets"].map((item, index) => (
-                <div key={item} className={`rounded-lg px-3 py-2 ${index === 0 ? "bg-blue-600/55 text-white" : "bg-white/[0.04]"}`}>
-                  {item}
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 min-h-28 rounded-xl border border-white/10 bg-[linear-gradient(135deg,rgba(251,191,36,0.24),rgba(37,99,235,0.20)),linear-gradient(150deg,#0f172a,#78350f)]" />
-          </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {featureChips.map((chip) => (
