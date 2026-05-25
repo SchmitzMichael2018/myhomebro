@@ -164,7 +164,7 @@ export default function LandingPage() {
             </button>
 
             {loginOpen ? (
-              <LoginDropdown navigate={navigate} />
+              <LoginDropdown navigate={navigate} onLoginSelect={() => setLoginOpen(false)} />
             ) : null}
           </div>
         </nav>
@@ -250,12 +250,17 @@ export default function LandingPage() {
   );
 }
 
-function LoginDropdown({ navigate }) {
+function LoginDropdown({ navigate, onLoginSelect }) {
+  const openLoginModal = (audience) => {
+    window.dispatchEvent(new CustomEvent("mhb:open-login", { detail: { audience } }));
+    onLoginSelect?.();
+  };
+
   return (
     <div
       role="menu"
       aria-label="Log in options"
-      className="absolute right-0 top-[calc(100%+0.75rem)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/15 bg-slate-950/96 shadow-2xl shadow-slate-950/50 backdrop-blur-xl"
+      className="absolute right-0 top-[calc(100%+0.75rem)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.13] bg-[#071a3a] shadow-[0_20px_50px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.04)]"
     >
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Log In</div>
@@ -271,7 +276,7 @@ function LoginDropdown({ navigate }) {
           </p>
           <button
             type="button"
-            onClick={() => navigate("/portal")}
+            onClick={() => openLoginModal("homeowner")}
             className="mt-3 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/22 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
           >
             Homeowner Log In
@@ -286,7 +291,7 @@ function LoginDropdown({ navigate }) {
           </p>
           <button
             type="button"
-            onClick={() => navigate("/login")}
+            onClick={() => openLoginModal("contractor")}
             className="mt-3 w-full rounded-xl border border-sky-300/35 bg-white/[0.04] px-4 py-2.5 text-sm font-semibold text-sky-50 transition hover:bg-sky-400/10 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
           >
             Contractor Log In

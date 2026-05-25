@@ -1,7 +1,9 @@
 // src/components/LoginModal.jsx
 import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
+import { useAuth } from "../context/AuthContext";
 import logo from "../assets/myhomebro_logo.png";
 
 /**
@@ -20,6 +22,8 @@ import logo from "../assets/myhomebro_logo.png";
  *   /customers?new_customer_id=<id>
  */
 export default function LoginModal() {
+  const navigate = useNavigate();
+  const auth = useAuth();
   const [visible, setVisible] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,11 +32,20 @@ export default function LoginModal() {
 
   const [rememberMe, setRememberMe] = useState(true);
   const [inviteToken, setInviteToken] = useState("");
+  const [loginAudience, setLoginAudience] = useState("contractor");
 
   const openLogin = useCallback(() => setVisible(true), []);
   const close = () => {
     if (!loading) setVisible(false);
   };
+
+  const openLoginForAudience = useCallback(
+    (audience = "contractor") => {
+      setLoginAudience(audience === "homeowner" ? "homeowner" : "contractor");
+      openLogin();
+    },
+    [openLogin]
+  );
 
   const getInviteFromUrl = () => {
     try {
@@ -88,7 +101,7 @@ export default function LoginModal() {
       const passedInvite = (opts?.invite || "").trim();
       setInviteToken(urlInvite || passedInvite || "");
 
-      openLogin();
+      openLoginForAudience(opts?.audience || opts?.role || "contractor");
     };
 
     const onEvt = (e) => {
@@ -103,7 +116,7 @@ export default function LoginModal() {
       const passedInvite = (e?.detail?.invite || "").trim();
       setInviteToken(urlInvite || passedInvite || "");
 
-      openLogin();
+      openLoginForAudience(e?.detail?.audience || e?.detail?.role || "contractor");
     };
 
     window.addEventListener("mhb:open-login", onEvt);
@@ -113,7 +126,7 @@ export default function LoginModal() {
       } catch {}
       window.removeEventListener("mhb:open-login", onEvt);
     };
-  }, [openLogin]);
+  }, [openLoginForAudience]);
 
   // Auto-open / URL hints
   useEffect(() => {
@@ -142,15 +155,41 @@ export default function LoginModal() {
         const cleaned = `${url.pathname}${q.toString() ? "?" + q.toString() : ""}`;
         window.history.replaceState({}, "", cleaned);
       }
-      openLogin();
+      openLoginForAudience(q.get("audience") || "contractor");
     }
-  }, [openLogin]);
-
+  }, [openLoginForAudience]);
   const handleForgotPassword = (e) => {
     e.preventDefault();
     if (!loading) {
       setVisible(false);
-      window.location.href = "/forgot-password";
+      navigate("/forgot-password");
+    }
+  };
+
+  const identityRoute = (identity) => {
+    const role = String(
+      identity?.identity_type || identity?.type || identity?.role || ""
+    ).toLowerCase();
+
+    if (role === "admin") return "/app/admin";
+    if (role === "subaccount" || role === "internal_team_member") {
+      return "/app/employee/dashboard";
+    }
+    if (role === "subcontractor") return "/app/subcontractor/assigned-work";
+    if (role === "contractor" || role === "contractor_owner") return "/app/dashboard";
+    if (role === "homeowner") return "/portal";
+    return "";
+  };
+
+  const resolveLoginRoute = async () => {
+    if (loginAudience === "homeowner") return "/portal";
+    if (loginAudience === "contractor") return "/app/dashboard";
+
+    try {
+      const { data } = await api.get("/projects/whoami/");
+      return identityRoute(Array.isArray(data) ? data[0] : data) || "/app/dashboard";
+    } catch {
+      return "/app/dashboard";
     }
   };
 
@@ -183,6 +222,7 @@ export default function LoginModal() {
       if (!access) throw new Error("Missing tokens");
 
       setTokens(access, refresh || null, !!rememberMe);
+      auth?.setUser?.(data?.user || { email: payload.email });
 
       const tokenToAccept = inviteToken || getInviteFromUrl();
       if (tokenToAccept) {
@@ -195,11 +235,9 @@ export default function LoginModal() {
 
           // ✅ Route to customer list so they see it immediately (and can show NEW badge)
           if (newId) {
-            window.location.href = `/customers?new_customer_id=${encodeURIComponent(
-              String(newId)
-            )}`;
+            navigate(`/app/customers?new_customer_id=${encodeURIComponent(String(newId))}`);
           } else {
-            window.location.href = "/customers";
+            navigate("/app/customers");
           }
           return;
         }
@@ -207,7 +245,7 @@ export default function LoginModal() {
 
       toast.success("Signed in. Redirecting to your dashboard.");
       setVisible(false);
-      window.location.href = "/dashboard";
+      navigate(await resolveLoginRoute());
     } catch (err) {
       const msg =
         err?.response?.data?.detail ||
@@ -223,7 +261,15 @@ export default function LoginModal() {
   if (!visible) return null;
 
   return (
-    <div className="mhb-modal-overlay" role="dialog" aria-modal="true">
+    <div
+      className="mhb-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      data-testid="login-modal"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+    >
       <div className="mhb-modal-card" style={{ maxWidth: 520 }}>
         <div className="mhb-modal-header" style={{ justifyContent: "center" }}>
           <div style={{ display: "grid", placeItems: "center", width: "100%" }}>
@@ -281,6 +327,7 @@ export default function LoginModal() {
                 onChange={(e) => setEmail(e.target.value)}
                 type="email"
                 required
+                data-testid="login-email-input"
                 style={{
                   width: "100%",
                   border: "1px solid #e5e7eb",
@@ -303,6 +350,7 @@ export default function LoginModal() {
                     onChange={(e) => setPassword(e.target.value)}
                     type={showPw ? "text" : "password"}
                     required
+                    data-testid="login-password-input"
                     style={{
                       width: "100%",
                       border: "1px solid #e5e7eb",
@@ -374,6 +422,7 @@ export default function LoginModal() {
               type="submit"
               className="mhb-btn primary"
               disabled={loading}
+              data-testid="login-submit-button"
               style={{ justifyContent: "center" }}
             >
               {loading ? "Signing in..." : "Sign In"}
