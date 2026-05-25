@@ -499,31 +499,31 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
     <div
       id={id}
       data-testid={`landing-${tone}-card`}
-      className={`overflow-hidden rounded-3xl border bg-white/[0.055] shadow-2xl shadow-slate-950/20 backdrop-blur ${
+      className={`overflow-hidden rounded-2xl border bg-white/[0.055] shadow-2xl shadow-slate-950/20 backdrop-blur ${
         isHomeowner ? "border-blue-300/28" : "border-amber-300/30"
       }`}
     >
-      <div className="grid h-full md:grid-cols-[0.86fr_1.08fr]">
-        <div className="p-5 sm:p-6">
-          <div className={`text-xs font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>
+      <div className="grid h-full md:grid-cols-[0.9fr_1.1fr]">
+        <div className="p-4 sm:p-5">
+          <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>
             {eyebrow}
           </div>
-          <h2 className="mt-4 whitespace-pre-line text-3xl font-semibold leading-tight text-white">
+          <h2 className="mt-2 whitespace-pre-line text-2xl font-semibold leading-tight text-white">
             {title.replace(". ", ".\n")}
           </h2>
-          <div className="mt-4 space-y-2">
+          <div className="mt-3 space-y-1.5">
             {bullets.map((bullet) => (
-              <div key={bullet} className="flex items-start gap-3 text-sm leading-6 text-sky-50/76">
-                <CheckCircle2 className={`mt-0.5 h-4 w-4 shrink-0 ${isHomeowner ? "text-sky-300" : "text-amber-300"}`} aria-hidden="true" />
+              <div key={bullet} className="flex items-start gap-2.5 text-xs leading-5 text-sky-50/76">
+                <CheckCircle2 className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${isHomeowner ? "text-sky-300" : "text-amber-300"}`} aria-hidden="true" />
                 {bullet}
               </div>
             ))}
           </div>
-          <div className="mt-5 flex flex-col items-start gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={onPrimary}
-              className="rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-950/22 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+              className="rounded-lg border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-blue-950/22 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
               {primaryLabel}
             </button>
@@ -531,26 +531,15 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
               type="button"
               onClick={onSecondary}
               data-testid={isHomeowner ? "landing-customer-portal-button" : undefined}
-              className="text-sm font-semibold text-sky-300 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
+              className="text-xs font-semibold text-sky-300 hover:text-sky-200 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
               {secondaryLabel} →
             </button>
           </div>
         </div>
-        <div className={`min-h-60 border-t border-white/10 p-3.5 md:border-l md:border-t-0 ${isHomeowner ? "bg-blue-500/5" : "bg-amber-300/5"}`}>
-          <div
-            className={`relative flex h-full min-h-56 items-center justify-center overflow-hidden rounded-[1.5rem] border p-4 ${
-              isHomeowner
-                ? "border-blue-300/22 bg-[radial-gradient(circle_at_84%_16%,rgba(96,165,250,0.34),transparent_25%),radial-gradient(circle_at_18%_18%,rgba(251,191,36,0.22),transparent_22%),linear-gradient(160deg,#06142d_0%,#12306b_54%,#7c3b08_100%)]"
-                : "border-amber-300/26 bg-[radial-gradient(circle_at_78%_18%,rgba(251,191,36,0.30),transparent_24%),radial-gradient(circle_at_18%_18%,rgba(37,99,235,0.26),transparent_22%),linear-gradient(160deg,#071121_0%,#10285c_48%,#4a1d04_100%)]"
-            }`}
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_36%,rgba(2,6,23,0.46)_100%)]" />
-            <div className={`absolute inset-y-0 w-44 rounded-full blur-2xl ${isHomeowner ? "-right-10 bg-blue-400/18" : "right-0 bg-amber-300/18"}`} />
-            <div className={`absolute h-72 w-72 rounded-full border ${isHomeowner ? "-right-24 bottom-[-7rem] border-amber-200/36" : "-right-20 bottom-[-6rem] border-amber-200/34"}`} />
-            <div className={`absolute h-80 w-80 rounded-full border ${isHomeowner ? "-right-28 bottom-[-7.75rem] border-blue-200/22" : "-right-24 bottom-[-7.25rem] border-blue-200/22"}`} />
+        <div className={`border-t border-white/10 p-3 md:border-l md:border-t-0 ${isHomeowner ? "bg-blue-500/5" : "bg-amber-300/5"}`}>
             {isHomeowner ? (
-              <div data-testid="landing-homeowner-image-panel" className="relative h-56 w-full max-w-md overflow-hidden rounded-[1.25rem] border border-blue-200/20 shadow-2xl shadow-slate-950/35">
+              <div data-testid="landing-homeowner-image-panel" className="relative h-44 w-full overflow-hidden rounded-xl border border-blue-200/20 shadow-2xl shadow-slate-950/35 sm:h-48 lg:h-full lg:min-h-48">
                 <img
                   src={homeownerCardImage}
                   alt="MyHomeBro homeowner project visual"
@@ -560,7 +549,7 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
                 <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.02),rgba(2,6,23,0.06)_52%,rgba(2,6,23,0.18)),radial-gradient(circle_at_80%_26%,rgba(59,130,246,0.10),transparent_34%)]" />
               </div>
             ) : (
-              <div data-testid="landing-contractor-image-panel" className="relative h-56 w-full max-w-md overflow-hidden rounded-[1.25rem] border border-amber-200/22 shadow-2xl shadow-slate-950/38">
+              <div data-testid="landing-contractor-image-panel" className="relative h-44 w-full overflow-hidden rounded-xl border border-amber-200/22 shadow-2xl shadow-slate-950/38 sm:h-48 lg:h-full lg:min-h-48">
                 <img
                   src={contractorCardImage}
                   alt="MyHomeBro contractor platform visual"
@@ -570,7 +559,6 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
                 <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.04),rgba(2,6,23,0.04)_52%,rgba(2,6,23,0.16)),radial-gradient(circle_at_78%_24%,rgba(251,191,36,0.10),transparent_34%)]" />
               </div>
             )}
-          </div>
         </div>
       </div>
     </div>
