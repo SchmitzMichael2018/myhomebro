@@ -2337,6 +2337,75 @@ export default function ContractorDashboard() {
       onClick: () => goPayments({ moneyStatus: "issues" }),
     },
   ];
+  const dashboardKpis = useMemo(() => {
+    const activeAgreementCount = (Array.isArray(agreements) ? agreements : []).filter((agreement) => {
+      const status = norm(agreement?.status || agreement?.agreement_status || agreement?.state);
+      return !["archived", "cancelled", "canceled", "void", "deleted"].includes(status);
+    }).length;
+    const awaitingSignatureCount = (Array.isArray(agreements) ? agreements : []).filter((agreement) => {
+      const status = norm(agreement?.status || agreement?.agreement_status || agreement?.signature_status || agreement?.state);
+      return (
+        status.includes("signature") ||
+        agreement?.signed_by_contractor === false ||
+        agreement?.signed_by_homeowner === false ||
+        agreement?.requires_signature === true
+      );
+    }).length;
+    const pendingPaymentAmount =
+      money(paymentSummary.awaiting_customer_approval.amount) +
+      money(paymentSummary.payment_pending.amount);
+    const pendingPaymentCount =
+      Number(paymentSummary.awaiting_customer_approval.count || 0) +
+      Number(paymentSummary.payment_pending.count || 0);
+    const escrowProtectedAmount =
+      money(paymentSummary.awaiting_customer_approval.amount) +
+      money(paymentSummary.payment_pending.amount) +
+      money(paymentSummary.paid.amount);
+    const upcomingMilestoneCount = Number(dueSchedule.week.count || 0);
+
+    return [
+      {
+        key: "active-projects",
+        label: "Active Projects",
+        value: Number(activeAgreementCount || mStats.totalCount || 0).toLocaleString(),
+        helper: mStats.inProgressCount > 0 ? `${mStats.inProgressCount} in progress` : "Across active work",
+        icon: ClipboardCheck,
+        tone: "blue",
+      },
+      {
+        key: "pending-payments",
+        label: "Pending Payments",
+        value: currency(pendingPaymentAmount),
+        helper: `${pendingPaymentCount} ${pendingPaymentCount === 1 ? "payment" : "payments"} pending`,
+        icon: BadgeDollarSign,
+        tone: "amber",
+      },
+      {
+        key: "awaiting-signatures",
+        label: "Awaiting Signatures",
+        value: Number(awaitingSignatureCount).toLocaleString(),
+        helper: awaitingSignatureCount > 0 ? "Needs your attention" : "No signatures waiting",
+        icon: FileText,
+        tone: "violet",
+      },
+      {
+        key: "escrow-protected",
+        label: "Escrow Protected",
+        value: currency(escrowProtectedAmount),
+        helper: "Across payment records",
+        icon: WalletMinimal,
+        tone: "emerald",
+      },
+      {
+        key: "upcoming-milestones",
+        label: "Upcoming Milestones",
+        value: Number(upcomingMilestoneCount).toLocaleString(),
+        helper: "Next 7 days",
+        icon: CalendarDays,
+        tone: "blue",
+      },
+    ];
+  }, [agreements, dueSchedule.week.count, mStats.inProgressCount, mStats.totalCount, paymentSummary]);
 
   return (
     <PageShell
@@ -2359,49 +2428,89 @@ export default function ContractorDashboard() {
 
       {!isEmployee ? (
         <div className="space-y-5">
-          <DashboardSection
-            title="Quick Actions"
-            subtitle="Creation and navigation shortcuts for the next move."
-            variant="premium"
+          <DashboardCard
+            testId="dashboard-kpi-strip"
+            tone="premium"
+            className="mhb-dashboard-kpi-strip p-0"
           >
+            <div className="grid gap-0 md:grid-cols-2 xl:grid-cols-5">
+              {dashboardKpis.map(({ key, label, value, helper, icon: Icon, tone }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    if (key === "active-projects") navigate("/app/agreements");
+                    else if (key === "pending-payments") goPayments({ moneyStatus: "payment_pending" });
+                    else if (key === "awaiting-signatures") navigate("/app/agreements");
+                    else if (key === "escrow-protected") goPayments();
+                    else navigate("/app/milestones");
+                  }}
+                  className="mhb-dashboard-kpi-button group flex min-h-[112px] items-center gap-4 border-white/10 px-4 py-4 text-left transition focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-[#061d42] xl:border-r xl:last:border-r-0"
+                  data-tone={tone}
+                >
+                  <span className="mhb-dashboard-kpi-icon flex h-14 w-14 shrink-0 items-center justify-center rounded-full border">
+                    <Icon className="h-6 w-6" aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-sky-100/80">{label}</span>
+                    <span className="mt-1 block text-2xl font-black text-white md:text-3xl">
+                      {value}
+                    </span>
+                    <span className="mt-1 block text-xs font-semibold text-sky-100/62">{helper}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </DashboardCard>
+
+          <DashboardSection variant="premium">
             <DashboardCard
               testId="dashboard-quick-actions-row"
               tone="premium"
-              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
+              className="mhb-dashboard-quick-actions p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
             >
-              <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-                <button
-                  type="button"
-                  onClick={goNewAgreement}
-                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
-                >
-                  <FilePlus2 className="h-4 w-4" />
-                  <span>New Agreement</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={goNewMilestone}
-                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
-                >
-                  <ListPlus className="h-4 w-4" />
-                  <span>New Milestone</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={goInvoices}
-                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
-                >
-                  <BadgeDollarSign className="h-4 w-4" />
-                  <span>Payment</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={openNewExpense}
-                  className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
-                >
-                  <HandCoins className="h-4 w-4" />
-                  <span>Expense</span>
-                </button>
+              <div className="grid gap-4 xl:grid-cols-[minmax(14rem,0.7fr)_minmax(0,2fr)] xl:items-center">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="mt-1 h-6 w-6 text-amber-300" aria-hidden="true" />
+                  <span>
+                    <span className="block text-2xl font-black text-white">Quick Actions</span>
+                    <span className="mt-1 block text-sm font-medium text-sky-100/76">Create and navigate faster</span>
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={goNewAgreement}
+                    className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                  >
+                    <FilePlus2 className="h-4 w-4" />
+                    <span>New Agreement</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goNewMilestone}
+                    className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                  >
+                    <ListPlus className="h-4 w-4" />
+                    <span>New Milestone</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goInvoices}
+                    className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                  >
+                    <BadgeDollarSign className="h-4 w-4" />
+                    <span>Payment</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openNewExpense}
+                    className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                  >
+                    <HandCoins className="h-4 w-4" />
+                    <span>Expense</span>
+                  </button>
+                </div>
               </div>
             </DashboardCard>
           </DashboardSection>
@@ -2417,7 +2526,7 @@ export default function ContractorDashboard() {
             >
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
-                <div className="text-2xl font-bold tracking-[-0.01em] text-white">
+                <div className="text-2xl font-bold text-white">
                   Next Actions
                 </div>
                 <div className="mt-1 text-sm text-sky-100/85">

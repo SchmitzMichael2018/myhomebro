@@ -560,10 +560,30 @@
     transform: rotate(-7deg);
   }
 
+  .mhb-dashboard-shell .mhb-topbar::after {
+    content: "";
+    position: absolute;
+    right: clamp(1.5rem, 7vw, 7rem);
+    bottom: 1.35rem;
+    width: min(23rem, 34vw);
+    height: 6.6rem;
+    pointer-events: none;
+    opacity: 0.3;
+    background:
+      linear-gradient(22deg, transparent 0 54%, rgba(59, 130, 246, 0.58) 54.4% 55.2%, transparent 55.6%),
+      linear-gradient(158deg, transparent 0 55%, rgba(59, 130, 246, 0.5) 55.4% 56.2%, transparent 56.6%),
+      linear-gradient(90deg, transparent 0 13%, rgba(96, 165, 250, 0.48) 13.4% 14%, transparent 14.4% 34%, rgba(96, 165, 250, 0.4) 34.4% 35%, transparent 35.4% 100%),
+      linear-gradient(0deg, transparent 0 67%, rgba(96, 165, 250, 0.44) 67.4% 68%, transparent 68.4% 100%),
+      repeating-linear-gradient(90deg, rgba(96, 165, 250, 0.1) 0 1px, transparent 1px 34px);
+    filter: drop-shadow(0 0 18px rgba(37, 99, 235, 0.38));
+    clip-path: polygon(2% 68%, 25% 46%, 39% 56%, 58% 36%, 94% 68%, 94% 90%, 2% 90%);
+    mask-image: linear-gradient(90deg, transparent, #000 18%, #000 86%, transparent);
+  }
+
   .mhb-dashboard-shell .mhb-topbar h1 {
     color: #f8fbff !important;
     font-weight: 900;
-    letter-spacing: -0.035em;
+    letter-spacing: 0;
     text-shadow: 0 8px 28px rgba(2, 8, 23, 0.34);
   }
 
@@ -601,7 +621,7 @@
 
   .mhb-contractor-dashboard .mhb-dashboard-section :is([class*="text-[1.4rem]"], [class*="text-[1.55rem]"]) {
     font-weight: 800;
-    letter-spacing: -0.025em;
+    letter-spacing: 0;
     text-shadow: 0 10px 30px rgba(2, 8, 23, 0.28);
   }
 
@@ -635,6 +655,97 @@
       radial-gradient(circle at 88% 18%, rgba(245, 158, 11, 0.18), transparent 18rem),
       radial-gradient(circle at 16% 0%, rgba(59, 130, 246, 0.2), transparent 18rem),
       linear-gradient(135deg, rgba(6, 29, 66, 0.98), rgba(7, 26, 58, 0.94)) !important;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-strip {
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 4% 50%, rgba(37, 99, 235, 0.24), transparent 17rem),
+      radial-gradient(circle at 98% 0%, rgba(124, 58, 237, 0.14), transparent 20rem),
+      linear-gradient(135deg, rgba(2, 12, 33, 0.98), rgba(5, 22, 50, 0.94)) !important;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-button {
+    position: relative;
+    border-right: 1px solid rgba(148, 197, 255, 0.12);
+    background: transparent;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 0%, rgba(96, 165, 250, 0.12), transparent 70%);
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-button:hover::after {
+    opacity: 1;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-button:hover {
+    background: rgba(59, 130, 246, 0.08);
+    transform: translateY(-1px);
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-icon {
+    color: #bfdbfe;
+    border-color: rgba(96, 165, 250, 0.38);
+    background:
+      radial-gradient(circle at 50% 50%, rgba(37, 99, 235, 0.28), transparent 72%),
+      rgba(37, 99, 235, 0.12);
+    box-shadow:
+      0 0 0 1px rgba(96, 165, 250, 0.08),
+      0 0 28px rgba(37, 99, 235, 0.2);
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-button[data-tone="amber"] .mhb-dashboard-kpi-icon {
+    color: #fde68a;
+    border-color: rgba(251, 191, 36, 0.42);
+    background:
+      radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.24), transparent 72%),
+      rgba(245, 158, 11, 0.1);
+    box-shadow: 0 0 28px rgba(245, 158, 11, 0.18);
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-button[data-tone="violet"] .mhb-dashboard-kpi-icon {
+    color: #ddd6fe;
+    border-color: rgba(168, 85, 247, 0.42);
+    background:
+      radial-gradient(circle at 50% 50%, rgba(124, 58, 237, 0.28), transparent 72%),
+      rgba(124, 58, 237, 0.11);
+    box-shadow: 0 0 28px rgba(124, 58, 237, 0.2);
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-kpi-button[data-tone="emerald"] .mhb-dashboard-kpi-icon {
+    color: #a7f3d0;
+    border-color: rgba(16, 185, 129, 0.42);
+    background:
+      radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.24), transparent 72%),
+      rgba(16, 185, 129, 0.1);
+    box-shadow: 0 0 28px rgba(16, 185, 129, 0.18);
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-quick-actions {
+    overflow: hidden;
+    position: relative;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-quick-actions::after {
+    content: "";
+    position: absolute;
+    right: -6%;
+    bottom: -70%;
+    width: 28rem;
+    height: 12rem;
+    pointer-events: none;
+    opacity: 0.42;
+    background:
+      radial-gradient(ellipse at center, rgba(245, 158, 11, 0.18), transparent 60%),
+      repeating-radial-gradient(ellipse at center, rgba(251, 191, 36, 0.22) 0 1px, transparent 1px 16px);
+    transform: rotate(-9deg);
   }
 
   .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button,
