@@ -605,8 +605,9 @@ export default function Sidebar({ variant = "desktop" }) {
             className="h-9 w-9 rounded-lg object-contain"
           />
           <div>
-            <div className="text-base font-extrabold tracking-tight text-slate-900">
-              MyHomeBro
+            <div className="mhb-sidebar-wordmark text-base font-extrabold tracking-tight">
+              <span className="mhb-sidebar-wordmark-main">MyHome</span>
+              <span className="mhb-sidebar-wordmark-accent">Bro</span>
             </div>
             <div className="mt-0.5 text-xs font-medium text-slate-600">{consoleLabel}</div>
           </div>

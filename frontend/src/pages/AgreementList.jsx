@@ -1845,7 +1845,7 @@ export default function AgreementList() {
         <div className="flex-1" />
 
         <button
-          className="inline-flex items-center gap-2 rounded-xl border border-white/80 bg-white/95 px-3.5 py-2.5 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-sky-50"
+          className="mhb-agreement-primary-action inline-flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm font-semibold shadow-sm transition"
           title="New Agreement"
           onClick={() => navigate(`${BASE}/agreements/new/wizard?step=1`)}
         >
@@ -2016,7 +2016,7 @@ export default function AgreementList() {
                       icon: busyArchiveRow === r.id ? RefreshCw : Undo2,
                       onClick: () => unarchiveAgreement(r),
                       disabled: busyArchiveRow === r.id,
-                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
+                      className: "mhb-agreement-primary-action",
                     }
                   : canMarkComplete
                   ? {
@@ -2025,7 +2025,7 @@ export default function AgreementList() {
                       icon: busyCompleteRow === r.id ? RefreshCw : Check,
                       onClick: () => markComplete(r, stat),
                       disabled: busyCompleteRow === r.id,
-                      className: "border border-emerald-300/50 bg-emerald-400/20 text-emerald-50 hover:bg-emerald-400/30",
+                      className: "mhb-agreement-primary-action mhb-agreement-primary-action--success",
                     }
                   : needsFundingAttention
                   ? {
@@ -2034,7 +2034,7 @@ export default function AgreementList() {
                       icon: Landmark,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "border border-amber-300/50 bg-amber-400/20 text-amber-50 hover:bg-amber-400/30",
+                      className: "mhb-agreement-primary-action mhb-agreement-primary-action--warning",
                     }
                   : fullySigned
                   ? {
@@ -2043,7 +2043,7 @@ export default function AgreementList() {
                       icon: Layers,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
+                      className: "mhb-agreement-primary-action",
                     }
                   : isDraft
                   ? {
@@ -2052,7 +2052,7 @@ export default function AgreementList() {
                       icon: Pencil,
                       onClick: () => goEdit(r.id),
                       disabled: false,
-                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
+                      className: "mhb-agreement-primary-action",
                     }
                   : {
                       key: "status",
@@ -2060,7 +2060,7 @@ export default function AgreementList() {
                       icon: Eye,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "border border-white/80 bg-white/95 text-slate-950 hover:bg-sky-50",
+                      className: "mhb-agreement-primary-action",
                     };
 
                 return (
