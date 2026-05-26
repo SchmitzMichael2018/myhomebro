@@ -20,7 +20,7 @@ export default function DashboardCard({
   return (
     <div
       data-testid={testId}
-      className={`rounded-2xl border p-5 shadow-sm ${toneClass} ${className}`.trim()}
+      className={`mhb-dashboard-card rounded-2xl border p-5 shadow-sm ${toneClass} ${className}`.trim()}
     >
       {children}
     </div>

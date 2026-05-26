@@ -488,6 +488,325 @@
   .mhb-operational-surface a:hover {
     box-shadow: 0 10px 24px rgba(14, 165, 233, 0.16);
   }
+
+  .mhb-gradient-bg {
+    background:
+      radial-gradient(circle at 24% 0%, rgba(37, 99, 235, 0.26), transparent 30rem),
+      radial-gradient(circle at 82% 8%, rgba(124, 58, 237, 0.16), transparent 28rem),
+      linear-gradient(135deg, #020617 0%, #061733 45%, #071a3a 100%);
+  }
+
+  .mhb-dashboard-shell {
+    position: relative;
+    isolation: isolate;
+    padding-top: 1.15rem;
+  }
+
+  .mhb-dashboard-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 15.5rem;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 19% 35%, rgba(59, 130, 246, 0.28), transparent 21rem),
+      radial-gradient(circle at 66% 8%, rgba(99, 102, 241, 0.24), transparent 25rem),
+      linear-gradient(135deg, rgba(7, 26, 58, 0.92), rgba(2, 6, 23, 0.1));
+    opacity: 0.95;
+  }
+
+  .mhb-dashboard-shell::after {
+    content: "";
+    position: absolute;
+    inset: 2.25rem 2rem auto auto;
+    width: min(38rem, 48vw);
+    height: 11rem;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.38;
+    background:
+      linear-gradient(120deg, transparent 0 18%, rgba(96, 165, 250, 0.28) 18.5% 19%, transparent 19.5% 100%),
+      repeating-linear-gradient(15deg, rgba(125, 211, 252, 0.17) 0 1px, transparent 1px 22px);
+    mask-image: linear-gradient(90deg, transparent, #000 20%, #000 82%, transparent);
+  }
+
+  .mhb-dashboard-shell .mhb-topbar {
+    position: relative;
+    margin-bottom: 1.35rem;
+    padding: 1.35rem 1.4rem 1.45rem;
+    overflow: hidden;
+    border: 1px solid rgba(148, 197, 255, 0.16);
+    border-radius: 28px;
+    background:
+      radial-gradient(circle at 18% 5%, rgba(59, 130, 246, 0.34), transparent 18rem),
+      radial-gradient(circle at 70% 0%, rgba(124, 58, 237, 0.22), transparent 22rem),
+      linear-gradient(135deg, rgba(3, 15, 38, 0.92), rgba(7, 26, 58, 0.78));
+    box-shadow:
+      0 24px 70px rgba(2, 8, 23, 0.36),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .mhb-dashboard-shell .mhb-topbar::before {
+    content: "";
+    position: absolute;
+    inset: auto -8% -52% 28%;
+    height: 10rem;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at center, rgba(250, 204, 21, 0.16), transparent 58%),
+      repeating-radial-gradient(ellipse at center, rgba(251, 191, 36, 0.2) 0 1px, transparent 1px 16px);
+    opacity: 0.46;
+    transform: rotate(-7deg);
+  }
+
+  .mhb-dashboard-shell .mhb-topbar h1 {
+    color: #f8fbff !important;
+    font-weight: 900;
+    letter-spacing: -0.035em;
+    text-shadow: 0 8px 28px rgba(2, 8, 23, 0.34);
+  }
+
+  .mhb-dashboard-shell .mhb-topbar h1 + div,
+  .mhb-dashboard-shell .mhb-topbar .mhb-page-subtitle {
+    color: rgba(219, 234, 254, 0.86) !important;
+  }
+
+  .mhb-contractor-dashboard {
+    position: relative;
+    isolation: isolate;
+    background:
+      radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.22), transparent 25rem),
+      radial-gradient(circle at 78% 14%, rgba(124, 58, 237, 0.13), transparent 24rem),
+      radial-gradient(circle at 88% 72%, rgba(245, 158, 11, 0.1), transparent 28rem),
+      linear-gradient(135deg, #020617 0%, #041631 48%, #071a3a 100%);
+  }
+
+  .mhb-contractor-dashboard::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      linear-gradient(rgba(148, 197, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 197, 255, 0.03) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(circle at 48% 18%, #000, transparent 72%);
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-section > div:first-child {
+    padding-inline: 0.15rem;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-section :is([class*="text-[1.4rem]"], [class*="text-[1.55rem]"]) {
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    text-shadow: 0 10px 30px rgba(2, 8, 23, 0.28);
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-card {
+    border-color: rgba(148, 197, 255, 0.17) !important;
+    border-radius: 22px;
+    background:
+      radial-gradient(circle at 12% 0%, rgba(59, 130, 246, 0.18), transparent 18rem),
+      linear-gradient(145deg, rgba(6, 29, 66, 0.96), rgba(5, 22, 50, 0.9)) !important;
+    box-shadow:
+      0 24px 70px rgba(2, 8, 23, 0.38),
+      0 0 0 1px rgba(255, 255, 255, 0.025),
+      inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease,
+      background 180ms ease;
+  }
+
+  .mhb-contractor-dashboard .mhb-dashboard-card:hover {
+    border-color: rgba(147, 197, 253, 0.28) !important;
+    box-shadow:
+      0 28px 80px rgba(2, 8, 23, 0.42),
+      0 0 34px rgba(37, 99, 235, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.075) !important;
+  }
+
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] {
+    background:
+      radial-gradient(circle at 88% 18%, rgba(245, 158, 11, 0.18), transparent 18rem),
+      radial-gradient(circle at 16% 0%, rgba(59, 130, 246, 0.2), transparent 18rem),
+      linear-gradient(135deg, rgba(6, 29, 66, 0.98), rgba(7, 26, 58, 0.94)) !important;
+  }
+
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button,
+  .mhb-contractor-dashboard [data-testid="dashboard-next-actions"] button,
+  .mhb-contractor-dashboard [data-testid="dashboard-schedule-section"] button {
+    box-shadow:
+      0 14px 34px rgba(2, 8, 23, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      background 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button {
+    background:
+      linear-gradient(135deg, rgba(30, 64, 175, 0.38), rgba(15, 42, 78, 0.7)) !important;
+  }
+
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button:hover,
+  .mhb-contractor-dashboard [data-testid="dashboard-next-actions"] button:hover,
+  .mhb-contractor-dashboard [data-testid="dashboard-schedule-section"] button:hover {
+    transform: translateY(-2px);
+    border-color: rgba(191, 219, 254, 0.42);
+    background: rgba(59, 130, 246, 0.16);
+    box-shadow:
+      0 20px 48px rgba(2, 8, 23, 0.3),
+      0 0 28px rgba(37, 99, 235, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .mhb-contractor-dashboard button[data-testid^="dashboard-work-"],
+  .mhb-contractor-dashboard button[data-testid^="dashboard-money-"] {
+    border-radius: 16px;
+  }
+
+  .mhb-contractor-dashboard button[data-testid^="dashboard-work-"]:hover,
+  .mhb-contractor-dashboard button[data-testid^="dashboard-money-"]:hover {
+    transform: translateY(-2px);
+  }
+
+  .mhb-sidebar-shell {
+    border-right-color: rgba(148, 197, 255, 0.18) !important;
+    box-shadow:
+      18px 0 55px rgba(2, 8, 23, 0.38),
+      inset -1px 0 0 rgba(255, 255, 255, 0.035);
+  }
+
+  .mhb-sidebar-brand {
+    border-bottom-color: rgba(148, 197, 255, 0.14) !important;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(37, 99, 235, 0.22), transparent 8rem),
+      linear-gradient(180deg, rgba(15, 42, 78, 0.46), transparent);
+  }
+
+  .mhb-sidebar-brand img {
+    box-shadow: 0 10px 26px rgba(37, 99, 235, 0.18);
+  }
+
+  .mhb-sidebar-brand :is(.text-slate-900, .text-slate-600) {
+    color: #f8fbff !important;
+  }
+
+  .mhb-sidebar-brand .text-slate-600 {
+    color: rgba(219, 234, 254, 0.72) !important;
+  }
+
+  .mhb-sidebar-group-label {
+    color: rgba(186, 230, 253, 0.52) !important;
+  }
+
+  .mhb-sidebar-item {
+    border-color: rgba(148, 197, 255, 0.1) !important;
+    background: rgba(15, 42, 78, 0.42) !important;
+    color: rgba(226, 232, 240, 0.8) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+  }
+
+  .mhb-sidebar-item:hover {
+    border-color: rgba(96, 165, 250, 0.36) !important;
+    background: rgba(37, 99, 235, 0.18) !important;
+    color: #fff !important;
+    transform: translateX(2px);
+    box-shadow:
+      0 12px 28px rgba(2, 8, 23, 0.22),
+      0 0 26px rgba(37, 99, 235, 0.08) !important;
+  }
+
+  .mhb-sidebar-item.is-active {
+    border-color: rgba(96, 165, 250, 0.55) !important;
+    background:
+      radial-gradient(circle at 12% 50%, rgba(96, 165, 250, 0.28), transparent 9rem),
+      linear-gradient(135deg, rgba(29, 78, 216, 0.78), rgba(30, 64, 175, 0.46)) !important;
+    color: #fff !important;
+    box-shadow:
+      0 16px 38px rgba(2, 8, 23, 0.34),
+      0 0 0 1px rgba(125, 211, 252, 0.12),
+      0 0 28px rgba(37, 99, 235, 0.18) !important;
+  }
+
+  .mhb-sidebar-item-icon {
+    border-color: rgba(148, 197, 255, 0.13) !important;
+    background: rgba(2, 22, 50, 0.78) !important;
+    color: rgba(147, 197, 253, 0.82) !important;
+  }
+
+  .mhb-sidebar-item.is-active .mhb-sidebar-item-icon,
+  .mhb-sidebar-item:hover .mhb-sidebar-item-icon {
+    border-color: rgba(191, 219, 254, 0.3) !important;
+    background: rgba(96, 165, 250, 0.16) !important;
+    color: #fff !important;
+  }
+
+  .mhb-sidebar-ai-button {
+    position: relative;
+    overflow: hidden;
+    border-color: rgba(129, 140, 248, 0.62) !important;
+    background:
+      radial-gradient(circle at 12% 30%, rgba(56, 189, 248, 0.32), transparent 8rem),
+      linear-gradient(135deg, rgba(37, 99, 235, 0.9), rgba(124, 58, 237, 0.68)) !important;
+    color: #fff !important;
+    box-shadow:
+      0 16px 42px rgba(37, 99, 235, 0.22),
+      0 0 0 1px rgba(255, 255, 255, 0.05),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  }
+
+  .mhb-sidebar-ai-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(110deg, transparent 0 28%, rgba(255, 255, 255, 0.22) 43%, transparent 58% 100%);
+    transform: translateX(-115%);
+    transition: transform 700ms ease;
+  }
+
+  .mhb-sidebar-ai-button:hover::after {
+    transform: translateX(115%);
+  }
+
+  .mhb-sidebar-ai-button svg {
+    color: #dbeafe !important;
+    filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.34));
+  }
+
+  .mhb-sidebar-footer {
+    border-top-color: rgba(148, 197, 255, 0.13) !important;
+    background: linear-gradient(180deg, transparent, rgba(2, 8, 23, 0.32));
+  }
+
+  .mhb-sidebar-footer,
+  .mhb-sidebar-footer :is(.text-slate-600, .text-slate-500, .text-slate-300) {
+    color: rgba(219, 234, 254, 0.66) !important;
+  }
+
+  .mhb-sidebar-footer a:hover {
+    color: #bfdbfe !important;
+  }
+
+  .mhb-sidebar-logout {
+    border-color: rgba(148, 197, 255, 0.16) !important;
+    background: rgba(15, 42, 78, 0.52) !important;
+    color: rgba(226, 232, 240, 0.86) !important;
+  }
+
+  .mhb-sidebar-logout:hover {
+    border-color: rgba(251, 191, 36, 0.36) !important;
+    background: rgba(37, 99, 235, 0.16) !important;
+    color: #fff !important;
+  }
 }
 
 /* === Responsive Typography Tweaks === */

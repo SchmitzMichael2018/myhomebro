@@ -2312,7 +2312,7 @@ export default function ContractorDashboard() {
       icon: WalletMinimal,
       count: paymentSummary.payment_pending.count,
       amount: paymentSummary.payment_pending.amount,
-      description: "Approved work still moving through payment.",
+      description: "Approved work awaiting payment or release.",
       tone: "active",
       onClick: () => goPayments({ moneyStatus: "payment_pending" }),
     },
@@ -2344,14 +2344,11 @@ export default function ContractorDashboard() {
       subtitle={greetingName ? `Good to see you, ${greetingName}.` : null}
       showLogo={false}
       compact
+      className="mhb-dashboard-shell"
       titleClassName="drop-shadow-none"
     >
       <div
-        className="-mx-4 -mb-6 min-h-screen space-y-5 px-4 pb-8 pt-1 md:-mx-6 md:px-6"
-        style={{
-          background:
-            "linear-gradient(135deg, #041735 0%, #063f96 38%, #667f88 70%, #f0c94b 100%)",
-        }}
+        className="mhb-contractor-dashboard -mx-4 -mb-6 min-h-screen space-y-5 px-4 pb-8 pt-1 md:-mx-6 md:px-6"
       >
       {!isEmployee ? (
         <ContractorContextualGuideModal

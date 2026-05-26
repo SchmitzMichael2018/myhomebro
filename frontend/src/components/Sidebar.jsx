@@ -72,8 +72,8 @@ const SidebarNavCtx = createContext({
 
 function NavGroup({ label, children, className = "" }) {
   return (
-    <div className={`space-y-2.5 ${className}`.trim()}>
-      <div className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500/95">
+    <div className={`mhb-sidebar-group space-y-2.5 ${className}`.trim()}>
+      <div className="mhb-sidebar-group-label px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500/95">
         {label}
       </div>
       <div className="space-y-2">{children}</div>
@@ -97,9 +97,9 @@ function Item({ to, label, icon: Icon, emoji, title, hint, count = 0 }) {
         className={({ isActive }) =>
           [
             "group flex min-w-0 overflow-hidden items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-semibold transition duration-200",
-            "border",
+            "mhb-sidebar-item border",
             isActive
-              ? "bg-slate-900 text-white border-slate-950/20 shadow-[0_12px_28px_rgba(15,23,42,0.18)]"
+              ? "is-active bg-slate-900 text-white border-slate-950/20 shadow-[0_12px_28px_rgba(15,23,42,0.18)]"
               : "bg-[#f7f8fa] text-slate-700 border-slate-200/95 shadow-[0_2px_6px_rgba(15,23,42,0.04)] hover:bg-white hover:text-[#18395f] hover:border-amber-200 hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)]",
           ].join(" ")
         }
@@ -112,7 +112,7 @@ function Item({ to, label, icon: Icon, emoji, title, hint, count = 0 }) {
       >
         <span aria-hidden="true">
           <span
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+            className={`mhb-sidebar-item-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
               isCurrent
                 ? "border-white/15 bg-white/10 text-white"
                 : "border-slate-200 bg-white text-slate-500 group-hover:border-amber-100 group-hover:bg-amber-50/70 group-hover:text-[#214d7f]"
@@ -597,7 +597,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       ) : null}
 
-      <div className="border-b border-slate-200/90 px-4 pb-4 pt-5">
+      <div className="mhb-sidebar-brand border-b border-slate-200/90 px-4 pb-4 pt-5">
         <div className="flex items-center gap-3">
           <img
             src={new URL("../assets/myhomebro_logo.png", import.meta.url).href}
@@ -613,7 +613,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       </div>
 
-      <nav className="flex-1 min-h-0 overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar">
+      <nav className="mhb-sidebar-nav flex-1 min-h-0 overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar">
         {showRefundContext && !isEmployee && (
           <RefundEscrowModal
             open={refundOpen}
@@ -635,7 +635,7 @@ export default function Sidebar({ variant = "desktop" }) {
                     context: { current_route: `${location.pathname}${location.search || ""}` },
                   })
                 }
-                className="mb-5 hidden w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-[#f7f8fa] px-3.5 py-3 text-[15px] font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.04)] transition duration-200 hover:border-amber-200 hover:bg-white hover:text-[#18395f] hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)] [&>span:first-child]:hidden xl:flex"
+                className="mhb-sidebar-ai-button mb-5 hidden w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-[#f7f8fa] px-3.5 py-3 text-[15px] font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.04)] transition duration-200 hover:border-amber-200 hover:bg-white hover:text-[#18395f] hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)] [&>span:first-child]:hidden xl:flex"
               >
                 <span aria-hidden="true">âœ¨</span>
                 <Sparkles size={16} strokeWidth={2} className="shrink-0 text-[#214d7f]" />
@@ -736,11 +736,11 @@ export default function Sidebar({ variant = "desktop" }) {
         ) : null}
       </nav>
 
-      <div className="border-t border-slate-200/90 px-4 py-4">
+      <div className="mhb-sidebar-footer border-t border-slate-200/90 px-4 py-4">
         <button
           onClick={handleLogout}
           data-close-sidebar="1"
-          className="w-full rounded-xl border border-slate-200 bg-[#f7f8fa] px-3.5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.04)] transition duration-200 hover:bg-white hover:text-[#18395f]"
+          className="mhb-sidebar-logout w-full rounded-xl border border-slate-200 bg-[#f7f8fa] px-3.5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.04)] transition duration-200 hover:bg-white hover:text-[#18395f]"
         >
           Logout
         </button>
@@ -779,10 +779,9 @@ export default function Sidebar({ variant = "desktop" }) {
 
   return (
     <aside
-      className="hidden h-screen max-w-full flex-shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
+      className="mhb-sidebar-shell hidden h-screen max-w-full flex-shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
-        background: "linear-gradient(180deg, rgba(252,253,255,0.94) 0%, rgba(246,248,251,0.92) 100%)",
-        backdropFilter: "blur(12px)",
+        background: "linear-gradient(180deg, #020b1f 0%, #041633 54%, #061d42 100%)",
       }}
     >
       {inner}

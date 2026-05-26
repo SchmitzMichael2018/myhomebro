@@ -14,6 +14,7 @@ export default function PageShell({
   children,
   showLogo = true,
   titleClassName = "",
+  className = "",
   compact = false,
 }) {
   const { openSidebar, registerHeaderHamburger, unregisterHeaderHamburger } =
@@ -26,7 +27,7 @@ export default function PageShell({
   }, [registerHeaderHamburger, unregisterHeaderHamburger]);
 
   return (
-    <div className="mhb-container">
+    <div className={`mhb-container ${className}`.trim()}>
       {(title || showLogo) && (
         <header>
           <div className={`mhb-topbar${compact ? " mb-3 gap-3" : ""}`}>

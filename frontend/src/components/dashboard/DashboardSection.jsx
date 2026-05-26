@@ -12,7 +12,7 @@ export default function DashboardSection({
 }) {
   const premium = variant === "premium";
   return (
-    <section data-testid={testId} className={`space-y-3.5 ${className}`.trim()}>
+    <section data-testid={testId} className={`mhb-dashboard-section space-y-3.5 ${className}`.trim()}>
       {(title || subtitle || actions || eyebrow) ? (
         <div className="flex flex-col gap-2.5 md:flex-row md:items-end md:justify-between">
           <div>
