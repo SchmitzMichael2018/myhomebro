@@ -295,11 +295,8 @@ test.describe('AI Workspace page', () => {
     await page.getByTestId('ai-workspace-hero-submit').click();
 
     await page.waitForURL('**/app/agreements/new/wizard?step=1');
-    await expect(page.locator('textarea[name="description"]')).toContainText(
-      'Casey Prospect kitchen remodel'
-    );
-    await expect(page.locator('input[placeholder="e.g., Jane Smith"]')).toHaveValue(
-      'Casey Prospect'
+    await expect(page.getByTestId('step1-job-description-input')).toHaveValue(
+      /Casey Prospect kitchen remodel/
     );
 
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });

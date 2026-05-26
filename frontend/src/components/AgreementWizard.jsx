@@ -1180,7 +1180,11 @@ export default function AgreementWizard() {
     });
 
     const nextQaName =
-      prefill.customer_name || prefill.full_name || draftPayload.homeowner_name || "";
+      prefill.customer_name ||
+      prefill.full_name ||
+      draftPayload.customer_name ||
+      draftPayload.homeowner_name ||
+      "";
     const nextQaEmail = prefill.email || draftPayload.email || "";
 
     if (isBlankAssistantValue(dLocal?.homeowner) && !isBlankAssistantValue(nextQaName)) {

@@ -420,6 +420,7 @@ export default function AIAssistantPage() {
       title="AI Workspace"
       subtitle="Start work, launch the right flow, and keep the next move clear."
       variant="operational"
+      className="mhb-ai-workspace"
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">

@@ -1680,6 +1680,24 @@ export default function Step1Details({
       },
     ];
   }, [dLocal?.project_type, mergedProjectTypeOptions]);
+
+  useEffect(() => {
+    const nextPrompt = safeTrim(
+      dLocal?.description ||
+        assistantDraftPayload?.description ||
+        assistantDraftPayload?.project_scope_summary ||
+        assistantDraftPayload?.project_summary ||
+        ""
+    );
+    if (!nextPrompt) return;
+    setStep1JobDescriptionPrompt((current) => (safeTrim(current) ? current : nextPrompt));
+    setStep1ResetChooserPrompt((current) => (safeTrim(current) ? current : nextPrompt));
+  }, [
+    assistantDraftPayload?.description,
+    assistantDraftPayload?.project_scope_summary,
+    assistantDraftPayload?.project_summary,
+    dLocal?.description,
+  ]);
   const activeCustomSubtypeOptions = customProjectSubtypeOptionsByType[safeTrim(dLocal?.project_type)] || [];
   const mergedProjectSubtypeOptions = useMemo(
     () => [...(projectSubtypeOptions || []), ...activeCustomSubtypeOptions],
