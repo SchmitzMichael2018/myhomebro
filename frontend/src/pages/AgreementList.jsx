@@ -1741,7 +1741,8 @@ export default function AgreementList() {
   return (
     <ContractorPageSurface
       title="Agreements"
-      className="max-w-[1680px]"
+      subtitle="Track drafts, signatures, funding, invoices, and agreement history in one workspace."
+      className="mhb-agreements-page max-w-[1680px]"
       variant="operational"
       contentClassName="space-y-4"
     >
@@ -1896,7 +1897,19 @@ export default function AgreementList() {
         data-testid="agreement-list-table-shell"
         className="min-h-[420px] overflow-x-auto rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)] backdrop-blur"
       >
-        <table className="min-w-full text-[14px] leading-5">
+        <table className="w-full min-w-[1160px] table-fixed text-[14px] leading-5">
+          <colgroup>
+            <col className="w-[44px]" />
+            <col className="w-[88px]" />
+            <col />
+            <col className="w-[118px]" />
+            <col className="w-[132px]" />
+            <col className="w-[150px]" />
+            <col className="w-[128px]" />
+            <col className="w-[118px]" />
+            <col className="w-[86px]" />
+            <col className="w-[188px]" />
+          </colgroup>
           <thead className="bg-white/[0.07]">
             <tr>
               <th className="px-3 py-3 text-center">
@@ -2092,7 +2105,7 @@ export default function AgreementList() {
                       </button>
                     </td>
 
-                    <td className="min-w-[360px] max-w-[560px] px-3 py-4 align-top" title={renderProject(r)}>
+                    <td className="min-w-0 px-3 py-4 align-top" title={renderProject(r)}>
                       <div
                         className={`min-w-0 rounded-2xl border px-4 py-3 shadow-sm ${
                           needsFundingAttention
@@ -2207,7 +2220,7 @@ export default function AgreementList() {
                             primaryAction.onClick();
                           }}
                           disabled={primaryAction.disabled}
-                          className={`inline-flex min-w-[128px] items-center justify-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${primaryAction.className}`}
+                          className={`inline-flex min-w-[118px] items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed ${primaryAction.className}`}
                           title={primaryAction.label}
                         >
                           <primaryAction.icon

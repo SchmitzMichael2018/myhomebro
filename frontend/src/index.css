@@ -930,6 +930,172 @@
     background: rgba(37, 99, 235, 0.16) !important;
     color: #fff !important;
   }
+
+  .mhb-agreements-page {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .mhb-agreements-page > div > div:first-child {
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 1.15rem;
+    border: 1px solid rgba(148, 197, 255, 0.16);
+    border-radius: 28px;
+    padding: 1.25rem 1.35rem 1.3rem;
+    background:
+      radial-gradient(circle at 18% 5%, rgba(59, 130, 246, 0.3), transparent 17rem),
+      radial-gradient(circle at 74% 0%, rgba(124, 58, 237, 0.18), transparent 22rem),
+      linear-gradient(135deg, rgba(3, 15, 38, 0.94), rgba(7, 26, 58, 0.82));
+    box-shadow:
+      0 24px 70px rgba(2, 8, 23, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .mhb-agreements-page > div > div:first-child::after {
+    content: "";
+    position: absolute;
+    inset: auto -8% -56% 34%;
+    height: 9rem;
+    pointer-events: none;
+    opacity: 0.4;
+    background:
+      radial-gradient(ellipse at center, rgba(250, 204, 21, 0.13), transparent 58%),
+      repeating-radial-gradient(ellipse at center, rgba(251, 191, 36, 0.18) 0 1px, transparent 1px 16px);
+    transform: rotate(-6deg);
+  }
+
+  .mhb-agreements-page > div > div:first-child h1 {
+    color: #f8fbff !important;
+    font-weight: 900;
+    letter-spacing: 0;
+    text-shadow: 0 8px 28px rgba(2, 8, 23, 0.34);
+  }
+
+  .mhb-agreements-page > div > div:first-child p,
+  .mhb-agreements-page > div > div:first-child [class*="text-sky-100"] {
+    color: rgba(219, 234, 254, 0.84) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-controls"],
+  .mhb-agreements-page [data-testid^="agreement-pagination-"],
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] {
+    border-color: rgba(148, 197, 255, 0.18) !important;
+    background:
+      radial-gradient(circle at 8% 0%, rgba(59, 130, 246, 0.16), transparent 18rem),
+      linear-gradient(145deg, rgba(6, 29, 66, 0.97), rgba(5, 22, 50, 0.92)) !important;
+    box-shadow:
+      0 24px 70px rgba(2, 8, 23, 0.36),
+      0 0 0 1px rgba(255, 255, 255, 0.025),
+      inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+    backdrop-filter: none;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-controls"] {
+    padding: 1rem !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-controls"] input[type="text"],
+  .mhb-agreements-page [data-testid="agreement-list-controls"] input:not([type]),
+  .mhb-agreements-page [data-testid="agreement-list-controls"] select {
+    border-color: rgba(148, 197, 255, 0.2) !important;
+    background-color: rgba(2, 22, 50, 0.82) !important;
+    color: #f8fbff !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.045),
+      0 10px 24px rgba(2, 8, 23, 0.16);
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-controls"] input::placeholder {
+    color: rgba(219, 234, 254, 0.52) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-controls"] label {
+    border-color: rgba(148, 197, 255, 0.18) !important;
+    background: rgba(15, 42, 78, 0.58) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] {
+    overflow-x: auto;
+    scrollbar-color: rgba(96, 165, 250, 0.38) rgba(2, 12, 33, 0.52);
+    scrollbar-width: thin;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"]::-webkit-scrollbar {
+    height: 10px;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"]::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: rgba(2, 12, 33, 0.52);
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"]::-webkit-scrollbar-thumb {
+    border: 2px solid rgba(2, 12, 33, 0.52);
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.46);
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] thead {
+    background: rgba(255, 255, 255, 0.045) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] th {
+    color: rgba(219, 234, 254, 0.66) !important;
+    letter-spacing: 0.08em;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] tbody {
+    border-color: rgba(148, 197, 255, 0.1) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] tbody tr {
+    background: rgba(255, 255, 255, 0.026) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] tbody tr:hover {
+    background: rgba(59, 130, 246, 0.09) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] td {
+    border-color: rgba(148, 197, 255, 0.1) !important;
+  }
+
+  .mhb-agreements-page [data-testid="agreement-list-table-shell"] td > div.rounded-2xl {
+    border-color: rgba(148, 197, 255, 0.16) !important;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.14), transparent 14rem),
+      rgba(15, 42, 78, 0.5) !important;
+    box-shadow:
+      0 14px 34px rgba(2, 8, 23, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+  }
+
+  .mhb-agreements-page button {
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      background 180ms ease,
+      box-shadow 180ms ease,
+      color 180ms ease;
+  }
+
+  .mhb-agreements-page button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .mhb-agreements-page button:disabled {
+    border-color: rgba(255, 255, 255, 0.16) !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: rgba(255, 255, 255, 0.72) !important;
+    cursor: not-allowed;
+    opacity: 1 !important;
+    box-shadow: none !important;
+  }
+
+  .mhb-agreements-page [data-testid^="agreement-pagination-"] button:disabled {
+    color: rgba(219, 234, 254, 0.62) !important;
+  }
 }
 
 /* === Responsive Typography Tweaks === */
