@@ -632,7 +632,6 @@ export default function Sidebar({ variant = "desktop" }) {
                 data-testid="assistant-dock-open-button"
                 onClick={() =>
                   openAssistant({
-                    title: "Ask AI",
                     context: { current_route: `${location.pathname}${location.search || ""}` },
                   })
                 }
@@ -640,7 +639,7 @@ export default function Sidebar({ variant = "desktop" }) {
               >
                 <span aria-hidden="true">âœ¨</span>
                 <Sparkles size={16} strokeWidth={2} className="shrink-0 text-[#214d7f]" />
-                <span>Ask AI</span>
+                <span>AI Copilot</span>
               </button>
             </div>
 
@@ -714,14 +713,13 @@ export default function Sidebar({ variant = "desktop" }) {
               data-testid="assistant-dock-open-button"
               onClick={() =>
                 openAssistant({
-                  title: "Ask AI",
                   context: { current_route: `${location.pathname}${location.search || ""}` },
                 })
               }
               className="mb-3 hidden w-full items-center justify-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-slate-800 transition hover:bg-slate-50 xl:flex"
             >
               <span aria-hidden="true">✨</span>
-              Ask AI
+              AI Copilot
             </button>
           ) : null}
           <div className="space-y-2">{mainNav}</div>

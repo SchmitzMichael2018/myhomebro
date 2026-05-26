@@ -64,7 +64,7 @@ const CAPABILITY_ROWS = [
   "Turn a plain-language job description into the right workflow",
   "Jump into agreements, templates, milestones, and next-step routing",
   "Bring recent work back into focus without hunting through the sidebar",
-  "Keep AI Copilot reserved for contextual help on the page you're in",
+  "Use AI Copilot later for contextual help inside the page you're working on",
 ];
 
 function normalizeList(data) {
@@ -156,7 +156,7 @@ function buildSmartSuggestions({ leads, agreements, milestones }) {
       priority: index === 0 ? "High" : "Medium",
       primaryLabel: "Open dashboard",
       primaryTarget: "/app/dashboard",
-      secondaryLabel: "Ask AI",
+      secondaryLabel: "Open Copilot",
       secondaryAction: "copilot",
     });
   });
@@ -198,7 +198,7 @@ function buildSmartSuggestions({ leads, agreements, milestones }) {
       priority: "Medium",
       primaryLabel: "Open review queue",
       primaryTarget: "/app/reviewer/queue",
-      secondaryLabel: "Ask AI",
+      secondaryLabel: "Open Copilot",
       secondaryAction: "copilot",
     });
   }
@@ -398,7 +398,6 @@ export default function AIAssistantPage() {
 
   function openCopilot() {
     openAssistant({
-      title: "Ask AI",
       context: WORKSPACE_CONTEXT,
     });
   }
@@ -418,7 +417,7 @@ export default function AIAssistantPage() {
     <ContractorPageSurface
       eyebrow="AI Workspace"
       title="AI Workspace"
-      subtitle="Start work, launch the right flow, and keep the next move clear."
+      subtitle="Launch workflows, organize projects, and coordinate work with AI."
       variant="operational"
       className="mhb-ai-workspace"
     >
@@ -435,8 +434,8 @@ export default function AIAssistantPage() {
               Start something new with AI
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-[15px]">
-              Describe the job, project, or task in plain language and AI Workspace will route you
-              into the right MyHomeBro flow with the right setup already in motion.
+              Describe what you want to start, plan, or organize and AI Workspace will route you
+              into the right MyHomeBro workflow with the right setup already in motion.
             </p>
 
             <form onSubmit={handleHeroSubmit} className="mt-6">
@@ -444,7 +443,7 @@ export default function AIAssistantPage() {
                 <textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Describe your job or task..."
+                  placeholder="Describe what you want to start, plan, or organize..."
                   rows={5}
                   className="min-h-[148px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none placeholder:text-slate-400"
                   data-testid="ai-workspace-hero-input"
@@ -486,7 +485,7 @@ export default function AIAssistantPage() {
                       onClick={openCopilot}
                       className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                     >
-                      Open AI Copilot
+                      Open contextual Copilot
                     </button>
                   </div>
                 </div>
@@ -503,10 +502,10 @@ export default function AIAssistantPage() {
               What This Does
             </div>
             <h3 className="mt-4 text-2xl font-bold tracking-tight">
-              AI Workspace is your launch hub, onboarding surface, and control center.
+              AI Workspace is your orchestration hub for launching and organizing work.
             </h3>
             <p className="mt-3 text-sm leading-6 text-sky-50/90">
-              Start new work here, jump into the right area faster, and keep AI Copilot focused on
+              Start new work here, jump into the right area faster, and use AI Copilot later for
               contextual help inside the page you're already using.
             </p>
             <div className="mt-6 space-y-3">
@@ -709,11 +708,11 @@ export default function AIAssistantPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-lg font-semibold text-slate-900">
-                Need help with your current page?
+                Need help on this page?
               </div>
               <div className="mt-1 text-sm leading-6 text-slate-600">
-                AI Copilot is for contextual guidance inside the page or workflow step you're
-                already using. Open it when you want help without leaving where you are.
+                AI Copilot gives current-page guidance while you work. Open it when you want help
+                without leaving the workflow you're already in.
               </div>
             </div>
             <button
@@ -723,7 +722,7 @@ export default function AIAssistantPage() {
               data-testid="ai-workspace-open-copilot"
             >
               <MessageSquareText className="h-4 w-4" />
-              Ask AI
+              Open AI Copilot
             </button>
           </div>
         </section>

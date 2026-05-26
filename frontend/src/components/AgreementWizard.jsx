@@ -1928,13 +1928,11 @@ export default function AgreementWizard() {
   useEffect(() => {
     if (!step1AiEntryOpen || step !== 1) return;
     openAssistant({
-      title: aiPanelConfig.entryTitle,
       context: assistantContext,
       onAction: handleAssistantAction,
     });
     setStep1AiEntryOpen(false);
   }, [
-    aiPanelConfig.entryTitle,
     assistantContext,
     handleAssistantAction,
     openAssistant,
@@ -1945,12 +1943,10 @@ export default function AgreementWizard() {
   useEffect(() => {
     if (!isAssistantDockOpen) return;
     openAssistant({
-      title: aiPanelConfig.entryTitle,
       context: assistantContext,
       onAction: handleAssistantAction,
     });
   }, [
-    aiPanelConfig.entryTitle,
     assistantContext,
     handleAssistantAction,
     isAssistantDockOpen,
@@ -1972,14 +1968,13 @@ export default function AgreementWizard() {
             data-testid="agreement-wizard-ask-ai-button"
             onClick={() =>
               openAssistant({
-                title: aiPanelConfig.entryTitle,
                 context: assistantContext,
                 onAction: handleAssistantAction,
               })
             }
             className="mhb-operational-filter-chip is-active rounded-xl px-3 py-2 text-sm font-semibold"
           >
-            Ask AI
+            AI Copilot
           </button>
           {agreementId ? (
             <div className="flex items-center gap-2">

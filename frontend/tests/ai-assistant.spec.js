@@ -625,7 +625,7 @@ test('desktop docked assistant panel opens and closes from app chrome', async ({
   await expect(page.getByTestId('assistant-desktop-dock')).not.toBeVisible();
 });
 
-test('agreement wizard assistant uses agreement context to resume at the blocked step', async ({
+test('agreement wizard assistant uses agreement context from the current workflow step', async ({
   page,
 }) => {
   const agreementId = 123;
@@ -741,26 +741,28 @@ test('agreement wizard assistant uses agreement context to resume at the blocked
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
-  await expect(page.getByTestId('start-with-ai-status')).toContainText('Ready to set up this agreement');
-
-  await page.getByTestId('start-with-ai-input').fill('Help me finish this agreement');
-  await page.getByRole('button', { name: 'Ask AI' }).click();
-
-  await expect(page.getByTestId('start-with-ai-next-action-label')).toContainText(
-    'Next: Open Milestone Builder.'
+  await page.getByTestId('agreement-wizard-ask-ai-button').click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText(
+    'AI Copilot for Agreements'
   );
-  await expect(page.getByTestId('start-with-ai-navigate')).toContainText('Open Milestone Builder');
+
+  await page.getByTestId('start-with-ai-input-dock').fill('Help me finish this agreement');
+  await page.getByRole('button', { name: 'Ask Copilot' }).click();
+
+  await expect(page.getByTestId('start-with-ai-next-action-label-dock')).toContainText(
+    'Next: Review the milestones below and click Save & Next when the plan looks right.'
+  );
   await page
-    .getByTestId('start-with-ai-assistant')
+    .getByTestId('start-with-ai-assistant-dock')
     .getByText('Assistant diagnostics')
     .click();
-  await expect(page.getByTestId('start-with-ai-detected-intent')).toContainText('Resume agreement');
-  await page.getByTestId('start-with-ai-structured-toggle').click();
-  await expect(page.getByTestId('start-with-ai-structured-json')).toContainText(
+  await expect(page.getByTestId('start-with-ai-detected-intent-dock')).toContainText('Resume agreement');
+  await page.getByTestId('start-with-ai-structured-toggle-dock').click();
+  await expect(page.getByTestId('start-with-ai-structured-json-dock')).toContainText(
     '"wizard_step_target": 2'
   );
-  await expect(page.getByTestId('start-with-ai-structured-json')).toContainText(
+  await expect(page.getByTestId('start-with-ai-structured-json-dock')).toContainText(
     '"action_key": "open_wizard_step"'
   );
 });

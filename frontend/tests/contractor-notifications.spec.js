@@ -681,9 +681,9 @@ test('contractor sidebar groups navigation into core work business and settings'
 
   const sidebar = page.locator('aside');
   await expect(sidebar).toContainText('Main');
-  await expect(sidebar).toContainText('ACCOUNT');
+  await expect(sidebar).toContainText('Users');
   await expect(sidebar).toContainText('Dashboard');
-  await expect(sidebar).toContainText('Ask AI');
+  await expect(sidebar).toContainText('AI Copilot');
   await expect(sidebar).toContainText('Business Dashboard');
   await expect(sidebar).toContainText('Agreements');
   await expect(sidebar).toContainText('Milestones');

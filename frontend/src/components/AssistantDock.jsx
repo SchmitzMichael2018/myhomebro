@@ -19,6 +19,19 @@ function buildRouteContext(location) {
   };
 }
 
+function copilotLabelForRoute(route = "") {
+  const path = String(route || "").toLowerCase();
+  if (path.includes("/agreements")) return "AI Copilot for Agreements";
+  if (path.includes("/milestones")) return "AI Copilot for Milestones";
+  if (path.includes("/invoices") || path.includes("/payments") || path.includes("/business")) {
+    return "AI Copilot for Payments";
+  }
+  if (path.includes("/templates")) return "AI Copilot for Templates";
+  if (path.includes("/bids") || path.includes("/public-presence")) return "AI Copilot for Leads";
+  if (path.includes("/dashboard")) return "AI Copilot for Dashboard";
+  return "AI Copilot";
+}
+
 export function useAssistantDock() {
   return useContext(AssistantDockContext);
 }
@@ -101,7 +114,7 @@ export function AssistantDockProvider({ children }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [dockTitle, setDockTitle] = useState("Ask AI");
+  const [dockTitle, setDockTitle] = useState("AI Copilot");
   const [dockContext, setDockContext] = useState(null);
   const [dockOnAction, setDockOnAction] = useState(null);
 
@@ -109,8 +122,9 @@ export function AssistantDockProvider({ children }) {
     (options = {}) => {
       setOpen(true);
       setMinimized(false);
-      setDockTitle(options.title || "Ask AI");
-      setDockContext(options.context || buildRouteContext(location));
+      const nextContext = options.context || buildRouteContext(location);
+      setDockTitle(options.title || copilotLabelForRoute(nextContext.current_route));
+      setDockContext(nextContext);
       setDockOnAction(() =>
         typeof options.onAction === "function" ? options.onAction : null
       );

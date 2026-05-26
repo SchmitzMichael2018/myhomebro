@@ -653,7 +653,7 @@ function normalizeTemplateMilestoneDrafts(items = []) {
 }
 
 export function StartWithAIEntry({
-  title = "Ask AI",
+  title = "AI Copilot",
   description = "Get contextual help for the workflow you are already in.",
   context = {},
   onAction,
@@ -681,7 +681,7 @@ export function StartWithAIEntry({
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              AI Assistant
+              AI Copilot
             </div>
             <div className="mt-1 text-lg font-semibold text-slate-900">{title}</div>
             <div className="mt-1 text-sm text-slate-600">{description}</div>
@@ -700,14 +700,14 @@ export function StartWithAIEntry({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
             <Wand2 className="h-4 w-4" />
-            {resolvedOpen ? "Hide Assistant" : "Ask AI"}
+            {resolvedOpen ? "Hide Copilot" : "Open Copilot"}
           </button>
           <button
             type="button"
             data-testid={`${testId}-dock`}
             onClick={() => {
               onOpenChange?.(true);
-              openAssistant({ title, context: entryContext });
+              openAssistant({ context: entryContext });
             }}
             className="hidden items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 xl:inline-flex"
           >
@@ -865,7 +865,7 @@ export default function StartWithAIAssistant({
     ? "AI Copilot"
     : isContextualMode
     ? "AI Copilot"
-    : "AI Assistant";
+    : "AI Workspace";
   const inputHelperText = isFieldAwareDescriptionMode
     ? "Generate a contractor-grade Scope of Work with sections, responsibilities, and exclusions."
     : isFieldAwareMilestonesMode
@@ -873,8 +873,8 @@ export default function StartWithAIAssistant({
     : isFieldAwareExclusionsMode
     ? "Generate reusable exclusions and assumptions for this template."
     : isContextualMode
-    ? "Ask AI about the step you're on right now."
-    : "Describe the work you want to start or improve.";
+    ? "Get contextual help for the step you're on right now."
+    : "Describe the work you want to start, plan, or organize.";
   const headline = isFieldAwareDescriptionMode
     ? "Generate description text for this template"
     : isFieldAwareMilestonesMode
@@ -902,7 +902,7 @@ export default function StartWithAIAssistant({
     ? "Generate Milestones"
     : isFieldAwareExclusionsMode
     ? "Generate Exclusions"
-    : panelConfig.submitButtonLabel || "Ask AI";
+    : panelConfig.submitButtonLabel || (isContextualMode ? "Ask Copilot" : "Start with AI");
 
   useEffect(() => {
     setFieldDraft("");

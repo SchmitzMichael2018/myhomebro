@@ -734,7 +734,7 @@ export function buildUserFacingAiPanel({
     statusDetail,
     quickActions: Array.isArray(panelConfig.quickActions) ? panelConfig.quickActions : [],
     promptPlaceholder:
-      safeText(panelConfig.promptPlaceholder) || "Ask AI what you want to improve.",
+      safeText(panelConfig.promptPlaceholder) || "Ask Copilot what you want to improve.",
     feedback: safeText(panelConfig.feedback),
     coachingTone: safeText(coaching?.tone) || "neutral",
     coachingTitle: safeText(coaching?.title),

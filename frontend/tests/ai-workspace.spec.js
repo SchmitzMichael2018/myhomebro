@@ -300,7 +300,7 @@ test.describe('AI Workspace page', () => {
     );
 
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    await page.getByRole('button', { name: 'Open AI Copilot' }).click();
+    await page.getByRole('button', { name: 'Open contextual Copilot' }).click();
     await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
   });
 
@@ -358,7 +358,7 @@ test.describe('AI Workspace page', () => {
     await page.waitForURL('**/app/templates');
   });
 
-  test('footer Ask AI opens the dock', async ({ page }) => {
+  test('footer AI Copilot opens the dock', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await page.getByTestId('ai-workspace-open-copilot').click();
