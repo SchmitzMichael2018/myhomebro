@@ -547,6 +547,11 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 
+  .mhb-dashboard-shell {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
   .mhb-dashboard-shell .mhb-topbar::before {
     content: "";
     position: absolute;
@@ -568,15 +573,14 @@
     width: min(23rem, 34vw);
     height: 6.6rem;
     pointer-events: none;
-    opacity: 0.3;
+    opacity: 0.28;
     background:
-      linear-gradient(22deg, transparent 0 54%, rgba(59, 130, 246, 0.58) 54.4% 55.2%, transparent 55.6%),
-      linear-gradient(158deg, transparent 0 55%, rgba(59, 130, 246, 0.5) 55.4% 56.2%, transparent 56.6%),
-      linear-gradient(90deg, transparent 0 13%, rgba(96, 165, 250, 0.48) 13.4% 14%, transparent 14.4% 34%, rgba(96, 165, 250, 0.4) 34.4% 35%, transparent 35.4% 100%),
-      linear-gradient(0deg, transparent 0 67%, rgba(96, 165, 250, 0.44) 67.4% 68%, transparent 68.4% 100%),
-      repeating-linear-gradient(90deg, rgba(96, 165, 250, 0.1) 0 1px, transparent 1px 34px);
+      radial-gradient(ellipse at 72% 62%, rgba(245, 158, 11, 0.12), transparent 55%),
+      repeating-radial-gradient(ellipse at 76% 72%, rgba(96, 165, 250, 0.16) 0 1px, transparent 1px 13px),
+      linear-gradient(90deg, transparent 0 14%, rgba(96, 165, 250, 0.34) 14.4% 15%, transparent 15.4% 32%, rgba(96, 165, 250, 0.28) 32.4% 33%, transparent 33.4% 100%),
+      linear-gradient(0deg, transparent 0 68%, rgba(96, 165, 250, 0.28) 68.4% 69%, transparent 69.4% 100%),
+      repeating-linear-gradient(90deg, rgba(96, 165, 250, 0.08) 0 1px, transparent 1px 32px);
     filter: drop-shadow(0 0 18px rgba(37, 99, 235, 0.38));
-    clip-path: polygon(2% 68%, 25% 46%, 39% 56%, 58% 36%, 94% 68%, 94% 90%, 2% 90%);
     mask-image: linear-gradient(90deg, transparent, #000 18%, #000 86%, transparent);
   }
 
@@ -595,6 +599,8 @@
   .mhb-contractor-dashboard {
     position: relative;
     isolation: isolate;
+    max-width: calc(100% + 3rem);
+    overflow-x: clip;
     background:
       radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.22), transparent 25rem),
       radial-gradient(circle at 78% 14%, rgba(124, 58, 237, 0.13), transparent 24rem),
@@ -613,6 +619,12 @@
       linear-gradient(90deg, rgba(148, 197, 255, 0.03) 1px, transparent 1px);
     background-size: 44px 44px;
     mask-image: radial-gradient(circle at 48% 18%, #000, transparent 72%);
+  }
+
+  .mhb-contractor-dashboard > *,
+  .mhb-contractor-dashboard .mhb-dashboard-section,
+  .mhb-contractor-dashboard .mhb-dashboard-card {
+    min-width: 0;
   }
 
   .mhb-contractor-dashboard .mhb-dashboard-section > div:first-child {
