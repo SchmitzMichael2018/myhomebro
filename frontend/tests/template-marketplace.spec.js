@@ -206,6 +206,19 @@ test('templates page opens tab-aware AI Copilot guidance without apply actions',
     'placeholder',
     /pricing guidance/i
   );
+  await page.getByTestId('start-with-ai-input-dock').fill('create me a template for junk removal');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toContainText(
+    'Junk Removal Workflow Template'
+  );
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toContainText(
+    'Suggested milestones'
+  );
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toContainText(
+    'Questions to decide next'
+  );
+  await expect(page.getByRole('button', { name: /Use this draft · Coming next/i })).toBeDisabled();
   await expect(dock).not.toContainText('The agreement is nearly ready');
   await expect(dock).not.toContainText('signatures and funding');
   await expect(dock.getByRole('button', { name: /Apply/i })).toHaveCount(0);

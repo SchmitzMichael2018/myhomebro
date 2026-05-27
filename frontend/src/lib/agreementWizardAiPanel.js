@@ -699,7 +699,7 @@ function titleForTemplateTab(tab = "") {
   return "Template setup guidance";
 }
 
-function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, isPlanning = false } = {}) {
+function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, isPlanning = false, history = [] } = {}) {
   const template = context?.template_summary || {};
   const tab = safeText(context?.active_tab || template?.active_tab || "setup");
   const templateName = safeText(context?.template_name || template?.name) || "this template";
@@ -713,6 +713,17 @@ function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, is
     ? workflowProfile.participation_structure.length
     : 0;
   const suggestions = Array.isArray(plan?.suggestions) ? plan.suggestions.filter(Boolean) : [];
+  const hasUserRequest =
+    (Array.isArray(history) && history.length > 0) ||
+    Boolean(safeText(plan?.collected_data?.template_request));
+  const templateDraft =
+    hasUserRequest &&
+    plan?.preview_payload?.template_draft && typeof plan.preview_payload.template_draft === "object"
+      ? plan.preview_payload.template_draft
+      : null;
+  const guidedQuestions = Array.isArray(plan?.preview_payload?.guided_questions)
+    ? plan.preview_payload.guided_questions.filter(Boolean)
+    : [];
   const statusDetailParts = [
     templateName,
     tab ? `${titleForTemplateTab(tab)}` : "",
@@ -746,20 +757,10 @@ function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, is
       promptByTab[safeText(tab).toLowerCase()] ||
       promptByTab.setup,
     feedback: safeText(panelConfig.feedback),
-    coachingTone: missingSections.length || milestoneCount <= 1 || (pricingState && pricingState !== "configured")
-      ? "attention"
-      : "positive",
-    coachingTitle:
-      safeText(panelConfig.nextGuidanceTitle) ||
-      (missingSections.length ? "Workflow gaps to review" : "Reusable workflow is taking shape"),
-    coachingMessage:
-      safeText(panelConfig.nextGuidance) ||
-      firstSuggestion,
-    nextStepMessage:
-      safeText(panelConfig.nextActionText) ||
-      (participationCount
-        ? "Keep refining this template as a reusable workflow pattern before saving or publishing."
-        : "Consider adding homeowner prep, shared tasks, or contractor-led checkpoints to the workflow profile."),
+    coachingTone: "neutral",
+    coachingTitle: "",
+    coachingMessage: "",
+    nextStepMessage: "",
     checklistItems: [],
     templateRecommendation: null,
     nextActionTitle: "Template Guidance",
@@ -767,11 +768,11 @@ function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, is
       safeText(panelConfig.nextActionText) ||
       firstSuggestion,
     nextGuidanceTitle: "What Copilot is checking",
-    nextGuidance:
-      safeText(panelConfig.nextGuidance) ||
-      "Copilot is reading template structure only: scope, tabs, workflow profile, milestones, pricing guidance, materials, and unsaved draft state.",
+    nextGuidance: "",
     showPrimaryAction: false,
     primaryActionLabel: "Review Template",
+    templateDraft,
+    guidedQuestions,
     diagnostics: {
       step: null,
       intentLabel: safeText(plan?.intent_label),
@@ -787,6 +788,7 @@ function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, is
         navigation_target: plan?.navigation_target,
         prefill_fields: plan?.prefill_fields,
         draft_payload: plan?.draft_payload,
+        preview_payload: plan?.preview_payload,
         planning_confidence: plan?.planning_confidence,
         reasoning_source: plan?.reasoning_source,
       },
@@ -802,7 +804,7 @@ export function buildUserFacingAiPanel({
   history = [],
 } = {}) {
   if (isTemplatesContext(context)) {
-    return buildTemplatePanelState({ context, panelConfig, plan, isPlanning });
+    return buildTemplatePanelState({ context, panelConfig, plan, isPlanning, history });
   }
 
   const step = readWizardStep(context);

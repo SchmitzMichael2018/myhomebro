@@ -104,6 +104,15 @@ function titleCaseWords(value) {
     .join(" ");
 }
 
+function titleCaseLoose(value) {
+  return clean(value)
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function normalizeContext(context = {}) {
   const next = safeObject(context);
   return {
@@ -248,9 +257,130 @@ function extractProjectSummary(input) {
 
 function extractTemplateQuery(input) {
   const text = clean(input);
-  const match = text.match(/template(?: for)?\s+(.+)/i);
+  const match = text.match(/(?:template|workflow)(?: for)?\s+(.+)/i);
   if (match?.[1]) return clean(match[1]);
-  return text.toLowerCase().includes("template") ? text : "";
+  return /(template|workflow|milestones|exclusions|pricing guidance|scope)/i.test(text) ? text : "";
+}
+
+function inferTemplateSubject(input = "", context = {}) {
+  const template = context.template_summary || {};
+  const source =
+    clean(input)
+      .replace(/\b(create|build|make|help me|generate|draft|template|workflow|for|me|a|an|the|this)\b/gi, " ")
+      .replace(/\b(milestones?|exclusions?|assumptions?|pricing|guidance|scope|profile|improve|add|suggest)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim() ||
+    clean(template.project_subtype) ||
+    clean(template.project_type) ||
+    clean(template.name) ||
+    "reusable project";
+  return titleCaseLoose(source);
+}
+
+function inferProjectTypeFromSubject(subject = "", context = {}) {
+  const existing = clean(context.template_summary?.project_type || context.project_type);
+  if (existing) return existing;
+  const lower = clean(subject).toLowerCase();
+  if (/(kitchen|bath|remodel|renovation|basement|addition|flooring|paint|drywall)/.test(lower)) {
+    return "Remodel";
+  }
+  if (/(hvac|plumbing|electrical|service|maintenance|repair|inspection)/.test(lower)) {
+    return "Service";
+  }
+  if (/(junk|clean|haul|removal|demo|demolition)/.test(lower)) {
+    return "Cleanup";
+  }
+  if (/(deck|fence|shed|patio|roof|siding|outdoor|landscape)/.test(lower)) {
+    return "Outdoor";
+  }
+  return "General Contracting";
+}
+
+function buildGenericTemplateMilestones(subject = "") {
+  const name = clean(subject).toLowerCase();
+  const noun = titleCaseLoose(subject || "Project");
+  if (/(service|hvac|maintenance|repair|inspection)/.test(name)) {
+    return [
+      "Initial assessment and access confirmation",
+      "Service preparation and safety setup",
+      `${noun} work session`,
+      "Testing, cleanup, and homeowner review",
+    ];
+  }
+  if (/(junk|clean|haul|removal|demo|demolition)/.test(name)) {
+    return [
+      "Site review and item confirmation",
+      "Access protection and staging",
+      "Removal, hauling, and disposal",
+      "Final sweep and completion review",
+    ];
+  }
+  return [
+    "Project setup and site preparation",
+    "Rough work and core installation",
+    "Finish work and quality review",
+    "Cleanup, walkthrough, and closeout",
+  ];
+}
+
+function buildTemplateDraftPreview(input = "", context = {}) {
+  const template = context.template_summary || {};
+  const hasPrompt = Boolean(clean(input));
+  const subject = inferTemplateSubject(input, context);
+  const projectType = inferProjectTypeFromSubject(subject, context);
+  const projectSubtype =
+    (hasPrompt ? subject : "") ||
+    clean(template.project_subtype || context.project_subtype) ||
+    subject;
+  const templateName =
+    (hasPrompt ? `${projectSubtype} Workflow Template` : "") ||
+    clean(template.name || context.template_name) ||
+    `${projectSubtype} Workflow Template`;
+  const milestones = buildGenericTemplateMilestones(projectSubtype);
+  const assistedDiy =
+    /diy|homeowner|shared|assist/i.test(input) ||
+    (Array.isArray(context.workflow_profile?.participation_structure) &&
+      context.workflow_profile.participation_structure.some((item) => /homeowner|shared/i.test(item)));
+
+  return {
+    template_name: templateName,
+    project_type: projectType,
+    project_subtype: projectSubtype,
+    description:
+      `Reusable ${projectSubtype.toLowerCase()} workflow covering intake, scope confirmation, preparation, core work, review checkpoints, and closeout. Keep project-specific quantities, selections, and site conditions editable when the template is applied.`,
+    exclusions: [
+      "Hidden conditions, code-required corrections, and unrelated trade work unless added in writing.",
+      "Owner-requested upgrades or specialty materials outside the reusable baseline scope.",
+      "Permit, engineering, disposal, or third-party fees unless explicitly included for this workflow.",
+    ],
+    assumptions: [
+      "Access, selections, and site readiness are confirmed before work begins.",
+      "Milestones remain reusable and can be resized for each project.",
+      assistedDiy
+        ? "Homeowner prep tasks and contractor-led technical checkpoints are clearly separated."
+        : "Contractor-led work is structured with clear review checkpoints.",
+    ],
+    milestones,
+    workflow_structure: {
+      assistance_format: assistedDiy ? "Milestone-Based Assistance" : "Full-service / milestone-based",
+      scheduling_mode: "Milestone-driven with adjustable date offsets",
+      billing_style: "Advisory milestone pricing only",
+      participation_structure: assistedDiy
+        ? ["Homeowner prep", "Shared tasks", "Contractor-led technical work", "Inspection / review checkpoints"]
+        : ["Contractor-led technical work", "Customer review checkpoints", "Closeout approval"],
+    },
+    pricing_guidance: [
+      "Use advisory ranges or percentages rather than enforced fixed prices.",
+      "Add confidence and source notes for each milestone if pricing guidance is used.",
+      "Keep material allowances and disposal or permit assumptions visible as notes.",
+    ],
+    guided_questions: [
+      "Should this template support assisted DIY, full-service delivery, or both?",
+      "Which phases are reusable across most jobs, and which should stay project-specific?",
+      "What exclusions or owner responsibilities commonly prevent scope confusion?",
+      "Should pricing guidance be milestone-based, hourly/session-based, or advisory only?",
+    ],
+  };
 }
 
 function getLeadScopeSummary(leadSummary = {}) {
@@ -368,6 +498,11 @@ function mergeCollectedData(intent, input, previousPlan, context) {
   if (intent === "navigate_app") {
     next.destination = destination.label;
     next.navigation_target = destination.target;
+  }
+  if (intent === "template_guidance") {
+    if (templateQuery) next.template_query = templateQuery;
+    if (projectSummary) next.project_summary = projectSummary;
+    if (input) next.template_request = input;
   }
 
   return next;
@@ -778,6 +913,10 @@ function buildIntentPlan(intent, context, collectedData) {
   }
 
   if (intent === "template_guidance") {
+    const draftPreview = buildTemplateDraftPreview(
+      collectedData.template_request || collectedData.template_query || collectedData.project_summary,
+      context
+    );
     navigationTarget = context.current_route || "/app/templates";
     nextAction = {
       type: "review_current_page",
@@ -797,6 +936,29 @@ function buildIntentPlan(intent, context, collectedData) {
       workflow_profile: context.workflow_profile || template.workflow_profile || {},
     };
     blockedWorkflowStates = buildTemplateContextSuggestions(context);
+    prefillFields = {
+      ...prefillFields,
+      template_query: collectedData.template_query || draftPreview.project_subtype,
+    };
+    draftPayload = {
+      ...draftPayload,
+      template_draft_ready: true,
+    };
+    return {
+      navigationTarget,
+      nextAction,
+      prefillFields,
+      draftPayload,
+      wizardStepTarget,
+      suggestedMilestones,
+      clarificationQuestions,
+      blockedWorkflowStates,
+      requiredFieldOverrides: [],
+      previewPayload: {
+        template_draft: draftPreview,
+        guided_questions: draftPreview.guided_questions,
+      },
+    };
   }
 
   return {
@@ -938,6 +1100,7 @@ export function planAssistantAction({
     navigation_target: planDetails.navigationTarget,
     prefill_fields: planDetails.prefillFields || {},
     draft_payload: planDetails.draftPayload || {},
+    preview_payload: planDetails.previewPayload || {},
     wizard_step_target: planDetails.wizardStepTarget ?? null,
     suggested_milestones: planDetails.suggestedMilestones || [],
     clarification_questions: planDetails.clarificationQuestions || [],

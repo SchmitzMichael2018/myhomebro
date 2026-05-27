@@ -60,6 +60,10 @@ function chooseHeuristicIntent(request, fallbackPlan) {
   const text = clean(request.input).toLowerCase();
   const context = safeObject(request.context);
 
+  if (clean(context.page).toLowerCase() === "templates" && !/(go to|open |take me|navigate)/.test(text)) {
+    return "template_guidance";
+  }
+
   if (context.agreement_id && /(pick up|left off|continue|unstick|blocked|finish)/.test(text)) {
     return "resume_agreement";
   }

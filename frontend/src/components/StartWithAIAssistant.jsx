@@ -67,6 +67,127 @@ function CompactBadge({ children }) {
   );
 }
 
+function TemplateDraftPreview({ draft, questions = [], testId = "" }) {
+  if (!draft) return null;
+  const milestones = Array.isArray(draft.milestones) ? draft.milestones : [];
+  const exclusions = Array.isArray(draft.exclusions) ? draft.exclusions : [];
+  const assumptions = Array.isArray(draft.assumptions) ? draft.assumptions : [];
+  const pricingGuidance = Array.isArray(draft.pricing_guidance) ? draft.pricing_guidance : [];
+  const guidedQuestions = Array.isArray(questions) && questions.length
+    ? questions
+    : Array.isArray(draft.guided_questions)
+    ? draft.guided_questions
+    : [];
+  const workflow = draft.workflow_structure || {};
+
+  return (
+    <ResultBlock title="Workflow Draft" testId={testId}>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+          <div className="text-base font-semibold text-indigo-950">
+            {draft.template_name || "Reusable Workflow Template"}
+          </div>
+          <div className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
+            {[draft.project_type, draft.project_subtype].filter(Boolean).join(" · ") || "Template workflow"}
+          </div>
+          {draft.description ? (
+            <p className="mt-3 text-sm leading-6 text-indigo-950/90">{draft.description}</p>
+          ) : null}
+        </div>
+
+        {milestones.length ? (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Suggested milestones
+            </div>
+            <div className="mt-2 space-y-2">
+              {milestones.map((item, idx) => (
+                <div
+                  key={`${item}-${idx}`}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                >
+                  <span className="font-semibold text-slate-900">{idx + 1}.</span> {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 gap-3">
+          {exclusions.length ? (
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Exclusions
+              </div>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-700">
+                {exclusions.map((item, idx) => <li key={`exclusion-${idx}`}>{item}</li>)}
+              </ul>
+            </div>
+          ) : null}
+
+          {assumptions.length ? (
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Assumptions
+              </div>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-700">
+                {assumptions.map((item, idx) => <li key={`assumption-${idx}`}>{item}</li>)}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Workflow structure
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-700">
+            <div><span className="font-semibold text-slate-900">Assistance:</span> {workflow.assistance_format || "Milestone-based assistance"}</div>
+            <div><span className="font-semibold text-slate-900">Scheduling:</span> {workflow.scheduling_mode || "Milestone-driven"}</div>
+            <div><span className="font-semibold text-slate-900">Billing:</span> {workflow.billing_style || "Advisory milestone pricing"}</div>
+          </div>
+        </div>
+
+        {pricingGuidance.length ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
+              Pricing guidance notes
+            </div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-amber-950">
+              {pricingGuidance.map((item, idx) => <li key={`pricing-${idx}`}>{item}</li>)}
+            </ul>
+          </div>
+        ) : null}
+
+        {guidedQuestions.length ? (
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
+              Questions to decide next
+            </div>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-sky-950">
+              {guidedQuestions.map((item, idx) => <li key={`question-${idx}`}>{item}</li>)}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          {["Use this draft", "Refine draft", "Generate milestones", "Generate pricing guidance", "Copy draft"].map((label) => (
+            <button
+              key={label}
+              type="button"
+              disabled
+              className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-500"
+              title="Coming next: explicit apply/copy controls without auto-saving."
+            >
+              {label} · Coming next
+            </button>
+          ))}
+        </div>
+      </div>
+    </ResultBlock>
+  );
+}
+
 function coachingToneClasses(tone = "neutral") {
   if (tone === "positive") {
     return {
@@ -783,6 +904,10 @@ export default function StartWithAIAssistant({
   );
   const isFieldAwareMode =
     isFieldAwareDescriptionMode || isFieldAwareMilestonesMode || isFieldAwareExclusionsMode;
+  const isTemplatesContextualMode =
+    String(normalizedContext?.page || "").trim().toLowerCase() === "templates" &&
+    isContextualMode &&
+    !isFieldAwareMode;
   const panelConfig = useMemo(
     () => normalizePanelConfig(normalizedContext),
     [normalizedContext]
@@ -872,6 +997,8 @@ export default function StartWithAIAssistant({
     ? "Generate reusable milestone titles for this template."
     : isFieldAwareExclusionsMode
     ? "Generate reusable exclusions and assumptions for this template."
+    : isTemplatesContextualMode
+    ? "Ask for reusable workflow structure, milestones, exclusions, assumptions, or advisory pricing guidance."
     : isContextualMode
     ? "Get contextual help for the step you're on right now."
     : "Describe the work you want to start, plan, or organize.";
@@ -1408,6 +1535,14 @@ export default function StartWithAIAssistant({
               {userFacingPanel.feedback}
             </div>
           </ResultBlock>
+        ) : null}
+
+        {!isFieldAwareMode && userFacingPanel.templateDraft ? (
+          <TemplateDraftPreview
+            draft={userFacingPanel.templateDraft}
+            questions={userFacingPanel.guidedQuestions}
+            testId={testId("start-with-ai-template-draft")}
+          />
         ) : null}
 
         {isFieldAwareDescriptionMode && fieldDraft ? (
