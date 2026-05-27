@@ -84,14 +84,23 @@ function TemplateDraftPreview({ draft, questions = [], testId = "" }) {
     <ResultBlock title="Workflow Draft" testId={testId}>
       <div className="space-y-4">
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
+            Template Name
+          </div>
           <div className="text-base font-semibold text-indigo-950">
             {draft.template_name || "Reusable Workflow Template"}
           </div>
           <div className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
+            Project Type / Project Subtype
+          </div>
+          <div className="mt-1 text-sm font-semibold text-indigo-950">
             {[draft.project_type, draft.project_subtype].filter(Boolean).join(" · ") || "Template workflow"}
           </div>
+          <div className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
+            Description / Scope
+          </div>
           {draft.description ? (
-            <p className="mt-3 text-sm leading-6 text-indigo-950/90">{draft.description}</p>
+            <p className="mt-1 text-sm leading-6 text-indigo-950/90">{draft.description}</p>
           ) : null}
         </div>
 
@@ -1062,6 +1071,9 @@ export default function StartWithAIAssistant({
       ...overrides,
     };
     const fallbackPlan = runPlanner(promptText, overrides);
+    if (isTemplatesContextualMode) {
+      return fallbackPlan;
+    }
     try {
       setIsPlanning(true);
       const { data } = await api.post("/projects/assistant/orchestrate/", requestPayload);
