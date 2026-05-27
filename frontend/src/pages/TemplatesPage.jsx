@@ -16,6 +16,7 @@ import {
   deriveTemplateInsights,
 } from "../lib/templateInsights.js";
 import { computeSequentialOffsets, needsSequentialOffsets } from "../lib/templateScheduling.js";
+import { StartWithAIEntry } from "../components/StartWithAIAssistant.jsx";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -752,6 +753,74 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     () => buildTemplateInsightLines(templateInsights, { context: "template" }),
     [templateInsights]
   );
+
+  const templateAiContext = useMemo(() => ({
+    page: "templates",
+    field: assistantField,
+    current_route: "/app/templates",
+    template_id: selectedId ?? null,
+    template_summary: {
+      name: currentHeader?.name || "",
+      project_type: currentHeader?.project_type || "",
+      project_subtype: currentHeader?.project_subtype || "",
+      description: currentHeader?.description || "",
+      default_scope: currentHeader?.default_scope || "",
+    },
+    project_type: currentHeader?.project_type || "",
+    project_subtype: currentHeader?.project_subtype || "",
+    description: currentHeader?.description || "",
+    default_scope: currentHeader?.default_scope || "",
+    exclusions_text: currentHeader?.exclusions_text || "",
+    assumptions_text: currentHeader?.assumptions_text || "",
+  }), [
+    assistantField,
+    selectedId,
+    currentHeader?.name,
+    currentHeader?.project_type,
+    currentHeader?.project_subtype,
+    currentHeader?.description,
+    currentHeader?.default_scope,
+    currentHeader?.exclusions_text,
+    currentHeader?.assumptions_text,
+  ]);
+
+  function handleTemplateAiAction(action) {
+    const key = String(action?.assistant_action_key || action?.action_key || "").trim();
+    if (key === "apply_template_description") {
+      const value = String(action?.value || "").trim();
+      if (!value) return false;
+      updateHeader("description", value);
+      updateHeader("default_scope", value);
+      toast.success("Description applied. Review and save when ready.");
+      return true;
+    }
+    if (key === "apply_template_milestones") {
+      const value = Array.isArray(action?.value) ? action.value : [];
+      if (!value.length) return false;
+      setEditMilestones(
+        value.map((m, idx) => ({
+          ...buildBlankMilestone(idx + 1),
+          title: String(m?.title || "").trim(),
+          description: String(m?.description || "").trim(),
+          normalized_milestone_type: m?.normalized_milestone_type || "",
+          sort_order: idx + 1,
+        }))
+      );
+      setActiveTab("milestones");
+      toast.success("Milestone draft applied. Review and save when ready.");
+      return true;
+    }
+    if (key === "apply_template_exclusions") {
+      const exclusions = Array.isArray(action?.exclusions) ? action.exclusions : [];
+      const assumptions = Array.isArray(action?.assumptions) ? action.assumptions : [];
+      if (!exclusions.length && !assumptions.length) return false;
+      if (exclusions.length) updateHeader("exclusions_text", exclusions.join("\n"));
+      if (assumptions.length) updateHeader("assumptions_text", assumptions.join("\n"));
+      toast.success("Exclusions applied. Review and save when ready.");
+      return true;
+    }
+    return false;
+  }
 
   function formatGuidancePercentages(items) {
     if (!Array.isArray(items) || !items.length) return "No milestone percentages provided yet.";
@@ -2217,6 +2286,30 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                   </div>
                 ) : null}
               </div>
+
+              {(editMode || creatingNew) ? (
+                <div className="mb-4" data-testid="templates-ai-copilot-entry">
+                  <StartWithAIEntry
+                    title={
+                      assistantField === "milestones"
+                        ? "AI Copilot · Milestones"
+                        : assistantField === "exclusions"
+                        ? "AI Copilot · Exclusions"
+                        : "AI Copilot · Description"
+                    }
+                    description={
+                      assistantField === "milestones"
+                        ? "Generate milestone phases for this template type."
+                        : assistantField === "exclusions"
+                        ? "Generate exclusions and assumptions for this template."
+                        : "Generate a reusable description for this template type."
+                    }
+                    context={templateAiContext}
+                    onAction={handleTemplateAiAction}
+                    testId="templates-ai-copilot-entry"
+                  />
+                </div>
+              ) : null}
 
               <div className="mb-4 flex flex-wrap gap-2">
                 <TabButton
