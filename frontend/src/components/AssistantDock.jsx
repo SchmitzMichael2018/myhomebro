@@ -9,6 +9,7 @@ const AssistantDockContext = createContext({
   closeAssistant: () => {},
   toggleAssistant: () => {},
   minimizeAssistant: () => {},
+  updateAssistantContext: () => {},
   isOpen: false,
   isMinimized: false,
 });
@@ -117,20 +118,33 @@ export function AssistantDockProvider({ children }) {
   const [dockTitle, setDockTitle] = useState("AI Copilot");
   const [dockContext, setDockContext] = useState(null);
   const [dockOnAction, setDockOnAction] = useState(null);
+  const [pageAssistantContext, setPageAssistantContext] = useState({});
 
   const openAssistant = useCallback(
     (options = {}) => {
       setOpen(true);
       setMinimized(false);
-      const nextContext = options.context || buildRouteContext(location);
+      const routeContext = options.context || buildRouteContext(location);
+      const nextContext = { ...pageAssistantContext, ...routeContext };
       setDockTitle(options.title || copilotLabelForRoute(nextContext.current_route));
       setDockContext(nextContext);
       setDockOnAction(() =>
         typeof options.onAction === "function" ? options.onAction : null
       );
     },
-    [location]
+    [location, pageAssistantContext]
   );
+
+  const updateAssistantContext = useCallback((context = {}) => {
+    setPageAssistantContext(context && typeof context === "object" ? context : {});
+    setDockContext((prev) => {
+      if (!open || !prev) return prev;
+      return {
+        ...prev,
+        ...(context && typeof context === "object" ? context : {}),
+      };
+    });
+  }, [open]);
 
   const closeAssistant = useCallback(() => {
     setOpen(false);
@@ -155,10 +169,11 @@ export function AssistantDockProvider({ children }) {
       closeAssistant,
       minimizeAssistant,
       toggleAssistant,
+      updateAssistantContext,
       isOpen: open,
       isMinimized: minimized,
     }),
-    [closeAssistant, minimized, open, openAssistant, toggleAssistant]
+    [closeAssistant, minimized, open, openAssistant, toggleAssistant, updateAssistantContext]
   );
 
   return (

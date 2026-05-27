@@ -186,3 +186,27 @@ test('templates marketplace allows explicit visibility changes for owned templat
   await page.getByTestId('template-visibility-public').click();
   await expect(page.getByText('Visibility: public')).toBeVisible();
 });
+
+test('templates page opens tab-aware AI Copilot guidance without apply actions', async ({ page }) => {
+  await installMarketplaceMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('template-discovery-card-1').click();
+  await expect(page.getByRole('heading', { name: 'My Private Kitchen Template' })).toBeVisible();
+  await page.getByTestId('templates-tab-pricing').click();
+  await page.getByTestId('assistant-dock-open-button').click();
+
+  const dock = page.getByTestId('assistant-desktop-dock');
+  await expect(dock).toBeVisible();
+  await expect(dock).toContainText('AI Copilot for Templates');
+  await expect(dock).toContainText('Review this template workflow');
+  await expect(dock).toContainText('Advisory pricing guidance');
+  await expect(page.getByTestId('start-with-ai-input-dock')).toHaveAttribute(
+    'placeholder',
+    /pricing guidance/i
+  );
+  await expect(dock).not.toContainText('The agreement is nearly ready');
+  await expect(dock).not.toContainText('signatures and funding');
+  await expect(dock.getByRole('button', { name: /Apply/i })).toHaveCount(0);
+});

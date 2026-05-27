@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { useAssistantDock } from "../components/AssistantDock.jsx";
 import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
@@ -487,6 +488,7 @@ function buildTemplatePayload(header, milestones, extras = {}) {
 
 export default function TemplatesPage({ adminMode = false } = {}) {
   const location = useLocation();
+  const { updateAssistantContext } = useAssistantDock();
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -752,6 +754,127 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     () => buildTemplateInsightLines(templateInsights, { context: "template" }),
     [templateInsights]
   );
+
+  const missingTemplateSections = useMemo(() => {
+    const missing = [];
+    if (!safeTrim(currentHeader?.name)) missing.push("template name");
+    if (!safeTrim(currentHeader?.description || currentHeader?.default_scope)) missing.push("scope description");
+    if (!safeTrim(currentHeader?.exclusions_text)) missing.push("exclusions");
+    if (!safeTrim(currentHeader?.assumptions_text)) missing.push("assumptions");
+    if (!currentMilestones.length || currentMilestones.every((row) => !safeTrim(row?.title))) {
+      missing.push("reusable milestones");
+    }
+    if (!safeTrim(currentHeader?.project_materials_hint) && !generatedMaterials.length) {
+      missing.push("materials guidance");
+    }
+    return missing;
+  }, [currentHeader, currentMilestones, generatedMaterials.length]);
+
+  const pricingGuidanceState = useMemo(() => {
+    if (currentMilestones.some((row) => row?.pricing_advisory)) return "configured";
+    if (generatedPricingGuidance) return "ai_guidance_available";
+    return "not_configured";
+  }, [currentMilestones, generatedPricingGuidance]);
+
+  const templateCopilotPrompt = useMemo(() => {
+    if (activeTab === "milestones") {
+      return 'Examples: "Help me build reusable milestones" or "What optional milestones should I add?"';
+    }
+    if (activeTab === "pricing") {
+      return 'Examples: "What pricing guidance should I add?" or "How should this template explain pricing ranges?"';
+    }
+    if (activeTab === "schedule") {
+      return 'Examples: "Suggest a scheduling strategy" or "How should assisted DIY timing work?"';
+    }
+    if (activeTab === "materials") {
+      return 'Examples: "Where is material guidance sparse?" or "Suggest reusable material assumptions."';
+    }
+    return 'Examples: "Improve this workflow profile" or "Suggest exclusions for junk removal."';
+  }, [activeTab]);
+
+  const templateCopilotNextAction = useMemo(() => {
+    if (missingTemplateSections.length) {
+      return `Next: Review ${missingTemplateSections.slice(0, 3).join(", ")} before saving this reusable workflow.`;
+    }
+    if (pricingGuidanceState !== "configured") {
+      return "Next: Consider adding advisory pricing ranges, confidence, or source notes.";
+    }
+    return "Next: Review this template as a reusable workflow pattern before saving or publishing.";
+  }, [missingTemplateSections, pricingGuidanceState]);
+
+  const templateAssistantContext = useMemo(() => {
+    const templateName = safeTrim(currentHeader?.name) || safeTrim(selectedDetail?.name);
+    const workflowProfile = normalizeWorkflowProfile(currentHeader?.workflow_profile);
+    return {
+      page: "templates",
+      current_route: `${location.pathname}${location.search || ""}`,
+      active_tab: activeTab,
+      template_id: selectedDetail?.id || null,
+      template_name: templateName,
+      project_type: safeTrim(currentHeader?.project_type),
+      project_subtype: safeTrim(currentHeader?.project_subtype),
+      description: safeTrim(currentHeader?.description || currentHeader?.default_scope),
+      workflow_profile: workflowProfile,
+      pricing_guidance_state: pricingGuidanceState,
+      missing_sections: missingTemplateSections,
+      unsaved_draft: Boolean(creatingNew || editMode),
+      generated_ai_draft: Boolean(generatedAiDraft),
+      template_summary: {
+        id: selectedDetail?.id || null,
+        name: templateName,
+        project_type: safeTrim(currentHeader?.project_type),
+        project_subtype: safeTrim(currentHeader?.project_subtype),
+        description: safeTrim(currentHeader?.description),
+        default_scope: safeTrim(currentHeader?.default_scope),
+        exclusions_text: safeTrim(currentHeader?.exclusions_text),
+        assumptions_text: safeTrim(currentHeader?.assumptions_text),
+        workflow_profile: workflowProfile,
+        active_tab: activeTab,
+        milestone_count: currentMilestones.length,
+        pricing_guidance_state: pricingGuidanceState,
+      },
+      milestone_summary: {
+        count: currentMilestones.length,
+        suggested_titles: currentMilestones.map((row) => safeTrim(row?.title)).filter(Boolean),
+      },
+      ai_panel: {
+        headline: "Review this template workflow",
+        helperText:
+          "Get template-aware guidance for reusable scope, workflow profile, milestones, pricing, timing, and materials. Copilot will not edit fields automatically.",
+        statusText: creatingNew
+          ? "Unsaved template draft in progress"
+          : selectedDetail
+          ? "Template context loaded"
+          : "Template workspace context loaded",
+        promptPlaceholder: templateCopilotPrompt,
+        nextActionText: templateCopilotNextAction,
+        nextGuidanceTitle:
+          missingTemplateSections.length ? "Workflow gaps to review" : "Workflow intelligence",
+        nextGuidance:
+          missingTemplateSections.length
+            ? `Copilot sees missing template sections: ${missingTemplateSections.join(", ")}.`
+            : "Copilot is checking reusable workflow structure, not agreement signature or funding readiness.",
+      },
+    };
+  }, [
+    activeTab,
+    creatingNew,
+    currentHeader,
+    currentMilestones,
+    editMode,
+    generatedAiDraft,
+    location.pathname,
+    location.search,
+    missingTemplateSections,
+    pricingGuidanceState,
+    selectedDetail,
+    templateCopilotNextAction,
+    templateCopilotPrompt,
+  ]);
+
+  useEffect(() => {
+    updateAssistantContext(templateAssistantContext);
+  }, [templateAssistantContext, updateAssistantContext]);
 
   function formatGuidancePercentages(items) {
     if (!Array.isArray(items) || !items.length) return "No milestone percentages provided yet.";

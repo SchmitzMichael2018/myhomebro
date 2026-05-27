@@ -68,6 +68,13 @@ const INTENT_CONFIG = {
     destinationLabel: "Open Dashboard",
     summary: "Route to the right workflow quickly.",
   },
+  template_guidance: {
+    label: "Template guidance",
+    requiredFields: [],
+    destination: "/app/templates",
+    destinationLabel: "Review Template",
+    summary: "Review reusable workflow gaps, template structure, and next refinements.",
+  },
 };
 
 const FIELD_LABELS = {
@@ -108,6 +115,13 @@ function normalizeContext(context = {}) {
     template_id: next.template_id ?? null,
     template_summary: safeObject(next.template_summary),
     milestone_summary: safeObject(next.milestone_summary),
+    page: clean(next.page),
+    active_tab: clean(next.active_tab),
+    workflow_profile: safeObject(next.workflow_profile),
+    missing_sections: Array.isArray(next.missing_sections) ? next.missing_sections : [],
+    pricing_guidance_state: clean(next.pricing_guidance_state),
+    unsaved_draft: Boolean(next.unsaved_draft),
+    generated_ai_draft: Boolean(next.generated_ai_draft),
   };
 }
 
@@ -117,12 +131,18 @@ function detectIntent(input, preferredIntent, context) {
   const text = clean(input).toLowerCase();
   const hasAgreementContext = !!context?.agreement_id;
   const hasLeadContext = !!context?.lead_id;
+  const isTemplatesPage = clean(context?.page).toLowerCase() === "templates";
 
   if (!text) {
+    if (isTemplatesPage) return "template_guidance";
     if (hasAgreementContext) return "resume_agreement";
     if (hasLeadContext) return "create_lead";
     if (context?.template_id) return "apply_template";
     return "navigate_app";
+  }
+
+  if (isTemplatesPage && !/(go to|open |take me|navigate)/.test(text)) {
+    return "template_guidance";
   }
 
   if (
@@ -396,6 +416,45 @@ function buildSuggestedMilestones(projectSummary, milestoneSummary = {}) {
     return ["Demo", "Plumbing and tile", "Fixtures and closeout"];
   }
   return ["Preparation", "Core work", "Final walkthrough"];
+}
+
+function buildTemplateContextSuggestions(context = {}) {
+  const template = context.template_summary || {};
+  const tab = clean(context.active_tab || template.active_tab).toLowerCase() || "setup";
+  const milestoneCount = Number(
+    context.milestone_summary?.count ?? template.milestone_count ?? 0
+  );
+  const pricingState = clean(context.pricing_guidance_state || template.pricing_guidance_state);
+  const workflow = context.workflow_profile || template.workflow_profile || {};
+  const missing = Array.isArray(context.missing_sections) ? context.missing_sections : [];
+  const suggestions = [];
+
+  if (milestoneCount <= 1) {
+    suggestions.push(`This template has ${milestoneCount || 0} milestone${milestoneCount === 1 ? "" : "s"}; consider adding reusable phases before relying on it.`);
+  }
+  if (pricingState && pricingState !== "configured") {
+    suggestions.push("Advisory pricing guidance is still thin for this template.");
+  }
+  if (missing.length) {
+    suggestions.push(`Missing sections to review: ${missing.slice(0, 4).join(", ")}.`);
+  }
+  if (!Array.isArray(workflow.participation_structure) || !workflow.participation_structure.length) {
+    suggestions.push("Consider adding homeowner prep, shared tasks, or contractor-led checkpoints to the workflow profile.");
+  }
+
+  if (tab === "milestones") {
+    suggestions.push("Use reusable phases that can survive different job sizes, not one-off project tasks.");
+  } else if (tab === "pricing") {
+    suggestions.push("Pricing guidance should stay advisory: ranges, confidence, and source notes are more reusable than fixed prices.");
+  } else if (tab === "schedule") {
+    suggestions.push("Workflow timing should describe cadence and dependencies without locking every future project into exact dates.");
+  } else if (tab === "materials") {
+    suggestions.push("Material guidance works best as reusable categories plus milestone-specific notes.");
+  } else {
+    suggestions.push("Tighten scope, exclusions, assumptions, and workflow mode before building detailed milestones.");
+  }
+
+  return suggestions.slice(0, 5);
 }
 
 function buildClarificationQuestions(projectSummary, context) {
@@ -718,6 +777,28 @@ function buildIntentPlan(intent, context, collectedData) {
     };
   }
 
+  if (intent === "template_guidance") {
+    navigationTarget = context.current_route || "/app/templates";
+    nextAction = {
+      type: "review_current_page",
+      label: "Review Template Guidance",
+      action_key: "review_template_guidance",
+    };
+    prefillFields = {
+      template_name: clean(template.name),
+      active_tab: clean(context.active_tab || template.active_tab),
+      milestone_count: Number(milestone.count || template.milestone_count || 0),
+      pricing_guidance_state: clean(context.pricing_guidance_state || template.pricing_guidance_state),
+    };
+    draftPayload = {
+      template_id: context.template_id || null,
+      unsaved_draft: Boolean(context.unsaved_draft),
+      generated_ai_draft: Boolean(context.generated_ai_draft),
+      workflow_profile: context.workflow_profile || template.workflow_profile || {},
+    };
+    blockedWorkflowStates = buildTemplateContextSuggestions(context);
+  }
+
   return {
     navigationTarget,
     nextAction,
@@ -778,6 +859,9 @@ function buildSuggestions(intent, collectedData, missingFields, context, planDet
     return missingFields.length
       ? ['Try prompts like "open invoices" or "take me to templates".']
       : [];
+  }
+  if (intent === "template_guidance") {
+    return buildTemplateContextSuggestions(context);
   }
   return ["I can guide you into the right workflow without replacing it."];
 }

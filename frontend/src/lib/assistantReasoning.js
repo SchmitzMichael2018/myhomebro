@@ -13,6 +13,7 @@ const KNOWN_INTENTS = new Set([
   "check_compliance",
   "subcontractor_assignment",
   "maintenance_contract",
+  "template_guidance",
 ]);
 
 function clean(value) {
@@ -39,6 +40,7 @@ export function normalizeAssistantRequest(request = {}) {
 function buildConfidence(plan, request) {
   const text = clean(request.input).toLowerCase();
   if (plan.missing_fields?.length) return "medium";
+  if (request.context?.page === "templates" && plan.intent === "template_guidance") return "high";
   if (request.context?.agreement_id && plan.intent === "resume_agreement") return "high";
   if (request.context?.lead_id && ["create_lead", "start_agreement"].includes(plan.intent)) {
     return "high";

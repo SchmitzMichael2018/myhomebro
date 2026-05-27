@@ -686,6 +686,114 @@ function sanitizeActionLabel(label) {
   return clean;
 }
 
+function isTemplatesContext(context = {}) {
+  return safeText(context?.page).toLowerCase() === "templates";
+}
+
+function titleForTemplateTab(tab = "") {
+  const normalized = safeText(tab).toLowerCase();
+  if (normalized === "milestones") return "Milestone structure guidance";
+  if (normalized === "pricing") return "Advisory pricing guidance";
+  if (normalized === "schedule") return "Workflow timing guidance";
+  if (normalized === "materials") return "Materials guidance";
+  return "Template setup guidance";
+}
+
+function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, isPlanning = false } = {}) {
+  const template = context?.template_summary || {};
+  const tab = safeText(context?.active_tab || template?.active_tab || "setup");
+  const templateName = safeText(context?.template_name || template?.name) || "this template";
+  const milestoneCount = Number(
+    context?.milestone_summary?.count ?? template?.milestone_count ?? 0
+  );
+  const pricingState = safeText(context?.pricing_guidance_state || template?.pricing_guidance_state);
+  const missingSections = Array.isArray(context?.missing_sections) ? context.missing_sections : [];
+  const workflowProfile = context?.workflow_profile || template?.workflow_profile || {};
+  const participationCount = Array.isArray(workflowProfile?.participation_structure)
+    ? workflowProfile.participation_structure.length
+    : 0;
+  const suggestions = Array.isArray(plan?.suggestions) ? plan.suggestions.filter(Boolean) : [];
+  const statusDetailParts = [
+    templateName,
+    tab ? `${titleForTemplateTab(tab)}` : "",
+    `${milestoneCount} milestone${milestoneCount === 1 ? "" : "s"}`,
+    pricingState ? `pricing ${pricingState.replaceAll("_", " ")}` : "",
+  ].filter(Boolean);
+  const firstSuggestion =
+    suggestions[0] ||
+    (missingSections.length
+      ? `Review missing sections: ${missingSections.slice(0, 3).join(", ")}.`
+      : "Review reusable scope, workflow profile, milestones, and advisory guidance before saving.");
+
+  const promptByTab = {
+    setup: 'Examples: "Improve this workflow profile" or "Suggest exclusions for junk removal".',
+    milestones: 'Examples: "Help me build reusable milestones" or "What optional phases should I add?"',
+    pricing: 'Examples: "What pricing guidance should I add?" or "How should I explain advisory pricing?"',
+    schedule: 'Examples: "Suggest a reusable scheduling strategy" or "How should assisted DIY timing work?"',
+    materials: 'Examples: "Suggest reusable material assumptions" or "Where is material guidance sparse?"',
+  };
+
+  return {
+    headline: safeText(panelConfig.headline) || "Review this template workflow",
+    helperText:
+      safeText(panelConfig.helperText) ||
+      "Use Copilot to pressure-test reusable workflow structure without changing the template fields.",
+    status: isPlanning ? "Reviewing template context" : safeText(panelConfig.statusText) || "Template context loaded",
+    statusDetail: safeText(panelConfig.statusDetail) || statusDetailParts.join(" · "),
+    quickActions: Array.isArray(panelConfig.quickActions) ? panelConfig.quickActions : [],
+    promptPlaceholder:
+      safeText(panelConfig.promptPlaceholder) ||
+      promptByTab[safeText(tab).toLowerCase()] ||
+      promptByTab.setup,
+    feedback: safeText(panelConfig.feedback),
+    coachingTone: missingSections.length || milestoneCount <= 1 || (pricingState && pricingState !== "configured")
+      ? "attention"
+      : "positive",
+    coachingTitle:
+      safeText(panelConfig.nextGuidanceTitle) ||
+      (missingSections.length ? "Workflow gaps to review" : "Reusable workflow is taking shape"),
+    coachingMessage:
+      safeText(panelConfig.nextGuidance) ||
+      firstSuggestion,
+    nextStepMessage:
+      safeText(panelConfig.nextActionText) ||
+      (participationCount
+        ? "Keep refining this template as a reusable workflow pattern before saving or publishing."
+        : "Consider adding homeowner prep, shared tasks, or contractor-led checkpoints to the workflow profile."),
+    checklistItems: [],
+    templateRecommendation: null,
+    nextActionTitle: "Template Guidance",
+    nextActionText:
+      safeText(panelConfig.nextActionText) ||
+      firstSuggestion,
+    nextGuidanceTitle: "What Copilot is checking",
+    nextGuidance:
+      safeText(panelConfig.nextGuidance) ||
+      "Copilot is reading template structure only: scope, tabs, workflow profile, milestones, pricing guidance, materials, and unsaved draft state.",
+    showPrimaryAction: false,
+    primaryActionLabel: "Review Template",
+    diagnostics: {
+      step: null,
+      intentLabel: safeText(plan?.intent_label),
+      summary: safeText(plan?.summary),
+      collectedData:
+        plan?.collected_data && typeof plan.collected_data === "object" ? plan.collected_data : {},
+      missingFields: Array.isArray(plan?.missing_fields) ? plan.missing_fields : [],
+      suggestions,
+      history: [],
+      raw: {
+        intent: plan?.intent,
+        next_action: plan?.next_action,
+        navigation_target: plan?.navigation_target,
+        prefill_fields: plan?.prefill_fields,
+        draft_payload: plan?.draft_payload,
+        planning_confidence: plan?.planning_confidence,
+        reasoning_source: plan?.reasoning_source,
+      },
+    },
+  };
+}
+
 export function buildUserFacingAiPanel({
   context = {},
   panelConfig = {},
@@ -693,6 +801,10 @@ export function buildUserFacingAiPanel({
   isPlanning = false,
   history = [],
 } = {}) {
+  if (isTemplatesContext(context)) {
+    return buildTemplatePanelState({ context, panelConfig, plan, isPlanning });
+  }
+
   const step = readWizardStep(context);
   const status = isPlanning
     ? "Working on your request"
