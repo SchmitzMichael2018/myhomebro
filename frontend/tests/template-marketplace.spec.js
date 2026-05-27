@@ -181,6 +181,7 @@ test('templates marketplace allows explicit visibility changes for owned templat
 
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
 
+  await page.getByTestId('template-discovery-card-1').click();
   await expect(page.getByRole('heading', { name: 'My Private Kitchen Template' })).toBeVisible();
   await page.getByTestId('template-visibility-public').click();
   await expect(page.getByText('Visibility: public')).toBeVisible();

@@ -1386,6 +1386,297 @@
       radial-gradient(circle at 8% 0%, rgba(124, 58, 237, 0.18), transparent 16rem),
       linear-gradient(135deg, rgba(2, 12, 33, 0.98), rgba(5, 22, 50, 0.94)) !important;
   }
+
+  .mhb-templates-studio {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .mhb-templates-studio::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 16% 6%, rgba(37, 99, 235, 0.18), transparent 18rem),
+      radial-gradient(circle at 82% 2%, rgba(124, 58, 237, 0.16), transparent 19rem),
+      radial-gradient(circle at 64% 86%, rgba(14, 165, 233, 0.10), transparent 20rem);
+  }
+
+  .mhb-templates-studio .mhb-template-discovery-toolbar,
+  .mhb-templates-studio .mhb-template-library,
+  .mhb-templates-studio .mhb-template-editor-shell,
+  .mhb-templates-studio .mhb-template-section-card {
+    border-color: rgba(125, 166, 255, 0.26) !important;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(37, 99, 235, 0.16), transparent 16rem),
+      linear-gradient(145deg, rgba(6, 21, 47, 0.98), rgba(5, 18, 40, 0.96) 58%, rgba(8, 24, 52, 0.98)) !important;
+    box-shadow:
+      0 24px 70px rgba(0, 0, 0, 0.34),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  }
+
+  .mhb-templates-studio .mhb-template-discovery-toolbar {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .mhb-templates-studio .mhb-template-discovery-toolbar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.34;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 34px 34px;
+    mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+  }
+
+  .mhb-templates-studio .mhb-template-discovery-toolbar > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .mhb-templates-studio .text-slate-900,
+  .mhb-templates-studio .text-slate-800,
+  .mhb-templates-studio .text-gray-900 {
+    color: rgba(248, 251, 255, 0.96) !important;
+  }
+
+  .mhb-templates-studio .text-slate-700,
+  .mhb-templates-studio .text-slate-600,
+  .mhb-templates-studio .text-gray-700 {
+    color: rgba(205, 218, 238, 0.86) !important;
+  }
+
+  .mhb-templates-studio .text-slate-500,
+  .mhb-templates-studio .text-gray-500 {
+    color: rgba(169, 187, 214, 0.78) !important;
+  }
+
+  .mhb-templates-studio label,
+  .mhb-templates-studio .mhb-template-section-title {
+    color: rgba(216, 228, 248, 0.9) !important;
+  }
+
+  .mhb-templates-studio input:not([type="checkbox"]),
+  .mhb-templates-studio textarea,
+  .mhb-templates-studio select {
+    border-color: rgba(148, 183, 255, 0.24) !important;
+    background: rgba(4, 16, 37, 0.88) !important;
+    color: rgba(248, 251, 255, 0.96) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  }
+
+  .mhb-templates-studio input::placeholder,
+  .mhb-templates-studio textarea::placeholder {
+    color: rgba(163, 181, 209, 0.58) !important;
+  }
+
+  .mhb-templates-studio input:not([type="checkbox"]):hover,
+  .mhb-templates-studio textarea:hover,
+  .mhb-templates-studio select:hover {
+    border-color: rgba(125, 166, 255, 0.4) !important;
+    background: rgba(7, 23, 51, 0.94) !important;
+  }
+
+  .mhb-templates-studio input:not([type="checkbox"]):focus,
+  .mhb-templates-studio textarea:focus,
+  .mhb-templates-studio select:focus {
+    border-color: rgba(96, 165, 250, 0.78) !important;
+    box-shadow:
+      0 0 0 3px rgba(37, 99, 235, 0.2),
+      0 14px 30px rgba(0, 0, 0, 0.18) !important;
+    outline: none !important;
+  }
+
+  .mhb-templates-studio input:disabled,
+  .mhb-templates-studio textarea:disabled,
+  .mhb-templates-studio select:disabled {
+    color: rgba(214, 226, 246, 0.78) !important;
+    background: rgba(8, 27, 58, 0.72) !important;
+    opacity: 1 !important;
+  }
+
+  .mhb-templates-studio .mhb-template-tab {
+    border: 1px solid rgba(145, 180, 255, 0.18) !important;
+    background: rgba(10, 31, 68, 0.78) !important;
+    color: rgba(205, 218, 238, 0.88) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .mhb-templates-studio .mhb-template-tab:hover {
+    border-color: rgba(96, 165, 250, 0.44) !important;
+    background: rgba(21, 54, 110, 0.86) !important;
+    color: #fff !important;
+    transform: translateY(-1px);
+  }
+
+  .mhb-templates-studio .mhb-template-tab.is-active {
+    border-color: rgba(96, 165, 250, 0.7) !important;
+    background: linear-gradient(135deg, #2563eb, #5b4bff 58%, #7c3aed) !important;
+    color: #fff !important;
+    box-shadow:
+      0 12px 28px rgba(37, 99, 235, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+  }
+
+  .mhb-templates-studio .mhb-template-library {
+    overflow: hidden;
+  }
+
+  .mhb-templates-studio .mhb-template-library > div:first-child,
+  .mhb-templates-studio .mhb-template-editor-shell > div:first-child {
+    border-color: rgba(125, 166, 255, 0.22) !important;
+    background: linear-gradient(180deg, rgba(13, 36, 78, 0.82), rgba(8, 24, 52, 0.42));
+  }
+
+  .mhb-templates-studio .mhb-template-library button[data-testid^="template-discovery-card"] {
+    border-color: rgba(125, 166, 255, 0.16) !important;
+    background: rgba(6, 21, 47, 0.66) !important;
+    color: rgba(236, 244, 255, 0.95) !important;
+    transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  }
+
+  .mhb-templates-studio .mhb-template-library button[data-testid^="template-discovery-card"]:hover {
+    border-color: rgba(96, 165, 250, 0.45) !important;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(96, 165, 250, 0.16), transparent 12rem),
+      rgba(13, 38, 82, 0.9) !important;
+    box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.72);
+    transform: translateX(2px);
+  }
+
+  .mhb-templates-studio .sticky {
+    border-color: rgba(125, 166, 255, 0.18) !important;
+    background: rgba(3, 13, 31, 0.96) !important;
+    color: rgba(166, 196, 255, 0.9) !important;
+    backdrop-filter: none;
+  }
+
+  .mhb-templates-studio .mhb-template-editor {
+    background:
+      radial-gradient(circle at 92% 0%, rgba(124, 58, 237, 0.1), transparent 16rem),
+      linear-gradient(180deg, rgba(4, 14, 32, 0.78), rgba(3, 11, 26, 0.48));
+  }
+
+  .mhb-templates-studio .mhb-template-section-card {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(96, 165, 250, 0.12), transparent 14rem),
+      linear-gradient(145deg, rgba(7, 24, 55, 0.96), rgba(5, 18, 42, 0.98)) !important;
+  }
+
+  .mhb-templates-studio .mhb-template-section-title {
+    letter-spacing: 0.16em !important;
+    color: rgba(135, 180, 255, 0.92) !important;
+  }
+
+  .mhb-templates-studio .bg-white,
+  .mhb-templates-studio .bg-slate-50,
+  .mhb-templates-studio .bg-slate-50\/90,
+  .mhb-templates-studio .bg-white\/80 {
+    background-color: rgba(8, 27, 58, 0.72) !important;
+  }
+
+  .mhb-templates-studio .border-slate-200,
+  .mhb-templates-studio .border-slate-300,
+  .mhb-templates-studio .border-indigo-200 {
+    border-color: rgba(125, 166, 255, 0.22) !important;
+  }
+
+  .mhb-templates-studio .bg-indigo-50,
+  .mhb-templates-studio .bg-amber-50 {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(96, 165, 250, 0.14), transparent 13rem),
+      rgba(9, 31, 68, 0.86) !important;
+  }
+
+  .mhb-templates-studio [data-testid*="templates-ai"]:not(input):not(button),
+  .mhb-templates-studio [data-testid="templates-generated-ai-summary"],
+  .mhb-templates-studio [data-testid="templates-generated-pricing-guidance"],
+  .mhb-templates-studio [data-testid="templates-generated-materials-guidance"] {
+    border-color: rgba(139, 92, 246, 0.32) !important;
+    background:
+      radial-gradient(circle at 10% 0%, rgba(139, 92, 246, 0.2), transparent 14rem),
+      linear-gradient(135deg, rgba(13, 26, 66, 0.96), rgba(8, 26, 57, 0.95)) !important;
+    color: rgba(240, 246, 255, 0.94) !important;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+  }
+
+  .mhb-templates-studio [data-testid="templates-workflow-profile"],
+  .mhb-templates-studio [data-testid="templates-template-insights"] {
+    border-color: rgba(96, 165, 250, 0.28) !important;
+    background:
+      radial-gradient(circle at 100% 0%, rgba(250, 204, 21, 0.08), transparent 16rem),
+      linear-gradient(135deg, rgba(7, 28, 62, 0.96), rgba(6, 22, 50, 0.98)) !important;
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .mhb-templates-studio [data-testid="templates-template-insights"] li span:first-child {
+    background: linear-gradient(135deg, #60a5fa, #facc15) !important;
+    box-shadow: 0 0 14px rgba(96, 165, 250, 0.45);
+  }
+
+  .mhb-templates-studio .mhb-template-badge,
+  .mhb-templates-studio .rounded-full.bg-slate-100,
+  .mhb-templates-studio .rounded.bg-slate-100 {
+    border: 1px solid rgba(148, 183, 255, 0.18);
+    background: rgba(12, 34, 72, 0.9) !important;
+    color: rgba(219, 232, 255, 0.92) !important;
+  }
+
+  .mhb-templates-studio .mhb-template-badge.is-custom {
+    border-color: rgba(52, 211, 153, 0.28);
+    background: rgba(6, 78, 59, 0.36) !important;
+    color: rgba(190, 255, 232, 0.9) !important;
+  }
+
+  .mhb-templates-studio .mhb-template-badge.is-system {
+    border-color: rgba(250, 204, 21, 0.32);
+    background: rgba(113, 79, 18, 0.28) !important;
+    color: rgba(255, 239, 179, 0.94) !important;
+  }
+
+  .mhb-templates-studio button:not(.mhb-template-tab):not([data-testid^="template-discovery-card"]) {
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+  }
+
+  .mhb-templates-studio button:not(.mhb-template-tab):not([data-testid^="template-discovery-card"]):hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  }
+
+  .mhb-templates-studio button:disabled {
+    cursor: not-allowed;
+    opacity: 0.72 !important;
+  }
+
+  .mhb-templates-studio table {
+    color: rgba(222, 233, 250, 0.92);
+  }
+
+  .mhb-templates-studio thead {
+    background: rgba(3, 13, 31, 0.92) !important;
+    color: rgba(163, 190, 234, 0.9);
+  }
+
+  .mhb-templates-studio tbody tr {
+    border-color: rgba(125, 166, 255, 0.16) !important;
+  }
+
+  .mhb-templates-studio tbody tr:hover {
+    background: rgba(37, 99, 235, 0.08);
+  }
+
+  .mhb-templates-studio .overflow-x-auto {
+    scrollbar-color: rgba(96, 165, 250, 0.5) rgba(4, 16, 37, 0.75);
+  }
 }
 
 /* === Responsive Typography Tweaks === */

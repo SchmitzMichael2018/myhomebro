@@ -208,10 +208,10 @@ function OptionBadge({ ownerType }) {
   const text = ownerType === "system" ? "System / Built-in" : "Custom";
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+      className={`mhb-template-badge inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
         ownerType === "system"
-          ? "bg-slate-100 text-slate-700"
-          : "bg-emerald-100 text-emerald-800"
+          ? "is-system bg-slate-100 text-slate-700"
+          : "is-custom bg-emerald-100 text-emerald-800"
       }`}
     >
       {text}
@@ -230,7 +230,7 @@ function VisibilityBadge({ visibility }) {
   };
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+      className={`mhb-template-badge is-visibility inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
         styles[normalized] || styles.private
       }`}
     >
@@ -283,9 +283,9 @@ function TabButton({ active, onClick, children, ...rest }) {
       type="button"
       onClick={onClick}
       {...rest}
-      className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+      className={`mhb-template-tab rounded-lg px-3 py-2 text-sm font-semibold transition ${
         active
-          ? "bg-indigo-600 text-white"
+          ? "is-active bg-indigo-600 text-white"
           : "bg-slate-100 text-slate-700 hover:bg-slate-200"
       }`}
     >
@@ -296,8 +296,8 @@ function TabButton({ active, onClick, children, ...rest }) {
 
 function SectionCard({ title, children }) {
   return (
-    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/90 p-5 shadow-sm">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <div className="mhb-template-section-card mt-4 rounded-2xl border border-slate-200 bg-slate-50/90 p-5 shadow-sm">
+      <div className="mhb-template-section-title text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         {title}
       </div>
       <div className="mt-3">{children}</div>
@@ -1545,14 +1545,15 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       title={adminMode ? "Admin Templates" : "Templates"}
       subtitle={
         adminMode
-          ? "Create and manage reusable system templates for the platform."
-          : "Create reusable project setups to speed up your agreements."
+          ? "Configure reusable workflow starters, milestone structures, and system guidance for the platform."
+          : "Build reusable workflow structures that turn repeatable work into faster, smarter agreements."
       }
       actions={null}
       variant="operational"
+      className="mhb-templates-studio"
     >
 
-      <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mhb-template-discovery-toolbar mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 text-sm text-slate-600">
           {adminMode
             ? "Manage reusable platform templates. Publish system starters, duplicate contractor templates, and keep milestone structure consistent."
@@ -1624,7 +1625,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           )}
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="mhb-template-filter-grid mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
           <div className="xl:col-span-2">
             <label className="mb-1 block text-sm font-medium text-slate-800">
               Search Templates
@@ -1720,7 +1721,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       ) : null}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="rounded-[22px] border border-slate-200 bg-white shadow-sm">
+        <div className="mhb-template-library rounded-[22px] border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold text-slate-900">
               Template Library
@@ -1837,7 +1838,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="mhb-template-editor-shell rounded-xl border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm font-semibold text-slate-900">
@@ -2054,7 +2055,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
               )}
             </div>
           ) : (
-            <div className="p-4" data-testid="templates-draft-editor" ref={editorPanelRef}>
+            <div className="mhb-template-editor p-4" data-testid="templates-draft-editor" ref={editorPanelRef}>
               {creatingNew && generatedAiDraft ? (
                 <div
                   data-testid="templates-ai-unsaved-banner"
