@@ -61,6 +61,10 @@ function chooseHeuristicIntent(request, fallbackPlan) {
   const context = safeObject(request.context);
 
   if (clean(context.page).toLowerCase() === "templates" && !/(go to|open |take me|navigate)/.test(text)) {
+    // Explicit "use / apply / find existing template" prompts stay on the apply path.
+    if (/\b(use|apply|find|pick)\b/.test(text) && /\btemplate\b/.test(text)) {
+      return "apply_template";
+    }
     return "template_guidance";
   }
 

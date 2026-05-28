@@ -1414,3 +1414,141 @@ test('lead inbox consumes assistant create-lead prefill into quick add', async (
   await expect(page.getByTestId('quick-add-lead-name')).toHaveValue('Casey Prospect');
   await expect(page.getByTestId('quick-add-lead-phone')).toHaveValue('(555) 444-3333');
 });
+
+// ─── Templates Copilot: creation intent must never reach the orchestrator ─────
+
+function installTemplatesPageRoutes(page) {
+  return Promise.all([
+    page.route('**/api/projects/contractors/me/', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 77,
+          city: 'San Antonio',
+          state: 'TX',
+          ai: { access: 'included', enabled: true, unlimited: true },
+        }),
+      });
+    }),
+    page.route('**/api/projects/templates/discover/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [], count: 0 }),
+      });
+    }),
+    page.route(/\/api\/projects\/templates\/?(\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [], count: 0 }),
+      });
+    }),
+    page.route('**/api/projects/project-types/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [] }),
+      });
+    }),
+    page.route('**/api/projects/project-subtypes/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [] }),
+      });
+    }),
+  ]);
+}
+
+test('templates copilot: "create template" prompt renders a review-only draft without calling the orchestrator', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+  await installTemplatesPageRoutes(page);
+
+  // Any call to the orchestrator is a test failure — creation prompts on the
+  // templates page must be handled entirely by the local planner.
+  let orchestratorCalled = false;
+  await page.route('**/api/projects/assistant/orchestrate/', async (route) => {
+    orchestratorCalled = true;
+    await route.abort();
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  // Open the AI Copilot dock via the sidebar button.
+  await page.getByTestId('assistant-dock-open-button').first().click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+
+  // Type a template creation prompt — the exact phrase from the bug report.
+  await page.getByTestId('start-with-ai-input-dock').fill('create template for kitchen cabinet installation');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  // The "Workflow Draft" block must appear in the copilot panel.
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toBeVisible();
+
+  // Draft should contain kitchen / cabinet relevant labels.
+  const draftText = await page.getByTestId('start-with-ai-template-draft-dock').textContent();
+  expect((draftText ?? '').toLowerCase()).toMatch(/kitchen|cabinet/);
+
+  // "Open Template Marketplace" must NOT appear — that is the apply_template response.
+  await expect(page.getByText('Open Template Marketplace')).not.toBeVisible();
+
+  // No existing template should have been selected.
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).not.toContainText('selected_template_id');
+
+  // The orchestrator must not have been called.
+  expect(orchestratorCalled).toBe(false);
+});
+
+test('templates copilot: "build a kitchen remodel template" also bypasses the orchestrator', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+  await installTemplatesPageRoutes(page);
+
+  let orchestratorCalled = false;
+  await page.route('**/api/projects/assistant/orchestrate/', async (route) => {
+    orchestratorCalled = true;
+    await route.abort();
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').first().click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+
+  await page.getByTestId('start-with-ai-input-dock').fill('build a kitchen remodel template');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toBeVisible();
+  expect(orchestratorCalled).toBe(false);
+});
+
+test('templates copilot: "use existing template" resolves to apply_template intent without showing a workflow draft', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+  await installTemplatesPageRoutes(page);
+
+  // On the templates page the local planner handles this — the orchestrator must still NOT be called.
+  let orchestratorCalled = false;
+  await page.route('**/api/projects/assistant/orchestrate/', async (route) => {
+    orchestratorCalled = true;
+    await route.abort();
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').first().click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+
+  await page.getByTestId('start-with-ai-input-dock').fill('use my existing kitchen remodel template');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  // The apply path (apply_template intent) should NOT produce a review-only workflow draft block.
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).not.toBeVisible();
+
+  // The orchestrator must still not have been called — the local planner handles apply prompts too.
+  expect(orchestratorCalled).toBe(false);
+});

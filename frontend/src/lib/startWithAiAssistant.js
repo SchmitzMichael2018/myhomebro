@@ -151,6 +151,10 @@ function detectIntent(input, preferredIntent, context) {
   }
 
   if (isTemplatesPage && !/(go to|open |take me|navigate)/.test(text)) {
+    // Explicit "use / apply / find existing template" prompts stay on the apply path.
+    if (/\b(use|apply|find|pick)\b/.test(text) && /\btemplate\b/.test(text)) {
+      return "apply_template";
+    }
     return "template_guidance";
   }
 
@@ -167,6 +171,8 @@ function detectIntent(input, preferredIntent, context) {
 
   if (text.includes("clarif")) return "collect_clarifications";
   if (text.includes("milestone")) return "suggest_milestones";
+  // Creation verbs with a template noun should always draft, never apply an existing template.
+  if (isTemplateCreationIntent(text)) return "template_guidance";
   if (text.includes("template")) return "apply_template";
   if (text.includes("customer")) return "create_customer";
   if (text.includes("lead") || text.includes("intake")) return "create_lead";
@@ -1113,6 +1119,16 @@ export function planAssistantAction({
 
 export function getAssistantQuickActions() {
   return QUICK_ACTIONS;
+}
+
+// Returns true when a prompt is asking to CREATE a new template, not apply an existing one.
+// Used to short-circuit the generic orchestrator before it can mis-classify the prompt.
+export function isTemplateCreationIntent(text = "") {
+  const lower = String(text || "").toLowerCase().trim();
+  if (!lower) return false;
+  const hasCreationVerb = /\b(create|build|make|draft|design|generate|write|start)\b/.test(lower);
+  const hasTemplateNoun = /\b(template|workflow|reusable|checklist)\b/.test(lower);
+  return hasCreationVerb && hasTemplateNoun;
 }
 
 export { planAssistantAction as planAssistantActionRules };

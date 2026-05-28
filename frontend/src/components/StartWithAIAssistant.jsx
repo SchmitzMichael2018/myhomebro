@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import api from "../api.js";
-import { getAssistantQuickActions } from "../lib/startWithAiAssistant.js";
+import { getAssistantQuickActions, isTemplateCreationIntent } from "../lib/startWithAiAssistant.js";
 import {
   normalizeStructuredPlanShape,
   produceStructuredAssistantPlan,
@@ -1071,7 +1071,9 @@ export default function StartWithAIAssistant({
       ...overrides,
     };
     const fallbackPlan = runPlanner(promptText, overrides);
-    if (isTemplatesContextualMode) {
+    const isTemplatesPage =
+      String(normalizedContext?.page || "").trim().toLowerCase() === "templates";
+    if (isTemplatesContextualMode || (isTemplatesPage && isTemplateCreationIntent(promptText))) {
       return fallbackPlan;
     }
     try {
