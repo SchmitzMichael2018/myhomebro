@@ -279,7 +279,20 @@ test.describe('AI Workspace page', () => {
     await expect(page.getByTestId('ai-workspace-popular-templates')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-footer')).toBeVisible();
 
-    await expect(page.getByText('Start something new with AI')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Start or continue work' })).toBeVisible();
+    const hero = page.getByTestId('ai-workspace-hero');
+    await expect(hero.getByRole('button', { name: 'Create an agreement' })).toBeVisible();
+    await expect(hero.getByRole('button', { name: 'Create a template' })).toBeVisible();
+    await expect(hero.getByRole('button', { name: 'Continue a project' })).toBeVisible();
+    await expect(hero.getByRole('button', { name: 'Plan milestones' })).toBeVisible();
+    await expect(hero.getByRole('button', { name: 'Find my next task' })).toBeVisible();
+    await expect(hero.getByRole('button', { name: 'Show work needing attention' })).toBeVisible();
+    await expect(hero.getByRole('button', { name: 'Kitchen remodel' })).not.toBeVisible();
+    await expect(hero.getByRole('button', { name: 'Roof replacement' })).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-hero-input')).toHaveAttribute(
+      'placeholder',
+      /Create agreements, use templates, continue projects, plan milestones/
+    );
     await expect(page.getByText('Launch the right workflow without hunting for it.')).toBeVisible();
     await expect(page.getByText('Recommended next moves based on your current work.')).toBeVisible();
     await expect(page.getByText('Continue where your recent projects left off.')).toBeVisible();
@@ -300,7 +313,10 @@ test.describe('AI Workspace page', () => {
     );
 
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    await page.getByRole('button', { name: 'Open contextual Copilot' }).click();
+    await page
+      .getByTestId('ai-workspace-hero')
+      .getByRole('button', { name: 'Open AI Copilot' })
+      .click();
     await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
   });
 

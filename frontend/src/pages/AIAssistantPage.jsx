@@ -29,10 +29,13 @@ const WORKSPACE_CONTEXT = {
 };
 
 const HERO_CHIPS = [
-  "Kitchen remodel",
-  "Roof replacement",
+  "Create an agreement",
   "Use a template",
-  "What needs attention?",
+  "Create a template",
+  "Continue a project",
+  "Plan milestones",
+  "Find my next task",
+  "Show work needing attention",
 ];
 
 const QUICK_ACTIONS = [
@@ -63,9 +66,9 @@ const QUICK_ACTIONS = [
 ];
 
 const CAPABILITY_ROWS = [
-  "Turn a plain-language job description into the right workflow",
-  "Jump into agreements, templates, milestones, and next-step routing",
-  "Bring recent work back into focus without hunting through the sidebar",
+  "Launch agreement, template, milestone, and task workflows from one place",
+  "Continue active projects without hunting through the sidebar",
+  "Find work that needs attention and route to the right next step",
   "Use the global AI Copilot for help with the work you're currently doing",
 ];
 
@@ -433,11 +436,11 @@ export default function AIAssistantPage() {
               AI Workspace
             </div>
             <h2 className="mt-4 text-3xl font-bold tracking-tight text-[#18395f] md:text-[2.6rem]">
-              Start something new with AI
+              Start or continue work
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-[15px]">
-              Describe what you want to start, continue, or organize. AI Workspace routes you into
-              the right MyHomeBro workflow with the right setup already in motion.
+              Launch work, continue active projects, organize next steps, and route into the right
+              MyHomeBro workflow with the right setup already in motion.
             </p>
 
             <form onSubmit={handleHeroSubmit} className="mt-6">
@@ -445,7 +448,7 @@ export default function AIAssistantPage() {
                 <textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Describe what you want to start, plan, or organize..."
+                  placeholder="Describe what you'd like to do. Create agreements, use templates, continue projects, plan milestones, or find work that needs attention."
                   rows={5}
                   className="min-h-[148px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none placeholder:text-slate-400"
                   data-testid="ai-workspace-hero-input"
