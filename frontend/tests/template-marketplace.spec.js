@@ -210,7 +210,7 @@ test('templates page opens tab-aware AI Copilot guidance without apply actions',
   await page.getByTestId('start-with-ai-submit-dock').click();
   await expect(page.getByTestId('start-with-ai-template-draft-dock')).toBeVisible();
   await expect(page.getByTestId('start-with-ai-template-draft-dock')).toContainText(
-    'Pool Installation Workflow Template'
+    'Pool Installation'
   );
   await expect(page.getByTestId('start-with-ai-template-draft-dock')).toContainText(
     'Template Name'

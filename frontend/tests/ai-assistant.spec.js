@@ -1589,9 +1589,95 @@ test('templates copilot: "Use this draft" applies the AI draft into the template
   await expect(page.getByTestId('templates-assistant-prefill-banner')).toBeVisible();
   await expect(page.getByTestId('templates-assistant-prefill-banner')).toContainText('AI draft applied');
 
-  // The template name input must be pre-filled from the draft.
+  // The template name must be pre-filled and NOT contain the legacy "Workflow Template" suffix.
   const nameInput = page.getByTestId('templates-name-input');
   await expect(nameInput).toBeVisible();
   const nameValue = await nameInput.inputValue();
   expect(nameValue.trim().length).toBeGreaterThan(0);
+  expect(nameValue).not.toMatch(/workflow\s+template/i);
+
+  // Milestone tab: descriptions must be populated.
+  await page.getByTestId('templates-tab-milestones').click();
+  const milestoneDesc = page.getByTestId('templates-milestone-description-1');
+  await expect(milestoneDesc).toBeVisible();
+  const descValue = await milestoneDesc.inputValue();
+  expect(descValue.trim().length).toBeGreaterThan(0);
+});
+
+test('templates copilot: applied AI draft populates pricing guidance and timing tabs', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+  await installTemplatesPageRoutes(page);
+
+  await page.route('**/api/projects/assistant/orchestrate/', async (route) => {
+    await route.abort();
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('assistant-dock-open-button').first().click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+
+  await page.getByTestId('start-with-ai-input-dock').fill('create template for bathroom remodel');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toBeVisible();
+  await page.getByTestId('start-with-ai-template-draft-dock-use-draft').click();
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+
+  // Close the dock so it doesn't overlap the tab buttons.
+  await page.getByTestId('assistant-desktop-dock-close').click();
+
+  // Pricing tab: "AI Pricing Guidance" section must appear because generatedAiDraft.pricing is set.
+  await page.getByTestId('templates-tab-pricing').click();
+  await expect(page.getByTestId('templates-generated-pricing-guidance')).toBeVisible();
+
+  // Schedule tab: first milestone must have a numeric start offset (0) and duration >= 1.
+  await page.getByTestId('templates-tab-schedule').click();
+  const startOffset1 = page.getByTestId('templates-milestone-start-offset-1');
+  await expect(startOffset1).toBeVisible();
+  const offsetVal = await startOffset1.inputValue();
+  expect(Number(offsetVal)).toBeGreaterThanOrEqual(0);
+
+  const duration1 = page.getByTestId('templates-milestone-duration-1');
+  await expect(duration1).toBeVisible();
+  const durVal = await duration1.inputValue();
+  expect(Number(durVal)).toBeGreaterThanOrEqual(1);
+});
+
+test('templates copilot: applied AI draft populates project-level materials immediately', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+  await installTemplatesPageRoutes(page);
+
+  await page.route('**/api/projects/assistant/orchestrate/', async (route) => {
+    await route.abort();
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('assistant-dock-open-button').first().click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+
+  await page.getByTestId('start-with-ai-input-dock').fill('create template for deck construction');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toBeVisible();
+  await page.getByTestId('start-with-ai-template-draft-dock-use-draft').click();
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+
+  // Close the dock so it doesn't overlap the tab buttons.
+  await page.getByTestId('assistant-desktop-dock-close').click();
+
+  // Materials tab: AI materials guidance section must appear (from draft.materials).
+  await page.getByTestId('templates-tab-materials').click();
+  await expect(page.getByTestId('templates-generated-materials-guidance')).toBeVisible();
+
+  // Project-level materials textarea must be pre-filled without needing "Refresh Materials from AI".
+  const projectMaterialsHint = page.getByTestId('templates-project-materials-hint');
+  await expect(projectMaterialsHint).toBeVisible();
+  const materialsValue = await projectMaterialsHint.inputValue();
+  expect(materialsValue.trim().length).toBeGreaterThan(0);
 });

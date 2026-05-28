@@ -110,14 +110,19 @@ function TemplateDraftPreview({ draft, questions = [], onAction = null, testId =
               Suggested milestones
             </div>
             <div className="mt-2 space-y-2">
-              {milestones.map((item, idx) => (
-                <div
-                  key={`${item}-${idx}`}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-                >
-                  <span className="font-semibold text-slate-900">{idx + 1}.</span> {item}
-                </div>
-              ))}
+              {milestones.map((item, idx) => {
+                const title = typeof item === "object" ? (item.title || "") : item;
+                const desc = typeof item === "object" ? (item.description || "") : "";
+                return (
+                  <div
+                    key={`${title}-${idx}`}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+                  >
+                    <div><span className="font-semibold text-slate-900">{idx + 1}.</span> {title}</div>
+                    {desc ? <div className="mt-1 text-xs text-slate-500">{desc}</div> : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}

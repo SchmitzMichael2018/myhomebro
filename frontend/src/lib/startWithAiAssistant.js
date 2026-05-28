@@ -305,28 +305,143 @@ function inferProjectTypeFromSubject(subject = "", context = {}) {
 function buildGenericTemplateMilestones(subject = "") {
   const name = clean(subject).toLowerCase();
   const noun = titleCaseLoose(subject || "Project");
+
   if (/(service|hvac|maintenance|repair|inspection)/.test(name)) {
     return [
-      "Initial assessment and access confirmation",
-      "Service preparation and safety setup",
-      `${noun} work session`,
-      "Testing, cleanup, and homeowner review",
+      {
+        title: "Initial assessment and access confirmation",
+        description: "Confirm site access, review service scope assumptions, identify any conditions that may affect the work, and complete safety checks.",
+        start_offset: 0,
+        duration_days: 1,
+        materials_hint: "Safety equipment, diagnostic tools, access confirmation checklist",
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — adjust based on regional service rates.",
+        pricing_confidence: "low",
+      },
+      {
+        title: "Service preparation and safety setup",
+        description: "Stage tools and materials, protect adjacent surfaces and equipment, and confirm all pre-work conditions are met before proceeding.",
+        start_offset: 1,
+        duration_days: 1,
+        materials_hint: "Protective covers, staging materials, safety barriers",
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — adjust based on setup complexity.",
+        pricing_confidence: "low",
+      },
+      {
+        title: `${noun} work session`,
+        description: `Perform the core ${name} work per scope. Document any findings or conditions requiring scope adjustments.`,
+        start_offset: 2,
+        duration_days: 2,
+        materials_hint: `${noun} components and replacement parts as needed`,
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — this milestone typically carries the largest share of labor cost.",
+        pricing_confidence: "low",
+      },
+      {
+        title: "Testing, cleanup, and homeowner review",
+        description: "Verify work quality or system operation, clean the worksite, and walk the homeowner through the completed work. Collect sign-off.",
+        start_offset: 4,
+        duration_days: 1,
+        materials_hint: "Cleanup supplies, final punch list documentation",
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — closeout and review milestone.",
+        pricing_confidence: "low",
+      },
     ];
   }
+
   if (/(junk|clean|haul|removal|demo|demolition)/.test(name)) {
     return [
-      "Site review and item confirmation",
-      "Access protection and staging",
-      "Removal, hauling, and disposal",
-      "Final sweep and completion review",
+      {
+        title: "Site review and item confirmation",
+        description: "Walk through the site to confirm removal scope, document items, and identify access limitations or special disposal requirements.",
+        start_offset: 0,
+        duration_days: 1,
+        materials_hint: "Documentation materials, photography for scope record",
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — adjust for volume and access complexity.",
+        pricing_confidence: "low",
+      },
+      {
+        title: "Access protection and staging",
+        description: "Protect floors, walls, and adjacent areas. Stage removal equipment and disposal containers.",
+        start_offset: 1,
+        duration_days: 1,
+        materials_hint: "Floor protection, disposal containers, tarps, safety equipment",
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — staging milestone.",
+        pricing_confidence: "low",
+      },
+      {
+        title: "Removal, hauling, and disposal",
+        description: "Remove all confirmed items, haul to appropriate disposal locations, and document any special handling or diversion requirements.",
+        start_offset: 2,
+        duration_days: 2,
+        materials_hint: "Hauling equipment, disposal bags, tarps, tie-downs",
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — primary labor milestone; adjust for volume and disposal fees.",
+        pricing_confidence: "low",
+      },
+      {
+        title: "Final sweep and completion review",
+        description: "Conduct a final walkthrough to verify all items have been removed, clean up residual debris, and confirm client satisfaction.",
+        start_offset: 4,
+        duration_days: 1,
+        materials_hint: "Brooms, vacuums, cleanup bags, final debris removal",
+        pricing_advisory: true,
+        pricing_source_note: "Advisory — closeout milestone.",
+        pricing_confidence: "low",
+      },
     ];
   }
+
   return [
-    "Project setup and site preparation",
-    "Rough work and core installation",
-    "Finish work and quality review",
-    "Cleanup, walkthrough, and closeout",
+    {
+      title: "Project setup and site preparation",
+      description: "Confirm site access, protect nearby surfaces, review scope assumptions, prepare tools and materials, and identify any conditions that may affect the work.",
+      start_offset: 0,
+      duration_days: 1,
+      materials_hint: "Safety equipment, surface protection materials, staging supplies",
+      pricing_advisory: true,
+      pricing_source_note: "Advisory — setup and mobilization milestone.",
+      pricing_confidence: "low",
+    },
+    {
+      title: "Rough work and core installation",
+      description: `Complete the core ${name} work. Address any field conditions discovered during rough-in and document any scope adjustments for client review.`,
+      start_offset: 1,
+      duration_days: 3,
+      materials_hint: `Primary ${name} materials and structural components`,
+      pricing_advisory: true,
+      pricing_source_note: "Advisory — core labor milestone; typically carries the largest share of project cost.",
+      pricing_confidence: "low",
+    },
+    {
+      title: "Finish work and quality review",
+      description: "Complete all finish work, inspect systems and surfaces for quality, and address any punch list items before the final walkthrough.",
+      start_offset: 4,
+      duration_days: 2,
+      materials_hint: "Finish materials, trim, sealants, touch-up supplies",
+      pricing_advisory: true,
+      pricing_source_note: "Advisory — finish milestone.",
+      pricing_confidence: "low",
+    },
+    {
+      title: "Cleanup, walkthrough, and closeout",
+      description: "Remove all debris and materials, clean the work area, walk the client through the completed work, and collect final sign-off.",
+      start_offset: 6,
+      duration_days: 1,
+      materials_hint: "Cleanup supplies, waste bags, final punch list documentation",
+      pricing_advisory: true,
+      pricing_source_note: "Advisory — closeout milestone.",
+      pricing_confidence: "low",
+    },
   ];
+}
+
+function stripWorkflowTemplateSuffix(name = "") {
+  return String(name || "").replace(/\s*workflow\s+template\s*/gi, "").trim();
 }
 
 function buildTemplateDraftPreview(input = "", context = {}) {
@@ -338,15 +453,27 @@ function buildTemplateDraftPreview(input = "", context = {}) {
     (hasPrompt ? subject : "") ||
     clean(template.project_subtype || context.project_subtype) ||
     subject;
+
+  // Concise reusable name — no "Workflow Template" suffix.
   const templateName =
-    (hasPrompt ? `${projectSubtype} Workflow Template` : "") ||
-    clean(template.name || context.template_name) ||
-    `${projectSubtype} Workflow Template`;
+    stripWorkflowTemplateSuffix(
+      (hasPrompt ? projectSubtype : "") ||
+      clean(template.name || context.template_name) ||
+      projectSubtype
+    );
+
   const milestones = buildGenericTemplateMilestones(projectSubtype);
   const assistedDiy =
     /diy|homeowner|shared|assist/i.test(input) ||
     (Array.isArray(context.workflow_profile?.participation_structure) &&
       context.workflow_profile.participation_structure.some((item) => /homeowner|shared/i.test(item)));
+
+  const guidedQuestions = [
+    "Should this template support assisted DIY, full-service delivery, or both?",
+    "Which phases are reusable across most jobs, and which should stay project-specific?",
+    "What exclusions or owner responsibilities commonly prevent scope confusion?",
+    "Should pricing guidance be milestone-based, hourly/session-based, or advisory only?",
+  ];
 
   return {
     template_name: templateName,
@@ -375,17 +502,52 @@ function buildTemplateDraftPreview(input = "", context = {}) {
         ? ["Homeowner prep", "Shared tasks", "Contractor-led technical work", "Inspection / review checkpoints"]
         : ["Contractor-led technical work", "Customer review checkpoints", "Closeout approval"],
     },
+    workflow_profile: {
+      assistance_format: "milestone_based",
+      scheduling_mode: "milestone_driven",
+      billing_style: "milestone",
+      participation_structure: assistedDiy
+        ? ["homeowner_prep", "shared_tasks", "contractor_led_technical_work", "inspection_review_checkpoints"]
+        : ["contractor_led_technical_work", "inspection_review_checkpoints"],
+    },
     pricing_guidance: [
       "Use advisory ranges or percentages rather than enforced fixed prices.",
       "Add confidence and source notes for each milestone if pricing guidance is used.",
       "Keep material allowances and disposal or permit assumptions visible as notes.",
     ],
-    guided_questions: [
-      "Should this template support assisted DIY, full-service delivery, or both?",
-      "Which phases are reusable across most jobs, and which should stay project-specific?",
-      "What exclusions or owner responsibilities commonly prevent scope confusion?",
-      "Should pricing guidance be milestone-based, hourly/session-based, or advisory only?",
+    pricing: {
+      total_range: "Advisory only — adjust based on your regional labor and material rates.",
+      milestone_percentages: milestones.map((m) => ({
+        milestone: m.title,
+        percentage: `${Math.round(100 / milestones.length)}%`,
+        notes: "Reusable estimate — adjust per project scope.",
+      })),
+    },
+    materials: [
+      {
+        category: "Primary Materials",
+        options: [],
+        notes: `Core ${projectSubtype.toLowerCase()} materials and structural components.`,
+      },
+      {
+        category: "Protective and Staging",
+        options: [],
+        notes: "Surface protection, safety equipment, and staging supplies.",
+      },
+      {
+        category: "Cleanup and Closeout",
+        options: [],
+        notes: "Debris removal bags, cleanup supplies, and final documentation materials.",
+      },
     ],
+    project_materials_hint: `${projectSubtype} — primary components, protective and staging materials, finish materials, and cleanup supplies.`,
+    timeline: (() => {
+      const last = milestones[milestones.length - 1];
+      const totalDays = (Number(last.start_offset) || 0) + (Number(last.duration_days) || 1);
+      return `Typical ${projectSubtype.toLowerCase()} workflow: ${totalDays}+ days depending on scope and site conditions.`;
+    })(),
+    default_clarifications: guidedQuestions,
+    guided_questions: guidedQuestions,
   };
 }
 

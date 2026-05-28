@@ -965,9 +965,19 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   const handleDockAction = useCallback((action) => {
     if (action?.action_key !== "use_template_draft") return false;
     const draft = action.draft || {};
-    const milestones = Array.isArray(draft.milestones) ? draft.milestones : [];
+    const rawMilestones = Array.isArray(draft.milestones) ? draft.milestones : [];
     const exclusions = Array.isArray(draft.exclusions) ? draft.exclusions : [];
     const assumptions = Array.isArray(draft.assumptions) ? draft.assumptions : [];
+    const clarifications = Array.isArray(draft.default_clarifications)
+      ? draft.default_clarifications
+      : Array.isArray(draft.guided_questions)
+      ? draft.guided_questions
+      : [];
+
+    // Strip legacy "Workflow Template" suffix if the name was generated before the cleanup.
+    const cleanedName = String(draft.template_name || "")
+      .replace(/\s*workflow\s+template\s*/gi, "")
+      .trim();
 
     setSelectedId(null);
     setSelectedDetail(null);
@@ -986,21 +996,46 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
     setEditHeader({
       ...buildBlankHeader(),
-      name: draft.template_name || "",
+      name: cleanedName,
       project_type: draft.project_type || "",
       project_subtype: draft.project_subtype || "",
       description: draft.description || "",
       default_scope: draft.description || "",
       exclusions_text: exclusions.join("\n"),
       assumptions_text: assumptions.join("\n"),
+      project_materials_hint: draft.project_materials_hint || "",
+      default_clarifications: clarifications,
+      workflow_profile: normalizeWorkflowProfile(draft.workflow_profile || null),
     });
+
     setEditMilestones(
-      milestones.length
-        ? milestones.map((title, idx) =>
-            normalizeMilestoneForEdit({ title, sort_order: idx + 1 }, idx)
-          )
+      rawMilestones.length
+        ? rawMilestones.map((m, idx) => {
+            const milestoneObj =
+              typeof m === "string"
+                ? { title: m, sort_order: idx + 1 }
+                : {
+                    title: m.title ?? "",
+                    description: m.description ?? "",
+                    sort_order: m.sort_order ?? idx + 1,
+                    start_offset: m.start_offset ?? (idx === 0 ? 0 : ""),
+                    duration_days: m.duration_days ?? "",
+                    pricing_advisory: m.pricing_advisory ?? false,
+                    suggested_amount_fixed: m.suggested_amount_fixed ?? "",
+                    suggested_amount_low: m.suggested_amount_low ?? "",
+                    suggested_amount_high: m.suggested_amount_high ?? "",
+                    pricing_confidence: m.pricing_confidence ?? "",
+                    pricing_source_note: m.pricing_source_note ?? "",
+                    recommended_days_from_start: m.start_offset != null ? Number(m.start_offset) + 1 : idx + 1,
+                    recommended_duration_days: m.duration_days ?? "",
+                    materials_hint: m.materials_hint ?? "",
+                    is_optional: !!m.is_optional,
+                  };
+            return normalizeMilestoneForEdit(milestoneObj, idx);
+          })
         : [buildBlankMilestone(1)]
     );
+
     setGeneratedAiDraft(draft);
     setAssistantPrefillBanner("AI draft applied — review and save your template.");
     return true;
@@ -3249,6 +3284,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       Project-Level Suggested Materials
                     </label>
                     <textarea
+                      data-testid="templates-project-materials-hint"
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       rows={4}
                       value={currentHeader?.project_materials_hint || ""}
