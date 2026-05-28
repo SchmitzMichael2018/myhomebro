@@ -227,7 +227,7 @@ test('templates page opens tab-aware AI Copilot guidance without apply actions',
   await expect(page.getByTestId('start-with-ai-template-draft-dock')).toContainText(
     'Questions to decide next'
   );
-  await expect(page.getByRole('button', { name: /Use this draft · Coming next/i })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Use this draft/i })).toBeEnabled();
   await expect(page.getByTestId('templates-detail-name')).toContainText('My Private Kitchen Template');
   await expect(page.getByTestId('templates-detail-subtype')).toContainText('Kitchen Remodel');
   await expect(dock).not.toContainText('The agreement is nearly ready');

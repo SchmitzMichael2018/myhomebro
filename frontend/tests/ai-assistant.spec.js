@@ -1552,3 +1552,46 @@ test('templates copilot: "use existing template" resolves to apply_template inte
   // The orchestrator must still not have been called — the local planner handles apply prompts too.
   expect(orchestratorCalled).toBe(false);
 });
+
+test('templates copilot: "Use this draft" applies the AI draft into the template editor', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+  await installTemplatesPageRoutes(page);
+
+  await page.route('**/api/projects/assistant/orchestrate/', async (route) => {
+    await route.abort();
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  // Open the dock and produce a template draft.
+  await page.getByTestId('assistant-dock-open-button').first().click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+
+  await page.getByTestId('start-with-ai-input-dock').fill('create template for kitchen cabinet installation');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  const draftBlock = page.getByTestId('start-with-ai-template-draft-dock');
+  await expect(draftBlock).toBeVisible();
+
+  // The "Use this draft" button must be enabled (not disabled).
+  const useDraftBtn = page.getByTestId('start-with-ai-template-draft-dock-use-draft');
+  await expect(useDraftBtn).toBeEnabled();
+
+  // Click it — the template editor should open with the AI draft populated.
+  await useDraftBtn.click();
+
+  // The draft editor panel should appear.
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+
+  // The AI draft applied banner must be shown.
+  await expect(page.getByTestId('templates-assistant-prefill-banner')).toBeVisible();
+  await expect(page.getByTestId('templates-assistant-prefill-banner')).toContainText('AI draft applied');
+
+  // The template name input must be pre-filled from the draft.
+  const nameInput = page.getByTestId('templates-name-input');
+  await expect(nameInput).toBeVisible();
+  const nameValue = await nameInput.inputValue();
+  expect(nameValue.trim().length).toBeGreaterThan(0);
+});

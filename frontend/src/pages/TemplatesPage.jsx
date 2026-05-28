@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
@@ -488,7 +488,7 @@ function buildTemplatePayload(header, milestones, extras = {}) {
 
 export default function TemplatesPage({ adminMode = false } = {}) {
   const location = useLocation();
-  const { updateAssistantContext } = useAssistantDock();
+  const { updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -961,6 +961,55 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     setDraftSourceTemplateId(template?.id || null);
     setDraftIsSystemTemplate(asSystem);
   }
+
+  const handleDockAction = useCallback((action) => {
+    if (action?.action_key !== "use_template_draft") return false;
+    const draft = action.draft || {};
+    const milestones = Array.isArray(draft.milestones) ? draft.milestones : [];
+    const exclusions = Array.isArray(draft.exclusions) ? draft.exclusions : [];
+    const assumptions = Array.isArray(draft.assumptions) ? draft.assumptions : [];
+
+    setSelectedId(null);
+    setSelectedDetail(null);
+    setDetailErr("");
+    setGeneratedAiDraft(null);
+    setAiGenerationError("");
+    setAiGenerationPartialSections([]);
+    setAiGenerationRecoveryMode(false);
+    setAiGenerationRecoveryNote("");
+    setAiGenerationStageIndex(-1);
+    setCreatingNew(true);
+    setEditMode(true);
+    setActiveTab("setup");
+    setDraftSourceTemplateId(null);
+    setDraftIsSystemTemplate(false);
+
+    setEditHeader({
+      ...buildBlankHeader(),
+      name: draft.template_name || "",
+      project_type: draft.project_type || "",
+      project_subtype: draft.project_subtype || "",
+      description: draft.description || "",
+      default_scope: draft.description || "",
+      exclusions_text: exclusions.join("\n"),
+      assumptions_text: assumptions.join("\n"),
+    });
+    setEditMilestones(
+      milestones.length
+        ? milestones.map((title, idx) =>
+            normalizeMilestoneForEdit({ title, sort_order: idx + 1 }, idx)
+          )
+        : [buildBlankMilestone(1)]
+    );
+    setGeneratedAiDraft(draft);
+    setAssistantPrefillBanner("AI draft applied — review and save your template.");
+    return true;
+  }, []);
+
+  useEffect(() => {
+    updateAssistantOnAction(handleDockAction);
+    return () => updateAssistantOnAction(null);
+  }, [handleDockAction, updateAssistantOnAction]);
 
   function clearTemplateSelection() {
     setSelectedId(null);

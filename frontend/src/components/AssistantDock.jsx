@@ -10,6 +10,7 @@ const AssistantDockContext = createContext({
   toggleAssistant: () => {},
   minimizeAssistant: () => {},
   updateAssistantContext: () => {},
+  updateAssistantOnAction: () => {},
   isOpen: false,
   isMinimized: false,
 });
@@ -118,6 +119,7 @@ export function AssistantDockProvider({ children }) {
   const [dockTitle, setDockTitle] = useState("AI Copilot");
   const [dockContext, setDockContext] = useState(null);
   const [dockOnAction, setDockOnAction] = useState(null);
+  const [pageAssistantOnAction, setPageAssistantOnAction] = useState(null);
   const [pageAssistantContext, setPageAssistantContext] = useState({});
 
   const openAssistant = useCallback(
@@ -134,6 +136,10 @@ export function AssistantDockProvider({ children }) {
     },
     [location, pageAssistantContext]
   );
+
+  const updateAssistantOnAction = useCallback((fn) => {
+    setPageAssistantOnAction(() => (typeof fn === "function" ? fn : null));
+  }, []);
 
   const updateAssistantContext = useCallback((context = {}) => {
     setPageAssistantContext(context && typeof context === "object" ? context : {});
@@ -170,10 +176,11 @@ export function AssistantDockProvider({ children }) {
       minimizeAssistant,
       toggleAssistant,
       updateAssistantContext,
+      updateAssistantOnAction,
       isOpen: open,
       isMinimized: minimized,
     }),
-    [closeAssistant, minimized, open, openAssistant, toggleAssistant, updateAssistantContext]
+    [closeAssistant, minimized, open, openAssistant, toggleAssistant, updateAssistantContext, updateAssistantOnAction]
   );
 
   return (
@@ -184,7 +191,7 @@ export function AssistantDockProvider({ children }) {
         minimized={minimized}
         title={dockTitle}
         context={dockContext || buildRouteContext(location)}
-        onAction={dockOnAction}
+        onAction={dockOnAction ?? pageAssistantOnAction}
         onClose={closeAssistant}
         onMinimize={minimizeAssistant}
       />
