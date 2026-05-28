@@ -1462,6 +1462,53 @@ function installTemplatesPageRoutes(page) {
   ]);
 }
 
+function installAgreementListRoutes(page) {
+  return Promise.all([
+    page.route('**/api/projects/agreements/**/milestones/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [], count: 0 }),
+      });
+    }),
+    page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          results: [
+            {
+              id: 123,
+              project_title: 'Kitchen agreement',
+              title: 'Kitchen agreement',
+              description: 'Cabinet installation agreement',
+              status: 'draft',
+              total_price: '4500.00',
+              payment_mode: 'escrow',
+              homeowner: { first_name: 'Casey', last_name: 'Prospect' },
+              created_at: '2026-05-01T10:00:00Z',
+              updated_at: '2026-05-02T10:00:00Z',
+              milestone_count: 2,
+              pdf_version: 1,
+              pdf_versions_count: 1,
+            },
+          ],
+          count: 1,
+          page: 1,
+          page_size: 10,
+        }),
+      });
+    }),
+    page.route('**/api/projects/homeowners/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [] }),
+      });
+    }),
+  ]);
+}
+
 test('templates copilot: "create template" prompt renders a review-only draft without calling the orchestrator', async ({
   page,
 }) => {
@@ -1680,4 +1727,59 @@ test('templates copilot: applied AI draft populates project-level materials imme
   await expect(projectMaterialsHint).toBeVisible();
   const materialsValue = await projectMaterialsHint.inputValue();
   expect(materialsValue.trim().length).toBeGreaterThan(0);
+});
+
+test('templates copilot state resets when navigating to agreements and restores on return', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+  await installTemplatesPageRoutes(page);
+  await installAgreementListRoutes(page);
+
+  await page.route('**/api/projects/assistant/orchestrate/', async (route) => {
+    await route.abort();
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').first().click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-title-dock')).toContainText(
+    'Review this template workflow'
+  );
+
+  await page.getByTestId('start-with-ai-input-dock').fill('create template for kitchen cabinet installation');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).toBeVisible();
+  await page.getByTestId('start-with-ai-template-draft-dock-use-draft').click();
+  await expect(page.getByTestId('templates-assistant-prefill-banner')).toContainText('AI draft applied');
+
+  await page.getByRole('link', { name: /^Agreements$/ }).first().click();
+  await page.waitForURL('**/app/agreements');
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText(
+    'AI Copilot for Agreements'
+  );
+  await expect(page.getByTestId('start-with-ai-title-dock')).toContainText('Review this agreement');
+  await expect(page.getByTestId('start-with-ai-assistant-dock')).toContainText(
+    'Agreement workspace context loaded'
+  );
+  await expect(page.getByTestId('start-with-ai-assistant-dock')).not.toContainText(
+    'Review this template workflow'
+  );
+  await expect(page.getByTestId('start-with-ai-assistant-dock')).not.toContainText(
+    'Template workspace context loaded'
+  );
+  await expect(page.getByTestId('start-with-ai-template-draft-dock')).not.toBeVisible();
+  await expect(page.getByText('Workflow Draft')).not.toBeVisible();
+  await expect(page.getByText('Use this draft')).not.toBeVisible();
+
+  await page.getByRole('link', { name: /^Templates$/ }).first().click();
+  await page.waitForURL('**/app/templates');
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText(
+    'AI Copilot for Templates'
+  );
+  await expect(page.getByTestId('start-with-ai-title-dock')).toContainText(
+    'Review this template workflow'
+  );
 });

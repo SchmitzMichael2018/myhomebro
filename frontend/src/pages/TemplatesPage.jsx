@@ -807,6 +807,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     const workflowProfile = normalizeWorkflowProfile(currentHeader?.workflow_profile);
     return {
       page: "templates",
+      workspace_mode: "templates",
       current_route: `${location.pathname}${location.search || ""}`,
       active_tab: activeTab,
       template_id: selectedDetail?.id || null,
@@ -3362,4 +3363,3 @@ function formatAiGenerationSectionLabels(keys) {
   if (!unique.length) return "some sections";
   return unique.map((key) => AI_GENERATION_SECTION_LABELS[key] || key).join(", ");
 }
-

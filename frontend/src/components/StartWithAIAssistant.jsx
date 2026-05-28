@@ -905,6 +905,12 @@ export default function StartWithAIAssistant({
   const testId = (base) => (mode === "dock" ? `${base}-dock` : base);
   const contextSignature = useMemo(() => JSON.stringify(context || {}), [context]);
   const normalizedContext = useMemo(() => context || {}, [contextSignature, context]);
+  const workspaceMode = String(
+    normalizedContext?.workspace_mode || normalizedContext?.page || "general"
+  )
+    .trim()
+    .toLowerCase();
+  const workspaceRouteSignature = `${workspaceMode}:${normalizedContext?.current_route || ""}`;
   const isContextualMode = mode === "dock" || mode === "panel";
   const isFieldAwareDescriptionMode = useMemo(
     () => isTemplateDescriptionMode(normalizedContext),
@@ -920,10 +926,9 @@ export default function StartWithAIAssistant({
   );
   const isFieldAwareMode =
     isFieldAwareDescriptionMode || isFieldAwareMilestonesMode || isFieldAwareExclusionsMode;
+  const isTemplatesPage = workspaceMode === "templates";
   const isTemplatesContextualMode =
-    String(normalizedContext?.page || "").trim().toLowerCase() === "templates" &&
-    isContextualMode &&
-    !isFieldAwareMode;
+    isTemplatesPage && isContextualMode && !isFieldAwareMode;
   const panelConfig = useMemo(
     () => normalizePanelConfig(normalizedContext),
     [normalizedContext]
@@ -953,6 +958,16 @@ export default function StartWithAIAssistant({
       })
     );
   }, [contextSignature, normalizedContext]);
+
+  useEffect(() => {
+    setPrompt("");
+    setHistory([]);
+    setShowStructuredPayload(false);
+    setVoiceStatus("idle");
+    setFieldDraft("");
+    setMilestoneDrafts([]);
+    setExclusionsDraft({ exclusions: [], assumptions: [] });
+  }, [workspaceRouteSignature]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -1078,8 +1093,6 @@ export default function StartWithAIAssistant({
       ...overrides,
     };
     const fallbackPlan = runPlanner(promptText, overrides);
-    const isTemplatesPage =
-      String(normalizedContext?.page || "").trim().toLowerCase() === "templates";
     if (isTemplatesContextualMode || (isTemplatesPage && isTemplateCreationIntent(promptText))) {
       return fallbackPlan;
     }
@@ -1558,7 +1571,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareMode && userFacingPanel.templateDraft ? (
+        {!isFieldAwareMode && isTemplatesPage && userFacingPanel.templateDraft ? (
           <TemplateDraftPreview
             draft={userFacingPanel.templateDraft}
             questions={userFacingPanel.guidedQuestions}

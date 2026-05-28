@@ -1823,6 +1823,8 @@ export default function AgreementWizard() {
   );
   const assistantContext = useMemo(
     () => ({
+      page: "agreements",
+      workspace_mode: "agreements",
       current_route: `/app/agreements/${agreementId || "new"}/wizard?step=${step}`,
       agreement_id: agreementId || null,
       agreement_summary: {

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { PanelRightClose, PanelRightOpen, Wand2 } from "lucide-react";
 
@@ -15,9 +15,114 @@ const AssistantDockContext = createContext({
   isMinimized: false,
 });
 
-function buildRouteContext(location) {
+function workspaceModeForRoute(route = "") {
+  const path = String(route || "").toLowerCase();
+  if (path.includes("/templates")) return "templates";
+  if (path.includes("/agreements")) return "agreements";
+  if (path.includes("/milestones")) return "milestones";
+  if (path.includes("/invoices") || path.includes("/payments") || path.includes("/business")) {
+    return "invoices";
+  }
+  if (path.includes("/dashboard")) return "dashboard";
+  if (path.includes("/bids") || path.includes("/public-presence")) return "leads";
+  return "general";
+}
+
+function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
+  if (workspaceMode === "templates") {
+    return {
+      headline: "Review this template workflow",
+      helperText:
+        "Get template-aware guidance for reusable scope, workflow profile, milestones, pricing, timing, and materials.",
+      statusText: "Template workspace context loaded",
+      promptPlaceholder:
+        'Examples: "Improve this workflow profile" or "Suggest reusable exclusions."',
+      nextActionText: "Next: Review reusable workflow structure before saving or publishing.",
+      nextGuidanceTitle: "Workflow intelligence",
+      nextGuidance:
+        "Copilot is checking reusable workflow structure, not agreement signature or funding readiness.",
+    };
+  }
+
+  if (workspaceMode === "agreements") {
+    return {
+      headline: "Review this agreement",
+      helperText:
+        "Get help with agreement scope, milestones, funding, signatures, amendments, invoices, and payment workflow readiness.",
+      statusText: "Agreement workspace context loaded",
+      promptPlaceholder:
+        'Examples: "Review this agreement" or "Help me check milestone and signature readiness."',
+      nextActionText:
+        "Next: Review the agreement, milestone, funding, signature, and payment workflow details.",
+      nextGuidanceTitle: "Agreement guidance",
+      nextGuidance:
+        "Copilot is checking agreement readiness, milestone structure, funding, signatures, amendments, invoices, and payment workflow steps.",
+    };
+  }
+
+  if (workspaceMode === "milestones") {
+    return {
+      headline: "Review milestones",
+      helperText:
+        "Get help sequencing milestones, pricing checkpoints, completion evidence, and invoice readiness.",
+      statusText: "Milestone workspace context loaded",
+      promptPlaceholder:
+        'Examples: "Review milestone readiness" or "Help me sequence these checkpoints."',
+      nextActionText: "Next: Review milestone sequence, completion criteria, and invoice readiness.",
+      nextGuidanceTitle: "Milestone guidance",
+      nextGuidance:
+        "Copilot is checking schedule, completion evidence, approvals, and invoice handoff.",
+    };
+  }
+
+  if (workspaceMode === "invoices") {
+    return {
+      headline: "Review payments",
+      helperText:
+        "Get help with invoice readiness, funding state, approvals, payouts, and dispute-safe payment steps.",
+      statusText: "Payment workspace context loaded",
+      promptPlaceholder:
+        'Examples: "Review this invoice" or "Help me understand payment status."',
+      nextActionText: "Next: Review payment status, approvals, funding, and payout workflow.",
+      nextGuidanceTitle: "Payment guidance",
+      nextGuidance:
+        "Copilot is checking invoice approval, funding, escrow or direct-pay state, payout readiness, and dispute context.",
+    };
+  }
+
+  if (workspaceMode === "dashboard") {
+    return {
+      headline: "Review dashboard priorities",
+      helperText:
+        "Get help triaging active agreements, leads, milestones, invoices, and customer follow-up.",
+      statusText: "Dashboard context loaded",
+      promptPlaceholder:
+        'Examples: "What needs attention today?" or "Help me prioritize open work."',
+      nextActionText: "Next: Review active work, blockers, and follow-up priorities.",
+      nextGuidanceTitle: "Dashboard guidance",
+      nextGuidance: "Copilot is checking cross-workspace priorities and next actions.",
+    };
+  }
+
   return {
-    current_route: `${location.pathname}${location.search || ""}`,
+    headline: "Tell me what you want to do",
+    helperText: "Use AI to guide the next step in your workflow.",
+    statusText: "Workspace context loaded",
+    promptPlaceholder: 'Examples: "Help me review this page" or "What should I do next?"',
+    nextActionText: "Next: Review the suggested update and continue when you're ready.",
+    nextGuidanceTitle: "What happens next",
+    nextGuidance: "",
+  };
+}
+
+function buildRouteContext(location) {
+  const currentRoute = `${location.pathname}${location.search || ""}`;
+  const workspaceMode = workspaceModeForRoute(currentRoute);
+  return {
+    current_route: currentRoute,
+    page: workspaceMode,
+    workspace_mode: workspaceMode,
+    ai_panel: defaultAssistantPanelForWorkspace(workspaceMode),
   };
 }
 
@@ -99,6 +204,9 @@ function DesktopAssistantDock({
           ) : (
             <div className="min-h-0 flex-1 overflow-auto p-4">
               <StartWithAIAssistant
+                key={`${context?.workspace_mode || context?.page || "general"}:${
+                  context?.current_route || ""
+                }`}
                 mode="dock"
                 context={context}
                 onAction={onAction}
@@ -114,27 +222,56 @@ function DesktopAssistantDock({
 
 export function AssistantDockProvider({ children }) {
   const location = useLocation();
+  const routeContext = useMemo(() => buildRouteContext(location), [location]);
+  const routeWorkspaceMode = routeContext.workspace_mode;
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [dockTitle, setDockTitle] = useState("AI Copilot");
-  const [dockContext, setDockContext] = useState(null);
+  const [dockContext, setDockContext] = useState(routeContext);
   const [dockOnAction, setDockOnAction] = useState(null);
   const [pageAssistantOnAction, setPageAssistantOnAction] = useState(null);
-  const [pageAssistantContext, setPageAssistantContext] = useState({});
+  const [pageAssistantContext, setPageAssistantContext] = useState(routeContext);
+
+  useEffect(() => {
+    setPageAssistantContext(routeContext);
+    setPageAssistantOnAction(null);
+    setDockOnAction(null);
+    setDockTitle(copilotLabelForRoute(routeContext.current_route));
+    setDockContext(routeContext);
+  }, [routeContext, routeWorkspaceMode]);
 
   const openAssistant = useCallback(
     (options = {}) => {
       setOpen(true);
       setMinimized(false);
-      const routeContext = options.context || buildRouteContext(location);
-      const nextContext = { ...pageAssistantContext, ...routeContext };
+      const optionContext = options.context || routeContext;
+      const pageContextWorkspace = String(
+        pageAssistantContext.workspace_mode || pageAssistantContext.page || ""
+      );
+      const scopedPageAssistantContext =
+        pageContextWorkspace === routeContext.workspace_mode ? pageAssistantContext : {};
+      const nextContext = {
+        ...routeContext,
+        ...scopedPageAssistantContext,
+        ...optionContext,
+        workspace_mode:
+          optionContext.workspace_mode ||
+          optionContext.page ||
+          scopedPageAssistantContext.workspace_mode ||
+          routeContext.workspace_mode,
+        page:
+          optionContext.page ||
+          optionContext.workspace_mode ||
+          scopedPageAssistantContext.page ||
+          routeContext.page,
+      };
       setDockTitle(options.title || copilotLabelForRoute(nextContext.current_route));
       setDockContext(nextContext);
       setDockOnAction(() =>
         typeof options.onAction === "function" ? options.onAction : null
       );
     },
-    [location, pageAssistantContext]
+    [pageAssistantContext, routeContext]
   );
 
   const updateAssistantOnAction = useCallback((fn) => {
@@ -142,15 +279,29 @@ export function AssistantDockProvider({ children }) {
   }, []);
 
   const updateAssistantContext = useCallback((context = {}) => {
-    setPageAssistantContext(context && typeof context === "object" ? context : {});
+    const cleanContext = context && typeof context === "object" ? context : {};
+    const nextContext = {
+      ...routeContext,
+      ...cleanContext,
+      workspace_mode:
+        cleanContext.workspace_mode ||
+        cleanContext.page ||
+        routeContext.workspace_mode,
+      page:
+        cleanContext.page ||
+        cleanContext.workspace_mode ||
+        routeContext.page,
+    };
+    setPageAssistantContext(nextContext);
     setDockContext((prev) => {
       if (!open || !prev) return prev;
       return {
+        ...routeContext,
         ...prev,
-        ...(context && typeof context === "object" ? context : {}),
+        ...nextContext,
       };
     });
-  }, [open]);
+  }, [open, routeContext]);
 
   const closeAssistant = useCallback(() => {
     setOpen(false);
