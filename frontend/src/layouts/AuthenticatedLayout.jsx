@@ -7,7 +7,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import MobileSidebarShell from "../components/MobileSidebarShell.jsx";
-import { AssistantDockProvider } from "../components/AssistantDock.jsx";
+import { AssistantDockProvider, GlobalCopilotTrigger } from "../components/AssistantDock.jsx";
 import NotificationBell from "../components/NotificationBell.jsx";
 
 const AUTH_LAYOUT_DEBUG_PREFIX = "[AuthenticatedLayoutDebug]";
@@ -41,7 +41,8 @@ export default function AuthenticatedLayout() {
     <MobileSidebarShell sidebar={<Sidebar variant="plain" />}>
       <AssistantDockProvider>
         <div className="pointer-events-none fixed right-4 top-4 z-40">
-          <div className="pointer-events-auto">
+          <div className="pointer-events-auto flex items-center gap-2">
+            <GlobalCopilotTrigger />
             <NotificationBell />
           </div>
         </div>

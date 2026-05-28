@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { PanelRightClose, PanelRightOpen, Wand2 } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
 
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
 
@@ -17,7 +17,10 @@ const AssistantDockContext = createContext({
 
 function workspaceModeForRoute(route = "") {
   const path = String(route || "").toLowerCase();
+  if (path.includes("/admin")) return "admin";
+  if (path.includes("/disputes")) return "disputes";
   if (path.includes("/templates")) return "templates";
+  if (path.includes("/agreements") && path.includes("/wizard")) return "agreement_wizard";
   if (path.includes("/agreements")) return "agreements";
   if (path.includes("/milestones")) return "milestones";
   if (path.includes("/invoices") || path.includes("/payments") || path.includes("/business")) {
@@ -29,6 +32,22 @@ function workspaceModeForRoute(route = "") {
 }
 
 function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
+  if (workspaceMode === "agreement_wizard") {
+    return {
+      headline: "Review this agreement draft",
+      helperText:
+        "Get help creating the agreement, improving scope, planning milestones, checking funding and signature readiness, and preparing invoice or payment next steps.",
+      statusText: "Agreement creation context loaded",
+      promptPlaceholder:
+        'Examples: "Improve this scope" or "Help me check milestone and signature readiness."',
+      nextActionText:
+        "Next: Review agreement details, milestones, funding, signatures, and payment workflow readiness.",
+      nextGuidanceTitle: "Agreement creation guidance",
+      nextGuidance:
+        "Copilot is checking the draft agreement, milestone structure, funding state, signatures, amendments, invoices, and payment workflow steps.",
+    };
+  }
+
   if (workspaceMode === "templates") {
     return {
       headline: "Review this template workflow",
@@ -104,6 +123,37 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
     };
   }
 
+  if (workspaceMode === "disputes") {
+    return {
+      headline: "Review this dispute",
+      helperText:
+        "Get help reviewing dispute evidence, summarizing history, explaining agreement requirements, suggesting next steps, and preparing escalation guidance.",
+      statusText: "Dispute workspace context loaded",
+      promptPlaceholder:
+        'Examples: "Summarize dispute history" or "What evidence should I review next?"',
+      nextActionText:
+        "Next: Review evidence, agreement requirements, timeline, and escalation options.",
+      nextGuidanceTitle: "Dispute resolution guidance",
+      nextGuidance:
+        "Copilot is prepared to help review dispute evidence, summarize history, explain agreement requirements, suggest next steps, and outline escalation guidance.",
+    };
+  }
+
+  if (workspaceMode === "admin") {
+    return {
+      headline: "Review admin workspace",
+      helperText:
+        "Get help reviewing marketplace operations, contractor records, support issues, templates, and administrative next steps.",
+      statusText: "Admin workspace context loaded",
+      promptPlaceholder:
+        'Examples: "Review marketplace issues" or "Help me find contractor records."',
+      nextActionText: "Next: Review admin priorities, records, and operational follow-up.",
+      nextGuidanceTitle: "Admin guidance",
+      nextGuidance:
+        "Copilot is checking administrative context, routing, contractor records, marketplace health, and support follow-up.",
+    };
+  }
+
   return {
     headline: "Tell me what you want to do",
     helperText: "Use AI to guide the next step in your workflow.",
@@ -123,24 +173,80 @@ function buildRouteContext(location) {
     page: workspaceMode,
     workspace_mode: workspaceMode,
     ai_panel: defaultAssistantPanelForWorkspace(workspaceMode),
+    navigation_assist: buildNavigationAssistContext(workspaceMode),
   };
 }
 
 function copilotLabelForRoute(route = "") {
-  const path = String(route || "").toLowerCase();
-  if (path.includes("/agreements")) return "AI Copilot for Agreements";
-  if (path.includes("/milestones")) return "AI Copilot for Milestones";
-  if (path.includes("/invoices") || path.includes("/payments") || path.includes("/business")) {
-    return "AI Copilot for Payments";
-  }
-  if (path.includes("/templates")) return "AI Copilot for Templates";
-  if (path.includes("/bids") || path.includes("/public-presence")) return "AI Copilot for Leads";
-  if (path.includes("/dashboard")) return "AI Copilot for Dashboard";
+  const workspaceMode = workspaceModeForRoute(route);
+  if (workspaceMode === "agreement_wizard") return "AI Copilot for Agreement Creation";
+  if (workspaceMode === "agreements") return "AI Copilot for Agreements";
+  if (workspaceMode === "milestones") return "AI Copilot for Milestones";
+  if (workspaceMode === "invoices") return "AI Copilot for Payments";
+  if (workspaceMode === "templates") return "AI Copilot for Templates";
+  if (workspaceMode === "disputes") return "AI Copilot for Dispute Resolution";
+  if (workspaceMode === "admin") return "AI Copilot for Admin";
+  if (workspaceMode === "leads") return "AI Copilot for Leads";
+  if (workspaceMode === "dashboard") return "AI Copilot for Dashboard";
   return "AI Copilot";
+}
+
+function buildNavigationAssistContext(workspaceMode = "general") {
+  const commonActions = [
+    { label: "Open Templates", target: "/app/templates", intent: "open_templates" },
+    { label: "Create an Agreement", target: "/app/agreements/new/wizard?step=1", intent: "create_agreement" },
+    { label: "Find unsigned agreements", target: "/app/agreements", intent: "find_unsigned_agreements" },
+    { label: "Show funding issues", target: "/app/agreements", intent: "show_funding_issues" },
+  ];
+
+  if (workspaceMode === "disputes") {
+    return {
+      can_navigate: true,
+      capabilities: [
+        "Review dispute evidence",
+        "Summarize dispute history",
+        "Explain agreement requirements",
+        "Suggest next steps",
+        "Escalation guidance",
+      ],
+      actions: [
+        { label: "Open Disputes", target: "/app/disputes", intent: "open_disputes" },
+        ...commonActions,
+      ],
+    };
+  }
+
+  return {
+    can_navigate: true,
+    capabilities: ["Open workspaces", "Find records", "Route to next tasks"],
+    actions: commonActions,
+  };
 }
 
 export function useAssistantDock() {
   return useContext(AssistantDockContext);
+}
+
+export function GlobalCopilotTrigger() {
+  const { openAssistant, isOpen } = useAssistantDock();
+
+  return (
+    <button
+      type="button"
+      data-testid="assistant-dock-open-button"
+      aria-label={isOpen ? "AI Copilot open" : "Open AI Copilot"}
+      aria-pressed={isOpen}
+      onClick={() => openAssistant()}
+      className={`inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-bold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+        isOpen
+          ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+          : "border-slate-200 bg-white text-slate-800 hover:border-amber-200 hover:text-[#18395f] hover:shadow-md"
+      }`}
+    >
+      <Sparkles className="h-4 w-4" aria-hidden="true" />
+      <span className="hidden sm:inline">AI Copilot</span>
+    </button>
+  );
 }
 
 function DesktopAssistantDock({

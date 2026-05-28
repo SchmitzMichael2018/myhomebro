@@ -24,6 +24,8 @@ import { getDashboardNextSteps } from "../lib/workflowHints.js";
 
 const WORKSPACE_CONTEXT = {
   current_route: "/app/assistant",
+  page: "dashboard",
+  workspace_mode: "dashboard",
 };
 
 const HERO_CHIPS = [
@@ -64,7 +66,7 @@ const CAPABILITY_ROWS = [
   "Turn a plain-language job description into the right workflow",
   "Jump into agreements, templates, milestones, and next-step routing",
   "Bring recent work back into focus without hunting through the sidebar",
-  "Use AI Copilot later for contextual help inside the page you're working on",
+  "Use the global AI Copilot for help with the work you're currently doing",
 ];
 
 function normalizeList(data) {
@@ -417,7 +419,7 @@ export default function AIAssistantPage() {
     <ContractorPageSurface
       eyebrow="AI Workspace"
       title="AI Workspace"
-      subtitle="Launch workflows, organize projects, and coordinate work with AI."
+      subtitle="Launch and organize work."
       variant="operational"
       className="mhb-ai-workspace"
     >
@@ -434,8 +436,8 @@ export default function AIAssistantPage() {
               Start something new with AI
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-[15px]">
-              Describe what you want to start, plan, or organize and AI Workspace will route you
-              into the right MyHomeBro workflow with the right setup already in motion.
+              Describe what you want to start, continue, or organize. AI Workspace routes you into
+              the right MyHomeBro workflow with the right setup already in motion.
             </p>
 
             <form onSubmit={handleHeroSubmit} className="mt-6">
@@ -485,7 +487,7 @@ export default function AIAssistantPage() {
                       onClick={openCopilot}
                       className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                     >
-                      Open contextual Copilot
+                      Open AI Copilot
                     </button>
                   </div>
                 </div>
@@ -502,11 +504,11 @@ export default function AIAssistantPage() {
               What This Does
             </div>
             <h3 className="mt-4 text-2xl font-bold tracking-tight">
-              AI Workspace is your orchestration hub for launching and organizing work.
+              AI Workspace launches workflows and organizes the work already in motion.
             </h3>
             <p className="mt-3 text-sm leading-6 text-sky-50/90">
-              Start new work here, jump into the right area faster, and use AI Copilot later for
-              contextual help inside the page you're already using.
+              Start or continue work here. Use the global AI Copilot when you want help with the
+              page, form, agreement, template, invoice, or task you're currently working on.
             </p>
             <div className="mt-6 space-y-3">
               {CAPABILITY_ROWS.map((row) => (
@@ -707,12 +709,10 @@ export default function AIAssistantPage() {
         >
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="text-lg font-semibold text-slate-900">
-                Need help on this page?
-              </div>
+              <div className="text-lg font-semibold text-slate-900">Need help with current work?</div>
               <div className="mt-1 text-sm leading-6 text-slate-600">
-                AI Copilot gives current-page guidance while you work. Open it when you want help
-                without leaving the workflow you're already in.
+                AI Copilot follows you across MyHomeBro to review, improve, explain, navigate, and
+                help complete the workflow you're already in.
               </div>
             </div>
             <button

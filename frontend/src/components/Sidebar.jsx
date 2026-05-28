@@ -11,7 +11,6 @@ import toast from "react-hot-toast";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
-import { useAssistantDock } from "./AssistantDock.jsx";
 import {
   Bot,
   BriefcaseBusiness,
@@ -28,7 +27,6 @@ import {
   LifeBuoy,
   SearchCheck,
   ShieldCheck,
-  Sparkles,
   SquareKanban,
   Users,
   UserRound,
@@ -167,7 +165,6 @@ export default function Sidebar({ variant = "desktop" }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { data, isContractor, isEmployee, isSubcontractor } = useWhoAmI();
-  const { openAssistant } = useAssistantDock();
 
   const [refundOpen, setRefundOpen] = useState(false);
 
@@ -626,23 +623,6 @@ export default function Sidebar({ variant = "desktop" }) {
 
         {isContractorOwner ? (
           <>
-            <div>
-              <button
-                type="button"
-                data-testid="assistant-dock-open-button"
-                onClick={() =>
-                  openAssistant({
-                    context: { current_route: `${location.pathname}${location.search || ""}` },
-                  })
-                }
-                className="mhb-sidebar-ai-button mb-5 hidden w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-[#f7f8fa] px-3.5 py-3 text-[15px] font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.04)] transition duration-200 hover:border-amber-200 hover:bg-white hover:text-[#18395f] hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)] [&>span:first-child]:hidden xl:flex"
-              >
-                <span aria-hidden="true">âœ¨</span>
-                <Sparkles size={16} strokeWidth={2} className="shrink-0 text-[#214d7f]" />
-                <span>AI Copilot</span>
-              </button>
-            </div>
-
             <NavGroup label="Main">
               <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
               <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
@@ -707,21 +687,6 @@ export default function Sidebar({ variant = "desktop" }) {
           <div className="mb-2 px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
             Main
           </div>
-          {isContractorOwner ? (
-            <button
-              type="button"
-              data-testid="assistant-dock-open-button"
-              onClick={() =>
-                openAssistant({
-                  context: { current_route: `${location.pathname}${location.search || ""}` },
-                })
-              }
-              className="mb-3 hidden w-full items-center justify-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-slate-800 transition hover:bg-slate-50 xl:flex"
-            >
-              <span aria-hidden="true">✨</span>
-              AI Copilot
-            </button>
-          ) : null}
           <div className="space-y-2">{mainNav}</div>
         </div>
 

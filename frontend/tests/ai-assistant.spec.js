@@ -616,6 +616,8 @@ test('desktop docked assistant panel opens and closes from app chrome', async ({
   await installBaseAuthMocks(page);
 
   await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('aside')).not.toContainText('AI Copilot');
+  await expect(page.getByTestId('assistant-dock-open-button')).toBeVisible();
   await page.getByTestId('assistant-dock-open-button').click();
 
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
@@ -744,7 +746,7 @@ test('agreement wizard assistant uses agreement context from the current workflo
   await page.getByTestId('agreement-wizard-ask-ai-button').click();
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
   await expect(page.getByTestId('assistant-desktop-dock')).toContainText(
-    'AI Copilot for Agreements'
+    'AI Copilot for Agreement Creation'
   );
 
   await page.getByTestId('start-with-ai-input-dock').fill('Help me finish this agreement');
