@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ArrowRight, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
 
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
 
@@ -249,6 +249,58 @@ export function GlobalCopilotTrigger() {
   );
 }
 
+// ── Proactive briefing panel ──────────────────────────────────────────────────
+
+function getBriefingCta(item) {
+  const key = String(item?.key || "");
+  if (key === "agreements-awaiting-signature") return "Send reminder";
+  if (key.startsWith("agreement-draft:")) return "Open and review";
+  if (key === "invoices-pending-approval" || key.startsWith("invoice-approved:")) return "Review payment";
+  if (key === "invoices-disputed") return "Review dispute";
+  if (key === "milestone-submitted-review") return "Review work";
+  return item?.buttonLabel || "Open";
+}
+
+function BriefingPanel({ items, onNavigate }) {
+  if (!Array.isArray(items) || !items.length) return null;
+
+  return (
+    <div
+      data-testid="copilot-briefing-panel"
+      className="mb-4 overflow-hidden rounded-2xl border border-sky-100 bg-sky-50"
+    >
+      <div className="border-b border-sky-100 px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700">
+          Top Priorities
+        </div>
+      </div>
+
+      <div className="divide-y divide-sky-100">
+        {items.map((item) => (
+          <div key={item.key} className="px-3 py-2.5">
+            <div className="text-sm font-semibold text-slate-800">{item.title}</div>
+            <div className="mt-0.5 text-xs leading-5 text-slate-500">{item.description}</div>
+            <button
+              type="button"
+              onClick={() => onNavigate(item.navigationTarget || "/app/dashboard")}
+              className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+            >
+              {getBriefingCta(item)}
+              <ArrowRight className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-sky-100 px-3 py-2 text-xs text-sky-600">
+        Ask me anything about these items below.
+      </div>
+    </div>
+  );
+}
+
+// ── Desktop dock shell ────────────────────────────────────────────────────────
+
 function DesktopAssistantDock({
   open,
   minimized,
@@ -258,6 +310,7 @@ function DesktopAssistantDock({
   onClose,
   onMinimize,
 }) {
+  const navigate = useNavigate();
   return (
     <div
       className={`pointer-events-none fixed inset-y-0 right-0 z-40 hidden xl:flex ${
@@ -309,6 +362,10 @@ function DesktopAssistantDock({
             </div>
           ) : (
             <div className="min-h-0 flex-1 overflow-auto p-4">
+              <BriefingPanel
+                items={context?.briefingItems}
+                onNavigate={(route) => { navigate(route); onClose(); }}
+              />
               <StartWithAIAssistant
                 key={`${context?.workspace_mode || context?.page || "general"}:${
                   context?.current_route || ""

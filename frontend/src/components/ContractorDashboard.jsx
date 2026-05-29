@@ -45,6 +45,7 @@ import {
 import { getContractorNextActions } from "../lib/contractorNextActions.js";
 import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
 import OnboardingConversation from "./OnboardingConversation.jsx";
+import { useAssistantDock } from "./AssistantDock.jsx";
 import {
   detectLoginExperience,
   getDaysSinceLastLogin,
@@ -1143,9 +1144,87 @@ function getTimeGreeting() {
   return "Good evening";
 }
 
-function DashboardGreeting({ firstName, daysSince, briefingItems, onNavigate }) {
+// Extract a leading number from an action's description, e.g. "3 agreements are…" → 3.
+function extractDescriptionCount(action) {
+  const m = String(action?.description || "").match(/^(\d+)/);
+  return m ? Number(m[1]) : 1;
+}
+
+// Build a natural one-sentence summary from the prioritised next actions.
+// Max 2 noun phrases, overdue/signatures lead. Empty list → clear message.
+function buildSummaryLine(actions, isWelcomeBack) {
+  if (!actions.length) {
+    return isWelcomeBack
+      ? "Your queue looks clear since your last visit."
+      : "Everything looks clear — no urgent items right now.";
+  }
+
+  const find = (keyTest) => actions.find((a) => keyTest(String(a.key || "")));
+
+  const sigItem     = find((k) => k === "agreements-awaiting-signature");
+  const draftItem   = find((k) => k.startsWith("agreement-draft:"));
+  const payItem     = find((k) => k === "invoices-pending-approval");
+  const approvedItem= find((k) => k.startsWith("invoice-approved:"));
+  const submitted   = find((k) => k === "milestone-submitted-review");
+  const disputed    = find((k) => k === "invoices-disputed");
+
+  const phrases = [];
+
+  if (sigItem) {
+    const n = extractDescriptionCount(sigItem);
+    phrases.push(
+      n === 1 ? "1 agreement waiting on a signature" : `${n} agreements waiting on signatures`
+    );
+  }
+
+  if (draftItem && phrases.length < 2) {
+    phrases.push("a draft ready to send");
+  }
+
+  if (payItem && phrases.length < 2) {
+    const n = extractDescriptionCount(payItem);
+    phrases.push(
+      n === 1 ? "1 payment request pending approval" : `${n} payment requests pending`
+    );
+  }
+
+  if (submitted && phrases.length < 2) {
+    const n = extractDescriptionCount(submitted);
+    phrases.push(
+      n === 1 ? "submitted work awaiting review" : `${n} milestones awaiting review`
+    );
+  }
+
+  if (disputed && phrases.length < 2) {
+    const n = extractDescriptionCount(disputed);
+    phrases.push(n === 1 ? "1 payment dispute to resolve" : `${n} payment disputes to resolve`);
+  }
+
+  if (approvedItem && phrases.length < 2) {
+    phrases.push("an approved payment ready to release");
+  }
+
+  if (!phrases.length) {
+    // Fall back to a generic count from whatever's in the queue
+    const total = actions.length;
+    return isWelcomeBack
+      ? "A few things need your attention since your last visit."
+      : `You have ${total} item${total !== 1 ? "s" : ""} needing attention.`;
+  }
+
+  const body =
+    phrases.length === 1
+      ? `You have ${phrases[0]}.`
+      : `You have ${phrases[0]} and ${phrases[1]}.`;
+
+  // The welcome-back prefix lives on the greeting line, not here — keep sentence neutral.
+  return body;
+}
+
+function DashboardGreeting({ firstName, daysSince, briefingItems, onOpenCopilot }) {
   const isWelcomeBack = Number(daysSince) >= 7;
   const greeting = getTimeGreeting();
+  const summary = buildSummaryLine(briefingItems, isWelcomeBack);
 
   return (
     <div
@@ -1153,34 +1232,22 @@ function DashboardGreeting({ firstName, daysSince, briefingItems, onNavigate }) 
       className="rounded-[28px] border border-sky-200/20 bg-[linear-gradient(145deg,#020b1f_0%,#0e2d5b_54%,#155ea8_100%)] p-5 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
     >
       <div className="text-sm font-semibold text-sky-100/90">
-        {isWelcomeBack ? "Welcome back — " : ""}{greeting}{firstName ? `, ${firstName}` : ""}.
-        {isWelcomeBack ? ` It's been ${daysSince} day${daysSince === 1 ? "" : "s"}.` : ""}
+        {isWelcomeBack ? "Welcome back — " : ""}
+        {greeting}{firstName ? `, ${firstName}` : ""}.
       </div>
 
-      {briefingItems.length > 0 ? (
-        <div className="mt-3 space-y-2">
-          {briefingItems.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => onNavigate(item.navigationTarget || "/app/dashboard")}
-              className="flex w-full items-start justify-between gap-4 rounded-xl border border-white/15 bg-white/8 px-4 py-2.5 text-left transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12"
-            >
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-white">{item.title}</div>
-                <div className="mt-0.5 text-xs leading-5 text-sky-100/70">{item.description}</div>
-              </div>
-              <span className="shrink-0 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0a2550]">
-                {item.buttonLabel || "Open"}
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="mt-2 text-sm text-sky-100/70">
-          Your queue is clear — a great time to start new work.
-        </div>
-      )}
+      <div className="mt-1.5 text-sm text-sky-100/75">{summary}</div>
+
+      <div className="mt-4">
+        <button
+          type="button"
+          data-testid="dashboard-greeting-open-copilot"
+          onClick={onOpenCopilot}
+          className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-[#0a2550] shadow-sm hover:bg-sky-50 transition"
+        >
+          Open Copilot →
+        </button>
+      </div>
     </div>
   );
 }
@@ -1204,14 +1271,14 @@ function ProfileCompletenessWidget({ profile, stripeConnected, jobCount }) {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
 
-  const { score, highestValueMissing, missingItems } = calculateProfileCompleteness(
+  const result = calculateProfileCompleteness(
     profile || {},
     { stripeConnected: Boolean(stripeConnected), jobCount: Number(jobCount) || 0, templateCount: 0 }
   );
+  const { score, highestValueMissing, missingItems } = result;
 
   const isComplete = score >= 100;
   const missingKeys = new Set(missingItems.map((m) => m.key));
-  const visibleItems = COMPLETENESS_ITEMS.slice(0, 5); // top 5 by weight
 
   if (isComplete && !expanded) {
     return (
@@ -1272,37 +1339,60 @@ function ProfileCompletenessWidget({ profile, stripeConnected, jobCount }) {
         />
       </div>
 
+      {/* Show ALL items so the display always matches the score — no slice */}
       <div className="mt-3 space-y-1.5">
-        {visibleItems.map(({ key, label, route }) => {
+        {COMPLETENESS_ITEMS.map(({ key, label, route }) => {
           const done = !missingKeys.has(key);
           const isHighlight = highestValueMissing?.key === key;
+          const isMissing = !done;
+
           return (
-            <div
+            <button
               key={key}
-              className={`flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 ${
-                isHighlight ? "border border-amber-200 bg-amber-50" : ""
+              type="button"
+              disabled={done}
+              onClick={isMissing ? () => navigate(route) : undefined}
+              className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left transition ${
+                isHighlight
+                  ? "border border-amber-200 bg-amber-50 hover:bg-amber-100"
+                  : isMissing
+                  ? "hover:bg-slate-50"
+                  : "cursor-default"
               }`}
             >
               <div className="flex items-center gap-2 min-w-0">
                 {done ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                 ) : (
-                  <div className={`h-3.5 w-3.5 shrink-0 rounded-full border ${isHighlight ? "border-amber-400" : "border-slate-300"}`} />
+                  <div
+                    className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
+                      isHighlight ? "border-amber-400" : "border-slate-300"
+                    }`}
+                  />
                 )}
-                <span className={`text-xs font-medium truncate ${done ? "text-slate-500" : isHighlight ? "text-amber-900" : "text-slate-700"}`}>
+                <span
+                  className={`text-xs font-medium truncate ${
+                    done
+                      ? "text-slate-400"
+                      : isHighlight
+                      ? "text-amber-900 font-semibold"
+                      : "text-slate-700"
+                  }`}
+                >
                   {label}
                 </span>
               </div>
-              {isHighlight && route ? (
-                <button
-                  type="button"
-                  onClick={() => navigate(route)}
-                  className="shrink-0 text-xs font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
+
+              {isMissing ? (
+                <span
+                  className={`shrink-0 text-xs font-semibold whitespace-nowrap ${
+                    isHighlight ? "text-amber-700" : "text-slate-400"
+                  }`}
                 >
-                  Fix this →
-                </button>
+                  {isHighlight ? "Fix this →" : "→"}
+                </span>
               ) : null}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -1351,6 +1441,7 @@ export default function ContractorDashboard() {
   const [earnedExpensesLoading, setEarnedExpensesLoading] = useState(false);
 
   const navigate = useNavigate();
+  const { openAssistant } = useAssistantDock();
 
   // Intro pricing countdown state (60-day intro) — contractor only
   const [introDaysRemaining, setIntroDaysRemaining] = useState(null);
@@ -2675,7 +2766,15 @@ export default function ContractorDashboard() {
             firstName={greetingName}
             daysSince={daysSinceLogin}
             briefingItems={contractorNextActions.slice(0, 3)}
-            onNavigate={(route) => navigate(route)}
+            onOpenCopilot={() =>
+              openAssistant({
+                context: {
+                  workspace_mode: "dashboard",
+                  page: "dashboard",
+                  briefingItems: contractorNextActions.slice(0, 3),
+                },
+              })
+            }
           />
 
           <DashboardCard
