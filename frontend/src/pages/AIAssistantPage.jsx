@@ -1,26 +1,21 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  Bot,
-  BriefcaseBusiness,
   CheckCircle2,
   ClipboardList,
   Compass,
   FileSignature,
-  LayoutTemplate,
   ListChecks,
   LoaderCircle,
   MessageSquareText,
   Sparkles,
 } from "lucide-react";
 
-import api from "../api.js";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
 import { produceStructuredAssistantPlan } from "../lib/assistantReasoning.js";
-import { getDashboardNextSteps } from "../lib/workflowHints.js";
 
 const WORKSPACE_CONTEXT = {
   current_route: "/app/assistant",
@@ -72,154 +67,48 @@ const CAPABILITY_ROWS = [
   "Use the global AI Copilot for help with the work you're currently doing",
 ];
 
-function normalizeList(data) {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.results)) return data.results;
-  return [];
-}
-
-function toTitleCase(value) {
-  return String(value || "")
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-    .trim();
-}
-
-function agreementTitle(agreement) {
-  return (
-    agreement?.title ||
-    agreement?.project_title ||
-    agreement?.project_summary ||
-    `Agreement #${agreement?.id || ""}`.trim()
-  );
-}
-
-function agreementCustomer(agreement) {
-  return (
-    agreement?.customer_name ||
-    agreement?.homeowner_name ||
-    agreement?.homeowner?.full_name ||
-    agreement?.customer?.full_name ||
-    "Customer not set"
-  );
-}
-
-function agreementStatus(agreement) {
-  return toTitleCase(agreement?.status || "draft") || "Draft";
-}
-
-function agreementCurrentStep(agreement) {
-  const status = String(agreement?.status || "").toLowerCase();
-  if (["draft", "pending_signature", "awaiting_signature"].includes(status)) {
-    return "Agreement setup";
-  }
-  if (status === "signed" || agreement?.is_fully_signed) {
-    return "Signed and active";
-  }
-  if (agreement?.escrow_funded === false) {
-    return "Waiting for funding";
-  }
-  return "Review details";
-}
-
-function templateTitle(template) {
-  return template?.name || template?.project_type || "Template";
-}
-
-function templateType(template) {
-  return template?.project_type || "General";
-}
-
-function templateSubtype(template) {
-  return template?.project_subtype || "Not specified";
-}
-
-function templateMilestoneCount(template) {
-  if (Array.isArray(template?.milestones)) return template.milestones.length;
-  const count = Number(template?.milestone_count || template?.milestones_count || 0);
-  return Number.isFinite(count) ? count : 0;
-}
-
-function templateSummary(template) {
-  return (
-    template?.description ||
-    template?.default_scope ||
-    "Reusable project structure with milestone guidance and setup details."
-  );
-}
-
-function buildSmartSuggestions({ leads, agreements, milestones }) {
-  const items = [];
-  const nextSteps = getDashboardNextSteps({ leads, agreements, milestones }).slice(0, 2);
-
-  nextSteps.forEach((text, index) => {
-    items.push({
-      id: `dashboard-${index}`,
-      eyebrow: "Suggested For You",
-      title: index === 0 ? "Open your priority queue" : "Review what needs attention",
-      description: text,
-      priority: index === 0 ? "High" : "Medium",
-      primaryLabel: "Open dashboard",
-      primaryTarget: "/app/dashboard",
-      secondaryLabel: "Open Copilot",
-      secondaryAction: "copilot",
-    });
-  });
-
-  const draftAgreement = agreements.find((agreement) => {
-    const status = String(agreement?.status || "").toLowerCase();
-    return ["draft", "pending_signature", "awaiting_signature"].includes(status);
-  });
-  if (draftAgreement) {
-    items.push({
-      id: `agreement-${draftAgreement.id}`,
-      eyebrow: "Continue Project",
-      title: agreementTitle(draftAgreement),
-      description: `${agreementCustomer(draftAgreement)} · ${agreementStatus(draftAgreement)}`,
-      priority: "High",
-      primaryLabel: "Continue draft",
-      primaryTarget: draftAgreement?.id
-        ? `/app/agreements/${draftAgreement.id}/wizard?step=1`
-        : "/app/agreements",
-      secondaryLabel: "Open agreement",
-      secondaryTarget: draftAgreement?.id
-        ? `/app/agreements/${draftAgreement.id}`
-        : "/app/agreements",
-    });
-  }
-
-  const awaitingReview = milestones.find((milestone) => {
-    const status = String(
-      milestone?.status || milestone?.milestone_status || milestone?.state || ""
-    ).toLowerCase();
-    return ["submitted", "pending_review", "review", "in_review"].includes(status);
-  });
-  if (awaitingReview) {
-    items.push({
-      id: `review-${awaitingReview.id || "queue"}`,
-      eyebrow: "Review Work",
-      title: "Submitted work is waiting",
-      description: "A milestone is ready for review before the next step can move forward.",
-      priority: "Medium",
-      primaryLabel: "Open review queue",
-      primaryTarget: "/app/reviewer/queue",
-      secondaryLabel: "Open Copilot",
-      secondaryAction: "copilot",
-    });
-  }
-
-  return items.slice(0, 4);
-}
-
-function priorityClasses(priority) {
-  if (priority === "High") {
-    return "border-rose-200 bg-rose-50 text-rose-700";
-  }
-  if (priority === "Medium") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-  return "border-slate-200 bg-slate-50 text-slate-700";
-}
+const AI_CAPABILITY_GROUPS = [
+  {
+    title: "Create",
+    items: [
+      "Create an agreement draft from a project description",
+      "Create a reusable template",
+      "Generate a milestone plan",
+    ],
+  },
+  {
+    title: "Review",
+    items: [
+      "Review agreement scope for missing details",
+      "Check milestones for gaps",
+      "Identify unclear responsibilities or exclusions",
+    ],
+  },
+  {
+    title: "Improve",
+    items: [
+      "Improve descriptions",
+      "Refine milestone language",
+      "Suggest exclusions, assumptions, and owner responsibilities",
+    ],
+  },
+  {
+    title: "Analyze",
+    items: [
+      "Find work needing attention",
+      "Summarize project status",
+      "Identify signature, funding, or payment bottlenecks",
+    ],
+  },
+  {
+    title: "Organize",
+    items: [
+      "Prioritize next actions",
+      "Route to the right workflow",
+      "Help continue active work",
+    ],
+  },
+];
 
 function QuickActionCard({ action, busyKey, onSelect }) {
   const Icon = action.icon;
@@ -251,81 +140,23 @@ function QuickActionCard({ action, busyKey, onSelect }) {
   );
 }
 
-function SuggestionCard({ item, onPrimary, onSecondary }) {
+function AiCapabilityCard({ group }) {
   return (
     <div
       className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      data-testid={`ai-workspace-suggestion-${item.id}`}
+      data-testid={`ai-workspace-capability-${group.title.toLowerCase()}`}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-          {item.eyebrow}
-        </div>
-        <span
-          className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${priorityClasses(item.priority)}`}
-        >
-          {item.priority} Priority
-        </span>
+      <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+        {group.title}
       </div>
-      <div className="mt-4 text-xl font-semibold tracking-tight text-slate-900">{item.title}</div>
-      <div className="mt-2 text-sm leading-6 text-slate-600">{item.description}</div>
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={onPrimary}
-          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-        >
-          {item.primaryLabel}
-          <ArrowRight className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onSecondary}
-          className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          {item.secondaryLabel}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TemplatePreviewCard({ template, onOpenTemplates }) {
-  return (
-    <div
-      className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      data-testid={`ai-workspace-template-${template?.id || templateTitle(template)}`}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-50 text-slate-700">
-          <LayoutTemplate className="h-5 w-5" />
-        </div>
-        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-          {templateMilestoneCount(template)} milestones
-        </span>
-      </div>
-      <div className="mt-5 text-lg font-semibold text-slate-900">{templateTitle(template)}</div>
-      <div className="mt-2 text-sm text-slate-600">
-        {templateType(template)} · {templateSubtype(template)}
-      </div>
-      <div className="mt-4 line-clamp-4 text-sm leading-6 text-slate-600">{templateSummary(template)}</div>
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={onOpenTemplates}
-          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-        >
-          View template
-          <ArrowRight className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onOpenTemplates}
-          className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          See all templates
-        </button>
-      </div>
+      <ul className="mt-5 space-y-3">
+        {group.items.map((item) => (
+          <li key={item} className="flex gap-3 text-sm leading-6 text-slate-700">
+            <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-[#18395f]" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -335,54 +166,8 @@ export default function AIAssistantPage() {
   const { openAssistant } = useAssistantDock();
   const [prompt, setPrompt] = useState("");
   const [busyKey, setBusyKey] = useState("");
-  const [loadingWorkspace, setLoadingWorkspace] = useState(true);
-  const [recentAgreements, setRecentAgreements] = useState([]);
-  const [popularTemplates, setPopularTemplates] = useState([]);
-  const [smartSuggestions, setSmartSuggestions] = useState([]);
 
   const quickActions = useMemo(() => QUICK_ACTIONS, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadWorkspace() {
-      setLoadingWorkspace(true);
-      try {
-        const [agreementsRes, templatesRes, leadsRes, milestonesRes] = await Promise.all([
-          api.get("/projects/agreements/"),
-          api.get("/projects/templates/discover/", {
-            params: { source: "system", sort: "relevant" },
-          }),
-          api.get("/projects/contractor/public-leads/"),
-          api.get("/projects/milestones/"),
-        ]);
-
-        if (cancelled) return;
-
-        const agreements = normalizeList(agreementsRes.data).slice(0, 5);
-        const templates = normalizeList(templatesRes.data).slice(0, 3);
-        const leads = normalizeList(leadsRes.data);
-        const milestones = normalizeList(milestonesRes.data);
-
-        setRecentAgreements(agreements);
-        setPopularTemplates(templates);
-        setSmartSuggestions(buildSmartSuggestions({ leads, agreements, milestones }));
-      } catch {
-        if (cancelled) return;
-        setRecentAgreements([]);
-        setPopularTemplates([]);
-        setSmartSuggestions([]);
-      } finally {
-        if (!cancelled) setLoadingWorkspace(false);
-      }
-    }
-
-    loadWorkspace();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function routeWithAi(preferredIntent = "", input = "") {
     const busyValue = preferredIntent || "hero";
@@ -552,157 +337,24 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
-        <section data-testid="ai-workspace-suggested">
+        <section data-testid="ai-workspace-capabilities">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Suggested For You
+              AI Capabilities
             </div>
             <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
-              Recommended next moves based on your current work.
+              What AI can help with
             </h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Use AI Workspace for higher-level creation, review, improvement, analysis, and
+              organization. Use Dashboard, Agreements, and Templates for normal browsing and record
+              management.
+            </p>
           </div>
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            {loadingWorkspace ? (
-              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-sm text-slate-600 shadow-sm lg:col-span-2">
-                Loading suggestions...
-              </div>
-            ) : smartSuggestions.length ? (
-              smartSuggestions.map((item) => (
-                <SuggestionCard
-                  key={item.id}
-                  item={item}
-                  onPrimary={() => navigate(item.primaryTarget)}
-                  onSecondary={() => {
-                    if (item.secondaryAction === "copilot") {
-                      openCopilot();
-                      return;
-                    }
-                    if (item.secondaryTarget) {
-                      navigate(item.secondaryTarget);
-                    }
-                  }}
-                />
-              ))
-            ) : (
-              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-sm text-slate-600 shadow-sm lg:col-span-2">
-                Nothing urgent is surfaced right now. Use Quick Actions to start something new.
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section data-testid="ai-workspace-recent-work">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Recent Work
-              </div>
-              <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
-                Continue where your recent projects left off.
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/app/agreements")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              View all agreements
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="mt-5 space-y-3">
-            {loadingWorkspace ? (
-              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-sm text-slate-600 shadow-sm">
-                Loading recent work...
-              </div>
-            ) : recentAgreements.length ? (
-              recentAgreements.map((agreement) => (
-                <button
-                  key={agreement?.id || agreementTitle(agreement)}
-                  type="button"
-                  onClick={() =>
-                    navigate(
-                      agreement?.id ? `/app/agreements/${agreement.id}` : "/app/agreements"
-                    )
-                  }
-                  className="flex w-full flex-col gap-4 rounded-3xl border border-slate-200 bg-white px-6 py-5 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md md:flex-row md:items-center md:justify-between"
-                  data-testid={`ai-workspace-recent-work-${agreement?.id || "unknown"}`}
-                >
-                  <div className="flex min-w-0 items-start gap-4">
-                    <div className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-slate-700">
-                      <BriefcaseBusiness className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-lg font-semibold text-slate-900">
-                        {agreementTitle(agreement)}
-                      </div>
-                      <div className="mt-1 text-sm text-slate-600">
-                        {agreementCustomer(agreement)}
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
-                          Status: {agreementStatus(agreement)}
-                        </span>
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
-                          Current step: {agreementCurrentStep(agreement)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="shrink-0">
-                    <span className="inline-flex items-center gap-2 rounded-full bg-[#18395f] px-4 py-2 text-sm font-semibold text-white">
-                      Continue
-                      <ArrowRight className="h-4 w-4" />
-                    </span>
-                  </div>
-                </button>
-              ))
-            ) : (
-              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-sm text-slate-600 shadow-sm">
-                No recent agreements yet. Start with AI above to kick off the first project.
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section data-testid="ai-workspace-popular-templates">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Popular Templates
-              </div>
-              <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
-                Explore reusable project structures before you draft.
-              </h3>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/app/templates")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Open Templates
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="mt-5 grid gap-4 xl:grid-cols-3">
-            {loadingWorkspace ? (
-              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-sm text-slate-600 shadow-sm xl:col-span-3">
-                Loading templates...
-              </div>
-            ) : popularTemplates.length ? (
-              popularTemplates.map((template) => (
-                <TemplatePreviewCard
-                  key={template?.id || templateTitle(template)}
-                  template={template}
-                  onOpenTemplates={() => navigate("/app/templates")}
-                />
-              ))
-            ) : (
-              <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-sm text-slate-600 shadow-sm xl:col-span-3">
-                No template previews are available right now. Open Templates to browse the full
-                library.
-              </div>
-            )}
+          <div className="mt-5 grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
+            {AI_CAPABILITY_GROUPS.map((group) => (
+              <AiCapabilityCard key={group.title} group={group} />
+            ))}
           </div>
         </section>
 
@@ -714,8 +366,9 @@ export default function AIAssistantPage() {
             <div>
               <div className="text-lg font-semibold text-slate-900">Need help with current work?</div>
               <div className="mt-1 text-sm leading-6 text-slate-600">
-                AI Copilot follows you across MyHomeBro to review, improve, explain, navigate, and
-                help complete the workflow you're already in.
+                AI Workspace is for starting, routing, and organizing work with AI. AI Copilot is
+                for help on the page, form, agreement, template, invoice, or task you're currently
+                working on.
               </div>
             </div>
             <button
