@@ -1,16 +1,15 @@
 const WEIGHTS = {
   business_info:          20,
   trade_profile:          15,
-  project_path:           10,
-  service_area:           10,
-  stripe_connect:         20,
+  service_area:           15,
+  stripe_connect:         25,
   first_job_or_template:  10,
   license:                 8,
   logo:                    4,
   team_members:            3,
 };
 
-// Total: 100
+// Total: 100 (project_path removed — field not present in GET /projects/contractors/me/)
 
 const VALUE_REASONS = {
   stripe_connect:
@@ -27,8 +26,6 @@ const VALUE_REASONS = {
     "License info is required for compliance checks on permitted work.",
   logo:
     "Your logo appears on customer-facing agreements and invoices.",
-  project_path:
-    "Residential vs commercial sets the right rules for every workflow.",
   team_members:
     "Team members can be assigned to milestones for scheduling.",
 };
@@ -64,12 +61,11 @@ export function calculateProfileCompleteness(profile = {}, extras = {}) {
 
   check("business_info",         !!String(profile.business_name || "").trim());
   check("trade_profile",         Array.isArray(profile.skills) && profile.skills.length > 0);
-  check("project_path",          !!(profile.preferred_project_path || profile.project_path));
   check("service_area",          !!(profile.city || profile.state));
   check("stripe_connect",        stripeConnected);
   check("first_job_or_template", Number(jobCount) > 0 || Number(templateCount) > 0);
-  check("license",               !!(profile.license_number || profile.license));
-  check("logo",                  !!(profile.logo || profile.logo_url));
+  check("license",               !!(profile.license_number));
+  check("logo",                  !!(profile.logo));
   check("team_members",          Number(profile.team_count || 0) > 0);
 
   missing.sort((a, b) => b.points - a.points);

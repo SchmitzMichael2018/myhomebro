@@ -2,8 +2,9 @@
 // v2026-02-09 — Redirect legacy /customers routes into /app to avoid landing fallback.
 // v2026-02-24 — ✅ Fix /app routing: remove DashboardRouter shadow route so ProtectedRoutes / AgreementWizard render
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { clearExpiredConversations } from "./lib/conversationStorage.js";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
 
@@ -33,6 +34,14 @@ import "./styles/ui.css";
 import "./styles/modal.css";
 
 export default function App() {
+  const cleanedRef = useRef(false);
+  useEffect(() => {
+    if (!cleanedRef.current) {
+      cleanedRef.current = true;
+      clearExpiredConversations();
+    }
+  }, []);
+
   return (
     <AuthProvider>
       <BrowserRouter>

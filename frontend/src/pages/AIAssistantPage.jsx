@@ -16,7 +16,6 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
 import { produceStructuredAssistantPlan } from "../lib/assistantReasoning.js";
-import OnboardingConversation from "../components/OnboardingConversation.jsx";
 import WorkspaceConversation from "../components/WorkspaceConversation.jsx";
 import {
   detectLoginExperience,
@@ -395,38 +394,31 @@ export default function AIAssistantPage() {
   const [busyKey, setBusyKey] = useState("");
   const [result, setResult] = useState(null);
 
-  // Session detection
+  // Session detection (for DailyBriefing greeting only — onboarding is handled by Dashboard)
   const [loginExperience, setLoginExperience] = useState(null); // null = loading
   const [contractorProfile, setContractorProfile] = useState(null);
-  const [stripeStatus, setStripeStatus] = useState(null);
   const [workspaceSignals, setWorkspaceSignals] = useState(null);
   const [daysSince, setDaysSince] = useState(0);
 
   useEffect(() => {
     const days = getDaysSinceLastLogin();
     setDaysSince(days);
-    recordLoginTimestamp();
 
     async function detectExperience() {
       try {
-        const [profileRes, stripeRes, agreementsRes] = await Promise.allSettled([
+        const [profileRes, agreementsRes] = await Promise.allSettled([
           api.get("/projects/contractors/me/"),
-          api.get("/payments/onboarding/status/"),
           api.get("/projects/agreements/"),
         ]);
         const profile = profileRes.status === "fulfilled" ? (profileRes.value?.data || {}) : {};
-        const stripe = stripeRes.status === "fulfilled" ? (stripeRes.value?.data || {}) : {};
         const agreements = agreementsRes.status === "fulfilled"
           ? (agreementsRes.value?.data?.results ?? agreementsRes.value?.data ?? [])
           : [];
         const jobCount = Array.isArray(agreements) ? agreements.length : 0;
         setContractorProfile(profile);
-        setStripeStatus(stripe);
         const experience = detectLoginExperience(profile, jobCount, days);
         setLoginExperience(experience);
-        if (experience === "welcome_back" || experience === "daily_briefing") {
-          fetchWorkspaceSignals().then(setWorkspaceSignals).catch(() => {});
-        }
+        fetchWorkspaceSignals().then(setWorkspaceSignals).catch(() => {});
       } catch {
         setLoginExperience("daily_briefing");
       }
@@ -512,28 +504,6 @@ export default function AIAssistantPage() {
 
   const firstName =
     String(contractorProfile?.first_name || contractorProfile?.name || "").split(" ")[0] || "there";
-
-  // First login / resume onboarding: replace the workspace with the conversation
-  if (loginExperience === "first_login" || loginExperience === "resume_onboarding") {
-    return (
-      <ContractorPageSurface
-        eyebrow="Getting Started"
-        title={loginExperience === "resume_onboarding" ? "Finish your setup" : "Welcome to MyHomeBro"}
-        subtitle=""
-        variant="operational"
-        className="mhb-ai-workspace"
-      >
-        <div className="mx-auto max-w-3xl">
-          <OnboardingConversation
-            contractorProfile={contractorProfile}
-            stripeStatus={stripeStatus}
-            mode={loginExperience}
-            onComplete={() => setLoginExperience("daily_briefing")}
-          />
-        </div>
-      </ContractorPageSurface>
-    );
-  }
 
   return (
     <ContractorPageSurface

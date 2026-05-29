@@ -6,6 +6,11 @@ import api from "../api.js";
 import { buildTemplateDraftPreview } from "../lib/startWithAiAssistant.js";
 import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
 import { getFirstIncompleteStep, ONBOARDING_STEPS } from "../lib/onboardingState.js";
+import {
+  saveConversation,
+  loadConversation,
+  clearConversation,
+} from "../lib/conversationStorage.js";
 
 const POPULAR_TRADES = [
   "Roofing",
@@ -106,33 +111,62 @@ export default function OnboardingConversation({
   const navigate = useNavigate();
   const bottomRef = useRef(null);
   const stripeConnected = Boolean(stripeStatus?.connected);
+  const contractorId = contractorProfile?.id ?? null;
 
-  // Determine start phase for resume_onboarding
-  const initialPhase =
-    mode === "resume_onboarding"
-      ? getStartPhase(contractorProfile || {}, stripeConnected)
-      : "business_name";
+  // Load persisted conversation once at init time
+  const [_loaded] = useState(() => {
+    if (!contractorId) return null;
+    const record = loadConversation("onboarding", contractorId);
+    return record && PHASE_ORDER.includes(record.phase) ? record : null;
+  });
 
-  const [phase, setPhase] = useState(initialPhase);
-  const [messages, setMessages] = useState([]);
+  // Track whether we restored from storage (used to suppress the initial greeting)
+  const restoredRef = useRef(Boolean(_loaded));
+
+  // Phase — restore from storage or derive from profile
+  const [phase, setPhase] = useState(() => {
+    if (_loaded) return _loaded.phase;
+    if (mode === "resume_onboarding") return getStartPhase(contractorProfile || {}, stripeConnected);
+    return "business_name";
+  });
+
+  // Messages — restore or start empty (greeting effect seeds the first message)
+  const [messages, setMessages] = useState(() =>
+    Array.isArray(_loaded?.messages) ? _loaded.messages : []
+  );
+
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // Per-phase input state
-  const [businessName, setBusinessName] = useState(String(contractorProfile?.business_name || ""));
-  const [phone, setPhone] = useState(String(contractorProfile?.phone || contractorProfile?.phone_number || ""));
-  const [email, setEmail] = useState(String(contractorProfile?.email || ""));
-  const [city, setCity] = useState(String(contractorProfile?.city || ""));
-  const [state, setState] = useState(String(contractorProfile?.state || ""));
-  const [selectedTrades, setSelectedTrades] = useState(Array.isArray(contractorProfile?.skills) ? contractorProfile.skills : []);
-  const [projectPath, setProjectPath] = useState("");
+  // Per-phase collected data — restore from storage, then fall back to profile fields
+  const _cd = _loaded?.collectedData ?? {};
+  const [businessName, setBusinessName] = useState(
+    _cd.businessName ?? String(contractorProfile?.business_name || "")
+  );
+  const [phone, setPhone] = useState(
+    _cd.phone ?? String(contractorProfile?.phone || contractorProfile?.phone_number || "")
+  );
+  const [email, setEmail] = useState(
+    _cd.email ?? String(contractorProfile?.email || "")
+  );
+  const [city, setCity] = useState(
+    _cd.city ?? String(contractorProfile?.city || "")
+  );
+  const [state, setState] = useState(
+    _cd.state ?? String(contractorProfile?.state || "")
+  );
+  const [selectedTrades, setSelectedTrades] = useState(
+    _cd.selectedTrades ?? (Array.isArray(contractorProfile?.skills) ? contractorProfile.skills : [])
+  );
+  const [projectPath, setProjectPath] = useState(_cd.projectPath ?? "");
   const [templateDraft, setTemplateDraft] = useState(null);
   const [completenessResult, setCompletenessResult] = useState(null);
 
   const firstName = String(contractorProfile?.first_name || contractorProfile?.name || "").split(" ")[0] || "there";
 
-  // Seed the first AI message based on phase
+  // Seed the initial AI greeting — skipped when restoring a saved conversation
   useEffect(() => {
+    if (restoredRef.current) return;
     const greetings = {
       business_name:
         mode === "first_login"
@@ -149,6 +183,16 @@ export default function OnboardingConversation({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, phase]);
+
+  // Persist full conversation state on every phase or message change
+  useEffect(() => {
+    if (!contractorId || phase === "done") return;
+    saveConversation("onboarding", contractorId, {
+      phase,
+      messages,
+      collectedData: { businessName, phone, email, city, state, selectedTrades, projectPath },
+    });
+  }, [phase, messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addAiMessage(text) {
     setMessages((prev) => [...prev, { role: "ai", text }]);
@@ -296,6 +340,7 @@ export default function OnboardingConversation({
             type="button"
             data-testid="onboarding-go-to-workspace"
             onClick={() => {
+              clearConversation("onboarding", contractorId);
               if (typeof onComplete === "function") onComplete();
               navigate("/app/assistant");
             }}
@@ -306,7 +351,10 @@ export default function OnboardingConversation({
           </button>
           <button
             type="button"
-            onClick={() => navigate("/app/dashboard")}
+            onClick={() => {
+              clearConversation("onboarding", contractorId);
+              navigate("/app/dashboard");
+            }}
             className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             Go to Dashboard

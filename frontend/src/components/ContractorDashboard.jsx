@@ -43,6 +43,12 @@ import {
   summarizePaymentRecords,
 } from "../utils/paymentRecords.js";
 import { getContractorNextActions } from "../lib/contractorNextActions.js";
+import OnboardingConversation from "./OnboardingConversation.jsx";
+import {
+  detectLoginExperience,
+  getDaysSinceLastLogin,
+  recordLoginTimestamp,
+} from "../lib/onboardingState.js";
 
 /* Ensure react-modal knows the root */
 Modal.setAppElement("#root");
@@ -1132,6 +1138,11 @@ export default function ContractorDashboard() {
   const { ready: authReady, isAuthed } = useAuth();
   const [who, setWho] = useState(null);
   const [contractorProfile, setContractorProfile] = useState(null);
+
+  // Onboarding detection — shown on Dashboard, never on AI Workspace
+  const [loginExperience, setLoginExperience] = useState(null); // null = still loading
+  const [onboardingProfile, setOnboardingProfile] = useState(null);
+  const [onboardingStripe, setOnboardingStripe] = useState(null);
   const [activityFeed, setActivityFeed] = useState([]);
   const [nextBestAction, setNextBestAction] = useState(null);
   const [activationSummary, setActivationSummary] = useState(null);
@@ -1207,6 +1218,34 @@ export default function ContractorDashboard() {
     })();
     return () => (mounted = false);
   }, [authReady, isAuthed]);
+
+  /* ----- onboarding / login experience detection ----- */
+  useEffect(() => {
+    const days = getDaysSinceLastLogin();
+    recordLoginTimestamp();
+
+    async function detectExperience() {
+      try {
+        const [profileRes, stripeRes, agreementsRes] = await Promise.allSettled([
+          api.get("/projects/contractors/me/"),
+          api.get("/payments/onboarding/status/"),
+          api.get("/projects/agreements/"),
+        ]);
+        const profile = profileRes.status === "fulfilled" ? (profileRes.value?.data || {}) : {};
+        const stripe = stripeRes.status === "fulfilled" ? (stripeRes.value?.data || {}) : {};
+        const agreements = agreementsRes.status === "fulfilled"
+          ? (agreementsRes.value?.data?.results ?? agreementsRes.value?.data ?? [])
+          : [];
+        const jobCount = Array.isArray(agreements) ? agreements.length : 0;
+        setOnboardingProfile(profile);
+        setOnboardingStripe(stripe);
+        setLoginExperience(detectLoginExperience(profile, jobCount, days));
+      } catch {
+        setLoginExperience("daily_briefing");
+      }
+    }
+    detectExperience();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ----- load dashboard data ----- */
   useEffect(() => {
@@ -2406,6 +2445,29 @@ export default function ContractorDashboard() {
       },
     ];
   }, [agreements, dueSchedule.week.count, mStats.inProgressCount, mStats.totalCount, paymentSummary]);
+
+  // Show onboarding conversation on Dashboard until the contractor is fully set up
+  if (loginExperience === "first_login" || loginExperience === "resume_onboarding") {
+    return (
+      <PageShell
+        title={loginExperience === "resume_onboarding" ? "Finish your setup" : "Welcome to MyHomeBro"}
+        subtitle=""
+        showLogo={false}
+        compact
+        className="mhb-dashboard-shell"
+        titleClassName="drop-shadow-none"
+      >
+        <div className="mx-auto max-w-3xl py-4">
+          <OnboardingConversation
+            contractorProfile={onboardingProfile}
+            stripeStatus={onboardingStripe}
+            mode={loginExperience}
+            onComplete={() => setLoginExperience("daily_briefing")}
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell

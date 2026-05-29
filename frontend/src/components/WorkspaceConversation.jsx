@@ -8,6 +8,11 @@ import { buildTemplateDraftPreview } from "../lib/startWithAiAssistant.js";
 import { checkCompliance } from "../lib/complianceRules.js";
 import { checkSchedulingConflicts } from "../lib/schedulingConflict.js";
 import WorkspacePreviewPanel from "./WorkspacePreviewPanel.jsx";
+import {
+  saveConversation,
+  loadConversation,
+  clearConversation,
+} from "../lib/conversationStorage.js";
 
 // ── Conversation atoms ────────────────────────────────────────────────────
 
@@ -116,11 +121,17 @@ export default function WorkspaceConversation({ contractorProfile = null }) {
   const navigate = useNavigate();
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const hasRestoredRef = useRef(false);
+
+  const contractorId = contractorProfile?.id ?? null;
 
   const [phase, setPhase] = useState("input");
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Tracks the initial job description submitted (used as collectedData.jobDescription)
+  const [jobDescription, setJobDescription] = useState("");
 
   // Collected data across phases
   const [classifyResult, setClassifyResult] = useState(null);
@@ -140,6 +151,55 @@ export default function WorkspaceConversation({ contractorProfile = null }) {
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState([]);
 
+  // Restore persisted conversation on mount
+  useEffect(() => {
+    if (hasRestoredRef.current || !contractorId) return;
+    const loaded = loadConversation("workspace_intake", contractorId);
+    if (!loaded || !PHASES.includes(loaded.phase) || loaded.phase === "input") return;
+    // Only restore if the contractor hasn't started typing something different
+    const currentInput = inputText.trim();
+    const savedJob = loaded.collectedData?.jobDescription ?? "";
+    if (currentInput && currentInput !== savedJob) return;
+
+    hasRestoredRef.current = true;
+    setPhase(loaded.phase);
+    setMessages(loaded.messages ?? []);
+    const cd = loaded.collectedData ?? {};
+    if (cd.jobDescription) setJobDescription(cd.jobDescription);
+    if (cd.classifyResult) setClassifyResult(cd.classifyResult);
+    if (cd.templateMatch) setTemplateMatch(cd.templateMatch);
+    if (cd.customer) setCustomer(cd.customer);
+    if (cd.projectAddress) setProjectAddress(cd.projectAddress);
+    if (cd.addressInput) setAddressInput(cd.addressInput);
+    if (Array.isArray(cd.complianceFlags)) setComplianceFlags(cd.complianceFlags);
+    if (Array.isArray(cd.schedulingFlags)) setSchedulingFlags(cd.schedulingFlags);
+    if (typeof cd.flagIndex === "number") setFlagIndex(cd.flagIndex);
+    if (Array.isArray(cd.unresolvedFlags)) setUnresolvedFlags(cd.unresolvedFlags);
+    if (cd.draftResult) setDraftResult(cd.draftResult);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist conversation on every meaningful phase or message change
+  useEffect(() => {
+    if (!contractorId || phase === "input") return;
+    saveConversation("workspace_intake", contractorId, {
+      phase,
+      messages,
+      collectedData: {
+        jobDescription,
+        classifyResult,
+        templateMatch,
+        customer,
+        projectAddress,
+        addressInput,
+        complianceFlags,
+        schedulingFlags,
+        flagIndex,
+        unresolvedFlags,
+        draftResult,
+      },
+    });
+  }, [phase, messages]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, phase]);
@@ -157,6 +217,7 @@ export default function WorkspaceConversation({ contractorProfile = null }) {
     const text = inputText.trim();
     if (!text) return;
     addUser(text);
+    setJobDescription(text);
     setInputText("");
     setPhase("classify");
     setLoading(true);
@@ -461,6 +522,7 @@ export default function WorkspaceConversation({ contractorProfile = null }) {
   // ── PHASE 9: confirm + handoff ─────────────────────────────────────────
 
   function handleConfirm() {
+    clearConversation("workspace_intake", contractorId);
     addUser("Open agreement wizard →");
 
     const prefill = {

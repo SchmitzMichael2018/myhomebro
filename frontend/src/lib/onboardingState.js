@@ -49,14 +49,17 @@ export function getDaysSinceLastLogin() {
 
 /**
  * Determines what experience to show a contractor on login / app load.
- * jobCount=0 and onboarding_complete=false → first login
- * onboarding_complete=false (has some jobs) → resume
+ * contractor_onboarding_status !== "complete" and jobCount=0 → first login
+ * contractor_onboarding_status !== "complete" (has some jobs) → resume
  * daysSinceLastLogin >= 7 → welcome back
  * otherwise → daily briefing
+ *
+ * Uses contractor_onboarding_status from GET /projects/contractors/me/ which returns
+ * "not_started" | "in_progress" | "complete" (no boolean onboarding_complete field exists).
  */
 export function detectLoginExperience(contractorProfile, jobCount, daysSinceLastLogin) {
   const hasProfile = contractorProfile && typeof contractorProfile === "object";
-  const complete = hasProfile ? Boolean(contractorProfile.onboarding_complete) : false;
+  const complete = hasProfile ? contractorProfile.contractor_onboarding_status === "complete" : false;
   const count = Number(jobCount) || 0;
   if (!complete && count === 0) return "first_login";
   if (!complete) return "resume_onboarding";
