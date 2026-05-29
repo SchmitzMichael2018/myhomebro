@@ -7,7 +7,6 @@ import {
   FileSignature,
   ListChecks,
   LoaderCircle,
-  MessageSquareText,
   Sparkles,
   X,
 } from "lucide-react";
@@ -95,18 +94,12 @@ async function fetchWorkspaceSignals() {
 function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
   const drafts = agreements.filter((a) => a.status === "draft");
   if (drafts.length > 0) {
-    const first = drafts[0];
-    const label = first.title || "Agreement Draft";
-    const customer = first.customer_name ? ` · ${first.customer_name}` : "";
     return {
-      title: drafts.length === 1 ? "Complete your agreement draft" : `Complete ${drafts.length} agreement drafts`,
-      reason:
-        drafts.length === 1
-          ? `"${label}"${customer} is still in draft. Completing it unblocks customer signature, funding, and active work.`
-          : `You have ${drafts.length} draft agreements waiting. Finishing them unblocks signatures, funding, and active work.`,
-      context: drafts.length === 1 ? `${label}${customer}` : `${drafts.length} draft agreements`,
-      primaryLabel: drafts.length === 1 ? "Open Agreement" : "Open Agreements",
-      primaryRoute: drafts.length === 1 ? `/app/agreements/${first.id}` : "/app/agreements",
+      title: "Review and send draft agreements",
+      reason: `You have ${drafts.length} draft agreement${drafts.length === 1 ? "" : "s"} waiting. Completing ${drafts.length === 1 ? "it" : "them"} can unlock signatures, funding, and active work.`,
+      context: `${drafts.length} draft agreement${drafts.length === 1 ? "" : "s"}`,
+      primaryLabel: "Open Agreements",
+      primaryRoute: "/app/agreements",
       secondaryLabel: "Open Copilot",
     };
   }
@@ -193,17 +186,17 @@ function WorkspaceResultPanel({ result, onDismiss, onOpenCopilot, onNavigate }) 
   return (
     <div
       data-testid="ai-workspace-result-panel"
-      className="rounded-[28px] border border-indigo-200 bg-indigo-50 p-6 shadow-sm"
+      className="overflow-hidden rounded-[28px] border border-sky-200/20 bg-[linear-gradient(145deg,#020b1f_0%,#0e2d5b_54%,#155ea8_100%)] p-6 text-white shadow-[0_24px_70px_rgba(2,11,31,0.28)]"
     >
       <div className="flex items-start justify-between gap-4">
-        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-300/50 bg-indigo-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+        <div className="inline-flex items-center gap-2 rounded-full border border-sky-100/25 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">
           <Sparkles className="h-3.5 w-3.5" />
           Recommended Next Action
         </div>
         <button
           type="button"
           onClick={onDismiss}
-          className="rounded-lg border border-indigo-200 p-1.5 text-indigo-500 hover:bg-indigo-100"
+          className="rounded-lg border border-white/15 p-1.5 text-sky-100 hover:bg-white/10"
           aria-label="Dismiss recommendation"
         >
           <X className="h-4 w-4" />
@@ -212,20 +205,20 @@ function WorkspaceResultPanel({ result, onDismiss, onOpenCopilot, onNavigate }) 
 
       <h3
         data-testid="ai-workspace-result-title"
-        className="mt-4 text-xl font-bold tracking-tight text-indigo-950"
+        className="mt-4 text-xl font-bold tracking-tight text-white"
       >
         {result.title}
       </h3>
 
       <p
         data-testid="ai-workspace-result-reason"
-        className="mt-2 text-sm leading-6 text-indigo-800"
+        className="mt-2 text-sm leading-6 text-sky-50/90"
       >
         {result.reason}
       </p>
 
       {result.context ? (
-        <div className="mt-2 rounded-xl border border-indigo-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-indigo-700 inline-block">
+        <div className="mt-3 inline-block rounded-xl border border-sky-100/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-sky-50">
           {result.context}
         </div>
       ) : null}
@@ -235,7 +228,7 @@ function WorkspaceResultPanel({ result, onDismiss, onOpenCopilot, onNavigate }) 
           type="button"
           data-testid="ai-workspace-result-primary-cta"
           onClick={() => onNavigate(result.primaryRoute)}
-          className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+          className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-sm font-semibold text-[#12345c] shadow-sm hover:bg-sky-50"
         >
           {result.primaryLabel}
           <ArrowRight className="h-4 w-4" />
@@ -246,7 +239,7 @@ function WorkspaceResultPanel({ result, onDismiss, onOpenCopilot, onNavigate }) 
             type="button"
             data-testid="ai-workspace-result-secondary-cta"
             onClick={() => onNavigate(result.secondaryRoute)}
-            className="inline-flex items-center gap-2 rounded-2xl border border-indigo-300 bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20"
           >
             {result.secondaryLabel}
           </button>
@@ -255,7 +248,7 @@ function WorkspaceResultPanel({ result, onDismiss, onOpenCopilot, onNavigate }) 
             type="button"
             data-testid="ai-workspace-result-secondary-cta"
             onClick={onOpenCopilot}
-            className="inline-flex items-center gap-2 rounded-2xl border border-indigo-300 bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20"
           >
             {result.secondaryLabel}
           </button>
@@ -524,30 +517,6 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
-        <section
-          className="rounded-3xl border border-slate-200 bg-[#f8fafc] px-6 py-5 shadow-sm"
-          data-testid="ai-workspace-footer"
-        >
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-lg font-semibold text-slate-900">Need help with current work?</div>
-              <div className="mt-1 text-sm leading-6 text-slate-600">
-                AI Workspace is for starting, routing, and organizing work with AI. AI Copilot is
-                for help on the page, form, agreement, template, invoice, or task you're currently
-                working on.
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={openCopilot}
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
-              data-testid="ai-workspace-open-copilot"
-            >
-              <MessageSquareText className="h-4 w-4" />
-              Open AI Copilot
-            </button>
-          </div>
-        </section>
       </div>
     </ContractorPageSurface>
   );

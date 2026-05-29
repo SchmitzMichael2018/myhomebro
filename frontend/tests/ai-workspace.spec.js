@@ -61,10 +61,17 @@ async function installWorkspaceDataMocks(page) {
     },
     {
       id: 902,
-      title: 'Roof Replacement Project',
+      title: 'Roof Replacement Draft',
       customer_name: 'Jordan Homeowner',
-      status: 'signed',
+      status: 'draft',
       updated_at: '2026-03-28T09:00:00Z',
+    },
+    {
+      id: 903,
+      title: 'Bathroom Refresh Draft',
+      customer_name: 'Morgan Owner',
+      status: 'draft',
+      updated_at: '2026-03-26T09:00:00Z',
     },
   ];
 
@@ -278,7 +285,8 @@ test.describe('AI Workspace page', () => {
     await expect(page.getByTestId('ai-workspace-suggested')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-recent-work')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-popular-templates')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-footer')).toBeVisible();
+    await expect(page.getByTestId('ai-workspace-footer')).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-open-copilot')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
 
     await expect(page.getByRole('heading', { name: 'Start or continue work' })).toBeVisible();
@@ -362,19 +370,27 @@ test.describe('AI Workspace page', () => {
     await hero.getByRole('button', { name: 'Find my next task' }).click();
 
     await expect(page.getByTestId('ai-workspace-result-panel')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-result-title')).toContainText('Complete your agreement draft');
-    await expect(page.getByTestId('ai-workspace-result-reason')).toContainText('Kitchen Remodel Agreement');
-    await expect(page.getByTestId('ai-workspace-result-primary-cta')).toContainText('Open Agreement');
+    await expect(page.getByTestId('ai-workspace-result-title')).toContainText('Review and send draft agreements');
+    await expect(page.getByTestId('ai-workspace-result-reason')).toContainText(
+      'You have 3 draft agreements waiting. Completing them can unlock signatures, funding, and active work.'
+    );
+    await expect(page.getByTestId('ai-workspace-result-primary-cta')).toContainText('Open Agreements');
     await expect(page.getByTestId('ai-workspace-result-secondary-cta')).toContainText('Open Copilot');
 
+    await page.getByTestId('ai-workspace-result-secondary-cta').click();
+    await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+    await page.getByTestId('assistant-desktop-dock-close').click();
+    await expect(page.getByTestId('assistant-desktop-dock')).not.toBeVisible();
+
     await page.getByTestId('ai-workspace-result-primary-cta').click();
-    await page.waitForURL('**/app/agreements/901');
+    await page.waitForURL('**/app/agreements');
   });
 
-  test('footer AI Copilot opens the dock', async ({ page }) => {
+  test('bottom Copilot bridge stays removed', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
-    await page.getByTestId('ai-workspace-open-copilot').click();
-    await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+    await expect(page.getByText('Need help with current work?')).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-footer')).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-open-copilot')).not.toBeVisible();
   });
 });
