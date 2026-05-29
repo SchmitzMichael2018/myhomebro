@@ -1152,8 +1152,12 @@ function extractDescriptionCount(action) {
 
 // Build a natural one-sentence summary from the prioritised next actions.
 // Max 2 noun phrases, overdue/signatures lead. Empty list → clear message.
-function buildSummaryLine(actions, isWelcomeBack) {
+// profileScore: 0-100 numeric; phrase added only when score < 85 (not at 89% or 95%).
+function buildSummaryLine(actions, isWelcomeBack, profileScore) {
+  const profileLow = typeof profileScore === "number" && profileScore > 0 && profileScore < 85;
+
   if (!actions.length) {
+    if (profileLow) return `Your profile needs attention — score is ${profileScore}%.`;
     return isWelcomeBack
       ? "Your queue looks clear since your last visit."
       : "Everything looks clear — no urgent items right now.";
@@ -1204,8 +1208,12 @@ function buildSummaryLine(actions, isWelcomeBack) {
     phrases.push("an approved payment ready to release");
   }
 
+  // Profile phrase always goes last and only when score is notably low.
+  if (profileLow && phrases.length < 2) {
+    phrases.push("your profile needs attention");
+  }
+
   if (!phrases.length) {
-    // Fall back to a generic count from whatever's in the queue
     const total = actions.length;
     return isWelcomeBack
       ? "A few things need your attention since your last visit."
@@ -1215,16 +1223,18 @@ function buildSummaryLine(actions, isWelcomeBack) {
   const body =
     phrases.length === 1
       ? `You have ${phrases[0]}.`
-      : `You have ${phrases[0]} and ${phrases[1]}.`;
+      : phrases.length === 2
+      ? `You have ${phrases[0]} and ${phrases[1]}.`
+      : `You have ${phrases[0]}, ${phrases[1]}, and ${phrases[2]}.`;
 
-  // The welcome-back prefix lives on the greeting line, not here — keep sentence neutral.
+  // The welcome-back prefix lives on the greeting line — keep sentence neutral.
   return body;
 }
 
-function DashboardGreeting({ firstName, daysSince, briefingItems, onOpenCopilot }) {
+function DashboardGreeting({ firstName, daysSince, briefingItems, profileScore, onOpenCopilot }) {
   const isWelcomeBack = Number(daysSince) >= 7;
   const greeting = getTimeGreeting();
-  const summary = buildSummaryLine(briefingItems, isWelcomeBack);
+  const summary = buildSummaryLine(briefingItems, isWelcomeBack, profileScore);
 
   return (
     <div
@@ -1247,154 +1257,6 @@ function DashboardGreeting({ firstName, daysSince, briefingItems, onOpenCopilot 
         >
           Open Copilot →
         </button>
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================================== */
-/* =================== PROFILE COMPLETENESS WIDGET ========================== */
-/* ========================================================================== */
-
-const COMPLETENESS_ITEMS = [
-  { key: "stripe_connect",        label: "Stripe connected",       route: "/app/onboarding/stripe" },
-  { key: "business_info",         label: "Business info",          route: "/app/profile" },
-  { key: "trade_profile",         label: "Trade profile",          route: "/app/profile" },
-  { key: "service_area",          label: "Service area set",       route: "/app/profile" },
-  { key: "first_job_or_template", label: "First job or template",  route: "/app/assistant" },
-  { key: "license",               label: "License on file",        route: "/app/profile" },
-  { key: "logo",                  label: "Logo uploaded",          route: "/app/profile" },
-  { key: "team_members",          label: "Team members",           route: "/app/team" },
-];
-
-function ProfileCompletenessWidget({ profile, stripeConnected, jobCount }) {
-  const navigate = useNavigate();
-  const [expanded, setExpanded] = useState(false);
-
-  const result = calculateProfileCompleteness(
-    profile || {},
-    { stripeConnected: Boolean(stripeConnected), jobCount: Number(jobCount) || 0, templateCount: 0 }
-  );
-  const { score, highestValueMissing, missingItems } = result;
-
-  const isComplete = score >= 100;
-  const missingKeys = new Set(missingItems.map((m) => m.key));
-
-  if (isComplete && !expanded) {
-    return (
-      <div
-        data-testid="dashboard-profile-completeness"
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            <span className="text-sm font-semibold text-slate-700">Profile complete</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-bold text-emerald-600">100%</span>
-            <button
-              type="button"
-              onClick={() => setExpanded(true)}
-              className="text-xs text-slate-400 hover:text-slate-600"
-            >
-              Details
-            </button>
-          </div>
-        </div>
-        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-          <div className="h-full w-full rounded-full bg-emerald-500" />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      data-testid="dashboard-profile-completeness"
-      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-semibold text-slate-700">Profile Completeness</span>
-        <div className="flex items-center gap-2">
-          <span className={`text-sm font-bold ${isComplete ? "text-emerald-600" : score >= 60 ? "text-amber-600" : "text-red-500"}`}>
-            {score}%
-          </span>
-          {isComplete ? (
-            <button
-              type="button"
-              onClick={() => setExpanded(false)}
-              className="text-xs text-slate-400 hover:text-slate-600"
-            >
-              Hide
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-        <div
-          className={`h-full rounded-full transition-all ${isComplete ? "bg-emerald-500" : score >= 60 ? "bg-amber-500" : "bg-red-400"}`}
-          style={{ width: `${score}%` }}
-        />
-      </div>
-
-      {/* Show ALL items so the display always matches the score — no slice */}
-      <div className="mt-3 space-y-1.5">
-        {COMPLETENESS_ITEMS.map(({ key, label, route }) => {
-          const done = !missingKeys.has(key);
-          const isHighlight = highestValueMissing?.key === key;
-          const isMissing = !done;
-
-          return (
-            <button
-              key={key}
-              type="button"
-              disabled={done}
-              onClick={isMissing ? () => navigate(route) : undefined}
-              className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left transition ${
-                isHighlight
-                  ? "border border-amber-200 bg-amber-50 hover:bg-amber-100"
-                  : isMissing
-                  ? "hover:bg-slate-50"
-                  : "cursor-default"
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                {done ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                ) : (
-                  <div
-                    className={`h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
-                      isHighlight ? "border-amber-400" : "border-slate-300"
-                    }`}
-                  />
-                )}
-                <span
-                  className={`text-xs font-medium truncate ${
-                    done
-                      ? "text-slate-400"
-                      : isHighlight
-                      ? "text-amber-900 font-semibold"
-                      : "text-slate-700"
-                  }`}
-                >
-                  {label}
-                </span>
-              </div>
-
-              {isMissing ? (
-                <span
-                  className={`shrink-0 text-xs font-semibold whitespace-nowrap ${
-                    isHighlight ? "text-amber-700" : "text-slate-400"
-                  }`}
-                >
-                  {isHighlight ? "Fix this →" : "→"}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
       </div>
     </div>
   );
@@ -2349,6 +2211,17 @@ export default function ContractorDashboard() {
       "";
     return String(raw).trim().split(" ")[0] || "";
   }, [contractorProfile, who]);
+
+  const profileScore = useMemo(() => {
+    if (!onboardingProfile) return null;
+    const { score } = calculateProfileCompleteness(onboardingProfile, {
+      stripeConnected: Boolean(onboardingStripe?.connected),
+      jobCount: agreements.length,
+      templateCount: 0,
+    });
+    return score;
+  }, [onboardingProfile, onboardingStripe, agreements]);
+
   const hasUrgentSchedule = dueSchedule.late.count > 0 || dueSchedule.today.count > 0;
   const scheduleHasItems =
     dueSchedule.late.count > 0 ||
@@ -2766,6 +2639,7 @@ export default function ContractorDashboard() {
             firstName={greetingName}
             daysSince={daysSinceLogin}
             briefingItems={contractorNextActions.slice(0, 3)}
+            profileScore={profileScore}
             onOpenCopilot={() =>
               openAssistant({
                 context: {
@@ -3091,13 +2965,6 @@ export default function ContractorDashboard() {
 
           ) : null}
 
-          <div className="space-y-5">
-          <ProfileCompletenessWidget
-            profile={onboardingProfile}
-            stripeConnected={Boolean(onboardingStripe?.connected)}
-            jobCount={agreements.length}
-          />
-
           <DashboardSection
             title="Schedule"
             subtitle="Active due work only. Planned timelines stay in agreement previews until activated."
@@ -3187,7 +3054,6 @@ export default function ContractorDashboard() {
               )}
             </DashboardCard>
           </DashboardSection>
-          </div>{/* end ProfileCompleteness + Schedule column wrapper */}
           </div>{/* end dashboard-priority-schedule-grid */}
 
           {false ? (

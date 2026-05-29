@@ -254,10 +254,12 @@ export function GlobalCopilotTrigger() {
 function getBriefingCta(item) {
   const key = String(item?.key || "");
   if (key === "agreements-awaiting-signature") return "Send reminder";
-  if (key.startsWith("agreement-draft:")) return "Open and review";
-  if (key === "invoices-pending-approval" || key.startsWith("invoice-approved:")) return "Review payment";
+  if (key.startsWith("agreement-draft:")) return "Open draft";
+  if (key === "invoices-pending-approval") return "Review payment";
+  if (key.startsWith("invoice-approved:")) return "Release payment";
   if (key === "invoices-disputed") return "Review dispute";
   if (key === "milestone-submitted-review") return "Review work";
+  if (key === "agreements-awaiting-funding") return "Open agreements";
   return item?.buttonLabel || "Open";
 }
 
@@ -267,23 +269,23 @@ function BriefingPanel({ items, onNavigate }) {
   return (
     <div
       data-testid="copilot-briefing-panel"
-      className="mb-4 overflow-hidden rounded-2xl border border-sky-100 bg-sky-50"
+      className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
     >
-      <div className="border-b border-sky-100 px-3 py-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-700">
-          Top Priorities
+      <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+        <div className="text-sm font-semibold text-slate-800">
+          Here's what needs your attention:
         </div>
       </div>
 
-      <div className="divide-y divide-sky-100">
+      <div className="divide-y divide-slate-100">
         {items.map((item) => (
-          <div key={item.key} className="px-3 py-2.5">
-            <div className="text-sm font-semibold text-slate-800">{item.title}</div>
+          <div key={item.key} className="px-4 py-3">
+            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
             <div className="mt-0.5 text-xs leading-5 text-slate-500">{item.description}</div>
             <button
               type="button"
               onClick={() => onNavigate(item.navigationTarget || "/app/dashboard")}
-              className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition"
             >
               {getBriefingCta(item)}
               <ArrowRight className="h-3 w-3" />
@@ -292,8 +294,8 @@ function BriefingPanel({ items, onNavigate }) {
         ))}
       </div>
 
-      <div className="border-t border-sky-100 px-3 py-2 text-xs text-sky-600">
-        Ask me anything about these items below.
+      <div className="border-t border-slate-100 bg-slate-50 px-4 py-2.5 text-xs text-slate-500">
+        Ask me anything about these items in the chat below.
       </div>
     </div>
   );

@@ -3,10 +3,12 @@
 // AI is included in the base experience.
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api";
 import AccountSettings from "./AccountSettings";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
 import TradeMultiSelect from "./trades/TradeMultiSelect.jsx";
+import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -95,6 +97,116 @@ function formatComplianceDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
   return parsed.toLocaleDateString();
+}
+
+// ── Profile completeness items: key → display label + fix route ──────────────
+// Route is null when the fix is on this page (user is already here).
+const PROFILE_COMPLETENESS_ITEMS = [
+  { key: "stripe_connect",        label: "Stripe connected",       route: "/app/onboarding/stripe" },
+  { key: "business_info",         label: "Business info",          route: null },
+  { key: "trade_profile",         label: "Trade profile",          route: null },
+  { key: "service_area",          label: "Service area set",       route: null },
+  { key: "first_job_or_template", label: "First job or template",  route: "/app/assistant" },
+  { key: "license",               label: "License on file",        route: null },
+  { key: "logo",                  label: "Logo uploaded",          route: null },
+  { key: "team_members",          label: "Team members",           route: "/app/team" },
+];
+
+function ProfileCompletenessBar({ meData }) {
+  const navigate = useNavigate();
+
+  if (!meData) return null;
+
+  // Derive extras from meData to avoid a separate API call.
+  const stripeConnected = Boolean(meData.stripe_connected);
+  const hasFirstJob = Boolean(
+    meData?.onboarding?.first_project_started_at ||
+    meData?.onboarding?.first_agreement_created_at ||
+    meData?.first_project_started_at ||
+    meData?.first_agreement_created_at
+  );
+
+  const { score, highestValueMissing, missingItems } = calculateProfileCompleteness(meData, {
+    stripeConnected,
+    jobCount: hasFirstJob ? 1 : 0,
+    templateCount: 0,
+  });
+
+  const isComplete = score >= 100;
+  const missingKeys = new Set(missingItems.map((m) => m.key));
+
+  if (isComplete) {
+    return (
+      <div
+        data-testid="profile-completeness-bar"
+        className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
+      >
+        <span className="text-emerald-600">✓</span>
+        <span className="text-sm font-semibold text-emerald-800">Profile complete</span>
+        <span className="ml-auto text-sm font-bold text-emerald-600">100%</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="profile-completeness-bar"
+      className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-slate-700">Profile Completeness</span>
+        <span className={`text-sm font-bold ${score >= 60 ? "text-amber-600" : "text-red-500"}`}>
+          {score}%
+        </span>
+      </div>
+
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+        <div
+          className={`h-full rounded-full transition-all ${score >= 60 ? "bg-amber-500" : "bg-red-400"}`}
+          style={{ width: `${score}%` }}
+        />
+      </div>
+
+      <div className="mt-3 space-y-1">
+        {PROFILE_COMPLETENESS_ITEMS.map(({ key, label, route }) => {
+          const done = !missingKeys.has(key);
+          const isHighlight = highestValueMissing?.key === key;
+          const isMissing = !done;
+
+          return (
+            <div
+              key={key}
+              className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 ${
+                isHighlight ? "border border-amber-200 bg-amber-50" : ""
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {done ? (
+                  <span className="text-emerald-500 text-xs">✓</span>
+                ) : (
+                  <span className={`inline-block h-3 w-3 shrink-0 rounded-full border-2 ${isHighlight ? "border-amber-400" : "border-slate-300"}`} />
+                )}
+                <span className={`text-xs font-medium truncate ${done ? "text-slate-400" : isHighlight ? "text-amber-900 font-semibold" : "text-slate-700"}`}>
+                  {label}
+                </span>
+              </div>
+              {isMissing && route ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(route)}
+                  className={`shrink-0 text-xs font-semibold whitespace-nowrap ${isHighlight ? "text-amber-700 hover:text-amber-900" : "text-slate-400 hover:text-slate-600"}`}
+                >
+                  {isHighlight ? "Fix this →" : "→"}
+                </button>
+              ) : isMissing ? (
+                <span className="shrink-0 text-xs text-slate-400">Update below</span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function ContractorProfile() {
@@ -1068,6 +1180,8 @@ export default function ContractorProfile() {
   return (
     <div className="flex justify-center">
       <div className="w-full rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+
+        <ProfileCompletenessBar meData={meData} />
 
         {showSetupReminder ? (
           <div
