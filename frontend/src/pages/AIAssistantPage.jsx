@@ -17,11 +17,6 @@ import { useAssistantDock } from "../components/AssistantDock.jsx";
 import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
 import { produceStructuredAssistantPlan } from "../lib/assistantReasoning.js";
 import WorkspaceConversation from "../components/WorkspaceConversation.jsx";
-import {
-  detectLoginExperience,
-  getDaysSinceLastLogin,
-  recordLoginTimestamp,
-} from "../lib/onboardingState.js";
 
 const WORKSPACE_CONTEXT = {
   current_route: "/app/assistant",
@@ -294,99 +289,6 @@ function QuickActionCard({ action, busyKey, onSelect }) {
   );
 }
 
-function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return "morning";
-  if (hour < 17) return "afternoon";
-  return "evening";
-}
-
-function buildBriefingItems({ agreements = [], milestones = [], leads = [] }) {
-  const items = [];
-
-  const drafts = agreements.filter((a) => a.status === "draft");
-  if (drafts.length) {
-    items.push({
-      label: `Review ${drafts.length} draft agreement${drafts.length > 1 ? "s" : ""}`,
-      reason: "Completing them unlocks signatures, funding, and active work.",
-      route: "/app/agreements",
-    });
-  }
-
-  const submitted = milestones.filter((m) => m.status === "submitted");
-  if (submitted.length) {
-    items.push({
-      label: `Approve ${submitted.length} submitted milestone${submitted.length > 1 ? "s" : ""}`,
-      reason: "Approval keeps active projects on schedule and unblocks payments.",
-      route: "/app/milestones",
-    });
-  }
-
-  const pending = leads.filter((l) => ["ready_for_review", "new"].includes(l.status));
-  if (pending.length) {
-    items.push({
-      label: `Follow up on ${pending.length} lead${pending.length > 1 ? "s" : ""}`,
-      reason: "Following up quickly improves conversion.",
-      route: "/app/public-presence",
-    });
-  }
-
-  if (!items.length) {
-    items.push({
-      label: "Create your first agreement",
-      reason: "Your queue is clear — a great time to start new work.",
-      route: "/app/agreements/new/wizard?step=1",
-    });
-  }
-
-  return items.slice(0, 3);
-}
-
-function DailyBriefing({ firstName, signals, daysSince = 0 }) {
-  const navigate = useNavigate();
-  const items = signals ? buildBriefingItems(signals) : [];
-  const isWelcomeBack = daysSince >= 7;
-
-  return (
-    <div
-      className="rounded-[28px] border border-sky-200 bg-sky-50 px-6 py-5 shadow-sm"
-      data-testid="ai-workspace-daily-briefing"
-    >
-      <div className="text-sm font-semibold text-sky-900">
-        {isWelcomeBack
-          ? `Welcome back, ${firstName} — it's been ${daysSince} day${daysSince === 1 ? "" : "s"}.`
-          : `Good ${getGreeting()}, ${firstName}.`}
-      </div>
-      {items.length ? (
-        <>
-          <div className="mt-2 text-sm text-sky-800">
-            {isWelcomeBack ? "Here's what needs your attention:" : "Here's where things stand:"}
-          </div>
-          <div className="mt-3 space-y-2">
-            {items.map((item) => (
-              <button
-                key={item.route}
-                type="button"
-                onClick={() => navigate(item.route)}
-                className="flex w-full items-start gap-3 rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left text-sm transition hover:border-sky-400"
-              >
-                <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" />
-                <div>
-                  <div className="font-semibold text-sky-900">{item.label}</div>
-                  <div className="mt-0.5 text-xs text-sky-700">{item.reason}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 text-sm text-sky-700">Where do you want to start?</div>
-        </>
-      ) : (
-        <div className="mt-2 text-sm text-sky-700">Loading your workspace...</div>
-      )}
-    </div>
-  );
-}
-
 export default function AIAssistantPage() {
   const navigate = useNavigate();
   const { openAssistant } = useAssistantDock();
@@ -394,37 +296,13 @@ export default function AIAssistantPage() {
   const [busyKey, setBusyKey] = useState("");
   const [result, setResult] = useState(null);
 
-  // Session detection (for DailyBriefing greeting only — onboarding is handled by Dashboard)
-  const [loginExperience, setLoginExperience] = useState(null); // null = loading
   const [contractorProfile, setContractorProfile] = useState(null);
-  const [workspaceSignals, setWorkspaceSignals] = useState(null);
-  const [daysSince, setDaysSince] = useState(0);
 
   useEffect(() => {
-    const days = getDaysSinceLastLogin();
-    setDaysSince(days);
-
-    async function detectExperience() {
-      try {
-        const [profileRes, agreementsRes] = await Promise.allSettled([
-          api.get("/projects/contractors/me/"),
-          api.get("/projects/agreements/"),
-        ]);
-        const profile = profileRes.status === "fulfilled" ? (profileRes.value?.data || {}) : {};
-        const agreements = agreementsRes.status === "fulfilled"
-          ? (agreementsRes.value?.data?.results ?? agreementsRes.value?.data ?? [])
-          : [];
-        const jobCount = Array.isArray(agreements) ? agreements.length : 0;
-        setContractorProfile(profile);
-        const experience = detectLoginExperience(profile, jobCount, days);
-        setLoginExperience(experience);
-        fetchWorkspaceSignals().then(setWorkspaceSignals).catch(() => {});
-      } catch {
-        setLoginExperience("daily_briefing");
-      }
-    }
-    detectExperience();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    api.get("/projects/contractors/me/")
+      .then((res) => setContractorProfile(res.data || {}))
+      .catch(() => setContractorProfile({}));
+  }, []);
 
   const quickActions = useMemo(() => QUICK_ACTIONS, []);
 
@@ -502,9 +380,6 @@ export default function AIAssistantPage() {
     }
   }
 
-  const firstName =
-    String(contractorProfile?.first_name || contractorProfile?.name || "").split(" ")[0] || "there";
-
   return (
     <ContractorPageSurface
       eyebrow="AI Workspace"
@@ -514,15 +389,6 @@ export default function AIAssistantPage() {
       className="mhb-ai-workspace"
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
-        {/* Daily briefing / welcome back — shown above the hero */}
-        {(loginExperience === "daily_briefing" || loginExperience === "welcome_back") ? (
-          <DailyBriefing
-            firstName={firstName}
-            signals={workspaceSignals}
-            daysSince={daysSince}
-          />
-        ) : null}
-
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
           {/* WorkspaceConversation replaces the old textarea hero */}
           <div data-testid="ai-workspace-hero">

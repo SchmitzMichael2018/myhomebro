@@ -43,6 +43,7 @@ import {
   summarizePaymentRecords,
 } from "../utils/paymentRecords.js";
 import { getContractorNextActions } from "../lib/contractorNextActions.js";
+import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
 import OnboardingConversation from "./OnboardingConversation.jsx";
 import {
   detectLoginExperience,
@@ -1132,6 +1133,184 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
 }
 
 /* ========================================================================== */
+/* ========================= GREETING BAND ================================== */
+/* ========================================================================== */
+
+function getTimeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function DashboardGreeting({ firstName, daysSince, briefingItems, onNavigate }) {
+  const isWelcomeBack = Number(daysSince) >= 7;
+  const greeting = getTimeGreeting();
+
+  return (
+    <div
+      data-testid="dashboard-greeting-band"
+      className="rounded-[28px] border border-sky-200/20 bg-[linear-gradient(145deg,#020b1f_0%,#0e2d5b_54%,#155ea8_100%)] p-5 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
+    >
+      <div className="text-sm font-semibold text-sky-100/90">
+        {isWelcomeBack ? "Welcome back — " : ""}{greeting}{firstName ? `, ${firstName}` : ""}.
+        {isWelcomeBack ? ` It's been ${daysSince} day${daysSince === 1 ? "" : "s"}.` : ""}
+      </div>
+
+      {briefingItems.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {briefingItems.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onNavigate(item.navigationTarget || "/app/dashboard")}
+              className="flex w-full items-start justify-between gap-4 rounded-xl border border-white/15 bg-white/8 px-4 py-2.5 text-left transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-white">{item.title}</div>
+                <div className="mt-0.5 text-xs leading-5 text-sky-100/70">{item.description}</div>
+              </div>
+              <span className="shrink-0 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0a2550]">
+                {item.buttonLabel || "Open"}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 text-sm text-sky-100/70">
+          Your queue is clear — a great time to start new work.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========================================================================== */
+/* =================== PROFILE COMPLETENESS WIDGET ========================== */
+/* ========================================================================== */
+
+const COMPLETENESS_ITEMS = [
+  { key: "stripe_connect",        label: "Stripe connected",       route: "/app/onboarding/stripe" },
+  { key: "business_info",         label: "Business info",          route: "/app/profile" },
+  { key: "trade_profile",         label: "Trade profile",          route: "/app/profile" },
+  { key: "service_area",          label: "Service area set",       route: "/app/profile" },
+  { key: "first_job_or_template", label: "First job or template",  route: "/app/assistant" },
+  { key: "license",               label: "License on file",        route: "/app/profile" },
+  { key: "logo",                  label: "Logo uploaded",          route: "/app/profile" },
+  { key: "team_members",          label: "Team members",           route: "/app/team" },
+];
+
+function ProfileCompletenessWidget({ profile, stripeConnected, jobCount }) {
+  const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
+
+  const { score, highestValueMissing, missingItems } = calculateProfileCompleteness(
+    profile || {},
+    { stripeConnected: Boolean(stripeConnected), jobCount: Number(jobCount) || 0, templateCount: 0 }
+  );
+
+  const isComplete = score >= 100;
+  const missingKeys = new Set(missingItems.map((m) => m.key));
+  const visibleItems = COMPLETENESS_ITEMS.slice(0, 5); // top 5 by weight
+
+  if (isComplete && !expanded) {
+    return (
+      <div
+        data-testid="dashboard-profile-completeness"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            <span className="text-sm font-semibold text-slate-700">Profile complete</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-bold text-emerald-600">100%</span>
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Details
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div className="h-full w-full rounded-full bg-emerald-500" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="dashboard-profile-completeness"
+      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-slate-700">Profile Completeness</span>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-bold ${isComplete ? "text-emerald-600" : score >= 60 ? "text-amber-600" : "text-red-500"}`}>
+            {score}%
+          </span>
+          {isComplete ? (
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Hide
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          className={`h-full rounded-full transition-all ${isComplete ? "bg-emerald-500" : score >= 60 ? "bg-amber-500" : "bg-red-400"}`}
+          style={{ width: `${score}%` }}
+        />
+      </div>
+
+      <div className="mt-3 space-y-1.5">
+        {visibleItems.map(({ key, label, route }) => {
+          const done = !missingKeys.has(key);
+          const isHighlight = highestValueMissing?.key === key;
+          return (
+            <div
+              key={key}
+              className={`flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 ${
+                isHighlight ? "border border-amber-200 bg-amber-50" : ""
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {done ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                ) : (
+                  <div className={`h-3.5 w-3.5 shrink-0 rounded-full border ${isHighlight ? "border-amber-400" : "border-slate-300"}`} />
+                )}
+                <span className={`text-xs font-medium truncate ${done ? "text-slate-500" : isHighlight ? "text-amber-900" : "text-slate-700"}`}>
+                  {label}
+                </span>
+              </div>
+              {isHighlight && route ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(route)}
+                  className="shrink-0 text-xs font-semibold text-amber-700 hover:text-amber-900 whitespace-nowrap"
+                >
+                  Fix this →
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ========================================================================== */
 /* =============================== MAIN VIEW ================================= */
 /* ========================================================================== */
 export default function ContractorDashboard() {
@@ -1143,6 +1322,7 @@ export default function ContractorDashboard() {
   const [loginExperience, setLoginExperience] = useState(null); // null = still loading
   const [onboardingProfile, setOnboardingProfile] = useState(null);
   const [onboardingStripe, setOnboardingStripe] = useState(null);
+  const [daysSinceLogin, setDaysSinceLogin] = useState(0);
   const [activityFeed, setActivityFeed] = useState([]);
   const [nextBestAction, setNextBestAction] = useState(null);
   const [activationSummary, setActivationSummary] = useState(null);
@@ -1222,6 +1402,7 @@ export default function ContractorDashboard() {
   /* ----- onboarding / login experience detection ----- */
   useEffect(() => {
     const days = getDaysSinceLastLogin();
+    setDaysSinceLogin(days);
     recordLoginTimestamp();
 
     async function detectExperience() {
@@ -1233,10 +1414,10 @@ export default function ContractorDashboard() {
         ]);
         const profile = profileRes.status === "fulfilled" ? (profileRes.value?.data || {}) : {};
         const stripe = stripeRes.status === "fulfilled" ? (stripeRes.value?.data || {}) : {};
-        const agreements = agreementsRes.status === "fulfilled"
+        const agreementsData = agreementsRes.status === "fulfilled"
           ? (agreementsRes.value?.data?.results ?? agreementsRes.value?.data ?? [])
           : [];
-        const jobCount = Array.isArray(agreements) ? agreements.length : 0;
+        const jobCount = Array.isArray(agreementsData) ? agreementsData.length : 0;
         setOnboardingProfile(profile);
         setOnboardingStripe(stripe);
         setLoginExperience(detectLoginExperience(profile, jobCount, days));
@@ -2490,6 +2671,13 @@ export default function ContractorDashboard() {
 
       {!isEmployee ? (
         <div className="space-y-5">
+          <DashboardGreeting
+            firstName={greetingName}
+            daysSince={daysSinceLogin}
+            briefingItems={contractorNextActions.slice(0, 3)}
+            onNavigate={(route) => navigate(route)}
+          />
+
           <DashboardCard
             testId="dashboard-kpi-strip"
             tone="premium"
@@ -2804,6 +2992,13 @@ export default function ContractorDashboard() {
 
           ) : null}
 
+          <div className="space-y-5">
+          <ProfileCompletenessWidget
+            profile={onboardingProfile}
+            stripeConnected={Boolean(onboardingStripe?.connected)}
+            jobCount={agreements.length}
+          />
+
           <DashboardSection
             title="Schedule"
             subtitle="Active due work only. Planned timelines stay in agreement previews until activated."
@@ -2893,7 +3088,8 @@ export default function ContractorDashboard() {
               )}
             </DashboardCard>
           </DashboardSection>
-          </div>
+          </div>{/* end ProfileCompleteness + Schedule column wrapper */}
+          </div>{/* end dashboard-priority-schedule-grid */}
 
           {false ? (
           <DashboardSection

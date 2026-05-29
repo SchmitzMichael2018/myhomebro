@@ -28,6 +28,21 @@ function normalizeStatus(value) {
   return safeText(value).toLowerCase();
 }
 
+// Activity feed items that confirm status (not actions) — excluded from the queue
+const STATUS_CONFIRMATION_PATTERNS = [
+  /onboard(ing)?.*(complet|done|finish|setup)/i,
+  /stripe.*(connect|ready|done|complet)/i,
+  /profile.*(complet|done|setup|ready)/i,
+  /account.*(activat|verif|complet|ready)/i,
+  /setup.*(complet|done|ready)/i,
+  /payment.*(setup|configur|ready)/i,
+];
+
+function isStatusConfirmationItem(item) {
+  const title = safeText(item?.title || item?.message);
+  return STATUS_CONFIRMATION_PATTERNS.some((p) => p.test(title));
+}
+
 function invBucket(inv) {
   const status = normalizeStatus(inv?.status);
   const display = normalizeStatus(inv?.display_status);
@@ -405,6 +420,7 @@ export function getContractorNextActions({
   const remainingActivitySlots = Math.max(0, FALLBACK_ACTIVITY_LIMIT - actions.length);
   if (remainingActivitySlots > 0) {
     const activityActions = [...(Array.isArray(activityFeed) ? activityFeed : [])]
+      .filter((item) => !isStatusConfirmationItem(item))
       .slice(0, remainingActivitySlots)
       .map((item, index) =>
         buildAction({
