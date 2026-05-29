@@ -2,7 +2,6 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  CheckCircle2,
   ClipboardList,
   Compass,
   FileSignature,
@@ -10,8 +9,10 @@ import {
   LoaderCircle,
   MessageSquareText,
   Sparkles,
+  X,
 } from "lucide-react";
 
+import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
@@ -24,13 +25,13 @@ const WORKSPACE_CONTEXT = {
 };
 
 const HERO_CHIPS = [
-  "Create an agreement",
-  "Use a template",
-  "Create a template",
-  "Continue a project",
-  "Plan milestones",
-  "Find my next task",
-  "Show work needing attention",
+  { label: "Create an agreement", mode: "route", intent: "start_agreement" },
+  { label: "Use a template", mode: "route", intent: "apply_template" },
+  { label: "Create a template", mode: "route", intent: "template_guidance" },
+  { label: "Continue a project", mode: "analyze", analyzeMode: "continue_project" },
+  { label: "Plan milestones", mode: "route", intent: "suggest_milestones" },
+  { label: "Find my next task", mode: "analyze", analyzeMode: "next_task" },
+  { label: "Show work needing attention", mode: "analyze", analyzeMode: "next_task" },
 ];
 
 const QUICK_ACTIONS = [
@@ -39,24 +40,29 @@ const QUICK_ACTIONS = [
     title: "Create Agreement",
     description: "Start a new agreement draft and move into the wizard with AI-prefilled setup.",
     icon: FileSignature,
+    mode: "route",
   },
   {
     key: "apply_template",
     title: "Use Template",
     description: "Begin from a reusable project template instead of building the structure by hand.",
     icon: ClipboardList,
+    mode: "route",
   },
   {
     key: "suggest_milestones",
     title: "Plan Milestones",
     description: "Shape milestone phases, pricing, and scope before the draft moves forward.",
     icon: ListChecks,
+    mode: "route",
   },
   {
     key: "navigate_app",
     title: "Find My Next Task",
-    description: "Open the workflow that best matches what already needs attention.",
+    description: "Analyze your active work and surface the best next action across agreements, milestones, and leads.",
     icon: Compass,
+    mode: "analyze",
+    analyzeMode: "next_task",
   },
 ];
 
@@ -67,48 +73,197 @@ const CAPABILITY_ROWS = [
   "Use the global AI Copilot for help with the work you're currently doing",
 ];
 
-const AI_CAPABILITY_GROUPS = [
-  {
-    title: "Create",
-    items: [
-      "Create an agreement draft from a project description",
-      "Create a reusable template",
-      "Generate a milestone plan",
-    ],
-  },
-  {
-    title: "Review",
-    items: [
-      "Review agreement scope for missing details",
-      "Check milestones for gaps",
-      "Identify unclear responsibilities or exclusions",
-    ],
-  },
-  {
-    title: "Improve",
-    items: [
-      "Improve descriptions",
-      "Refine milestone language",
-      "Suggest exclusions, assumptions, and owner responsibilities",
-    ],
-  },
-  {
-    title: "Analyze",
-    items: [
-      "Find work needing attention",
-      "Summarize project status",
-      "Identify signature, funding, or payment bottlenecks",
-    ],
-  },
-  {
-    title: "Organize",
-    items: [
-      "Prioritize next actions",
-      "Route to the right workflow",
-      "Help continue active work",
-    ],
-  },
-];
+async function fetchWorkspaceSignals() {
+  const [agreementsRes, milestonesRes, leadsRes] = await Promise.allSettled([
+    api.get("/projects/agreements/"),
+    api.get("/projects/milestones/"),
+    api.get("/projects/contractor/public-leads/"),
+  ]);
+  return {
+    agreements: agreementsRes.status === "fulfilled"
+      ? (agreementsRes.value?.data?.results ?? [])
+      : [],
+    milestones: milestonesRes.status === "fulfilled"
+      ? (milestonesRes.value?.data?.results ?? [])
+      : [],
+    leads: leadsRes.status === "fulfilled"
+      ? (leadsRes.value?.data?.results ?? [])
+      : [],
+  };
+}
+
+function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
+  const drafts = agreements.filter((a) => a.status === "draft");
+  if (drafts.length > 0) {
+    const first = drafts[0];
+    const label = first.title || "Agreement Draft";
+    const customer = first.customer_name ? ` · ${first.customer_name}` : "";
+    return {
+      title: drafts.length === 1 ? "Complete your agreement draft" : `Complete ${drafts.length} agreement drafts`,
+      reason:
+        drafts.length === 1
+          ? `"${label}"${customer} is still in draft. Completing it unblocks customer signature, funding, and active work.`
+          : `You have ${drafts.length} draft agreements waiting. Finishing them unblocks signatures, funding, and active work.`,
+      context: drafts.length === 1 ? `${label}${customer}` : `${drafts.length} draft agreements`,
+      primaryLabel: drafts.length === 1 ? "Open Agreement" : "Open Agreements",
+      primaryRoute: drafts.length === 1 ? `/app/agreements/${first.id}` : "/app/agreements",
+      secondaryLabel: "Open Copilot",
+    };
+  }
+
+  const submitted = milestones.filter((m) => m.status === "submitted");
+  if (submitted.length > 0) {
+    return {
+      title: submitted.length === 1 ? "Review a submitted milestone" : `Review ${submitted.length} submitted milestones`,
+      reason: `${submitted.length} milestone${submitted.length > 1 ? "s are" : " is"} awaiting review. Approving them keeps active projects on schedule and unblocks payments.`,
+      context: null,
+      primaryLabel: "Open Milestones",
+      primaryRoute: "/app/milestones",
+      secondaryLabel: "Open Copilot",
+    };
+  }
+
+  const pendingLeads = leads.filter((l) => l.status === "ready_for_review" || l.status === "new");
+  if (pendingLeads.length > 0) {
+    return {
+      title: pendingLeads.length === 1 ? "Review a pending lead" : `Review ${pendingLeads.length} pending leads`,
+      reason: `You have ${pendingLeads.length} lead${pendingLeads.length > 1 ? "s" : ""} ready for review. Following up quickly improves conversion.`,
+      context: null,
+      primaryLabel: "Open Leads",
+      primaryRoute: "/app/public-presence",
+      secondaryLabel: "Open Copilot",
+    };
+  }
+
+  const active = agreements.filter((a) => ["signed", "active", "in_progress"].includes(a.status));
+  if (active.length > 0) {
+    const first = active[0];
+    return {
+      title: "Continue an active project",
+      reason: `"${first.title || "Agreement"}" is signed and ready for active work. Check milestone status, funding, and next steps.`,
+      context: first.title || null,
+      primaryLabel: "Open Agreement",
+      primaryRoute: `/app/agreements/${first.id}`,
+      secondaryLabel: "Open Copilot",
+    };
+  }
+
+  return {
+    title: "Your queue looks clear",
+    reason: "No urgent tasks found. Start a new agreement, build a template, or plan milestones for upcoming projects.",
+    context: null,
+    primaryLabel: "Create Agreement",
+    primaryRoute: "/app/agreements/new/wizard?step=1",
+    secondaryLabel: "Use Template",
+    secondaryRoute: "/app/templates",
+  };
+}
+
+function analyzeContinueProject({ agreements = [] }) {
+  const inProgress = agreements.filter((a) =>
+    ["signed", "active", "in_progress", "draft"].includes(a.status)
+  );
+  if (inProgress.length === 0) {
+    return {
+      title: "No active projects found",
+      reason: "You don't have any in-progress or draft agreements yet. Start a new agreement to begin a project.",
+      context: null,
+      primaryLabel: "Create Agreement",
+      primaryRoute: "/app/agreements/new/wizard?step=1",
+      secondaryLabel: "Use Template",
+      secondaryRoute: "/app/templates",
+    };
+  }
+  const first = inProgress[0];
+  const isDraft = first.status === "draft";
+  return {
+    title: isDraft ? "Complete your draft agreement" : "Continue your active project",
+    reason: isDraft
+      ? `"${first.title || "Agreement"}" is a draft ready to complete. Finishing it will unlock signatures and active work.`
+      : `"${first.title || "Agreement"}" is your most recent active project. Open it to check milestones, funding, and next steps.`,
+    context: first.title ? `${first.title}${first.customer_name ? ` · ${first.customer_name}` : ""}` : null,
+    primaryLabel: isDraft ? "Open Draft" : "Open Agreement",
+    primaryRoute: `/app/agreements/${first.id}`,
+    secondaryLabel: "Open Copilot",
+  };
+}
+
+function WorkspaceResultPanel({ result, onDismiss, onOpenCopilot, onNavigate }) {
+  if (!result) return null;
+  return (
+    <div
+      data-testid="ai-workspace-result-panel"
+      className="rounded-[28px] border border-indigo-200 bg-indigo-50 p-6 shadow-sm"
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-300/50 bg-indigo-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+          <Sparkles className="h-3.5 w-3.5" />
+          Recommended Next Action
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-lg border border-indigo-200 p-1.5 text-indigo-500 hover:bg-indigo-100"
+          aria-label="Dismiss recommendation"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <h3
+        data-testid="ai-workspace-result-title"
+        className="mt-4 text-xl font-bold tracking-tight text-indigo-950"
+      >
+        {result.title}
+      </h3>
+
+      <p
+        data-testid="ai-workspace-result-reason"
+        className="mt-2 text-sm leading-6 text-indigo-800"
+      >
+        {result.reason}
+      </p>
+
+      {result.context ? (
+        <div className="mt-2 rounded-xl border border-indigo-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-indigo-700 inline-block">
+          {result.context}
+        </div>
+      ) : null}
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        <button
+          type="button"
+          data-testid="ai-workspace-result-primary-cta"
+          onClick={() => onNavigate(result.primaryRoute)}
+          className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+        >
+          {result.primaryLabel}
+          <ArrowRight className="h-4 w-4" />
+        </button>
+
+        {result.secondaryRoute ? (
+          <button
+            type="button"
+            data-testid="ai-workspace-result-secondary-cta"
+            onClick={() => onNavigate(result.secondaryRoute)}
+            className="inline-flex items-center gap-2 rounded-2xl border border-indigo-300 bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+          >
+            {result.secondaryLabel}
+          </button>
+        ) : result.secondaryLabel ? (
+          <button
+            type="button"
+            data-testid="ai-workspace-result-secondary-cta"
+            onClick={onOpenCopilot}
+            className="inline-flex items-center gap-2 rounded-2xl border border-indigo-300 bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+          >
+            {result.secondaryLabel}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function QuickActionCard({ action, busyKey, onSelect }) {
   const Icon = action.icon;
@@ -117,7 +272,7 @@ function QuickActionCard({ action, busyKey, onSelect }) {
   return (
     <button
       type="button"
-      onClick={() => onSelect(action.key)}
+      onClick={() => onSelect(action)}
       disabled={Boolean(busyKey)}
       className="group flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md disabled:cursor-wait disabled:opacity-70"
       data-testid={`ai-workspace-quick-action-${action.key}`}
@@ -127,37 +282,16 @@ function QuickActionCard({ action, busyKey, onSelect }) {
           <Icon className="h-5 w-5" />
         </div>
         <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-          {isBusy ? "Opening" : "Launch"}
+          {isBusy ? "Analyzing" : action.mode === "analyze" ? "Analyze" : "Launch"}
         </span>
       </div>
       <div className="mt-5 text-lg font-semibold text-slate-900">{action.title}</div>
       <div className="mt-2 text-sm leading-6 text-slate-600">{action.description}</div>
       <div className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#18395f]">
-        {isBusy ? "Preparing..." : "Open flow"}
+        {isBusy ? (action.mode === "analyze" ? "Analyzing..." : "Preparing...") : (action.mode === "analyze" ? "Find best next step" : "Open flow")}
         <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
       </div>
     </button>
-  );
-}
-
-function AiCapabilityCard({ group }) {
-  return (
-    <div
-      className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
-      data-testid={`ai-workspace-capability-${group.title.toLowerCase()}`}
-    >
-      <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-        {group.title}
-      </div>
-      <ul className="mt-5 space-y-3">
-        {group.items.map((item) => (
-          <li key={item} className="flex gap-3 text-sm leading-6 text-slate-700">
-            <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-[#18395f]" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
@@ -166,12 +300,14 @@ export default function AIAssistantPage() {
   const { openAssistant } = useAssistantDock();
   const [prompt, setPrompt] = useState("");
   const [busyKey, setBusyKey] = useState("");
+  const [result, setResult] = useState(null);
 
   const quickActions = useMemo(() => QUICK_ACTIONS, []);
 
   async function routeWithAi(preferredIntent = "", input = "") {
     const busyValue = preferredIntent || "hero";
     setBusyKey(busyValue);
+    setResult(null);
     try {
       const plan = await produceStructuredAssistantPlan({
         preferredIntent,
@@ -186,21 +322,60 @@ export default function AIAssistantPage() {
     }
   }
 
+  async function runWorkspaceAnalysis(analyzeMode) {
+    setBusyKey(analyzeMode);
+    setResult(null);
+    try {
+      const signals = await fetchWorkspaceSignals();
+      const rec =
+        analyzeMode === "continue_project"
+          ? analyzeContinueProject(signals)
+          : analyzeNextTask(signals);
+      setResult(rec);
+    } catch {
+      setResult({
+        title: "Unable to load workspace data",
+        reason: "We couldn't fetch your current work. Check your connection and try again.",
+        context: null,
+        primaryLabel: "Open Dashboard",
+        primaryRoute: "/app/dashboard",
+        secondaryLabel: "Open Copilot",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  }
+
   function openCopilot() {
-    openAssistant({
-      context: WORKSPACE_CONTEXT,
-    });
+    openAssistant({ context: WORKSPACE_CONTEXT });
+  }
+
+  function handleResultNavigate(route) {
+    if (route) navigate(route);
   }
 
   function handleHeroSubmit(event) {
     event.preventDefault();
     const cleanPrompt = String(prompt || "").trim();
     if (!cleanPrompt) return;
+    setResult(null);
     routeWithAi("", cleanPrompt);
   }
 
-  function handleChipClick(value) {
-    setPrompt(value);
+  function handleChipAction(chip) {
+    if (chip.mode === "analyze") {
+      runWorkspaceAnalysis(chip.analyzeMode);
+    } else {
+      setPrompt(chip.label);
+    }
+  }
+
+  function handleQuickActionSelect(action) {
+    if (action.mode === "analyze") {
+      runWorkspaceAnalysis(action.analyzeMode);
+    } else {
+      routeWithAi(action.key);
+    }
   }
 
   return (
@@ -228,6 +403,17 @@ export default function AIAssistantPage() {
               MyHomeBro workflow with the right setup already in motion.
             </p>
 
+            {result ? (
+              <div className="mt-6">
+                <WorkspaceResultPanel
+                  result={result}
+                  onDismiss={() => setResult(null)}
+                  onOpenCopilot={openCopilot}
+                  onNavigate={handleResultNavigate}
+                />
+              </div>
+            ) : null}
+
             <form onSubmit={handleHeroSubmit} className="mt-6">
               <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-3">
                 <textarea
@@ -242,12 +428,13 @@ export default function AIAssistantPage() {
                   <div className="flex flex-wrap gap-2">
                     {HERO_CHIPS.map((chip) => (
                       <button
-                        key={chip}
+                        key={chip.label}
                         type="button"
-                        onClick={() => handleChipClick(chip)}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                        onClick={() => handleChipAction(chip)}
+                        disabled={Boolean(busyKey)}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
                       >
-                        {chip}
+                        {chip.label}
                       </button>
                     ))}
                   </div>
@@ -304,7 +491,7 @@ export default function AIAssistantPage() {
                   key={row}
                   className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/10 px-4 py-3"
                 >
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-200" />
+                  <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-sky-200" />
                   <div className="text-sm leading-6 text-sky-50">{row}</div>
                 </div>
               ))}
@@ -331,29 +518,8 @@ export default function AIAssistantPage() {
                 key={action.key}
                 action={action}
                 busyKey={busyKey}
-                onSelect={(actionKey) => routeWithAi(actionKey)}
+                onSelect={handleQuickActionSelect}
               />
-            ))}
-          </div>
-        </section>
-
-        <section data-testid="ai-workspace-capabilities">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              AI Capabilities
-            </div>
-            <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
-              What AI can help with
-            </h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Use AI Workspace for higher-level creation, review, improvement, analysis, and
-              organization. Use Dashboard, Agreements, and Templates for normal browsing and record
-              management.
-            </p>
-          </div>
-          <div className="mt-5 grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
-            {AI_CAPABILITY_GROUPS.map((group) => (
-              <AiCapabilityCard key={group.title} group={group} />
             ))}
           </div>
         </section>
