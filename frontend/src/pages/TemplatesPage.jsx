@@ -8,6 +8,7 @@ import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
   normalizeAssistantQuestion,
+  validateHandoff,
 } from "../lib/assistantHandoff.js";
 import {
   canonicalizeTemplateMilestoneType,
@@ -536,7 +537,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   const appliedPrefillRef = React.useRef("");
   const assistantAppliedRef = React.useRef("");
   const intakePrefillMeta = location.state?.templateDraftPrefill || null;
-  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
+  const assistantHandoff = useMemo(() => {
+    const raw = getAssistantHandoff(location.state);
+    const { payload } = validateHandoff(raw);
+    return payload;
+  }, [location.state]);
   const assistantHandoffSignature = useMemo(
     () => buildAssistantHandoffSignature(assistantHandoff),
     [assistantHandoff]

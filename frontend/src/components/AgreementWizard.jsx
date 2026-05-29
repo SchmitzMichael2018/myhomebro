@@ -27,6 +27,7 @@ import {
   getAssistantHandoff,
   isBlankAssistantValue,
   mergeAssistantFields,
+  validateHandoff,
 } from "../lib/assistantHandoff.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
@@ -424,7 +425,11 @@ export default function AgreementWizard() {
   const { isOpen: isAssistantDockOpen, openAssistant } = useAssistantDock();
 
   const step = clampStep(searchParams.get("step") || 1);
-  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
+  const assistantHandoff = useMemo(() => {
+    const raw = getAssistantHandoff(location.state);
+    const { payload } = validateHandoff(raw);
+    return payload;
+  }, [location.state]);
   const assistantHandoffSignature = useMemo(
     () => buildAssistantHandoffSignature(assistantHandoff),
     [assistantHandoff]

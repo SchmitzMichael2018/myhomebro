@@ -538,44 +538,25 @@ export default function Sidebar({ variant = "desktop" }) {
       {stripeRequirement ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div
-            className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
             data-testid="stripe-requirement-modal"
           >
-            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
-              Payments Setup Required
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              One quick step before sending
             </div>
-            <h3 className="mt-2 text-lg font-extrabold text-slate-900">
-              {stripeRequirement?.action_label || "Connect Stripe to continue"}
+            <h3 className="mt-2 text-xl font-bold text-slate-900">
+              One quick step before sending
             </h3>
-            <p className="mt-2 text-sm text-slate-700">
-              {stripeRequirement?.message || "You can keep exploring, but this payment action requires Stripe setup."}
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              To receive payments through MyHomeBro, your bank account needs to be connected. It takes about 2 minutes — and you'll only do it once.
             </p>
-
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              <div className="font-semibold text-slate-900">Why this showed up</div>
-              <div className="mt-1">
-                {stripeRequirement?.detail || "Stripe Connect must be completed before MyHomeBro can send or receive payment-related funds."}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700">
-                  Charges: {stripeRequirement?.stripe_status?.charges_enabled ? "enabled" : "not ready"}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700">
-                  Payouts: {stripeRequirement?.stripe_status?.payouts_enabled ? "enabled" : "not ready"}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700">
-                  Requirements due: {Number(stripeRequirement?.stripe_status?.requirements_due_count || 0)}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 flex justify-end gap-3">
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={() => setStripeRequirement(null)}
-                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
-                Keep Exploring
+                Save as draft and come back
               </button>
               <button
                 type="button"
@@ -585,9 +566,9 @@ export default function Sidebar({ variant = "desktop" }) {
                   setStripeRequirement(null);
                   navigate(target);
                 }}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
+                className="inline-flex items-center gap-1 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
               >
-                Connect Stripe
+                Connect my bank →
               </button>
             </div>
           </div>

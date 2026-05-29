@@ -5,6 +5,8 @@ import api from "../../api";
 import { getStripePublishableKey } from "../../lib/runtimeConfig";
 import ContractorPageSurface from "../dashboard/ContractorPageSurface.jsx";
 import StripeOnboardingButton from "../StripeOnboardingButton.jsx";
+import StripeGuidanceSidebar from "./StripeGuidanceSidebar.jsx";
+import { readEntityTypeFromSession } from "../../lib/stripeGuidanceContent.js";
 
 const CONNECT_SCRIPT_SRC = "https://connect-js.stripe.com/v1.0/connect.js";
 
@@ -80,7 +82,9 @@ export default function EmbeddedStripeOnboarding() {
   const [completed, setCompleted] = useState(false);
   const [error, setError] = useState("");
   const [stepHint, setStepHint] = useState("Preparing account session");
+  const [currentStripeStep, setCurrentStripeStep] = useState("");
   const [resumeUrl, setResumeUrl] = useState("/app/onboarding/stripe");
+  const [entityType] = useState(() => readEntityTypeFromSession());
 
   async function refreshStatus() {
     const { data } = await api.get("/payments/onboarding/status/");
@@ -139,6 +143,7 @@ export default function EmbeddedStripeOnboarding() {
         if (typeof accountOnboarding.setOnStepChange === "function") {
           accountOnboarding.setOnStepChange(({ step }) => {
             if (typeof step === "string" && step.trim()) {
+              setCurrentStripeStep(step);
               setStepHint(step.replace(/_/g, " "));
             }
           });
@@ -231,7 +236,7 @@ export default function EmbeddedStripeOnboarding() {
             </div>
           ) : null}
 
-          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+          <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.43fr)]">
             <div className="space-y-4">
               {completed ? (
                 <div
@@ -321,31 +326,25 @@ export default function EmbeddedStripeOnboarding() {
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                <div className="text-sm font-semibold text-slate-900">What happens here</div>
-                <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                  <li>Stripe collects the secure details it needs for your account.</li>
-                  <li>MyHomeBro keeps your contractor profile and AI context in sync.</li>
-                  <li>When you finish, you return to a ready-to-use success screen.</li>
-                </ul>
-              </div>
-
+              <StripeGuidanceSidebar
+                step={currentStripeStep}
+                entityType={entityType}
+              />
               {!completed ? (
-                <div className="rounded-3xl border border-slate-200 bg-white p-5" data-testid="embedded-stripe-fallback">
-                  <div className="text-sm font-semibold text-slate-900">Fallback option</div>
-                  <p className="mt-2 text-sm text-slate-600">
-                    If the embedded flow is unavailable, you can still continue with hosted Stripe onboarding.
-                  </p>
-                  <div className="mt-4">
+                <div
+                  className="rounded-2xl border border-slate-200 bg-white p-4"
+                  data-testid="embedded-stripe-fallback"
+                >
+                  <div className="text-xs font-semibold text-slate-500">
+                    If the embedded flow isn't loading
+                  </div>
+                  <div className="mt-2">
                     <StripeOnboardingButton
                       dataTestId="embedded-stripe-hosted-fallback"
-                      className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                     >
-                      Open hosted onboarding
+                      Open hosted onboarding instead
                     </StripeOnboardingButton>
-                  </div>
-                  <div className="mt-3 text-xs text-slate-500">
-                    Resume path: {resumeUrl}
                   </div>
                 </div>
               ) : null}

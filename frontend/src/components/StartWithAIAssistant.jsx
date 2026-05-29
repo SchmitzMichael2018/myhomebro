@@ -12,7 +12,11 @@ import {
 } from "lucide-react";
 
 import api from "../api.js";
-import { getAssistantQuickActions, isTemplateCreationIntent } from "../lib/startWithAiAssistant.js";
+import {
+  getAssistantQuickActions,
+  isTemplateCreationIntent,
+  CONFIDENCE_THRESHOLD,
+} from "../lib/startWithAiAssistant.js";
 import {
   normalizeStructuredPlanShape,
   produceStructuredAssistantPlan,
@@ -1266,6 +1270,11 @@ export default function StartWithAIAssistant({
     }
   }
 
+  const isInClarifyingMode =
+    history.length > 0 &&
+    (plan.is_fallback === true ||
+      (typeof plan.confidence_score === "number" && plan.confidence_score < CONFIDENCE_THRESHOLD));
+
   function handlePrimaryAction() {
     if (typeof onAction === "function") {
       const handled = onAction(plan);
@@ -1275,6 +1284,31 @@ export default function StartWithAIAssistant({
     navigate(plan.navigation_target, {
       state: buildAssistantNavigationState(plan, normalizedContext),
     });
+  }
+
+  function navigateWithCandidateIntent(candidate) {
+    const target = candidate.destination || plan.navigation_target;
+    if (!target) return;
+    const candidatePlan = {
+      ...plan,
+      intent: candidate.intent,
+      navigation_target: target,
+    };
+    navigate(target, {
+      state: buildAssistantNavigationState(candidatePlan, normalizedContext),
+    });
+  }
+
+  function handleSomethingElse() {
+    setPrompt("");
+    setHistory([]);
+    setPlan(
+      produceStructuredAssistantPlan({
+        preferredIntent: "navigate_app",
+        input: "",
+        context: normalizedContext,
+      })
+    );
   }
 
   async function handleApplyFieldDraft() {
@@ -1742,26 +1776,66 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareDescriptionMode ? (
-        <ResultBlock title={userFacingPanel.nextActionTitle || "Next Action"}>
-          <div
-            className="text-sm font-medium text-slate-800"
-            data-testid={testId("start-with-ai-next-action-label")}
+        {!isFieldAwareDescriptionMode && isInClarifyingMode ? (
+          <ResultBlock
+            title="Help me understand"
+            testId={testId("start-with-ai-clarifying")}
           >
-            {userFacingPanel.nextActionText}
-          </div>
-          {userFacingPanel.showPrimaryAction ? (
-            <button
-              type="button"
-              data-testid={testId("start-with-ai-navigate")}
-              onClick={handlePrimaryAction}
-              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            <div className="mb-3 text-sm text-slate-700">
+              I want to make sure I send you to the right place — did you mean:
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(plan.candidate_intents || []).map((candidate) => (
+                <button
+                  key={candidate.intent}
+                  type="button"
+                  data-testid={testId(`start-with-ai-candidate-${candidate.intent}`)}
+                  onClick={() => navigateWithCandidateIntent(candidate)}
+                  className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 transition hover:border-indigo-600 hover:bg-indigo-100"
+                >
+                  {candidate.label}
+                </button>
+              ))}
+              {plan.intent_label && plan.navigation_target ? (
+                <button
+                  type="button"
+                  data-testid={testId("start-with-ai-clarify-primary")}
+                  onClick={handlePrimaryAction}
+                  className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-900"
+                >
+                  {plan.intent_label}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                data-testid={testId("start-with-ai-something-else")}
+                onClick={handleSomethingElse}
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+              >
+                Something else
+              </button>
+            </div>
+          </ResultBlock>
+        ) : !isFieldAwareDescriptionMode ? (
+          <ResultBlock title={userFacingPanel.nextActionTitle || "Next Action"}>
+            <div
+              className="text-sm font-medium text-slate-800"
+              data-testid={testId("start-with-ai-next-action-label")}
             >
-              {userFacingPanel.primaryActionLabel}
-              <Compass className="h-4 w-4" />
-            </button>
-          ) : null}
-        </ResultBlock>
+              {userFacingPanel.nextActionText}
+            </div>
+            {userFacingPanel.showPrimaryAction ? (
+              <button
+                type="button"
+                data-testid={testId("start-with-ai-navigate")}
+                onClick={handlePrimaryAction}
+                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                {userFacingPanel.primaryActionLabel}
+                <Compass className="h-4 w-4" />
+              </button>
+            ) : null}
+          </ResultBlock>
         ) : null}
 
         {!isFieldAwareDescriptionMode && userFacingPanel.nextGuidance ? (

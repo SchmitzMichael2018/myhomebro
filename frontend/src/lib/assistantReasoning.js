@@ -118,9 +118,18 @@ export function validateStructuredPlanShape(plan) {
   return true;
 }
 
+const PLANNING_CONFIDENCE_TO_SCORE = { high: 0.85, medium: 0.65, low: 0.3 };
+
 export function normalizeStructuredPlanShape(plan, fallbackPlan) {
   const source = validateStructuredPlanShape(plan) ? plan : fallbackPlan;
   const extraSource = safeObject(plan);
+
+  const rawConfidenceScore = source.confidence_score ?? extraSource.confidence_score;
+  const confidence_score =
+    typeof rawConfidenceScore === "number"
+      ? rawConfidenceScore
+      : PLANNING_CONFIDENCE_TO_SCORE[clean(source.planning_confidence || "medium")] ?? 0.65;
+
   return {
     ...source,
     collected_data: safeObject(source.collected_data),
@@ -156,6 +165,10 @@ export function normalizeStructuredPlanShape(plan, fallbackPlan) {
     planning_confidence: clean(source.planning_confidence || "medium"),
     reasoning_source: clean(source.reasoning_source || "rules_fallback"),
     structured_result_version: Number(source.structured_result_version || 1),
+    confidence_score,
+    candidate_intents: safeArray(source.candidate_intents ?? extraSource.candidate_intents),
+    is_fallback: Boolean(source.is_fallback ?? extraSource.is_fallback ?? false),
+    project_path: clean(source.project_path || extraSource.project_path) || null,
   };
 }
 

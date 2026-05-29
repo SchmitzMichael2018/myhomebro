@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -16,6 +16,13 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
 import { produceStructuredAssistantPlan } from "../lib/assistantReasoning.js";
+import OnboardingConversation from "../components/OnboardingConversation.jsx";
+import WorkspaceConversation from "../components/WorkspaceConversation.jsx";
+import {
+  detectLoginExperience,
+  getDaysSinceLastLogin,
+  recordLoginTimestamp,
+} from "../lib/onboardingState.js";
 
 const WORKSPACE_CONTEXT = {
   current_route: "/app/assistant",
@@ -288,12 +295,144 @@ function QuickActionCard({ action, busyKey, onSelect }) {
   );
 }
 
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
+}
+
+function buildBriefingItems({ agreements = [], milestones = [], leads = [] }) {
+  const items = [];
+
+  const drafts = agreements.filter((a) => a.status === "draft");
+  if (drafts.length) {
+    items.push({
+      label: `Review ${drafts.length} draft agreement${drafts.length > 1 ? "s" : ""}`,
+      reason: "Completing them unlocks signatures, funding, and active work.",
+      route: "/app/agreements",
+    });
+  }
+
+  const submitted = milestones.filter((m) => m.status === "submitted");
+  if (submitted.length) {
+    items.push({
+      label: `Approve ${submitted.length} submitted milestone${submitted.length > 1 ? "s" : ""}`,
+      reason: "Approval keeps active projects on schedule and unblocks payments.",
+      route: "/app/milestones",
+    });
+  }
+
+  const pending = leads.filter((l) => ["ready_for_review", "new"].includes(l.status));
+  if (pending.length) {
+    items.push({
+      label: `Follow up on ${pending.length} lead${pending.length > 1 ? "s" : ""}`,
+      reason: "Following up quickly improves conversion.",
+      route: "/app/public-presence",
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      label: "Create your first agreement",
+      reason: "Your queue is clear — a great time to start new work.",
+      route: "/app/agreements/new/wizard?step=1",
+    });
+  }
+
+  return items.slice(0, 3);
+}
+
+function DailyBriefing({ firstName, signals, daysSince = 0 }) {
+  const navigate = useNavigate();
+  const items = signals ? buildBriefingItems(signals) : [];
+  const isWelcomeBack = daysSince >= 7;
+
+  return (
+    <div
+      className="rounded-[28px] border border-sky-200 bg-sky-50 px-6 py-5 shadow-sm"
+      data-testid="ai-workspace-daily-briefing"
+    >
+      <div className="text-sm font-semibold text-sky-900">
+        {isWelcomeBack
+          ? `Welcome back, ${firstName} — it's been ${daysSince} day${daysSince === 1 ? "" : "s"}.`
+          : `Good ${getGreeting()}, ${firstName}.`}
+      </div>
+      {items.length ? (
+        <>
+          <div className="mt-2 text-sm text-sky-800">
+            {isWelcomeBack ? "Here's what needs your attention:" : "Here's where things stand:"}
+          </div>
+          <div className="mt-3 space-y-2">
+            {items.map((item) => (
+              <button
+                key={item.route}
+                type="button"
+                onClick={() => navigate(item.route)}
+                className="flex w-full items-start gap-3 rounded-2xl border border-sky-200 bg-white px-4 py-3 text-left text-sm transition hover:border-sky-400"
+              >
+                <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-sky-500" />
+                <div>
+                  <div className="font-semibold text-sky-900">{item.label}</div>
+                  <div className="mt-0.5 text-xs text-sky-700">{item.reason}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 text-sm text-sky-700">Where do you want to start?</div>
+        </>
+      ) : (
+        <div className="mt-2 text-sm text-sky-700">Loading your workspace...</div>
+      )}
+    </div>
+  );
+}
+
 export default function AIAssistantPage() {
   const navigate = useNavigate();
   const { openAssistant } = useAssistantDock();
   const [prompt, setPrompt] = useState("");
   const [busyKey, setBusyKey] = useState("");
   const [result, setResult] = useState(null);
+
+  // Session detection
+  const [loginExperience, setLoginExperience] = useState(null); // null = loading
+  const [contractorProfile, setContractorProfile] = useState(null);
+  const [stripeStatus, setStripeStatus] = useState(null);
+  const [workspaceSignals, setWorkspaceSignals] = useState(null);
+  const [daysSince, setDaysSince] = useState(0);
+
+  useEffect(() => {
+    const days = getDaysSinceLastLogin();
+    setDaysSince(days);
+    recordLoginTimestamp();
+
+    async function detectExperience() {
+      try {
+        const [profileRes, stripeRes, agreementsRes] = await Promise.allSettled([
+          api.get("/projects/contractors/me/"),
+          api.get("/payments/onboarding/status/"),
+          api.get("/projects/agreements/"),
+        ]);
+        const profile = profileRes.status === "fulfilled" ? (profileRes.value?.data || {}) : {};
+        const stripe = stripeRes.status === "fulfilled" ? (stripeRes.value?.data || {}) : {};
+        const agreements = agreementsRes.status === "fulfilled"
+          ? (agreementsRes.value?.data?.results ?? agreementsRes.value?.data ?? [])
+          : [];
+        const jobCount = Array.isArray(agreements) ? agreements.length : 0;
+        setContractorProfile(profile);
+        setStripeStatus(stripe);
+        const experience = detectLoginExperience(profile, jobCount, days);
+        setLoginExperience(experience);
+        if (experience === "welcome_back" || experience === "daily_briefing") {
+          fetchWorkspaceSignals().then(setWorkspaceSignals).catch(() => {});
+        }
+      } catch {
+        setLoginExperience("daily_briefing");
+      }
+    }
+    detectExperience();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const quickActions = useMemo(() => QUICK_ACTIONS, []);
 
@@ -371,6 +510,31 @@ export default function AIAssistantPage() {
     }
   }
 
+  const firstName =
+    String(contractorProfile?.first_name || contractorProfile?.name || "").split(" ")[0] || "there";
+
+  // First login / resume onboarding: replace the workspace with the conversation
+  if (loginExperience === "first_login" || loginExperience === "resume_onboarding") {
+    return (
+      <ContractorPageSurface
+        eyebrow="Getting Started"
+        title={loginExperience === "resume_onboarding" ? "Finish your setup" : "Welcome to MyHomeBro"}
+        subtitle=""
+        variant="operational"
+        className="mhb-ai-workspace"
+      >
+        <div className="mx-auto max-w-3xl">
+          <OnboardingConversation
+            contractorProfile={contractorProfile}
+            stripeStatus={stripeStatus}
+            mode={loginExperience}
+            onComplete={() => setLoginExperience("daily_briefing")}
+          />
+        </div>
+      </ContractorPageSurface>
+    );
+  }
+
   return (
     <ContractorPageSurface
       eyebrow="AI Workspace"
@@ -380,87 +544,19 @@ export default function AIAssistantPage() {
       className="mhb-ai-workspace"
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
+        {/* Daily briefing / welcome back — shown above the hero */}
+        {(loginExperience === "daily_briefing" || loginExperience === "welcome_back") ? (
+          <DailyBriefing
+            firstName={firstName}
+            signals={workspaceSignals}
+            daysSince={daysSince}
+          />
+        ) : null}
+
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
-          <div
-            className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8"
-            data-testid="ai-workspace-hero"
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
-              AI Workspace
-            </div>
-            <h2 className="mt-4 text-3xl font-bold tracking-tight text-[#18395f] md:text-[2.6rem]">
-              Start or continue work
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-[15px]">
-              Launch work, continue active projects, organize next steps, and route into the right
-              MyHomeBro workflow with the right setup already in motion.
-            </p>
-
-            {result ? (
-              <div className="mt-6">
-                <WorkspaceResultPanel
-                  result={result}
-                  onDismiss={() => setResult(null)}
-                  onOpenCopilot={openCopilot}
-                  onNavigate={handleResultNavigate}
-                />
-              </div>
-            ) : null}
-
-            <form onSubmit={handleHeroSubmit} className="mt-6">
-              <div className="rounded-[28px] border border-slate-200 bg-slate-50 p-3">
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Describe what you'd like to do. Create agreements, use templates, continue projects, plan milestones, or find work that needs attention."
-                  rows={5}
-                  className="min-h-[148px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base text-slate-900 outline-none placeholder:text-slate-400"
-                  data-testid="ai-workspace-hero-input"
-                />
-                <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="flex flex-wrap gap-2">
-                    {HERO_CHIPS.map((chip) => (
-                      <button
-                        key={chip.label}
-                        type="button"
-                        onClick={() => handleChipAction(chip)}
-                        disabled={Boolean(busyKey)}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
-                      >
-                        {chip.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="submit"
-                      disabled={busyKey === "hero" || !String(prompt || "").trim()}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-wait disabled:opacity-70"
-                      data-testid="ai-workspace-hero-submit"
-                    >
-                      {busyKey === "hero" ? (
-                        <>
-                          <LoaderCircle className="h-4 w-4 animate-spin" />
-                          Starting...
-                        </>
-                      ) : (
-                        <>
-                          Start with AI
-                          <ArrowRight className="h-4 w-4" />
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openCopilot}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      Open AI Copilot
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </form>
+          {/* WorkspaceConversation replaces the old textarea hero */}
+          <div data-testid="ai-workspace-hero">
+            <WorkspaceConversation contractorProfile={contractorProfile} />
           </div>
 
           <div

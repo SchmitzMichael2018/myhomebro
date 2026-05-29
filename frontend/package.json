@@ -16,7 +16,9 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:report": "playwright show-report playwright-report",
     "test:e2e:local-integrated": "playwright test -c playwright.local-auth.config.js",
-    "test:e2e:local-integrated:headed": "playwright test -c playwright.local-auth.config.js --project=chromium-live --headed"
+    "test:e2e:local-integrated:headed": "playwright test -c playwright.local-auth.config.js --project=chromium-live --headed",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest"
   },
   "dependencies": {
     "@fullcalendar/core": "6.1.19",
@@ -75,7 +77,8 @@
     "tailwindcss": "^3.4.17",
     "vite": "^6.3.1",
     "vite-plugin-compression": "^0.5.1",
-    "vite-plugin-pwa": "^1.0.0"
+    "vite-plugin-pwa": "^1.0.0",
+    "vitest": "^2.1.9"
   },
   "eslintConfig": {
     "extends": [

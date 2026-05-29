@@ -11,6 +11,11 @@ import { fileURLToPath, URL } from "node:url";
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
 
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.{js,jsx}"],
+  },
+
   // Dev serves from "/", prod emits absolute URLs under "/static/"
   base: mode === "production" ? "/static/" : "/",
 

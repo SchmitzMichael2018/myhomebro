@@ -2,6 +2,22 @@ import {
   getProjectClarificationQuestions,
 } from "./subtypeClarifications.js";
 
+export const CONFIDENCE_THRESHOLD = 0.7;
+
+const INTENT_SCORE_TIERS = {
+  exact_keyword: 1.0,
+  context_override: 0.9,
+  strong_keyword: 0.85,
+  partial_keyword: 0.65,
+  fallback: 0.3,
+};
+
+export function scoreIntent(matchType, missingFields = []) {
+  const base = INTENT_SCORE_TIERS[matchType] ?? 0.3;
+  const penalty = Math.min(missingFields.length * 0.1, 0.3);
+  return Math.max(base - penalty, 0.1);
+}
+
 const QUICK_ACTIONS = [
   { intent: "create_lead", label: "Create lead" },
   { intent: "start_agreement", label: "Start agreement" },
@@ -75,6 +91,42 @@ const INTENT_CONFIG = {
     destinationLabel: "Review Template",
     summary: "Review reusable workflow gaps, template structure, and next refinements.",
   },
+  estimate_project: {
+    label: "Estimate project cost",
+    requiredFields: ["project_summary"],
+    destination: "/app/agreements/new/wizard?step=2",
+    destinationLabel: "Open Milestone Builder",
+    summary: "Help estimate costs and build a milestone-based budget before committing to scope.",
+    keywords: ["estimate", "cost", "budget", "price", "quote", "how much"],
+    project_path: ["residential", "commercial"],
+  },
+  check_compliance: {
+    label: "Check compliance requirements",
+    requiredFields: ["project_summary"],
+    destination: "/app/agreements",
+    destinationLabel: "Open Agreements",
+    summary: "Surface permit, inspection, and licensing requirements for the project location and type.",
+    keywords: ["compliance", "permit", "inspection", "code", "regulation", "zoning", "license required"],
+    project_path: ["commercial"],
+  },
+  subcontractor_assignment: {
+    label: "Assign subcontractor",
+    requiredFields: ["project_summary"],
+    destination: "/app/agreements",
+    destinationLabel: "Open Agreements",
+    summary: "Link a subcontractor or trade partner to the current job or agreement.",
+    keywords: ["sub", "subcontractor", "assign", "crew", "trade", "electrician", "plumber", "hvac sub"],
+    project_path: ["commercial"],
+  },
+  maintenance_contract: {
+    label: "Create maintenance contract",
+    requiredFields: ["customer_name", "project_summary"],
+    destination: "/app/agreements/new/wizard?step=1",
+    destinationLabel: "Open Agreement Wizard",
+    summary: "Start a recurring or ongoing service agreement for regular maintenance work.",
+    keywords: ["maintenance", "recurring", "service contract", "annual", "ongoing", "retainer"],
+    project_path: ["residential", "commercial"],
+  },
 };
 
 const FIELD_LABELS = {
@@ -135,7 +187,9 @@ function normalizeContext(context = {}) {
 }
 
 function detectIntent(input, preferredIntent, context) {
-  if (preferredIntent && INTENT_CONFIG[preferredIntent]) return preferredIntent;
+  if (preferredIntent && INTENT_CONFIG[preferredIntent]) {
+    return { intent: preferredIntent, matchType: "exact_keyword", is_fallback: false };
+  }
 
   const text = clean(input).toLowerCase();
   const hasAgreementContext = !!context?.agreement_id;
@@ -143,19 +197,18 @@ function detectIntent(input, preferredIntent, context) {
   const isTemplatesPage = clean(context?.page).toLowerCase() === "templates";
 
   if (!text) {
-    if (isTemplatesPage) return "template_guidance";
-    if (hasAgreementContext) return "resume_agreement";
-    if (hasLeadContext) return "create_lead";
-    if (context?.template_id) return "apply_template";
-    return "navigate_app";
+    if (isTemplatesPage) return { intent: "template_guidance", matchType: "context_override", is_fallback: false };
+    if (hasAgreementContext) return { intent: "resume_agreement", matchType: "context_override", is_fallback: false };
+    if (hasLeadContext) return { intent: "create_lead", matchType: "context_override", is_fallback: false };
+    if (context?.template_id) return { intent: "apply_template", matchType: "context_override", is_fallback: false };
+    return { intent: "navigate_app", matchType: "fallback", is_fallback: true };
   }
 
   if (isTemplatesPage && !/(go to|open |take me|navigate)/.test(text)) {
-    // Explicit "use / apply / find existing template" prompts stay on the apply path.
     if (/\b(use|apply|find|pick)\b/.test(text) && /\btemplate\b/.test(text)) {
-      return "apply_template";
+      return { intent: "apply_template", matchType: "strong_keyword", is_fallback: false };
     }
-    return "template_guidance";
+    return { intent: "template_guidance", matchType: "context_override", is_fallback: false };
   }
 
   if (
@@ -165,35 +218,84 @@ function detectIntent(input, preferredIntent, context) {
     text.includes("unstick") ||
     text.includes("blocked")
   ) {
-    if (hasAgreementContext) return "resume_agreement";
-    if (hasLeadContext) return "create_lead";
+    if (hasAgreementContext) return { intent: "resume_agreement", matchType: "strong_keyword", is_fallback: false };
+    if (hasLeadContext) return { intent: "create_lead", matchType: "strong_keyword", is_fallback: false };
   }
 
-  if (text.includes("clarif")) return "collect_clarifications";
-  if (text.includes("milestone")) return "suggest_milestones";
-  // Creation verbs with a template noun should always draft, never apply an existing template.
-  if (isTemplateCreationIntent(text)) return "template_guidance";
-  if (text.includes("template")) return "apply_template";
-  if (text.includes("customer")) return "create_customer";
-  if (text.includes("lead") || text.includes("intake")) return "create_lead";
-  if (text.includes("agreement") || text.includes("contract")) {
-    return hasAgreementContext &&
-      (text.includes("finish") || text.includes("resume") || text.includes("fix"))
-      ? "resume_agreement"
-      : "start_agreement";
+  if (text.includes("clarif")) return { intent: "collect_clarifications", matchType: "partial_keyword", is_fallback: false };
+  if (text.includes("milestone")) return { intent: "suggest_milestones", matchType: "partial_keyword", is_fallback: false };
+  if (isTemplateCreationIntent(text)) return { intent: "template_guidance", matchType: "strong_keyword", is_fallback: false };
+  if (text.includes("template")) return { intent: "apply_template", matchType: "partial_keyword", is_fallback: false };
+  if (text.includes("customer")) return { intent: "create_customer", matchType: "partial_keyword", is_fallback: false };
+  if (text.includes("lead") || text.includes("intake")) return { intent: "create_lead", matchType: "partial_keyword", is_fallback: false };
+
+  // Check multi-word commercial phrases before single-word "contract" to avoid mis-routing.
+  if (
+    text.includes("maintenance") ||
+    text.includes("recurring") ||
+    text.includes("service contract") ||
+    text.includes("retainer") ||
+    text.includes("ongoing contract")
+  ) {
+    return { intent: "maintenance_contract", matchType: "partial_keyword", is_fallback: false };
   }
+
+  if (text.includes("agreement") || text.includes("contract")) {
+    const intent =
+      hasAgreementContext &&
+      (text.includes("finish") || text.includes("resume") || text.includes("fix"))
+        ? "resume_agreement"
+        : "start_agreement";
+    return { intent, matchType: "strong_keyword", is_fallback: false };
+  }
+
+  // Commercial intents — keyword-based primary routing.
+  if (/\b(estimate|budget|quote|how much)\b/.test(text) || text.includes("cost estimate")) {
+    return { intent: "estimate_project", matchType: "partial_keyword", is_fallback: false };
+  }
+  if (/\b(compliance|regulation|zoning|license required)\b/.test(text) || text.includes("permit requirement")) {
+    return { intent: "check_compliance", matchType: "partial_keyword", is_fallback: false };
+  }
+  if (/\b(subcontractor|electrician|plumber)\b/.test(text) || /\bassign\b.*(sub|crew|trade)/.test(text) || /\bhvac sub\b/.test(text)) {
+    return { intent: "subcontractor_assignment", matchType: "partial_keyword", is_fallback: false };
+  }
+
   if (
     text.includes("go to") ||
     text.includes("open ") ||
     text.includes("take me") ||
     text.includes("navigate")
   ) {
-    return "navigate_app";
+    return { intent: "navigate_app", matchType: "strong_keyword", is_fallback: false };
   }
 
-  if (hasAgreementContext) return "resume_agreement";
-  if (hasLeadContext) return "create_lead";
-  return "navigate_app";
+  if (hasAgreementContext) return { intent: "resume_agreement", matchType: "context_override", is_fallback: false };
+  if (hasLeadContext) return { intent: "create_lead", matchType: "context_override", is_fallback: false };
+  return { intent: "navigate_app", matchType: "fallback", is_fallback: true };
+}
+
+function getTopCandidates(input, primaryIntent, confidence_score) {
+  if (confidence_score >= CONFIDENCE_THRESHOLD) return [];
+  const text = clean(input).toLowerCase();
+  if (!text) return [];
+
+  return Object.entries(INTENT_CONFIG)
+    .filter(([key]) => key !== primaryIntent && Array.isArray(INTENT_CONFIG[key].keywords))
+    .map(([key, config]) => {
+      const matches = config.keywords.filter((kw) => text.includes(kw));
+      if (!matches.length) return null;
+      const matchType = matches.length >= 2 ? "strong_keyword" : "partial_keyword";
+      return {
+        intent: key,
+        label: config.label,
+        destination: config.destination,
+        confidence_score: scoreIntent(matchType),
+      };
+    })
+    .filter(Boolean)
+    .filter((c) => c.confidence_score >= 0.4)
+    .sort((a, b) => b.confidence_score - a.confidence_score)
+    .slice(0, 2);
 }
 
 function extractEmail(input) {
@@ -1193,6 +1295,30 @@ function buildSuggestions(intent, collectedData, missingFields, context, planDet
   if (intent === "template_guidance") {
     return buildTemplateContextSuggestions(context);
   }
+  if (intent === "estimate_project") {
+    return [
+      "Use the milestone builder to break down costs by phase.",
+      "Advisory pricing ranges are more useful than fixed prices at estimate time.",
+    ];
+  }
+  if (intent === "check_compliance") {
+    return [
+      "Check your trade profile to verify you have the right licenses for this scope.",
+      "Permits vary by project type and address — confirm requirements before starting.",
+    ];
+  }
+  if (intent === "subcontractor_assignment") {
+    return [
+      "Link a subcontractor to the agreement after creating it.",
+      "Subcontractors can be added to milestones for scheduling coordination.",
+    ];
+  }
+  if (intent === "maintenance_contract") {
+    return [
+      "Recurring agreements work best with milestone-based payment triggers.",
+      "Use a maintenance template to pre-build the repeatable scope.",
+    ];
+  }
   return ["I can guide you into the right workflow without replacing it."];
 }
 
@@ -1230,16 +1356,22 @@ export function planAssistantAction({
 }) {
   const normalizedContext = normalizeContext(context);
   const fallbackIntent = clean(input) ? "" : previousPlan?.intent;
-  const intent = detectIntent(input, preferredIntent || fallbackIntent, normalizedContext);
+  const { intent, matchType, is_fallback } = detectIntent(
+    input,
+    preferredIntent || fallbackIntent,
+    normalizedContext
+  );
   const config = INTENT_CONFIG[intent];
   const collectedData = mergeCollectedData(intent, input, previousPlan, normalizedContext);
   const planDetails = buildIntentPlan(intent, normalizedContext, collectedData);
 
   const requiredFieldSource = planDetails.requiredFieldOverrides?.length
     ? planDetails.requiredFieldOverrides
-    : config.requiredFields;
+    : (config.requiredFields || []);
 
   const missingFields = requiredFieldSource.filter((field) => !clean(collectedData[field]));
+  const confidence_score = scoreIntent(matchType, missingFields);
+  const candidate_intents = getTopCandidates(input, intent, confidence_score);
 
   const nextAction = missingFields.length
     ? {
@@ -1276,8 +1408,13 @@ export function planAssistantAction({
     context_summary: summarizeContext(normalizedContext),
     summary: config.summary,
     follow_up_prompt: buildFollowUpPrompt(missingFields, planDetails),
+    confidence_score,
+    candidate_intents,
+    is_fallback,
   };
 }
+
+export { buildTemplateDraftPreview };
 
 export function getAssistantQuickActions() {
   return QUICK_ACTIONS;

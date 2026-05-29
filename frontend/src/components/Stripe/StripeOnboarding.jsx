@@ -4,6 +4,10 @@ import api from "../../api";
 import { trackOnboardingEvent } from "../../lib/onboardingAnalytics.js";
 import StripeOnboardingButton from "../StripeOnboardingButton.jsx";
 import TradeMultiSelect from "../trades/TradeMultiSelect.jsx";
+import {
+  STRIPE_GUIDANCE,
+  writeEntityTypeToSession,
+} from "../../lib/stripeGuidanceContent.js";
 
 const STATE_OPTIONS = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -111,6 +115,8 @@ export default function StripeOnboarding() {
   const [meData, setMeData] = useState(null);
   const [stripeStatus, setStripeStatus] = useState(null);
   const [localStep, setLocalStep] = useState(null);
+  const [entityType, setEntityType] = useState(null);
+  const [entityTypeConfirmed, setEntityTypeConfirmed] = useState(false);
   const [form, setForm] = useState({
     business_name: "",
     city: "",
@@ -436,13 +442,83 @@ export default function StripeOnboarding() {
       );
     }
 
+    // Entity type pre-conversation: show before the Connect button if not yet confirmed.
+    if (!entityTypeConfirmed && !stripeReady) {
+      return (
+        <PrimaryCard
+          eyebrow={`Step ${stepNumber} of ${stepTotal}`}
+          title="One quick question first"
+          description={STRIPE_GUIDANCE.intro.default}
+          testId="contractor-onboarding-entity-type"
+        >
+          <div className="mt-4 text-sm font-semibold text-slate-900">
+            How is your business set up?
+          </div>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {[
+              { key: "sole_proprietor", label: "Sole proprietor" },
+              { key: "llc", label: "LLC" },
+              { key: "corporation", label: "Corporation" },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                data-testid={`contractor-onboarding-entity-${key}`}
+                onClick={() => {
+                  setEntityType(key);
+                  writeEntityTypeToSession(key);
+                  setEntityTypeConfirmed(true);
+                }}
+                className={`rounded-2xl border px-5 py-3 text-sm font-semibold transition ${
+                  entityType === key
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {entityType ? (
+            <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+              {STRIPE_GUIDANCE.entity[entityType]}
+            </div>
+          ) : null}
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => handleBack("region")}
+              className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              data-testid="contractor-onboarding-entity-skip"
+              onClick={() => {
+                writeEntityTypeToSession(null);
+                setEntityTypeConfirmed(true);
+              }}
+              className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50"
+            >
+              Skip this step
+            </button>
+          </div>
+        </PrimaryCard>
+      );
+    }
+
     return (
       <OnboardingStripeStep
         stepNumber={stepNumber}
         stepTotal={stepTotal}
         stripeReady={stripeReady}
         statusError={statusError}
-        onBack={() => handleBack("region")}
+        onBack={() => {
+          setEntityTypeConfirmed(false);
+          setEntityType(null);
+          writeEntityTypeToSession(null);
+        }}
         onSkip={handleSkipStripe}
         saving={saving}
       />

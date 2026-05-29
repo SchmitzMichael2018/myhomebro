@@ -1,5 +1,96 @@
 const FIRST_PROJECT_HANDOFF_STORAGE_KEY = "mhb_first_project_assist_handoff";
 
+export const HANDOFF_SAFE_DEFAULTS = Object.freeze({
+  prefillFields: {},
+  draftPayload: {},
+  context: {},
+  wizardStepTarget: null,
+  suggestedMilestones: [],
+  clarificationQuestions: [],
+  estimatePreview: {},
+  templateRecommendations: [],
+  topTemplatePreview: {},
+  proactiveRecommendations: [],
+  predictiveInsights: [],
+  proposedActions: [],
+  confirmationRequiredActions: [],
+  guidedFlow: {},
+  automationPlan: {},
+  intent: "",
+  projectAddress: {},
+  complianceFlags: [],
+});
+
+// Each entry: [key, validator fn, default value]
+const HANDOFF_FIELD_SPECS = [
+  ["prefillFields",              (v) => isPlainObject(v),           {}],
+  ["draftPayload",               (v) => isPlainObject(v),           {}],
+  ["context",                    (v) => isPlainObject(v),           {}],
+  ["wizardStepTarget",           (v) => v === null || typeof v === "number", null],
+  ["suggestedMilestones",        Array.isArray,                     []],
+  ["clarificationQuestions",     Array.isArray,                     []],
+  ["estimatePreview",            (v) => v === null || isPlainObject(v), {}],
+  ["templateRecommendations",    Array.isArray,                     []],
+  ["topTemplatePreview",         (v) => isPlainObject(v),           {}],
+  ["proactiveRecommendations",   Array.isArray,                     []],
+  ["predictiveInsights",         Array.isArray,                     []],
+  ["proposedActions",            Array.isArray,                     []],
+  ["confirmationRequiredActions",Array.isArray,                     []],
+  ["guidedFlow",                 (v) => v === null || isPlainObject(v), {}],
+  ["automationPlan",             (v) => v === null || isPlainObject(v), {}],
+  ["intent",                     (v) => typeof v === "string",      ""],
+  ["projectAddress",             (v) => v === null || isPlainObject(v), {}],
+  ["complianceFlags",            Array.isArray,                     []],
+];
+
+function isPlainObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+/**
+ * Validates a handoff payload (typically the output of getAssistantHandoff).
+ * Always returns a usable payload — never throws.
+ *
+ * @param {unknown} payload
+ * @returns {{ valid: boolean, payload: object, errors: string[] }}
+ */
+export function validateHandoff(payload) {
+  if (payload == null || !isPlainObject(payload)) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[validateHandoff] Expected a plain object — using safe defaults.", payload);
+    }
+    return {
+      valid: false,
+      payload: { ...HANDOFF_SAFE_DEFAULTS },
+      errors: ["payload must be a plain object"],
+    };
+  }
+
+  const errors = [];
+  const result = {};
+
+  for (const [key, isValid, defaultValue] of HANDOFF_FIELD_SPECS) {
+    if (!(key in payload)) {
+      errors.push(`missing key: "${key}"`);
+      result[key] = Array.isArray(defaultValue) ? [] : defaultValue === null ? null : typeof defaultValue === "object" ? {} : defaultValue;
+      continue;
+    }
+    const value = payload[key];
+    if (!isValid(value)) {
+      errors.push(`wrong type for "${key}": got ${Array.isArray(value) ? "array" : typeof value}`);
+      result[key] = Array.isArray(defaultValue) ? [] : defaultValue === null ? null : typeof defaultValue === "object" ? {} : defaultValue;
+      continue;
+    }
+    result[key] = value;
+  }
+
+  if (errors.length > 0 && process.env.NODE_ENV !== "production") {
+    console.warn("[validateHandoff] Validation issues:", errors);
+  }
+
+  return { valid: errors.length === 0, payload: result, errors };
+}
+
 function safeObject(value) {
   return value && typeof value === "object" ? value : {};
 }
@@ -79,6 +170,10 @@ export function getAssistantHandoff(locationState) {
     guidedFlow: safeObject(state.assistantGuidedFlow),
     automationPlan: safeObject(state.assistantAutomationPlan),
     intent: typeof state.assistantIntent === "string" ? state.assistantIntent : "",
+    projectAddress: safeObject(state.assistantProjectAddress),
+    complianceFlags: Array.isArray(state.assistantComplianceFlags)
+      ? state.assistantComplianceFlags
+      : [],
   };
 }
 
@@ -112,6 +207,8 @@ export function buildAssistantHandoffSignature(handoff) {
       : [],
     guidedFlow: safeObject(handoff?.guidedFlow),
     intent: handoff?.intent || "",
+    projectAddress: safeObject(handoff?.projectAddress),
+    complianceFlags: Array.isArray(handoff?.complianceFlags) ? handoff.complianceFlags : [],
   });
 }
 
