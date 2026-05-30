@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
+import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import {
@@ -1485,6 +1486,14 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         project_type: currentHeader?.project_type,
         project_subtype: currentHeader?.project_subtype,
         description: currentHeader?.description,
+        context: serializeAiContext(buildAiContext({
+          page: "templates",
+          entityId: selectedDetail?.id || null,
+          entityType: "template",
+          projectType: currentHeader?.project_type || null,
+          projectSubtype: currentHeader?.project_subtype || null,
+          existingScope: currentHeader?.description || null,
+        })),
       });
 
       const sections = normalizeTemplateScopeSections(data);
@@ -1506,6 +1515,12 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       const { data } = await api.post("/projects/templates/ai/suggest-type-subtype/", {
         name: currentHeader?.name,
         description: currentHeader?.description,
+        context: serializeAiContext(buildAiContext({
+          page: "templates",
+          entityId: selectedDetail?.id || null,
+          entityType: "template",
+          existingScope: currentHeader?.description || null,
+        })),
       });
 
       updateHeader("project_type", data?.project_type || "");
@@ -1541,6 +1556,14 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         project_subtype: headerSource?.project_subtype,
         description: descriptionSeed,
         prompt,
+        context: serializeAiContext(buildAiContext({
+          page: "templates",
+          entityId: selectedDetail?.id || null,
+          entityType: "template",
+          projectType: headerSource?.project_type || null,
+          projectSubtype: headerSource?.project_subtype || null,
+          existingScope: descriptionSeed || null,
+        })),
       });
       const sections = normalizeTemplateScopeSections(data);
       const workflowProfile = normalizeWorkflowProfile(data?.workflow_profile);
@@ -1715,6 +1738,15 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           title: m?.title || "",
           description: m?.description || "",
           normalized_milestone_type: m?.normalized_milestone_type || "",
+        })),
+        context: serializeAiContext(buildAiContext({
+          page: "templates",
+          entityId: selectedDetail?.id || null,
+          entityType: "template",
+          projectType: currentHeader?.project_type || null,
+          projectSubtype: currentHeader?.project_subtype || null,
+          existingScope: currentHeader?.description || null,
+          milestoneCount: currentMilestones.length,
         })),
       });
 

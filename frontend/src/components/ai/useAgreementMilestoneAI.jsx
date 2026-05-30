@@ -15,6 +15,7 @@ import { useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../../api";
 import { dedupeMilestoneRows } from "../../lib/milestonePlanGuardrails.js";
+import { buildAiContext, serializeAiContext } from "../../lib/aiContext.js";
 
 function safeStr(v) {
   return v == null ? "" : String(v).trim();
@@ -616,6 +617,7 @@ export default function useAgreementMilestoneAI({
   onMilestonesReplaced,
   projectFamilyContext = {},
   projectStartDate = "",
+  aiContextOverrides = {},
 }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
@@ -698,6 +700,12 @@ export default function useAgreementMilestoneAI({
           project_family_key: resolvedProjectFamily.project_family_key,
           project_family_label: resolvedProjectFamily.project_family_label,
           project_start_date: safeStr(projectStartDate),
+          context: serializeAiContext(buildAiContext({
+            page: "agreement_wizard_step2",
+            entityId: agreementId || null,
+            entityType: "agreement",
+            ...aiContextOverrides,
+          })),
         });
 
         const nextPreview = {
@@ -848,6 +856,12 @@ export default function useAgreementMilestoneAI({
       const payload = {
         project_family_key: resolvedProjectFamily.project_family_key,
         project_family_label: resolvedProjectFamily.project_family_label,
+        context: serializeAiContext(buildAiContext({
+          page: "agreement_wizard_step2",
+          entityId: agreementId || null,
+          entityType: "agreement",
+          ...aiContextOverrides,
+        })),
       };
       const res = await api.post(`/projects/agreements/${agreementId}/ai/refresh-pricing-estimate/`, payload);
 

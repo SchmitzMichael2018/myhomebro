@@ -41,6 +41,7 @@ import {
   isAgreementLocked,
 } from "./step1/step1Utils";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 
 function PrettyJson({ data }) {
   if (!data) return null;
@@ -2748,6 +2749,26 @@ export default function Step1Details({
         milestones: milestoneContext,
         milestone_count: agreement?.milestone_count ?? agreement?.milestones?.length ?? null,
         current_description: clarificationContext,
+        context: serializeAiContext(buildAiContext({
+          page: "agreement_wizard_step1",
+          entityId: agreementId || null,
+          entityType: "agreement",
+          status: agreement?.status || null,
+          projectType: dLocal.project_type || null,
+          projectSubtype: dLocal.project_subtype || null,
+          projectPath: normalizeProjectClass(dLocal?.project_class),
+          projectAddress: (dLocal.address_line1 || dLocal.address_city || dLocal.address_state) ? {
+            street: dLocal.address_line1 || null,
+            city: dLocal.address_city || null,
+            state: dLocal.address_state || null,
+            zip: dLocal.address_postal_code || null,
+          } : null,
+          milestoneCount: agreement?.milestone_count ?? agreement?.milestones?.length ?? 0,
+          existingScope: dLocal.description || null,
+          templateApplied: !!(agreement?.selected_template?.id || agreement?.selected_template_id),
+          customerName: selectedCustomer?.full_name || selectedCustomer?.name || agreement?.homeowner_name || null,
+          contractorTradeProfile: contractorBrandVoice?.skills ?? [],
+        })),
       };
 
       if (!agreementId) {
@@ -2972,6 +2993,20 @@ export default function Step1Details({
         project_title: currentTitle,
         project_type: currentType,
         project_subtype: currentSubtype,
+        context: serializeAiContext(buildAiContext({
+          page: "agreement_wizard_step1",
+          entityId: agreementId || null,
+          entityType: "agreement",
+          status: agreement?.status || null,
+          projectType: currentType || null,
+          projectSubtype: currentSubtype || null,
+          projectPath: normalizeProjectClass(dLocal?.project_class),
+          milestoneCount: agreement?.milestone_count ?? agreement?.milestones?.length ?? 0,
+          existingScope: currentScope || null,
+          templateApplied: !!(agreement?.selected_template?.id || agreement?.selected_template_id),
+          customerName: selectedCustomer?.full_name || selectedCustomer?.name || agreement?.homeowner_name || null,
+          contractorTradeProfile: contractorBrandVoice?.skills ?? [],
+        })),
       };
 
       const { data } = await api.post("/projects/agreements/ai/classify/", payload);
@@ -3064,6 +3099,20 @@ export default function Step1Details({
         description: dLocal.description || "",
         project_type: dLocal.project_type || "",
         project_subtype: dLocal.project_subtype || "",
+        context: serializeAiContext(buildAiContext({
+          page: "agreement_wizard_step1",
+          entityId: agreementId || null,
+          entityType: "agreement",
+          status: agreement?.status || null,
+          projectType: dLocal.project_type || null,
+          projectSubtype: dLocal.project_subtype || null,
+          projectPath: normalizeProjectClass(dLocal?.project_class),
+          milestoneCount: agreement?.milestone_count ?? agreement?.milestones?.length ?? 0,
+          existingScope: dLocal.description || null,
+          templateApplied: !!(agreement?.selected_template?.id || agreement?.selected_template_id),
+          customerName: selectedCustomer?.full_name || selectedCustomer?.name || agreement?.homeowner_name || null,
+          contractorTradeProfile: contractorBrandVoice?.skills ?? [],
+        })),
       });
 
       const draftPayload = data?.proposal_draft || {};
@@ -4601,6 +4650,20 @@ export default function Step1Details({
         project_family_key: resolvedProjectFamily.project_family_key || "",
         project_family_label: resolvedProjectFamily.project_family_label || "",
         current_description: clarificationContext,
+        context: serializeAiContext(buildAiContext({
+          page: "agreement_wizard_step1",
+          entityId: agreementId || null,
+          entityType: "agreement",
+          status: agreement?.status || null,
+          projectType: shouldShowResetChooserOnly ? null : dLocal.project_type || null,
+          projectSubtype: shouldShowResetChooserOnly ? null : dLocal.project_subtype || null,
+          projectPath: normalizeProjectClass(dLocal?.project_class),
+          milestoneCount: agreement?.milestone_count ?? agreement?.milestones?.length ?? 0,
+          existingScope: roughDescription || null,
+          templateApplied: !!(agreement?.selected_template?.id || agreement?.selected_template_id),
+          customerName: selectedCustomer?.full_name || selectedCustomer?.name || agreement?.homeowner_name || null,
+          contractorTradeProfile: contractorBrandVoice?.skills ?? [],
+        })),
       };
 
       const refineRes = await api.post(`/projects/agreements/ai/description/`, refinePayload);

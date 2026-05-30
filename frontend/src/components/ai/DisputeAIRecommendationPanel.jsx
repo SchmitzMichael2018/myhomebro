@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../api";
+import { buildAiContext, serializeAiContext } from "../../lib/aiContext.js";
 
 export default function DisputeAIRecommendationPanel({ disputeId }) {
   const [loading, setLoading] = useState(false);
@@ -52,7 +53,14 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
     setErr("");
     setLoading(true);
     try {
-      const res = await api.post(`/projects/disputes/${disputeId}/ai/recommendation/`, { force });
+      const res = await api.post(`/projects/disputes/${disputeId}/ai/recommendation/`, {
+        force,
+        context: serializeAiContext(buildAiContext({
+          page: "disputes",
+          entityId: disputeId || null,
+          entityType: "dispute",
+        })),
+      });
       setResult(res.data);
     } catch (e) {
       const msg =

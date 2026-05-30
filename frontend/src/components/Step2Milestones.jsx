@@ -21,6 +21,7 @@ import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { labelForTemplateMilestoneType } from "../lib/milestoneTypes.js";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 import {
   buildActionableTemplateInsightCards,
   deriveTemplateInsights,
@@ -2633,6 +2634,21 @@ export default function Step2Milestones({
       project_family_label: safeStr(projectContextSummary?.projectFamilyLabel) || safeStr(projectContextSummary?.projectType),
     },
     projectStartDate: projectStartDateDraft || agreementProjectStartDate || "",
+    aiContextOverrides: {
+      status: agreementMeta?.status || null,
+      projectType: projectContextSummary?.projectType || null,
+      projectSubtype: projectContextSummary?.projectSubtype || null,
+      projectPath: normalizeProjectClass(agreementMeta?.project_class),
+      projectAddress: (agreementMeta?.project_address_line1 || agreementMeta?.project_address_city) ? {
+        street: agreementMeta?.project_address_line1 || null,
+        city: agreementMeta?.project_address_city || null,
+        state: agreementMeta?.project_address_state || null,
+        zip: agreementMeta?.project_address_postal_code || null,
+      } : null,
+      milestoneCount: Array.isArray(milestones) ? milestones.length : 0,
+      existingScope: agreementMeta?.description || agreementMeta?.scope_of_work || null,
+      templateApplied: !!(agreementMeta?.selected_template?.id || agreementMeta?.selected_template_id),
+    },
   });
   const aiMilestonePreview = useMemo(
     () => (Array.isArray(aiPreview?.milestones) ? aiPreview.milestones : []),
@@ -4264,6 +4280,16 @@ export default function Step2Milestones({
         project_type: "",
         project_subtype: "",
         current_description: editForm.description || "",
+        context: serializeAiContext(buildAiContext({
+          page: "agreement_wizard_step2",
+          entityId: agreementId || null,
+          entityType: "milestone",
+          status: agreementMeta?.status || null,
+          projectType: projectContextSummary?.projectType || null,
+          projectSubtype: projectContextSummary?.projectSubtype || null,
+          projectPath: normalizeProjectClass(agreementMeta?.project_class),
+          existingScope: editForm.description || null,
+        })),
       };
 
       const res = await api.post(`/projects/agreements/ai/description/`, payload);

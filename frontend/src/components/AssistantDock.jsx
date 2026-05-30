@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
 
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
+import { buildAiContext } from "../lib/aiContext.js";
 
 const AssistantDockContext = createContext({
   openAssistant: () => {},
@@ -168,12 +169,14 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
 function buildRouteContext(location) {
   const currentRoute = `${location.pathname}${location.search || ""}`;
   const workspaceMode = workspaceModeForRoute(currentRoute);
+  const aiContext = buildAiContext({ page: workspaceMode });
   return {
     current_route: currentRoute,
     page: workspaceMode,
     workspace_mode: workspaceMode,
     ai_panel: defaultAssistantPanelForWorkspace(workspaceMode),
     navigation_assist: buildNavigationAssistContext(workspaceMode),
+    aiContext,
   };
 }
 
@@ -456,17 +459,24 @@ export function AssistantDockProvider({ children }) {
 
   const updateAssistantContext = useCallback((context = {}) => {
     const cleanContext = context && typeof context === "object" ? context : {};
+    const workspacePage =
+      cleanContext.workspace_mode ||
+      cleanContext.page ||
+      routeContext.workspace_mode;
+    const mergedAiContext = buildAiContext({
+      ...(routeContext.aiContext || {}),
+      ...(cleanContext.aiContext || {}),
+      page: workspacePage,
+    });
     const nextContext = {
       ...routeContext,
       ...cleanContext,
-      workspace_mode:
-        cleanContext.workspace_mode ||
-        cleanContext.page ||
-        routeContext.workspace_mode,
+      workspace_mode: workspacePage,
       page:
         cleanContext.page ||
         cleanContext.workspace_mode ||
         routeContext.page,
+      aiContext: mergedAiContext,
     };
     setPageAssistantContext(nextContext);
     setDockContext((prev) => {

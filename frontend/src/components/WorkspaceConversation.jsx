@@ -4,6 +4,7 @@ import { ArrowRight, LoaderCircle, AlertTriangle, Info } from "lucide-react";
 
 import api from "../api.js";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
+import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 import { buildTemplateDraftPreview } from "../lib/startWithAiAssistant.js";
 import { checkCompliance } from "../lib/complianceRules.js";
 import { checkSchedulingConflicts } from "../lib/schedulingConflict.js";
@@ -224,7 +225,14 @@ export default function WorkspaceConversation({ contractorProfile = null }) {
 
     let result = null;
     try {
-      const { data } = await api.post("/agreements/ai/classify/", { description: text });
+      const { data } = await api.post("/agreements/ai/classify/", {
+        description: text,
+        context: serializeAiContext(buildAiContext({
+          page: "workspace_intake",
+          entityType: "agreement",
+          existingScope: text || null,
+        })),
+      });
       result = data;
       setClassifyResult(data);
     } catch {
@@ -505,6 +513,15 @@ export default function WorkspaceConversation({ contractorProfile = null }) {
         customer_id: customer?.id || undefined,
         project_address: projectAddress || undefined,
         template_id: templateMatch?.template_id || undefined,
+        context: serializeAiContext(buildAiContext({
+          page: "workspace_intake",
+          entityType: "agreement",
+          projectType: classifyResult?.project_type || null,
+          projectSubtype: classifyResult?.project_subtype || null,
+          projectPath: classifyResult?.project_path || "residential",
+          projectAddress: projectAddress || null,
+          customerName: customer?.name || customer?.full_name || null,
+        })),
       };
       const { data } = await api.post("/agreements/ai/draft/", body);
       draft = data;
