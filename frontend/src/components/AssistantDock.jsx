@@ -1,9 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, ClipboardCopy, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
 
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
 import { buildAiContext } from "../lib/aiContext.js";
+import { checkJobHealth } from "../lib/jobHealthMonitor.js";
+import { draftCheckIn, draftSignatureFollowUp, draftMilestoneUpdate } from "../lib/actionDrafter.js";
+import api from "../api.js";
 
 const AssistantDockContext = createContext({
   openAssistant: () => {},
@@ -304,6 +307,134 @@ function BriefingPanel({ items, onNavigate }) {
   );
 }
 
+// ── Job health panel ─────────────────────────────────────────────────────────
+
+function buildDraftForFlag(flag) {
+  const { type } = flag;
+  if (type === "signature_pending") {
+    return draftSignatureFollowUp({
+      agreementTitle: flag.agreementTitle,
+      daysSinceSent: flag.daysSince,
+    });
+  }
+  if (type === "relationship_risk" || type === "no_activity") {
+    return draftCheckIn({
+      agreementTitle: flag.agreementTitle,
+      daysSinceActivity: flag.daysSince,
+    });
+  }
+  if (type === "milestone_overdue" || type === "payment_delayed" || type === "funding_not_released") {
+    return draftMilestoneUpdate({
+      milestoneTitle: flag.milestoneTitle || "",
+      agreementTitle: flag.agreementTitle,
+    });
+  }
+  return null;
+}
+
+const SEVERITY_STYLES = {
+  urgent: { dot: "bg-rose-500", badge: "bg-rose-50 border-rose-200 text-rose-800" },
+  warning: { dot: "bg-amber-400", badge: "bg-amber-50 border-amber-200 text-amber-800" },
+  info: { dot: "bg-blue-400", badge: "bg-blue-50 border-blue-200 text-blue-800" },
+};
+
+function HealthFlagRow({ flag, onNavigate }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const draft = buildDraftForFlag(flag);
+  const styles = SEVERITY_STYLES[flag.severity] || SEVERITY_STYLES.info;
+
+  function handleCopy() {
+    if (!draft) return;
+    const text = `Subject: ${draft.subject}\n\n${draft.body}`;
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className={`rounded-xl border p-3 ${styles.badge}`}>
+      <div className="flex items-start gap-2">
+        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${styles.dot}`} />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold leading-5">{flag.message}</p>
+          {flag.draftedAction && (
+            <p className="mt-0.5 text-[11px] opacity-75">{flag.draftedAction}</p>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { onNavigate(flag.ctaRoute); }}
+              className="inline-flex items-center gap-1 rounded-lg border border-current/20 bg-white/60 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/90 transition"
+            >
+              {flag.ctaLabel}
+              <ArrowRight className="h-3 w-3" />
+            </button>
+            {draft && (
+              <button
+                type="button"
+                onClick={() => setExpanded((p) => !p)}
+                className="inline-flex items-center gap-1 rounded-lg border border-current/20 bg-white/60 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/90 transition"
+              >
+                {expanded ? "Hide message" : "View drafted message"}
+                {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </button>
+            )}
+          </div>
+
+          {expanded && draft && (
+            <div className="mt-3 rounded-lg border border-current/20 bg-white/70 p-3">
+              <div className="mb-1 text-[11px] font-bold opacity-70">Subject: {draft.subject}</div>
+              <pre className="whitespace-pre-wrap text-[11px] leading-5 text-slate-800">{draft.body}</pre>
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="mt-2 inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                <ClipboardCopy className="h-3 w-3" />
+                {copied ? "Copied!" : "Copy message"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JobHealthPanel({ flags, onNavigate }) {
+  if (!Array.isArray(flags) || !flags.length) return null;
+
+  const urgentCount = flags.filter((f) => f.severity === "urgent").length;
+
+  return (
+    <div
+      data-testid="copilot-job-health-panel"
+      className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+    >
+      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+        <AlertTriangle className={`h-4 w-4 ${urgentCount > 0 ? "text-rose-500" : "text-amber-500"}`} />
+        <div className="text-sm font-semibold text-slate-800">
+          {urgentCount > 0 ? `${urgentCount} urgent item${urgentCount !== 1 ? "s" : ""} need attention` : "Active job health check"}
+        </div>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {flags.map((flag, idx) => (
+          <div key={`${flag.type}:${flag.agreementId}:${idx}`} className="px-3 py-3">
+            <HealthFlagRow flag={flag} onNavigate={onNavigate} />
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-slate-100 bg-slate-50 px-4 py-2.5 text-xs text-slate-500">
+        Ask me about any of these jobs in the chat below.
+      </div>
+    </div>
+  );
+}
+
 // ── Desktop dock shell ────────────────────────────────────────────────────────
 
 function DesktopAssistantDock({
@@ -311,6 +442,7 @@ function DesktopAssistantDock({
   minimized,
   title,
   context,
+  healthFlags,
   onAction,
   onClose,
   onMinimize,
@@ -318,8 +450,9 @@ function DesktopAssistantDock({
   const navigate = useNavigate();
   const scrollRef = useRef(null);
   const hasBriefing = Array.isArray(context?.briefingItems) && context.briefingItems.length > 0;
+  const hasHealthFlags = Array.isArray(healthFlags) && healthFlags.length > 0;
 
-  // Scroll to top whenever the dock opens, so BriefingPanel is always visible first.
+  // Scroll to top whenever the dock opens, so panels are always visible first.
   useEffect(() => {
     if (open && scrollRef.current) {
       scrollRef.current.scrollTop = 0;
@@ -381,6 +514,10 @@ function DesktopAssistantDock({
                 items={context?.briefingItems}
                 onNavigate={(route) => { navigate(route); onClose(); }}
               />
+              <JobHealthPanel
+                flags={healthFlags}
+                onNavigate={(route) => { navigate(route); onClose(); }}
+              />
               <StartWithAIAssistant
                 key={`${context?.workspace_mode || context?.page || "general"}:${
                   context?.current_route || ""
@@ -389,7 +526,7 @@ function DesktopAssistantDock({
                 context={context}
                 onAction={onAction}
                 onClose={onClose}
-                hideContextHeader={hasBriefing}
+                hideContextHeader={hasBriefing || hasHealthFlags}
               />
             </div>
           )}
@@ -410,6 +547,40 @@ export function AssistantDockProvider({ children }) {
   const [dockOnAction, setDockOnAction] = useState(null);
   const [pageAssistantOnAction, setPageAssistantOnAction] = useState(null);
   const [pageAssistantContext, setPageAssistantContext] = useState(routeContext);
+  const [healthFlags, setHealthFlags] = useState([]);
+
+  // Fetch job health data when the dock opens in agreements workspace mode
+  useEffect(() => {
+    if (!open || routeWorkspaceMode !== "agreements") {
+      setHealthFlags([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchAndCheck() {
+      try {
+        const [agreementsRes, milestonesRes] = await Promise.allSettled([
+          api.get("/projects/agreements/", { params: { page_size: 50, status: "active" } }),
+          api.get("/projects/milestones/", { params: { page_size: 100 } }),
+        ]);
+        if (cancelled) return;
+        const agreements = agreementsRes.status === "fulfilled"
+          ? (agreementsRes.value?.data?.results ?? agreementsRes.value?.data ?? [])
+          : [];
+        const milestones = milestonesRes.status === "fulfilled"
+          ? (milestonesRes.value?.data?.results ?? milestonesRes.value?.data ?? [])
+          : [];
+        const flags = checkJobHealth({ agreements, milestones });
+        if (!cancelled) setHealthFlags(flags);
+      } catch {
+        if (!cancelled) setHealthFlags([]);
+      }
+    }
+
+    fetchAndCheck();
+    return () => { cancelled = true; };
+  }, [open, routeWorkspaceMode]);
 
   useEffect(() => {
     setPageAssistantContext(routeContext);
@@ -528,6 +699,7 @@ export function AssistantDockProvider({ children }) {
         minimized={minimized}
         title={dockTitle}
         context={dockContext || buildRouteContext(location)}
+        healthFlags={healthFlags}
         onAction={dockOnAction ?? pageAssistantOnAction}
         onClose={closeAssistant}
         onMinimize={minimizeAssistant}
