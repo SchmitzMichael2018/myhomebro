@@ -114,16 +114,50 @@ const PROFILE_COMPLETENESS_ITEMS = [
 
 function ProfileCompletenessBar({ meData }) {
   const navigate = useNavigate();
+  // Fetch agreement count once to detect first job for older accounts whose
+  // first_project_started_at / first_agreement_created_at were never set.
+  const [agreementCount, setAgreementCount] = useState(null); // null = still loading
+  const [showDetails, setShowDetails] = useState(false);
+
+  useEffect(() => {
+    if (!meData) return;
+
+    // DEBUG: log meData.onboarding so we can see which fields are set in the browser console.
+    // Remove this log once Issue 1 is confirmed fixed in production.
+    console.log("[ProfileCompletenessBar] meData.onboarding:", meData?.onboarding, {
+      first_value_reached: meData?.onboarding?.first_value_reached,
+      first_project_started_at: meData?.onboarding?.first_project_started_at,
+      first_agreement_created_at: meData?.onboarding?.first_agreement_created_at,
+      stripe_connected: meData?.stripe_connected,
+    });
+
+    api.get("/projects/agreements/", { params: { limit: 1 } })
+      .then((res) => {
+        const count =
+          typeof res.data?.count === "number"
+            ? res.data.count
+            : Array.isArray(res.data?.results)
+            ? res.data.results.length
+            : Array.isArray(res.data)
+            ? res.data.length
+            : 0;
+        setAgreementCount(count);
+      })
+      .catch(() => setAgreementCount(0));
+  }, [meData]);
 
   if (!meData) return null;
 
-  // Derive extras from meData to avoid a separate API call.
+  // Derive extras from meData. Use first_value_reached (backend boolean) first,
+  // then fall back to timestamps, then to the live agreement count fetch.
   const stripeConnected = Boolean(meData.stripe_connected);
   const hasFirstJob = Boolean(
+    meData?.onboarding?.first_value_reached ||
     meData?.onboarding?.first_project_started_at ||
     meData?.onboarding?.first_agreement_created_at ||
     meData?.first_project_started_at ||
-    meData?.first_agreement_created_at
+    meData?.first_agreement_created_at ||
+    (agreementCount !== null && agreementCount > 0)
   );
 
   const { score, highestValueMissing, missingItems } = calculateProfileCompleteness(meData, {
@@ -134,6 +168,10 @@ function ProfileCompletenessBar({ meData }) {
 
   const isComplete = score >= 100;
   const missingKeys = new Set(missingItems.map((m) => m.key));
+
+  // Score >= 85: collapsible (collapsed by default). Score < 85: always expanded.
+  const isCollapsible = !isComplete && score >= 85;
+  const showItems = isComplete || !isCollapsible || showDetails;
 
   if (isComplete) {
     return (
@@ -155,9 +193,20 @@ function ProfileCompletenessBar({ meData }) {
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-semibold text-slate-700">Profile Completeness</span>
-        <span className={`text-sm font-bold ${score >= 60 ? "text-amber-600" : "text-red-500"}`}>
-          {score}%
-        </span>
+        <div className="flex items-center gap-3">
+          <span className={`text-sm font-bold ${score >= 60 ? "text-amber-600" : "text-red-500"}`}>
+            {score}%
+          </span>
+          {isCollapsible ? (
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              {showDetails ? "Hide ↑" : "View details ↓"}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
@@ -167,44 +216,62 @@ function ProfileCompletenessBar({ meData }) {
         />
       </div>
 
-      <div className="mt-3 space-y-1">
-        {PROFILE_COMPLETENESS_ITEMS.map(({ key, label, route }) => {
-          const done = !missingKeys.has(key);
-          const isHighlight = highestValueMissing?.key === key;
-          const isMissing = !done;
+      {showItems ? (
+        <div className="mt-3 space-y-1">
+          {PROFILE_COMPLETENESS_ITEMS.map(({ key, label, route }) => {
+            const done = !missingKeys.has(key);
+            const isHighlight = highestValueMissing?.key === key;
+            const isMissing = !done;
 
-          return (
-            <div
-              key={key}
-              className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 ${
-                isHighlight ? "border border-amber-200 bg-amber-50" : ""
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                {done ? (
-                  <span className="text-emerald-500 text-xs">✓</span>
-                ) : (
-                  <span className={`inline-block h-3 w-3 shrink-0 rounded-full border-2 ${isHighlight ? "border-amber-400" : "border-slate-300"}`} />
-                )}
-                <span className={`text-xs font-medium truncate ${done ? "text-slate-400" : isHighlight ? "text-amber-900 font-semibold" : "text-slate-700"}`}>
-                  {label}
-                </span>
+            return (
+              <div
+                key={key}
+                className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 ${
+                  isHighlight ? "border border-amber-200 bg-amber-50" : ""
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  {done ? (
+                    <span className="text-emerald-500 text-xs">✓</span>
+                  ) : (
+                    <span
+                      className={`inline-block h-3 w-3 shrink-0 rounded-full border-2 ${
+                        isHighlight ? "border-amber-400" : "border-slate-300"
+                      }`}
+                    />
+                  )}
+                  <span
+                    className={`text-xs font-medium truncate ${
+                      done
+                        ? "text-slate-400"
+                        : isHighlight
+                        ? "text-amber-900 font-semibold"
+                        : "text-slate-700"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </div>
+                {isMissing && route ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(route)}
+                    className={`shrink-0 text-xs font-semibold whitespace-nowrap ${
+                      isHighlight
+                        ? "text-amber-700 hover:text-amber-900"
+                        : "text-slate-400 hover:text-slate-600"
+                    }`}
+                  >
+                    {isHighlight ? "Fix this →" : "→"}
+                  </button>
+                ) : isMissing ? (
+                  <span className="shrink-0 text-xs text-slate-400">Update below</span>
+                ) : null}
               </div>
-              {isMissing && route ? (
-                <button
-                  type="button"
-                  onClick={() => navigate(route)}
-                  className={`shrink-0 text-xs font-semibold whitespace-nowrap ${isHighlight ? "text-amber-700 hover:text-amber-900" : "text-slate-400 hover:text-slate-600"}`}
-                >
-                  {isHighlight ? "Fix this →" : "→"}
-                </button>
-              ) : isMissing ? (
-                <span className="shrink-0 text-xs text-slate-400">Update below</span>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
