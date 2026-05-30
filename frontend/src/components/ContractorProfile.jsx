@@ -122,15 +122,6 @@ function ProfileCompletenessBar({ meData }) {
   useEffect(() => {
     if (!meData) return;
 
-    // DEBUG: log meData.onboarding so we can see which fields are set in the browser console.
-    // Remove this log once Issue 1 is confirmed fixed in production.
-    console.log("[ProfileCompletenessBar] meData.onboarding:", meData?.onboarding, {
-      first_value_reached: meData?.onboarding?.first_value_reached,
-      first_project_started_at: meData?.onboarding?.first_project_started_at,
-      first_agreement_created_at: meData?.onboarding?.first_agreement_created_at,
-      stripe_connected: meData?.stripe_connected,
-    });
-
     api.get("/projects/agreements/", { params: { limit: 1 } })
       .then((res) => {
         const count =
