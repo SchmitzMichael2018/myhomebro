@@ -902,6 +902,7 @@ export default function StartWithAIAssistant({
   context = null,
   onAction = null,
   onClose = null,
+  hideContextHeader = false,
 }) {
   const navigate = useNavigate();
   const inputRef = useRef(null);
@@ -1383,41 +1384,43 @@ export default function StartWithAIAssistant({
 
   return (
     <section className={containerClass} data-testid={testId("start-with-ai-assistant")}>
-      <div className="border-b border-slate-200 px-5 py-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
-              <Bot className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                {sectionEyebrow}
+      {!hideContextHeader ? (
+        <div className="border-b border-slate-200 px-5 py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
+                <Bot className="h-5 w-5" />
               </div>
-              <h2
-                data-testid={testId("start-with-ai-title")}
-                className="mt-1 text-2xl font-bold tracking-tight text-slate-900"
-              >
-                {headline}
-              </h2>
-              <p className="mt-2 max-w-2xl text-sm text-slate-600">
-                {helperText}
-              </p>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  {sectionEyebrow}
+                </div>
+                <h2
+                  data-testid={testId("start-with-ai-title")}
+                  className="mt-1 text-2xl font-bold tracking-tight text-slate-900"
+                >
+                  {headline}
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm text-slate-600">
+                  {helperText}
+                </p>
+              </div>
             </div>
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            ) : null}
           </div>
-          {onClose ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Close
-            </button>
-          ) : null}
         </div>
-      </div>
+      ) : null}
 
       <div className="space-y-4 px-5 py-5">
-        {!isFieldAwareMode ? (
+        {hideContextHeader ? null : !isFieldAwareMode ? (
           <div
             className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
             data-testid={testId("start-with-ai-status")}

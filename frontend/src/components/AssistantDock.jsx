@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
 
@@ -313,6 +313,16 @@ function DesktopAssistantDock({
   onMinimize,
 }) {
   const navigate = useNavigate();
+  const scrollRef = useRef(null);
+  const hasBriefing = Array.isArray(context?.briefingItems) && context.briefingItems.length > 0;
+
+  // Scroll to top whenever the dock opens, so BriefingPanel is always visible first.
+  useEffect(() => {
+    if (open && scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+  }, [open]);
+
   return (
     <div
       className={`pointer-events-none fixed inset-y-0 right-0 z-40 hidden xl:flex ${
@@ -363,7 +373,7 @@ function DesktopAssistantDock({
               <Wand2 className="h-6 w-6 text-slate-500" />
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-auto p-4">
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto p-4">
               <BriefingPanel
                 items={context?.briefingItems}
                 onNavigate={(route) => { navigate(route); onClose(); }}
@@ -376,6 +386,7 @@ function DesktopAssistantDock({
                 context={context}
                 onAction={onAction}
                 onClose={onClose}
+                hideContextHeader={hasBriefing}
               />
             </div>
           )}
