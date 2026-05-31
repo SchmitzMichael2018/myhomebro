@@ -806,10 +806,9 @@ export default function useStep1Templates({
           setNoTemplateReason("");
 
           if (backendConfidence === "high") {
+            // Never expose raw backend scoring strings (data.reason) to the UI.
             setTemplateRecommendationReason(
-              data?.reason
-                ? data.reason
-                : chosen?._matchReason || "Exact type and subtype match."
+              "This template closely matches your project type and scope."
             );
           } else if (backendConfidence === "medium") {
             // When the backend flagged this as a partial (multi-trade) match, surface the warning.
@@ -818,7 +817,7 @@ export default function useStep1Templates({
                   "Partial match — this template covers one trade only. Your other work will need to be added manually.")
               : null;
             setTemplateRecommendationReason(
-              partialReason || data?.reason || chosen?._matchReason || "This template could fit, but review it before applying."
+              partialReason || "This template may fit — review before applying."
             );
           } else {
             setTemplateRecommendationReason("");

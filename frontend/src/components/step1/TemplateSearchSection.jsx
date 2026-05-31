@@ -182,7 +182,7 @@ function TemplateSearchResult({
             </span>
           </div>
 
-          {safeTrim(template?._matchReason) ? (
+          {isSafeReasonText(template?._matchReason) ? (
             <div className="mt-1 text-[11px] text-slate-500">
               {template._matchReason}
             </div>
@@ -338,6 +338,19 @@ export default function TemplateSearchSection({
     () => (Array.isArray(recommendedCandidates) ? recommendedCandidates.slice(0, 3) : []),
     [recommendedCandidates]
   );
+
+  // Safety filter: internal backend scoring strings must never surface in the UI.
+  // They contain semicolons (reason joiner), "shared keywords:", or "penalized".
+  function isSafeReasonText(text) {
+    if (!text || typeof text !== "string") return false;
+    const t = text.trim();
+    if (!t) return false;
+    if (t.includes(";")) return false;
+    if (/shared keywords:/i.test(t)) return false;
+    if (/\bpenalized\b/i.test(t)) return false;
+    if (/family mismatch:/i.test(t)) return false;
+    return true;
+  }
   const [manualDetailsExpanded, setManualDetailsExpanded] = useState(
     () => !isAiMode || hasTitle || hasDescription || hasAiPreview
   );
@@ -882,7 +895,7 @@ export default function TemplateSearchSection({
                       const reasons = Array.from(
                         new Set(
                           [
-                            safeTrim(template?._matchReason),
+                            isSafeReasonText(template?._matchReason) ? safeTrim(template._matchReason) : "",
                             ...insightLines,
                           ].filter(Boolean)
                         )
@@ -1031,7 +1044,7 @@ export default function TemplateSearchSection({
                         {getSafeEstimatedDays(detailTemplate) === 1 ? "" : "s"}
                       </span>
                     </div>
-                    {safeTrim(detailTemplate?._matchReason) ? (
+                    {isSafeReasonText(detailTemplate?._matchReason) ? (
                       <div className="mt-2 text-xs text-slate-500">
                         {detailTemplate._matchReason}
                       </div>
