@@ -260,7 +260,12 @@ export default function WorkspaceConversation({ contractorProfile = null }) {
     // Build a local template preview
     let draft = null;
     try {
-      draft = buildTemplateDraftPreview(subject, {});
+      draft = buildTemplateDraftPreview(subject, {
+        projectType: type,
+        project_type: type,
+        projectPath: classify?.project_path || "",
+        project_path: classify?.project_path || "",
+      });
     } catch {
       draft = null;
     }

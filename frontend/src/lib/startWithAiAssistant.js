@@ -1,6 +1,7 @@
 import {
   getProjectClarificationQuestions,
 } from "./subtypeClarifications.js";
+import { getMilestonePattern } from "./milestoneTemplates.js";
 
 export const CONFIDENCE_THRESHOLD = 0.7;
 
@@ -564,7 +565,12 @@ function buildTemplateDraftPreview(input = "", context = {}) {
       projectSubtype
     );
 
-  const milestones = buildGenericTemplateMilestones(projectSubtype);
+  const projectPath = context.projectPath || context.project_path || "";
+  const rawMilestones = getMilestonePattern(projectType || projectSubtype, projectPath);
+  const milestones = rawMilestones.map((m) => ({
+    ...m,
+    start_offset: m.start_offset_days,
+  }));
   const assistedDiy =
     /diy|homeowner|shared|assist/i.test(input) ||
     (Array.isArray(context.workflow_profile?.participation_structure) &&

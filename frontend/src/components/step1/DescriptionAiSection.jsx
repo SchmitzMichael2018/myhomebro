@@ -1,5 +1,6 @@
 import React from "react";
 import { safeTrim } from "./step1Utils";
+import ScopeDiffView from "../ScopeDiffView.jsx";
 
 export default function DescriptionAiSection({
   locked,
@@ -18,6 +19,7 @@ export default function DescriptionAiSection({
   runAiDescription,
   applyAiDescription,
   hasSomeContext,
+  existingScope,
 }) {
   void aiCredits;
   const aiCreditText = "AI Included";
@@ -118,46 +120,13 @@ export default function DescriptionAiSection({
       {aiErr ? <div className="mt-2 text-xs text-red-600">{aiErr}</div> : null}
 
       {aiPreview ? (
-        <div className="mt-3 rounded-md border bg-indigo-50 p-3">
-          <div className="mb-2 text-xs font-semibold text-indigo-900">
-            AI Suggested Scope Draft
-          </div>
-
-          <div className="whitespace-pre-wrap text-sm text-indigo-900">{aiPreview}</div>
-
-          <div className="mt-2 text-[11px] text-indigo-900/80">
-            Review this draft before using it. Make sure it matches the actual work, assumptions,
-            exclusions, and expectations for this agreement.
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => applyAiDescription("replace")}
-              disabled={locked}
-              className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              Replace Description
-            </button>
-
-            <button
-              type="button"
-              onClick={() => applyAiDescription("append")}
-              disabled={locked}
-              className="rounded border px-3 py-1.5 text-xs disabled:opacity-60"
-            >
-              Append to Description
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setAiPreview("")}
-              className="rounded border px-3 py-1.5 text-xs"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <ScopeDiffView
+          original={existingScope ?? safeTrim(dLocal?.description)}
+          improved={aiPreview}
+          locked={locked}
+          onAccept={(text) => applyAiDescription("replace", text)}
+          onReject={() => setAiPreview("")}
+        />
       ) : null}
     </div>
   );

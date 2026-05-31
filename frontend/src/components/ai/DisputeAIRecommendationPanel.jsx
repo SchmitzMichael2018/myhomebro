@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../api";
 import { buildAiContext, serializeAiContext } from "../../lib/aiContext.js";
+import { parseDisputeRecommendationResponse } from "../../lib/aiResponseParser.js";
 
 export default function DisputeAIRecommendationPanel({ disputeId }) {
   const [loading, setLoading] = useState(false);
@@ -61,6 +62,11 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
           entityType: "dispute",
         })),
       });
+      const parsed = parseDisputeRecommendationResponse(res.data);
+      if (!parsed.overview && !parsed.recommendation) {
+        setErr("AI recommendation returned an unexpected response — please try again.");
+        return;
+      }
       setResult(res.data);
     } catch (e) {
       const msg =

@@ -7218,10 +7218,18 @@ export default function Step2Milestones({
 
                         {estimate.hasPrimaryRange ? (
                           <div className="text-gray-700">
-                            {estimate.primaryLabel}:{" "}
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              {estimate.primaryLabel === "Total" ? "Est." : estimate.primaryLabel}
+                            </span>{" "}
                             <span className="font-medium">
-                              {formatCurrency(estimate.primaryLow)} - {formatCurrency(estimate.primaryHigh)}
+                              {formatCurrency(estimate.primaryLow)} – {formatCurrency(estimate.primaryHigh)}
                             </span>
+                          </div>
+                        ) : null}
+
+                        {m?.retainage_pct != null && Number(m.retainage_pct) > 0 ? (
+                          <div className="text-[10px] text-slate-500">
+                            Retainage: {Number(m.retainage_pct)}%
                           </div>
                         ) : null}
 
@@ -7558,10 +7566,18 @@ export default function Step2Milestones({
 
                         {estimate.hasPrimaryRange ? (
                           <div className="text-gray-700">
-                            {estimate.primaryLabel}:{" "}
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              {estimate.primaryLabel === "Total" ? "Est." : estimate.primaryLabel}
+                            </span>{" "}
                             <span className="font-medium">
-                              {formatCurrency(estimate.primaryLow)} - {formatCurrency(estimate.primaryHigh)}
+                              {formatCurrency(estimate.primaryLow)} – {formatCurrency(estimate.primaryHigh)}
                             </span>
+                          </div>
+                        ) : null}
+
+                        {m?.retainage_pct != null && Number(m.retainage_pct) > 0 ? (
+                          <div className="text-[10px] text-slate-500">
+                            Retainage: {Number(m.retainage_pct)}%
                           </div>
                         ) : null}
 

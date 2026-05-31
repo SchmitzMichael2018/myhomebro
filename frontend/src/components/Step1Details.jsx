@@ -42,6 +42,8 @@ import {
 } from "./step1/step1Utils";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
+import { isModelRefusal } from "../lib/aiResponseParser.js";
+import ScopeDiffView from "./ScopeDiffView.jsx";
 
 function PrettyJson({ data }) {
   if (!data) return null;
@@ -2787,6 +2789,9 @@ export default function Step1Details({
       const res = await api.post(`/projects/agreements/ai/description/`, payload);
       const text = extractAiScopeText(res?.data || {});
 
+      if (isModelRefusal(text)) {
+        throw new Error("AI couldn't process this description — please edit the scope and try again.");
+      }
       if (!safeTrim(text)) {
         throw new Error("AI returned an empty description.");
       }
@@ -2830,10 +2835,10 @@ export default function Step1Details({
     }
   }
 
-  async function applyAiDescription(action) {
+  async function applyAiDescription(action, textOverride = null) {
     if (locked) return;
 
-    const suggestion = safeTrim(aiPreview);
+    const suggestion = safeTrim(textOverride ?? aiPreview);
     if (!suggestion) return;
 
     const cur = safeTrim(dLocal.description);
@@ -7232,45 +7237,13 @@ export default function Step1Details({
                 ) : null}
 
                 {aiPreview ? (
-                  <div className="mt-3 rounded-md border bg-indigo-50 p-3">
-                    <div className="mb-2 text-xs font-semibold text-indigo-900">
-                      AI Suggested Scope Draft
-                    </div>
-
-                    <div className="whitespace-pre-wrap text-sm text-indigo-900">{aiPreview}</div>
-
-                    <div className="mt-2 text-[11px] text-indigo-900/80">
-                      Review this draft before using it.
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => applyAiDescription("replace")}
-                        disabled={locked}
-                        className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-60"
-                      >
-                        Replace Description
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => applyAiDescription("append")}
-                        disabled={locked}
-                        className="rounded border border-slate-200 px-3 py-1.5 text-xs disabled:opacity-60"
-                      >
-                        Append to Description
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setAiPreview("")}
-                        className="rounded border border-slate-200 px-3 py-1.5 text-xs"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
+                  <ScopeDiffView
+                    original={safeTrim(dLocal.description)}
+                    improved={aiPreview}
+                    locked={locked}
+                    onAccept={(text) => applyAiDescription("replace", text)}
+                    onReject={() => setAiPreview("")}
+                  />
                 ) : null}
               </div>
             </div>

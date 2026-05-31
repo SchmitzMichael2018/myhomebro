@@ -16,6 +16,7 @@ import toast from "react-hot-toast";
 import api from "../../api";
 import { dedupeMilestoneRows } from "../../lib/milestonePlanGuardrails.js";
 import { buildAiContext, serializeAiContext } from "../../lib/aiContext.js";
+import { parsePricingResponse, isModelRefusal } from "../../lib/aiResponseParser.js";
 
 function safeStr(v) {
   return v == null ? "" : String(v).trim();
@@ -469,6 +470,7 @@ function normalizePricingEstimates(list) {
     order: m?.order ?? idx + 1,
     title: safeStr(m?.title) || `Milestone ${idx + 1}`,
     suggested_amount_low: m?.suggested_amount_low ?? "",
+    suggested_amount_mid: m?.suggested_amount_mid ?? "",
     suggested_amount_high: m?.suggested_amount_high ?? "",
     labor_estimate_low: m?.labor_estimate_low ?? "",
     labor_estimate_high: m?.labor_estimate_high ?? "",
@@ -479,6 +481,7 @@ function normalizePricingEstimates(list) {
     pricing_source_note: safeStr(m?.pricing_source_note),
     recommended_duration_days: m?.recommended_duration_days ?? "",
     materials_hint: safeStr(m?.materials_hint),
+    retainage_pct: m?.retainage_pct ?? null,
   }));
 }
 
@@ -865,7 +868,12 @@ export default function useAgreementMilestoneAI({
       };
       const res = await api.post(`/projects/agreements/${agreementId}/ai/refresh-pricing-estimate/`, payload);
 
-      const pricingEstimates = normalizePricingEstimates(res?.data?.pricing_estimates || []);
+      const rawText = typeof res?.data === "string" ? res.data : null;
+      if (rawText && isModelRefusal(rawText)) {
+        throw new Error("Pricing estimate unavailable — please try again.");
+      }
+      const parsed = parsePricingResponse(res?.data || {});
+      const pricingEstimates = normalizePricingEstimates(parsed.milestones.length > 0 ? parsed.milestones : (res?.data?.pricing_estimates || []));
 
       if (typeof onCreditsUpdate === "function") {
         onCreditsUpdate({

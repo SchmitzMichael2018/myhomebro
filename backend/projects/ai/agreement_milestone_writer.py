@@ -1655,12 +1655,29 @@ def _normalize_pricing_estimates(
         materials_low = _blend_values(materials_low, baseline_materials_low)
         materials_high = _blend_values(materials_high, baseline_materials_high)
 
+        raw_mid = item.get("suggested_amount_mid")
+        mid: float | None = None
+        if raw_mid is not None:
+            mid_val = _safe_float(raw_mid, None)
+            if mid_val is not None and mid_val > 0:
+                mid = round(mid_val, 2)
+        if mid is None and low > 0 and high > 0:
+            mid = round((low + high) / 2, 2)
+
+        retainage_pct_raw = item.get("retainage_pct")
+        retainage_pct: float | None = None
+        if retainage_pct_raw is not None:
+            rp = _safe_float(retainage_pct_raw, None)
+            if rp is not None and 0 < rp <= 100:
+                retainage_pct = round(rp, 2)
+
         out.append(
             {
                 "milestone_id": item.get("milestone_id") or base.get("milestone_id"),
                 "order": order,
                 "title": _safe_str(item.get("title")) or _safe_str(base.get("title")) or f"Milestone {order}",
                 "suggested_amount_low": low or None,
+                "suggested_amount_mid": mid,
                 "suggested_amount_high": high or None,
                 "labor_estimate_low": labor_low or None,
                 "labor_estimate_high": labor_high or None,
@@ -1675,6 +1692,7 @@ def _normalize_pricing_estimates(
                 "recommended_duration_days": max(_safe_int(item.get("recommended_duration_days"), 0), 1),
                 "materials_hint": _safe_str(item.get("materials_hint")) or _safe_str(base.get("materials_hint")),
                 "pricing_mode": default_pricing_mode,
+                "retainage_pct": retainage_pct,
             }
         )
 
@@ -1949,13 +1967,18 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         "- full_service: guidance includes labor + materials\n"
         "- labor_only: guidance should emphasize contractor labor while treating materials as customer-supplied context\n"
         "- hybrid: guidance should reflect mixed/shared material responsibility\n"
-        "Use suggested_amount_low/high as the combined total estimate guidance.\n"
+        "Return pricing as a confidence range per milestone:\n"
+        "- suggested_amount_low: if all goes smoothly (best case)\n"
+        "- suggested_amount_mid: most likely outcome (center estimate)\n"
+        "- suggested_amount_high: if complications arise (worst case)\n"
+        "ALWAYS validate: suggested_amount_high >= suggested_amount_mid >= suggested_amount_low > 0.\n"
         "When possible, also return labor_estimate_low/high and materials_estimate_low/high as advisory breakdowns.\n"
         "If pricing_mode is labor_only, labor estimates should be primary and materials estimates may be omitted or de-emphasized.\n"
         "pricing_source_note should briefly explain the pricing mode and the main labor/material drivers.\n"
         "Use project_type/project_subtype as the primary baseline and treat template context as a secondary refinement, not the final answer.\n"
         "If clarification answers increase uncertainty, widen ranges and reduce confidence.\n"
         "If materials, size, pitch, or decking condition imply higher complexity, increase ranges accordingly.\n"
+        "For commercial projects: if retainage is typically used, return retainage_pct as a percentage (e.g. 10.0 for 10%); otherwise return null.\n"
         "Return only JSON that matches the schema.\n"
     )
 
@@ -1989,6 +2012,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
                             "order": {"type": "integer"},
                             "title": {"type": "string"},
                             "suggested_amount_low": {"type": "number"},
+                            "suggested_amount_mid": {"type": ["number", "null"]},
                             "suggested_amount_high": {"type": "number"},
                             "labor_estimate_low": {"type": "number"},
                             "labor_estimate_high": {"type": "number"},
@@ -1999,12 +2023,14 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
                             "recommended_duration_days": {"type": "integer"},
                             "materials_hint": {"type": "string"},
                             "pricing_mode": {"type": "string"},
+                            "retainage_pct": {"type": ["number", "null"]},
                         },
                         "required": [
                             "milestone_id",
                             "order",
                             "title",
                             "suggested_amount_low",
+                            "suggested_amount_mid",
                             "suggested_amount_high",
                             "labor_estimate_low",
                             "labor_estimate_high",
@@ -2015,6 +2041,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
                             "recommended_duration_days",
                             "materials_hint",
                             "pricing_mode",
+                            "retainage_pct",
                         ],
                     },
                 }
