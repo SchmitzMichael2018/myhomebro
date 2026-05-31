@@ -54,6 +54,17 @@ function MatchBadge({ template, recommended, possible }) {
   return null;
 }
 
+// Safety filter: internal backend scoring strings must never surface in the UI.
+// They contain semicolons (reason joiner), "shared keywords:", or "penalized".
+function isSafeReasonText(text) {
+  if (!text || typeof text !== "string") return false;
+  if (text.includes(";")) return false;
+  if (text.includes("shared keywords:")) return false;
+  if (text.includes("penalized")) return false;
+  if (text.includes("family mismatch:")) return false;
+  return true;
+}
+
 function PreviewSection({ title, children, testId }) {
   return (
     <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3" data-testid={testId}>
@@ -339,18 +350,6 @@ export default function TemplateSearchSection({
     [recommendedCandidates]
   );
 
-  // Safety filter: internal backend scoring strings must never surface in the UI.
-  // They contain semicolons (reason joiner), "shared keywords:", or "penalized".
-  function isSafeReasonText(text) {
-    if (!text || typeof text !== "string") return false;
-    const t = text.trim();
-    if (!t) return false;
-    if (t.includes(";")) return false;
-    if (/shared keywords:/i.test(t)) return false;
-    if (/\bpenalized\b/i.test(t)) return false;
-    if (/family mismatch:/i.test(t)) return false;
-    return true;
-  }
   const [manualDetailsExpanded, setManualDetailsExpanded] = useState(
     () => !isAiMode || hasTitle || hasDescription || hasAiPreview
   );
