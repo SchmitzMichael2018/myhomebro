@@ -812,8 +812,13 @@ export default function useStep1Templates({
                 : chosen?._matchReason || "Exact type and subtype match."
             );
           } else if (backendConfidence === "medium") {
+            // When the backend flagged this as a partial (multi-trade) match, surface the warning.
+            const partialReason = data?.partial_match
+              ? (data.partial_match_reason ||
+                  "Partial match — this template covers one trade only. Your other work will need to be added manually.")
+              : null;
             setTemplateRecommendationReason(
-              data?.reason || chosen?._matchReason || "This template could fit, but review it before applying."
+              partialReason || data?.reason || chosen?._matchReason || "This template could fit, but review it before applying."
             );
           } else {
             setTemplateRecommendationReason("");

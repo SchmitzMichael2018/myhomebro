@@ -14,6 +14,8 @@ class RecommendationResult:
     score: int
     reason: str
     candidates: list[dict]
+    partial_match: bool = False
+    partial_match_reason: str = ""
 
 
 def _norm(text: str) -> str:
@@ -48,6 +50,37 @@ def _canonical_hvac_text(text: str) -> str:
         normalized = re.sub(pattern, " central air installation ", normalized)
 
     return _search_norm(normalized)
+
+
+# Extended trade groups used for multi-trade detection. Broader than the kitchen-remodel-focused
+# groups in _count_project_trade_groups — these cover exterior, roofing, siding, etc.
+_EXTENDED_TRADE_GROUPS: list[list[str]] = [
+    ["roofing", "roof", "shingle", "flashing", "underlayment"],
+    ["siding", "vinyl siding", "lap siding", "fiber cement", "hardie", "exterior cladding"],
+    ["plumbing", "plumber", "water line", "drain", "pipe", "faucet"],
+    ["electrical", "electric", "wiring", "outlet", "breaker", "panel"],
+    ["flooring", "floor", "lvp", "hardwood", "tile floor", "laminate"],
+    ["painting", "paint", "primer", "stain", "repaint"],
+    ["hvac", "air conditioning", "heating", "ductwork", "furnace", "central air"],
+    ["deck", "pergola", "patio cover", "gazebo"],
+    ["concrete", "driveway", "sidewalk", "patio slab", "concrete slab"],
+    ["fencing", "fence", "gate"],
+    ["masonry", "brick", "stone wall", "retaining wall"],
+    ["tile", "backsplash", "shower tile", "bathroom tile"],
+    ["cabinet", "cabinetry", "kitchen cabinet"],
+    ["countertop", "counter top", "quartz", "granite countertop"],
+]
+
+
+def _count_all_trade_groups_extended(text: str) -> int:
+    """Return the number of distinct extended trade groups found in the text."""
+    return sum(1 for phrases in _EXTENDED_TRADE_GROUPS if _contains_phrase(text, phrases))
+
+
+def _template_has_repair_keyword(template: "ProjectTemplate") -> bool:
+    """Return True when the template's name/subtype signals repair/fix/patch intent."""
+    text = _norm((template.name or "") + " " + (template.project_subtype or ""))
+    return bool(re.search(r"\b(repair|fix|patch|damage|restore|maintenance)\b", text))
 
 
 def _tokens(text: str) -> set[str]:
@@ -343,6 +376,15 @@ def _project_signals(text: str) -> dict[str, bool]:
         ),
         "multi_trade": trade_group_count >= 3,
         "full_scope": remodel_signal and (trade_group_count >= 3 or has_demo or has_layout_change),
+        # Intent signals — detects whether the INPUT describes new work vs. fixing existing
+        "has_install_signal": _contains_phrase(
+            t, ["install", "build", "construct", "attach", "put in", "put up", "new construction", "build new"]
+        ),
+        "has_repair_signal": _contains_phrase(
+            t, ["repair", "fix", "patch", "restore", "damaged", "damage repair"]
+        ),
+        # Fires when 2+ distinct trade categories are found in the input text
+        "two_distinct_trades": _count_all_trade_groups_extended(t) >= 2,
     }
 
 
@@ -681,6 +723,32 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
         score -= 28
         penalties.append("penalized trade mismatch for no-utility cabinet scope")
 
+    # --- Intent mismatch penalties ---
+    # When the input has new-install/build intent, penalize templates named/typed as repair.
+    # "patio roof install" should not match "Roof Repair Project".
+    if project_sig.get("has_install_signal") and _template_has_repair_keyword(template):
+        score -= 40
+        penalties.append("penalized repair template for new-install/build input")
+
+    # When the input is clearly repair-only (no install signal), penalize explicit new-build templates.
+    # Threshold is softer because many templates say "install" generically in their scope.
+    if project_sig.get("has_repair_signal") and not project_sig.get("has_install_signal"):
+        template_name_lower = _norm(template.name or "")
+        if re.search(r"\b(new construction|build new|installation project)\b", template_name_lower):
+            score -= 30
+            penalties.append("penalized new-construction template for repair-only input")
+
+    # --- Multi-trade penalty ---
+    # A job describing 2+ distinct trade categories shouldn't confidently match a single-trade template.
+    if project_sig.get("two_distinct_trades"):
+        corpus_trades = _count_all_trade_groups_extended(
+            " ".join(x for x in [project_title or "", description or ""] if x)
+        )
+        template_trades = _count_all_trade_groups_extended(_template_signature_text(template))
+        if corpus_trades >= 2 and template_trades <= 1:
+            score -= 30
+            penalties.append("multi-trade job partially covered by single-trade template")
+
     if penalties:
         reasons.extend(penalties)
 
@@ -826,9 +894,22 @@ def recommend_template(
         for row in ranked[:5]
     ]
 
+    best_reason = best["reason"]
+    is_partial = "partially covered by single-trade template" in best_reason
+    partial_reason = ""
+    if is_partial and best["template"]:
+        tpl_type = _norm(best["template"].project_type or "")
+        label = best["template"].project_type or "one trade"
+        partial_reason = (
+            f"Partial match — this template covers {label} only. "
+            "Work from other trades in your scope will need to be added manually."
+        )
+
     return RecommendationResult(
         template=best["template"],
         score=best["score"],
-        reason=best["reason"],
+        reason=best_reason,
         candidates=candidate_payload,
+        partial_match=is_partial,
+        partial_match_reason=partial_reason,
     )

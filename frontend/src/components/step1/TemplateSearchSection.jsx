@@ -870,8 +870,13 @@ export default function TemplateSearchSection({
                 {!noTemplateMatch && topRecommendedTemplates.length ? (
                   <div className="space-y-3">
                     <div className="text-sm font-semibold text-slate-900">
-                      Recommended starting point
+                      {recommendationConfidence === "medium" ? "Closest template match" : "Recommended starting point"}
                     </div>
+                    {recommendationConfidence === "medium" && templateRecommendationReason ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        {templateRecommendationReason}
+                      </div>
+                    ) : null}
                     {topRecommendedTemplates.map((template) => {
                       const insightLines = getRecommendationInsightLines(template);
                       const reasons = Array.from(
