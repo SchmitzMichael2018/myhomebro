@@ -442,15 +442,36 @@ def _call_openai_classifier(
         "additionalProperties": False,
     }
 
+    # Build a flat list of valid type names from the taxonomy snapshot so the
+    # model sees them as an explicit constrained list in the system prompt.
+    _type_names: list[str] = [
+        row["name"]
+        for row in ((taxonomy or {}).get("types") or [])
+        if isinstance(row, dict) and row.get("name")
+    ]
+    _taxonomy_list = (
+        "\n".join(f"- {name}" for name in _type_names)
+        if _type_names
+        else "(see taxonomy in user message)"
+    )
+
     system = (
-        "You classify contractor jobs into a project taxonomy. "
-        "Use the generated scope as the strongest signal, then the original description. "
-        "Return only normalized taxonomy labels. "
-        "Do not return sentences, fragments, or raw scope text in project_type, project_subtype, or project_title. "
-        "Choose only from the provided project types and subtypes. "
-        "If no exact subtype exists, pick the closest valid project type and return a recommended_custom_subtype separately. "
-        "Never reuse stale values from prior requests unless the current text clearly supports them. "
-        "Return only valid JSON matching the schema."
+        "You classify contractor jobs into a project taxonomy.\n"
+        "Use the scope as the strongest signal, then the original description.\n"
+        "\n"
+        f"Valid project_type values — you MUST choose from this list only:\n{_taxonomy_list}\n"
+        "\n"
+        "Rules:\n"
+        "- Select the single best matching project_type from the list above. "
+        "Do NOT invent new categories or use category names not in the list.\n"
+        "- If the description mentions multiple trade types (e.g. roofing AND siding, or electrical AND plumbing), "
+        "select the primary or most significant one — the trade that represents the majority of the described work. "
+        "Roofing and Siding are distinct types; choose the one that dominates the scope.\n"
+        "- Return only normalized taxonomy labels in project_type, project_subtype, and project_title. "
+        "Do not return sentences, fragments, or raw scope text in those fields.\n"
+        "- If no exact subtype exists, pick the closest valid project_type and return a recommended_custom_subtype separately.\n"
+        "- Never reuse stale values from prior requests unless the current text clearly supports them.\n"
+        "- Return only valid JSON matching the schema."
     )
 
     user = _json_dump(

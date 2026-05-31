@@ -2888,7 +2888,11 @@ export default function Step1Details({
     const nextSubtype = preserveManualClassification
       ? currentSubtype
       : normalizeStep1FieldValue(currentSubtypeResolved);
-    const nextTitle = normalizeStep1FieldValue(currentTitleResolved);
+    // Never overwrite a title the contractor has already typed.
+    // Only fill in the title when it is completely empty.
+    const nextTitle = currentTitle
+      ? currentTitle
+      : normalizeStep1FieldValue(currentTitleResolved);
     const nextTypeRef =
       (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
     const nextSubtypeRef =
@@ -3059,12 +3063,34 @@ export default function Step1Details({
             }
           : classification;
 
-      const result = commitClassificationResult(resolvedClassification, { silent: false });
-      if (!result?.hasMeaningfulChange && safeTrim(resolvedClassification?.confidence) === "low") {
-        setClassificationMessage("Classification already looks accurate.");
-      }
-      if (!safeTrim(result?.nextType) && !safeTrim(result?.nextSubtype) && !safeTrim(result?.nextTitle)) {
-        throw new Error("AI returned no classification changes.");
+      const resolvedConfidence = safeTrim(resolvedClassification?.confidence || "low");
+      const shouldAutoApply = resolvedConfidence === "medium" || resolvedConfidence === "high";
+
+      if (!shouldAutoApply) {
+        // Low confidence — surface alternatives for the contractor to choose from,
+        // but do NOT auto-apply type/subtype/title to the form.
+        setClassificationResult({
+          project_type: safeTrim(resolvedClassification?.project_type),
+          project_subtype: safeTrim(resolvedClassification?.project_subtype),
+          project_title: safeTrim(resolvedClassification?.project_title),
+          confidence: resolvedConfidence,
+          confidence_label: safeTrim(resolvedClassification?.confidence_label) || "Low confidence",
+          reason: safeTrim(resolvedClassification?.reason),
+          alternatives: Array.isArray(resolvedClassification?.alternatives)
+            ? resolvedClassification.alternatives
+            : [],
+          recommended_custom_subtype: safeTrim(resolvedClassification?.recommended_custom_subtype),
+          note: "Review the suggestions below and select one, or edit manually.",
+        });
+        setClassificationMessage("AI confidence is low — review the suggestions below or edit manually.");
+      } else {
+        const result = commitClassificationResult(resolvedClassification, { silent: false });
+        if (!result?.hasMeaningfulChange) {
+          setClassificationMessage("Classification already looks accurate.");
+        }
+        if (!safeTrim(result?.nextType) && !safeTrim(result?.nextSubtype) && !safeTrim(result?.nextTitle)) {
+          throw new Error("AI returned no classification changes.");
+        }
       }
     } catch (error) {
       const payload = error?.response?.data || {};
