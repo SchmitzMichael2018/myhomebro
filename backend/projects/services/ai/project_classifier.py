@@ -407,10 +407,37 @@ def _call_openai_classifier(
         or "gpt-4o-mini"
     )
 
+    # Build a flat list of valid type names from the taxonomy snapshot.
+    # This list is injected into the system prompt AND enforced as a JSON enum
+    # so the model cannot return a type that isn't in the database.
+    _type_names: list[str] = [
+        row["name"]
+        for row in ((taxonomy or {}).get("types") or [])
+        if isinstance(row, dict) and row.get("name")
+    ]
+    _taxonomy_list = (
+        "\n".join(f"- {name}" for name in _type_names)
+        if _type_names
+        else "(see taxonomy in user message)"
+    )
+
+    logger.debug(
+        "Classifier taxonomy list (%d types): %s",
+        len(_type_names),
+        ", ".join(_type_names) or "(empty)",
+    )
+
+    # Use enum enforcement when taxonomy is non-empty so the model is
+    # structurally forced to pick from the list, not just instructed to.
+    _project_type_schema: dict[str, Any] = {"type": "string"}
+    if _type_names:
+        _project_type_schema["enum"] = _type_names
+
     schema = {
         "type": "object",
         "properties": {
-            "project_type": {"type": "string"},
+            "reasoning_text": {"type": "string"},
+            "project_type": _project_type_schema,
             "project_subtype": {"type": "string"},
             "project_title": {"type": "string"},
             "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
@@ -431,6 +458,7 @@ def _call_openai_classifier(
             },
         },
         "required": [
+            "reasoning_text",
             "project_type",
             "project_subtype",
             "project_title",
@@ -442,19 +470,6 @@ def _call_openai_classifier(
         "additionalProperties": False,
     }
 
-    # Build a flat list of valid type names from the taxonomy snapshot so the
-    # model sees them as an explicit constrained list in the system prompt.
-    _type_names: list[str] = [
-        row["name"]
-        for row in ((taxonomy or {}).get("types") or [])
-        if isinstance(row, dict) and row.get("name")
-    ]
-    _taxonomy_list = (
-        "\n".join(f"- {name}" for name in _type_names)
-        if _type_names
-        else "(see taxonomy in user message)"
-    )
-
     system = (
         "You classify contractor jobs into a project taxonomy.\n"
         "Use the scope as the strongest signal, then the original description.\n"
@@ -462,6 +477,7 @@ def _call_openai_classifier(
         f"Valid project_type values — you MUST choose from this list only:\n{_taxonomy_list}\n"
         "\n"
         "Rules:\n"
+        "- First write your reasoning_text: briefly explain in 1-2 sentences which project_type best fits and why.\n"
         "- Select the single best matching project_type from the list above. "
         "Do NOT invent new categories or use category names not in the list.\n"
         "- If the description mentions multiple trade types (e.g. roofing AND siding, or electrical AND plumbing), "
@@ -481,6 +497,11 @@ def _call_openai_classifier(
             "current_values": current_values or {},
             "taxonomy": taxonomy,
         }
+    )
+
+    logger.debug(
+        "Classifier system prompt (first 500 chars): %s",
+        system[:500],
     )
 
     client = OpenAI(api_key=api_key)
@@ -510,7 +531,36 @@ def _call_openai_classifier(
     if not text:
         return None
 
-    return _safe_json_loads(text)
+    logger.debug("Classifier raw model response: %s", text[:800])
+
+    result = _safe_json_loads(text)
+
+    # Cross-check: if the model's own reasoning mentions a different type than what
+    # it returned, downgrade confidence. This catches cases where the model correctly
+    # identifies the job in its reasoning but then outputs a mismatched type (which
+    # can happen when the enum forces a constrained choice the model isn't confident about).
+    if isinstance(result, dict):
+        reasoning = _safe_str(result.get("reasoning_text", "")).lower()
+        returned_type = _safe_str(result.get("project_type", "")).lower()
+        if reasoning and returned_type and _type_names:
+            # Check whether any OTHER type name appears prominently in the reasoning
+            # but is NOT the returned type.
+            reasoning_mentions_another = any(
+                (t.lower() != returned_type and t.lower() in reasoning)
+                for t in _type_names
+            )
+            returned_type_in_reasoning = returned_type in reasoning
+            if reasoning_mentions_another and not returned_type_in_reasoning:
+                logger.warning(
+                    "Classifier reasoning/output mismatch: returned=%r but reasoning mentions another type. "
+                    "Downgrading confidence to low. reasoning=%r",
+                    result.get("project_type"),
+                    result.get("reasoning_text", "")[:200],
+                )
+                result["confidence"] = "low"
+                result["_confidence_downgraded"] = True
+
+    return result
 
 
 def _normalize_candidate(result: dict[str, Any] | None, lookup: _TaxonomyLookup) -> dict[str, Any] | None:
