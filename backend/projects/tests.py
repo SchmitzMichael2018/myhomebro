@@ -15945,6 +15945,119 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertNotIn("Roof Repair", candidate_names)
         self.assertNotIn("Concrete Slab Installation", candidate_names)
 
+    @override_settings(OPENAI_API_KEY="")
+    def test_classifier_keeps_exterior_siding_patio_roof_out_of_inspection(self):
+        description = "Exterior siding repair and patio roof install"
+
+        classification = classify_project_from_scope(
+            description=description,
+            scope=description,
+            current_values={"project_type": "", "project_subtype": "", "project_title": ""},
+            contractor=self.contractor,
+        )
+
+        self.assertNotEqual(classification["project_type"], "Inspection")
+        self.assertIn(classification["project_type"], {"Outdoor", "Siding"})
+        self.assertIn("Siding", classification["project_subtype"])
+        self.assertIn("Patio Roof", classification["project_subtype"])
+
+    def test_recommend_endpoint_rejects_home_inspection_for_exterior_multi_scope(self):
+        ProjectTemplate.objects.create(
+            name="Home Inspection Service",
+            project_type="Inspection",
+            project_subtype="Home Inspection",
+            description="Whole-home visual inspection, findings review, and report preparation.",
+            default_scope="Inspect accessible home systems and provide a written inspection report.",
+            is_system_template=True,
+            is_published=True,
+            visibility=ProjectTemplate.Visibility.SYSTEM,
+            allow_discovery=True,
+        )
+
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "project_title": "Exterior siding repair and patio roof install",
+                "project_type": "Outdoor",
+                "project_subtype": "Siding Repair + Patio Roof Installation",
+                "description": "Exterior siding repair and patio roof install",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "none")
+        self.assertEqual(body["confidence_level"], "low")
+        self.assertIsNone(body["recommended_template"])
+        self.assertIsNone(body["possible_match"])
+        matched_names = {
+            row["name"]
+            for row in [
+                body.get("recommended_template"),
+                body.get("possible_match"),
+            ]
+            if row
+        }
+        self.assertNotIn("Home Inspection Service", matched_names)
+        self.assertEqual(body["detail"], "No strong template match found.")
+
+    def test_recommend_endpoint_still_matches_home_inspection_when_requested(self):
+        ProjectTemplate.objects.create(
+            name="Home Inspection Service",
+            project_type="Inspection",
+            project_subtype="Home Inspection",
+            description="Whole-home visual inspection, findings review, and report preparation.",
+            default_scope="Inspect accessible home systems and provide a written inspection report.",
+            is_system_template=True,
+            is_published=True,
+            visibility=ProjectTemplate.Visibility.SYSTEM,
+            allow_discovery=True,
+        )
+
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Home inspection before closing with a written report.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["confidence_level"], "high")
+        self.assertEqual(body["recommended_template"]["name"], "Home Inspection Service")
+
+    def test_recommend_endpoint_roof_inspection_does_not_become_siding_patio_work(self):
+        roof_inspection = ProjectTemplate.objects.create(
+            name="Roof Inspection",
+            project_type="Inspection",
+            project_subtype="Roof Inspection",
+            description="Inspect roof covering, flashing, vents, and visible roof penetrations.",
+            default_scope="Perform a roof inspection and provide findings.",
+            is_system_template=True,
+            is_published=True,
+            visibility=ProjectTemplate.Visibility.SYSTEM,
+            allow_discovery=True,
+        )
+
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Roof inspection to check flashing and shingles after a storm.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        matched = body["recommended_template"] or body["possible_match"]
+        self.assertIsNotNone(matched)
+        self.assertEqual(matched["id"], roof_inspection.id)
+        self.assertNotIn("Siding", matched["project_subtype"])
+        self.assertNotIn("Patio", matched["project_subtype"])
+
     def test_recommend_endpoint_returns_optional_match_for_medium_confidence(self):
         response = self.client.post(
             "/api/projects/templates/recommend/",

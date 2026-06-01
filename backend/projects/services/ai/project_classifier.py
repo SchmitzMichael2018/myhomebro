@@ -44,6 +44,32 @@ CLASSIFICATION_BOILERPLATE_PREFIXES = (
 )
 
 
+def _has_construction_scope_without_explicit_inspection(text: str) -> bool:
+    normalized = _norm_text(text)
+    if not normalized:
+        return False
+    if any(term in normalized for term in ["home inspection", "roof inspection", "inspect", "inspection"]):
+        return False
+    return any(
+        term in normalized
+        for term in [
+            "siding",
+            "patio roof",
+            "patio cover",
+            "covered patio",
+            "exterior",
+            "roof construction",
+            "structural repair",
+            "install",
+            "installation",
+            "build",
+            "construct",
+            "repair",
+            "renovation",
+        ]
+    )
+
+
 @dataclass(frozen=True)
 class _TaxonomyLookup:
     type_by_norm: dict[str, str]
@@ -483,6 +509,8 @@ def _call_openai_classifier(
         "- If the description mentions multiple trade types (e.g. roofing AND siding, or electrical AND plumbing), "
         "select the primary or most significant one — the trade that represents the majority of the described work. "
         "Roofing and Siding are distinct types; choose the one that dominates the scope.\n"
+        "- Choose Inspection only when the user clearly asks for an inspection, assessment, or site visit. "
+        "Do not classify repair, installation, exterior renovation, siding, patio roof, structural, or roof construction work as Inspection.\n"
         "- Return only normalized taxonomy labels in project_type, project_subtype, and project_title. "
         "Do not return sentences, fragments, or raw scope text in those fields.\n"
         "- If no exact subtype exists, pick the closest valid project_type and return a recommended_custom_subtype separately.\n"
@@ -746,6 +774,21 @@ def classify_project_from_scope(
                 current_values=clean_current_values,
             )
             return fallback
+
+    if normalized_key(candidate_type) == "inspection" and _has_construction_scope_without_explicit_inspection(f"{scope}\n{description}"):
+        logger.warning(
+            "Rejected AI inspection classification for construction/repair/install scope; falling back. candidate=%s description=%s scope=%s",
+            _json_dump(candidate)[:1000],
+            description[:500],
+            scope[:500],
+        )
+        fallback["alternatives"] = _build_alternatives(
+            text=f"{scope}\n{description}",
+            lookup=lookup,
+            primary=fallback,
+            current_values=clean_current_values,
+        )
+        return fallback
 
     result = {
         **normalized_candidate,

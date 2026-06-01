@@ -5863,13 +5863,13 @@ export default function Step1Details({
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="max-w-3xl">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                      No template found - let&apos;s build this together
+                      No strong template match found
                     </div>
                     <div className="mt-1 text-base font-semibold text-slate-900">
-                      We couldn&apos;t find a saved template for this job. MyHomeBro can build editable project details from your description.
+                      This project appears to combine multiple work scopes, so a saved template may not fit cleanly.
                     </div>
                     <div className="mt-1 text-sm text-slate-600">
-                      Review the fields below, make any changes, then click Save and Next.
+                      Build an AI draft from the project description, or browse templates manually if you want to compare saved starting points.
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <button
@@ -5877,7 +5877,7 @@ export default function Step1Details({
                         data-testid="step1-review-project-details-jump"
                         onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
                         disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
-                        className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                        className="rounded-xl border border-transparent px-2 py-2 text-sm font-semibold text-slate-600 hover:underline disabled:opacity-60"
                       >
                         Review Project Details
                       </button>
@@ -5886,9 +5886,9 @@ export default function Step1Details({
                         data-testid="step1-build-agreement-ai-button"
                         onClick={() => applyNoTemplateFallbackSetup(step1JobDescriptionPrompt || dLocal?.description || agreement?.description || "")}
                         disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >
-                        Build with AI
+                        Build with AI instead
                       </button>
                       <button
                         type="button"
@@ -5918,9 +5918,9 @@ export default function Step1Details({
                             activateStartMode("template", { committed: true, source: "user" });
                           }}
                         disabled={locked}
-                        className="rounded-xl border border-transparent px-2 py-2 text-sm font-semibold text-slate-600 hover:underline"
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
-                        Browse templates manually
+                        Browse Templates
                       </button>
                     </div>
                   </div>
@@ -6337,14 +6337,21 @@ export default function Step1Details({
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                  AI Recommendation
+                  {aiCompactRecommendationConfidence === "medium"
+                    ? "Possible template match"
+                    : "Template match found"}
                 </div>
                 <div className="mt-1 text-base font-semibold text-slate-900">
-                  {aiRecommendedTemplate?.name || "I found a strong template fit"}
+                  {aiRecommendedTemplate?.name ||
+                    (aiCompactRecommendationConfidence === "medium"
+                      ? "Possible template match"
+                      : "I found a strong template fit")}
                 </div>
                 <div className="mt-1 text-sm text-slate-700">
                   {templateRecommendationReason ||
-                    "This looks like a strong starting structure for the job you described."}
+                    (aiCompactRecommendationConfidence === "medium"
+                      ? "This template may fit parts of the job you described. Review it before applying."
+                      : "This looks like a strong starting structure for the job you described.")}
                 </div>
                 {assistantTopTemplatePreview?.milestone_count ? (
                   <div className="mt-2 text-xs text-sky-800/90">

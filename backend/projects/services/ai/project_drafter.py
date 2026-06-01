@@ -743,6 +743,18 @@ def classify_type_subtype(
         if any(sig in hay for sig in concrete_primary_signals) and not any(sig in hay for sig in shed_signals):
             return "Concrete", "Concrete Slab", "Detected concrete-specific scope. Using type 'Concrete' and subtype 'Concrete Slab'."
 
+        exterior_multi_scope = (
+            ("siding" in hay)
+            and any(sig in hay for sig in ["patio roof", "patio cover", "covered patio", "porch roof"])
+            and any(sig in hay for sig in ["install", "installation", "build", "construct"])
+        )
+        if exterior_multi_scope:
+            return (
+                "Outdoor",
+                "Siding Repair + Patio Roof Installation",
+                "Detected multi-scope exterior work: siding repair plus patio roof installation.",
+            )
+
         concrete_type, concrete_subtype, concrete_reason = _roofing_force_override(
             project_title, description
         )
@@ -756,8 +768,22 @@ def classify_type_subtype(
     if any(sig in hay_norm for sig in pool_signals):
         return "Pool", "Inground Pool and Pool House", "Detected pool-specific scope. Using type 'Pool' and subtype 'Inground Pool and Pool House'."
 
-    siding_signals = ["replace siding", "siding replacement", "new siding", "siding repair", "siding"]
+    exterior_multi_scope = (
+        ("siding" in hay_norm)
+        and any(sig in hay_norm for sig in ["patio roof", "patio cover", "covered patio", "porch roof"])
+        and any(sig in hay_norm for sig in ["install", "installation", "build", "construct"])
+    )
+    if exterior_multi_scope:
+        return (
+            "Outdoor",
+            "Siding Repair + Patio Roof Installation",
+            "Detected multi-scope exterior work: siding repair plus patio roof installation.",
+        )
+
+    siding_signals = ["replace siding", "siding replacement", "new siding", "siding install", "siding repair", "siding"]
     if any(sig in hay_norm for sig in siding_signals):
+        if any(sig in hay_norm for sig in ["siding repair", "repair siding", "patch siding", "fix siding"]):
+            return "Siding", "Siding Repair", "Detected siding-repair scope. Using type 'Siding' and subtype 'Siding Repair'."
         return "Siding", "Siding Replacement", "Detected siding-specific scope. Using type 'Siding' and subtype 'Siding Replacement'."
 
     garage_door_signals = ["garage door replacement", "replace garage door", "garage door install", "garage door installation", "garage door opener", "garage opener"]

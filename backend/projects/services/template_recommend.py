@@ -54,27 +54,47 @@ def _canonical_hvac_text(text: str) -> str:
 
 # Extended trade groups used for multi-trade detection. Broader than the kitchen-remodel-focused
 # groups in _count_project_trade_groups — these cover exterior, roofing, siding, etc.
-_EXTENDED_TRADE_GROUPS: list[list[str]] = [
-    ["roofing", "roof", "shingle", "flashing", "underlayment"],
-    ["siding", "vinyl siding", "lap siding", "fiber cement", "hardie", "exterior cladding"],
-    ["plumbing", "plumber", "water line", "drain", "pipe", "faucet"],
-    ["electrical", "electric", "wiring", "outlet", "breaker", "panel"],
-    ["flooring", "floor", "lvp", "hardwood", "tile floor", "laminate"],
-    ["painting", "paint", "primer", "stain", "repaint"],
-    ["hvac", "air conditioning", "heating", "ductwork", "furnace", "central air"],
-    ["deck", "pergola", "patio cover", "gazebo"],
-    ["concrete", "driveway", "sidewalk", "patio slab", "concrete slab"],
-    ["fencing", "fence", "gate"],
-    ["masonry", "brick", "stone wall", "retaining wall"],
-    ["tile", "backsplash", "shower tile", "bathroom tile"],
-    ["cabinet", "cabinetry", "kitchen cabinet"],
-    ["countertop", "counter top", "quartz", "granite countertop"],
+_EXTENDED_TRADE_GROUPS: list[tuple[str, list[str]]] = [
+    ("roofing", ["roofing", "roof", "shingle", "flashing", "underlayment"]),
+    ("siding", ["siding", "vinyl siding", "lap siding", "fiber cement", "hardie", "exterior cladding"]),
+    ("patio_roof", ["patio roof", "patio cover", "porch roof", "covered patio", "shade structure"]),
+    ("inspection", ["inspection", "inspect", "assessment", "site visit"]),
+    ("installation", ["install", "installation", "build", "construct", "new construction"]),
+    ("repair", ["repair", "fix", "patch", "restore", "damaged"]),
+    ("plumbing", ["plumbing", "plumber", "water line", "drain", "pipe", "faucet"]),
+    ("electrical", ["electrical", "electric", "wiring", "outlet", "breaker", "panel"]),
+    ("flooring", ["flooring", "floor", "lvp", "hardwood", "tile floor", "laminate"]),
+    ("painting", ["painting", "paint", "primer", "stain", "repaint"]),
+    ("hvac", ["hvac", "air conditioning", "heating", "ductwork", "furnace", "central air"]),
+    ("deck", ["deck", "pergola", "gazebo"]),
+    ("concrete", ["concrete", "driveway", "sidewalk", "patio slab", "concrete slab"]),
+    ("fencing", ["fence", "fencing", "gate"]),
+    ("masonry", ["masonry", "brick", "stone wall", "retaining wall"]),
+    ("tile", ["tile", "backsplash", "shower tile", "bathroom tile"]),
+    ("cabinet", ["cabinet", "cabinetry", "kitchen cabinet"]),
+    ("countertop", ["countertop", "counter top", "quartz", "granite countertop"]),
 ]
+
+
+def _matched_trade_group_keys(text: str) -> set[str]:
+    matched: set[str] = set()
+    normalized = _norm(text)
+    for key, phrases in _EXTENDED_TRADE_GROUPS:
+        if key in {"plumbing", "electrical"} and re.search(rf"\b(no|without|excluding)\s+{key}\b", normalized):
+            continue
+        if _contains_phrase(text, phrases):
+            matched.add(key)
+    return matched
 
 
 def _count_all_trade_groups_extended(text: str) -> int:
     """Return the number of distinct extended trade groups found in the text."""
-    return sum(1 for phrases in _EXTENDED_TRADE_GROUPS if _contains_phrase(text, phrases))
+    return len(_matched_trade_group_keys(text))
+
+
+def _request_scope_trade_keys(text: str) -> set[str]:
+    ignored_intent_keys = {"inspection", "installation", "repair"}
+    return _matched_trade_group_keys(text) - ignored_intent_keys
 
 
 def _template_has_repair_keyword(template: "ProjectTemplate") -> bool:
@@ -384,7 +404,24 @@ def _project_signals(text: str) -> dict[str, bool]:
             t, ["repair", "fix", "patch", "restore", "damaged", "damage repair"]
         ),
         # Fires when 2+ distinct trade categories are found in the input text
-        "two_distinct_trades": _count_all_trade_groups_extended(t) >= 2,
+        "two_distinct_trades": len(_request_scope_trade_keys(t)) >= 2,
+        "explicit_inspection": _contains_phrase(t, ["home inspection", "roof inspection", "inspect", "inspection"]),
+        "construction_work": _contains_phrase(
+            t,
+            [
+                "siding",
+                "patio roof",
+                "patio cover",
+                "roof construction",
+                "structural repair",
+                "install",
+                "installation",
+                "build",
+                "repair",
+                "renovation",
+                "exterior",
+            ],
+        ),
     }
 
 
@@ -642,6 +679,10 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
         score += 32
         reasons.append("deck build intent")
 
+    if project_sig.get("explicit_inspection") and template_sig.get("explicit_inspection"):
+        score += 45
+        reasons.append("inspection intent")
+
     # Explicit mismatch penalties
     penalties: list[str] = []
 
@@ -711,6 +752,10 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
         score -= 16
         penalties.append("penalized appliance mismatch for countertop project")
 
+    if template_sig.get("explicit_inspection") and project_sig.get("construction_work") and not project_sig.get("explicit_inspection"):
+        score -= 95
+        penalties.append("penalized inspection template for construction/repair/install scope")
+
     if project_sig["cabinet"] and template_sig.get("structural"):
         score -= 24
         penalties.append("penalized structural mismatch for cabinet installation")
@@ -741,12 +786,15 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
     # --- Multi-trade penalty ---
     # A job describing 2+ distinct trade categories shouldn't confidently match a single-trade template.
     if project_sig.get("two_distinct_trades"):
-        corpus_trades = _count_all_trade_groups_extended(
+        request_trades = _request_scope_trade_keys(
             " ".join(x for x in [project_title or "", description or ""] if x)
         )
-        template_trades = _count_all_trade_groups_extended(_template_signature_text(template))
-        if corpus_trades >= 2 and template_trades <= 1:
-            score -= 30
+        template_trades = _request_scope_trade_keys(_template_signature_text(template))
+        missing_trades = request_trades - template_trades
+        if len(request_trades) >= 2 and missing_trades:
+            score -= 55
+            if score > 54:
+                score = 54
             penalties.append("multi-trade job partially covered by single-trade template")
 
     if penalties:

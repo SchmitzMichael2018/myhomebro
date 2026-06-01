@@ -104,7 +104,9 @@ class TemplateRecommendView(APIView):
         elif confidence_level == "medium":
             detail = "Possible template match found."
         else:
-            if project_subtype or project_type:
+            if result.partial_match:
+                detail = "No strong template match found."
+            elif project_subtype or project_type:
                 detail = "No confident matching template exists yet for this Type/Subtype."
             else:
                 detail = "No confident template recommendation."
