@@ -1970,19 +1970,6 @@ export default function AgreementWizard() {
       contentClassName="mhb-agreement-wizard space-y-5"
       actions={
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            data-testid="agreement-wizard-ask-ai-button"
-            onClick={() =>
-              openAssistant({
-                context: assistantContext,
-                onAction: handleAssistantAction,
-              })
-            }
-            className="mhb-operational-filter-chip is-active rounded-xl px-3 py-2 text-sm font-semibold"
-          >
-            AI Copilot
-          </button>
           {agreementId ? (
             <div className="flex items-center gap-2">
               <button

@@ -474,7 +474,9 @@ function AudienceCards({ navigate }) {
         primaryLabel="Contractor Sign Up"
         secondaryLabel="Contractor Log In"
         onPrimary={() => navigate("/signup")}
-        onSecondary={() => navigate("/login")}
+        onSecondary={() =>
+          window.dispatchEvent(new CustomEvent("mhb:open-login", { detail: { audience: "contractor" } }))
+        }
         tone="contractor"
       />
     </section>
