@@ -58,10 +58,14 @@ function MatchBadge({ template, recommended, possible }) {
 // They contain semicolons (reason joiner), "shared keywords:", or "penalized".
 function isSafeReasonText(text) {
   if (!text || typeof text !== "string") return false;
+  const lower = text.toLowerCase();
   if (text.includes(";")) return false;
-  if (text.includes("shared keywords:")) return false;
-  if (text.includes("penalized")) return false;
-  if (text.includes("family mismatch:")) return false;
+  if (/shared\s+keywords\s*:/.test(lower)) return false;
+  if (/family\s+mismatch\s*:/.test(lower)) return false;
+  if (/\b(blocked|debug|keyword|keywords|loose similarity|mismatch|penalized|penalty|rank|rank_score|score|scoring|token|weighted)\b/.test(lower)) {
+    return false;
+  }
+  if (/\b(type|category|family)\s+does\s+not\s+match\b/.test(lower)) return false;
   return true;
 }
 

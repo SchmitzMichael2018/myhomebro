@@ -1669,6 +1669,7 @@ test('agreement wizard step 1 treats hardwood flooring as AI draft when only unr
 
   await expect(page.getByText('Template match found')).toHaveCount(0);
   await expect(page.getByText('Shed Build Template')).toHaveCount(0);
+  await expect(page.getByText(/blocked family mismatch|outdoor vs flooring/i)).toHaveCount(0);
   await expect(page.getByText('No strong template match found')).toBeVisible();
   await expect(
     page.getByText('Continue with the AI-generated title, scope, project type, and subtype')
@@ -4151,7 +4152,7 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
           milestone_count: 4,
         },
         score: 97,
-        reason: 'Exact type and subtype match.',
+        reason: 'shared keywords: roof, shingles; score=97; rank_score=97',
         candidates: [
           {
             id: 88,
@@ -4265,6 +4266,7 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
   });
 
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByText(/shared keywords|score=97|rank_score/i)).toHaveCount(0);
   await expect(page.getByTestId('step1-start-mode-chooser')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
 });

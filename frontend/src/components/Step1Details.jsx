@@ -178,6 +178,26 @@ function extractAiScopeText(data = {}) {
   return formatGeneratedScopeAsBullets(candidates.map(safeTrim).find(Boolean) || "");
 }
 
+function isUserFriendlyTemplateReason(value) {
+  const text = safeTrim(value);
+  if (!text) return false;
+
+  const lower = text.toLowerCase();
+  if (text.includes(";")) return false;
+  if (/shared\s+keywords\s*:/.test(lower)) return false;
+  if (/family\s+mismatch\s*:/.test(lower)) return false;
+  if (/\b(blocked|debug|keyword|keywords|loose similarity|mismatch|penalized|penalty|rank|rank_score|score|scoring|token|weighted)\b/.test(lower)) {
+    return false;
+  }
+  if (/\b(type|category|family)\s+does\s+not\s+match\b/.test(lower)) return false;
+
+  return true;
+}
+
+function getUserFriendlyTemplateReason(value, fallback) {
+  return isUserFriendlyTemplateReason(value) ? safeTrim(value) : fallback;
+}
+
 const MATCH_STOP_WORDS = new Set([
   "a",
   "an",
@@ -4128,6 +4148,26 @@ export default function Step1Details({
   const aiCompactRecommendationConfidence = normalizeTemplateConfidenceLevel(
     recommendationConfidence || "low"
   );
+  const assistantTemplateRankReasons = Array.isArray(
+    assistantTemplateRecommendations?.[0]?.rank_reasons
+  )
+    ? assistantTemplateRecommendations[0].rank_reasons
+        .map(safeTrim)
+        .filter(isUserFriendlyTemplateReason)
+        .slice(0, 2)
+    : [];
+  const safeAiSetupTemplateReason = getUserFriendlyTemplateReason(
+    aiSetupResult?.reason,
+    aiSetupResult?.confidenceLevel === "medium"
+      ? "This template may fit parts of the job you described. Review it before applying."
+      : "This looks like a strong starting structure for the job you described."
+  );
+  const safeCompactTemplateRecommendationReason = getUserFriendlyTemplateReason(
+    templateRecommendationReason,
+    aiCompactRecommendationConfidence === "medium"
+      ? "This template may fit parts of the job you described. Review it before applying."
+      : "This looks like a strong starting structure for the job you described."
+  );
   useEffect(() => {
     if (!step1ResettingRef.current) return;
     const hasBlankResetState =
@@ -4664,17 +4704,16 @@ export default function Step1Details({
         (probeConfidence === "high" || probeScore >= 70 || exactTitleMatch);
 
       if (probeStrongMatch) {
+        const probeReasonFallback = exactTitleMatch
+          ? "Matches the template name exactly."
+          : "This template closely matches the job details you provided.";
         recommendationData = templateProbeData;
         setAiSetupResult({
           kind: "template_match",
           confidenceLevel: "high",
           refinedDescription: roughDescription,
           recommendedTemplate: probeRecommendedTemplate,
-          reason:
-            safeTrim(templateProbeData?.reason) ||
-            (exactTitleMatch
-              ? "Matches the template name exactly."
-              : "This template closely matches the job details you provided."),
+          reason: getUserFriendlyTemplateReason(templateProbeData?.reason, probeReasonFallback),
           setupFieldKeys: [],
         });
         if (probeRecommendedTemplate?.id) {
@@ -4823,15 +4862,18 @@ export default function Step1Details({
         Boolean(recommendedTemplate?.id) &&
         !strongMatch &&
         (confidenceLevel === "medium" || score >= 50 || exactTypeMatch);
-      const recommendationReason =
-        safeTrim(recommendationData?.reason) ||
-        (exactTypeMatch && exactSubtypeMatch
+      const recommendationReasonFallback =
+        exactTypeMatch && exactSubtypeMatch
           ? "Matches the project type and subtype you selected."
           : exactTypeMatch
           ? resolvedProjectFamily.project_family_label
             ? `Matches the project type you selected and stays aligned with ${resolvedProjectFamily.project_family_label}.`
             : "Matches the project type you selected."
-          : "This template closely matches the job details you provided.");
+          : "This template closely matches the job details you provided.";
+      const recommendationReason = getUserFriendlyTemplateReason(
+        recommendationData?.reason,
+        recommendationReasonFallback
+      );
 
       if (strongMatch) {
         setAiNoTemplateDraftNotice(false);
@@ -5804,9 +5846,9 @@ export default function Step1Details({
                     : "Recommended template"}
                 </div>
                 <div className="mt-1">{assistantTemplateRecommendations[0]?.name}</div>
-                {assistantTemplateRecommendations[0]?.rank_reasons?.length ? (
+                {assistantTemplateRankReasons.length ? (
                   <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
-                    {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" - ")}
+                    {assistantTemplateRankReasons.join(" - ")}
                   </div>
                 ) : null}
                 {assistantTopTemplatePreview?.milestone_count ? (
@@ -6353,7 +6395,7 @@ export default function Step1Details({
               </div>
             </div>
             <div className="mt-3 text-sm text-slate-700">
-              {aiSetupResult.reason}
+              {safeAiSetupTemplateReason}
             </div>
             <div className="mt-2 text-xs text-slate-600">
               {aiSetupResult?.confidenceLevel === "medium"
@@ -6565,10 +6607,7 @@ export default function Step1Details({
                       : "I found a strong template fit")}
                 </div>
                 <div className="mt-1 text-sm text-slate-700">
-                  {templateRecommendationReason ||
-                    (aiCompactRecommendationConfidence === "medium"
-                      ? "This template may fit parts of the job you described. Review it before applying."
-                      : "This looks like a strong starting structure for the job you described.")}
+                  {safeCompactTemplateRecommendationReason}
                 </div>
                 {assistantTopTemplatePreview?.milestone_count ? (
                   <div className="mt-2 text-xs text-sky-800/90">
