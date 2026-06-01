@@ -181,6 +181,93 @@ async function installWizardAuthRoutes(page) {
   });
 }
 
+async function installMockGooglePlaces(page) {
+  await page.addInitScript(() => {
+    window.__mhbGoogleImportCalls = [];
+    window.__mhbAddressInputs = [];
+
+    function createMockPlace() {
+      return {
+        formattedAddress: '10750 Test Address, San Antonio, TX 78249, USA',
+        id: 'places/test-10750',
+        location: { lat: 29.501, lng: -98.621 },
+        addressComponents: [
+          { longText: '10750', shortText: '10750', types: ['street_number'] },
+          { longText: 'Test Address', shortText: 'Test Address', types: ['route'] },
+          { longText: 'San Antonio', shortText: 'San Antonio', types: ['locality'] },
+          { longText: 'Texas', shortText: 'TX', types: ['administrative_area_level_1'] },
+          { longText: '78249', shortText: '78249', types: ['postal_code'] },
+          { longText: 'United States', shortText: 'US', types: ['country'] },
+        ],
+        fetchFields: async () => {},
+      };
+    }
+
+    function MockPlaceAutocompleteElement() {
+      const element = document.createElement('div');
+      const input = document.createElement('input');
+      const list = document.createElement('div');
+      let selectCallback = null;
+
+      input.setAttribute('aria-label', 'Google address search');
+      list.setAttribute('data-testid', 'mock-google-address-suggestions');
+      element.appendChild(input);
+      element.appendChild(list);
+
+      input.addEventListener('input', () => {
+        window.__mhbAddressInputs.push(input.value);
+        list.innerHTML = '';
+        if (!input.value.trim()) return;
+
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.textContent = '10750 Test Address, San Antonio, TX';
+        option.addEventListener('click', () => {
+          selectCallback?.({
+            placePrediction: {
+              toPlace: () => createMockPlace(),
+            },
+          });
+        });
+        list.appendChild(option);
+      });
+
+      const nativeAddEventListener = element.addEventListener.bind(element);
+      element.addEventListener = (type, callback, options) => {
+        if (type === 'gmp-select') {
+          selectCallback = callback;
+        }
+        return nativeAddEventListener(type, callback, options);
+      };
+
+      return element;
+    }
+
+    window.google = {
+      maps: {
+        importLibrary: async (name) => {
+          window.__mhbGoogleImportCalls.push(name);
+          return { PlaceAutocompleteElement: MockPlaceAutocompleteElement };
+        },
+        places: { PlaceAutocompleteElement: MockPlaceAutocompleteElement },
+      },
+    };
+
+    const installMeta = () => {
+      const meta = document.createElement('meta');
+      meta.setAttribute('name', 'mhb-google-maps-api-key');
+      meta.setAttribute('content', 'playwright-runtime-google-key');
+      (document.head || document.documentElement).appendChild(meta);
+    };
+
+    if (document.head) {
+      installMeta();
+    } else {
+      document.addEventListener('DOMContentLoaded', installMeta, { once: true });
+    }
+  });
+}
+
 async function installStep2AutoDraftRoutes(
   page,
   { agreement, projectTypes, projectSubtypes, milestoneState }
@@ -803,6 +890,151 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   );
   await expect(page.getByTestId('step1-starting-point-loading-card')).toHaveCount(0);
   await expect(page.getByText('No strong template match found')).toHaveCount(0);
+});
+
+test('agreement wizard step 1 address search uses Google Places autocomplete path', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    address_line1: '',
+    address_city: '',
+    address_state: '',
+    address_postal_code: '',
+  };
+
+  await installWizardAuthRoutes(page);
+  await installMockGooglePlaces(page);
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 10, value: 'Repair', label: 'Repair', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 101,
+            value: 'Water Damage Repair',
+            label: 'Water Damage Repair',
+            owner_type: 'system',
+            project_type: 'Repair',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Water Damage Repair',
+        project_type: 'Repair',
+        project_subtype: 'Water Damage Repair',
+        description: 'Repair ceiling damage from a leak and restore the finished ceiling surface.',
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+
+    agreement = {
+      ...agreement,
+      ...request.postDataJSON(),
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      status: 'draft',
+    };
+
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(agreement),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+      if (request.method() === 'PATCH') {
+        agreement = { ...agreement, ...request.postDataJSON() };
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByTestId('step1-job-description-input').fill('ceiling repair from leak');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  const autocomplete = page.getByTestId('agreement-address-autocomplete');
+  await expect(autocomplete).toBeVisible();
+  const addressInput = autocomplete.locator('input');
+  await expect(addressInput).toBeVisible();
+
+  await addressInput.fill('10750');
+  await expect(page.getByText('10750 Test Address, San Antonio, TX')).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.__mhbGoogleImportCalls || []))
+    .toContain('places');
+  await expect
+    .poll(() => page.evaluate(() => window.__mhbAddressInputs || []))
+    .toContain('10750');
+
+  await page.getByText('10750 Test Address, San Antonio, TX').click();
+  await expect(page.locator('input[name="address_line1"]')).toHaveValue('10750 Test Address');
+  await expect(page.locator('input[name="address_city"]')).toHaveValue('San Antonio');
+  await expect(page.locator('input[name="address_state"]')).toHaveValue('TX');
+  await expect(page.locator('input[name="address_postal_code"]')).toHaveValue('78249');
 });
 
 test('agreement wizard step 1 shows a recommended fallback when AI/template matching is unavailable', async ({
@@ -1452,9 +1684,72 @@ test('agreement wizard step 1 treats hardwood flooring as AI draft when only unr
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/hardwood flooring/i);
 });
 
-test('agreement wizard step 1 continues existing ceiling leak AI draft without junk-removal reclassification', async ({
+test('agreement wizard step 1 no-template AI CTA preserves generated draft fields across project families', async ({
   page,
 }) => {
+  const draftScenarios = [
+    {
+      input: 'ceiling repair from leak',
+      title: 'Water Damage Repair',
+      type: 'Repair',
+      subtype: 'Water Damage Repair',
+      scope:
+        'Repair ceiling damage from a leak, including protecting the work area, removing compromised material as needed, patching, finishing, and cleanup.',
+      scopePattern: /ceiling damage from a leak/i,
+      allowJunkRemoval: false,
+    },
+    {
+      input: 'drywall repair from plumbing leak',
+      title: 'Drywall Repair',
+      type: 'Drywall',
+      subtype: 'Drywall Repair',
+      scope:
+        'Repair drywall damaged by a plumbing leak, including moisture-aware preparation, patching, finishing, texture blending, and cleanup.',
+      scopePattern: /drywall damaged by a plumbing leak/i,
+      allowJunkRemoval: false,
+    },
+    {
+      input: 'replace damaged siding after storm',
+      title: 'Siding Repair',
+      type: 'Siding',
+      subtype: 'Siding Repair',
+      scope:
+        'Replace damaged siding after storm impact, including removing compromised siding sections, installing matching materials, sealing trim, and cleanup.',
+      scopePattern: /damaged siding after storm/i,
+      allowJunkRemoval: false,
+    },
+    {
+      input: 'install hardwood flooring in living room',
+      title: 'Hardwood Floor Installation',
+      type: 'Flooring',
+      subtype: 'Hardwood Floor Installation',
+      scope:
+        'Install hardwood flooring in the living room, including surface preparation, layout, installation, transitions, finish details, and cleanup.',
+      scopePattern: /hardwood flooring in the living room/i,
+      allowJunkRemoval: false,
+    },
+    {
+      input: 'repair leaking patio roof',
+      title: 'Patio Roof Repair',
+      type: 'Roofing',
+      subtype: 'Roof Repair',
+      scope:
+        'Repair the leaking patio roof, including leak investigation, localized roof repairs, flashing or sealant work as needed, water testing, and cleanup.',
+      scopePattern: /leaking patio roof/i,
+      allowJunkRemoval: false,
+    },
+    {
+      input: 'remove old couch and debris',
+      title: 'Junk Removal',
+      type: 'Junk Removal',
+      subtype: 'Junk Removal',
+      scope:
+        'Remove the old couch and debris, load and haul away the items, dispose of materials properly, and sweep the work area when complete.',
+      scopePattern: /old couch and debris/i,
+      allowJunkRemoval: true,
+    },
+  ];
+  const draftsByInput = new Map(draftScenarios.map((scenario) => [scenario.input, scenario]));
   let aiDescriptionCalls = 0;
   const patchPayloads = [];
   let agreement = {
@@ -1486,6 +1781,10 @@ test('agreement wizard step 1 continues existing ceiling leak AI draft without j
         results: [
           { id: 10, value: 'Repair', label: 'Repair', owner_type: 'system' },
           { id: 20, value: 'Junk Removal', label: 'Junk Removal', owner_type: 'system' },
+          { id: 30, value: 'Drywall', label: 'Drywall', owner_type: 'system' },
+          { id: 40, value: 'Siding', label: 'Siding', owner_type: 'system' },
+          { id: 50, value: 'Flooring', label: 'Flooring', owner_type: 'system' },
+          { id: 60, value: 'Roofing', label: 'Roofing', owner_type: 'system' },
         ],
       }),
     });
@@ -1505,9 +1804,44 @@ test('agreement wizard step 1 continues existing ceiling leak AI draft without j
             project_type: 'Repair',
           },
           {
+            id: 102,
+            value: 'Drywall Repair',
+            label: 'Drywall Repair',
+            owner_type: 'system',
+            project_type: 'Drywall',
+          },
+          {
+            id: 103,
+            value: 'Siding Repair',
+            label: 'Siding Repair',
+            owner_type: 'system',
+            project_type: 'Siding',
+          },
+          {
+            id: 104,
+            value: 'Hardwood Floor Installation',
+            label: 'Hardwood Floor Installation',
+            owner_type: 'system',
+            project_type: 'Flooring',
+          },
+          {
+            id: 105,
+            value: 'Roof Repair',
+            label: 'Roof Repair',
+            owner_type: 'system',
+            project_type: 'Roofing',
+          },
+          {
             id: 201,
             value: 'Junk Removal',
             label: 'Junk Removal',
+            owner_type: 'system',
+            project_type: 'Junk Removal',
+          },
+          {
+            id: 202,
+            value: 'Furniture Removal',
+            label: 'Furniture Removal',
             owner_type: 'system',
             project_type: 'Junk Removal',
           },
@@ -1518,15 +1852,22 @@ test('agreement wizard step 1 continues existing ceiling leak AI draft without j
 
   await page.route('**/api/projects/agreements/ai/description/', async (route) => {
     aiDescriptionCalls += 1;
+    const payload = route.request().postDataJSON();
+    const input = String(
+      payload?.job_description ||
+        payload?.description ||
+        payload?.current_description ||
+        ''
+    ).trim();
+    const draft = draftsByInput.get(input) || draftScenarios[0];
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        project_title: 'Water Damage Repair',
-        project_type: 'Repair',
-        project_subtype: 'Water Damage Repair',
-        description:
-          'Repair ceiling damage from a leak, including protecting the work area, removing compromised material as needed, patching, finishing, and cleanup.',
+        project_title: draft.title,
+        project_type: draft.type,
+        project_subtype: draft.subtype,
+        description: draft.scope,
         ai_access: 'included',
         ai_enabled: true,
         ai_unlimited: true,
@@ -1626,44 +1967,92 @@ test('agreement wizard step 1 continues existing ceiling leak AI draft without j
     }
   );
 
-  await page.goto('/app/agreements/new/wizard?step=1', {
-    waitUntil: 'domcontentloaded',
-  });
+  for (const scenario of draftScenarios) {
+    agreement = {
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      project_title: '',
+      title: '',
+      project_type: '',
+      project_subtype: '',
+      payment_mode: 'escrow',
+      payment_structure: 'simple',
+      description: '',
+      homeowner: null,
+      status: 'draft',
+      selected_template_id: null,
+      selected_template: null,
+    };
+    patchPayloads.length = 0;
+    const callsBefore = aiDescriptionCalls;
 
-  await page.getByTestId('step1-job-description-input').fill('ceiling repair from leak');
-  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-
-  await expect(page.getByText('No strong template match found')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Water Damage Repair');
-  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Repair');
-  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
-    'Water Damage Repair'
-  );
-  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/ceiling damage from a leak/i);
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveText(
-    'Continue with AI Draft'
-  );
-  expect(aiDescriptionCalls).toBe(1);
-
-  await page.getByTestId('step1-build-agreement-ai-button').click();
-
-  expect(aiDescriptionCalls).toBe(1);
-  if (patchPayloads.length > 0) {
-    expect(patchPayloads.at(-1)).toMatchObject({
-      project_title: 'Water Damage Repair',
-      project_type: 'Repair',
-      project_subtype: 'Water Damage Repair',
+    await page.goto(`/app/agreements/new/wizard?step=1&case=${encodeURIComponent(scenario.input)}`, {
+      waitUntil: 'domcontentloaded',
     });
-    expect(patchPayloads.at(-1).description).toMatch(/ceiling damage from a leak/i);
-    expect(patchPayloads.at(-1).project_type).not.toBe('Junk Removal');
-    expect(patchPayloads.at(-1).project_subtype).not.toBe('Junk Removal');
+
+    await page.getByTestId('step1-job-description-input').fill(scenario.input);
+    await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+    if (scenario.allowJunkRemoval) {
+      await expect(page.getByText('Template match found')).toBeVisible();
+    } else {
+      await expect(page.getByText('No strong template match found')).toBeVisible();
+    }
+    await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(scenario.title);
+    await expect(page.getByTestId('agreement-project-type-select')).toHaveValue(scenario.type);
+    await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+      scenario.subtype
+    );
+    await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scenario.scopePattern);
+    expect(aiDescriptionCalls).toBe(callsBefore + 1);
+
+    if (scenario.allowJunkRemoval) {
+      const continueWithAiDraft = page.getByRole('button', {
+        name: 'Continue with AI Draft',
+      });
+      await expect(continueWithAiDraft).toBeVisible();
+      await continueWithAiDraft.click();
+    } else {
+      await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveText(
+        'Continue with AI Draft'
+      );
+      await page.getByTestId('step1-browse-templates-manually-button').click();
+      const templateSearchNoTemplateButton = page
+        .getByTestId('step1-no-template-card')
+        .getByTestId('step1-build-agreement-ai-button');
+      await expect(templateSearchNoTemplateButton).toHaveText('Continue with AI Draft');
+      await templateSearchNoTemplateButton.click();
+    }
+
+    expect(aiDescriptionCalls).toBe(callsBefore + 1);
+    await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(scenario.title);
+    await expect(page.getByTestId('agreement-project-type-select')).toHaveValue(scenario.type);
+    await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+      scenario.subtype
+    );
+    await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scenario.scopePattern);
+
+    if (patchPayloads.length > 0) {
+      expect(patchPayloads.at(-1)).toMatchObject({
+        project_title: scenario.title,
+        project_type: scenario.type,
+        project_subtype: scenario.subtype,
+      });
+      expect(patchPayloads.at(-1).description).toMatch(scenario.scopePattern);
+      if (!scenario.allowJunkRemoval) {
+        expect(patchPayloads.at(-1).project_type).not.toBe('Junk Removal');
+        expect(patchPayloads.at(-1).project_subtype).not.toBe('Junk Removal');
+      }
+    }
+    if (!scenario.allowJunkRemoval) {
+      await expect(page.getByTestId('agreement-project-type-select')).not.toHaveValue(
+        'Junk Removal'
+      );
+      await expect(page.getByTestId('agreement-project-subtype-select')).not.toHaveValue(
+        'Junk Removal'
+      );
+    }
   }
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Water Damage Repair');
-  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Repair');
-  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
-    'Water Damage Repair'
-  );
-  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/ceiling damage from a leak/i);
 });
 
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({

@@ -1,6 +1,9 @@
 # backend/core/views_frontend.py
+import os
+
 from django.shortcuts import render
 from django.http import HttpResponseServerError
+from django.conf import settings
 
 
 def spa(request, *args, **kwargs):
@@ -14,6 +17,18 @@ def spa(request, *args, **kwargs):
     `npm run build` automatically picks up new filenames — no manual edits needed.
     """
     try:
-        return render(request, "index.html")
+        google_maps_api_key = (
+            getattr(settings, "VITE_GOOGLE_MAPS_API_KEY", "")
+            or os.getenv("VITE_GOOGLE_MAPS_API_KEY", "")
+            or getattr(settings, "GOOGLE_MAPS_API_KEY", "")
+            or os.getenv("GOOGLE_MAPS_API_KEY", "")
+            or getattr(settings, "GOOGLE_PLACES_API_KEY", "")
+            or os.getenv("GOOGLE_PLACES_API_KEY", "")
+        )
+        return render(
+            request,
+            "index.html",
+            {"google_maps_api_key": google_maps_api_key},
+        )
     except Exception as exc:
         return HttpResponseServerError(f"SPA render error: {exc}")

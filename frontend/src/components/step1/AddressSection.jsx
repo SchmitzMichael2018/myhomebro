@@ -85,6 +85,7 @@ export default function AddressSection({
             }
           }}
           placeholder="Start typing the street address (pick from suggestions)…"
+          testId="agreement-address-autocomplete"
         />
       </div>
 

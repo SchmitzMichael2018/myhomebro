@@ -4313,13 +4313,19 @@ export default function Step1Details({
       projectTypeOptions,
       projectSubtypeOptions,
     });
-    const consistencySetup = normalizedBackendClassification || inferStep1ProjectClassificationConsistency({
-      sourceText,
-      scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
-      suggestedProjectType: "",
-      suggestedProjectSubtype: "",
-      suggestedProjectTitle: "",
-    });
+    const hasExplicitAiDraftClassification =
+      Boolean(rawProjectTitle) && Boolean(rawProjectType) && Boolean(rawProjectSubtype);
+    const consistencySetup =
+      normalizedBackendClassification ||
+      (hasExplicitAiDraftClassification
+        ? null
+        : inferStep1ProjectClassificationConsistency({
+            sourceText,
+            scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
+            suggestedProjectType: "",
+            suggestedProjectSubtype: "",
+            suggestedProjectTitle: "",
+          }));
     const dominantCategory = consistencySetup
       ? {
           category: consistencySetup.project_type,
@@ -4398,6 +4404,7 @@ export default function Step1Details({
 
     const generatedTitle =
       normalizeStep1FieldValue(
+        rawProjectTitle ||
         consistencySetup?.project_title ||
         buildProjectFriendlyTitle({
           subtype: generatedSubtype,
@@ -4503,15 +4510,21 @@ export default function Step1Details({
     const deterministicFallback = buildDeterministicStep1Setup(
       refinedDescription || dLocal?.description || step1JobDescriptionPrompt || ""
     );
-    const consistencySetup = inferStep1ProjectClassificationConsistency({
-      sourceText: refinedDescription || dLocal?.description || step1JobDescriptionPrompt || "",
-      scopeText: refinedDescription || dLocal?.description || "",
-      suggestedProjectType: suggestedSetupValues?.project_type || dLocal?.project_type || "",
-      suggestedProjectSubtype:
-        suggestedSetupValues?.project_subtype || dLocal?.project_subtype || "",
-      suggestedProjectTitle:
-        suggestedSetupValues?.project_title || dLocal?.project_title || "",
-    });
+    const hasSuggestedDraftClassification =
+      Boolean(safeTrim(suggestedSetupValues?.project_title || dLocal?.project_title)) &&
+      Boolean(safeTrim(suggestedSetupValues?.project_type || dLocal?.project_type)) &&
+      Boolean(safeTrim(suggestedSetupValues?.project_subtype || dLocal?.project_subtype));
+    const consistencySetup = hasSuggestedDraftClassification
+      ? null
+      : inferStep1ProjectClassificationConsistency({
+          sourceText: refinedDescription || dLocal?.description || step1JobDescriptionPrompt || "",
+          scopeText: refinedDescription || dLocal?.description || "",
+          suggestedProjectType: suggestedSetupValues?.project_type || dLocal?.project_type || "",
+          suggestedProjectSubtype:
+            suggestedSetupValues?.project_subtype || dLocal?.project_subtype || "",
+          suggestedProjectTitle:
+            suggestedSetupValues?.project_title || dLocal?.project_title || "",
+        });
     const effectiveProjectType =
       consistencySetup?.project_type ||
       suggestedSetupValues?.project_type ||
@@ -4921,22 +4934,47 @@ export default function Step1Details({
 
   async function handleUseAiDescriptionOnly() {
     const draftResult = aiSetupResult?.refinedDescription ? aiSetupResult : aiNoTemplateDraftPayload;
-    if (!draftResult?.refinedDescription) return;
-    const deterministicFallback = buildDeterministicStep1Setup(draftResult.refinedDescription);
+    const draftSource =
+      draftResult?.refinedDescription ||
+      dLocal?.description ||
+      agreement?.description ||
+      agreement?.scope_of_work ||
+      step1JobDescriptionPrompt ||
+      "";
+    const hasExistingDraft =
+      Boolean(safeTrim(dLocal?.project_title || agreement?.project_title)) ||
+      Boolean(safeTrim(dLocal?.project_type || agreement?.project_type)) ||
+      Boolean(safeTrim(dLocal?.project_subtype || agreement?.project_subtype)) ||
+      Boolean(safeTrim(draftSource));
+    if (!hasExistingDraft) return;
+    const deterministicFallback = buildDeterministicStep1Setup(draftSource);
     const nextTitle = normalizeStep1FieldValue(
-      dLocal?.project_title || draftResult?.suggestedTitle || deterministicFallback.project_title || ""
+      dLocal?.project_title ||
+        agreement?.project_title ||
+        draftResult?.suggestedTitle ||
+        deterministicFallback.project_title ||
+        ""
     );
     const nextType = normalizeStep1FieldValue(
-      dLocal?.project_type || draftResult?.suggestedProjectType || deterministicFallback.project_type || ""
+      dLocal?.project_type ||
+        agreement?.project_type ||
+        draftResult?.suggestedProjectType ||
+        deterministicFallback.project_type ||
+        ""
     );
     const nextSubtype = normalizeStep1FieldValue(
       dLocal?.project_subtype ||
+        agreement?.project_subtype ||
         draftResult?.suggestedProjectSubtype ||
         deterministicFallback.project_subtype ||
         ""
     );
     const nextDescription = normalizeStep1FieldValue(
-      dLocal?.description || draftResult.refinedDescription || deterministicFallback.description || ""
+      dLocal?.description ||
+        agreement?.description ||
+        draftResult?.refinedDescription ||
+        deterministicFallback.description ||
+        ""
     );
     const nextTypeRef =
       (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
@@ -5990,13 +6028,7 @@ export default function Step1Details({
                       <button
                         type="button"
                         data-testid="step1-build-agreement-ai-button"
-                        onClick={() => {
-                          if (aiSetupResult?.refinedDescription) {
-                            handleUseAiDescriptionOnly();
-                            return;
-                          }
-                          applyNoTemplateFallbackSetup(step1JobDescriptionPrompt || dLocal?.description || agreement?.description || "");
-                        }}
+                        onClick={handleUseAiDescriptionOnly}
                         disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                         className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >

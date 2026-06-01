@@ -23,6 +23,16 @@ import React, { useEffect, useRef, useState } from "react";
 
 let __mhbMapsPromise = null;
 
+function getRuntimeGoogleMapsApiKey() {
+  if (typeof document === "undefined") return "";
+  return (
+    document
+      .querySelector('meta[name="mhb-google-maps-api-key"]')
+      ?.getAttribute("content")
+      ?.trim() || ""
+  );
+}
+
 function loadMapsOnce(apiKey) {
   if (__mhbMapsPromise) return __mhbMapsPromise;
 
@@ -76,6 +86,9 @@ function loadMapsOnce(apiKey) {
       reject(new Error("Failed to load Google Maps JS API script."));
 
     document.head.appendChild(script);
+  }).catch((error) => {
+    __mhbMapsPromise = null;
+    throw error;
   });
 
   return __mhbMapsPromise;
@@ -185,8 +198,11 @@ export default function AddressAutocomplete({
   onSelect,
   country = "us",
   placeholder = "Start typing an address…",
+  disabled = false,
+  testId = "",
 }) {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const apiKey =
+    import.meta.env.VITE_GOOGLE_MAPS_API_KEY || getRuntimeGoogleMapsApiKey();
 
   const hostRef = useRef(null);
   const widgetRef = useRef(null);
@@ -205,12 +221,20 @@ export default function AddressAutocomplete({
         await loadMapsOnce(apiKey);
         if (cancelled) return;
 
-        await window.google.maps.importLibrary("places");
+        const placesLibrary = await window.google.maps.importLibrary("places");
         if (cancelled) return;
 
-        const widget = new window.google.maps.places.PlaceAutocompleteElement({});
+        const PlaceAutocompleteElement =
+          placesLibrary?.PlaceAutocompleteElement ||
+          window.google?.maps?.places?.PlaceAutocompleteElement;
+        if (!PlaceAutocompleteElement) {
+          throw new Error("Google Places autocomplete is unavailable.");
+        }
+
+        const widget = new PlaceAutocompleteElement({});
         widget.placeholder = placeholder;
         widget.includedRegionCodes = [country];
+        widget.disabled = !!disabled;
 
         widget.addEventListener("gmp-select", async ({ placePrediction }) => {
           try {
@@ -268,7 +292,7 @@ export default function AddressAutocomplete({
     return () => {
       cancelled = true;
     };
-  }, [apiKey, country, placeholder]);
+  }, [apiKey, country, placeholder, disabled]);
 
   // ✅ when `value` changes (ex: profile loads), update widget input
   useEffect(() => {
@@ -276,9 +300,14 @@ export default function AddressAutocomplete({
     setWidgetInputValue(hostRef.current, value || "");
   }, [value]);
 
+  useEffect(() => {
+    if (!widgetRef.current) return;
+    widgetRef.current.disabled = !!disabled;
+  }, [disabled]);
+
   return (
     <div className="w-full">
-      <div ref={hostRef} />
+      <div ref={hostRef} data-testid={testId || undefined} />
       {!ready && !err ? (
         <div className="mt-1 text-xs text-slate-500">Loading address suggestions…</div>
       ) : null}

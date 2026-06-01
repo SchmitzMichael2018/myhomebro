@@ -25,6 +25,9 @@
       base-uri 'self';
       form-action 'self';
     " />
+    {% if google_maps_api_key %}
+    <meta name="mhb-google-maps-api-key" content="{{ google_maps_api_key }}">
+    {% endif %}
     <script type="module" crossorigin src="{% vite_entry_js %}"></script>
     {% vite_entry_css as vite_css_href %}
     {% if vite_css_href %}
