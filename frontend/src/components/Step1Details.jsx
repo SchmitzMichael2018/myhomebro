@@ -43,6 +43,7 @@ import {
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 import { isModelRefusal } from "../lib/aiResponseParser.js";
+import { formatGeneratedScopeAsBullets } from "../lib/scopeFormat.js";
 import ScopeDiffView from "./ScopeDiffView.jsx";
 
 function PrettyJson({ data }) {
@@ -174,7 +175,7 @@ function extractAiScopeText(data = {}) {
     data?.normalizedDescription,
     data?.proposal_draft?.text,
   ];
-  return candidates.map(safeTrim).find(Boolean) || "";
+  return formatGeneratedScopeAsBullets(candidates.map(safeTrim).find(Boolean) || "");
 }
 
 const MATCH_STOP_WORDS = new Set([
@@ -1571,12 +1572,14 @@ function buildLocalAiScopeDraft({ mode, context, agreement, dLocal, selectedTemp
       ? baseContext
       : `Work includes ${String(projectLabel).toLowerCase()} services based on the current agreement details.`;
 
-  return [
-    scopeIntro,
-    "Contractor will verify site conditions, access, measurements, and material selections before work begins.",
-    "The work includes coordination of agreed labor, materials, installation or construction activities, cleanup, and closeout for the described scope.",
-    "Items not specifically listed in this scope, including hidden condition repairs, engineering, permits, utility relocation, or specialty upgrades, are excluded unless added in writing.",
-  ].join("\n");
+  return formatGeneratedScopeAsBullets(
+    [
+      scopeIntro,
+      "Contractor will verify site conditions, access, measurements, and material selections before work begins.",
+      "The work includes coordination of agreed labor, materials, installation or construction activities, cleanup, and closeout for the described scope.",
+      "Items not specifically listed in this scope, including hidden condition repairs, engineering, permits, utility relocation, or specialty upgrades, are excluded unless added in writing.",
+    ].join("\n")
+  );
 }
 
 function buildMilestoneScopeContext(agreement) {
@@ -2173,6 +2176,7 @@ export default function Step1Details({
   const [aiSetupResult, setAiSetupResult] = useState(null);
   const [aiNoTemplateDraftNotice, setAiNoTemplateDraftNotice] = useState(false);
   const [aiNoTemplateDraftPayload, setAiNoTemplateDraftPayload] = useState(null);
+  const [aiDraftReviewPending, setAiDraftReviewPending] = useState(false);
   const [lastAiSetupPrompt, setLastAiSetupPrompt] = useState("");
   const [step1ResetChooserPrompt, setStep1ResetChooserPrompt] = useState("");
   const [aiSuggestedFieldMeta, setAiSuggestedFieldMeta] = useState({});
@@ -2810,7 +2814,7 @@ export default function Step1Details({
         throw new Error("AI returned an empty description.");
       }
 
-      setAiPreview(text);
+      setAiPreview(formatGeneratedScopeAsBullets(text));
 
       setAiCredits((prev) => ({
         ...prev,
@@ -2852,7 +2856,7 @@ export default function Step1Details({
   async function applyAiDescription(action, textOverride = null) {
     if (locked) return;
 
-    const suggestion = safeTrim(textOverride ?? aiPreview);
+    const suggestion = formatGeneratedScopeAsBullets(safeTrim(textOverride ?? aiPreview));
     if (!suggestion) return;
 
     const cur = safeTrim(dLocal.description);
@@ -3161,7 +3165,9 @@ export default function Step1Details({
       });
 
       const draftPayload = data?.proposal_draft || {};
-      const nextDraft = safeTrim(draftPayload.text || data?.normalized_description || "");
+      const nextDraft = formatGeneratedScopeAsBullets(
+        safeTrim(draftPayload.text || data?.normalized_description || "")
+      );
       if (!nextDraft) {
         throw new Error("Could not build a proposal draft.");
       }
@@ -3824,13 +3830,13 @@ export default function Step1Details({
     const nextTitle = normalizeStep1FieldValue(deterministicFallback.project_title);
     const nextType = normalizeStep1FieldValue(deterministicFallback.project_type);
     const nextSubtype = normalizeStep1FieldValue(deterministicFallback.project_subtype);
-    const nextDescription = normalizeStep1FieldValue(
+    const nextDescription = formatGeneratedScopeAsBullets(normalizeStep1FieldValue(
       deterministicFallback.description ||
         sourceText ||
         dLocal?.description ||
         agreement?.description ||
         ""
-    );
+    ));
 
     const nextTypeRef =
       (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
@@ -3840,6 +3846,7 @@ export default function Step1Details({
     setAiSetupBusy(false);
     setAiSetupError("");
     setAiSetupResult(null);
+    setAiDraftReviewPending(false);
     setDismissedAiTemplateRecommendation(true);
     setStep1NoTemplateBuilt(true);
     setSelectedTemplateId(null);
@@ -4147,17 +4154,19 @@ export default function Step1Details({
     hasMeaningfulSavedProjectDetails,
     startModeCommitted,
   ]);
+  const hasPendingNoTemplateAiDraft =
+    !step1NoTemplateBuilt &&
+    !appliedTemplateId &&
+    (aiSetupResult?.kind === "no_template" ||
+      aiSetupResult?.kind === "fallback_recommendation" ||
+      Boolean(aiDraftReviewPending) ||
+      Boolean(aiNoTemplateDraftNotice) ||
+      Boolean(aiNoTemplateDraftPayload?.refinedDescription));
   const isAiBuiltState =
     !step1ResetToChooser &&
+    !hasPendingNoTemplateAiDraft &&
     (Boolean(step1NoTemplateBuilt) ||
       aiSetupResult?.kind === "description_only" ||
-      (aiSetupResult?.kind === "fallback_recommendation" &&
-        Boolean(
-          safeTrim(dLocal?.project_title) ||
-            safeTrim(dLocal?.project_type) ||
-            safeTrim(dLocal?.project_subtype) ||
-            safeTrim(dLocal?.description)
-        )) ||
       Boolean(appliedTemplateId) ||
       (startMode === "manual" &&
         aiSetupResult?.kind !== "no_template" &&
@@ -4176,9 +4185,13 @@ export default function Step1Details({
     !isLoadingState && aiSetupResult?.kind === "template_match" && !isAiBuiltState;
   const isNoTemplateState =
     !isLoadingState &&
-    !isAiBuiltState &&
+    !step1NoTemplateBuilt &&
+    aiSetupResult?.kind !== "description_only" &&
     (aiSetupResult?.kind === "no_template" ||
       aiSetupResult?.kind === "fallback_recommendation" ||
+      Boolean(aiNoTemplateDraftNotice) ||
+      Boolean(aiDraftReviewPending) ||
+      Boolean(aiNoTemplateDraftPayload?.refinedDescription) ||
       noTemplateMatch);
   const isInitialInputState = !isLoadingState && !isAiBuiltState && !isTemplateFoundState && !isNoTemplateState;
   const isNoTemplateFlow =
@@ -4194,9 +4207,7 @@ export default function Step1Details({
   const shouldShowAppliedTemplateSummary =
     startMode !== "template" && Boolean(appliedTemplateId);
   const shouldShowAiDraftNoTemplateNotice =
-    (Boolean(aiNoTemplateDraftNotice) || Boolean(aiNoTemplateDraftPayload?.refinedDescription)) &&
-    !appliedTemplateId &&
-    aiSetupResult?.kind !== "template_match";
+    false;
   const hasResolvedStep1Content = Boolean(
     safeTrim(dLocal?.project_title) ||
       safeTrim(dLocal?.project_type) ||
@@ -4208,12 +4219,12 @@ export default function Step1Details({
     ? "loading"
     : shouldForceStartChooser
     ? "initial_input"
+    : isNoTemplateState
+    ? "no_template"
     : isAiBuiltState || (startMode === "manual" && hasResolvedStep1Content)
     ? "ai_built"
     : isTemplateFoundState
     ? "template_found"
-    : isNoTemplateState
-    ? "no_template"
     : "initial_input";
   const effectiveStep1ViewState = shouldForceStartChooser ? "initial_input" : step1ViewState;
   const shouldShowStartModePanel =
@@ -4230,6 +4241,8 @@ export default function Step1Details({
       isAiBuiltState ||
       startMode !== "manual" ||
       hasResolvedStep1Content);
+  const shouldShowProjectDetailsSection =
+    !shouldShowResetChooserOnly && effectiveStep1ViewState !== "no_template";
 
   async function handleUseAiRecommendedTemplate() {
     if (!aiRecommendedTemplate) return;
@@ -4237,7 +4250,7 @@ export default function Step1Details({
   }
 
   function applyRefinedDescription(refinedDescription) {
-    const nextDescription = normalizeStep1FieldValue(refinedDescription);
+    const nextDescription = formatGeneratedScopeAsBullets(normalizeStep1FieldValue(refinedDescription));
     if (!nextDescription) return;
 
     setDLocal((prev) => ({ ...prev, description: nextDescription }));
@@ -4262,6 +4275,7 @@ export default function Step1Details({
     setAiSetupLoadingVisible(true);
     setAiSetupError("");
     setAiSetupResult(null);
+    setAiDraftReviewPending(false);
     setAiNoTemplateDraftNotice(false);
     setAiNoTemplateDraftPayload(null);
     setDismissedAiTemplateRecommendation(false);
@@ -4287,9 +4301,9 @@ export default function Step1Details({
     ) {
       return { changedKeys: [], nextValues: null, ignored: true };
     }
-    const refinedDescription = normalizeStep1FieldValue(
+    const refinedDescription = formatGeneratedScopeAsBullets(normalizeStep1FieldValue(
       aiData?.description || aiData?.normalized_description || ""
-    );
+    ));
     const rawProjectTitle = safeTrim(
       aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""
     );
@@ -4821,6 +4835,7 @@ export default function Step1Details({
 
       if (strongMatch) {
         setAiNoTemplateDraftNotice(false);
+        setAiDraftReviewPending(false);
         setAiSetupResult({
           kind: "template_match",
           confidenceLevel: "high",
@@ -4836,6 +4851,7 @@ export default function Step1Details({
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else if (optionalMatch) {
         setAiNoTemplateDraftNotice(false);
+        setAiDraftReviewPending(false);
         setAiSetupResult({
           kind: "template_match",
           confidenceLevel: "medium",
@@ -4860,6 +4876,7 @@ export default function Step1Details({
             : "Recommended from your description. Review the suggested starting point before you continue.",
         });
         setAiNoTemplateDraftNotice(true);
+        setAiDraftReviewPending(true);
         setAiNoTemplateDraftPayload(fallbackResult);
         setAiSetupResult(fallbackResult);
         setSelectedTemplateId(null);
@@ -4907,6 +4924,7 @@ export default function Step1Details({
         });
         setAiSetupResult(fallbackResult);
         setAiNoTemplateDraftNotice(true);
+        setAiDraftReviewPending(true);
         setAiNoTemplateDraftPayload(fallbackResult);
         setSelectedTemplateId(null);
         queueProjectDetailsReview([
@@ -4969,13 +4987,13 @@ export default function Step1Details({
         deterministicFallback.project_subtype ||
         ""
     );
-    const nextDescription = normalizeStep1FieldValue(
+    const nextDescription = formatGeneratedScopeAsBullets(normalizeStep1FieldValue(
       dLocal?.description ||
         agreement?.description ||
         draftResult?.refinedDescription ||
         deterministicFallback.description ||
         ""
-    );
+    ));
     const nextTypeRef =
       (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
     const nextSubtypeRef =
@@ -5039,6 +5057,7 @@ export default function Step1Details({
         ? draftResult.setupFieldKeys
         : [],
     });
+    setAiDraftReviewPending(false);
     setAiNoTemplateDraftNotice(false);
     setAiNoTemplateDraftPayload(null);
     setDismissedAiTemplateRecommendation(true);
@@ -5074,6 +5093,7 @@ export default function Step1Details({
     step1AiRequestIdRef.current = "";
     setAiSetupError("");
     setAiSetupResult(null);
+    setAiDraftReviewPending(false);
     setLastAiSetupPrompt("");
     setAiSuggestedFieldMeta({});
     setStep1FieldErrors({});
@@ -5660,7 +5680,7 @@ export default function Step1Details({
                   if (!prompt) return;
                   setStep1JobDescriptionPrompt(prompt);
                   setStep1ResetChooserPrompt(prompt);
-                  activateStartMode("template", { committed: true, source: "assistant" });
+                  activateStartMode("ai", { committed: true, source: "assistant" });
                   if (typeof onStep1ResetToChooserChange === "function") {
                     onStep1ResetToChooserChange(false);
                   }
@@ -6003,28 +6023,19 @@ export default function Step1Details({
                     ) : null}
                   </div>
                 </div>
-              ) : ((aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation" || noTemplateMatch) && !shouldShowTemplateBrowserSection && startMode !== "manual") ? (
+              ) : (false && (aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation" || noTemplateMatch) && !shouldShowTemplateBrowserSection && startMode !== "manual") ? (
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="max-w-3xl">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                      No strong template match found
+                      AI draft generated successfully
                     </div>
                     <div className="mt-1 text-base font-semibold text-slate-900">
-                      We generated a project draft from your description, but no saved template closely matches this work.
+                      No strong template match found
                     </div>
                     <div className="mt-1 text-sm text-slate-600">
                       Continue with the AI-generated title, scope, project type, and subtype, or browse templates manually if you want to compare saved starting points.
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        data-testid="step1-review-project-details-jump"
-                        onClick={() => scrollToProjectDetails({ allowAutoScroll: false })}
-                        disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
-                        className="rounded-xl border border-transparent px-2 py-2 text-sm font-semibold text-slate-600 hover:underline disabled:opacity-60"
-                      >
-                        Review Project Details
-                      </button>
                       <button
                         type="button"
                         data-testid="step1-build-agreement-ai-button"
@@ -6171,7 +6182,7 @@ export default function Step1Details({
                     if (typeof onStep1ResetToChooserChange === "function") {
                       onStep1ResetToChooserChange(false);
                     }
-                    activateStartMode("template", { committed: true, source: "assistant" });
+                    activateStartMode("ai", { committed: true, source: "assistant" });
                     requestStep1AiSetup(prompt);
                   }}
                   disabled={locked || aiSetupBusy || aiSetupLoadingVisible || !safeTrim(step1JobDescriptionPrompt)}
@@ -6239,6 +6250,67 @@ export default function Step1Details({
               </div>
             ) : null}
           </div>
+        ) : null}
+
+        {isNoTemplateState && !shouldShowTemplateBrowserSection ? (
+          <section
+            data-testid="step1-no-template-review"
+            className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+              AI draft generated successfully
+            </div>
+            <div className="mt-1 text-base font-semibold text-slate-900">
+              No strong template match found
+            </div>
+            <div className="mt-1 text-sm text-slate-700">
+              Continue with the AI-generated title, scope, project type, and subtype, or browse templates manually if you want to compare saved starting points.
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="step1-build-agreement-ai-button"
+                onClick={handleUseAiDescriptionOnly}
+                disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                Continue with AI Draft
+              </button>
+              <button
+                type="button"
+                data-testid="step1-browse-templates-manually-button"
+                onClick={() => {
+                  setStep1ManualBrowseSignal((prev) => prev + 1);
+                  activateStartMode("template", { committed: true, source: "user" });
+                }}
+                disabled={locked}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Browse Templates
+              </button>
+              <button
+                type="button"
+                data-testid="step1-change-description-button"
+                onClick={() => {
+                  reopenStartModeChooser();
+                  scrollToStartModeChooser();
+                }}
+                disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Change Description
+              </button>
+              <button
+                type="button"
+                data-testid="step1-start-over-button"
+                onClick={() => handleResetStep1Setup()}
+                disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Start Over
+              </button>
+            </div>
+          </section>
         ) : null}
 
         {aiSetupResult?.kind === "template_match" ? (
@@ -6313,7 +6385,7 @@ export default function Step1Details({
         ) : null}
 
 
-        {startMode === "ai" && aiSetupResult?.kind === "description_only" ? (
+        {false && startMode === "ai" && aiSetupResult?.kind === "description_only" ? (
           <section
             data-testid="step1-ai-setup-result"
             className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm"
@@ -6774,7 +6846,8 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        <div className={shouldShowResetChooserOnly ? "hidden" : "space-y-6"}>
+        {shouldShowProjectDetailsSection ? (
+        <div className="space-y-6">
           <StepSection
             title="Project Details"
             description={projectDetailsDescription}
@@ -7765,8 +7838,9 @@ export default function Step1Details({
             </button>
           )}
             </div>
-          </div>
         </div>
+        ) : null}
+      </div>
 
       <SaveTemplateModal
         open={showSaveTemplateModal}

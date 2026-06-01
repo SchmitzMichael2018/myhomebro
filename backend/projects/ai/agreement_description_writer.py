@@ -105,6 +105,65 @@ def _safe_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def _format_scope_as_bullets(value: Any) -> str:
+    raw = str(value or "").replace("\r\n", "\n").strip()
+    if not raw:
+        return ""
+    has_bullets = bool(re.search(r"(?m)^\s*[-*]\s+\S", raw))
+    has_numbered = bool(re.search(r"(?m)^\s*\d+[.)]\s+\S", raw))
+    if has_bullets and not has_numbered:
+        return raw
+
+    normalized = re.sub(r"(?m)^\s*\d+[.)]\s+", "", raw)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    sentences = [
+        re.sub(r"[.!?]+$", "", part).strip()
+        for part in re.split(r"(?<=[.!?])\s+", normalized)
+        if part.strip()
+    ]
+    if len(sentences) < 2 and not has_numbered and "," not in normalized:
+        return raw
+
+    included: list[str] = []
+    exclusions: list[str] = []
+    customer: list[str] = []
+    for sentence in sentences:
+        item = re.sub(r"^(scope of work|work includes|included work|includes)\s*[:,-]?\s*", "", sentence, flags=re.I).strip()
+        if not item:
+            continue
+        if re.search(r"\b(not included|excluded|exclusions?|unless specified|unless added)\b", item, flags=re.I):
+            exclusions.append(re.sub(r"^not included unless specified\s*[:,-]?\s*", "", item, flags=re.I).strip())
+        elif re.search(r"\bcustomer\b", item, flags=re.I) and re.search(r"\b(provide|confirm|responsib|select|approve|access)\b", item, flags=re.I):
+            customer.append(item)
+        else:
+            included.append(item)
+
+    defaults = [
+        "Verify site conditions, measurements, access, and material requirements before work begins",
+        "Coordinate agreed labor, materials, installation activities, and job sequencing",
+        "Protect adjacent areas affected by the work and maintain a reasonably clean work area",
+        "Complete the described installation, repair, replacement, or removal work for the project area",
+        "Perform final cleanup and review completed work with the customer",
+    ]
+    for item in defaults:
+        if len(included) >= 5:
+            break
+        if item.lower() not in {existing.lower() for existing in included}:
+            included.append(item)
+
+    max_bullets = 12
+    capped_included = included[: max(5, max_bullets - len(exclusions) - len(customer))]
+    capped_exclusions = exclusions[: max(0, max_bullets - len(capped_included) - len(customer))]
+    capped_customer = customer[: max(0, max_bullets - len(capped_included) - len(capped_exclusions))]
+
+    lines = ["Included Work", *[f"- {item}" for item in capped_included]]
+    if capped_exclusions:
+        lines.extend(["", "Exclusions", *[f"- {item}" for item in capped_exclusions]])
+    if capped_customer:
+        lines.extend(["", "Customer Responsibilities", *[f"- {item}" for item in capped_customer]])
+    return "\n".join(lines).strip()
+
+
 def _fallback_from_context(*, project_title: str, project_type: str, project_subtype: str, current_description: str) -> Dict[str, Any]:
     haystack = " ".join(
         part for part in [_safe_text(project_title), _safe_text(project_type), _safe_text(project_subtype), _safe_text(current_description)] if part
@@ -121,7 +180,7 @@ def _fallback_from_context(*, project_title: str, project_type: str, project_sub
     inferred_title = matched["project_title"] if matched else (_safe_text(project_title) or inferred_subtype or "Project Starting Point")
     summary = matched["summary"] if matched else "Work includes the project described by the customer."
 
-    fallback_description = (
+    fallback_description = _format_scope_as_bullets(
         f"{summary} Contractor will verify measurements, site conditions, material selections, and access before work begins. "
         "Not included unless specified: hidden condition repairs, engineering, permits, utility relocation, or specialty upgrades."
     )
@@ -209,7 +268,12 @@ def generate_or_improve_description(
         "- Be specific and measurable.\n"
         "- Avoid vague phrases like 'as needed', 'minor fixes', 'etc'.\n"
         "- Include key inclusions and exclusions.\n"
-        "- Keep it concise (6-12 bullet-like sentences max).\n"
+        "- Always return bullet lists, not paragraph prose.\n"
+        "- Use section headings exactly as needed: Included Work, Exclusions, Customer Responsibilities.\n"
+        "- Return 5 to 12 total bullets.\n"
+        "- Use one work item per bullet.\n"
+        "- Put exclusions in separate bullets under Exclusions.\n"
+        "- Do not use numbered lists.\n"
         "- Do NOT provide legal advice.\n"
     )
 
@@ -276,7 +340,7 @@ def generate_or_improve_description(
             "_mode": mode,
         }
 
-    desc = (payload.get("description") or "").strip()
+    desc = _format_scope_as_bullets((payload.get("description") or "").strip())
     if not desc:
         logger.warning("AI returned an empty description; using fallback.")
         return {

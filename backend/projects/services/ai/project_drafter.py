@@ -12,6 +12,7 @@ from django.db.models import Q
 
 from projects.models import Agreement, Contractor
 from projects.models_templates import ProjectTemplate
+from projects.ai.agreement_description_writer import _format_scope_as_bullets
 from projects.services.proposal_learning import build_proposal_draft
 
 
@@ -1241,6 +1242,11 @@ Project description: {description}
 
 Rules:
 - Keep the description reusable and professional.
+- normalized_description must be sectioned bullet text, not paragraph prose.
+- Use headings: Included Work, Exclusions, and Customer Responsibilities only when relevant.
+- Return 5 to 12 total bullets, one work item per bullet.
+- Put exclusions in separate bullets under Exclusions.
+- Do not use numbered lists.
 - Milestones should be practical for contractor billing and customer review.
 - Clarifications should be job-specific variables.
 - Clarifications should avoid duplicates and use stable wording when possible.
@@ -1294,7 +1300,7 @@ def draft_project_structure(
     )
 
     normalized_description = (
-        _safe_str(openai_data.get("normalized_description"))
+        _format_scope_as_bullets(_safe_str(openai_data.get("normalized_description")))
         if isinstance(openai_data, dict)
         else ""
     )

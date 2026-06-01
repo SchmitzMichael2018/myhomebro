@@ -1015,6 +1015,8 @@ test('agreement wizard step 1 address search uses Google Places autocomplete pat
   await page.getByTestId('step1-job-description-input').fill('ceiling repair from leak');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
+  await expect(page.getByText('No strong template match found')).toHaveCount(1);
+  await page.getByTestId('step1-build-agreement-ai-button').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   const autocomplete = page.getByTestId('agreement-address-autocomplete');
   await expect(autocomplete).toBeVisible();
@@ -1669,7 +1671,7 @@ test('agreement wizard step 1 treats hardwood flooring as AI draft when only unr
   await expect(page.getByText('Shed Build Template')).toHaveCount(0);
   await expect(page.getByText('No strong template match found')).toBeVisible();
   await expect(
-    page.getByText('We generated a project draft from your description, but no saved template closely matches this work.')
+    page.getByText('Continue with the AI-generated title, scope, project type, and subtype')
   ).toBeVisible();
 
   await page.getByTestId('step1-build-agreement-ai-button').click();
@@ -1996,14 +1998,10 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
     if (scenario.allowJunkRemoval) {
       await expect(page.getByText('Template match found')).toBeVisible();
     } else {
-      await expect(page.getByText('No strong template match found')).toBeVisible();
+      await expect(page.getByText('No strong template match found')).toHaveCount(1);
+      await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+      await expect(page.getByTestId('proposal-draft-textarea')).toHaveCount(0);
     }
-    await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(scenario.title);
-    await expect(page.getByTestId('agreement-project-type-select')).toHaveValue(scenario.type);
-    await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
-      scenario.subtype
-    );
-    await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scenario.scopePattern);
     expect(aiDescriptionCalls).toBe(callsBefore + 1);
 
     if (scenario.allowJunkRemoval) {
@@ -2031,6 +2029,11 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
       scenario.subtype
     );
     await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scenario.scopePattern);
+    await expect(page.getByText('No strong template match found')).toHaveCount(0);
+    const finalScope = await page.getByTestId('proposal-draft-textarea').inputValue();
+    expect(finalScope).toContain('Included Work\n-');
+    expect((finalScope.match(/^- /gm) || []).length).toBeGreaterThanOrEqual(5);
+    expect(finalScope).not.toMatch(/^\s*\d+[.)]\s+/m);
 
     if (patchPayloads.length > 0) {
       expect(patchPayloads.at(-1)).toMatchObject({
