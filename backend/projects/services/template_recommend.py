@@ -842,8 +842,9 @@ def score_template(
             total_score += 22
             reasons.append(f"{request_family} family match")
         else:
-            total_score -= 45
-            reasons.append(f"family mismatch: {template_family} vs {request_family}")
+            reasons.append(f"blocked family mismatch: {template_family} vs {request_family}")
+            reason = "; ".join(dict.fromkeys(reasons))
+            return 0, reason
     elif request_family != "general" and template_family == "general":
         total_score -= 18
         reasons.append(f"generic template mismatch for {request_family} project")

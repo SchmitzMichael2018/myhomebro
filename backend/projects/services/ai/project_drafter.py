@@ -768,6 +768,31 @@ def classify_type_subtype(
     if any(sig in hay_norm for sig in pool_signals):
         return "Pool", "Inground Pool and Pool House", "Detected pool-specific scope. Using type 'Pool' and subtype 'Inground Pool and Pool House'."
 
+    flooring_signals = [
+        "hardwood floor",
+        "hardwood flooring",
+        "floor installation",
+        "flooring installation",
+        "install flooring",
+        "install hardwood",
+        "lvp",
+        "vinyl plank",
+        "laminate floor",
+        "tile floor",
+    ]
+    if any(sig in hay_norm for sig in flooring_signals):
+        if any(sig in hay_norm for sig in ["hardwood floor", "hardwood flooring", "install hardwood"]):
+            return (
+                "Flooring",
+                "Hardwood Floor Installation",
+                "Detected hardwood flooring installation scope. Using type 'Flooring' and subtype 'Hardwood Floor Installation'.",
+            )
+        return (
+            "Flooring",
+            "Hardwood Floor Installation",
+            "Detected flooring installation scope. Using type 'Flooring' and subtype 'Hardwood Floor Installation'.",
+        )
+
     exterior_multi_scope = (
         ("siding" in hay_norm)
         and any(sig in hay_norm for sig in ["patio roof", "patio cover", "covered patio", "porch roof"])

@@ -1255,6 +1255,203 @@ test('agreement wizard step 1 no-template build with ai does not leave a ghost c
   await expect(page.getByText('Junk Removal')).toHaveCount(0);
 });
 
+test('agreement wizard step 1 treats hardwood flooring as AI draft when only unrelated templates exist', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    selected_template_id: null,
+    selected_template: null,
+  };
+
+  await installWizardAuthRoutes(page);
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 30, value: 'Flooring', label: 'Flooring', owner_type: 'system' },
+          { id: 40, value: 'Outdoor', label: 'Outdoor', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 301,
+            value: 'Hardwood Floor Installation',
+            label: 'Hardwood Floor Installation',
+            owner_type: 'system',
+            project_type: 'Flooring',
+          },
+          {
+            id: 401,
+            value: 'Shed Build',
+            label: 'Shed Build',
+            owner_type: 'system',
+            project_type: 'Outdoor',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Hardwood Floor Installation',
+        project_type: 'Flooring',
+        project_subtype: 'Hardwood Floor Installation',
+        description:
+          'Install hardwood flooring, including surface preparation, layout, flooring installation, transitions, finish details, and cleanup.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        confidence_level: 'low',
+        score: 0,
+        detail: 'No strong template match found.',
+        reason: 'blocked family mismatch: outdoor vs flooring',
+        recommended_template: null,
+        possible_match: null,
+        candidates: [
+          {
+            id: 501,
+            name: 'Shed Build Template',
+            project_type: 'Outdoor',
+            project_subtype: 'Shed Build',
+            score: 0,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 501,
+            name: 'Shed Build Template',
+            project_type: 'Outdoor',
+            project_subtype: 'Shed Build',
+            owner_type: 'system',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+
+    agreement = {
+      ...agreement,
+      ...request.postDataJSON(),
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      status: 'draft',
+    };
+
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(agreement),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+      if (request.method() === 'PATCH') {
+        agreement = { ...agreement, ...request.postDataJSON() };
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await page.getByTestId('step1-job-description-input').fill('Hardwood Floor Installation');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+  await expect(page.getByText('Template match found')).toHaveCount(0);
+  await expect(page.getByText('Shed Build Template')).toHaveCount(0);
+  await expect(page.getByText('No strong template match found')).toBeVisible();
+  await expect(
+    page.getByText('We generated a project draft from your description, but no saved template closely matches this work.')
+  ).toBeVisible();
+
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Hardwood Floor Installation'
+  );
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Flooring');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Hardwood Floor Installation'
+  );
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/hardwood flooring/i);
+});
+
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
   page,
 }) => {

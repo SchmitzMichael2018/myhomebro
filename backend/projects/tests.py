@@ -16002,6 +16002,75 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertNotIn("Home Inspection Service", matched_names)
         self.assertEqual(body["detail"], "No strong template match found.")
 
+    @override_settings(OPENAI_API_KEY="")
+    def test_classifier_maps_hardwood_floor_installation_to_flooring(self):
+        description = "Hardwood Floor Installation"
+
+        classification = classify_project_from_scope(
+            description=description,
+            scope=description,
+            current_values={"project_type": "", "project_subtype": "", "project_title": ""},
+            contractor=self.contractor,
+        )
+
+        self.assertEqual(classification["project_type"], "Flooring")
+        self.assertEqual(classification["project_subtype"], "Hardwood Floor Installation")
+        self.assertEqual(classification["project_title"], "Hardwood Floor Installation")
+
+    def test_recommend_endpoint_does_not_recommend_shed_for_hardwood_flooring_without_flooring_template(self):
+        ProjectTemplate.objects.filter(project_type__iexact="Flooring").update(
+            is_active=False,
+            is_published=False,
+        )
+        ProjectTemplate.objects.create(
+            name="Shed Build Template",
+            project_type="Outdoor",
+            project_subtype="Shed Build",
+            description="Build a backyard shed with framing, siding, roofing, door installation, and cleanup.",
+            default_scope="Build an outdoor shed structure with walls, roof, siding, door, and final cleanup.",
+            is_system_template=True,
+            is_published=True,
+            visibility=ProjectTemplate.Visibility.SYSTEM,
+            allow_discovery=True,
+        )
+
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "project_title": "Hardwood Floor Installation",
+                "project_type": "Flooring",
+                "project_subtype": "Hardwood Floor Installation",
+                "description": "Install hardwood flooring in the home with prep, layout, transitions, and cleanup.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "none")
+        self.assertEqual(body["confidence_level"], "low")
+        self.assertEqual(body["detail"], "No strong template match found.")
+        self.assertIsNone(body["recommended_template"])
+        self.assertIsNone(body["possible_match"])
+
+    def test_recommend_endpoint_matches_flooring_template_for_hardwood_flooring_when_available(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "project_title": "Hardwood Floor Installation",
+                "project_type": "Flooring",
+                "project_subtype": "Hardwood Floor Installation",
+                "description": "Install hardwood flooring in the home with prep, layout, transitions, and cleanup.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["confidence_level"], "high")
+        self.assertEqual(body["recommended_template"]["name"], "Flooring Installation")
+
     def test_recommend_endpoint_still_matches_home_inspection_when_requested(self):
         ProjectTemplate.objects.create(
             name="Home Inspection Service",

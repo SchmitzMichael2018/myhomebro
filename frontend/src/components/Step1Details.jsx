@@ -1121,6 +1121,18 @@ const STEP1_LOCAL_FALLBACK_RULES = [
       "Remove or prepare existing siding as needed, install replacement siding and related trim, complete finish details, and clean the work area. Contractor will verify measurements, material requirements, and site conditions before final pricing or work begins.",
   },
   {
+    patterns: [
+      /\bhardwood\s+floor(ing)?\s+(install|installation|replacement)\b/i,
+      /\binstall\s+(new\s+)?hardwood\s+floor(ing)?\b/i,
+      /\bfloor(ing)?\s+(install|installation)\b/i,
+    ],
+    project_type: "Flooring",
+    project_subtype: "Hardwood Floor Installation",
+    project_title: "Hardwood Floor Installation",
+    scope:
+      "Install hardwood flooring as described, including surface preparation, layout, flooring installation, transitions, finish details, and cleanup. Contractor will verify measurements, subfloor condition, material requirements, and site conditions before final pricing or work begins.",
+  },
+  {
     patterns: [/\bgarage\s+door\b/i, /\bgarage\s+door\s+replacement\b/i, /\bgarage\s+door\s+repair\b/i, /\bgarage\s+door\s+opener\b/i, /\boverhead\s+door\b/i],
     project_type: "Garage Doors",
     project_subtype: "Garage Door Replacement",
@@ -2159,6 +2171,8 @@ export default function Step1Details({
   const [step1AiRequestId, setStep1AiRequestId] = useState("");
   const [aiSetupError, setAiSetupError] = useState("");
   const [aiSetupResult, setAiSetupResult] = useState(null);
+  const [aiNoTemplateDraftNotice, setAiNoTemplateDraftNotice] = useState(false);
+  const [aiNoTemplateDraftPayload, setAiNoTemplateDraftPayload] = useState(null);
   const [lastAiSetupPrompt, setLastAiSetupPrompt] = useState("");
   const [step1ResetChooserPrompt, setStep1ResetChooserPrompt] = useState("");
   const [aiSuggestedFieldMeta, setAiSuggestedFieldMeta] = useState({});
@@ -4146,12 +4160,17 @@ export default function Step1Details({
         )) ||
       Boolean(appliedTemplateId) ||
       (startMode === "manual" &&
+        aiSetupResult?.kind !== "no_template" &&
+        aiSetupResult?.kind !== "fallback_recommendation" &&
         Boolean(
           safeTrim(dLocal?.project_title) ||
             safeTrim(dLocal?.project_type) ||
             safeTrim(dLocal?.project_subtype)
         )) ||
-      (isEdit && hasMeaningfulStep1DraftState({ agreement, dLocal })));
+      (isEdit &&
+        aiSetupResult?.kind !== "no_template" &&
+        aiSetupResult?.kind !== "fallback_recommendation" &&
+        hasMeaningfulStep1DraftState({ agreement, dLocal })));
   const isLoadingState = Boolean(aiSetupLoadingVisible);
   const isTemplateFoundState =
     !isLoadingState && aiSetupResult?.kind === "template_match" && !isAiBuiltState;
@@ -4174,6 +4193,10 @@ export default function Step1Details({
     aiCompactRecommendationConfidence !== "low";
   const shouldShowAppliedTemplateSummary =
     startMode !== "template" && Boolean(appliedTemplateId);
+  const shouldShowAiDraftNoTemplateNotice =
+    (Boolean(aiNoTemplateDraftNotice) || Boolean(aiNoTemplateDraftPayload?.refinedDescription)) &&
+    !appliedTemplateId &&
+    aiSetupResult?.kind !== "template_match";
   const hasResolvedStep1Content = Boolean(
     safeTrim(dLocal?.project_title) ||
       safeTrim(dLocal?.project_type) ||
@@ -4239,6 +4262,8 @@ export default function Step1Details({
     setAiSetupLoadingVisible(true);
     setAiSetupError("");
     setAiSetupResult(null);
+    setAiNoTemplateDraftNotice(false);
+    setAiNoTemplateDraftPayload(null);
     setDismissedAiTemplateRecommendation(false);
   }
 
@@ -4516,9 +4541,10 @@ export default function Step1Details({
       refinedDescription,
       message:
         message ||
-        "No template found — let's build this together. We'll generate a custom agreement based on your description.",
+        "We generated a project draft from your description, but no saved template closely matches this work.",
       recommendationReason:
-        recommendationReason || "No template found — let's build this together.",
+        recommendationReason ||
+        "We generated a project draft from your description, but no saved template closely matches this work.",
       recommendedTemplate: null,
       suggestedTitle: normalizeStep1FieldValue(
         nextTitle || deterministicFallback.project_title || ""
@@ -4531,7 +4557,7 @@ export default function Step1Details({
       ),
       setupFieldKeys: Array.isArray(setupFieldKeys) ? setupFieldKeys : [],
       recommendationSource: "fallback",
-      fallbackLabel: "No template found — let's build this together",
+      fallbackLabel: "No strong template match found",
     };
   }
 
@@ -4781,6 +4807,7 @@ export default function Step1Details({
           : "This template closely matches the job details you provided.");
 
       if (strongMatch) {
+        setAiNoTemplateDraftNotice(false);
         setAiSetupResult({
           kind: "template_match",
           confidenceLevel: "high",
@@ -4795,6 +4822,7 @@ export default function Step1Details({
         }
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else if (optionalMatch) {
+        setAiNoTemplateDraftNotice(false);
         setAiSetupResult({
           kind: "template_match",
           confidenceLevel: "medium",
@@ -4809,17 +4837,18 @@ export default function Step1Details({
         }
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else {
-        setAiSetupResult(
-          buildFallbackAiSetupResult({
-            refinedDescription,
-            suggestedSetupValues,
-            setupFieldKeys,
-            recommendationReason,
-            message: recommendationData?.detail
-              ? `Recommended from your description. ${recommendationData.detail}`
-              : "Recommended from your description. Review the suggested starting point before you continue.",
-          })
-        );
+        const fallbackResult = buildFallbackAiSetupResult({
+          refinedDescription,
+          suggestedSetupValues,
+          setupFieldKeys,
+          recommendationReason,
+          message: recommendationData?.detail
+            ? `Recommended from your description. ${recommendationData.detail}`
+            : "Recommended from your description. Review the suggested starting point before you continue.",
+        });
+        setAiNoTemplateDraftNotice(true);
+        setAiNoTemplateDraftPayload(fallbackResult);
+        setAiSetupResult(fallbackResult);
         setSelectedTemplateId(null);
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       }
@@ -4854,16 +4883,18 @@ export default function Step1Details({
         if (deterministicApplied?.ignored) {
           return;
         }
-        setAiSetupResult(
-          buildFallbackAiSetupResult({
-            refinedDescription:
-              deterministicFallback.description || refinedDescription || roughDescription,
-            suggestedSetupValues: deterministicApplied?.nextValues || suggestedSetupValues,
-            setupFieldKeys: deterministicApplied?.changedKeys || setupFieldKeys,
-            recommendationReason: "Recommended from your description.",
-            message: "No template found — let's build this together.",
-          })
-        );
+        const fallbackResult = buildFallbackAiSetupResult({
+          refinedDescription:
+            deterministicFallback.description || refinedDescription || roughDescription,
+          suggestedSetupValues: deterministicApplied?.nextValues || suggestedSetupValues,
+          setupFieldKeys: deterministicApplied?.changedKeys || setupFieldKeys,
+          recommendationReason: "Recommended from your description.",
+          message:
+            "We generated a project draft from your description, but no saved template closely matches this work.",
+        });
+        setAiSetupResult(fallbackResult);
+        setAiNoTemplateDraftNotice(true);
+        setAiNoTemplateDraftPayload(fallbackResult);
         setSelectedTemplateId(null);
         queueProjectDetailsReview([
           "description",
@@ -4889,18 +4920,93 @@ export default function Step1Details({
   }
 
   async function handleUseAiDescriptionOnly() {
-    if (!aiSetupResult?.refinedDescription) return;
-    applyRefinedDescription(aiSetupResult.refinedDescription);
+    const draftResult = aiSetupResult?.refinedDescription ? aiSetupResult : aiNoTemplateDraftPayload;
+    if (!draftResult?.refinedDescription) return;
+    const deterministicFallback = buildDeterministicStep1Setup(draftResult.refinedDescription);
+    const nextTitle = normalizeStep1FieldValue(
+      draftResult?.suggestedTitle || deterministicFallback.project_title || dLocal?.project_title || ""
+    );
+    const nextType = normalizeStep1FieldValue(
+      draftResult?.suggestedProjectType || deterministicFallback.project_type || dLocal?.project_type || ""
+    );
+    const nextSubtype = normalizeStep1FieldValue(
+      draftResult?.suggestedProjectSubtype ||
+        deterministicFallback.project_subtype ||
+        dLocal?.project_subtype ||
+        ""
+    );
+    const nextDescription = normalizeStep1FieldValue(
+      draftResult.refinedDescription || deterministicFallback.description || dLocal?.description || ""
+    );
+    const nextTypeRef =
+      (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
+    const nextSubtypeRef =
+      (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === nextSubtype)?.id || null;
+
+    setDLocal((prev) => ({
+      ...prev,
+      project_title: nextTitle || prev.project_title || "",
+      title: nextTitle || prev.title || "",
+      project_type: nextType || prev.project_type || "",
+      project_type_ref: nextTypeRef,
+      project_subtype: nextSubtype || prev.project_subtype || "",
+      project_subtype_ref: nextSubtypeRef,
+      description: nextDescription || prev.description || "",
+      scope_of_work: nextDescription || prev.scope_of_work || "",
+      step_status: "step1",
+    }));
+
+    if (agreementId) {
+      patchAgreement(
+        {
+          project_title: nextTitle || "",
+          title: nextTitle || "",
+          project_type: nextType || "",
+          project_type_ref: nextTypeRef,
+          project_subtype: nextSubtype || "",
+          project_subtype_ref: nextSubtypeRef,
+          description: nextDescription || "",
+          scope_of_work: nextDescription || "",
+          selected_template: null,
+          selected_template_id: null,
+          selected_template_name_snapshot: "",
+          project_template_id: null,
+          template_id: null,
+          step_status: "step1",
+        },
+        { silent: true }
+      );
+    }
+
+    if (!isNewAgreement) {
+      writeCache({
+        project_title: nextTitle || "",
+        title: nextTitle || "",
+        project_type: nextType || "",
+        project_type_ref: nextTypeRef,
+        project_subtype: nextSubtype || "",
+        project_subtype_ref: nextSubtypeRef,
+        description: nextDescription || "",
+        scope_of_work: nextDescription || "",
+        step_status: "step1",
+      });
+    }
+
     setAiSetupResult({
       kind: "description_only",
-      refinedDescription: aiSetupResult.refinedDescription,
+      refinedDescription: nextDescription,
       message:
         "Agreement draft created. Review the highlighted sections below.",
-      setupFieldKeys: Array.isArray(aiSetupResult?.setupFieldKeys)
-        ? aiSetupResult.setupFieldKeys
+      setupFieldKeys: Array.isArray(draftResult?.setupFieldKeys)
+        ? draftResult.setupFieldKeys
         : [],
     });
+    setAiNoTemplateDraftNotice(false);
+    setAiNoTemplateDraftPayload(null);
     setDismissedAiTemplateRecommendation(true);
+    setStep1NoTemplateBuilt(true);
+    setSelectedTemplateId(null);
+    queueProjectDetailsReview(["project_title", "project_type", "project_subtype", "description"]);
   }
 
   async function handleResetStep1Setup() {
@@ -5866,7 +5972,7 @@ export default function Step1Details({
                       No strong template match found
                     </div>
                     <div className="mt-1 text-base font-semibold text-slate-900">
-                      This project appears to combine multiple work scopes, so a saved template may not fit cleanly.
+                      We generated a project draft from your description, but no saved template closely matches this work.
                     </div>
                     <div className="mt-1 text-sm text-slate-600">
                       Build an AI draft from the project description, or browse templates manually if you want to compare saved starting points.
@@ -5884,7 +5990,13 @@ export default function Step1Details({
                       <button
                         type="button"
                         data-testid="step1-build-agreement-ai-button"
-                        onClick={() => applyNoTemplateFallbackSetup(step1JobDescriptionPrompt || dLocal?.description || agreement?.description || "")}
+                        onClick={() => {
+                          if (aiSetupResult?.refinedDescription) {
+                            handleUseAiDescriptionOnly();
+                            return;
+                          }
+                          applyNoTemplateFallbackSetup(step1JobDescriptionPrompt || dLocal?.description || agreement?.description || "");
+                        }}
                         disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                         className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >
@@ -6659,6 +6771,42 @@ export default function Step1Details({
             emphasis={projectDetailsReviewPulse}
           >
             <div className="space-y-5">
+              {shouldShowAiDraftNoTemplateNotice ? (
+                <div
+                  data-testid="step1-ai-draft-no-template-notice"
+                  className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3"
+                >
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                    No strong template match found
+                  </div>
+                  <div className="mt-1 text-sm text-slate-700">
+                    We generated a project draft from your description, but no saved template closely matches this work.
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="step1-build-agreement-ai-button"
+                      onClick={handleUseAiDescriptionOnly}
+                      disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
+                      className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      Build with AI instead
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="step1-browse-templates-manually-button"
+                      onClick={() => {
+                        setStep1ManualBrowseSignal((prev) => prev + 1);
+                        activateStartMode("template", { committed: true, source: "user" });
+                      }}
+                      disabled={locked}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Browse Templates
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <div
                 data-testid="maintenance-settings-card"
                 className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
