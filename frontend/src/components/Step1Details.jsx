@@ -4924,19 +4924,19 @@ export default function Step1Details({
     if (!draftResult?.refinedDescription) return;
     const deterministicFallback = buildDeterministicStep1Setup(draftResult.refinedDescription);
     const nextTitle = normalizeStep1FieldValue(
-      draftResult?.suggestedTitle || deterministicFallback.project_title || dLocal?.project_title || ""
+      dLocal?.project_title || draftResult?.suggestedTitle || deterministicFallback.project_title || ""
     );
     const nextType = normalizeStep1FieldValue(
-      draftResult?.suggestedProjectType || deterministicFallback.project_type || dLocal?.project_type || ""
+      dLocal?.project_type || draftResult?.suggestedProjectType || deterministicFallback.project_type || ""
     );
     const nextSubtype = normalizeStep1FieldValue(
-      draftResult?.suggestedProjectSubtype ||
+      dLocal?.project_subtype ||
+        draftResult?.suggestedProjectSubtype ||
         deterministicFallback.project_subtype ||
-        dLocal?.project_subtype ||
         ""
     );
     const nextDescription = normalizeStep1FieldValue(
-      draftResult.refinedDescription || deterministicFallback.description || dLocal?.description || ""
+      dLocal?.description || draftResult.refinedDescription || deterministicFallback.description || ""
     );
     const nextTypeRef =
       (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
@@ -5948,7 +5948,7 @@ export default function Step1Details({
                         onClick={handleUseAiDescriptionOnly}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
-                        Build with AI instead
+                        Continue with AI Draft
                       </button>
                     </div>
                   </div>
@@ -5975,7 +5975,7 @@ export default function Step1Details({
                       We generated a project draft from your description, but no saved template closely matches this work.
                     </div>
                     <div className="mt-1 text-sm text-slate-600">
-                      Build an AI draft from the project description, or browse templates manually if you want to compare saved starting points.
+                      Continue with the AI-generated title, scope, project type, and subtype, or browse templates manually if you want to compare saved starting points.
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
                       <button
@@ -6000,7 +6000,7 @@ export default function Step1Details({
                         disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                         className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >
-                        Build with AI instead
+                        Continue with AI Draft
                       </button>
                       <button
                         type="button"
@@ -6274,7 +6274,7 @@ export default function Step1Details({
                 onClick={handleUseAiDescriptionOnly}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
-                Build with AI instead
+                Continue with AI Draft
               </button>
             </div>
           </section>
@@ -6426,6 +6426,7 @@ export default function Step1Details({
                 onReviewProjectDetails={handleReviewProjectDetails}
                 onResetStep1={handleResetStep1Setup}
                 onGenerateAiDraft={requestStep1AiSetup}
+                onContinueWithAiDraft={handleUseAiDescriptionOnly}
                 onContinueToStep2={onStep1Continue}
                 spreadEnabled={spreadEnabled}
                 setSpreadEnabled={setSpreadEnabled}
@@ -6790,7 +6791,7 @@ export default function Step1Details({
                       disabled={locked || aiSetupBusy || aiSetupLoadingVisible}
                       className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                     >
-                      Build with AI instead
+                      Continue with AI Draft
                     </button>
                     <button
                       type="button"

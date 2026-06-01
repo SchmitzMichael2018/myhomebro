@@ -299,6 +299,7 @@ export default function TemplateSearchSection({
   startingPointBusy = false,
   onStartModeChange = null,
   onGenerateAiDraft = null,
+  onContinueWithAiDraft = null,
   onContinueToStep2 = null,
   onStartFromScratch = null,
   onReviewProjectDetails = null,
@@ -621,8 +622,9 @@ export default function TemplateSearchSection({
     if (locked || startingPointBusy) return;
     setSelectedTemplateId?.(null);
     setTemplateDropdownOpen(false);
-    if (noTemplateMatch) {
-      onStartFromScratch?.();
+    if (noTemplateMatch && onContinueWithAiDraft) {
+      onStartModeChange?.("ai");
+      onContinueWithAiDraft();
       return;
     }
     const prompt =
@@ -635,6 +637,11 @@ export default function TemplateSearchSection({
     if (prompt && onGenerateAiDraft) {
       onStartModeChange?.("ai");
       onGenerateAiDraft(prompt);
+      return;
+    }
+
+    if (noTemplateMatch) {
+      onStartFromScratch?.();
       return;
     }
 
@@ -840,7 +847,11 @@ export default function TemplateSearchSection({
                         data-testid="step1-build-agreement-ai-button"
                         className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                       >
-                        {startingPointBusy ? "Building agreement draft..." : "Build with AI"}
+                        {startingPointBusy
+                          ? "Building agreement draft..."
+                          : noTemplateMatch
+                          ? "Continue with AI Draft"
+                          : "Build with AI"}
                       </button>
                       {noTemplateMatch ? (
                         <button
@@ -990,6 +1001,8 @@ export default function TemplateSearchSection({
                               >
                               {startingPointBusy && startMode === "ai"
                                 ? "Building agreement draft..."
+                                : noTemplateMatch
+                                ? "Continue with AI Draft"
                                 : "Build with AI"}
                               </button>
                             </div>

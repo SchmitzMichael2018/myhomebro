@@ -1452,6 +1452,220 @@ test('agreement wizard step 1 treats hardwood flooring as AI draft when only unr
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/hardwood flooring/i);
 });
 
+test('agreement wizard step 1 continues existing ceiling leak AI draft without junk-removal reclassification', async ({
+  page,
+}) => {
+  let aiDescriptionCalls = 0;
+  const patchPayloads = [];
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    selected_template_id: null,
+    selected_template: null,
+  };
+
+  await installWizardAuthRoutes(page);
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 10, value: 'Repair', label: 'Repair', owner_type: 'system' },
+          { id: 20, value: 'Junk Removal', label: 'Junk Removal', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 101,
+            value: 'Water Damage Repair',
+            label: 'Water Damage Repair',
+            owner_type: 'system',
+            project_type: 'Repair',
+          },
+          {
+            id: 201,
+            value: 'Junk Removal',
+            label: 'Junk Removal',
+            owner_type: 'system',
+            project_type: 'Junk Removal',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    aiDescriptionCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Water Damage Repair',
+        project_type: 'Repair',
+        project_subtype: 'Water Damage Repair',
+        description:
+          'Repair ceiling damage from a leak, including protecting the work area, removing compromised material as needed, patching, finishing, and cleanup.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        confidence_level: 'low',
+        score: 0,
+        detail: 'No strong template match found.',
+        recommended_template: null,
+        possible_match: null,
+        candidates: [
+          {
+            id: 77,
+            name: 'Junk Removal Template',
+            project_type: 'Junk Removal',
+            project_subtype: 'Junk Removal',
+            score: 0,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 77,
+            name: 'Junk Removal Template',
+            project_type: 'Junk Removal',
+            project_subtype: 'Junk Removal',
+            owner_type: 'system',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+
+    agreement = {
+      ...agreement,
+      ...request.postDataJSON(),
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      status: 'draft',
+    };
+
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(agreement),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+      if (request.method() === 'PATCH') {
+        const payload = request.postDataJSON();
+        patchPayloads.push(payload);
+        agreement = { ...agreement, ...payload };
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByTestId('step1-job-description-input').fill('ceiling repair from leak');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+  await expect(page.getByText('No strong template match found')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Water Damage Repair');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Repair');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Water Damage Repair'
+  );
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/ceiling damage from a leak/i);
+  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveText(
+    'Continue with AI Draft'
+  );
+  expect(aiDescriptionCalls).toBe(1);
+
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+
+  expect(aiDescriptionCalls).toBe(1);
+  if (patchPayloads.length > 0) {
+    expect(patchPayloads.at(-1)).toMatchObject({
+      project_title: 'Water Damage Repair',
+      project_type: 'Repair',
+      project_subtype: 'Water Damage Repair',
+    });
+    expect(patchPayloads.at(-1).description).toMatch(/ceiling damage from a leak/i);
+    expect(patchPayloads.at(-1).project_type).not.toBe('Junk Removal');
+    expect(patchPayloads.at(-1).project_subtype).not.toBe('Junk Removal');
+  }
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Water Damage Repair');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Repair');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Water Damage Repair'
+  );
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/ceiling damage from a leak/i);
+});
+
 test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
   page,
 }) => {
