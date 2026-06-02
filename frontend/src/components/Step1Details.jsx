@@ -1761,6 +1761,7 @@ export default function Step1Details({
     onStep1ResetToChooserChange = null,
     onResetWizardForNewAgreement = null,
     onStep1AiSetupRequest = null,
+    onDraftIntelligenceChange = null,
     onStep1Continue = null,
     onAiModeActiveChange = null,
     onAiSetupReviewReady = null,
@@ -4030,7 +4031,53 @@ export default function Step1Details({
     scrollToProjectDetails({ allowAutoScroll: false });
   }
 
+  function buildDraftIntelligenceSnapshotPayload({
+    draftSource = "manual",
+    originalDescription = "",
+    projectTitle = "",
+    projectType = "",
+    projectSubtype = "",
+    scope = "",
+    classification = {},
+    templateRecommendation = {},
+    templateRecommendationTier = "",
+    selectedTemplateId = null,
+    aiModelVersion = "",
+  } = {}) {
+    return {
+      original_project_description: safeTrim(originalDescription || step1JobDescriptionPrompt || lastAiSetupPrompt || ""),
+      ai_project_title: safeTrim(projectTitle),
+      ai_project_type: safeTrim(projectType),
+      ai_project_subtype: safeTrim(projectSubtype),
+      ai_scope: formatGeneratedScopeAsBullets(safeTrim(scope)),
+      advisory_classification: classification && typeof classification === "object" ? classification : {},
+      template_recommendation_result:
+        templateRecommendation && typeof templateRecommendation === "object" ? templateRecommendation : {},
+      template_recommendation_tier: safeTrim(templateRecommendationTier),
+      selected_template_id: selectedTemplateId || null,
+      draft_source: draftSource,
+      ai_model_version: safeTrim(aiModelVersion),
+    };
+  }
+
   async function handleTemplateApplyWithOptions(template, options = {}) {
+    if (template?.id && typeof onDraftIntelligenceChange === "function") {
+      onDraftIntelligenceChange(
+        buildDraftIntelligenceSnapshotPayload({
+          draftSource: "template_match",
+          originalDescription: step1JobDescriptionPrompt || lastAiSetupPrompt || dLocal?.description || "",
+          projectTitle: dLocal?.project_title || template?.name || "",
+          projectType: dLocal?.project_type || template?.project_type || "",
+          projectSubtype: dLocal?.project_subtype || template?.project_subtype || "",
+          scope: dLocal?.description || template?.default_scope || template?.description || "",
+          templateRecommendation: template,
+          templateRecommendationTier: normalizeTemplateMatchTier(
+            aiSetupResult?.matchTier || aiSetupResult?.confidenceLevel || "strong_match"
+          ) || "strong_match",
+          selectedTemplateId: template.id,
+        })
+      );
+    }
     if (typeof handleApplyTemplate !== "function") return null;
     return handleApplyTemplate(template, options);
   }
@@ -5081,6 +5128,8 @@ export default function Step1Details({
           message:
             "We generated a project draft from your description, but no saved template closely matches this work.",
         });
+        fallbackResult.classification = refineRes?.data?.classification || {};
+        fallbackResult._model = refineRes?.data?._model || "";
         setAiSetupResult(fallbackResult);
         setAiNoTemplateDraftNotice(true);
         setAiDraftReviewPending(true);
@@ -5157,6 +5206,24 @@ export default function Step1Details({
       (projectTypeOptions || []).find((opt) => safeTrim(opt?.value) === nextType)?.id || null;
     const nextSubtypeRef =
       (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === nextSubtype)?.id || null;
+
+    if (typeof onDraftIntelligenceChange === "function") {
+      onDraftIntelligenceChange(
+        buildDraftIntelligenceSnapshotPayload({
+          draftSource: "no_template_ai",
+          originalDescription: step1JobDescriptionPrompt || lastAiSetupPrompt || draftSource,
+          projectTitle: nextTitle,
+          projectType: nextType,
+          projectSubtype: nextSubtype,
+          scope: nextDescription,
+          classification: draftResult?.classification || {},
+          templateRecommendation: draftResult?.recommendedTemplate || {},
+          templateRecommendationTier: "no_useful_match",
+          selectedTemplateId: null,
+          aiModelVersion: draftResult?._model || "",
+        })
+      );
+    }
 
     setDLocal((prev) => ({
       ...prev,
@@ -5243,6 +5310,9 @@ export default function Step1Details({
     }));
     setStep1JobDescriptionPrompt("");
     setStep1ResetChooserPrompt("");
+    if (typeof onDraftIntelligenceChange === "function") {
+      onDraftIntelligenceChange(null);
+    }
     setSelectedTemplateId(null);
     setTemplateSearch("");
     setAiPreview("");

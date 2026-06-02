@@ -955,6 +955,19 @@ export default function useStep1Templates({
         project_start_date: payloadStartDate || null,
         is_draft: !agreementId,
         wizard_step: 1,
+        draft_intelligence_snapshot: {
+          original_project_description: payloadDescription,
+          ai_project_title: payloadProjectTitle,
+          ai_project_type: payloadProjectType,
+          ai_project_subtype: payloadProjectSubtype,
+          ai_scope: payloadDescription,
+          advisory_classification: {},
+          template_recommendation_result: detail || template,
+          template_recommendation_tier: "strong_match",
+          selected_template_id: template.id,
+          draft_source: "template_match",
+          ai_model_version: "",
+        },
       });
 
       const data = response?.data || {};

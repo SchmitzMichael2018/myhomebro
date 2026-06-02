@@ -546,6 +546,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     ai_scope = serializers.SerializerMethodField()
     ai_scope_input = AgreementAIScopeWriteSerializer(write_only=True, required=False)
     scope_clarifications = serializers.JSONField(write_only=True, required=False)
+    draft_intelligence_snapshot = serializers.JSONField(write_only=True, required=False)
 
     use_default_warranty = serializers.BooleanField(write_only=True, required=False, default=True)
     custom_warranty_text = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
@@ -1487,6 +1488,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         ai_scope_payload = validated_data.pop("ai_scope_input", None)
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
+        draft_intelligence_payload = validated_data.pop("draft_intelligence_snapshot", None)
 
         validated_data = self._pop_non_model_fields(validated_data)
         validated_data = self._sync_taxonomy_snapshot_fields(validated_data)
@@ -1508,6 +1510,16 @@ class AgreementSerializer(serializers.ModelSerializer):
         self._stamp_external_attestation_if_needed(agreement, validated_data)
         if agreement.external_contract_attested_at:
             agreement.save(update_fields=["external_contract_attested_at", "external_contract_attested_by"])
+
+        try:
+            from projects.services.draft_intelligence import capture_agreement_draft_intelligence_snapshot
+
+            capture_agreement_draft_intelligence_snapshot(
+                agreement,
+                source_payload=draft_intelligence_payload if isinstance(draft_intelligence_payload, dict) else None,
+            )
+        except Exception:
+            pass
 
         self._persist_ai_scope(agreement, ai_scope_payload, scope_clarifications_payload)
         return agreement

@@ -489,6 +489,7 @@ class ApplyTemplateSerializer(serializers.Serializer):
         decimal_places=2,
         min_value=0,
     )
+    draft_intelligence_snapshot = serializers.JSONField(required=False)
 
     def validate(self, attrs):
         spread_enabled = bool(attrs.get("spread_enabled", False))

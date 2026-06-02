@@ -52,6 +52,7 @@ NON_MODEL_FIELDS = {
     "scope_text",
     "questions",
     "answers",
+    "draft_intelligence_snapshot",
 }
 
 
@@ -157,6 +158,17 @@ def create_agreement_from_validated(validated: Dict[str, Any]) -> Agreement:
     ag.save()
 
     _hydrate_project_title_from_payload(ag, original)
+
+    try:
+        from projects.services.draft_intelligence import capture_agreement_draft_intelligence_snapshot
+
+        draft_payload = original.get("draft_intelligence_snapshot")
+        capture_agreement_draft_intelligence_snapshot(
+            ag,
+            source_payload=draft_payload if isinstance(draft_payload, dict) else original,
+        )
+    except Exception:
+        pass
 
     try:
         from projects.services.proposal_learning import capture_agreement_proposal_snapshot

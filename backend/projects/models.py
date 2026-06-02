@@ -2566,6 +2566,7 @@ from .models_customer_portal import (  # noqa: E402,F401
 )
 from .models_amendment_request import AmendmentRequest  # noqa: E402,F401
 from .models_learning import (
+    AgreementDraftIntelligenceSnapshot,
     ProjectOutcomeSnapshot,
     ContractorBenchmarkAggregate,
     AgreementOutcomeSnapshot,

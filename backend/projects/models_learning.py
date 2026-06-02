@@ -5,6 +5,76 @@ from decimal import Decimal
 from django.db import models
 
 
+class AgreementDraftIntelligenceSnapshot(models.Model):
+    """
+    Immutable Step 1 intelligence captured before contractor edits can reshape
+    the editable agreement fields.
+    """
+
+    class DraftSource(models.TextChoices):
+        TEMPLATE_MATCH = "template_match", "Template Match"
+        NO_TEMPLATE_AI = "no_template_ai", "No-template AI"
+        MANUAL = "manual", "Manual"
+
+    agreement = models.OneToOneField(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="draft_intelligence_snapshot",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="agreement_draft_intelligence_snapshots",
+    )
+    selected_template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="draft_intelligence_snapshots",
+    )
+
+    original_project_description = models.TextField(blank=True, default="")
+    ai_project_title = models.CharField(max_length=255, blank=True, default="")
+    ai_project_type = models.CharField(max_length=120, blank=True, default="")
+    ai_project_subtype = models.CharField(max_length=160, blank=True, default="")
+    ai_scope = models.TextField(blank=True, default="")
+
+    advisory_classification = models.JSONField(blank=True, default=dict)
+    template_recommendation_result = models.JSONField(blank=True, default=dict)
+    template_recommendation_tier = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    draft_source = models.CharField(
+        max_length=32,
+        choices=DraftSource.choices,
+        default=DraftSource.MANUAL,
+        db_index=True,
+    )
+    ai_model_version = models.CharField(max_length=120, blank=True, default="")
+    snapshot_version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["contractor", "draft_source"]),
+            models.Index(fields=["template_recommendation_tier"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not kwargs.pop("_allow_update", False):
+            raise ValueError("AgreementDraftIntelligenceSnapshot is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("AgreementDraftIntelligenceSnapshot is immutable.")
+
+    def __str__(self) -> str:
+        return f"AgreementDraftIntelligenceSnapshot(agreement_id={self.agreement_id}, source={self.draft_source})"
+
+
 class ProjectOutcomeSnapshot(models.Model):
     """
     Append-only project outcome snapshot used to learn from real contractor results.

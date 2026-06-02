@@ -531,6 +531,7 @@ export default function AgreementWizard() {
   const [assistantAppliedSummary, setAssistantAppliedSummary] = useState("");
   const [step1AiEntryOpen, setStep1AiEntryOpen] = useState(false);
   const [step1AiSetupRequest, setStep1AiSetupRequest] = useState(null);
+  const [draftIntelligenceSnapshot, setDraftIntelligenceSnapshot] = useState(null);
   const [step1ResetToChooser, setStep1ResetToChooser] = useState(false);
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
@@ -635,6 +636,7 @@ export default function AgreementWizard() {
     setAssistantAppliedSummary("");
     setStep1AiEntryOpen(false);
     setStep1AiSetupRequest(null);
+    setDraftIntelligenceSnapshot(null);
     setStep1ResetToChooser(true);
     setAiFeedbackByStep({});
 
@@ -1342,7 +1344,7 @@ export default function AgreementWizard() {
     const fallbackDescription =
       "Draft agreement. Details will be completed after template selection or manual entry.";
 
-    return {
+    const payload = {
       homeowner: dLocal.homeowner ? Number(dLocal.homeowner) : null,
       title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
       project_title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
@@ -1397,6 +1399,10 @@ export default function AgreementWizard() {
       address_state: dLocal.address_state || "",
       address_postal_code: dLocal.address_postal_code || "",
     };
+    if (forDraftCreate && draftIntelligenceSnapshot && typeof draftIntelligenceSnapshot === "object") {
+      payload.draft_intelligence_snapshot = draftIntelligenceSnapshot;
+    }
+    return payload;
   }
 
   const ensureAgreementExists = async () => {
@@ -2168,6 +2174,7 @@ export default function AgreementWizard() {
               step1ResetToChooser={step1ResetToChooser}
               onStep1ResetToChooserChange={setStep1ResetToChooser}
               onStep1AiSetupRequest={setStep1AiSetupRequest}
+              onDraftIntelligenceChange={setDraftIntelligenceSnapshot}
               onStep1Continue={() => goStep(2)}
               onAiModeActiveChange={setStep1AiEntryOpen}
               onAiSetupReviewReady={({ message = "", changedKeys = [] } = {}) => {

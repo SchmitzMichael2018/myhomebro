@@ -36,6 +36,7 @@ from projects.models import (
     AgreementOutcomeMilestoneSnapshot,
     AgreementOutcomeSnapshot,
     AgreementProposalSnapshot,
+    AgreementDraftIntelligenceSnapshot,
     ProjectOutcomeSnapshot,
     Contractor,
     ContractorActivityEvent,
@@ -13372,6 +13373,168 @@ class ProjectLearningFoundationTests(TestCase):
             city="Miami",
             state="FL",
         )
+        self.api_client = APIClient()
+
+    def _new_learning_project(self, title="Draft Intelligence Project"):
+        return Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title=title,
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+            status=ProjectStatus.IN_PROGRESS,
+        )
+
+    def test_ai_draft_intelligence_snapshot_is_captured_on_agreement_create(self):
+        project = self._new_learning_project("Draft Placeholder")
+        agreement = create_agreement_from_validated(
+            {
+                "project": project,
+                "contractor": self.contractor,
+                "homeowner": self.homeowner,
+                "project_title": "Front Porch Decorative Wood Column Repair",
+                "project_type": "Carpentry",
+                "project_subtype": "Wood Column Restoration",
+                "description": "Included Work:\n- Repair decorative wood columns\n- Repaint trim",
+                "draft_intelligence_snapshot": {
+                    "original_project_description": "Repair decorative wood columns on front porch",
+                    "ai_project_title": "Front Porch Decorative Wood Column Repair",
+                    "ai_project_type": "Carpentry",
+                    "ai_project_subtype": "Wood Column Restoration",
+                    "ai_scope": "Included Work:\n- Repair decorative wood columns\n- Repaint trim",
+                    "advisory_classification": {"project_type": "Carpentry", "confidence": "medium"},
+                    "template_recommendation_result": {"name": "No useful template"},
+                    "template_recommendation_tier": "no_useful_match",
+                    "draft_source": "no_template_ai",
+                    "ai_model_version": "test-model-v1",
+                },
+            }
+        )
+
+        snapshot = AgreementDraftIntelligenceSnapshot.objects.get(agreement=agreement)
+        self.assertEqual(snapshot.draft_source, AgreementDraftIntelligenceSnapshot.DraftSource.NO_TEMPLATE_AI)
+        self.assertEqual(snapshot.original_project_description, "Repair decorative wood columns on front porch")
+        self.assertEqual(snapshot.ai_project_title, "Front Porch Decorative Wood Column Repair")
+        self.assertEqual(snapshot.ai_project_type, "Carpentry")
+        self.assertEqual(snapshot.ai_project_subtype, "Wood Column Restoration")
+        self.assertIn("decorative wood columns", snapshot.ai_scope)
+        self.assertEqual(snapshot.advisory_classification["project_type"], "Carpentry")
+        self.assertEqual(snapshot.template_recommendation_tier, "no_useful_match")
+        self.assertEqual(snapshot.ai_model_version, "test-model-v1")
+
+    def test_draft_intelligence_snapshot_is_write_once_when_agreement_is_edited(self):
+        project = self._new_learning_project("Original Draft")
+        agreement = create_agreement_from_validated(
+            {
+                "project": project,
+                "contractor": self.contractor,
+                "homeowner": self.homeowner,
+                "project_title": "Original AI Title",
+                "project_type": "Repair",
+                "project_subtype": "Exterior Repair",
+                "description": "Original AI scope",
+                "draft_intelligence_snapshot": {
+                    "original_project_description": "Original one sentence prompt",
+                    "ai_project_title": "Original AI Title",
+                    "ai_project_type": "Repair",
+                    "ai_project_subtype": "Exterior Repair",
+                    "ai_scope": "Original AI scope",
+                    "draft_source": "no_template_ai",
+                },
+            }
+        )
+
+        snapshot = AgreementDraftIntelligenceSnapshot.objects.get(agreement=agreement)
+        agreement.project.title = "Contractor Edited Title"
+        agreement.project.save(update_fields=["title"])
+        agreement.project_type = "Contractor Type"
+        agreement.project_subtype = "Contractor Subtype"
+        agreement.description = "Contractor edited scope"
+        agreement.save(update_fields=["project_type", "project_subtype", "description"])
+
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.ai_project_title, "Original AI Title")
+        self.assertEqual(snapshot.ai_project_type, "Repair")
+        self.assertEqual(snapshot.ai_project_subtype, "Exterior Repair")
+        self.assertEqual(snapshot.ai_scope, "Original AI scope")
+
+        snapshot.ai_project_title = "Attempted Mutation"
+        with self.assertRaises(ValueError):
+            snapshot.save()
+
+    def test_manual_agreement_create_gets_manual_draft_intelligence_snapshot(self):
+        project = self._new_learning_project("Manual Draft")
+        agreement = create_agreement_from_validated(
+            {
+                "project": project,
+                "contractor": self.contractor,
+                "homeowner": self.homeowner,
+                "project_title": "Manual Draft",
+                "project_type": "Repair",
+                "project_subtype": "General Repair",
+                "description": "Contractor typed scope",
+            }
+        )
+
+        snapshot = AgreementDraftIntelligenceSnapshot.objects.get(agreement=agreement)
+        self.assertEqual(snapshot.draft_source, AgreementDraftIntelligenceSnapshot.DraftSource.MANUAL)
+        self.assertEqual(snapshot.ai_project_title, "Manual Draft")
+        self.assertEqual(snapshot.ai_scope, "Contractor typed scope")
+
+    def test_fresh_template_apply_captures_template_match_draft_intelligence(self):
+        self.api_client.force_authenticate(user=self.contractor_user)
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Interior Painting",
+            project_type="Painting",
+            project_subtype="Interior Painting",
+            description="Paint interior bedroom walls.",
+            default_scope="Included Work:\n- Paint interior walls\n- Protect floors",
+        )
+        template.milestones.create(
+            title="Paint Walls",
+            description="Prepare and paint the included walls.",
+            sort_order=1,
+        )
+
+        response = self.api_client.post(
+            "/api/projects/agreements/new/apply-template/",
+            {
+                "template_id": template.id,
+                "application_mode": "enhance",
+                "overwrite_existing": True,
+                "copy_text_fields": True,
+                "project_title": "Paint interior bedroom walls",
+                "project_type": "Painting",
+                "project_subtype": "Interior Painting",
+                "description": "Paint interior bedroom walls",
+                "payment_mode": "escrow",
+                "payment_structure": "simple",
+                "is_draft": True,
+                "wizard_step": 1,
+                "draft_intelligence_snapshot": {
+                    "original_project_description": "Paint interior bedroom walls",
+                    "ai_project_title": "Paint interior bedroom walls",
+                    "ai_project_type": "Painting",
+                    "ai_project_subtype": "Interior Painting",
+                    "ai_scope": "Paint interior bedroom walls",
+                    "template_recommendation_result": {"id": template.id, "name": template.name},
+                    "template_recommendation_tier": "strong_match",
+                    "selected_template_id": template.id,
+                    "draft_source": "template_match",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        agreement_id = response.json()["agreement"]["id"]
+        snapshot = AgreementDraftIntelligenceSnapshot.objects.get(agreement_id=agreement_id)
+        self.assertEqual(snapshot.draft_source, AgreementDraftIntelligenceSnapshot.DraftSource.TEMPLATE_MATCH)
+        self.assertEqual(snapshot.selected_template_id, template.id)
+        self.assertEqual(snapshot.template_recommendation_tier, "strong_match")
+        self.assertEqual(snapshot.template_recommendation_result["name"], "Interior Painting")
 
     def _create_completed_agreement(
         self,
@@ -14026,11 +14189,13 @@ class ProjectLearningFoundationTests(TestCase):
             milestone_count=4,
         )
         rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+        rebuild_regional_benchmark_aggregates()
         small_context = dict(context, template_name="Kitchen Remodel Template Small", template_used="Kitchen Remodel Template Small")
         small = get_blended_benchmark(small_context, self.contractor.id)
         self.assertEqual(small["contractor"]["sample_size"], 1)
         self.assertEqual(small["regional"]["sample_size"], 1)
-        self.assertEqual(small["source_type"], "blended_all")
+        self.assertEqual(small["source_type"], "blended_platform_contractor")
+        self.assertEqual(Decimal(small["weights"]["regional"]), Decimal("0.00"))
         self.assertGreater(Decimal(small["weights"]["contractor"]), Decimal("0.00"))
         self.assertLessEqual(Decimal(small["weights"]["contractor"]), Decimal("0.20"))
         self.assertEqual(
@@ -14051,6 +14216,7 @@ class ProjectLearningFoundationTests(TestCase):
                 milestone_count=4,
             )
         rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+        rebuild_regional_benchmark_aggregates()
         strong_context = dict(context, template_name="Kitchen Remodel Template Strong", template_used="Kitchen Remodel Template Strong")
         strong = get_blended_benchmark(strong_context, self.contractor.id)
         self.assertEqual(strong["contractor"]["sample_size"], 7)
