@@ -25,6 +25,7 @@ try:
         Invoice,
         Expense,
         AgreementAmendment,
+        ContractorEditEvent,
         ProjectOutcomeSnapshot,
         ContractorBenchmarkAggregate,
         AgreementOutcomeSnapshot,
@@ -40,7 +41,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
-    ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
+    ContractorEditEvent = ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
     SupportTicket = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
@@ -1095,6 +1096,47 @@ if ProjectOutcomeSnapshot is not None:
             "template_used",
         )
         readonly_fields = ("created_at",)
+
+
+if ContractorEditEvent is not None:
+    @admin.register(ContractorEditEvent)
+    class ContractorEditEventAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "agreement",
+            "contractor",
+            "field_changed",
+            "source",
+            "change_reason",
+            "created_at",
+        )
+        list_filter = ("field_changed", "source", "created_at")
+        search_fields = (
+            "agreement__project__number",
+            "agreement__project__title",
+            "contractor__business_name",
+            "change_reason",
+        )
+        readonly_fields = (
+            "agreement",
+            "contractor",
+            "field_changed",
+            "original_value",
+            "updated_value",
+            "source",
+            "change_reason",
+            "metadata",
+            "created_at",
+        )
+
+        def has_add_permission(self, request):
+            return False
+
+        def has_change_permission(self, request, obj=None):
+            return False
+
+        def has_delete_permission(self, request, obj=None):
+            return False
 
 
 if ContractorBenchmarkAggregate is not None:

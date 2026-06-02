@@ -67,6 +67,10 @@ from projects.services.milestone_workflow import can_user_review_submitted_work
 from projects.services.milestone_payouts import sync_milestone_payout
 from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
+from projects.services.edit_lineage import (
+    build_agreement_edit_lineage_state,
+    capture_agreement_edit_lineage_events,
+)
 from projects.services.subcontractor_milestone_agreements import (
     upsert_subcontractor_milestone_agreement,
 )
@@ -801,6 +805,36 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         return self._assigned_queryset_for_user(user)
 
+    def _lineage_state(self, agreement: Optional[Agreement]):
+        if agreement is None:
+            return None
+        try:
+            agreement.refresh_from_db()
+        except Exception:
+            pass
+        try:
+            return build_agreement_edit_lineage_state(agreement)
+        except Exception:
+            return None
+
+    def _capture_milestone_lineage(self, agreement: Optional[Agreement], before_state, reason: str):
+        if agreement is None or before_state is None:
+            return
+        try:
+            agreement.refresh_from_db()
+        except Exception:
+            pass
+        try:
+            capture_agreement_edit_lineage_events(
+                agreement,
+                before_state=before_state,
+                source="contractor",
+                change_reason=reason,
+                metadata={"capture_point": "milestone_viewset"},
+            )
+        except Exception:
+            pass
+
     @action(detail=False, methods=["get"], url_path="my-assigned")
     def my_assigned(self, request):
         user = request.user
@@ -825,11 +859,15 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if incoming_order in (None, "", [], {}):
             incoming_order = data.get("sort_order")
 
+        agreement_for_lineage = None
+        before_lineage_state = None
         if agreement_id:
             try:
                 ag = Agreement.objects.select_related("project").get(pk=int(agreement_id))
                 if not can_edit_milestones_under_agreement(ag, allow_amendment=_is_amendment_request(request)):
                     return _locked_response(ag)
+                agreement_for_lineage = ag
+                before_lineage_state = self._lineage_state(agreement_for_lineage)
             except Exception:
                 pass
 
@@ -852,7 +890,13 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             self.perform_create(serializer)
             created_instance = getattr(serializer, "instance", None)
             if created_instance is not None:
-                _recompute_agreement_total_cost(getattr(created_instance, "agreement", None))
+                agreement_for_lineage = getattr(created_instance, "agreement", None)
+                _recompute_agreement_total_cost(agreement_for_lineage)
+                self._capture_milestone_lineage(
+                    agreement_for_lineage,
+                    before_lineage_state,
+                    "milestone_created",
+                )
         except IntegrityError as exc:
             logger.exception("IntegrityError creating milestone: %s", exc)
             return Response(
@@ -867,6 +911,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         milestone: Milestone = self.get_object()
         agreement = getattr(milestone, "agreement", None)
+        before_lineage_state = self._lineage_state(agreement)
 
         if agreement is None:
             return Response({"detail": "Milestone has no agreement."}, status=status.HTTP_400_BAD_REQUEST)
@@ -906,6 +951,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         response = super().destroy(request, *args, **kwargs)
         _recompute_agreement_total_cost(agreement)
+        self._capture_milestone_lineage(agreement, before_lineage_state, "milestone_deleted")
         return response
 
     # ---------------- HARDEN completion via PUT/PATCH + LOCK edits on signed ---------------- #
@@ -917,6 +963,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop("partial", False)
         instance: Milestone = self.get_object()
         data = request.data.copy()
+        agreement_for_lineage = getattr(instance, "agreement", None)
+        before_lineage_state = self._lineage_state(agreement_for_lineage)
 
         # Prevent bypassing amendments (but allow completion-only updates if agreement locked)
         locked_resp = _enforce_no_edit_on_locked_agreement(request=request, milestone=instance, data=data)
@@ -965,6 +1013,11 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                         )
 
                 out = MilestoneSerializer(locked, context={"request": request}).data
+                self._capture_milestone_lineage(
+                    getattr(locked, "agreement", None),
+                    before_lineage_state,
+                    "milestone_updated",
+                )
                 return Response(out, status=status.HTTP_200_OK)
 
             except Exception as exc:
@@ -973,6 +1026,11 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         response = super().update(request, *args, partial=partial, **kwargs)
         _recompute_agreement_total_cost(getattr(instance, "agreement", None))
+        self._capture_milestone_lineage(
+            getattr(instance, "agreement", None),
+            before_lineage_state,
+            "milestone_updated",
+        )
         return response
 
     def partial_update(self, request, *args, **kwargs):
@@ -1192,6 +1250,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     cur = min(ag_end, end_i + timedelta(days=1))
                 schedule_pairs = pairs
 
+            before_lineage_state = self._lineage_state(agreement)
             created_objs = []
             for idx, m in enumerate(milestones_in):
                 if not isinstance(m, dict):
@@ -1230,6 +1289,11 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 created_objs.append(obj)
 
             _recompute_agreement_total_cost(agreement)
+            self._capture_milestone_lineage(
+                agreement,
+                before_lineage_state,
+                "milestones_bulk_created",
+            )
 
         out = MilestoneSerializer(created_objs, many=True, context={"request": request}).data
         return Response({"created": out, "count": len(created_objs)}, status=status.HTTP_201_CREATED)
@@ -1259,6 +1323,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if getattr(agreement, "project", None) is None or getattr(agreement.project, "contractor_id", None) != contractor.id:
             return Response({"detail": "Not authorized for this agreement."}, status=status.HTTP_403_FORBIDDEN)
 
+        before_lineage_state = self._lineage_state(agreement)
         with transaction.atomic():
             existing = list(Milestone.objects.select_for_update().filter(agreement_id=ag_id))
             if not existing:
@@ -1290,6 +1355,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             Milestone.objects.filter(agreement_id=ag_id).delete()
 
         _recompute_agreement_total_cost(agreement)
+        self._capture_milestone_lineage(agreement, before_lineage_state, "milestones_reset")
         return Response(
             {
                 "ok": True,

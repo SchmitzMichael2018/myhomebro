@@ -547,6 +547,8 @@ class AgreementSerializer(serializers.ModelSerializer):
     ai_scope_input = AgreementAIScopeWriteSerializer(write_only=True, required=False)
     scope_clarifications = serializers.JSONField(write_only=True, required=False)
     draft_intelligence_snapshot = serializers.JSONField(write_only=True, required=False)
+    edit_lineage_source = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    edit_lineage_reason = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     use_default_warranty = serializers.BooleanField(write_only=True, required=False, default=True)
     custom_warranty_text = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
@@ -1489,6 +1491,8 @@ class AgreementSerializer(serializers.ModelSerializer):
         ai_scope_payload = validated_data.pop("ai_scope_input", None)
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
         draft_intelligence_payload = validated_data.pop("draft_intelligence_snapshot", None)
+        edit_lineage_source = validated_data.pop("edit_lineage_source", "contractor")
+        edit_lineage_reason = validated_data.pop("edit_lineage_reason", "")
 
         validated_data = self._pop_non_model_fields(validated_data)
         validated_data = self._sync_taxonomy_snapshot_fields(validated_data)
@@ -1522,11 +1526,31 @@ class AgreementSerializer(serializers.ModelSerializer):
             pass
 
         self._persist_ai_scope(agreement, ai_scope_payload, scope_clarifications_payload)
+        try:
+            from projects.services.edit_lineage import capture_initial_draft_to_agreement_lineage
+
+            capture_initial_draft_to_agreement_lineage(
+                agreement,
+                source=edit_lineage_source,
+                change_reason=edit_lineage_reason or "agreement_created_from_reviewed_draft",
+                metadata={"capture_point": "agreement_serializer_create"},
+            )
+        except Exception:
+            pass
         return agreement
 
     def update(self, instance, validated_data):
         ai_scope_payload = validated_data.pop("ai_scope_input", None)
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
+        edit_lineage_source = validated_data.pop("edit_lineage_source", "contractor")
+        edit_lineage_reason = validated_data.pop("edit_lineage_reason", "")
+        before_lineage_state = None
+        try:
+            from projects.services.edit_lineage import build_agreement_edit_lineage_state
+
+            before_lineage_state = build_agreement_edit_lineage_state(instance)
+        except Exception:
+            before_lineage_state = None
 
         validated_data = self._pop_non_model_fields(validated_data)
         validated_data = self._sync_taxonomy_snapshot_fields(validated_data)
@@ -1551,4 +1575,16 @@ class AgreementSerializer(serializers.ModelSerializer):
             instance.save(update_fields=["external_contract_attested_at", "external_contract_attested_by"])
 
         self._persist_ai_scope(instance, ai_scope_payload, scope_clarifications_payload)
+        try:
+            from projects.services.edit_lineage import capture_agreement_edit_lineage_events
+
+            capture_agreement_edit_lineage_events(
+                instance,
+                before_state=before_lineage_state,
+                source=edit_lineage_source,
+                change_reason=edit_lineage_reason,
+                metadata={"capture_point": "agreement_serializer_update"},
+            )
+        except Exception:
+            pass
         return instance

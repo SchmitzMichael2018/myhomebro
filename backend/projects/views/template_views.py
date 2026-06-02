@@ -35,6 +35,10 @@ from projects.services.template_apply import (
     save_agreement_as_template,
     user_can_use_template_ai,
 )
+from projects.services.edit_lineage import (
+    build_agreement_edit_lineage_state,
+    capture_agreement_edit_lineage_events,
+)
 from projects.services.template_discovery import (
     attach_template_learning_metrics,
     can_access_template,
@@ -245,6 +249,10 @@ class ApplyTemplateToAgreementView(APIView):
 
         overwrite_existing = serializer.validated_data["overwrite_existing"]
         copy_text_fields = serializer.validated_data["copy_text_fields"]
+        try:
+            before_lineage_state = build_agreement_edit_lineage_state(agreement)
+        except Exception:
+            before_lineage_state = None
 
         try:
             result = apply_template_to_agreement(
@@ -260,6 +268,24 @@ class ApplyTemplateToAgreementView(APIView):
             )
         except ValueError as exc:
             raise ValidationError(str(exc))
+
+        if before_lineage_state is not None:
+            try:
+                agreement.refresh_from_db()
+                capture_agreement_edit_lineage_events(
+                    agreement,
+                    before_state=before_lineage_state,
+                    source="template",
+                    change_reason="template_applied",
+                    metadata={
+                        "capture_point": "template_apply_view",
+                        "template_id": template.id,
+                        "template_name": template.name,
+                        "application_mode": serializer.validated_data.get("application_mode", "enhance"),
+                    },
+                )
+            except Exception:
+                pass
 
         return self._serialize_apply_response(
             agreement=agreement,
@@ -469,6 +495,10 @@ class ResetAgreementStep1View(APIView):
             raise ValidationError("Only editable draft agreements can be reset here.")
 
         project = getattr(agreement, "project", None)
+        try:
+            before_lineage_state = build_agreement_edit_lineage_state(agreement)
+        except Exception:
+            before_lineage_state = None
 
         with transaction.atomic():
             agreement.selected_template = None
@@ -565,6 +595,19 @@ class ResetAgreementStep1View(APIView):
                         "project_zip_code",
                     ]
                 )
+
+        if before_lineage_state is not None:
+            try:
+                agreement.refresh_from_db()
+                capture_agreement_edit_lineage_events(
+                    agreement,
+                    before_state=before_lineage_state,
+                    source="contractor",
+                    change_reason="step1_reset",
+                    metadata={"capture_point": "reset_agreement_step1_view"},
+                )
+            except Exception:
+                pass
 
         agreement.refresh_from_db()
         agreement = (

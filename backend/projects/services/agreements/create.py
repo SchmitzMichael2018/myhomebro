@@ -53,6 +53,8 @@ NON_MODEL_FIELDS = {
     "questions",
     "answers",
     "draft_intelligence_snapshot",
+    "edit_lineage_source",
+    "edit_lineage_reason",
 }
 
 
@@ -166,6 +168,18 @@ def create_agreement_from_validated(validated: Dict[str, Any]) -> Agreement:
         capture_agreement_draft_intelligence_snapshot(
             ag,
             source_payload=draft_payload if isinstance(draft_payload, dict) else original,
+        )
+    except Exception:
+        pass
+
+    try:
+        from projects.services.edit_lineage import capture_initial_draft_to_agreement_lineage
+
+        capture_initial_draft_to_agreement_lineage(
+            ag,
+            source=original.get("edit_lineage_source") or "contractor",
+            change_reason=original.get("edit_lineage_reason") or "agreement_created_from_reviewed_draft",
+            metadata={"capture_point": "create_agreement_from_validated"},
         )
     except Exception:
         pass

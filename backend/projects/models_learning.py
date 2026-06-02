@@ -75,6 +75,76 @@ class AgreementDraftIntelligenceSnapshot(models.Model):
         return f"AgreementDraftIntelligenceSnapshot(agreement_id={self.agreement_id}, source={self.draft_source})"
 
 
+class ContractorEditEvent(models.Model):
+    """
+    Immutable contractor edit lineage captured for future agreement-learning.
+
+    Agreement rows remain editable; these rows are append-only observations of
+    how an agreement changed after AI/template/manual drafting.
+    """
+
+    class Field(models.TextChoices):
+        PROJECT_TITLE = "project_title", "Project Title"
+        PROJECT_TYPE = "project_type", "Project Type"
+        PROJECT_SUBTYPE = "project_subtype", "Project Subtype"
+        SCOPE = "scope", "Scope"
+        MILESTONES = "milestones", "Milestones"
+        PRICING = "pricing", "Pricing"
+        SCHEDULE = "schedule", "Schedule"
+        EXCLUSIONS = "exclusions", "Exclusions"
+        CLARIFICATION_QUESTIONS = "clarification_questions", "Clarification Questions"
+
+    class Source(models.TextChoices):
+        CONTRACTOR = "contractor", "Contractor"
+        TEMPLATE = "template", "Template"
+        AI = "ai", "AI"
+
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="contractor_edit_events",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="contractor_edit_events",
+    )
+    field_changed = models.CharField(max_length=64, choices=Field.choices, db_index=True)
+    original_value = models.JSONField(blank=True, default=dict)
+    updated_value = models.JSONField(blank=True, default=dict)
+    source = models.CharField(
+        max_length=24,
+        choices=Source.choices,
+        default=Source.CONTRACTOR,
+        db_index=True,
+    )
+    change_reason = models.CharField(max_length=255, blank=True, default="")
+    metadata = models.JSONField(blank=True, default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["agreement", "field_changed"]),
+            models.Index(fields=["contractor", "field_changed"]),
+            models.Index(fields=["source", "field_changed"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not kwargs.pop("_allow_update", False):
+            raise ValueError("ContractorEditEvent is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("ContractorEditEvent is immutable.")
+
+    def __str__(self) -> str:
+        return f"ContractorEditEvent(agreement_id={self.agreement_id}, field={self.field_changed})"
+
+
 class ProjectOutcomeSnapshot(models.Model):
     """
     Append-only project outcome snapshot used to learn from real contractor results.

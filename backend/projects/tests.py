@@ -37,6 +37,7 @@ from projects.models import (
     AgreementOutcomeSnapshot,
     AgreementProposalSnapshot,
     AgreementDraftIntelligenceSnapshot,
+    ContractorEditEvent,
     ProjectOutcomeSnapshot,
     Contractor,
     ContractorActivityEvent,
@@ -133,6 +134,7 @@ from projects.services.project_intelligence_orchestrator import build_project_in
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
 from projects.services.team_attention import build_contractor_attention_counts
 from projects.services.agreements.create import create_agreement_from_validated
+from projects.serializers.agreement import AgreementSerializer
 from projects.services.agreements.public_sign import build_public_sign_url
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
@@ -13387,7 +13389,7 @@ class ProjectLearningFoundationTests(TestCase):
         )
 
     def test_ai_draft_intelligence_snapshot_is_captured_on_agreement_create(self):
-        project = self._new_learning_project("Draft Placeholder")
+        project = self._new_learning_project("Draft Agreement")
         agreement = create_agreement_from_validated(
             {
                 "project": project,
@@ -13462,6 +13464,170 @@ class ProjectLearningFoundationTests(TestCase):
         snapshot.ai_project_title = "Attempted Mutation"
         with self.assertRaises(ValueError):
             snapshot.save()
+
+    def test_initial_contractor_edit_lineage_captures_ai_draft_identity_changes(self):
+        project = self._new_learning_project("Draft Agreement")
+        agreement = create_agreement_from_validated(
+            {
+                "project": project,
+                "contractor": self.contractor,
+                "homeowner": self.homeowner,
+                "project_title": "Contractor Expanded Column Repair",
+                "project_type": "Carpentry",
+                "project_subtype": "Wood Column Restoration",
+                "description": "Included Work:\n- Repair decorative wood columns\n- Repaint trim",
+                "draft_intelligence_snapshot": {
+                    "original_project_description": "Repair decorative wood columns on front porch",
+                    "ai_project_title": "Front Porch Decorative Wood Column Repair",
+                    "ai_project_type": "Carpentry",
+                    "ai_project_subtype": "Wood Column Restoration",
+                    "ai_scope": "Included Work:\n- Repair decorative wood columns\n- Repaint trim",
+                    "draft_source": "no_template_ai",
+                },
+            }
+        )
+
+        title_event = ContractorEditEvent.objects.get(
+            agreement=agreement,
+            field_changed=ContractorEditEvent.Field.PROJECT_TITLE,
+        )
+        self.assertEqual(title_event.source, ContractorEditEvent.Source.CONTRACTOR)
+        self.assertEqual(title_event.original_value["value"], "Front Porch Decorative Wood Column Repair")
+        self.assertEqual(title_event.updated_value["value"], "Contractor Expanded Column Repair")
+        self.assertEqual(title_event.metadata["draft_source"], AgreementDraftIntelligenceSnapshot.DraftSource.NO_TEMPLATE_AI)
+
+    def test_agreement_update_lineage_captures_contractor_field_changes(self):
+        project = self._new_learning_project("Window Trim Repair")
+        agreement = create_agreement_from_validated(
+            {
+                "project": project,
+                "contractor": self.contractor,
+                "homeowner": self.homeowner,
+                "project_title": "Window Trim Repair",
+                "project_type": "Carpentry",
+                "project_subtype": "Exterior Trim Repair",
+                "description": "Included Work:\n- Repair exterior window trim",
+                "total_cost": Decimal("1000.00"),
+                "draft_intelligence_snapshot": {
+                    "original_project_description": "Repair wood rot around exterior windows and repaint trim",
+                    "ai_project_title": "Window Trim Repair",
+                    "ai_project_type": "Carpentry",
+                    "ai_project_subtype": "Exterior Trim Repair",
+                    "ai_scope": "Included Work:\n- Repair exterior window trim",
+                    "draft_source": "no_template_ai",
+                },
+            }
+        )
+
+        serializer = AgreementSerializer(
+            agreement,
+            data={
+                "project_type": "Exterior Carpentry",
+                "project_subtype": "Window Wood Rot Repair",
+                "description": "Included Work:\n- Remove soft trim\n- Patch wood rot\n- Repaint repaired trim",
+                "total_cost": "1500.00",
+                "project_start_date": timezone.localdate().isoformat(),
+                "excluded_work": "Structural framing repairs are excluded unless separately approved.",
+                "ai_scope_input": {
+                    "questions": [{"key": "paint_match", "question": "Should paint be matched?"}],
+                    "answers": {"paint_match": "Match existing trim color."},
+                },
+                "edit_lineage_reason": "contractor_review",
+            },
+            partial=True,
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+
+        events = {
+            event.field_changed: event
+            for event in ContractorEditEvent.objects.filter(agreement=agreement)
+        }
+        self.assertEqual(events[ContractorEditEvent.Field.PROJECT_TYPE].updated_value["value"], "Exterior Carpentry")
+        self.assertEqual(events[ContractorEditEvent.Field.PROJECT_SUBTYPE].updated_value["value"], "Window Wood Rot Repair")
+        self.assertIn("Patch wood rot", events[ContractorEditEvent.Field.SCOPE].updated_value["value"])
+        self.assertEqual(events[ContractorEditEvent.Field.PRICING].updated_value["total_cost"], "1500.00")
+        self.assertEqual(events[ContractorEditEvent.Field.SCHEDULE].updated_value["start"], timezone.localdate().isoformat())
+        self.assertIn("Structural framing", events[ContractorEditEvent.Field.EXCLUSIONS].updated_value["excluded_work"])
+        self.assertEqual(
+            events[ContractorEditEvent.Field.CLARIFICATION_QUESTIONS].updated_value["answers"]["paint_match"],
+            "Match existing trim color.",
+        )
+        self.assertTrue(all(event.source == ContractorEditEvent.Source.CONTRACTOR for event in events.values()))
+
+    def test_milestone_endpoint_lineage_captures_milestone_and_pricing_changes(self):
+        self.api_client.force_authenticate(user=self.contractor_user)
+        project = self._new_learning_project("Milestone Lineage")
+        agreement = create_agreement_from_validated(
+            {
+                "project": project,
+                "contractor": self.contractor,
+                "homeowner": self.homeowner,
+                "project_title": "Milestone Lineage",
+                "project_type": "Repair",
+                "project_subtype": "General Repair",
+                "description": "Repair scope",
+                "total_cost": Decimal("0.00"),
+                "draft_intelligence_snapshot": {
+                    "ai_project_title": "Milestone Lineage",
+                    "ai_project_type": "Repair",
+                    "ai_project_subtype": "General Repair",
+                    "ai_scope": "Repair scope",
+                    "draft_source": "manual",
+                },
+            }
+        )
+
+        response = self.api_client.post(
+            "/api/projects/milestones/",
+            {
+                "agreement": agreement.id,
+                "order": 1,
+                "title": "Repair Prep",
+                "description": "Prepare and protect work area.",
+                "amount": "350.00",
+                "start_date": timezone.localdate().isoformat(),
+                "completion_date": (timezone.localdate() + timedelta(days=1)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        milestone_event = ContractorEditEvent.objects.get(
+            agreement=agreement,
+            field_changed=ContractorEditEvent.Field.MILESTONES,
+        )
+        pricing_event = ContractorEditEvent.objects.get(
+            agreement=agreement,
+            field_changed=ContractorEditEvent.Field.PRICING,
+        )
+        self.assertEqual(milestone_event.change_reason, "milestone_created")
+        self.assertEqual(milestone_event.updated_value["items"][0]["title"], "Repair Prep")
+        self.assertEqual(pricing_event.updated_value["total_cost"], "350.00")
+
+    def test_contractor_edit_event_is_immutable(self):
+        project = self._new_learning_project("Immutable Lineage")
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Repair",
+            project_subtype="General Repair",
+            description="Original",
+        )
+        event = ContractorEditEvent.objects.create(
+            agreement=agreement,
+            contractor=self.contractor,
+            field_changed=ContractorEditEvent.Field.SCOPE,
+            original_value={"value": "Original"},
+            updated_value={"value": "Updated"},
+        )
+
+        event.change_reason = "mutated"
+        with self.assertRaises(ValueError):
+            event.save()
+        with self.assertRaises(ValueError):
+            event.delete()
 
     def test_manual_agreement_create_gets_manual_draft_intelligence_snapshot(self):
         project = self._new_learning_project("Manual Draft")
@@ -16107,6 +16273,24 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertNotIn("interior painting", agreement.description.lower())
         self.assertEqual(scope.answers, {"paint_finish": "Satin"})
         self.assertEqual(Milestone.objects.filter(agreement=agreement).count(), 1)
+        template_events = ContractorEditEvent.objects.filter(
+            agreement=agreement,
+            source=ContractorEditEvent.Source.TEMPLATE,
+            change_reason="template_applied",
+        )
+        self.assertTrue(
+            template_events.filter(field_changed=ContractorEditEvent.Field.MILESTONES).exists()
+        )
+        self.assertFalse(
+            template_events.filter(
+                field_changed__in=[
+                    ContractorEditEvent.Field.PROJECT_TITLE,
+                    ContractorEditEvent.Field.PROJECT_TYPE,
+                    ContractorEditEvent.Field.PROJECT_SUBTYPE,
+                    ContractorEditEvent.Field.SCOPE,
+                ]
+            ).exists()
+        )
 
     def test_apply_template_enhance_fills_empty_identity_from_template(self):
         project = Project.objects.create(

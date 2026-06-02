@@ -842,14 +842,27 @@ def score_template(
         if request_family == template_family:
             total_score += 22
             reasons.append(f"{request_family} family match")
+        elif any(
+            reason.startswith(("exact title match:", "title phrase match:", "request phrase match:"))
+            for reason in reasons
+        ):
+            reasons.append(
+                f"family mismatch overridden by exact template phrase: {template_family} vs {request_family}"
+            )
         else:
             reasons.append(f"blocked family mismatch: {template_family} vs {request_family}")
             reason = "; ".join(dict.fromkeys(reasons))
             return 0, reason
     elif request_family != "general" and template_family == "general":
-        total_score -= 18
-        total_score = min(total_score, 54)
-        reasons.append(f"generic template mismatch for {request_family} project")
+        if any(
+            reason.startswith(("exact title match:", "title phrase match:", "request phrase match:"))
+            for reason in reasons
+        ):
+            reasons.append(f"generic family ignored for exact template phrase on {request_family} project")
+        else:
+            total_score -= 18
+            total_score = min(total_score, 54)
+            reasons.append(f"generic template mismatch for {request_family} project")
 
     if request_family == "outdoor":
         if template_family == "concrete":
