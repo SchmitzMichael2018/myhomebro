@@ -250,6 +250,7 @@ class ApplyTemplateToAgreementView(APIView):
             result = apply_template_to_agreement(
                 agreement=agreement,
                 template=template,
+                application_mode=serializer.validated_data.get("application_mode", "enhance"),
                 overwrite_existing=overwrite_existing,
                 copy_text_fields=copy_text_fields,
                 estimated_days=serializer.validated_data.get("estimated_days"),
@@ -316,6 +317,7 @@ class ApplyTemplateToNewAgreementView(APIView):
             "template_id",
             "overwrite_existing",
             "copy_text_fields",
+            "application_mode",
             "estimated_days",
             "auto_schedule",
             "spread_enabled",
@@ -347,7 +349,11 @@ class ApplyTemplateToNewAgreementView(APIView):
                     project = None
         except ValueError:
             normalized_payload = dict(payload)
-            draft_title = "Draft Agreement"
+            draft_title = _safe_str(
+                normalized_payload.get("project_title")
+                or normalized_payload.get("title")
+                or normalized_payload.get("name")
+            ) or "Draft Agreement"
             draft_description = str(
                 normalized_payload.get("description")
                 or normalized_payload.get("scope_of_work")
@@ -361,7 +367,11 @@ class ApplyTemplateToNewAgreementView(APIView):
             )
             normalized_payload["project"] = project
         else:
-            draft_title = "Draft Agreement"
+            draft_title = _safe_str(
+                normalized_payload.get("project_title")
+                or normalized_payload.get("title")
+                or normalized_payload.get("name")
+            ) or "Draft Agreement"
             draft_description = str(
                 normalized_payload.get("description")
                 or normalized_payload.get("scope_of_work")

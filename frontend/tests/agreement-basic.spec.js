@@ -3671,6 +3671,7 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
     },
   };
   const patchPayloads = [];
+  const applyPayloads = [];
 
   await installWizardAuthRoutes(page);
 
@@ -4774,6 +4775,7 @@ test('agreement wizard step 1 shows clarifications after template application an
   });
 
   await page.route(/\/api\/projects\/agreements\/123\/apply-template\/$/, async (route) => {
+    applyPayloads.push(route.request().postDataJSON());
     agreement.selected_template_id = 44;
     agreement.selected_template = {
       id: 44,
@@ -4864,6 +4866,11 @@ test('agreement wizard step 1 shows clarifications after template application an
   await expect(page.getByTestId('agreement-ai-generate-scope-button')).toBeEnabled();
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue('');
   await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
+  expect(applyPayloads).toHaveLength(1);
+  expect(applyPayloads[0]).toMatchObject({
+    template_id: 44,
+    application_mode: 'enhance',
+  });
   expect(patchPayloads.length).toBeGreaterThanOrEqual(0);
 });
 

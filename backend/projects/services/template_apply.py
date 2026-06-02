@@ -27,6 +27,21 @@ class DateRange:
     end_date: date
 
 
+TEMPLATE_APPLICATION_MODE_ENHANCE = "enhance"
+TEMPLATE_APPLICATION_MODE_REPLACE_SCOPE = "replace_scope"
+TEMPLATE_APPLICATION_MODE_REPLACE_IDENTITY = "replace_identity"
+TEMPLATE_APPLICATION_MODES = {
+    TEMPLATE_APPLICATION_MODE_ENHANCE,
+    TEMPLATE_APPLICATION_MODE_REPLACE_SCOPE,
+    TEMPLATE_APPLICATION_MODE_REPLACE_IDENTITY,
+}
+
+
+def normalize_template_application_mode(value: Any) -> str:
+    mode = str(value or TEMPLATE_APPLICATION_MODE_ENHANCE).strip().lower()
+    return mode if mode in TEMPLATE_APPLICATION_MODES else TEMPLATE_APPLICATION_MODE_ENHANCE
+
+
 def get_request_contractor(user) -> Optional[Contractor]:
     """
     Your actual schema uses user.contractor_profile.
@@ -468,6 +483,7 @@ def _hydrate_agreement_core_fields(
     agreement: Agreement,
     template: ProjectTemplate,
     *,
+    application_mode: str = TEMPLATE_APPLICATION_MODE_ENHANCE,
     overwrite_payment_settings: bool = False,
 ) -> None:
     """
@@ -479,6 +495,9 @@ def _hydrate_agreement_core_fields(
     """
     agreement_update_fields: list[str] = []
     project_update_fields: list[str] = []
+    mode = normalize_template_application_mode(application_mode)
+    can_replace_identity = mode == TEMPLATE_APPLICATION_MODE_REPLACE_IDENTITY
+    can_replace_scope = mode == TEMPLATE_APPLICATION_MODE_REPLACE_SCOPE
 
     template_type = (getattr(template, "project_type", None) or "").strip()
     template_subtype = (getattr(template, "project_subtype", None) or "").strip()
@@ -507,11 +526,15 @@ def _hydrate_agreement_core_fields(
         and not bool(getattr(agreement, "external_payment_records").exists())
     )
 
-    if template_type and getattr(agreement, "project_type", "") != template_type:
-      agreement.project_type = template_type
-      agreement_update_fields.append("project_type")
+    current_type = str(getattr(agreement, "project_type", "") or "").strip()
+    current_subtype = str(getattr(agreement, "project_subtype", "") or "").strip()
+    current_description = str(getattr(agreement, "description", "") or "").strip()
 
-    if template_subtype and (getattr(agreement, "project_subtype", "") or "") != template_subtype:
+    if template_type and (can_replace_identity or not current_type) and current_type != template_type:
+        agreement.project_type = template_type
+        agreement_update_fields.append("project_type")
+
+    if template_subtype and (can_replace_identity or not current_subtype) and current_subtype != template_subtype:
         agreement.project_subtype = template_subtype
         agreement_update_fields.append("project_subtype")
 
@@ -525,7 +548,7 @@ def _hydrate_agreement_core_fields(
         if "selected_template_name_snapshot" not in agreement_update_fields:
             agreement_update_fields.append("selected_template_name_snapshot")
 
-    if template_description and getattr(agreement, "description", "") != template_description:
+    if template_description and (can_replace_scope or not current_description) and current_description != template_description:
         agreement.description = template_description
         agreement_update_fields.append("description")
 
@@ -549,7 +572,7 @@ def _hydrate_agreement_core_fields(
     project = getattr(agreement, "project", None)
     if project is not None and template_name:
         current_title = str(getattr(project, "title", "") or "").strip()
-        if not current_title or current_title.lower() in {"untitled project", "draft agreement"}:
+        if can_replace_identity or not current_title or current_title.lower() in {"untitled project", "draft agreement"}:
             if current_title != template_name:
                 project.title = template_name
                 project_update_fields.append("title")
@@ -557,12 +580,18 @@ def _hydrate_agreement_core_fields(
     _save_model_if_needed(project, project_update_fields)
 
 
-def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) -> None:
+def _copy_template_text_fields(
+    agreement: Agreement,
+    template: ProjectTemplate,
+    *,
+    application_mode: str = TEMPLATE_APPLICATION_MODE_ENHANCE,
+) -> None:
     """
     Copy template scope/description into the agreement and persist clarification
     questions into AgreementAIScope while preserving only matching answers.
     """
-    _hydrate_agreement_core_fields(agreement, template)
+    mode = normalize_template_application_mode(application_mode)
+    _hydrate_agreement_core_fields(agreement, template, application_mode=mode)
 
     if AgreementAIScope is None:
         return
@@ -571,8 +600,10 @@ def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) 
 
     incoming_scope_text = _safe_scope_text(template)
     incoming_questions = _safe_question_list(template)
+    current_scope_text = str(getattr(scope_obj, "scope_text", "") or "").strip()
+    can_replace_scope = mode == TEMPLATE_APPLICATION_MODE_REPLACE_SCOPE
 
-    if incoming_scope_text and hasattr(scope_obj, "scope_text"):
+    if incoming_scope_text and hasattr(scope_obj, "scope_text") and (can_replace_scope or not current_scope_text):
         scope_obj.scope_text = incoming_scope_text
 
     scope_obj.questions, scope_obj.answers = _replace_questions_preserving_matching_answers(
@@ -581,7 +612,7 @@ def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) 
     )
 
     scope_update_fields = ["questions", "answers"]
-    if incoming_scope_text and hasattr(scope_obj, "scope_text"):
+    if incoming_scope_text and hasattr(scope_obj, "scope_text") and (can_replace_scope or not current_scope_text):
         scope_update_fields.append("scope_text")
 
     _save_model_if_needed(scope_obj, scope_update_fields)
@@ -928,6 +959,7 @@ def apply_template_to_agreement(
     agreement: Agreement,
     template: ProjectTemplate,
     *,
+    application_mode: str = TEMPLATE_APPLICATION_MODE_ENHANCE,
     overwrite_existing: bool = True,
     copy_text_fields: bool = True,
     estimated_days: Optional[int] = None,
@@ -935,6 +967,7 @@ def apply_template_to_agreement(
     spread_enabled: bool = False,
     spread_total: Optional[Any] = None,
 ) -> dict:
+    application_mode = normalize_template_application_mode(application_mode)
     template_rows = list(template.milestones.all().order_by("sort_order", "id"))
     if not template_rows:
         raise ValueError("Selected template has no milestone rows.")
@@ -957,7 +990,11 @@ def apply_template_to_agreement(
     _persist_selected_template(agreement, template)
 
     if copy_text_fields:
-        _copy_template_text_fields(agreement, template)
+        _copy_template_text_fields(
+            agreement,
+            template,
+            application_mode=application_mode,
+        )
 
     effective_estimated_days = _coerce_positive_int(estimated_days)
     spread_total_decimal = _safe_decimal(spread_total, Decimal("0.00"))
@@ -1055,6 +1092,7 @@ def apply_template_to_agreement(
     return {
         "template_id": template.id,
         "template_name": template.name,
+        "application_mode": application_mode,
         "selected_template_id": template.id,
         "selected_template_name_snapshot": template.name,
         "deleted_existing_count": deleted_count,

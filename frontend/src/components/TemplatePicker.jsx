@@ -45,6 +45,7 @@ export default function TemplatePicker({
         `/projects/agreements/${agreementId}/apply-template/`,
         {
           template_id: templateId,
+          application_mode: "enhance",
           overwrite_existing: true,
           copy_text_fields: true,
         }

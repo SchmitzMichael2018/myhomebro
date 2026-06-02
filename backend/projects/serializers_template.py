@@ -470,6 +470,11 @@ class ApplyTemplateSerializer(serializers.Serializer):
     template_id = serializers.IntegerField()
     overwrite_existing = serializers.BooleanField(default=True)
     copy_text_fields = serializers.BooleanField(default=True)
+    application_mode = serializers.ChoiceField(
+        choices=("enhance", "replace_scope", "replace_identity"),
+        default="enhance",
+        required=False,
+    )
 
     # Frontend already sends these during apply; keep serializer aligned
     # so the view layer can safely accept them now and the service layer can

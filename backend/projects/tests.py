@@ -15870,20 +15870,174 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(body["detail"], "Template applied successfully.")
         self.assertEqual(body["agreement"]["selected_template_id"], saved_template.id)
         self.assertEqual(body["agreement"]["selected_template"]["name"], saved_template.name)
-        self.assertEqual(body["agreement"]["project_title"], saved_template.name)
+        self.assertEqual(body["agreement"]["project_title"], "central air installation")
         self.assertEqual(body["agreement"]["project_start_date"], project_start.isoformat())
         self.assertEqual(body["result"]["start_date"], project_start.isoformat())
+        self.assertEqual(body["result"]["application_mode"], "enhance")
         self.assertGreaterEqual(body["result"]["created_count"], 2)
 
         fresh_agreement = Agreement.objects.get(pk=body["agreement"]["id"])
         self.assertEqual(fresh_agreement.selected_template_id, saved_template.id)
-        self.assertEqual(fresh_agreement.project.title, saved_template.name)
+        self.assertEqual(fresh_agreement.project.title, "central air installation")
         self.assertEqual(fresh_agreement.start.isoformat(), project_start.isoformat())
         self.assertEqual(fresh_agreement.milestone_count, saved_template.milestones.count())
         self.assertEqual(Milestone.objects.filter(agreement=fresh_agreement).count(), saved_template.milestones.count())
         first_milestone = Milestone.objects.filter(agreement=fresh_agreement).order_by("order", "id").first()
         self.assertIsNotNone(first_milestone)
         self.assertEqual(first_milestone.start_date.isoformat(), project_start.isoformat())
+
+    def test_apply_template_enhance_preserves_ai_draft_identity_and_scope(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Front Porch Decorative Wood Column Repair",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Carpentry",
+            project_subtype="Wood Column Restoration",
+            description="Included Work:\n- Repair decorative wood columns on front porch\n- Repaint repaired trim",
+        )
+        AgreementAIScope.objects.create(
+            agreement=agreement,
+            answers={"paint_finish": "Satin"},
+        )
+        painting_template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Interior Painting",
+            project_type="Painting",
+            project_subtype="Interior Painting",
+            description="Paint interior bedroom walls.",
+            default_scope="Included Work:\n- Paint interior walls\n- Protect flooring",
+            default_clarifications=[
+                {"key": "paint_finish", "label": "Paint finish?", "type": "text"},
+                {"key": "wall_color", "label": "Wall color?", "type": "text"},
+            ],
+        )
+        painting_template.milestones.create(title="Paint Prep", description="Protect and prep.", sort_order=1)
+
+        response = self.client.post(
+            f"/api/projects/agreements/{agreement.id}/apply-template/",
+            {
+                "template_id": painting_template.id,
+                "application_mode": "enhance",
+                "overwrite_existing": True,
+                "copy_text_fields": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        agreement.refresh_from_db()
+        agreement.project.refresh_from_db()
+        scope = AgreementAIScope.objects.get(agreement=agreement)
+        self.assertEqual(agreement.selected_template_id, painting_template.id)
+        self.assertEqual(agreement.project.title, "Front Porch Decorative Wood Column Repair")
+        self.assertEqual(agreement.project_type, "Carpentry")
+        self.assertEqual(agreement.project_subtype, "Wood Column Restoration")
+        self.assertIn("decorative wood columns", agreement.description)
+        self.assertNotIn("interior painting", agreement.description.lower())
+        self.assertEqual(scope.answers, {"paint_finish": "Satin"})
+        self.assertEqual(Milestone.objects.filter(agreement=agreement).count(), 1)
+
+    def test_apply_template_enhance_fills_empty_identity_from_template(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Draft Agreement",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="",
+            project_subtype="",
+            description="",
+        )
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Interior Painting",
+            project_type="Painting",
+            project_subtype="Interior Painting",
+            description="Paint interior bedroom walls.",
+            default_scope="Included Work:\n- Paint interior walls\n- Protect flooring",
+        )
+        template.milestones.create(title="Paint Prep", description="Protect and prep.", sort_order=1)
+
+        result = apply_template_to_agreement(
+            agreement=agreement,
+            template=template,
+            application_mode="enhance",
+            overwrite_existing=True,
+            copy_text_fields=True,
+        )
+
+        self.assertEqual(result["application_mode"], "enhance")
+        agreement.refresh_from_db()
+        agreement.project.refresh_from_db()
+        scope = AgreementAIScope.objects.get(agreement=agreement)
+        self.assertEqual(agreement.project.title, "Interior Painting")
+        self.assertEqual(agreement.project_type, "Painting")
+        self.assertEqual(agreement.project_subtype, "Interior Painting")
+        self.assertEqual(agreement.description, "Paint interior bedroom walls.")
+        self.assertEqual(scope.questions, [])
+
+    def test_apply_template_replace_modes_require_explicit_request(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Contractor Edited Title",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Carpentry",
+            project_subtype="Exterior Trim Repair",
+            description="Contractor edited scope.",
+        )
+        AgreementAIScope.objects.create(agreement=agreement)
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Interior Painting",
+            project_type="Painting",
+            project_subtype="Interior Painting",
+            description="Template description.",
+            default_scope="Template scope.",
+        )
+        template.milestones.create(title="Paint Prep", description="Protect and prep.", sort_order=1)
+
+        apply_template_to_agreement(
+            agreement=agreement,
+            template=template,
+            application_mode="replace_scope",
+            overwrite_existing=True,
+            copy_text_fields=True,
+        )
+        agreement.refresh_from_db()
+        agreement.project.refresh_from_db()
+        scope = AgreementAIScope.objects.get(agreement=agreement)
+        self.assertEqual(agreement.project.title, "Contractor Edited Title")
+        self.assertEqual(agreement.project_type, "Carpentry")
+        self.assertEqual(agreement.project_subtype, "Exterior Trim Repair")
+        self.assertEqual(agreement.description, "Template description.")
+
+        apply_template_to_agreement(
+            agreement=agreement,
+            template=template,
+            application_mode="replace_identity",
+            overwrite_existing=True,
+            copy_text_fields=True,
+        )
+        agreement.refresh_from_db()
+        agreement.project.refresh_from_db()
+        scope.refresh_from_db()
+        self.assertEqual(agreement.project.title, "Interior Painting")
+        self.assertEqual(agreement.project_type, "Painting")
+        self.assertEqual(agreement.project_subtype, "Interior Painting")
+        self.assertEqual(agreement.description, "Template description.")
 
     def test_fresh_agreement_apply_template_supports_system_templates(self):
         system_template = ProjectTemplate.objects.filter(

@@ -302,7 +302,14 @@ function normalizeApplyOptions(options = {}, template = null) {
   };
 }
 
-function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTitle, currentDescription) {
+function deriveAgreementPatchFromApplyResponse(
+  data,
+  fallbackTemplate,
+  currentTitle,
+  currentDescription,
+  currentProjectType = "",
+  currentProjectSubtype = ""
+) {
   const agreement = data?.agreement || null;
   const template = agreement?.selected_template || fallbackTemplate || null;
 
@@ -323,26 +330,27 @@ function deriveAgreementPatchFromApplyResponse(data, fallbackTemplate, currentTi
   const nextTitle =
     normalizeStep1FieldValue(
       agreement?.project_title ||
-        template?.name ||
         currentTitle ||
+        template?.name ||
         ""
     );
 
   const nextType = normalizeStep1FieldValue(
-    agreement?.project_type || template?.project_type || ""
+    agreement?.project_type || currentProjectType || template?.project_type || ""
   );
   const nextSubtype = normalizeStep1FieldValue(
-    agreement?.project_subtype || template?.project_subtype || ""
+    agreement?.project_subtype || currentProjectSubtype || template?.project_subtype || ""
   );
 
   const nextStartDate = toDateOnly(agreement?.project_start_date || agreement?.start || "");
 
   const nextDescription =
     normalizeStep1FieldValue(
-      agreement?.description ??
-        agreement?.scope_of_work ??
-        template?.default_scope ??
-        (safeTrim(template?.description) ? template.description : currentDescription)
+      agreement?.description ||
+        agreement?.scope_of_work ||
+        currentDescription ||
+        template?.default_scope ||
+        (safeTrim(template?.description) ? template.description : "")
     );
 
   return {
@@ -927,6 +935,7 @@ export default function useStep1Templates({
 
       const response = await api.post(`/projects/agreements/${targetAgreementId}/apply-template/`, {
         template_id: template.id,
+        application_mode: options?.application_mode || "enhance",
         overwrite_existing: true,
         copy_text_fields: true,
         estimated_days: applyOptions.estimated_days,
@@ -953,7 +962,9 @@ export default function useStep1Templates({
         data,
         detail || template,
         currentTitle,
-        currentDescription
+        currentDescription,
+        currentProjectType,
+        currentProjectSubtype
       );
 
       setDLocal((prev) => ({

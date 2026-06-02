@@ -180,6 +180,7 @@ class ApplyTemplateToAgreementView(APIView):
             result = apply_template_to_agreement(
                 agreement=agreement,
                 template=template,
+                application_mode=serializer.validated_data.get("application_mode", "enhance"),
                 overwrite_existing=overwrite_existing,
                 copy_text_fields=copy_text_fields,
                 estimated_days=serializer.validated_data.get("estimated_days"),
