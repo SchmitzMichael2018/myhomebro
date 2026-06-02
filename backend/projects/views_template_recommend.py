@@ -25,10 +25,14 @@ class TemplateRecommendView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     @staticmethod
-    def _confidence_level_from_score(score: int) -> str:
-        if score >= HIGH_CONFIDENCE_SCORE:
+    def _confidence_level_from_result(match_tier: str, score: int) -> str:
+        if match_tier == "strong_match":
             return "high"
-        if score >= MEDIUM_CONFIDENCE_SCORE:
+        if match_tier == "related_match":
+            return "medium"
+        if not match_tier and score >= HIGH_CONFIDENCE_SCORE:
+            return "high"
+        if not match_tier and score >= MEDIUM_CONFIDENCE_SCORE:
             return "medium"
         return "low"
 
@@ -63,6 +67,8 @@ class TemplateRecommendView(APIView):
                     "recommended_template": None,
                     "possible_match": None,
                     "confidence": "none",
+                    "confidence_level": "low",
+                    "match_tier": "no_useful_match",
                     "score": 0,
                     "reason": "No templates available.",
                     "candidates": [],
@@ -82,7 +88,8 @@ class TemplateRecommendView(APIView):
         recommended_template = None
         possible_match = None
         confidence = "none"
-        confidence_level = self._confidence_level_from_score(int(result.score or 0))
+        match_tier = result.match_tier or "no_useful_match"
+        confidence_level = self._confidence_level_from_result(match_tier, int(result.score or 0))
 
         if result.template is not None:
             serialized = ProjectTemplateListSerializer(
@@ -112,6 +119,7 @@ class TemplateRecommendView(APIView):
                 "possible_match": possible_match,
                 "confidence": confidence,
                 "confidence_level": confidence_level,
+                "match_tier": match_tier,
                 "score": result.score,
                 "reason": result.reason,
                 "candidates": result.candidates,

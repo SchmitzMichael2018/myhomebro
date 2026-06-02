@@ -14,6 +14,7 @@ class RecommendationResult:
     score: int
     reason: str
     candidates: list[dict]
+    match_tier: str = "no_useful_match"
     partial_match: bool = False
     partial_match_reason: str = ""
 
@@ -847,6 +848,7 @@ def score_template(
             return 0, reason
     elif request_family != "general" and template_family == "general":
         total_score -= 18
+        total_score = min(total_score, 54)
         reasons.append(f"generic template mismatch for {request_family} project")
 
     if request_family == "outdoor":
@@ -924,6 +926,7 @@ def recommend_template(
             score=0,
             reason="No templates available.",
             candidates=[],
+            match_tier="no_useful_match",
         )
 
     best = ranked[0]
@@ -945,6 +948,13 @@ def recommend_template(
 
     best_reason = best["reason"]
     is_partial = "partially covered by single-trade template" in best_reason
+    best_score = int(best["score"] or 0)
+    match_tier = "no_useful_match"
+    if best_score >= 70 and not is_partial:
+        match_tier = "strong_match"
+    elif best_score >= 60:
+        match_tier = "related_match"
+
     partial_reason = ""
     if is_partial and best["template"]:
         tpl_type = _norm(best["template"].project_type or "")
@@ -955,10 +965,11 @@ def recommend_template(
         )
 
     return RecommendationResult(
-        template=best["template"],
-        score=best["score"],
+        template=best["template"] if match_tier != "no_useful_match" else None,
+        score=best_score,
         reason=best_reason,
         candidates=candidate_payload,
+        match_tier=match_tier,
         partial_match=is_partial,
         partial_match_reason=partial_reason,
     )

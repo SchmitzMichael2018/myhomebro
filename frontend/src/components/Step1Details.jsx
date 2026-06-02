@@ -1649,6 +1649,18 @@ function normalizeTemplateConfidenceLevel(value) {
   return "low";
 }
 
+function normalizeTemplateMatchTier(value) {
+  const normalized = safeTrim(value).toLowerCase();
+  if (normalized === "strong_match" || normalized === "strong") return "strong_match";
+  if (normalized === "related_match" || normalized === "related" || normalized === "partial_match") {
+    return "related_match";
+  }
+  if (normalized === "no_useful_match" || normalized === "none" || normalized === "low") {
+    return "no_useful_match";
+  }
+  return "";
+}
+
 export default function Step1Details({
   agreement,
   isEdit,
@@ -4734,16 +4746,9 @@ export default function Step1Details({
       });
 
       const templateProbeData = templateProbeRes?.data || {};
-      const probeCandidates = Array.isArray(templateProbeData?.candidates)
-        ? templateProbeData.candidates
-        : Array.isArray(templateProbeData?.results)
-        ? templateProbeData.results
-        : [];
+      const probeMatchTier = normalizeTemplateMatchTier(templateProbeData?.match_tier || "");
       const probeRecommendedTemplate =
-        templateProbeData?.recommended_template ||
-        templateProbeData?.possible_match ||
-        probeCandidates[0] ||
-        null;
+        probeMatchTier === "no_useful_match" ? null : templateProbeData?.recommended_template || null;
       const probeConfidence = normalizeTemplateConfidenceLevel(
         templateProbeData?.confidence_level || templateProbeData?.confidence || "low"
       );
@@ -4759,7 +4764,8 @@ export default function Step1Details({
           normalizeRecommendationText(probeRecommendedTemplate?.name || "");
       const probeStrongMatch =
         Boolean(probeRecommendedTemplate?.id) &&
-        (probeConfidence === "high" || probeScore >= 70 || exactTitleMatch);
+        probeMatchTier !== "no_useful_match" &&
+        (probeMatchTier === "strong_match" || probeConfidence === "high" || exactTitleMatch);
 
       if (probeStrongMatch) {
         const probeReasonFallback = exactTitleMatch
@@ -4888,15 +4894,10 @@ export default function Step1Details({
       const resolvedProjectSubtype = safeTrim(
         suggestedSetupValues?.project_subtype || dLocal.project_subtype || ""
       );
-      const recommendationCandidates = Array.isArray(recommendationData?.candidates)
-        ? recommendationData.candidates
-        : Array.isArray(recommendationData?.results)
-        ? recommendationData.results
-        : [];
+      const matchTier = normalizeTemplateMatchTier(recommendationData?.match_tier || "");
       const recommendedTemplate =
         recommendationData?.recommended_template ||
         recommendationData?.possible_match ||
-        recommendationCandidates[0] ||
         null;
       const confidenceLevel = normalizeTemplateConfidenceLevel(
         recommendationData?.confidence_level || recommendationData?.confidence || "low"
@@ -4915,11 +4916,13 @@ export default function Step1Details({
           resolvedProjectSubtype.toLowerCase() && resolvedProjectSubtype;
       const strongMatch =
         Boolean(recommendedTemplate?.id) &&
-        (confidenceLevel === "high" || score >= 70 || (exactTypeMatch && exactSubtypeMatch));
+        matchTier !== "no_useful_match" &&
+        (matchTier === "strong_match" || confidenceLevel === "high" || (exactTypeMatch && exactSubtypeMatch));
       const optionalMatch =
         Boolean(recommendedTemplate?.id) &&
         !strongMatch &&
-        (confidenceLevel === "medium" || score >= 50 || exactTypeMatch);
+        matchTier !== "no_useful_match" &&
+        (matchTier === "related_match" || confidenceLevel === "medium" || exactTypeMatch);
       const recommendationReasonFallback =
         exactTypeMatch && exactSubtypeMatch
           ? "Matches the project type and subtype you selected."

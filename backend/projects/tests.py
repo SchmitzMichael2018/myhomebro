@@ -161,6 +161,7 @@ from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.regions import build_normalized_region_key
 from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
 from projects.services.template_discovery import discover_templates
+from projects.services.template_recommend import recommend_template
 from projects.services.milestone_payouts import sync_milestone_payout
 from projects.services.subcontractor_milestone_agreements import (
     accept_subcontractor_milestone_agreement,
@@ -19089,6 +19090,144 @@ class DisputeMutationSafetyTests(TestCase):
         )
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("Only terminal disputes can be archived.", str(response.data["detail"]))
+
+
+class TemplateRecommendationRelevanceTests(TestCase):
+    def _template(
+        self,
+        *,
+        template_id: int,
+        name: str,
+        project_type: str,
+        project_subtype: str,
+        description: str = "",
+        default_scope: str = "",
+    ) -> ProjectTemplate:
+        return ProjectTemplate(
+            id=template_id,
+            name=name,
+            project_type=project_type,
+            project_subtype=project_subtype,
+            description=description,
+            default_scope=default_scope,
+            is_system=True,
+            is_system_template=True,
+            is_published=True,
+            is_active=True,
+        )
+
+    def test_decorative_wood_column_repair_does_not_match_bedroom_addition(self):
+        bedroom_addition = self._template(
+            template_id=1,
+            name="Master Bedroom Addition",
+            project_type="Addition",
+            project_subtype="Bedroom Addition",
+            description="Build a master bedroom addition with framing, roofing tie-in, drywall, trim, and finishes.",
+            default_scope="Construct new bedroom addition, coordinate permits, frame walls, install drywall, trim, and finishes.",
+        )
+
+        result = recommend_template(
+            templates=[bedroom_addition],
+            project_title="Front Porch Decorative Wood Column Repair",
+            project_type="Carpentry (Custom)",
+            project_subtype="Wood Column Restoration (Custom)",
+            description=(
+                "Included Work:\n"
+                "- Repair decorative wood columns on front porch\n"
+                "- Remove deteriorated wood and restore column profiles\n"
+                "- Prime repaired areas for finish paint"
+            ),
+        )
+
+        self.assertIsNone(result.template)
+        self.assertEqual(result.match_tier, "no_useful_match")
+        self.assertLess(result.score, 60)
+        self.assertIn("family mismatch", result.reason)
+
+    def test_exterior_window_wood_rot_repair_does_not_recommend_diy_assist_as_match(self):
+        diy_assist = self._template(
+            template_id=2,
+            name="DIY Contractor Assist",
+            project_type="General",
+            project_subtype="Contractor Assist",
+            description="Hourly contractor assistance for homeowner-led DIY projects and general guidance.",
+            default_scope="Provide hands-on assistance, answer questions, and help complete homeowner-led tasks.",
+        )
+
+        result = recommend_template(
+            templates=[diy_assist],
+            project_title="Exterior Window Wood Rot Repair",
+            project_type="Windows / Doors",
+            project_subtype="Window Wood Rot Repair",
+            description=(
+                "Included Work:\n"
+                "- Repair exterior window wood rot\n"
+                "- Replace deteriorated trim sections\n"
+                "- Seal and prepare repaired areas for paint"
+            ),
+        )
+
+        self.assertIsNone(result.template)
+        self.assertEqual(result.match_tier, "no_useful_match")
+        self.assertLess(result.score, 60)
+
+    def test_roof_repair_can_recommend_roof_related_template(self):
+        roof_repair = self._template(
+            template_id=3,
+            name="Roof Repair Project",
+            project_type="Roofing",
+            project_subtype="Roof Repair",
+            description="Repair active roof leaks, damaged shingles, flashing, and related roof components.",
+            default_scope="Inspect roof leak area, replace damaged shingles, repair flashing, seal penetrations, and clean up.",
+        )
+        bedroom_addition = self._template(
+            template_id=4,
+            name="Master Bedroom Addition",
+            project_type="Addition",
+            project_subtype="Bedroom Addition",
+            description="Build a new master bedroom addition.",
+        )
+
+        result = recommend_template(
+            templates=[bedroom_addition, roof_repair],
+            project_title="Roof Leak Repair",
+            project_type="Roofing",
+            project_subtype="Roof Repair",
+            description="Included Work:\n- Locate and repair roof leak\n- Replace damaged shingles\n- Repair flashing",
+        )
+
+        self.assertEqual(result.template, roof_repair)
+        self.assertEqual(result.match_tier, "strong_match")
+        self.assertGreaterEqual(result.score, 70)
+
+    def test_actual_bedroom_addition_can_recommend_master_bedroom_addition(self):
+        bedroom_addition = self._template(
+            template_id=5,
+            name="Master Bedroom Addition",
+            project_type="Addition",
+            project_subtype="Bedroom Addition",
+            description="Build a master bedroom addition with framing, roofing tie-in, drywall, trim, and finishes.",
+            default_scope="Construct new bedroom addition, coordinate permits, frame walls, install drywall, trim, and finishes.",
+        )
+        roof_repair = self._template(
+            template_id=6,
+            name="Roof Repair Project",
+            project_type="Roofing",
+            project_subtype="Roof Repair",
+            description="Repair active roof leaks and damaged shingles.",
+        )
+
+        result = recommend_template(
+            templates=[roof_repair, bedroom_addition],
+            project_title="Master Bedroom Addition",
+            project_type="Addition",
+            project_subtype="Bedroom Addition",
+            description="Included Work:\n- Build new master bedroom addition\n- Frame new room\n- Finish drywall and trim",
+        )
+
+        self.assertEqual(result.template, bedroom_addition)
+        self.assertEqual(result.match_tier, "strong_match")
+        self.assertGreaterEqual(result.score, 70)
 
 
 class TemplateAIGenerationTests(TestCase):

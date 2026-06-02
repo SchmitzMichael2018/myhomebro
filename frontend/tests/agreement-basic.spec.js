@@ -1687,6 +1687,142 @@ test('agreement wizard step 1 treats hardwood flooring as AI draft when only unr
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/hardwood flooring/i);
 });
 
+test('agreement wizard step 1 does not promote no-useful template candidates into matches', async ({
+  page,
+}) => {
+  await installWizardAuthRoutes(page);
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 50, value: 'Carpentry', label: 'Carpentry', owner_type: 'system' },
+          { id: 60, value: 'Addition', label: 'Addition', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 501,
+            value: 'Wood Column Restoration',
+            label: 'Wood Column Restoration',
+            owner_type: 'system',
+            project_type: 'Carpentry',
+          },
+          {
+            id: 601,
+            value: 'Bedroom Addition',
+            label: 'Bedroom Addition',
+            owner_type: 'system',
+            project_type: 'Addition',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        draft: {
+          project_title: 'Front Porch Decorative Wood Column Repair',
+          project_type: 'Carpentry',
+          project_subtype: 'Wood Column Restoration',
+          description:
+            'Included Work:\n- Repair decorative wood columns on front porch\n- Remove deteriorated wood as needed\n- Restore column profiles\n- Prime repaired surfaces\n- Clean up work area\n\nExclusions:\n- Structural framing repairs behind concealed areas',
+        },
+        classification: {
+          project_type: 'Carpentry',
+          project_subtype: 'Wood Column Restoration',
+          confidence: 'high',
+          reasoning: 'Decorative porch wood column repair scope.',
+        },
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        confidence_level: 'low',
+        match_tier: 'no_useful_match',
+        score: 91,
+        detail: 'No strong template match found.',
+        reason: 'blocked family mismatch: addition vs carpentry',
+        recommended_template: null,
+        possible_match: null,
+        candidates: [
+          {
+            id: 901,
+            name: 'Master Bedroom Addition',
+            project_type: 'Addition',
+            project_subtype: 'Bedroom Addition',
+            score: 91,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 901,
+            name: 'Master Bedroom Addition',
+            project_type: 'Addition',
+            project_subtype: 'Bedroom Addition',
+            owner_type: 'system',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page
+    .getByTestId('step1-job-description-input')
+    .fill('Repair decorative wood columns on front porch');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+  const reviewPanel = page.getByTestId('step1-no-template-review');
+  await expect(reviewPanel).toBeVisible({ timeout: 15000 });
+  await expect(reviewPanel.getByText('Front Porch Decorative Wood Column Repair')).toBeVisible();
+  await expect(reviewPanel.getByText('Carpentry')).toBeVisible();
+  await expect(reviewPanel.getByText('Wood Column Restoration')).toBeVisible();
+  await expect(reviewPanel).toContainText('Repair decorative wood columns');
+  await expect(page.getByText('Template match found', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Optional template match', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Master Bedroom Addition')).toHaveCount(0);
+  await expect(page.getByText(/blocked family mismatch|score: 91|rank_score/i)).toHaveCount(0);
+});
+
 test('agreement wizard step 1 no-template AI CTA preserves generated draft fields across project families', async ({
   page,
 }) => {
