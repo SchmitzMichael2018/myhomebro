@@ -2040,7 +2040,11 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
     if (scenario.allowJunkRemoval) {
       await expect(page.getByText('Template match found')).toBeVisible();
     } else {
-      await expect(page.getByText('No strong template match found')).toHaveCount(1);
+      const noTemplateReview = page.getByTestId('step1-no-template-review');
+      await expect(noTemplateReview).toBeVisible({ timeout: 15000 });
+      await expect(noTemplateReview.getByText('No strong template match found')).toHaveCount(1);
+      await expect(noTemplateReview).toHaveCount(1);
+      await expect(page.getByTestId('step1-start-mode-summary')).toHaveCount(0);
       await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
       await expect(page.getByTestId('proposal-draft-textarea')).toHaveCount(0);
       await expect(page.getByTestId('step1-no-template-draft-preview')).toBeVisible();

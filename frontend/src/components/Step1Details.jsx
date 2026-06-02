@@ -4330,9 +4330,9 @@ export default function Step1Details({
     !shouldForceStartChooser &&
     shouldShowStartModePanel &&
     startModeCommitted &&
+    !isNoTemplateState &&
     (isLoadingState ||
       isTemplateFoundState ||
-      isNoTemplateState ||
       isAiBuiltState ||
       startMode !== "manual" ||
       hasResolvedStep1Content);
