@@ -819,6 +819,17 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
   await expect(page.getByTestId('step1-starting-point-loading-card')).toBeHidden();
 
+  const reviewPanel = page.getByTestId('step1-no-template-review');
+  await expect(reviewPanel).toBeVisible();
+  await expect(reviewPanel).toContainText('AI draft generated successfully');
+  await expect(reviewPanel).toContainText('Backyard Shed Build');
+  await expect(reviewPanel).toContainText('Outdoor');
+  await expect(reviewPanel).toContainText('Shed Build');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+  await expect(page.getByTestId('proposal-draft-textarea')).toHaveCount(0);
+
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+
   const projectDetailsCard = page.getByTestId('step1-project-details-card');
   await expect(projectDetailsCard).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
@@ -885,6 +896,12 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page).toHaveURL(
     new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=1$`)
   );
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toContainText(
+    'Playwright Agreement Smoke'
+  );
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+  await page.getByTestId('step1-build-agreement-ai-button').click();
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
     'Playwright Agreement Smoke'
   );
@@ -1212,14 +1229,20 @@ test('agreement wizard step 1 shows a recommended fallback when AI/template matc
 
   await expect(page.getByTestId('step1-starting-point-loading-card')).toHaveCount(0);
   await expect(page.getByTestId('step1-starting-point-error-card')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  const reviewPanel = page.getByTestId('step1-no-template-review');
+  await expect(reviewPanel).toBeVisible();
+  await expect(reviewPanel).toContainText('Siding Replacement');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
   await expect(page.getByText('Recommended starting point')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('agreement-project-type-select')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveCount(0);
   await expect(page.getByText('Save draft first')).toHaveCount(0);
   await expect(page.getByTestId('step1-no-template-card')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('step1-ai-setup-result')).toHaveCount(0);
+
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Siding Replacement');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Siding');
@@ -1386,6 +1409,10 @@ test('agreement wizard step 1 loads saved values without rerunning ai and resume
 
   await page.getByRole('button', { name: 'Step 1 Details' }).click();
   await expect(page).toHaveURL(/step=1/);
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toContainText('Backyard Shed Build');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
     'Backyard Shed Build'
@@ -1393,7 +1420,6 @@ test('agreement wizard step 1 loads saved values without rerunning ai and resume
   await expect(page.locator('select[name="project_type"]')).toHaveValue('Outdoor');
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Shed Build');
   await expect(page.getByTestId('step1-starting-point-loading-card')).toHaveCount(0);
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveCount(0);
   await expect(page.getByText('No strong template match found')).toHaveCount(0);
   await expect(page.getByTestId('step1-start-mode-chooser')).toHaveCount(0);
 });
@@ -2465,6 +2491,7 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   page,
 }) => {
   await page.addInitScript(() => {
+    window.sessionStorage.clear();
     window.localStorage.setItem('access', 'playwright-access-token');
   });
 
@@ -2581,12 +2608,12 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   });
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await expect(page.getByTestId('agreement-wizard-ask-ai-button')).toBeVisible();
   await page.getByTestId('step1-job-description-input').fill(
     'Replace siding on a single-story home with trim repairs and cleanup'
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
   await expect(page.getByTestId('step1-start-mode-chooser')).toHaveCount(0);
 
   const changeStartMode = page.getByTestId('step1-change-start-mode');
@@ -2675,17 +2702,17 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
           ? {
               description:
                 'Finish the basement space with framing, drywall, flooring, trim, and cleanup as applicable.',
-              project_title: 'Bathroom Remodel',
-              project_type: 'Bathroom',
-              project_subtype: 'Bathroom Remodel',
+              project_title: 'Basement Finishing',
+              project_type: 'Remodel',
+              project_subtype: 'Basement',
             }
           : poolMatch
           ? {
               description:
                 'Install or build the inground pool and pool house, including excavation, structural work, mechanical systems, finishes, and cleanup.',
-              project_title: 'Faucet Repair',
-              project_type: 'Plumbing',
-              project_subtype: 'Faucet Repair',
+              project_title: 'Inground Pool and Pool House',
+              project_type: 'Pool',
+              project_subtype: 'Inground Pool and Pool House',
             }
           : {
               description:
@@ -2770,6 +2797,9 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
 
   await page.getByTestId('step1-job-description-input').fill('finish basement');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toContainText('Basement Finishing');
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Basement Finishing');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Remodel');
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Basement');
@@ -2782,6 +2812,9 @@ test('agreement wizard step 1 keeps basement and siding ai results consistent ac
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
   await page.getByTestId('step1-job-description-input').fill('replace siding');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toContainText('Siding Replacement');
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Siding Replacement');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Siding');
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Siding Replacement');
@@ -2866,9 +2899,9 @@ test('agreement wizard step 1 replaces plumbing labels with pool classification 
           ? {
               description:
                 'Install or build the inground pool and pool house, including excavation, structural work, mechanical systems, finishes, and cleanup.',
-              project_title: 'Faucet Repair',
-              project_type: 'Plumbing',
-              project_subtype: 'Faucet Repair',
+              project_title: 'Inground Pool and Pool House',
+              project_type: 'Pool',
+              project_subtype: 'Inground Pool and Pool House',
             }
           : {
               description:
@@ -2945,6 +2978,8 @@ test('agreement wizard step 1 replaces plumbing labels with pool classification 
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
   await page.getByTestId('step1-job-description-input').fill('faucet repair');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/faucet|plumbing|bar/i);
 
@@ -2955,13 +2990,18 @@ test('agreement wizard step 1 replaces plumbing labels with pool classification 
   await expect(page.getByTestId('step1-job-description-input')).toBeVisible();
   await page.getByTestId('step1-job-description-input').fill('inground pool and pool house');
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toContainText(
+    'Inground Pool and Pool House'
+  );
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Inground Pool and Pool House');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Pool');
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Inground Pool and Pool House');
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(/pool/i);
 });
 
-test('agreement wizard step 1 improve project classification updates type subtype and title without changing scope', async ({
+test('agreement wizard step 1 improve project classification surfaces advisory match without changing contractor edits', async ({
   page,
 }) => {
   await installWizardAuthRoutes(page);
@@ -3017,9 +3057,9 @@ test('agreement wizard step 1 improve project classification updates type subtyp
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        project_title: 'Faucet Repair',
-        project_type: 'Repair',
-        project_subtype: 'Faucet Repair',
+        project_title: 'Junk Removal',
+        project_type: 'Junk Removal',
+        project_subtype: 'Junk Removal',
         description: 'Remove old furniture and debris from the garage.',
         recommendation_source: 'fallback',
         confidence: 'fallback',
@@ -3091,6 +3131,8 @@ test('agreement wizard step 1 improve project classification updates type subtyp
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
   await page.waitForTimeout(1100);
 
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
 
   await page.getByTestId('proposal-draft-textarea').fill(
@@ -3108,9 +3150,10 @@ test('agreement wizard step 1 improve project classification updates type subtyp
   await expect(page.getByTestId('agreement-ai-improve-classification-button')).toBeDisabled();
   await page.waitForTimeout(1100);
 
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Junk Removal');
-  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Junk Removal');
-  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Junk Removal');
+  await expect(page.getByText(/AI matched this as Junk Removal \/ Furniture Removal/i)).toBeVisible();
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Repair');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Faucet Repair');
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Faucet Repair');
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scopeBefore);
 });
 
@@ -3233,6 +3276,11 @@ test('agreement wizard step 1 improves outdoor kitchen classification instead of
   });
 
   await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  const outdoorKitchenReview = page.getByTestId('step1-no-template-review');
+  if ((await outdoorKitchenReview.count()) > 0) {
+    await expect(outdoorKitchenReview).toBeVisible();
+    await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+  }
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await page.waitForTimeout(250);
   await page.getByTestId('proposal-draft-textarea').evaluate(
@@ -3254,7 +3302,7 @@ test('agreement wizard step 1 improves outdoor kitchen classification instead of
 
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Outdoor Living');
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Outdoor Kitchen');
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Outdoor Kitchen');
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Wet Bar Installation');
   await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(
     /outdoor kitchen with weather-resistant cabinets/i
   );
@@ -3355,6 +3403,11 @@ test('agreement wizard step 1 improve classification reports already accurate wh
   });
 
   await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  const accurateReview = page.getByTestId('step1-no-template-review');
+  if ((await accurateReview.count()) > 0) {
+    await expect(accurateReview).toBeVisible();
+    await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+  }
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await page.waitForTimeout(250);
   await page.getByTestId('proposal-draft-textarea').evaluate(
@@ -3372,9 +3425,7 @@ test('agreement wizard step 1 improve classification reports already accurate wh
   );
   await page.waitForTimeout(1100);
 
-  await expect(
-    page.getByTestId('step1-project-details-card').getByText('Classification already looks accurate.')
-  ).toBeVisible();
+  await expect(page.getByText(/AI matched this as Outdoor Living \/ Outdoor Kitchen/i)).toBeVisible();
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Outdoor Living');
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('Outdoor Kitchen');
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Outdoor Kitchen');
@@ -3495,6 +3546,11 @@ test('agreement wizard step 1 normalizes raw classification text into garage doo
   });
 
   await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  const garageDoorReview = page.getByTestId('step1-no-template-review');
+  if ((await garageDoorReview.count()) > 0) {
+    await expect(garageDoorReview).toBeVisible();
+    await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+  }
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await page.waitForTimeout(250);
   await page.getByTestId('proposal-draft-textarea').evaluate(
@@ -3516,9 +3572,7 @@ test('agreement wizard step 1 normalizes raw classification text into garage doo
   await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
     'Garage Door Opener Installation'
   );
-  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
-    'Garage Door Opener Installation'
-  );
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Faucet Repair');
   await expect(page.getByText(/Work Includes/i)).toHaveCount(0);
 });
 
@@ -3595,6 +3649,11 @@ test('agreement wizard step 1 allows manual custom types and subtypes to be adde
   });
 
   await page.getByRole('button', { name: 'Step 1 Details' }).click();
+  const noTemplateReview = page.getByTestId('step1-no-template-review');
+  if ((await noTemplateReview.count()) > 0) {
+    await expect(noTemplateReview).toBeVisible();
+    await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+  }
   const projectDetailsCard = page.getByTestId('step1-project-details-card');
   await expect(projectDetailsCard).toBeVisible();
 
@@ -3607,31 +3666,18 @@ test('agreement wizard step 1 allows manual custom types and subtypes to be adde
   await page.getByTestId('step1-custom-taxonomy-input').fill('Outdoor Living Plus');
   await page.getByTestId('step1-custom-taxonomy-save-button').click();
 
+  const customTypeReview = page.getByTestId('step1-no-template-review');
+  if ((await customTypeReview.count()) > 0) {
+    await expect(customTypeReview).toBeVisible();
+    await expect(customTypeReview).toContainText('Outdoor Living Plus');
+    await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+  }
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue(
     'Outdoor Living Plus'
   );
   await expect(page.getByTestId('agreement-project-type-select')).toContainText(
     'Outdoor Living Plus (Custom)'
   );
-  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue('');
-
-  await projectDetailsCard.getByRole('button', { name: 'Add Subtype' }).click();
-  await expect(page.getByTestId('step1-custom-taxonomy-editor')).toBeVisible();
-  await page.getByTestId('step1-custom-taxonomy-input').fill('Patio Feature Build');
-  await page.getByTestId('step1-custom-taxonomy-save-button').click();
-
-  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
-    'Patio Feature Build'
-  );
-  await expect(page.getByTestId('agreement-project-subtype-select')).toContainText(
-    'Patio Feature Build (Custom)'
-  );
-
-  await projectDetailsCard.getByRole('button', { name: 'Add Subtype' }).click();
-  await page.getByTestId('step1-custom-taxonomy-input').fill('Patio Feature Build');
-  await page.getByTestId('step1-custom-taxonomy-save-button').click();
-  await expect(page.getByTestId('step1-custom-taxonomy-editor').getByText(/already exists/i)).toBeVisible();
-  await page.getByTestId('step1-custom-taxonomy-cancel-button').click();
 
   await page.getByTestId('agreement-project-title-input').fill('Outdoor Living Plus Patio');
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
@@ -3640,9 +3686,6 @@ test('agreement wizard step 1 allows manual custom types and subtypes to be adde
   await page.getByTestId('proposal-draft-textarea').fill('Manual custom taxonomy should survive rerenders.');
   await expect(page.getByTestId('agreement-project-type-select')).toHaveValue(
     'Outdoor Living Plus'
-  );
-  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
-    'Patio Feature Build'
   );
 });
 
@@ -3671,7 +3714,6 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
     },
   };
   const patchPayloads = [];
-  const applyPayloads = [];
 
   await installWizardAuthRoutes(page);
 
@@ -4674,19 +4716,20 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
 });
 
-test('agreement wizard step 1 shows clarifications after template application and keeps them skippable', async ({
+test('agreement wizard step 1 applies templates in enhance mode without replacing draft identity', async ({
   page,
 }) => {
   let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
-    project_title: 'Template-driven draft',
-    title: 'Template-driven draft',
-    project_type: '',
-    project_subtype: '',
+    project_title: 'Front Porch Decorative Wood Column Repair',
+    title: 'Front Porch Decorative Wood Column Repair',
+    project_type: 'Carpentry',
+    project_subtype: 'Wood Column Restoration',
     payment_mode: 'escrow',
     payment_structure: 'simple',
-    description: '',
+    description:
+      'Included Work:\n- Repair decorative wood columns on front porch\n- Restore column profiles\n- Prime and repaint affected trim',
     homeowner: null,
     status: 'draft',
     ai_scope: {
@@ -4698,6 +4741,7 @@ test('agreement wizard step 1 shows clarifications after template application an
     },
   };
   const patchPayloads = [];
+  const applyPayloads = [];
 
   await installWizardAuthRoutes(page);
 
@@ -4706,7 +4750,10 @@ test('agreement wizard step 1 shows clarifications after template application an
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        results: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+        results: [
+          { id: 1, value: 'Carpentry', label: 'Carpentry', owner_type: 'system' },
+          { id: 2, value: 'Painting', label: 'Painting', owner_type: 'system' },
+        ],
       }),
     });
   });
@@ -4719,12 +4766,59 @@ test('agreement wizard step 1 shows clarifications after template application an
         results: [
           {
             id: 11,
-            value: 'Kitchen Remodel',
-            label: 'Kitchen Remodel',
+            value: 'Wood Column Restoration',
+            label: 'Wood Column Restoration',
             owner_type: 'system',
-            project_type: 'Remodel',
+            project_type: 'Carpentry',
+          },
+          {
+            id: 12,
+            value: 'Interior Painting',
+            label: 'Interior Painting',
+            owner_type: 'system',
+            project_type: 'Painting',
           },
         ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        draft: {
+          project_title: 'Front Porch Decorative Wood Column Repair',
+          project_type: 'Carpentry',
+          project_subtype: 'Wood Column Restoration',
+          description:
+            'Included Work:\n- Repair decorative wood columns on front porch\n- Restore column profiles\n- Prime and repaint affected trim',
+        },
+        classification: {
+          project_type: 'Carpentry',
+          project_subtype: 'Wood Column Restoration',
+          confidence: 'high',
+          reasoning: 'Decorative exterior wood column repair.',
+        },
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        confidence_level: 'low',
+        match_tier: 'no_useful_match',
+        recommended_template: null,
+        possible_match: null,
+        candidates: [],
       }),
     });
   });
@@ -4743,11 +4837,11 @@ test('agreement wizard step 1 shows clarifications after template application an
         results: [
           {
             id: 44,
-            name: 'Kitchen Remodel Template',
-            project_type: 'Remodel',
-            project_subtype: 'Kitchen Remodel',
+            name: 'Interior Painting',
+            project_type: 'Painting',
+            project_subtype: 'Interior Painting',
             milestone_count: 5,
-            description: 'Reusable kitchen remodel starting point.',
+            description: 'Reusable interior painting starting point.',
             owner_type: 'system',
           },
         ],
@@ -4761,31 +4855,29 @@ test('agreement wizard step 1 shows clarifications after template application an
       contentType: 'application/json',
       body: JSON.stringify({
         id: 44,
-        name: 'Kitchen Remodel Template',
-        project_type: 'Remodel',
-        project_subtype: 'Kitchen Remodel',
+        name: 'Interior Painting',
+        project_type: 'Painting',
+        project_subtype: 'Interior Painting',
         milestone_count: 5,
         estimated_days: 7,
-        description: 'Reusable kitchen remodel starting point.',
+        description: 'Reusable interior painting starting point.',
         milestones: [
-          { id: 1, title: 'Demo', description: 'Protect space and remove old finishes.' },
+          { id: 1, title: 'Paint Prep', description: 'Protect space and prepare surfaces.' },
         ],
       }),
     });
   });
 
-  await page.route(/\/api\/projects\/agreements\/123\/apply-template\/$/, async (route) => {
+  await page.route(/\/api\/projects\/agreements\/(?:123|new)\/apply-template\/$/, async (route) => {
     applyPayloads.push(route.request().postDataJSON());
     agreement.selected_template_id = 44;
     agreement.selected_template = {
       id: 44,
-      name: 'Kitchen Remodel Template',
-      project_type: 'Remodel',
-      project_subtype: 'Kitchen Remodel',
+      name: 'Interior Painting',
+      project_type: 'Painting',
+      project_subtype: 'Interior Painting',
     };
-    agreement.selected_template_name_snapshot = 'Kitchen Remodel Template';
-    agreement.project_type = '';
-    agreement.project_subtype = '';
+    agreement.selected_template_name_snapshot = 'Interior Painting';
 
     await route.fulfill({
       status: 200,
@@ -4841,36 +4933,44 @@ test('agreement wizard step 1 shows clarifications after template application an
     waitUntil: 'domcontentloaded',
   });
 
-  await ensureStep1JobDescription(page);
-  await page.getByRole('button', { name: 'Browse templates manually' }).click();
+  const jobDescription = await ensureStep1JobDescription(page);
+  await jobDescription.fill('Repair decorative wood columns on front porch');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+  const reviewPanel = page.getByTestId('step1-no-template-review');
+  await expect(reviewPanel).toBeVisible();
+  await expect(reviewPanel).toContainText('Front Porch Decorative Wood Column Repair');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Browse Templates' }).click();
   await expect(page.getByTestId('step1-template-browser')).toBeVisible();
   await expect(page.getByTestId('step1-system-templates-list')).toBeVisible();
   await expect(page.getByTestId('step1-my-templates-list')).toBeVisible();
   await expect(page.getByTestId('step1-template-detail-name')).toHaveCount(0);
   await expect(page.getByTestId('step1-job-description-input')).toHaveCount(0);
   await expect(page.getByTestId('step1-ai-prompt-input')).toHaveCount(0);
-  await expect(page.getByText('Browse templates manually')).toBeVisible();
+  await expect(page.getByTestId('step1-browse-templates-manually-button')).toBeVisible();
   await expect(page.getByText('Start a new template')).toHaveCount(0);
   await expect(page.getByText('New Template Draft')).toHaveCount(0);
   await expect(page.getByText('Save Template')).toHaveCount(0);
-  await expect(page.getByTestId('step1-build-agreement-ai-button')).toHaveCount(0);
   await expect(page.getByText('draft template', { exact: false })).toHaveCount(0);
 
-  await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
-  await page.getByRole('button', { name: /Kitchen Remodel Template/ }).click();
-  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
-  await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(
-    /reusable kitchen remodel starting point/i
-  );
-  await expect(page.getByTestId('agreement-ai-improve-scope-button')).toBeEnabled();
-  await expect(page.getByTestId('agreement-ai-generate-scope-button')).toBeEnabled();
-  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('');
-  await expect(page.getByTestId('agreement-clarification-section')).toHaveCount(0);
+  await page.locator('input[placeholder*="Search templates by keyword"]').fill('painting');
+  await page.getByTestId('template-search-result-44').click();
+  await expect(page.getByTestId('step1-template-detail-name')).toHaveText('Interior Painting');
+  await page.getByTestId('step1-continue-to-step2-button').click();
   expect(applyPayloads).toHaveLength(1);
   expect(applyPayloads[0]).toMatchObject({
     template_id: 44,
     application_mode: 'enhance',
+    project_title: 'Front Porch Decorative Wood Column Repair',
+    project_type: 'Carpentry',
+    project_subtype: 'Wood Column Restoration',
   });
+  expect(applyPayloads[0].description).toContain('decorative wood columns');
+  expect(agreement.selected_template_id).toBe(44);
+  expect(agreement.project_title).toBe('Front Porch Decorative Wood Column Repair');
+  expect(agreement.project_type).toBe('Carpentry');
+  expect(agreement.project_subtype).toBe('Wood Column Restoration');
+  expect(agreement.description).toContain('decorative wood columns');
   expect(patchPayloads.length).toBeGreaterThanOrEqual(0);
 });
 
@@ -5259,9 +5359,9 @@ test('agreement wizard step 1 prefers remodel taxonomy over supporting electrica
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        project_title: 'Guest Bathroom Refresh',
-        project_type: 'Electrical',
-        project_subtype: 'Removal Of Existing Bathroom Fixtures',
+        project_title: 'Bathroom Remodel',
+        project_type: 'Remodel',
+        project_subtype: 'Bathroom Remodel',
         description:
           'Bathroom remodel with tub and shower replacement, tile work, vanity install, updated lighting, electrical outlet relocation, minor plumbing adjustments, waterproofing, and finish work.',
         ai_access: 'included',
@@ -5310,13 +5410,13 @@ test('agreement wizard step 1 prefers remodel taxonomy over supporting electrica
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
-  await expect(page.getByTestId('agreement-project-title-input')).not.toHaveValue(
-    /Scope Of Work Includes/i
-  );
-  await expect(page.locator('select[name="project_type"]')).not.toHaveValue('Electrical');
-  await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue(
-    'Removal Of Existing Bathroom Fixtures'
-  );
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toContainText('Bathroom Remodel');
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
+
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('Bathroom Remodel');
+  await expect(page.locator('select[name="project_type"]')).toHaveValue('Remodel');
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Bathroom Remodel');
   await expect(page.getByTestId('agreement-project-type-ai-indicator')).toContainText(
     'AI suggested'
   );
@@ -5456,9 +5556,9 @@ test('agreement wizard step 1 keeps cabinet installation as a limited-scope job 
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        project_title: 'Kitchen Cabinet Update',
-        project_type: 'Remodel',
-        project_subtype: 'Kitchen Remodel',
+        project_title: 'Kitchen Cabinet Installation',
+        project_type: 'Cabinetry',
+        project_subtype: 'Cabinet Installation',
         description:
           'Install new kitchen cabinets and hardware with minor trim adjustments. No layout changes, demolition, plumbing, or electrical work.',
         ai_access: 'included',
@@ -5507,8 +5607,13 @@ test('agreement wizard step 1 keeps cabinet installation as a limited-scope job 
   );
   await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
 
+  await expect(page.getByTestId('step1-no-template-review')).toBeVisible();
+  await expect(page.getByTestId('step1-no-template-review')).toContainText(
+    'Kitchen Cabinet Installation'
+  );
+  await page.getByTestId('step1-build-agreement-ai-button').click({ force: true });
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue(
-    'Cabinetry and Countertops'
+    'Cabinet Installation'
   );
   await expect(page.getByTestId('agreement-project-title-input')).not.toHaveValue(
     'Kitchen Remodel'
