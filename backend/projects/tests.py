@@ -5373,6 +5373,8 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertTrue(payload["ai_enabled"])
         self.assertTrue(payload["ai_unlimited"])
         self.assertIn("classification", payload)
+        self.assertIn("draft", payload)
+        self.assertEqual(payload["draft"]["description"], "AI-generated scope")
 
     def test_ai_agreement_description_includes_scope_template_and_milestones(self):
         with patch(
@@ -5427,6 +5429,8 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["recommendation_source"], "fallback")
         self.assertEqual(payload["project_type"], "Siding")
         self.assertEqual(payload["project_subtype"], "Siding Replacement")
+        self.assertEqual(payload["draft"]["project_type"], "Siding")
+        self.assertEqual(payload["draft"]["project_subtype"], "Siding Replacement")
         self.assertIn("Recommended from your description", payload["confidence_label"])
         self.assertTrue(payload["description"])
         self.assertIn("classification", payload)
@@ -5540,8 +5544,51 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["description"], "AI-generated scope")
         self.assertEqual(payload["project_type"], "Siding")
         self.assertEqual(payload["project_subtype"], "Siding Replacement")
+        self.assertEqual(payload["draft"]["project_title"], "Replace Siding")
+        self.assertEqual(payload["draft"]["project_type"], "Siding")
+        self.assertEqual(payload["draft"]["project_subtype"], "Siding Replacement")
         self.assertIn("classification", payload)
         self.assertEqual(payload["classification"]["project_type"], "Siding")
+
+    def test_ai_agreement_description_preserves_draft_when_classification_disagrees(self):
+        with patch(
+            "projects.api.ai_agreement_views.generate_or_improve_description",
+            return_value={
+                "description": "Included Work\n- Install new gutters and downspouts\n- Verify measurements and roofline conditions\n- Install hangers and gutter runs\n- Place downspouts for drainage\n- Clean the work area",
+                "project_title": "Gutter Installation",
+                "project_type": "Exterior Drainage",
+                "project_subtype": "Gutters & Downspouts",
+                "_mode": "generate",
+                "_model": "test-model",
+            },
+        ), patch(
+            "projects.api.ai_agreement_views.classify_project_from_scope",
+            return_value={
+                "project_title": "Installation Project",
+                "project_type": "Installation",
+                "project_subtype": "General Install",
+                "confidence": "medium",
+                "reason": "Generic fallback classification.",
+            },
+        ):
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": self.agreement.id,
+                    "mode": "generate",
+                    "current_description": "Install new gutters and downspouts on two-story home",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["project_title"], "Gutter Installation")
+        self.assertEqual(payload["project_type"], "Exterior Drainage")
+        self.assertEqual(payload["project_subtype"], "Gutters & Downspouts")
+        self.assertEqual(payload["draft"]["project_title"], "Gutter Installation")
+        self.assertEqual(payload["classification"]["project_title"], "Installation Project")
+        self.assertEqual(payload["classification"]["project_type"], "Installation")
 
     def test_ai_agreement_description_requires_input(self):
         response = self.client.post(

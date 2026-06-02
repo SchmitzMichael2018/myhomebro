@@ -163,16 +163,23 @@ def ai_agreement_description(request):
             "_mode": (request.data.get("mode") or "").strip(),
         }
 
+    draft = {
+        "project_title": _safe_text(out.get("project_title")) or raw_project_title,
+        "project_type": _safe_text(out.get("project_type")) or raw_project_type,
+        "project_subtype": _safe_text(out.get("project_subtype")) or raw_project_subtype,
+        "description": out["description"],
+    }
+
     taxonomy = build_project_taxonomy_snapshot(contractor=contractor)
     try:
         classification = classify_project_from_scope(
-            description=out.get("description", raw_description),
-            scope=out.get("description", raw_description),
+            description=draft.get("description") or raw_description,
+            scope=draft.get("description") or raw_description,
             taxonomy=taxonomy,
             current_values={
-                "project_title": raw_project_title,
-                "project_type": raw_project_type,
-                "project_subtype": raw_project_subtype,
+                "project_title": draft.get("project_title") or raw_project_title,
+                "project_type": draft.get("project_type") or raw_project_type,
+                "project_subtype": draft.get("project_subtype") or raw_project_subtype,
             },
             contractor=contractor,
         )
@@ -185,15 +192,27 @@ def ai_agreement_description(request):
         "description": out["description"],
         "_mode": out.get("_mode"),
         "_model": out.get("_model"),
-        "project_title": classification.get("project_title") or out.get("project_title", raw_project_title),
-        "project_type": classification.get("project_type") or out.get("project_type", raw_project_type),
-        "project_subtype": classification.get("project_subtype") or out.get("project_subtype", raw_project_subtype),
+        "project_title": draft["project_title"],
+        "project_type": draft["project_type"],
+        "project_subtype": draft["project_subtype"],
+        "draft": draft,
         "recommendation_source": out.get("recommendation_source", "ai"),
-        "confidence": classification.get("confidence") or out.get("confidence", "recommended"),
-        "confidence_label": classification.get("confidence_label") or out.get("confidence_label", ""),
+        "confidence": out.get("confidence", "recommended"),
+        "confidence_label": out.get("confidence_label", ""),
         "next_step_guidance": out.get("next_step_guidance", ""),
-        "reason": classification.get("reason") or out.get("reason", ""),
-        "classification": classification,
+        "reason": out.get("reason", ""),
+        "classification": {
+            "project_type": classification.get("project_type", ""),
+            "project_subtype": classification.get("project_subtype", ""),
+            "confidence": classification.get("confidence", ""),
+            "confidence_label": classification.get("confidence_label", ""),
+            "reasoning": classification.get("reason", ""),
+            "reason": classification.get("reason", ""),
+            "project_title": classification.get("project_title", ""),
+            "alternatives": classification.get("alternatives", []),
+            "recommended_custom_subtype": classification.get("recommended_custom_subtype", ""),
+            "classification_source": classification.get("classification_source", ""),
+        },
         **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)

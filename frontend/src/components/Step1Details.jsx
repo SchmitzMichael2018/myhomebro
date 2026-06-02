@@ -167,7 +167,11 @@ function buildDescriptionRequestContext(baseDescription = "", clarificationLines
 }
 
 function extractAiScopeText(data = {}) {
+  const draft = data?.draft && typeof data.draft === "object" ? data.draft : {};
   const candidates = [
+    draft?.description,
+    draft?.scope_of_work,
+    draft?.scopeOfWork,
     data?.description,
     data?.scope_of_work,
     data?.scopeOfWork,
@@ -176,6 +180,22 @@ function extractAiScopeText(data = {}) {
     data?.proposal_draft?.text,
   ];
   return formatGeneratedScopeAsBullets(candidates.map(safeTrim).find(Boolean) || "");
+}
+
+function extractAiDraftPayload(data = {}) {
+  const draft = data?.draft && typeof data.draft === "object" ? data.draft : {};
+  return {
+    project_title: safeTrim(
+      draft?.project_title ?? draft?.title ?? draft?.projectTitle ?? data?.project_title ?? data?.title ?? data?.projectTitle ?? ""
+    ),
+    project_type: safeTrim(
+      draft?.project_type ?? draft?.projectType ?? data?.project_type ?? data?.projectType ?? ""
+    ),
+    project_subtype: safeTrim(
+      draft?.project_subtype ?? draft?.projectSubtype ?? data?.project_subtype ?? data?.projectSubtype ?? ""
+    ),
+    description: extractAiScopeText(data),
+  };
 }
 
 function isUserFriendlyTemplateReason(value) {
@@ -4236,6 +4256,41 @@ export default function Step1Details({
   const isInitialInputState = !isLoadingState && !isAiBuiltState && !isTemplateFoundState && !isNoTemplateState;
   const isNoTemplateFlow =
     aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation";
+  const pendingNoTemplateDraft = aiNoTemplateDraftPayload || (isNoTemplateFlow ? aiSetupResult : null);
+  const pendingNoTemplateDraftPreview = {
+    title: safeTrim(
+      pendingNoTemplateDraft?.suggestedTitle ||
+        dLocal?.project_title ||
+        agreement?.project_title ||
+        ""
+    ),
+    projectType: safeTrim(
+      pendingNoTemplateDraft?.suggestedProjectType ||
+        dLocal?.project_type ||
+        agreement?.project_type ||
+        ""
+    ),
+    projectSubtype: safeTrim(
+      pendingNoTemplateDraft?.suggestedProjectSubtype ||
+        dLocal?.project_subtype ||
+        agreement?.project_subtype ||
+        ""
+    ),
+    scope: formatGeneratedScopeAsBullets(
+      safeTrim(
+        pendingNoTemplateDraft?.refinedDescription ||
+          dLocal?.description ||
+          agreement?.description ||
+          ""
+      )
+    ),
+  };
+  const shouldShowNoTemplateDraftPreview = Boolean(
+    pendingNoTemplateDraftPreview.title ||
+      pendingNoTemplateDraftPreview.projectType ||
+      pendingNoTemplateDraftPreview.projectSubtype ||
+      pendingNoTemplateDraftPreview.scope
+  );
   const shouldShowCompactTemplateRecommendation =
     startMode === "ai" &&
     !isAiBuiltState &&
@@ -4341,16 +4396,13 @@ export default function Step1Details({
     ) {
       return { changedKeys: [], nextValues: null, ignored: true };
     }
+    const aiDraft = extractAiDraftPayload(aiData);
     const refinedDescription = formatGeneratedScopeAsBullets(normalizeStep1FieldValue(
-      aiData?.description || aiData?.normalized_description || ""
+      aiDraft.description || aiData?.normalized_description || ""
     ));
-    const rawProjectTitle = safeTrim(
-      aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""
-    );
-    const rawProjectType = safeTrim(aiData?.project_type ?? aiData?.projectType ?? "");
-    const rawProjectSubtype = safeTrim(
-      aiData?.project_subtype ?? aiData?.projectSubtype ?? ""
-    );
+    const rawProjectTitle = safeTrim(aiDraft.project_title);
+    const rawProjectType = safeTrim(aiDraft.project_type);
+    const rawProjectSubtype = safeTrim(aiDraft.project_subtype);
     const scopeDrivenText = [
       refinedDescription,
       safeTrim(aiData?.scope_of_work || aiData?.scopeOfWork || ""),
@@ -4370,16 +4422,16 @@ export default function Step1Details({
     const hasExplicitAiDraftClassification =
       Boolean(rawProjectTitle) && Boolean(rawProjectType) && Boolean(rawProjectSubtype);
     const consistencySetup =
-      normalizedBackendClassification ||
-      (hasExplicitAiDraftClassification
+      hasExplicitAiDraftClassification
         ? null
-        : inferStep1ProjectClassificationConsistency({
+        : normalizedBackendClassification ||
+          inferStep1ProjectClassificationConsistency({
             sourceText,
             scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
             suggestedProjectType: "",
             suggestedProjectSubtype: "",
             suggestedProjectTitle: "",
-          }));
+          });
     const dominantCategory = consistencySetup
       ? {
           category: consistencySetup.project_type,
@@ -4440,6 +4492,7 @@ export default function Step1Details({
     const generatedType =
       normalizeStep1FieldValue(
         (preserveManualClassification ? safeTrim(dLocal?.project_type) : "") ||
+        rawProjectType ||
         consistencySetup?.project_type ||
         optionCanonicalValue(resolvedType) ||
           dominantCategory.category ||
@@ -4450,6 +4503,7 @@ export default function Step1Details({
     const generatedSubtype =
       normalizeStep1FieldValue(
         (preserveManualClassification ? safeTrim(dLocal?.project_subtype) : "") ||
+        rawProjectSubtype ||
         consistencySetup?.project_subtype ||
         optionCanonicalValue(matchedSubtype) ||
         dominantCategory.subtype ||
@@ -4484,8 +4538,12 @@ export default function Step1Details({
       return { changedKeys, nextValues };
     }
 
-    const projectTypeRef = resolvedType?.id || null;
-    const projectSubtypeRef = matchedSubtype?.id || null;
+    const projectTypeRef =
+      resolveOptionFromRawValue(generatedType, projectTypeOptions)?.id || resolvedType?.id || null;
+    const projectSubtypeRef =
+      resolveOptionFromRawValue(generatedSubtype, projectSubtypeOptions)?.id ||
+      matchedSubtype?.id ||
+      null;
     const usedFallbackCreation = Boolean(
       (generatedType && !resolvedType) || (generatedSubtype && !matchedSubtype)
     );
@@ -6308,6 +6366,61 @@ export default function Step1Details({
             <div className="mt-1 text-sm text-slate-700">
               Continue with the AI-generated title, scope, project type, and subtype, or browse templates manually if you want to compare saved starting points.
             </div>
+            {shouldShowNoTemplateDraftPreview ? (
+              <div
+                data-testid="step1-no-template-draft-preview"
+                className="mt-4 rounded-xl border border-white/80 bg-white/80 px-4 py-3"
+              >
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Draft preview
+                </div>
+                <dl className="mt-3 grid gap-3 text-sm text-slate-800 md:grid-cols-3">
+                  {pendingNoTemplateDraftPreview.projectType ? (
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Project Type
+                      </dt>
+                      <dd data-testid="step1-no-template-preview-type" className="mt-1 font-medium">
+                        {pendingNoTemplateDraftPreview.projectType}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {pendingNoTemplateDraftPreview.projectSubtype ? (
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Subtype
+                      </dt>
+                      <dd data-testid="step1-no-template-preview-subtype" className="mt-1 font-medium">
+                        {pendingNoTemplateDraftPreview.projectSubtype}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {pendingNoTemplateDraftPreview.title ? (
+                    <div>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Title
+                      </dt>
+                      <dd data-testid="step1-no-template-preview-title" className="mt-1 font-medium">
+                        {pendingNoTemplateDraftPreview.title}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+                {pendingNoTemplateDraftPreview.scope ? (
+                  <div className="mt-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Scope
+                    </div>
+                    <div
+                      data-testid="step1-no-template-preview-scope"
+                      className="mt-1 max-h-44 overflow-auto whitespace-pre-wrap text-sm text-slate-700"
+                    >
+                      {pendingNoTemplateDraftPreview.scope}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"

@@ -1742,6 +1742,33 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
       allowJunkRemoval: false,
     },
     {
+      input: 'Install new gutters and downspouts on two-story home',
+      title: 'Gutter Installation',
+      type: 'Exterior Drainage',
+      subtype: 'Gutters & Downspouts',
+      scope:
+        'Install new gutters and downspouts on the two-story home, including roofline measurements, gutter layout, hanger installation, downspout placement, drainage verification, and cleanup.',
+      scopePattern: /new gutters and downspouts/i,
+      allowJunkRemoval: false,
+      classification: {
+        project_title: 'Installation Project',
+        project_type: 'Installation',
+        project_subtype: 'General Install',
+        confidence: 'medium',
+        reasoning: 'Generic taxonomy fallback.',
+      },
+    },
+    {
+      input: 'repair leaking patio roof after storm damage',
+      title: 'Patio Roof Repair',
+      type: 'Roofing',
+      subtype: 'Roof Repair',
+      scope:
+        'Repair leaking patio roof after storm damage, including inspection, localized roof repair, flashing or sealant work, water testing, and cleanup.',
+      scopePattern: /storm damage/i,
+      allowJunkRemoval: false,
+    },
+    {
       input: 'remove old couch and debris',
       title: 'Junk Removal',
       type: 'Junk Removal',
@@ -1863,6 +1890,13 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
         ''
     ).trim();
     const draft = draftsByInput.get(input) || draftScenarios[0];
+    const classification = draft.classification || {
+      project_title: draft.title,
+      project_type: draft.type,
+      project_subtype: draft.subtype,
+      confidence: 'medium',
+      reasoning: 'Matched draft intent.',
+    };
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1871,6 +1905,13 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
         project_type: draft.type,
         project_subtype: draft.subtype,
         description: draft.scope,
+        draft: {
+          project_title: draft.title,
+          project_type: draft.type,
+          project_subtype: draft.subtype,
+          description: draft.scope,
+        },
+        classification,
         ai_access: 'included',
         ai_enabled: true,
         ai_unlimited: true,
@@ -2002,6 +2043,20 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
       await expect(page.getByText('No strong template match found')).toHaveCount(1);
       await expect(page.getByRole('heading', { name: 'Project Details' })).toHaveCount(0);
       await expect(page.getByTestId('proposal-draft-textarea')).toHaveCount(0);
+      await expect(page.getByTestId('step1-no-template-draft-preview')).toBeVisible();
+      await expect(page.getByTestId('step1-no-template-preview-title')).toHaveText(
+        scenario.title
+      );
+      await expect(page.getByTestId('step1-no-template-preview-type')).toHaveText(
+        scenario.type
+      );
+      await expect(page.getByTestId('step1-no-template-preview-subtype')).toHaveText(
+        scenario.subtype
+      );
+      await expect(page.getByTestId('step1-no-template-preview-scope')).toContainText(
+        scenario.scopePattern
+      );
+      await expect(page.getByText('Installation Project')).toHaveCount(0);
     }
     expect(aiDescriptionCalls).toBe(callsBefore + 1);
 
@@ -2030,6 +2085,7 @@ test('agreement wizard step 1 no-template AI CTA preserves generated draft field
       scenario.subtype
     );
     await expect(page.getByTestId('proposal-draft-textarea')).toHaveValue(scenario.scopePattern);
+    await expect(page.getByText('Installation Project')).toHaveCount(0);
     await expect(page.getByText('No strong template match found')).toHaveCount(0);
     const finalScope = await page.getByTestId('proposal-draft-textarea').inputValue();
     expect(finalScope).toContain('Included Work\n-');

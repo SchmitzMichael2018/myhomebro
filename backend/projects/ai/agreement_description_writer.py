@@ -186,10 +186,10 @@ def _fallback_from_context(*, project_title: str, project_type: str, project_sub
     )
 
     return {
-        "description": fallback_description,
         "project_title": inferred_title,
         "project_type": inferred_type,
         "project_subtype": inferred_subtype,
+        "description": fallback_description,
         "recommendation_source": "fallback",
         "confidence": "fallback",
         "confidence_label": "Recommended from your description",
@@ -236,7 +236,7 @@ def generate_or_improve_description(
       - "improve": rewrite existing description to be clearer and dispute-resistant
 
     Returns:
-      { "description": "..." }
+      { "project_title": "...", "project_type": "...", "project_subtype": "...", "description": "..." }
     """
     mode = (mode or "").strip().lower()
     if mode not in ("generate", "improve"):
@@ -262,9 +262,13 @@ def generate_or_improve_description(
         }
 
     system = (
-        "You are a construction agreement scope writer.\n"
-        "Write clear, dispute-resistant project descriptions.\n"
+        "You are a construction agreement draft writer.\n"
+        "Create a practical first draft from the contractor's short project description.\n"
         "Rules:\n"
+        "- Generate the project identity directly from the description.\n"
+        "- project_title should be concise and trade-specific.\n"
+        "- project_type and project_subtype should be natural trade labels, not taxonomy enum values.\n"
+        "- Do not use generic labels like 'Installation Project', 'General Project', or 'Custom Project' when the trade is inferable.\n"
         "- Be specific and measurable.\n"
         "- Avoid vague phrases like 'as needed', 'minor fixes', 'etc'.\n"
         "- Include key inclusions and exclusions.\n"
@@ -291,9 +295,12 @@ def generate_or_improve_description(
             "type": "object",
             "additionalProperties": False,
             "properties": {
+                "project_title": {"type": "string"},
+                "project_type": {"type": "string"},
+                "project_subtype": {"type": "string"},
                 "description": {"type": "string"},
             },
-            "required": ["description"],
+            "required": ["project_title", "project_type", "project_subtype", "description"],
         },
     }
 
@@ -341,7 +348,10 @@ def generate_or_improve_description(
         }
 
     desc = _format_scope_as_bullets((payload.get("description") or "").strip())
-    if not desc:
+    draft_title = _safe_text(payload.get("project_title"))
+    draft_type = _safe_text(payload.get("project_type"))
+    draft_subtype = _safe_text(payload.get("project_subtype"))
+    if not desc or not any([draft_title, draft_type, draft_subtype]):
         logger.warning("AI returned an empty description; using fallback.")
         return {
             **_fallback_from_context(
@@ -353,4 +363,12 @@ def generate_or_improve_description(
             "_mode": mode,
         }
 
-    return {"description": desc, "_model": model, "_mode": mode, "recommendation_source": "ai"}
+    return {
+        "project_title": draft_title,
+        "project_type": draft_type,
+        "project_subtype": draft_subtype,
+        "description": desc,
+        "_model": model,
+        "_mode": mode,
+        "recommendation_source": "ai",
+    }
