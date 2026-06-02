@@ -1823,6 +1823,212 @@ test('agreement wizard step 1 does not promote no-useful template candidates int
   await expect(page.getByText(/blocked family mismatch|score: 91|rank_score/i)).toHaveCount(0);
 });
 
+test('agreement wizard step 1 improve classification keeps exterior wood repair out of generic installation', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    selected_template_id: null,
+    selected_template: null,
+  };
+
+  await installWizardAuthRoutes(page);
+  await page.addInitScript(() => {
+    window.sessionStorage.clear();
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 60, value: 'Installation', label: 'Installation', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 601,
+            value: 'General Install',
+            label: 'General Install',
+            owner_type: 'system',
+            project_type: 'Installation',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        draft: {
+          project_title: 'Exterior Window Wood Rot Repair',
+          project_type: 'Windows / Doors',
+          project_subtype: 'Window Trim Wood Rot Repair',
+          description:
+            'Included Work:\n- Protect the work area around exterior windows\n- Remove deteriorated wood trim and affected rot\n- Repair or replace damaged trim sections\n- Seal repaired areas against moisture intrusion\n- Repaint repaired trim to match existing finish\n\nExclusions:\n- Full window replacement',
+        },
+        classification: {
+          project_type: 'Installation',
+          project_subtype: 'General Install',
+          confidence: 'low',
+          reasoning: 'Generic taxonomy fallback only.',
+        },
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/classify/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        classification: {
+          project_title: 'General Install',
+          project_type: 'Installation',
+          project_subtype: 'General Install',
+          confidence: 'high',
+          confidence_label: 'High confidence',
+          reason: 'Generic install fallback.',
+          alternatives: [],
+        },
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        confidence_level: 'low',
+        match_tier: 'no_useful_match',
+        score: 0,
+        detail: 'No strong template match found.',
+        recommended_template: null,
+        possible_match: null,
+        candidates: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+
+    agreement = {
+      ...agreement,
+      ...request.postDataJSON(),
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+    };
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(agreement),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+      if (request.method() === 'PATCH') {
+        agreement = { ...agreement, ...request.postDataJSON() };
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+      await route.fallback();
+    }
+  );
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page
+    .getByTestId('step1-job-description-input')
+    .fill('Repair wood rot around exterior windows and repaint trim');
+  await page.getByTestId('step1-find-best-starting-point-button').click({ force: true });
+
+  const reviewPanel = page.getByTestId('step1-no-template-review');
+  await expect(reviewPanel).toBeVisible({ timeout: 15000 });
+  await expect(reviewPanel.getByText('Exterior Window Wood Rot Repair')).toBeVisible();
+  await expect(reviewPanel.getByText('Windows / Doors')).toBeVisible();
+  await expect(reviewPanel.getByText('Window Trim Wood Rot Repair')).toBeVisible();
+
+  await page.getByTestId('step1-build-agreement-ai-button').click();
+
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Exterior Window Wood Rot Repair'
+  );
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Windows / Doors');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Window Trim Wood Rot Repair'
+  );
+
+  await page.getByTestId('agreement-ai-improve-classification-button').click();
+
+  await expect(page.getByTestId('agreement-project-type-select')).not.toHaveValue('Installation');
+  await expect(page.getByTestId('agreement-project-subtype-select')).not.toHaveValue('General Install');
+  await expect(page.getByTestId('agreement-project-title-input')).not.toHaveValue('General Install');
+  await expect(page.getByTestId('agreement-project-type-select')).toHaveValue('Windows / Doors');
+  await expect(page.getByTestId('agreement-project-subtype-select')).toHaveValue(
+    'Window Trim Wood Rot Repair'
+  );
+});
+
 test('agreement wizard step 1 no-template AI CTA preserves generated draft fields across project families', async ({
   page,
 }) => {

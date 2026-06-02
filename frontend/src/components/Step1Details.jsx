@@ -573,6 +573,62 @@ function inferStep1ProjectClassificationConsistency({
   const garageDoorSetup = inferGarageDoorProjectSetup(combinedText);
   if (garageDoorSetup) return garageDoorSetup;
 
+  const windowRepairSignals = countMatchingPatterns(combinedText, [
+    /\bwindow(s)?\b/i,
+    /\bwindow\s+trim\b/i,
+    /\bwindow\s+sill\b/i,
+    /\bwindow\s+frame\b/i,
+    /\bexterior\s+window(s)?\b/i,
+  ]);
+  const exteriorWoodRepairSignals = countMatchingPatterns(combinedText, [
+    /\bwood\s+rot\b/i,
+    /\brotted\s+wood\b/i,
+    /\brot\s+repair\b/i,
+    /\brepair\b/i,
+    /\brestore\b/i,
+    /\bpatch\b/i,
+    /\brepaint\b/i,
+    /\bpaint\s+trim\b/i,
+    /\btrim\s+repair\b/i,
+  ]);
+  if (windowRepairSignals >= 1 && exteriorWoodRepairSignals >= 2) {
+    return {
+      project_type: "Windows / Doors",
+      project_subtype: "Window Trim Wood Rot Repair",
+      project_title: "Exterior Window Wood Rot Repair",
+      description:
+        "Repair exterior window wood rot and trim damage as described, including removing deteriorated material, restoring or replacing affected trim sections, sealing repaired areas, repainting trim as included, and cleanup. Contractor will verify hidden damage, material matching, and paint requirements before final pricing or work begins.",
+    };
+  }
+
+  const exteriorCarpentrySignals = countMatchingPatterns(combinedText, [
+    /\bwood\s+rot\b/i,
+    /\brotted\s+wood\b/i,
+    /\bdecorative\s+wood\b/i,
+    /\bwood\s+columns?\b/i,
+    /\bporch\s+columns?\b/i,
+    /\bexterior\s+trim\b/i,
+    /\btrim\s+repair\b/i,
+    /\bfascia\s+repair\b/i,
+    /\bsoffit\s+repair\b/i,
+  ]);
+  const repairIntentSignals = countMatchingPatterns(combinedText, [
+    /\brepair\b/i,
+    /\brestore\b/i,
+    /\bpatch\b/i,
+    /\brepaint\b/i,
+    /\bpaint\b/i,
+  ]);
+  if (exteriorCarpentrySignals >= 2 && repairIntentSignals >= 1) {
+    return {
+      project_type: "Carpentry",
+      project_subtype: "Exterior Wood Repair",
+      project_title: "Exterior Wood Repair",
+      description:
+        "Repair exterior wood components as described, including removing deteriorated material, restoring or replacing affected sections, sealing repaired areas, finishing as included, and cleanup. Contractor will verify hidden damage, material matching, and finish requirements before final pricing or work begins.",
+    };
+  }
+
   if (
     /\binground\s+pool\b/i.test(combined) ||
     /\bin-?ground\s+pool\b/i.test(combined) ||
@@ -1794,18 +1850,18 @@ export default function Step1Details({
     const current = safeTrim(dLocal?.project_type);
     if (!current) return null;
     return (
-      mergedProjectTypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
+      augmentedProjectTypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
       null
     );
-  }, [mergedProjectTypeOptions, dLocal?.project_type]);
+  }, [augmentedProjectTypeOptions, dLocal?.project_type]);
   const selectedProjectSubtype = useMemo(() => {
     const current = safeTrim(dLocal?.project_subtype);
     if (!current) return null;
     return (
-      mergedProjectSubtypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
+      augmentedProjectSubtypeOptions.find((opt) => safeTrim(opt?.value) === current) ||
       null
     );
-  }, [mergedProjectSubtypeOptions, dLocal?.project_subtype]);
+  }, [augmentedProjectSubtypeOptions, dLocal?.project_subtype]);
 
   const hasAiSectionHighlight = (...keys) =>
     keys.some((key) => Boolean(aiHighlightKeys?.[key]));

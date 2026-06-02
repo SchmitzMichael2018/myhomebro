@@ -765,6 +765,55 @@ def classify_type_subtype(
     if any(sig in hay_norm for sig in ["finish basement", "basement finishing", "basement remodel", "basement renovation", "basement"]):
         return "Remodel", "Basement", "Detected basement-specific scope. Using type 'Remodel' and subtype 'Basement'."
 
+    exterior_window_repair_signals = [
+        "wood rot",
+        "rotted wood",
+        "rot repair",
+        "repair rot",
+        "trim repair",
+        "repaint trim",
+        "paint trim",
+        "window trim",
+        "window sill",
+        "window frame",
+        "exterior window",
+    ]
+    has_exterior_window_repair = (
+        any(sig in hay_norm for sig in ["window", "windows", "window trim", "window sill", "window frame"])
+        and any(sig in hay_norm for sig in ["repair", "rot", "rotted", "restore", "patch", "repaint", "paint"])
+        and sum(1 for sig in exterior_window_repair_signals if sig in hay_norm) >= 2
+    )
+    if has_exterior_window_repair:
+        return (
+            "Windows / Doors",
+            "Window Trim Wood Rot Repair",
+            "Detected exterior window repair scope. Using a repair classification instead of generic installation.",
+        )
+
+    exterior_carpentry_repair_signals = [
+        "wood rot",
+        "rotted wood",
+        "decorative wood",
+        "wood column",
+        "wood columns",
+        "porch column",
+        "porch columns",
+        "trim repair",
+        "exterior trim",
+        "fascia repair",
+        "soffit repair",
+    ]
+    has_exterior_carpentry_repair = (
+        any(sig in hay_norm for sig in ["repair", "rot", "rotted", "restore", "patch", "repaint", "paint"])
+        and sum(1 for sig in exterior_carpentry_repair_signals if sig in hay_norm) >= 2
+    )
+    if has_exterior_carpentry_repair:
+        return (
+            "Carpentry",
+            "Exterior Wood Repair",
+            "Detected exterior carpentry repair scope. Using a repair classification instead of generic installation.",
+        )
+
     pool_signals = ["inground pool", "in-ground pool", "pool house", "pool installation", "new pool", "pool build", "pool"]
     if any(sig in hay_norm for sig in pool_signals):
         return "Pool", "Inground Pool and Pool House", "Detected pool-specific scope. Using type 'Pool' and subtype 'Inground Pool and Pool House'."

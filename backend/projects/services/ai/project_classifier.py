@@ -70,6 +70,44 @@ def _has_construction_scope_without_explicit_inspection(text: str) -> bool:
     )
 
 
+def _has_repair_scope_without_install_intent(text: str) -> bool:
+    normalized = _norm_text(text)
+    if not normalized:
+        return False
+    repair_hits = sum(
+        1
+        for term in [
+            "repair",
+            "fix",
+            "patch",
+            "restore",
+            "restoration",
+            "wood rot",
+            "rotted",
+            "damaged",
+            "damage",
+            "repaint",
+            "paint trim",
+        ]
+        if term in normalized
+    )
+    install_hits = sum(
+        1
+        for term in [
+            "install",
+            "installation",
+            "new install",
+            "new construction",
+            "build",
+            "construct",
+            "mount",
+            "put in",
+        ]
+        if term in normalized
+    )
+    return repair_hits > 0 and install_hits == 0
+
+
 @dataclass(frozen=True)
 class _TaxonomyLookup:
     type_by_norm: dict[str, str]
@@ -778,6 +816,30 @@ def classify_project_from_scope(
     if normalized_key(candidate_type) == "inspection" and _has_construction_scope_without_explicit_inspection(f"{scope}\n{description}"):
         logger.warning(
             "Rejected AI inspection classification for construction/repair/install scope; falling back. candidate=%s description=%s scope=%s",
+            _json_dump(candidate)[:1000],
+            description[:500],
+            scope[:500],
+        )
+        fallback["alternatives"] = _build_alternatives(
+            text=f"{scope}\n{description}",
+            lookup=lookup,
+            primary=fallback,
+            current_values=clean_current_values,
+        )
+        return fallback
+
+    candidate_type_norm = normalized_key(candidate_type)
+    candidate_subtype_norm = normalized_key(candidate_subtype)
+    if (
+        candidate_type_norm == "installation"
+        and _has_repair_scope_without_install_intent(f"{scope}\n{description}")
+        and (
+            not candidate_subtype_norm
+            or candidate_subtype_norm in {"general_install", "general_installation", "installation"}
+        )
+    ):
+        logger.warning(
+            "Rejected AI generic installation classification for repair scope; falling back. candidate=%s description=%s scope=%s",
             _json_dump(candidate)[:1000],
             description[:500],
             scope[:500],

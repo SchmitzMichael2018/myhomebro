@@ -637,6 +637,42 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertIn("outdoor", result["reason"].lower())
         self.assertIn(result["confidence"], {"medium", "low"})
 
+    def test_classify_project_from_scope_rejects_generic_installation_for_exterior_window_repair(self):
+        self._ensure_taxonomy("Installation", ["General Install"])
+        self._ensure_taxonomy("Windows / Doors", ["Window Trim Wood Rot Repair", "Window / Door Repair"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Installation",
+                "project_subtype": "General Install",
+                "project_title": "General Install",
+                "confidence": "high",
+                "reason": "Incorrectly treated exterior repair work as a generic install.",
+                "alternatives": [],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="Repair wood rot around exterior windows and repaint trim",
+                scope=(
+                    "Included Work:\n"
+                    "- Remove deteriorated wood around exterior windows\n"
+                    "- Repair or replace damaged window trim sections\n"
+                    "- Seal repaired areas and repaint trim\n"
+                    "- Clean up work area"
+                ),
+                taxonomy=taxonomy,
+                current_values={},
+                contractor=self.contractor,
+            )
+
+        self.assertNotEqual(result["project_type"], "Installation")
+        self.assertNotEqual(result["project_subtype"], "General Install")
+        self.assertNotEqual(result["project_title"], "General Install")
+        self.assertEqual(result["project_type"], "Windows / Doors")
+        self.assertEqual(result["project_subtype"], "Window Trim Wood Rot Repair")
+        self.assertIn("repair", result["reason"].lower())
+
     def test_classify_project_from_scope_prefers_media_room_over_painting(self):
         self._ensure_taxonomy("Remodel", ["Home Theater / Media Room", "Wet Bar Installation", "Basement"])
         taxonomy = build_project_taxonomy_snapshot(self.contractor)
