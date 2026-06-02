@@ -26,6 +26,7 @@ try:
         Expense,
         AgreementAmendment,
         ContractorEditEvent,
+        MilestonePerformanceSnapshot,
         ProjectOutcomeSnapshot,
         ContractorBenchmarkAggregate,
         AgreementOutcomeSnapshot,
@@ -41,7 +42,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
-    ContractorEditEvent = ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
+    ContractorEditEvent = MilestonePerformanceSnapshot = ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
     SupportTicket = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
@@ -1125,6 +1126,82 @@ if ContractorEditEvent is not None:
             "updated_value",
             "source",
             "change_reason",
+            "metadata",
+            "created_at",
+        )
+
+        def has_add_permission(self, request):
+            return False
+
+        def has_change_permission(self, request, obj=None):
+            return False
+
+        def has_delete_permission(self, request, obj=None):
+            return False
+
+
+if MilestonePerformanceSnapshot is not None:
+    @admin.register(MilestonePerformanceSnapshot)
+    class MilestonePerformanceSnapshotAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "agreement",
+            "milestone",
+            "contractor",
+            "project_type",
+            "normalized_milestone_type",
+            "source_event",
+            "is_delayed",
+            "created_at",
+        )
+        list_filter = (
+            "project_type",
+            "normalized_milestone_type",
+            "source_event",
+            "is_delayed",
+            "draft_source",
+            "created_at",
+        )
+        search_fields = (
+            "agreement__project__number",
+            "agreement__project__title",
+            "milestone_title",
+            "contractor__business_name",
+            "project_type",
+            "project_subtype",
+        )
+        readonly_fields = (
+            "agreement",
+            "milestone",
+            "contractor",
+            "invoice",
+            "selected_template",
+            "project_title",
+            "project_type",
+            "project_subtype",
+            "draft_source",
+            "template_name_snapshot",
+            "milestone_order",
+            "milestone_title",
+            "normalized_milestone_type",
+            "milestone_amount",
+            "planned_start_date",
+            "planned_completion_date",
+            "contractor_completed_at",
+            "homeowner_approved_at",
+            "invoice_created_at",
+            "invoice_paid_at",
+            "escrow_released_at",
+            "dispute_opened_at",
+            "dispute_resolved_at",
+            "planned_vs_actual_completion_days",
+            "completion_to_approval_seconds",
+            "approval_to_payment_release_seconds",
+            "invoice_to_payment_release_seconds",
+            "total_lifecycle_seconds",
+            "is_delayed",
+            "source_event",
+            "state_signature",
             "metadata",
             "created_at",
         )

@@ -38,6 +38,7 @@ from projects.models import (
     AgreementProposalSnapshot,
     AgreementDraftIntelligenceSnapshot,
     ContractorEditEvent,
+    MilestonePerformanceSnapshot,
     ProjectOutcomeSnapshot,
     Contractor,
     ContractorActivityEvent,
@@ -11835,6 +11836,7 @@ class ProgressPaymentWorkflowTests(TestCase):
             contractor=self.contractor,
             homeowner=self.homeowner,
             description="Progress agreement",
+            project_class="commercial",
             payment_structure="progress",
             retainage_percent=Decimal("10.00"),
             total_cost=Decimal("10000.00"),
@@ -11936,9 +11938,10 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(agreement.retainage_percent, Decimal("5.00"))
 
     def test_progress_draw_endpoints_create_transition_and_record_payment(self):
+        self.agreement.payment_mode = "direct"
         self.agreement.signed_by_contractor = True
         self.agreement.signed_by_homeowner = True
-        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner"])
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
 
         create_response = self.client.post(
             f"/api/projects/agreements/{self.agreement.id}/draws/",
@@ -13388,6 +13391,31 @@ class ProjectLearningFoundationTests(TestCase):
             status=ProjectStatus.IN_PROGRESS,
         )
 
+    def _performance_agreement(self, *, title="Milestone Performance Project", draft_source=""):
+        project = self._new_learning_project(title)
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Exterior",
+            project_subtype="Window Repair",
+            description="Repair exterior windows and trim.",
+            total_cost=Decimal("1500.00"),
+            start=timezone.localdate(),
+        )
+        if draft_source:
+            AgreementDraftIntelligenceSnapshot.objects.create(
+                agreement=agreement,
+                contractor=self.contractor,
+                original_project_description="Repair exterior windows and trim",
+                ai_project_title=title,
+                ai_project_type="Exterior",
+                ai_project_subtype="Window Repair",
+                ai_scope="Included Work:\n- Repair exterior windows\n- Repaint trim",
+                draft_source=draft_source,
+            )
+        return agreement
+
     def test_ai_draft_intelligence_snapshot_is_captured_on_agreement_create(self):
         project = self._new_learning_project("Draft Agreement")
         agreement = create_agreement_from_validated(
@@ -13628,6 +13656,167 @@ class ProjectLearningFoundationTests(TestCase):
             event.save()
         with self.assertRaises(ValueError):
             event.delete()
+
+    def test_milestone_performance_captures_completion_timestamp(self):
+        agreement = self._performance_agreement()
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Repair Trim",
+            description="Repair exterior trim.",
+            amount=Decimal("500.00"),
+            start_date=timezone.localdate(),
+            completion_date=timezone.localdate() + timedelta(days=1),
+        )
+        completed_at = timezone.now() + timedelta(days=2)
+        milestone.completed = True
+        milestone.completed_at = completed_at
+        milestone.save(update_fields=["completed", "completed_at"])
+
+        snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
+        self.assertEqual(snapshot.contractor_completed_at, completed_at)
+        self.assertEqual(snapshot.planned_vs_actual_completion_days, 1)
+        self.assertTrue(snapshot.is_delayed)
+        self.assertEqual(snapshot.source_event, "milestone_saved")
+
+    def test_milestone_performance_captures_homeowner_approval_timestamp(self):
+        agreement = self._performance_agreement()
+        completed_at = timezone.now()
+        approved_at = completed_at + timedelta(hours=5)
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Window Repair",
+            description="Repair exterior window trim.",
+            amount=Decimal("700.00"),
+            start_date=timezone.localdate(),
+            completion_date=timezone.localdate(),
+            completed=True,
+            completed_at=completed_at,
+            is_invoiced=True,
+        )
+        invoice = Invoice.objects.create(
+            agreement=agreement,
+            amount=Decimal("700.00"),
+            status=InvoiceStatus.APPROVED,
+            approved_at=approved_at,
+            milestone_id_snapshot=milestone.id,
+            milestone_title_snapshot=milestone.title,
+        )
+        milestone.invoice = invoice
+        milestone.save(update_fields=["invoice"])
+
+        snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
+        self.assertEqual(snapshot.homeowner_approved_at, approved_at)
+        self.assertEqual(snapshot.invoice_created_at, invoice.created_at)
+        self.assertEqual(snapshot.completion_to_approval_seconds, 5 * 60 * 60)
+
+    def test_milestone_performance_captures_payment_and_release_timestamp(self):
+        agreement = self._performance_agreement()
+        completed_at = timezone.now()
+        approved_at = completed_at + timedelta(hours=2)
+        released_at = approved_at + timedelta(hours=3)
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Final Repair",
+            description="Complete final repair.",
+            amount=Decimal("800.00"),
+            start_date=timezone.localdate(),
+            completion_date=timezone.localdate(),
+            completed=True,
+            completed_at=completed_at,
+            is_invoiced=True,
+        )
+        invoice = Invoice.objects.create(
+            agreement=agreement,
+            amount=Decimal("800.00"),
+            status=InvoiceStatus.APPROVED,
+            approved_at=approved_at,
+            milestone_id_snapshot=milestone.id,
+        )
+        milestone.invoice = invoice
+        milestone.save(update_fields=["invoice"])
+        invoice.status = InvoiceStatus.PAID
+        invoice.escrow_released = True
+        invoice.escrow_released_at = released_at
+        invoice.save(update_fields=["status", "escrow_released", "escrow_released_at"])
+
+        snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
+        self.assertEqual(snapshot.invoice_paid_at, released_at)
+        self.assertEqual(snapshot.escrow_released_at, released_at)
+        self.assertEqual(snapshot.approval_to_payment_release_seconds, 3 * 60 * 60)
+        self.assertIsNotNone(snapshot.invoice_to_payment_release_seconds)
+        self.assertIsNotNone(snapshot.total_lifecycle_seconds)
+
+    def test_milestone_performance_snapshot_is_immutable(self):
+        agreement = self._performance_agreement()
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Immutable Performance",
+            description="Capture performance.",
+            amount=Decimal("300.00"),
+        )
+        snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
+
+        snapshot.source_event = "mutated"
+        with self.assertRaises(ValueError):
+            snapshot.save()
+        with self.assertRaises(ValueError):
+            snapshot.delete()
+
+    def test_no_template_ai_agreement_produces_milestone_performance_data(self):
+        agreement = self._performance_agreement(
+            title="Exterior Window Wood Rot Repair",
+            draft_source=AgreementDraftIntelligenceSnapshot.DraftSource.NO_TEMPLATE_AI,
+        )
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Wood Rot Repair",
+            description="Repair exterior window wood rot.",
+            amount=Decimal("900.00"),
+            completed=True,
+            completed_at=timezone.now(),
+        )
+
+        snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
+        self.assertEqual(snapshot.draft_source, AgreementDraftIntelligenceSnapshot.DraftSource.NO_TEMPLATE_AI)
+        self.assertEqual(snapshot.selected_template_id, None)
+        self.assertEqual(snapshot.project_type, "Exterior")
+        self.assertEqual(snapshot.contractor_id, self.contractor.id)
+
+    def test_milestone_performance_captures_dispute_open_and_resolution(self):
+        agreement = self._performance_agreement()
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Disputed Repair",
+            description="Repair item under review.",
+            amount=Decimal("650.00"),
+        )
+        dispute = Dispute.objects.create(
+            agreement=agreement,
+            milestone=milestone,
+            initiator="homeowner",
+            reason="Needs review",
+            description="The homeowner is disputing the milestone.",
+            status="open",
+            created_by=self.contractor_user,
+        )
+        opened_snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
+        self.assertEqual(opened_snapshot.dispute_opened_at, dispute.created_at)
+        self.assertEqual(opened_snapshot.metadata["dispute_count"], 1)
+
+        resolved_at = timezone.now() + timedelta(hours=4)
+        dispute.status = "resolved_homeowner"
+        dispute.resolved_at = resolved_at
+        dispute.save(update_fields=["status", "resolved_at"])
+
+        resolved_snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
+        self.assertEqual(resolved_snapshot.dispute_resolved_at, resolved_at)
+        self.assertEqual(resolved_snapshot.source_event, "dispute_saved")
 
     def test_manual_agreement_create_gets_manual_draft_intelligence_snapshot(self):
         project = self._new_learning_project("Manual Draft")

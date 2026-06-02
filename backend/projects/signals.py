@@ -8,6 +8,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from .models import Agreement, Contractor, ContractorReview, Invoice, Milestone
+from .models_dispute import Dispute
 from .tasks import (
     task_send_invoice_notification,
     task_generate_full_agreement_pdf,
@@ -78,6 +79,7 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
     """
     After a new Invoice is created, notify the homeowner.
     """
+    _capture_milestone_performance_from_invoice(instance, "invoice_created" if created else "invoice_saved")
     if created:
         try:
             task_send_invoice_notification.delay(instance.id)
@@ -112,11 +114,60 @@ def _touch_agreement_updated_at(agreement: Agreement | None):
 @receiver(post_save, sender=Milestone)
 def on_milestone_saved_touch_agreement(sender, instance: Milestone, created: bool, **kwargs):
     _touch_agreement_updated_at(getattr(instance, "agreement", None))
+    _capture_milestone_performance(instance, "milestone_created" if created else "milestone_saved")
 
 
 @receiver(post_delete, sender=Milestone)
 def on_milestone_deleted_touch_agreement(sender, instance: Milestone, **kwargs):
     _touch_agreement_updated_at(getattr(instance, "agreement", None))
+
+
+def _capture_milestone_performance(milestone: Milestone | None, source_event: str):
+    if milestone is None or not getattr(milestone, "id", None):
+        return
+    try:
+        from projects.services.milestone_performance import capture_milestone_performance_snapshot
+
+        capture_milestone_performance_snapshot(
+            milestone.id,
+            source_event=source_event,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Milestone performance capture skipped for milestone %s: %s",
+            getattr(milestone, "id", None),
+            exc,
+        )
+
+
+def _capture_milestone_performance_from_invoice(invoice: Invoice | None, source_event: str):
+    if invoice is None:
+        return
+    milestone = getattr(invoice, "source_milestone", None)
+    milestone_id = getattr(milestone, "id", None) or getattr(invoice, "milestone_id_snapshot", None)
+    if not milestone_id:
+        return
+    try:
+        from projects.services.milestone_performance import capture_milestone_performance_snapshot
+
+        capture_milestone_performance_snapshot(
+            int(milestone_id),
+            source_event=source_event,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Milestone performance capture skipped for invoice %s: %s",
+            getattr(invoice, "id", None),
+            exc,
+        )
+
+
+@receiver(post_save, sender=Dispute)
+def on_dispute_saved_capture_milestone_performance(sender, instance: Dispute, created: bool, **kwargs):
+    _capture_milestone_performance(
+        getattr(instance, "milestone", None),
+        "dispute_opened" if created else "dispute_saved",
+    )
 
 
 def _refresh_contractor_review_stats(contractor_id: int | None):

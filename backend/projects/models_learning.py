@@ -145,6 +145,102 @@ class ContractorEditEvent(models.Model):
         return f"ContractorEditEvent(agreement_id={self.agreement_id}, field={self.field_changed})"
 
 
+class MilestonePerformanceSnapshot(models.Model):
+    """
+    Append-only milestone lifecycle learning snapshot.
+
+    Operational milestone, invoice, payment, and dispute records remain the
+    source of truth. These rows normalize their timing data for future
+    contractor/project performance intelligence.
+    """
+
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="milestone_performance_snapshots",
+    )
+    milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.CASCADE,
+        related_name="performance_snapshots",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="milestone_performance_snapshots",
+    )
+    invoice = models.ForeignKey(
+        "projects.Invoice",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="milestone_performance_snapshots",
+    )
+    selected_template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="milestone_performance_snapshots",
+    )
+
+    project_title = models.CharField(max_length=255, blank=True, default="")
+    project_type = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    project_subtype = models.CharField(max_length=160, blank=True, default="")
+    draft_source = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    template_name_snapshot = models.CharField(max_length=255, blank=True, default="")
+
+    milestone_order = models.PositiveIntegerField(default=0)
+    milestone_title = models.CharField(max_length=255, blank=True, default="")
+    normalized_milestone_type = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    milestone_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    planned_start_date = models.DateField(null=True, blank=True)
+    planned_completion_date = models.DateField(null=True, blank=True)
+    contractor_completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    homeowner_approved_at = models.DateTimeField(null=True, blank=True)
+    invoice_created_at = models.DateTimeField(null=True, blank=True)
+    invoice_paid_at = models.DateTimeField(null=True, blank=True)
+    escrow_released_at = models.DateTimeField(null=True, blank=True)
+    dispute_opened_at = models.DateTimeField(null=True, blank=True)
+    dispute_resolved_at = models.DateTimeField(null=True, blank=True)
+
+    planned_vs_actual_completion_days = models.IntegerField(null=True, blank=True)
+    completion_to_approval_seconds = models.PositiveIntegerField(null=True, blank=True)
+    approval_to_payment_release_seconds = models.PositiveIntegerField(null=True, blank=True)
+    invoice_to_payment_release_seconds = models.PositiveIntegerField(null=True, blank=True)
+    total_lifecycle_seconds = models.PositiveIntegerField(null=True, blank=True)
+    is_delayed = models.BooleanField(default=False, db_index=True)
+
+    source_event = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    state_signature = models.CharField(max_length=64, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["agreement", "milestone"]),
+            models.Index(fields=["contractor", "project_type"]),
+            models.Index(fields=["normalized_milestone_type"]),
+            models.Index(fields=["source_event"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not kwargs.pop("_allow_update", False):
+            raise ValueError("MilestonePerformanceSnapshot is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("MilestonePerformanceSnapshot is immutable.")
+
+    def __str__(self) -> str:
+        return f"MilestonePerformanceSnapshot(milestone_id={self.milestone_id}, event={self.source_event})"
+
+
 class ProjectOutcomeSnapshot(models.Model):
     """
     Append-only project outcome snapshot used to learn from real contractor results.
