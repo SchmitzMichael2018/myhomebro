@@ -15469,17 +15469,22 @@ class SeededBenchmarkFoundationTests(TestCase):
     def test_starter_library_templates_seed_with_expected_names_and_milestone_counts(self):
         expected_templates = {
             "Bathroom Remodel",
-            "Kitchen Remodel",
+            "Standard Kitchen Remodel",
             "Cabinet Installation",
             "Countertop Installation",
             "Appliance Installation",
             "Flooring Installation",
             "Interior Painting",
+            "Exterior Painting",
             "Roof Replacement",
             "Fence Installation",
-            "Deck Build",
+            "Deck Construction",
             "Plumbing Repair",
             "Electrical Work",
+            "HVAC Replacement",
+            "General Repair Job",
+            "DIY Contractor Assist",
+            "Home Inspection Service",
         }
 
         system_templates = {
@@ -15493,9 +15498,37 @@ class SeededBenchmarkFoundationTests(TestCase):
 
         self.assertEqual(set(system_templates.keys()), expected_templates)
         for name, template in system_templates.items():
-            self.assertIn(template.project_subtype, expected_templates)
+            self.assertTrue(template.project_type, msg=name)
+            self.assertTrue(template.project_subtype, msg=name)
+            self.assertNotEqual(template.project_type, "Installation", msg=name)
+            self.assertGreater(len(template.description), len(template.name), msg=name)
+            self.assertIn("Included Work:", template.default_scope, msg=name)
+            self.assertIn("- ", template.default_scope, msg=name)
+            self.assertGreater(len(template.default_scope), len(template.name) * 3, msg=name)
+            self.assertTrue(template.exclusions_text, msg=name)
+            self.assertTrue(template.assumptions_text, msg=name)
+            self.assertTrue(template.project_materials_hint, msg=name)
             self.assertGreaterEqual(template.milestones.count(), 4, msg=name)
             self.assertLessEqual(template.milestones.count(), 7, msg=name)
+
+    def test_flooring_system_template_has_usable_trade_specific_content(self):
+        template = ProjectTemplate.objects.get(
+            is_system_template=True,
+            is_published=True,
+            name="Flooring Installation",
+        )
+
+        self.assertEqual(template.project_type, "Flooring")
+        self.assertTrue(template.project_subtype)
+        self.assertNotEqual(template.project_subtype.lower(), "installation")
+        self.assertGreater(len(template.default_scope), len(template.name) * 3)
+        self.assertIn("Included Work:", template.default_scope)
+        self.assertIn("Exclusions:", template.default_scope)
+        self.assertIn("Customer Responsibilities:", template.default_scope)
+        self.assertIn("- Install", template.default_scope)
+        self.assertTrue(template.exclusions_text)
+        self.assertTrue(template.assumptions_text)
+        self.assertGreaterEqual(template.milestones.count(), 4)
 
     def test_structured_resolver_output_includes_region_and_fallback_metadata(self):
         result = resolve_seed_benchmark_defaults(
@@ -16262,7 +16295,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertTrue(any(row["is_system"] for row in response.json()["results"]))
         names = {row["name"] for row in response.json()["results"]}
         self.assertIn("Bathroom Remodel", names)
-        self.assertIn("Kitchen Remodel", names)
+        self.assertIn("Standard Kitchen Remodel", names)
         self.assertIn("Roof Replacement", names)
 
     def test_unpublished_system_templates_do_not_appear_in_discovery(self):
@@ -17014,7 +17047,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertNotIn("Siding", matched["project_subtype"])
         self.assertNotIn("Patio", matched["project_subtype"])
 
-    def test_recommend_endpoint_returns_optional_match_for_medium_confidence(self):
+    def test_recommend_endpoint_returns_strong_match_for_roof_shingle_replacement(self):
         response = self.client.post(
             "/api/projects/templates/recommend/",
             {
@@ -17024,10 +17057,10 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
-        self.assertEqual(body["confidence"], "possible")
-        self.assertEqual(body["confidence_level"], "medium")
-        self.assertIsNone(body["recommended_template"])
-        self.assertEqual(body["possible_match"]["name"], "Roof Replacement")
+        self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["confidence_level"], "high")
+        self.assertEqual(body["recommended_template"]["name"], "Roof Replacement")
+        self.assertIsNone(body["possible_match"])
 
     def test_recommend_endpoint_can_recommend_concrete_template_when_available(self):
         concrete_template = ProjectTemplate.objects.create(
