@@ -28,7 +28,11 @@ const agreements = Array.from({ length: 12 }, (_, index) =>
   makeAgreement(index + 1, index === 0 ? { project_title: 'Kitchen Draft Agreement' } : {})
 ).concat(makeAgreement(13, { project_title: 'Archived Patio Agreement', is_archived: true }));
 
-async function installAgreementListMocks(page) {
+async function installAgreementListMocks(page, options = {}) {
+  let currentAgreements = agreements.slice();
+  const protectedIds = new Set(options.protectedIds || []);
+  const bulkDeletePayloads = [];
+
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -62,6 +66,35 @@ async function installAgreementListMocks(page) {
     });
   });
 
+  await page.route(/\/api\/projects\/agreements\/bulk-delete\/?$/, async (route) => {
+    const payload = route.request().postDataJSON();
+    const ids = Array.isArray(payload?.agreement_ids) ? payload.agreement_ids : [];
+    bulkDeletePayloads.push(payload);
+
+    const deleted = [];
+    const skipped = [];
+    currentAgreements = currentAgreements.filter((row) => {
+      if (!ids.includes(row.id)) return true;
+      if (protectedIds.has(row.id) || row.status !== 'draft' || row.invoices_count > 0 || row.is_fully_signed) {
+        skipped.push({ id: row.id, reason: 'Protected agreement skipped.' });
+        return true;
+      }
+      deleted.push({ id: row.id });
+      return false;
+    });
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        deleted_count: deleted.length,
+        skipped_count: skipped.length,
+        deleted,
+        skipped,
+      }),
+    });
+  });
+
   await page.route(/\/api\/projects\/agreements\/?(?:\?.*)?$/, async (route) => {
     const url = new URL(route.request().url());
     const pageNumber = Number(url.searchParams.get('page') || 1);
@@ -71,7 +104,7 @@ async function installAgreementListMocks(page) {
     const projectClass = (url.searchParams.get('project_class') || '').toLowerCase();
     const includeArchived = url.searchParams.get('include_archived') === '1';
 
-    let filtered = agreements.slice();
+    let filtered = currentAgreements.slice();
     if (!includeArchived) filtered = filtered.filter((row) => !row.is_archived);
     if (search) {
       filtered = filtered.filter((row) =>
@@ -101,6 +134,11 @@ async function installAgreementListMocks(page) {
       }),
     });
   });
+
+  return {
+    bulkDeletePayloads,
+    getCurrentAgreements: () => currentAgreements,
+  };
 }
 
 test('agreements list uses dark operational styling and paginates results', async ({ page }) => {
@@ -132,4 +170,38 @@ test('agreements list uses dark operational styling and paginates results', asyn
   await page.getByLabel('Show archived').check();
   await expect(page.getByTestId('agreement-pagination-top')).toContainText('Showing 1-13 of 13');
   await expect(page.getByText('Archived Patio Agreement')).toBeVisible();
+});
+
+test('agreements list bulk deletes selected draft agreements and skips protected records', async ({ page }) => {
+  const mocks = await installAgreementListMocks(page, { protectedIds: [3] });
+
+  await page.goto('/app/agreements', { waitUntil: 'domcontentloaded' });
+
+  const deleteSelected = page.getByTestId('agreement-bulk-delete-button');
+  await expect(deleteSelected).toBeVisible();
+  await expect(deleteSelected).toBeDisabled();
+
+  const rowCheckboxes = page.locator('tbody input[type="checkbox"]');
+  await rowCheckboxes.nth(1).check();
+  await expect(deleteSelected).toBeEnabled();
+  await rowCheckboxes.nth(2).check();
+
+  await deleteSelected.click();
+  await expect(page.getByTestId('agreement-bulk-delete-modal')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Delete selected agreements?' })).toBeVisible();
+  await expect(page.getByText('2 agreements selected.')).toBeVisible();
+  await expect(
+    page.getByText(
+      'This will permanently delete eligible draft agreements. Signed, funded, invoiced, paid, disputed, or completed agreements will be skipped.'
+    )
+  ).toBeVisible();
+
+  await page.getByTestId('agreement-bulk-delete-confirm').click();
+
+  await expect(page.getByText('1 deleted, 1 skipped')).toBeVisible();
+  expect(mocks.bulkDeletePayloads).toHaveLength(1);
+  expect(mocks.bulkDeletePayloads[0].agreement_ids).toEqual([2, 3]);
+  await expect(page.getByText('Agreement 2')).toHaveCount(0);
+  await expect(page.getByText('Agreement 3')).toBeVisible();
+  await expect(deleteSelected).toBeDisabled();
 });

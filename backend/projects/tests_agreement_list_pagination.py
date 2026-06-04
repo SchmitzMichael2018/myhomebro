@@ -4,7 +4,7 @@ from django.utils import timezone
 from datetime import timedelta
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner
+from projects.models import Agreement, Contractor, Homeowner, Invoice
 
 
 class AgreementListPaginationTests(TestCase):
@@ -99,3 +99,41 @@ class AgreementListPaginationTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["id"], target.id)
+
+    def test_bulk_delete_deletes_safe_drafts_and_skips_protected_agreements(self):
+        draft = self._create_agreement("Bulk Delete Draft")
+        signed = self._create_agreement("Bulk Delete Signed")
+        signed.signed_by_contractor = True
+        signed.status = "signed"
+        signed.save(update_fields=["signed_by_contractor", "status", "updated_at"])
+        invoiced = self._create_agreement("Bulk Delete Invoiced")
+        Invoice.objects.create(agreement=invoiced, amount="125.00")
+
+        response = self.client.post(
+            "/api/projects/agreements/bulk-delete/",
+            {"agreement_ids": [draft.id, signed.id, invoiced.id, 999999]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["deleted_count"], 1)
+        self.assertEqual(response.data["deleted"][0]["id"], draft.id)
+        self.assertEqual(response.data["skipped_count"], 3)
+        self.assertFalse(Agreement.objects.filter(pk=draft.id).exists())
+        self.assertTrue(Agreement.objects.filter(pk=signed.id).exists())
+        self.assertTrue(Agreement.objects.filter(pk=invoiced.id).exists())
+
+        skipped = {item["id"]: item["reason"] for item in response.data["skipped"]}
+        self.assertIn("Signed", skipped[signed.id])
+        self.assertIn("invoices", skipped[invoiced.id])
+        self.assertIn("not found", skipped[999999])
+
+    def test_bulk_delete_requires_at_least_one_agreement(self):
+        response = self.client.post(
+            "/api/projects/agreements/bulk-delete/",
+            {"agreement_ids": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Select at least one", response.data["detail"])

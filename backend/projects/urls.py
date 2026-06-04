@@ -35,6 +35,7 @@ from .views.attachments import (
     AgreementAttachmentNestedView,
 )
 
+from .views.agreements_bulk_delete import BulkDeleteAgreementsView
 from .views.agreements_merge import MergeAgreementsView
 from .views.calendar import MilestoneCalendarView, AgreementCalendarView
 from .views.contractors.public import ContractorPublicProfileView
@@ -812,6 +813,7 @@ urlpatterns = [
     path("contractors/<int:pk>/public/", ContractorPublicProfileView.as_view()),
 
     path("agreements/merge/", MergeAgreementsView.as_view()),
+    path("agreements/bulk-delete/", BulkDeleteAgreementsView.as_view()),
 
     # -------------------------------------------------
     # Magic invoice

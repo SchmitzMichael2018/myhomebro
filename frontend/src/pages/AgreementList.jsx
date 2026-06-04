@@ -567,6 +567,8 @@ export default function AgreementList() {
 
   const [selected, setSelected] = useState(() => new Set());
   const [primaryId, setPrimaryId] = useState(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1158,6 +1160,41 @@ export default function AgreementList() {
         if (d2?.detail) toast.error(String(d2.detail));
         toast.error(String(d2?.detail || d1?.detail || "Merge failed."));
       }
+    }
+  };
+
+  const confirmBulkDelete = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+
+    try {
+      setBulkDeleting(true);
+      const { data } = await api.post("/projects/agreements/bulk-delete/", { agreement_ids: ids });
+      const deletedCount = Number(data?.deleted_count ?? data?.deleted?.length ?? 0);
+      const skippedCount = Number(data?.skipped_count ?? data?.skipped?.length ?? 0);
+
+      if (deletedCount > 0 && skippedCount > 0) {
+        toast.success(`${deletedCount} deleted, ${skippedCount} skipped`);
+      } else if (deletedCount > 0) {
+        toast.success(`${deletedCount} agreements deleted`);
+      } else if (skippedCount > 0) {
+        toast.error(`0 deleted, ${skippedCount} skipped`);
+      } else {
+        toast.error("No agreements deleted.");
+      }
+
+      setBulkDeleteOpen(false);
+      setSelected(new Set());
+      setPrimaryId(null);
+      await load({ force: true, source: "bulk-delete" });
+    } catch (e) {
+      console.error(e);
+      const detail =
+        e?.response?.data?.detail ||
+        "Bulk delete failed. Signed, funded, invoiced, paid, disputed, or completed agreements are protected.";
+      toast.error(String(detail));
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -1866,8 +1903,73 @@ export default function AgreementList() {
             <Layers size={16} /> Merge Selected
           </button>
         ) : null}
+
+        <button
+          type="button"
+          data-testid="agreement-bulk-delete-button"
+          className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-sm font-semibold shadow-sm transition ${
+            selected.size > 0 && !bulkDeleting
+              ? "border-rose-300/40 bg-rose-500/20 text-rose-50 hover:border-rose-200/60 hover:bg-rose-500/30"
+              : "cursor-not-allowed border-white/10 bg-white/5 text-sky-100/45"
+          }`}
+          disabled={selected.size === 0 || bulkDeleting}
+          onClick={() => setBulkDeleteOpen(true)}
+          title="Delete Selected"
+        >
+          <Trash2 size={16} /> Delete Selected
+        </button>
       </div>
       </div>
+
+      {bulkDeleteOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="agreement-bulk-delete-title"
+          data-testid="agreement-bulk-delete-modal"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-rose-200/25 bg-[#071b3a] p-6 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-full border border-rose-300/30 bg-rose-500/15 p-2 text-rose-100">
+                <Trash2 size={20} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 id="agreement-bulk-delete-title" className="text-lg font-bold text-white">
+                  Delete selected agreements?
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-sky-100/80">
+                  {selected.size} agreement{selected.size === 1 ? "" : "s"} selected.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-sky-100/80">
+                  This will permanently delete eligible draft agreements. Signed, funded, invoiced, paid,
+                  disputed, or completed agreements will be skipped.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-sky-50 transition hover:bg-white/15"
+                onClick={() => setBulkDeleteOpen(false)}
+                disabled={bulkDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="agreement-bulk-delete-confirm"
+                className="rounded-xl border border-rose-300/40 bg-rose-500/25 px-4 py-2.5 text-sm font-semibold text-rose-50 shadow-sm transition hover:bg-rose-500/35 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={confirmBulkDelete}
+                disabled={bulkDeleting || selected.size === 0}
+              >
+                {bulkDeleting ? "Deleting..." : "Delete Selected"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {activeRouteFilter ? (
         <div
