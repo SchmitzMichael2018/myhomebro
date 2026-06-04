@@ -1,14 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * AddressAutocomplete.jsx (MyHomeBro) — Places "New" Widget
- *
- * FIXED:
- *  - Reflects external `value` into the widget input so saved street address displays on load
- *  - Still uses gmp-select to return structured components
+ * AddressAutocomplete.jsx (MyHomeBro)
  *
  * Props:
- *  - value: string (display mirror; will be pushed into widget input)
+ *  - value: string
  *  - onChangeText: (text: string) => void
  *  - onSelect: (addrObj) => void
  *  - country: default "us"
@@ -43,7 +39,7 @@ function loadMapsOnce(apiKey) {
     }
 
     if (!apiKey) {
-      reject(new Error("Missing VITE_GOOGLE_MAPS_API_KEY"));
+      reject(new Error("Missing Google Maps API key"));
       return;
     }
 
@@ -104,8 +100,7 @@ function pickComponent(components, type) {
         ? c.componentTypes
         : [];
       return types.includes(type) || c?.type === type || c?.componentType === type;
-    }) ||
-    null
+    }) || null
   );
 }
 
@@ -117,10 +112,10 @@ function componentLongText(component) {
   if (!component) return "";
   return String(
     component.longText ||
-    component.long_name ||
-    component.name ||
-    component.text ||
-    ""
+      component.long_name ||
+      component.name ||
+      component.text ||
+      ""
   ).trim();
 }
 
@@ -128,26 +123,21 @@ function componentShortText(component) {
   if (!component) return "";
   return String(
     component.shortText ||
-    component.short_name ||
-    component.abbreviation ||
-    componentLongText(component) ||
-    ""
+      component.short_name ||
+      component.abbreviation ||
+      componentLongText(component) ||
+      ""
   ).trim();
 }
 
 function parseAddressComponentsFromPlace(place) {
-  const comps =
-    place?.addressComponents ||
-    place?.address_components ||
-    place?.address_components?.map?.((x) => x) ||
-    [];
+  const comps = place?.addressComponents || place?.address_components || [];
 
   const formattedLine1 = firstAddressLineFromFormatted(
     place?.formattedAddress || place?.formatted_address
   );
 
   const streetNumber = componentLongText(pickComponent(comps, "street_number"));
-
   const route = componentLongText(pickComponent(comps, "route"));
 
   let line1 = [streetNumber, route].filter(Boolean).join(" ").trim();
@@ -155,7 +145,12 @@ function parseAddressComponentsFromPlace(place) {
     const normalizedFormatted = formattedLine1.toLowerCase();
     const normalizedLine1 = line1.toLowerCase();
     const normalizedRoute = route.toLowerCase();
-    if (!line1 || (route && normalizedFormatted.includes(normalizedRoute) && normalizedFormatted !== normalizedLine1)) {
+    if (
+      !line1 ||
+      (route &&
+        normalizedFormatted.includes(normalizedRoute) &&
+        normalizedFormatted !== normalizedLine1)
+    ) {
       line1 = formattedLine1;
     }
   }
@@ -168,28 +163,77 @@ function parseAddressComponentsFromPlace(place) {
     "";
 
   const state = componentShortText(pickComponent(comps, "administrative_area_level_1"));
-
   const postal = componentLongText(pickComponent(comps, "postal_code"));
-
   const postalSuffix = componentLongText(pickComponent(comps, "postal_code_suffix"));
-
-  // ZIP+4 if suffix exists
   const postal_code = postalSuffix ? `${postal}-${postalSuffix}` : postal;
-
   const country = componentShortText(pickComponent(comps, "country")) || "US";
 
   return { line1, city, state, postal_code, country };
 }
 
-// --- NEW helper: set internal widget input value ---
-function setWidgetInputValue(hostEl, text) {
-  if (!hostEl) return;
-  const input = hostEl.querySelector("input");
-  if (!input) return;
-  // Only set if different (avoids cursor jumps while typing)
-  if (String(input.value || "") !== String(text || "")) {
-    input.value = text || "";
-  }
+function getPredictionText(prediction) {
+  return String(
+    prediction?.description ||
+      prediction?.text?.text ||
+      prediction?.structured_formatting?.main_text ||
+      ""
+  ).trim();
+}
+
+function getPredictionPlaceId(prediction) {
+  return String(
+    prediction?.place_id ||
+      prediction?.placeId ||
+      prediction?.placePrediction?.placeId ||
+      prediction?.placePrediction?.place_id ||
+      ""
+  ).trim();
+}
+
+function fetchPlacePredictions(service, request) {
+  return new Promise((resolve, reject) => {
+    try {
+      const result = service.getPlacePredictions(request, (predictions, status) => {
+        const statuses = window.google?.maps?.places?.PlacesServiceStatus || {};
+        if (status && status !== statuses.OK && status !== statuses.ZERO_RESULTS) {
+          reject(new Error(`Google Places prediction failed: ${status}`));
+          return;
+        }
+        resolve(Array.isArray(predictions) ? predictions : []);
+      });
+
+      if (result?.then) {
+        result
+          .then((response) =>
+            resolve(Array.isArray(response?.predictions) ? response.predictions : [])
+          )
+          .catch(reject);
+      }
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function fetchPlaceDetails(service, request) {
+  return new Promise((resolve, reject) => {
+    try {
+      const result = service.getDetails(request, (place, status) => {
+        const statuses = window.google?.maps?.places?.PlacesServiceStatus || {};
+        if (status && status !== statuses.OK) {
+          reject(new Error(`Google Places details failed: ${status}`));
+          return;
+        }
+        resolve(place || {});
+      });
+
+      if (result?.then) {
+        result.then(resolve).catch(reject);
+      }
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 export default function AddressAutocomplete({
@@ -197,18 +241,24 @@ export default function AddressAutocomplete({
   onChangeText,
   onSelect,
   country = "us",
-  placeholder = "Start typing an address…",
+  placeholder = "Start typing an address...",
   disabled = false,
   testId = "",
 }) {
   const apiKey =
     import.meta.env.VITE_GOOGLE_MAPS_API_KEY || getRuntimeGoogleMapsApiKey();
 
-  const hostRef = useRef(null);
-  const widgetRef = useRef(null);
+  const detailsHostRef = useRef(null);
+  const autocompleteServiceRef = useRef(null);
+  const detailsServiceRef = useRef(null);
+  const sessionTokenRef = useRef(null);
+  const requestSeqRef = useRef(0);
 
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState("");
+  const [inputValue, setInputValue] = useState(value || "");
+  const [predictions, setPredictions] = useState([]);
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,62 +274,24 @@ export default function AddressAutocomplete({
         const placesLibrary = await window.google.maps.importLibrary("places");
         if (cancelled) return;
 
-        const PlaceAutocompleteElement =
-          placesLibrary?.PlaceAutocompleteElement ||
-          window.google?.maps?.places?.PlaceAutocompleteElement;
-        if (!PlaceAutocompleteElement) {
+        const AutocompleteService =
+          placesLibrary?.AutocompleteService ||
+          window.google?.maps?.places?.AutocompleteService;
+        const PlacesService =
+          placesLibrary?.PlacesService || window.google?.maps?.places?.PlacesService;
+        const AutocompleteSessionToken =
+          placesLibrary?.AutocompleteSessionToken ||
+          window.google?.maps?.places?.AutocompleteSessionToken;
+
+        if (!AutocompleteService || !PlacesService) {
           throw new Error("Google Places autocomplete is unavailable.");
         }
 
-        const widget = new PlaceAutocompleteElement({});
-        widget.placeholder = placeholder;
-        widget.includedRegionCodes = [country];
-        widget.disabled = !!disabled;
-
-        widget.addEventListener("gmp-select", async ({ placePrediction }) => {
-          try {
-            const place = placePrediction.toPlace();
-
-            await place.fetchFields({
-              fields: ["formattedAddress", "location", "addressComponents", "id"],
-            });
-
-            const formatted_address = place.formattedAddress || "";
-            const place_id = place.id || "";
-            const lat = place.location?.lat ?? null;
-            const lng = place.location?.lng ?? null;
-
-            const parts = parseAddressComponentsFromPlace(place);
-
-            // Update widget input text to the formatted address (nice UX)
-            if (hostRef.current) {
-              setWidgetInputValue(hostRef.current, formatted_address || parts.line1 || "");
-            }
-
-            onChangeText?.(formatted_address || parts.line1 || "");
-            onSelect?.({
-              ...parts,
-              line2: "",
-              formatted_address,
-              place_id,
-              lat,
-              lng,
-            });
-          } catch (e) {
-            console.error(e);
-            setErr("Unable to read selected address details.");
-          }
-        });
-
-        if (hostRef.current) {
-          hostRef.current.innerHTML = "";
-          hostRef.current.appendChild(widget);
-          widgetRef.current = widget;
-
-          // ✅ push initial value into widget input on mount
-          setWidgetInputValue(hostRef.current, value || "");
-        }
-
+        autocompleteServiceRef.current = new AutocompleteService();
+        detailsServiceRef.current = new PlacesService(detailsHostRef.current);
+        sessionTokenRef.current = AutocompleteSessionToken
+          ? new AutocompleteSessionToken()
+          : null;
         setReady(true);
       } catch (e) {
         console.error(e);
@@ -292,27 +304,154 @@ export default function AddressAutocomplete({
     return () => {
       cancelled = true;
     };
-  }, [apiKey, country, placeholder, disabled]);
+  }, [apiKey]);
 
-  // ✅ when `value` changes (ex: profile loads), update widget input
   useEffect(() => {
-    if (!hostRef.current) return;
-    setWidgetInputValue(hostRef.current, value || "");
+    setInputValue(value || "");
   }, [value]);
 
   useEffect(() => {
-    if (!widgetRef.current) return;
-    widgetRef.current.disabled = !!disabled;
-  }, [disabled]);
+    if (!ready || disabled) {
+      setPredictions([]);
+      return;
+    }
+
+    const query = String(inputValue || "").trim();
+    if (query.length < 2) {
+      setPredictions([]);
+      return;
+    }
+
+    const service = autocompleteServiceRef.current;
+    if (!service) return;
+
+    const seq = requestSeqRef.current + 1;
+    requestSeqRef.current = seq;
+    setLoadingPredictions(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const next = await fetchPlacePredictions(service, {
+          input: query,
+          componentRestrictions: country ? { country } : undefined,
+          types: ["address"],
+          sessionToken: sessionTokenRef.current || undefined,
+        });
+        if (requestSeqRef.current === seq) {
+          setPredictions(next.slice(0, 6));
+        }
+      } catch (error) {
+        console.error(error);
+        if (requestSeqRef.current === seq) {
+          setPredictions([]);
+          setErr("Unable to load address suggestions.");
+        }
+      } finally {
+        if (requestSeqRef.current === seq) {
+          setLoadingPredictions(false);
+        }
+      }
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [country, disabled, inputValue, ready]);
+
+  function handleInputChange(event) {
+    const next = event.target.value;
+    setInputValue(next);
+    setErr("");
+    onChangeText?.(next);
+  }
+
+  async function handleSelectPrediction(prediction) {
+    if (disabled) return;
+
+    const detailsService = detailsServiceRef.current;
+    const placeId = getPredictionPlaceId(prediction);
+    const predictionText = getPredictionText(prediction);
+
+    if (!detailsService || !placeId) {
+      setInputValue(predictionText);
+      onChangeText?.(predictionText);
+      setPredictions([]);
+      return;
+    }
+
+    try {
+      const place = await fetchPlaceDetails(detailsService, {
+        placeId,
+        fields: ["formatted_address", "geometry", "address_components", "place_id"],
+        sessionToken: sessionTokenRef.current || undefined,
+      });
+
+      const formatted_address =
+        place?.formatted_address || place?.formattedAddress || predictionText || "";
+      const place_id = place?.place_id || place?.id || placeId;
+      const location = place?.geometry?.location || place?.location;
+      const lat =
+        typeof location?.lat === "function" ? location.lat() : location?.lat ?? null;
+      const lng =
+        typeof location?.lng === "function" ? location.lng() : location?.lng ?? null;
+      const parts = parseAddressComponentsFromPlace(place);
+
+      setInputValue(formatted_address || parts.line1 || "");
+      setPredictions([]);
+      onChangeText?.(formatted_address || parts.line1 || "");
+      onSelect?.({
+        ...parts,
+        line2: "",
+        formatted_address,
+        place_id,
+        lat,
+        lng,
+      });
+    } catch (e) {
+      console.error(e);
+      setErr("Unable to read selected address details.");
+    }
+  }
 
   return (
-    <div className="w-full">
-      <div ref={hostRef} data-testid={testId || undefined} />
+    <div className="relative w-full" data-testid={testId || undefined}>
+      <input
+        aria-label="Google address search"
+        autoComplete="off"
+        className="w-full rounded border px-3 py-2 text-sm"
+        disabled={disabled}
+        onChange={handleInputChange}
+        placeholder={placeholder}
+        type="text"
+        value={inputValue || ""}
+      />
+      {predictions.length ? (
+        <div
+          className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-xl"
+          data-testid="address-autocomplete-suggestions"
+        >
+          {predictions.map((prediction, index) => {
+            const label = getPredictionText(prediction);
+            const key = getPredictionPlaceId(prediction) || `${label}-${index}`;
+            return (
+              <button
+                className="block w-full px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50"
+                key={key}
+                onClick={() => handleSelectPrediction(prediction)}
+                type="button"
+              >
+                {label || "Address suggestion"}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       {!ready && !err ? (
-        <div className="mt-1 text-xs text-slate-500">Loading address suggestions…</div>
+        <div className="mt-1 text-xs text-slate-500">Loading address suggestions...</div>
+      ) : null}
+      {ready && loadingPredictions ? (
+        <div className="mt-1 text-xs text-slate-500">Finding address suggestions...</div>
       ) : null}
       {err ? <div className="mt-1 text-sm text-red-600">{err}</div> : null}
-      <input type="hidden" value={value || ""} readOnly />
+      <div ref={detailsHostRef} className="hidden" aria-hidden="true" />
     </div>
   );
 }

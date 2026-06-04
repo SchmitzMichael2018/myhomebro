@@ -189,8 +189,16 @@ async function installMockGooglePlaces(page) {
     function createMockPlace() {
       return {
         formattedAddress: '10750 Test Address, San Antonio, TX 78249, USA',
+        formatted_address: '10750 Test Address, San Antonio, TX 78249, USA',
         id: 'places/test-10750',
+        place_id: 'places/test-10750',
         location: { lat: 29.501, lng: -98.621 },
+        geometry: {
+          location: {
+            lat: () => 29.501,
+            lng: () => -98.621,
+          },
+        },
         addressComponents: [
           { longText: '10750', shortText: '10750', types: ['street_number'] },
           { longText: 'Test Address', shortText: 'Test Address', types: ['route'] },
@@ -198,6 +206,14 @@ async function installMockGooglePlaces(page) {
           { longText: 'Texas', shortText: 'TX', types: ['administrative_area_level_1'] },
           { longText: '78249', shortText: '78249', types: ['postal_code'] },
           { longText: 'United States', shortText: 'US', types: ['country'] },
+        ],
+        address_components: [
+          { long_name: '10750', short_name: '10750', types: ['street_number'] },
+          { long_name: 'Test Address', short_name: 'Test Address', types: ['route'] },
+          { long_name: 'San Antonio', short_name: 'San Antonio', types: ['locality'] },
+          { long_name: 'Texas', short_name: 'TX', types: ['administrative_area_level_1'] },
+          { long_name: '78249', short_name: '78249', types: ['postal_code'] },
+          { long_name: 'United States', short_name: 'US', types: ['country'] },
         ],
         fetchFields: async () => {},
       };
@@ -243,13 +259,52 @@ async function installMockGooglePlaces(page) {
       return element;
     }
 
+    function MockAutocompleteService() {}
+    MockAutocompleteService.prototype.getPlacePredictions = (request, callback) => {
+      window.__mhbAddressInputs.push(request.input);
+      const predictions = request.input.trim()
+        ? [
+            {
+              description: '10750 Test Address, San Antonio, TX',
+              place_id: 'places/test-10750',
+              structured_formatting: {
+                main_text: '10750 Test Address',
+                secondary_text: 'San Antonio, TX',
+              },
+            },
+          ]
+        : [];
+      callback(predictions, predictions.length ? 'OK' : 'ZERO_RESULTS');
+    };
+
+    function MockPlacesService() {}
+    MockPlacesService.prototype.getDetails = (_request, callback) => {
+      callback(createMockPlace(), 'OK');
+    };
+
+    function MockAutocompleteSessionToken() {}
+
     window.google = {
       maps: {
         importLibrary: async (name) => {
           window.__mhbGoogleImportCalls.push(name);
-          return { PlaceAutocompleteElement: MockPlaceAutocompleteElement };
+          return {
+            PlaceAutocompleteElement: MockPlaceAutocompleteElement,
+            AutocompleteService: MockAutocompleteService,
+            PlacesService: MockPlacesService,
+            AutocompleteSessionToken: MockAutocompleteSessionToken,
+          };
         },
-        places: { PlaceAutocompleteElement: MockPlaceAutocompleteElement },
+        places: {
+          PlaceAutocompleteElement: MockPlaceAutocompleteElement,
+          AutocompleteService: MockAutocompleteService,
+          PlacesService: MockPlacesService,
+          AutocompleteSessionToken: MockAutocompleteSessionToken,
+          PlacesServiceStatus: {
+            OK: 'OK',
+            ZERO_RESULTS: 'ZERO_RESULTS',
+          },
+        },
       },
     };
 
