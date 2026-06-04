@@ -2004,6 +2004,7 @@ export default function Step1Details({
   const projectDetailsRevealSeenRef = useRef(false);
 
   const [addrSearch, setAddrSearch] = useState("");
+  const [addrSearchManuallyCleared, setAddrSearchManuallyCleared] = useState(false);
   const patchTimerRef = useRef(null);
   const lastPatchedRef = useRef({});
 
@@ -2415,8 +2416,10 @@ export default function Step1Details({
       });
 
       if (safeTrim(saved.address_search)) {
+        setAddrSearchManuallyCleared(false);
         setAddrSearch(saved.address_search);
       } else if (safeTrim(saved.address_line1)) {
+        setAddrSearchManuallyCleared(false);
         setAddrSearch(saved.address_line1);
       }
     } catch {
@@ -2425,10 +2428,14 @@ export default function Step1Details({
   }, [cacheKey, isNewAgreement, setDLocal]);
 
   useEffect(() => {
-    if (!safeTrim(addrSearch) && safeTrim(dLocal?.address_line1)) {
+    if (
+      !addrSearchManuallyCleared &&
+      !safeTrim(addrSearch) &&
+      safeTrim(dLocal?.address_line1)
+    ) {
       setAddrSearch(dLocal.address_line1);
     }
-  }, [agreementId, dLocal?.address_line1, addrSearch]);
+  }, [agreementId, dLocal?.address_line1, addrSearch, addrSearchManuallyCleared]);
 
   useEffect(() => {
     try {
@@ -7912,7 +7919,10 @@ export default function Step1Details({
                 <AddressSection
                   locked={locked}
                   addrSearch={addrSearch}
-                  setAddrSearch={setAddrSearch}
+                  setAddrSearch={(next) => {
+                    setAddrSearchManuallyCleared(!safeTrim(next));
+                    setAddrSearch(next);
+                  }}
                   dLocal={dLocal}
                   setDLocal={setDLocal}
                   isNewAgreement={isNewAgreement}

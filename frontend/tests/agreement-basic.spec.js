@@ -1109,6 +1109,20 @@ test('agreement wizard step 1 address search uses Google Places autocomplete pat
   await expect(page.locator('input[name="address_city"]')).toHaveValue('San Antonio');
   await expect(page.locator('input[name="address_state"]')).toHaveValue('TX');
   await expect(page.locator('input[name="address_postal_code"]')).toHaveValue('78249');
+
+  await autocomplete.getByRole('button', { name: 'Clear address search' }).click();
+  await expect(addressInput).toHaveValue('');
+  await expect(page.getByTestId('address-autocomplete-suggestions')).toHaveCount(0);
+  await page.waitForTimeout(350);
+  await expect(addressInput).toHaveValue('');
+
+  await addressInput.fill('10750');
+  await expect(page.getByText('10750 Test Address, San Antonio, TX')).toBeVisible();
+  await addressInput.fill('');
+  await expect(addressInput).toHaveValue('');
+  await expect(page.getByTestId('address-autocomplete-suggestions')).toHaveCount(0);
+  await page.waitForTimeout(350);
+  await expect(addressInput).toHaveValue('');
 });
 
 test('agreement wizard step 1 shows a recommended fallback when AI/template matching is unavailable', async ({

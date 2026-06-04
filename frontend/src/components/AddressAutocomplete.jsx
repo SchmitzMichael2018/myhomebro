@@ -253,6 +253,7 @@ export default function AddressAutocomplete({
   const detailsServiceRef = useRef(null);
   const sessionTokenRef = useRef(null);
   const requestSeqRef = useRef(0);
+  const editSeqRef = useRef(0);
 
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState("");
@@ -318,7 +319,9 @@ export default function AddressAutocomplete({
 
     const query = String(inputValue || "").trim();
     if (query.length < 2) {
+      requestSeqRef.current += 1;
       setPredictions([]);
+      setLoadingPredictions(false);
       return;
     }
 
@@ -358,14 +361,32 @@ export default function AddressAutocomplete({
 
   function handleInputChange(event) {
     const next = event.target.value;
+    editSeqRef.current += 1;
     setInputValue(next);
     setErr("");
+    if (!String(next || "").trim()) {
+      requestSeqRef.current += 1;
+      setPredictions([]);
+      setLoadingPredictions(false);
+    }
     onChangeText?.(next);
+  }
+
+  function handleClear() {
+    if (disabled) return;
+    editSeqRef.current += 1;
+    requestSeqRef.current += 1;
+    setInputValue("");
+    setPredictions([]);
+    setLoadingPredictions(false);
+    setErr("");
+    onChangeText?.("");
   }
 
   async function handleSelectPrediction(prediction) {
     if (disabled) return;
 
+    const editSeqAtSelection = editSeqRef.current;
     const detailsService = detailsServiceRef.current;
     const placeId = getPredictionPlaceId(prediction);
     const predictionText = getPredictionText(prediction);
@@ -383,6 +404,10 @@ export default function AddressAutocomplete({
         fields: ["formatted_address", "geometry", "address_components", "place_id"],
         sessionToken: sessionTokenRef.current || undefined,
       });
+
+      if (editSeqRef.current !== editSeqAtSelection) {
+        return;
+      }
 
       const formatted_address =
         place?.formatted_address || place?.formattedAddress || predictionText || "";
@@ -413,16 +438,28 @@ export default function AddressAutocomplete({
 
   return (
     <div className="relative w-full" data-testid={testId || undefined}>
-      <input
-        aria-label="Google address search"
-        autoComplete="off"
-        className="w-full rounded border px-3 py-2 text-sm"
-        disabled={disabled}
-        onChange={handleInputChange}
-        placeholder={placeholder}
-        type="text"
-        value={inputValue || ""}
-      />
+      <div className="relative">
+        <input
+          aria-label="Google address search"
+          autoComplete="off"
+          className="w-full rounded border px-3 py-2 pr-10 text-sm"
+          disabled={disabled}
+          onChange={handleInputChange}
+          placeholder={placeholder}
+          type="text"
+          value={inputValue || ""}
+        />
+        {inputValue && !disabled ? (
+          <button
+            aria-label="Clear address search"
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-700 focus:bg-slate-100 focus:outline-none"
+            onClick={handleClear}
+            type="button"
+          >
+            x
+          </button>
+        ) : null}
+      </div>
       {predictions.length ? (
         <div
           className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-xl"
