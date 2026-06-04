@@ -39,6 +39,7 @@ from projects.models import (
     AgreementDraftIntelligenceSnapshot,
     ContractorEditEvent,
     MilestonePerformanceSnapshot,
+    SignedAgreementSnapshot,
     ProjectOutcomeSnapshot,
     Contractor,
     ContractorActivityEvent,
@@ -13817,6 +13818,115 @@ class ProjectLearningFoundationTests(TestCase):
         resolved_snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
         self.assertEqual(resolved_snapshot.dispute_resolved_at, resolved_at)
         self.assertEqual(resolved_snapshot.source_event, "dispute_saved")
+
+    def test_signed_agreement_snapshot_captures_exact_signed_state(self):
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Window Repair Template",
+            project_type="Exterior",
+            project_subtype="Window Repair",
+        )
+        agreement = self._performance_agreement(
+            title="Exterior Window Wood Rot Repair",
+            draft_source=AgreementDraftIntelligenceSnapshot.DraftSource.NO_TEMPLATE_AI,
+        )
+        agreement.selected_template = template
+        agreement.excluded_work = "Excludes structural framing replacement."
+        agreement.homeowner_responsibilities = "Homeowner to provide access to work area."
+        agreement.warranty_type = "custom"
+        agreement.warranty_text_snapshot = "One year workmanship warranty."
+        agreement.payment_structure = "progress"
+        agreement.pricing_strategy = "fixed"
+        agreement.save(
+            update_fields=[
+                "selected_template",
+                "excluded_work",
+                "homeowner_responsibilities",
+                "warranty_type",
+                "warranty_text_snapshot",
+                "payment_structure",
+                "pricing_strategy",
+            ]
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Repair Wood Rot",
+            description="Remove damaged trim and install matching replacement.",
+            amount=Decimal("900.00"),
+            start_date=timezone.localdate(),
+            completion_date=timezone.localdate() + timedelta(days=2),
+        )
+        contractor_signed_at = timezone.now()
+        homeowner_signed_at = contractor_signed_at + timedelta(minutes=10)
+        agreement.signed_by_contractor = True
+        agreement.signed_by_homeowner = True
+        agreement.signed_at_contractor = contractor_signed_at
+        agreement.signed_at_homeowner = homeowner_signed_at
+        agreement.pdf_version = 3
+        agreement.save(
+            update_fields=[
+                "signed_by_contractor",
+                "signed_by_homeowner",
+                "signed_at_contractor",
+                "signed_at_homeowner",
+                "pdf_version",
+            ]
+        )
+
+        snapshot = SignedAgreementSnapshot.objects.get(agreement=agreement)
+        self.assertEqual(snapshot.project_title, "Exterior Window Wood Rot Repair")
+        self.assertEqual(snapshot.project_type, "Exterior")
+        self.assertEqual(snapshot.project_subtype, "Window Repair")
+        self.assertEqual(snapshot.signed_scope, "Repair exterior windows and trim.")
+        self.assertEqual(snapshot.exclusions, "Excludes structural framing replacement.")
+        self.assertEqual(snapshot.customer_responsibilities, "Homeowner to provide access to work area.")
+        self.assertEqual(snapshot.milestone_count, 1)
+        self.assertEqual(snapshot.milestone_details[0]["title"], "Repair Wood Rot")
+        self.assertEqual(snapshot.milestone_details[0]["amount"], "900.00")
+        self.assertEqual(snapshot.contract_amount, Decimal("1500.00"))
+        self.assertEqual(snapshot.pricing_structure, "fixed")
+        self.assertEqual(snapshot.payment_structure, "progress")
+        self.assertEqual(snapshot.selected_template, template)
+        self.assertEqual(snapshot.template_name_snapshot, "Window Repair Template")
+        self.assertEqual(snapshot.draft_source, AgreementDraftIntelligenceSnapshot.DraftSource.NO_TEMPLATE_AI)
+        self.assertEqual(snapshot.pdf_version, 3)
+        self.assertEqual(snapshot.warranty_text, "One year workmanship warranty.")
+        self.assertEqual(snapshot.contractor_signed_at, contractor_signed_at)
+        self.assertEqual(snapshot.homeowner_signed_at, homeowner_signed_at)
+        self.assertEqual(snapshot.fully_signed_at, homeowner_signed_at)
+
+    def test_signed_agreement_snapshot_is_not_created_before_signature_satisfied(self):
+        agreement = self._performance_agreement()
+        agreement.signed_by_contractor = True
+        agreement.signed_at_contractor = timezone.now()
+        agreement.save(update_fields=["signed_by_contractor", "signed_at_contractor"])
+
+        self.assertFalse(SignedAgreementSnapshot.objects.filter(agreement=agreement).exists())
+
+    def test_signed_agreement_snapshot_is_idempotent_and_immutable(self):
+        agreement = self._performance_agreement()
+        agreement.signed_by_contractor = True
+        agreement.signed_by_homeowner = True
+        agreement.signed_at_contractor = timezone.now()
+        agreement.signed_at_homeowner = timezone.now() + timedelta(minutes=5)
+        agreement.save(
+            update_fields=[
+                "signed_by_contractor",
+                "signed_by_homeowner",
+                "signed_at_contractor",
+                "signed_at_homeowner",
+            ]
+        )
+        agreement.save(update_fields=["updated_at"])
+
+        self.assertEqual(SignedAgreementSnapshot.objects.filter(agreement=agreement).count(), 1)
+        snapshot = SignedAgreementSnapshot.objects.get(agreement=agreement)
+        snapshot.project_title = "Mutated"
+        with self.assertRaises(ValueError):
+            snapshot.save()
+        with self.assertRaises(ValueError):
+            snapshot.delete()
 
     def test_manual_agreement_create_gets_manual_draft_intelligence_snapshot(self):
         project = self._new_learning_project("Manual Draft")

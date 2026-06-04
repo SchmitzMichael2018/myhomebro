@@ -241,6 +241,111 @@ class MilestonePerformanceSnapshot(models.Model):
         return f"MilestonePerformanceSnapshot(milestone_id={self.milestone_id}, event={self.source_event})"
 
 
+class SignedAgreementSnapshot(models.Model):
+    """
+    Immutable structured state of an agreement at the moment it becomes signed.
+
+    This is a learning record only. The operational Agreement, milestones, PDF
+    versions, and signatures remain the source of truth for live behavior.
+    """
+
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="signed_agreement_snapshots",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="signed_agreement_snapshots",
+    )
+    homeowner = models.ForeignKey(
+        "projects.Homeowner",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="signed_agreement_snapshots",
+    )
+    selected_template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="signed_agreement_snapshots",
+    )
+    draft_intelligence_snapshot = models.ForeignKey(
+        "projects.AgreementDraftIntelligenceSnapshot",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="signed_agreement_snapshots",
+    )
+
+    project_title = models.CharField(max_length=255, blank=True, default="")
+    project_type = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    project_subtype = models.CharField(max_length=160, blank=True, default="")
+
+    signed_scope = models.TextField(blank=True, default="")
+    exclusions = models.TextField(blank=True, default="")
+    customer_responsibilities = models.TextField(blank=True, default="")
+
+    milestone_count = models.PositiveIntegerField(default=0)
+    milestone_details = models.JSONField(default=list, blank=True)
+
+    contract_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    pricing_structure = models.CharField(max_length=64, blank=True, default="")
+    payment_structure = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    payment_mode = models.CharField(max_length=32, blank=True, default="")
+    retainage_percent = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+
+    draft_source = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    template_name_snapshot = models.CharField(max_length=255, blank=True, default="")
+    template_recommendation_result = models.JSONField(default=dict, blank=True)
+    template_recommendation_tier = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+    amendment_number = models.PositiveIntegerField(default=0)
+    pdf_version = models.PositiveIntegerField(default=0)
+    pdf_version_id = models.PositiveIntegerField(null=True, blank=True)
+    warranty_type = models.CharField(max_length=32, blank=True, default="")
+    warranty_text = models.TextField(blank=True, default="")
+
+    contractor_signed_at = models.DateTimeField(null=True, blank=True)
+    homeowner_signed_at = models.DateTimeField(null=True, blank=True)
+    fully_signed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    snapshot_version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "amendment_number", "pdf_version"],
+                name="uniq_signed_agreement_snapshot_version",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["contractor", "project_type"]),
+            models.Index(fields=["selected_template"]),
+            models.Index(fields=["draft_source"]),
+            models.Index(fields=["fully_signed_at"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not kwargs.pop("_allow_update", False):
+            raise ValueError("SignedAgreementSnapshot is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("SignedAgreementSnapshot is immutable.")
+
+    def __str__(self) -> str:
+        return f"SignedAgreementSnapshot(agreement_id={self.agreement_id}, pdf_version={self.pdf_version})"
+
+
 class ProjectOutcomeSnapshot(models.Model):
     """
     Append-only project outcome snapshot used to learn from real contractor results.

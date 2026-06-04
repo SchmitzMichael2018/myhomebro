@@ -27,6 +27,7 @@ try:
         AgreementAmendment,
         ContractorEditEvent,
         MilestonePerformanceSnapshot,
+        SignedAgreementSnapshot,
         ProjectOutcomeSnapshot,
         ContractorBenchmarkAggregate,
         AgreementOutcomeSnapshot,
@@ -42,7 +43,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
-    ContractorEditEvent = MilestonePerformanceSnapshot = ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
+    ContractorEditEvent = MilestonePerformanceSnapshot = SignedAgreementSnapshot = ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
     SupportTicket = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
@@ -1203,6 +1204,86 @@ if MilestonePerformanceSnapshot is not None:
             "source_event",
             "state_signature",
             "metadata",
+            "created_at",
+        )
+
+        def has_add_permission(self, request):
+            return False
+
+        def has_change_permission(self, request, obj=None):
+            return False
+
+        def has_delete_permission(self, request, obj=None):
+            return False
+
+
+if SignedAgreementSnapshot is not None:
+    @admin.register(SignedAgreementSnapshot)
+    class SignedAgreementSnapshotAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "agreement",
+            "contractor",
+            "homeowner",
+            "project_type",
+            "project_subtype",
+            "draft_source",
+            "payment_structure",
+            "pdf_version",
+            "fully_signed_at",
+            "created_at",
+        )
+        list_filter = (
+            "project_type",
+            "project_subtype",
+            "draft_source",
+            "payment_structure",
+            "template_recommendation_tier",
+            "fully_signed_at",
+            "created_at",
+        )
+        search_fields = (
+            "agreement__project__number",
+            "agreement__project__title",
+            "project_title",
+            "project_type",
+            "project_subtype",
+            "contractor__business_name",
+            "homeowner__full_name",
+            "template_name_snapshot",
+        )
+        readonly_fields = (
+            "agreement",
+            "contractor",
+            "homeowner",
+            "selected_template",
+            "draft_intelligence_snapshot",
+            "project_title",
+            "project_type",
+            "project_subtype",
+            "signed_scope",
+            "exclusions",
+            "customer_responsibilities",
+            "milestone_count",
+            "milestone_details",
+            "contract_amount",
+            "pricing_structure",
+            "payment_structure",
+            "payment_mode",
+            "retainage_percent",
+            "draft_source",
+            "template_name_snapshot",
+            "template_recommendation_result",
+            "template_recommendation_tier",
+            "amendment_number",
+            "pdf_version",
+            "pdf_version_id",
+            "warranty_type",
+            "warranty_text",
+            "contractor_signed_at",
+            "homeowner_signed_at",
+            "fully_signed_at",
+            "snapshot_version",
             "created_at",
         )
 

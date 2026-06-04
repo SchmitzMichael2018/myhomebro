@@ -22,6 +22,7 @@ from projects.services.pdf import build_agreement_pdf_bytes, attach_pdf_to_agree
 from projects.services.mailer import email_signed_agreement
 from projects.services.sms import sms_link_to_parties  # safe: no-op if not configured
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.signed_agreement_snapshot import capture_signed_agreement_snapshot
 
 
 DATA_URL_RE = re.compile(r"^data:(?P<mime>[-\w.\/]+);base64,(?P<b64>.+)$", re.IGNORECASE)
@@ -363,6 +364,7 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         if hasattr(ag, "signature_note"):
             ag.signature_note = f"{signer_role} {signer_name} accepted ToS/Privacy; text: {signature_text[:60]}"
 
+        ag._defer_signed_snapshot_capture = True
         ag.save()
 
         # Build the signed PDF version
@@ -379,6 +381,10 @@ class AgreementSigningViewSet(viewsets.ViewSet):
             warranty_text=getattr(ag, "warranty_text_snapshot", ""),
         )
         attach_pdf_to_agreement(ag, pdf_bytes, version=new_version)
+        try:
+            capture_signed_agreement_snapshot(ag)
+        except Exception:
+            pass
 
         # Email the freshly signed agreement (best-effort)
         try:

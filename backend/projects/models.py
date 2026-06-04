@@ -2569,6 +2569,7 @@ from .models_learning import (
     AgreementDraftIntelligenceSnapshot,
     ContractorEditEvent,
     MilestonePerformanceSnapshot,
+    SignedAgreementSnapshot,
     ProjectOutcomeSnapshot,
     ContractorBenchmarkAggregate,
     AgreementOutcomeSnapshot,

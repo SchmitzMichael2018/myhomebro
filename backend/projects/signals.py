@@ -72,6 +72,39 @@ def on_agreement_escrow_funded(sender, instance: Agreement, created: bool, **kwa
 
 
 # --------------------------------------------------------------------
+# Agreement post-save: signed learning snapshot
+# --------------------------------------------------------------------
+@receiver(post_save, sender=Agreement)
+def on_agreement_signed_capture_snapshot(sender, instance: Agreement, created: bool, **kwargs):
+    """
+    Capture immutable signed-agreement learning data once signatures satisfy
+    the agreement policy. This never mutates the operational Agreement.
+    """
+    if getattr(instance, "_defer_signed_snapshot_capture", False):
+        return
+    try:
+        signature_satisfied = getattr(instance, "signature_is_satisfied", False)
+        signature_satisfied = signature_satisfied() if callable(signature_satisfied) else bool(signature_satisfied)
+    except Exception:
+        signature_satisfied = bool(
+            getattr(instance, "signed_by_contractor", False)
+            and getattr(instance, "signed_by_homeowner", False)
+        )
+    if not signature_satisfied:
+        return
+    try:
+        from projects.services.signed_agreement_snapshot import capture_signed_agreement_snapshot
+
+        capture_signed_agreement_snapshot(instance)
+    except Exception as exc:
+        logger.warning(
+            "Signed agreement snapshot capture skipped for agreement %s: %s",
+            getattr(instance, "id", None),
+            exc,
+        )
+
+
+# --------------------------------------------------------------------
 # Invoice post-save: send notification when invoice is created
 # --------------------------------------------------------------------
 @receiver(post_save, sender=Invoice)

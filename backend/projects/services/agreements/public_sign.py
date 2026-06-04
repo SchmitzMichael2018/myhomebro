@@ -14,6 +14,7 @@ from projects.models import Agreement
 from projects.services.agreements.final_link import send_final_link_for_agreement
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 from projects.services.assisted_diy import build_assisted_diy_snapshot
+from projects.services.signed_agreement_snapshot import capture_signed_agreement_snapshot
 
 # ✅ NEW: PDF auto-finalize hook (same behavior as contractor sign)
 from projects.services.agreements.pdf_loader import load_pdf_services
@@ -156,7 +157,8 @@ def apply_homeowner_signature(
     except Exception:
         pass
 
-    # Save
+    # Save. Signed snapshot capture is deferred until after optional PDF finalization below.
+    ag._defer_signed_snapshot_capture = True
     ag.save()
 
     # Refresh and re-check satisfaction (waiver/policy aware)
@@ -169,6 +171,11 @@ def apply_homeowner_signature(
 
     # ✅ Auto finalize on transition
     _auto_finalize_if_satisfied_transition(ag, satisfied_before=satisfied_before)
+    if (not satisfied_before) and satisfied_after:
+        try:
+            capture_signed_agreement_snapshot(ag)
+        except Exception:
+            pass
 
     return ag, {
         "was_homeowner_signed": was_homeowner_signed,
