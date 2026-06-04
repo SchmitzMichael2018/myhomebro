@@ -15508,7 +15508,7 @@ class SeededBenchmarkFoundationTests(TestCase):
             self.assertTrue(template.exclusions_text, msg=name)
             self.assertTrue(template.assumptions_text, msg=name)
             self.assertTrue(template.project_materials_hint, msg=name)
-            self.assertGreaterEqual(template.milestones.count(), 4, msg=name)
+            self.assertGreaterEqual(template.milestones.count(), 3, msg=name)
             self.assertLessEqual(template.milestones.count(), 7, msg=name)
 
     def test_flooring_system_template_has_usable_trade_specific_content(self):
@@ -15528,7 +15528,15 @@ class SeededBenchmarkFoundationTests(TestCase):
         self.assertIn("- Install", template.default_scope)
         self.assertTrue(template.exclusions_text)
         self.assertTrue(template.assumptions_text)
-        self.assertGreaterEqual(template.milestones.count(), 4)
+        rows = list(template.milestones.order_by("sort_order", "id"))
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([row.title for row in rows], ["Prep & Leveling", "Install Flooring", "Trim & Cleanup"])
+        self.assertTrue(all(row.description for row in rows))
+        self.assertTrue(all(row.duration_days for row in rows))
+        self.assertEqual(
+            sum(row.suggested_amount_percent for row in rows),
+            Decimal("100.00"),
+        )
 
     def test_structured_resolver_output_includes_region_and_fallback_metadata(self):
         result = resolve_seed_benchmark_defaults(
@@ -16665,6 +16673,78 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(agreement.project_subtype, "Interior Painting")
         self.assertEqual(agreement.description, "Paint interior bedroom walls.")
         self.assertEqual(scope.questions, [])
+
+    def test_apply_template_enriches_thin_milestones_with_schedule_and_budget(self):
+        project_start = timezone.localdate() + timedelta(days=5)
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Luxury Vinyl Plank Flooring Installation",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Flooring",
+            project_subtype="Luxury Vinyl Plank",
+            description="Install luxury vinyl plank flooring in kitchen and hallway.",
+            start=project_start,
+            total_cost=Decimal("6000.00"),
+        )
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Flooring Installation",
+            project_type="Flooring",
+            project_subtype="Flooring Installation",
+            description="Reusable flooring installation template.",
+            default_scope="Included Work:\n- Prepare substrate\n- Install flooring\n- Finish transitions",
+            estimated_days=4,
+            project_materials_hint="LVP, underlayment, transitions, trim, and installation supplies.",
+        )
+        template.milestones.create(
+            title="Prep & Leveling",
+            sort_order=1,
+            duration_days=1,
+            suggested_amount_percent=Decimal("25.00"),
+            pricing_advisory=True,
+        )
+        template.milestones.create(
+            title="Install Flooring",
+            sort_order=2,
+            duration_days=2,
+            suggested_amount_percent=Decimal("55.00"),
+            pricing_advisory=True,
+        )
+        template.milestones.create(
+            title="Trim & Cleanup",
+            sort_order=3,
+            duration_days=1,
+            suggested_amount_percent=Decimal("20.00"),
+            pricing_advisory=True,
+        )
+
+        result = apply_template_to_agreement(
+            agreement=agreement,
+            template=template,
+            application_mode="enhance",
+            overwrite_existing=True,
+            copy_text_fields=True,
+            estimated_days=4,
+            start_date_override=project_start,
+            auto_schedule=True,
+            spread_enabled=True,
+            spread_total=Decimal("6000.00"),
+        )
+
+        self.assertEqual(result["created_count"], 3)
+        rows = list(Milestone.objects.filter(agreement=agreement).order_by("order", "id"))
+        self.assertEqual([row.title for row in rows], ["Prep & Leveling", "Install Flooring", "Trim & Cleanup"])
+        self.assertEqual([row.amount for row in rows], [Decimal("2000.00"), Decimal("2000.00"), Decimal("2000.00")])
+        self.assertEqual(rows[0].start_date, project_start)
+        self.assertTrue(all(row.completion_date for row in rows))
+        self.assertTrue(all(row.recommended_duration_days for row in rows))
+        self.assertTrue(all("luxury vinyl plank" in row.description.lower() for row in rows))
+        self.assertNotIn("No scope summary yet", rows[0].description)
 
     def test_apply_template_replace_modes_require_explicit_request(self):
         project = Project.objects.create(

@@ -1782,8 +1782,10 @@ export default function AgreementWizard() {
           selected_template_name_snapshot: returnedTemplate.name || "",
         }));
       }
+
+      goStep(2);
     },
-    [refreshAgreement, loadMilestones, setAgreement]
+    [refreshAgreement, loadMilestones, setAgreement, goStep]
   );
   const wizardHint = useMemo(
     () => getAgreementWizardHint({ step, agreement }),

@@ -5040,6 +5040,8 @@ test('agreement wizard step 1 applies templates in enhance mode without replacin
   expect(agreement.project_type).toBe('Carpentry');
   expect(agreement.project_subtype).toBe('Wood Column Restoration');
   expect(agreement.description).toContain('decorative wood columns');
+  await expect(page).toHaveURL(/\/app\/agreements\/(?:123|new)\/wizard\?(?=.*step=2)/);
+  await expect(page).not.toHaveURL(/step=3/);
   expect(patchPayloads.length).toBeGreaterThanOrEqual(0);
 });
 

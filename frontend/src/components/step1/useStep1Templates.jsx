@@ -302,6 +302,16 @@ function normalizeApplyOptions(options = {}, template = null) {
   };
 }
 
+function firstPositiveNumber(...values) {
+  for (const value of values) {
+    const normalized =
+      typeof value === "string" ? value.replace(/[$,\s]/g, "") : value;
+    const n = Number(normalized);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
 function deriveAgreementPatchFromApplyResponse(
   data,
   fallbackTemplate,
@@ -932,6 +942,20 @@ export default function useStep1Templates({
         normalizeStep1FieldValue(currentDescription) ||
         normalizeStep1FieldValue(detail?.default_scope || detail?.description || template?.description);
       const payloadStartDate = toDateOnly(dLocal?.project_start_date || dLocal?.start || "");
+      const payloadBudgetTotal = firstPositiveNumber(
+        options?.spread_total,
+        dLocal?.total_cost,
+        dLocal?.contract_amount,
+        dLocal?.project_budget,
+        dLocal?.budget,
+        dLocal?.estimated_total_amount,
+        dLocal?.final_agreed_total_amount
+      );
+      const shouldAutoSchedule = Boolean(applyOptions.auto_schedule || payloadStartDate);
+      const shouldSpreadPricing = Boolean(
+        (applyOptions.spread_enabled && applyOptions.spread_total) || payloadBudgetTotal
+      );
+      const spreadTotal = applyOptions.spread_total || payloadBudgetTotal || null;
 
       const response = await api.post(`/projects/agreements/${targetAgreementId}/apply-template/`, {
         template_id: template.id,
@@ -939,9 +963,9 @@ export default function useStep1Templates({
         overwrite_existing: true,
         copy_text_fields: true,
         estimated_days: applyOptions.estimated_days,
-        auto_schedule: applyOptions.auto_schedule,
-        spread_enabled: applyOptions.spread_enabled,
-        spread_total: applyOptions.spread_total,
+        auto_schedule: shouldAutoSchedule,
+        spread_enabled: shouldSpreadPricing,
+        spread_total: spreadTotal,
         project_title: payloadProjectTitle,
         title: payloadProjectTitle,
         project_type: payloadProjectType,
@@ -953,6 +977,7 @@ export default function useStep1Templates({
         agreement_mode: dLocal?.agreement_mode || "standard",
         step_status: dLocal?.step_status || "step1",
         project_start_date: payloadStartDate || null,
+        start: payloadStartDate || null,
         is_draft: !agreementId,
         wizard_step: 1,
         draft_intelligence_snapshot: {

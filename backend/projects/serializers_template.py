@@ -480,6 +480,8 @@ class ApplyTemplateSerializer(serializers.Serializer):
     # so the view layer can safely accept them now and the service layer can
     # use them later without dropping them at validation time.
     estimated_days = serializers.IntegerField(required=False, min_value=1, allow_null=True)
+    project_start_date = serializers.DateField(required=False, allow_null=True)
+    start = serializers.DateField(required=False, allow_null=True)
     auto_schedule = serializers.BooleanField(required=False, default=False)
     spread_enabled = serializers.BooleanField(required=False, default=False)
     spread_total = serializers.DecimalField(

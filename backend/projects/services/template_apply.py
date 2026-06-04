@@ -136,12 +136,16 @@ def _resolve_date_range(
     template: ProjectTemplate,
     *,
     estimated_days_override: Optional[int] = None,
+    start_date_override: Optional[date] = None,
 ) -> DateRange:
     today = timezone.localdate()
 
-    original_start = agreement.start or today
+    original_start = start_date_override or agreement.start or today
     start_date = original_start if original_start >= today else today
     end_date = agreement.end
+
+    if start_date_override is not None:
+        end_date = None
 
     if end_date is None:
         effective_estimated_days = estimated_days_override or int(template.estimated_days or 1)
@@ -352,6 +356,64 @@ def _resolve_template_milestone_duration(row) -> Optional[int]:
     if duration is not None:
         return duration
     return _coerce_template_duration(getattr(row, "recommended_duration_days", None))
+
+
+def _safe_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _shorten_text(value: Any, limit: int = 180) -> str:
+    text = re.sub(r"\s+", " ", _safe_text(value))
+    if len(text) <= limit:
+        return text
+    return text[: max(limit - 3, 0)].rstrip(" ,.;:-") + "..."
+
+
+def _is_thin_template_milestone_description(row) -> bool:
+    description = _safe_text(getattr(row, "description", ""))
+    title = _safe_text(getattr(row, "title", ""))
+    if not description:
+        return True
+    normalized_description = re.sub(r"[^a-z0-9]+", " ", description.lower()).strip()
+    normalized_title = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+    return len(description) < 28 or bool(normalized_title and normalized_description == normalized_title)
+
+
+def _build_enriched_template_milestone_description(
+    *,
+    agreement: Agreement,
+    template: ProjectTemplate,
+    row,
+) -> str:
+    existing = _safe_text(getattr(row, "description", ""))
+    if existing and not _is_thin_template_milestone_description(row):
+        return existing
+
+    title = _safe_text(getattr(row, "title", "")) or "Milestone"
+    project_title = _safe_text(getattr(agreement, "project_title", "")) or _safe_text(
+        getattr(getattr(agreement, "project", None), "title", "")
+    )
+    project_scope = _safe_text(getattr(agreement, "description", "")) or _safe_scope_text(template)
+    template_scope = _safe_scope_text(template)
+    materials_hint = _safe_text(getattr(row, "materials_hint", "")) or _safe_text(
+        getattr(template, "project_materials_hint", "")
+    )
+
+    lines = []
+    if project_title:
+        lines.append(f"{title} for {project_title}.")
+    else:
+        lines.append(f"{title} for the selected project scope.")
+
+    if project_scope:
+        lines.append(f"Project context: {_shorten_text(project_scope)}")
+    elif template_scope:
+        lines.append(f"Template scope: {_shorten_text(template_scope)}")
+
+    if materials_hint:
+        lines.append(f"Materials / planning notes: {_shorten_text(materials_hint, 140)}")
+
+    return "\n".join(lines).strip()
 
 
 def _infer_milestone_duration_days(milestone: Milestone) -> int:
@@ -963,6 +1025,7 @@ def apply_template_to_agreement(
     overwrite_existing: bool = True,
     copy_text_fields: bool = True,
     estimated_days: Optional[int] = None,
+    start_date_override: Optional[date] = None,
     auto_schedule: bool = False,
     spread_enabled: bool = False,
     spread_total: Optional[Any] = None,
@@ -1015,6 +1078,7 @@ def apply_template_to_agreement(
         agreement,
         template,
         estimated_days_override=effective_estimated_days,
+        start_date_override=start_date_override,
     )
     applied_estimated_days = _date_range_duration_days(date_range)
 
@@ -1047,12 +1111,17 @@ def apply_template_to_agreement(
             row,
             spread_total_decimal if use_spread_total else pricing_basis_total,
         )
+        milestone_description = _build_enriched_template_milestone_description(
+            agreement=agreement,
+            template=template,
+            row=row,
+        )
 
         milestone = Milestone.objects.create(
             agreement=agreement,
             order=idx,
             title=row.title,
-            description=row.description or "",
+            description=milestone_description,
             amount=amounts[idx - 1],
             start_date=row_start,
             completion_date=due_date,
@@ -1061,7 +1130,7 @@ def apply_template_to_agreement(
             milestone_role=normalize_milestone_role(getattr(row, "milestone_role", "")) or infer_milestone_role(
                 project_mode=getattr(agreement, "project_mode", ""),
                 title=row.title,
-                description=row.description or "",
+                description=milestone_description,
                 normalized_milestone_type=(row.normalized_milestone_type or "").strip(),
             ),
             template_suggested_amount=template_suggested_amount if template_suggested_amount > 0 else None,

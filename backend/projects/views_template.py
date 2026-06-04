@@ -184,6 +184,10 @@ class ApplyTemplateToAgreementView(APIView):
                 overwrite_existing=overwrite_existing,
                 copy_text_fields=copy_text_fields,
                 estimated_days=serializer.validated_data.get("estimated_days"),
+                start_date_override=(
+                    serializer.validated_data.get("project_start_date")
+                    or serializer.validated_data.get("start")
+                ),
                 auto_schedule=serializer.validated_data.get("auto_schedule", False),
                 spread_enabled=serializer.validated_data.get("spread_enabled", False),
                 spread_total=serializer.validated_data.get("spread_total"),
