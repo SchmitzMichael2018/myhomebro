@@ -23,6 +23,12 @@ import {
 } from "../lib/assistantReasoning.js";
 import { buildUserFacingAiPanel } from "../lib/agreementWizardAiPanel.js";
 import {
+  buildProjectAssistantActions,
+  buildProjectAssistantSummary,
+  formatAssistantCurrency,
+  matchProjectAssistantPromptToAction,
+} from "../lib/projectAssistantActions.js";
+import {
   canonicalizeTemplateMilestoneType,
   labelForTemplateMilestoneType,
 } from "../lib/milestoneTypes.js";
@@ -68,6 +74,107 @@ function CompactBadge({ children }) {
     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
       {children}
     </span>
+  );
+}
+
+function ProjectAssistantActionButton({ action, onSelect }) {
+  return (
+    <button
+      type="button"
+      data-testid={`project-assistant-action-${action.key}`}
+      onClick={() => onSelect(action)}
+      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-900 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+    >
+      <div className="text-sm font-semibold text-slate-950">{action.label}</div>
+      {action.description ? (
+        <div className="mt-1 text-xs leading-5 text-slate-600">{action.description}</div>
+      ) : null}
+    </button>
+  );
+}
+
+function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
+  const recommended = Array.isArray(actions?.recommended) ? actions.recommended : [];
+  const additional = Array.isArray(actions?.additional) ? actions.additional : [];
+
+  return (
+    <div className="space-y-4" data-testid="project-assistant-panel">
+      <div
+        className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-4 text-white"
+        data-testid="project-assistant-summary"
+      >
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
+          Current Project
+        </div>
+        <div className="mt-2 text-base font-semibold text-white">{summary.title}</div>
+        {summary.projectType ? (
+          <div className="mt-1 text-xs text-slate-300">{summary.projectType}</div>
+        ) : null}
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+            <div className="text-slate-300">Step</div>
+            <div className="mt-1 font-semibold text-white">{summary.step} of 4</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+            <div className="text-slate-300">Milestones</div>
+            <div className="mt-1 font-semibold text-white">{summary.milestoneCount}</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+            <div className="text-slate-300">Total</div>
+            <div className="mt-1 font-semibold text-white">{formatAssistantCurrency(summary.total)}</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+            <div className="text-slate-300">Template</div>
+            <div className="mt-1 truncate font-semibold text-white" title={summary.templateStatus}>
+              {summary.templateStatus}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {notice ? (
+        <div
+          className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          data-testid="project-assistant-notice"
+        >
+          {notice}
+        </div>
+      ) : null}
+
+      {recommended.length ? (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Recommended Actions
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-2">
+            {recommended.map((action) => (
+              <ProjectAssistantActionButton
+                key={action.key}
+                action={action}
+                onSelect={onAction}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {additional.length ? (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Additional Actions
+          </div>
+          <div className="mt-2 grid grid-cols-1 gap-2">
+            {additional.map((action) => (
+              <ProjectAssistantActionButton
+                key={action.key}
+                action={action}
+                onSelect={onAction}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -794,7 +901,7 @@ function normalizeTemplateMilestoneDrafts(items = []) {
 }
 
 export function StartWithAIEntry({
-  title = "AI Copilot",
+  title = "Project Assistant",
   description = "Get contextual help for the workflow you are already in.",
   context = {},
   onAction,
@@ -822,7 +929,7 @@ export function StartWithAIEntry({
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              AI Copilot
+              Project Assistant
             </div>
             <div className="mt-1 text-lg font-semibold text-slate-900">{title}</div>
             <div className="mt-1 text-sm text-slate-600">{description}</div>
@@ -841,7 +948,7 @@ export function StartWithAIEntry({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
             <Wand2 className="h-4 w-4" />
-            {resolvedOpen ? "Hide Copilot" : "Open Copilot"}
+            {resolvedOpen ? "Hide Assistant" : "Open Assistant"}
           </button>
           <button
             type="button"
@@ -853,7 +960,7 @@ export function StartWithAIEntry({
             className="hidden items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 xl:inline-flex"
           >
             <PanelRightOpen className="h-4 w-4" />
-            Open Copilot
+            Open Assistant
           </button>
         </div>
       </div>
@@ -932,6 +1039,7 @@ export default function StartWithAIAssistant({
   const isFieldAwareMode =
     isFieldAwareDescriptionMode || isFieldAwareMilestonesMode || isFieldAwareExclusionsMode;
   const isTemplatesPage = workspaceMode === "templates";
+  const isAgreementWizardAssistant = workspaceMode === "agreement_wizard" && !isFieldAwareMode;
   const isTemplatesContextualMode =
     isTemplatesPage && isContextualMode && !isFieldAwareMode;
   const panelConfig = useMemo(
@@ -946,6 +1054,7 @@ export default function StartWithAIAssistant({
   const [fieldDraft, setFieldDraft] = useState("");
   const [milestoneDrafts, setMilestoneDrafts] = useState([]);
   const [exclusionsDraft, setExclusionsDraft] = useState({ exclusions: [], assumptions: [] });
+  const [projectAssistantNotice, setProjectAssistantNotice] = useState("");
   const [plan, setPlan] = useState(() =>
     produceStructuredAssistantPlan({
       preferredIntent: "navigate_app",
@@ -972,6 +1081,7 @@ export default function StartWithAIAssistant({
     setFieldDraft("");
     setMilestoneDrafts([]);
     setExclusionsDraft({ exclusions: [], assumptions: [] });
+    setProjectAssistantNotice("");
   }, [workspaceRouteSignature]);
 
   useEffect(() => {
@@ -1018,14 +1128,24 @@ export default function StartWithAIAssistant({
       }),
     [history, isPlanning, normalizedContext, panelConfig, plan, quickActions]
   );
+  const projectAssistantSummary = useMemo(
+    () => buildProjectAssistantSummary(normalizedContext),
+    [normalizedContext]
+  );
+  const projectAssistantActions = useMemo(
+    () => buildProjectAssistantActions(normalizedContext),
+    [normalizedContext]
+  );
   const showDiagnostics =
     import.meta.env.DEV ||
     (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG_ASSISTANT === true);
   const visibleQuickActions = isContextualMode ? [] : userFacingPanel.quickActions;
-  const sectionEyebrow = isFieldAwareMode
-    ? "AI Copilot"
+  const sectionEyebrow = isAgreementWizardAssistant
+    ? "Project Assistant"
+    : isFieldAwareMode
+    ? "Project Assistant"
     : isContextualMode
-    ? "AI Copilot"
+    ? "Project Assistant"
     : "AI Workspace";
   const inputHelperText = isFieldAwareDescriptionMode
     ? "Generate a contractor-grade Scope of Work with sections, responsibilities, and exclusions."
@@ -1035,6 +1155,8 @@ export default function StartWithAIAssistant({
     ? "Generate reusable exclusions and assumptions for this template."
     : isTemplatesContextualMode
     ? "Ask for reusable workflow structure, milestones, exclusions, assumptions, or advisory pricing guidance."
+    : isAgreementWizardAssistant
+    ? "Optional chat is secondary. Workflow buttons above are the primary actions."
     : isContextualMode
     ? "Get contextual help for the step you're on right now."
     : "Describe the work you want to start, plan, or organize.";
@@ -1044,6 +1166,8 @@ export default function StartWithAIAssistant({
     ? "Generate milestone sequence for this template"
     : isFieldAwareExclusionsMode
     ? "Generate exclusions and assumptions for this template"
+    : isAgreementWizardAssistant
+    ? "Project Assistant"
     : userFacingPanel.headline;
   const helperText = isFieldAwareDescriptionMode
     ? "Use the current template name, type, and subtype to draft a reusable Scope of Work with the exact section structure."
@@ -1051,6 +1175,8 @@ export default function StartWithAIAssistant({
     ? "Use the current template scope, type, and subtype to draft a reusable milestone sequence for this template."
     : isFieldAwareExclusionsMode
     ? "Use the current template scope, type, and subtype to draft reusable exclusions and assumptions that define clear project boundaries."
+    : isAgreementWizardAssistant
+    ? "Use project-aware actions that call the same workflows available in this wizard step."
     : userFacingPanel.helperText;
   const promptPlaceholder = isFieldAwareDescriptionMode
     ? 'Optional: add scope guidance like "include site prep, framing, roofing, finishing, and cleanup."'
@@ -1058,6 +1184,8 @@ export default function StartWithAIAssistant({
     ? 'Optional: add sequencing guidance like "include permit review and punch list."'
     : isFieldAwareExclusionsMode
     ? 'Optional: add boundary guidance like "exclude owner-supplied fixtures and permit fees."'
+    : isAgreementWizardAssistant
+    ? "Optional: ask for one of the available actions, such as improving milestones or opening the next step."
     : userFacingPanel.promptPlaceholder;
   const submitLabel = isFieldAwareDescriptionMode
     ? "Generate Description"
@@ -1065,7 +1193,7 @@ export default function StartWithAIAssistant({
     ? "Generate Milestones"
     : isFieldAwareExclusionsMode
     ? "Generate Exclusions"
-    : panelConfig.submitButtonLabel || (isContextualMode ? "Ask Copilot" : "Start with AI");
+    : panelConfig.submitButtonLabel || (isAgreementWizardAssistant ? "Ask Project Assistant" : isContextualMode ? "Ask Assistant" : "Start with AI");
 
   useEffect(() => {
     setFieldDraft("");
@@ -1164,6 +1292,34 @@ export default function StartWithAIAssistant({
       return;
     }
     if (!cleanPrompt) return;
+    if (isAgreementWizardAssistant) {
+      const matchedAction = matchProjectAssistantPromptToAction(cleanPrompt, normalizedContext);
+      if (matchedAction && typeof onAction === "function") {
+        const handled = await onAction({
+          assistant_action_key: matchedAction.actionKey || matchedAction.key,
+          action_key: matchedAction.actionKey || matchedAction.key,
+          wizard_step_target: matchedAction.targetStep,
+          prompt: cleanPrompt,
+          source: "project_assistant_chat",
+        });
+        if (handled === true) {
+          setProjectAssistantNotice("");
+          setHistory((prev) => [
+            ...prev,
+            { prompt: cleanPrompt, plan: { intent_label: matchedAction.label || "Project Assistant Action" } },
+          ]);
+          setPrompt("");
+          return;
+        }
+      }
+      setProjectAssistantNotice("Use one of the available workflow actions for this step. Each visible action is wired to a real wizard workflow.");
+      setHistory((prev) => [
+        ...prev,
+        { prompt: cleanPrompt, plan: { intent_label: "Project Assistant" } },
+      ]);
+      setPrompt("");
+      return;
+    }
     if (panelConfig.submitActionKey && typeof onAction === "function") {
       const handled = await onAction({
         assistant_action_key: panelConfig.submitActionKey,
@@ -1210,6 +1366,22 @@ export default function StartWithAIAssistant({
     });
     setPlan(nextPlan);
     setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  async function useProjectAssistantAction(action) {
+    const actionKey = safeActionKey(action?.actionKey || action?.action_key || action?.key);
+    if (!actionKey || typeof onAction !== "function") return;
+    const handled = await onAction({
+      assistant_action_key: actionKey,
+      action_key: actionKey,
+      prompt: action?.prompt || action?.label || "",
+      source: "project_assistant_action",
+    });
+    if (handled === true) {
+      setProjectAssistantNotice("");
+      return;
+    }
+    setProjectAssistantNotice("That action is not available for the current wizard state.");
   }
 
   function safeActionKey(value) {
@@ -1272,6 +1444,7 @@ export default function StartWithAIAssistant({
   }
 
   const isInClarifyingMode =
+    !isAgreementWizardAssistant &&
     history.length > 0 &&
     (plan.is_fallback === true ||
       (typeof plan.confidence_score === "number" && plan.confidence_score < CONFIDENCE_THRESHOLD));
@@ -1424,7 +1597,14 @@ export default function StartWithAIAssistant({
       ) : null}
 
       <div className="space-y-4 px-5 py-5">
-        {hideContextHeader ? null : !isFieldAwareMode ? (
+        {isAgreementWizardAssistant ? (
+          <ProjectAssistantPanel
+            summary={projectAssistantSummary}
+            actions={projectAssistantActions}
+            notice={projectAssistantNotice}
+            onAction={useProjectAssistantAction}
+          />
+        ) : hideContextHeader ? null : !isFieldAwareMode ? (
           <div
             className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
             data-testid={testId("start-with-ai-status")}
@@ -1473,7 +1653,7 @@ export default function StartWithAIAssistant({
           </div>
         )}
 
-        {!isFieldAwareMode && (userFacingPanel.coachingTitle || userFacingPanel.coachingMessage) ? (
+        {!isAgreementWizardAssistant && !isFieldAwareMode && (userFacingPanel.coachingTitle || userFacingPanel.coachingMessage) ? (
           <div
             className={`rounded-2xl border px-4 py-4 ${coachingToneClasses(
               userFacingPanel.coachingTone
@@ -1604,7 +1784,7 @@ export default function StartWithAIAssistant({
           </div>
         </form>
 
-        {userFacingPanel.feedback ? (
+        {!isAgreementWizardAssistant && userFacingPanel.feedback ? (
           <ResultBlock title="AI Updated" testId={testId("start-with-ai-updated")}>
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {userFacingPanel.feedback}
@@ -1612,7 +1792,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareMode && isTemplatesPage && userFacingPanel.templateDraft ? (
+        {!isAgreementWizardAssistant && !isFieldAwareMode && isTemplatesPage && userFacingPanel.templateDraft ? (
           <TemplateDraftPreview
             draft={userFacingPanel.templateDraft}
             questions={userFacingPanel.guidedQuestions}
@@ -1723,7 +1903,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareMode && userFacingPanel.templateRecommendation?.title ? (
+        {!isAgreementWizardAssistant && !isFieldAwareMode && userFacingPanel.templateRecommendation?.title ? (
           <ResultBlock
             title="AI Recommendation"
             testId={testId("start-with-ai-template-recommendation")}
@@ -1750,7 +1930,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareMode && userFacingPanel.checklistItems.length ? (
+        {!isAgreementWizardAssistant && !isFieldAwareMode && userFacingPanel.checklistItems.length ? (
           <ResultBlock title="Pre-send Checklist" testId={testId("start-with-ai-checklist")}>
             <div className="space-y-2">
               {userFacingPanel.checklistItems.map((item) => {
@@ -1783,9 +1963,9 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareDescriptionMode && isInClarifyingMode ? (
+        {!isAgreementWizardAssistant && !isFieldAwareDescriptionMode && isInClarifyingMode ? (
           <ResultBlock
-            title="Help me understand"
+            title="Choose a workflow"
             testId={testId("start-with-ai-clarifying")}
           >
             <div className="mb-3 text-sm text-slate-700">
@@ -1813,17 +1993,9 @@ export default function StartWithAIAssistant({
                   {plan.intent_label}
                 </button>
               ) : null}
-              <button
-                type="button"
-                data-testid={testId("start-with-ai-something-else")}
-                onClick={handleSomethingElse}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
-              >
-                Something else
-              </button>
             </div>
           </ResultBlock>
-        ) : !isFieldAwareDescriptionMode ? (
+        ) : !isAgreementWizardAssistant && !isFieldAwareDescriptionMode ? (
           <ResultBlock title={userFacingPanel.nextActionTitle || "Next Action"}>
             <div
               className="text-sm font-medium text-slate-800"
@@ -1845,7 +2017,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareDescriptionMode && userFacingPanel.nextGuidance ? (
+        {!isAgreementWizardAssistant && !isFieldAwareDescriptionMode && userFacingPanel.nextGuidance ? (
           <ResultBlock
             title={userFacingPanel.nextGuidanceTitle || "What happens next"}
             testId={testId("start-with-ai-next-guidance")}

@@ -187,7 +187,7 @@ test('templates marketplace allows explicit visibility changes for owned templat
   await expect(page.getByText('Visibility: public')).toBeVisible();
 });
 
-test('templates page opens tab-aware AI Copilot guidance without apply actions', async ({ page }) => {
+test('templates page opens tab-aware Project Assistant guidance without apply actions', async ({ page }) => {
   await installMarketplaceMocks(page);
 
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
@@ -199,7 +199,7 @@ test('templates page opens tab-aware AI Copilot guidance without apply actions',
 
   const dock = page.getByTestId('assistant-desktop-dock');
   await expect(dock).toBeVisible();
-  await expect(dock).toContainText('AI Copilot for Templates');
+  await expect(dock).toContainText('Project Assistant for Templates');
   await expect(dock).toContainText('Review this template workflow');
   await expect(dock).toContainText('Advisory pricing guidance');
   await expect(page.getByTestId('start-with-ai-input-dock')).toHaveAttribute(

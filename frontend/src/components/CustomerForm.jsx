@@ -185,7 +185,7 @@ export default function CustomerForm(){
       <StartWithAIEntry
         className="mb-6"
         testId="customer-form-ai-entry"
-        title="AI Copilot for customer setup"
+        title="Project Assistant for customer setup"
         description="Get contextual help confirming the missing customer details before you finish this record."
         context={assistantContext}
       />

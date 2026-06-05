@@ -70,7 +70,7 @@ const CAPABILITY_ROWS = [
   "Launch agreement, template, milestone, and task workflows from one place",
   "Continue active projects without hunting through the sidebar",
   "Find work that needs attention and route to the right next step",
-  "Use the global AI Copilot for help with the work you're currently doing",
+  "Use the global Project Assistant for help with the work you're currently doing",
 ];
 
 async function fetchWorkspaceSignals() {
@@ -101,7 +101,7 @@ function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
       context: `${drafts.length} draft agreement${drafts.length === 1 ? "" : "s"}`,
       primaryLabel: "Open Agreements",
       primaryRoute: "/app/agreements",
-      secondaryLabel: "Open Copilot",
+      secondaryLabel: "Open Assistant",
     };
   }
 
@@ -113,7 +113,7 @@ function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
       context: null,
       primaryLabel: "Open Milestones",
       primaryRoute: "/app/milestones",
-      secondaryLabel: "Open Copilot",
+      secondaryLabel: "Open Assistant",
     };
   }
 
@@ -125,7 +125,7 @@ function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
       context: null,
       primaryLabel: "Open Leads",
       primaryRoute: "/app/public-presence",
-      secondaryLabel: "Open Copilot",
+      secondaryLabel: "Open Assistant",
     };
   }
 
@@ -138,7 +138,7 @@ function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
       context: first.title || null,
       primaryLabel: "Open Agreement",
       primaryRoute: `/app/agreements/${first.id}`,
-      secondaryLabel: "Open Copilot",
+      secondaryLabel: "Open Assistant",
     };
   }
 
@@ -178,7 +178,7 @@ function analyzeContinueProject({ agreements = [] }) {
     context: first.title ? `${first.title}${first.customer_name ? ` · ${first.customer_name}` : ""}` : null,
     primaryLabel: isDraft ? "Open Draft" : "Open Agreement",
     primaryRoute: `/app/agreements/${first.id}`,
-    secondaryLabel: "Open Copilot",
+    secondaryLabel: "Open Assistant",
   };
 }
 
@@ -341,7 +341,7 @@ export default function AIAssistantPage() {
         context: null,
         primaryLabel: "Open Dashboard",
         primaryRoute: "/app/dashboard",
-        secondaryLabel: "Open Copilot",
+        secondaryLabel: "Open Assistant",
       });
     } finally {
       setBusyKey("");
@@ -407,7 +407,7 @@ export default function AIAssistantPage() {
               AI Workspace launches workflows and organizes the work already in motion.
             </h3>
             <p className="mt-3 text-sm leading-6 text-sky-50/90">
-              Start or continue work here. Use the global AI Copilot when you want help with the
+              Start or continue work here. Use the global Project Assistant when you want help with the
               page, form, agreement, template, invoice, or task you're currently working on.
             </p>
             <div className="mt-6 space-y-3">
@@ -423,6 +423,13 @@ export default function AIAssistantPage() {
             </div>
           </div>
         </section>
+
+        <WorkspaceResultPanel
+          result={result}
+          onDismiss={() => setResult(null)}
+          onOpenCopilot={openCopilot}
+          onNavigate={handleResultNavigate}
+        />
 
         <section data-testid="ai-workspace-quick-actions">
           <div>

@@ -1255,7 +1255,7 @@ function DashboardGreeting({ firstName, daysSince, briefingItems, profileScore, 
           onClick={onOpenCopilot}
           className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-[#0a2550] shadow-sm hover:bg-sky-50 transition"
         >
-          Open Copilot →
+          Open Assistant →
         </button>
       </div>
     </div>

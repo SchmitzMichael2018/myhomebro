@@ -1926,7 +1926,7 @@ export default function AgreementWizard() {
     ]
   );
   const handleAssistantAction = useCallback(
-    (plan) => {
+    async (plan) => {
       const nextWizardStep = step < 4 ? step + 1 : 4;
       if (plan?.wizard_step_target && plan.wizard_step_target !== step) {
         goStep(plan.wizard_step_target);
@@ -1948,8 +1948,20 @@ export default function AgreementWizard() {
         goStep(nextWizardStep);
         return true;
       }
-      if (step === 1 && actionKey === "refine_and_setup") {
-        const prompt = String(plan?.prompt || "").trim();
+      if (
+        step === 1 &&
+        (actionKey === "refine_and_setup" ||
+          actionKey === "step1_improve_scope" ||
+          actionKey === "step1_generate_scope_draft" ||
+          actionKey === "step1_improve_classification")
+      ) {
+        const defaultPrompt =
+          actionKey === "step1_improve_classification"
+            ? "Improve the project title, type, and subtype from the current description without overwriting contractor edits."
+            : actionKey === "step1_generate_scope_draft"
+            ? "Generate a contractor-ready scope draft from the current project details."
+            : "Improve the scope for this agreement using the current project details.";
+        const prompt = String(plan?.prompt || defaultPrompt).trim();
         if (!prompt) return true;
         setWizardSessionState((prev) => ({
           ...prev,
@@ -1961,13 +1973,34 @@ export default function AgreementWizard() {
         setStep1AiSetupRequest({ prompt, nonce: Date.now() });
         return true;
       }
+      if (step === 3 && actionKey === "step3_apply_standard_warranty") {
+        const id = await ensureAgreementExists();
+        if (!id) return true;
+        try {
+          const { data } = await api.patch(`/projects/agreements/${id}/`, {
+            use_default_warranty: true,
+            custom_warranty_text: "",
+          });
+          setUseDefaultWarranty(true);
+          setCustomWarranty("");
+          setAgreement(data);
+          toast.success("Standard warranty applied.");
+        } catch (err) {
+          toast.error(err?.response?.data?.detail || "Unable to apply standard warranty.");
+        }
+        return true;
+      }
+      if (step === 4 && actionKey === "step4_preview_pdf") {
+        await handleViewAgreementPdf();
+        return true;
+      }
       if (plan?.next_action?.action_key === "review_clarifications") {
         goStep(2);
         return true;
       }
       return false;
     },
-    [goStep, step]
+    [ensureAgreementExists, goStep, handleViewAgreementPdf, step]
   );
 
   useEffect(() => {

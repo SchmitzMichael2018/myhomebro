@@ -1290,6 +1290,7 @@ export default function Step2Milestones({
   const [estimatePreview, setEstimatePreview] = useState(null);
   const [estimateBanner, setEstimateBanner] = useState("");
   const [projectBudgetInput, setProjectBudgetInput] = useState("");
+  const targetProjectTotalInputRef = useRef(null);
   const targetProjectTotalTouchedRef = useRef(false);
   const [rebalancePrompt, setRebalancePrompt] = useState(null);
   const [manualAmountMilestoneIds, setManualAmountMilestoneIds] = useState([]);
@@ -4709,6 +4710,7 @@ export default function Step2Milestones({
           agreementMeta?.selected_template?.name ||
           agreementMeta?.selected_template_name_snapshot ||
           "",
+        can_update_source: canUpdateSelectedTemplate,
       },
       milestone_summary: {
         count: effectiveMilestones.length,
@@ -4741,6 +4743,7 @@ export default function Step2Milestones({
     [
       agreementId,
       agreementMeta,
+      canUpdateSelectedTemplate,
       effectiveMilestones,
       mergedClarificationQuestions,
       aiChangeSummary,
@@ -4826,13 +4829,33 @@ export default function Step2Milestones({
     return true;
   }
 
+  function runCopilotEnterProjectTotal() {
+    targetProjectTotalInputRef.current?.focus?.();
+    targetProjectTotalInputRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    const message = "Enter a target project total, then rebalance milestone pricing.";
+    setAiChangeSummary(message);
+    onAiUpdateFeedback(message);
+    return true;
+  }
+
+  function runCopilotTimelineAction() {
+    applyEstimateSuggestedTimeline();
+    return true;
+  }
+
   async function handleAssistantAction(plan) {
     const actionKey = resolveStep2CopilotAction(plan);
     if (actionKey === "save_as_template") {
       await handleOpenSaveTemplate();
       return true;
     }
-    if (actionKey === "step2_improve_milestones") {
+    if (
+      actionKey === "step2_improve_milestones" ||
+      actionKey === "step2_improve_descriptions" ||
+      actionKey === "step2_generate_milestone_plan" ||
+      actionKey === "step2_regenerate_plan" ||
+      actionKey === "step2_replace_plan"
+    ) {
       return runCopilotImproveMilestones();
     }
     if (actionKey === "step2_suggest_pricing" || safeStr(plan?.intent) === "estimate_project") {
@@ -4841,8 +4864,27 @@ export default function Step2Milestones({
     if (actionKey === "step2_rebalance_pricing") {
       return runCopilotRebalancePricing();
     }
-    if (actionKey === "step2_apply_timeline") {
-      applyEstimateSuggestedTimeline();
+    if (actionKey === "step2_enter_project_total") {
+      return runCopilotEnterProjectTotal();
+    }
+    if (
+      actionKey === "step2_apply_timeline" ||
+      actionKey === "step2_build_timeline" ||
+      actionKey === "step2_compress_timeline" ||
+      actionKey === "step2_extend_timeline"
+    ) {
+      return runCopilotTimelineAction();
+    }
+    if (actionKey === "step2_save_plan_template") {
+      await handleOpenSaveTemplate();
+      return true;
+    }
+    if (actionKey === "step2_update_source_template") {
+      if (!templateApplied || !canUpdateSelectedTemplate) {
+        toast.error("You do not have permission to update the source template.");
+        return true;
+      }
+      setMilestoneTemplateUpdateConfirmOpen(true);
       return true;
     }
     if (actionKey === "open_wizard_step" || actionKey === "open_navigation_target") {
@@ -5362,6 +5404,7 @@ export default function Step2Milestones({
                     Target Project Total
                   </label>
                   <input
+                    ref={targetProjectTotalInputRef}
                     id="step2-target-project-total"
                     type="number"
                     min="0"

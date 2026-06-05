@@ -683,7 +683,7 @@ test('contractor sidebar groups navigation into core work business and settings'
   await expect(sidebar).toContainText('Main');
   await expect(sidebar).toContainText('Users');
   await expect(sidebar).toContainText('Dashboard');
-  await expect(sidebar).toContainText('AI Copilot');
+  await expect(sidebar).toContainText('AI Workspace');
   await expect(sidebar).toContainText('Business Dashboard');
   await expect(sidebar).toContainText('Agreements');
   await expect(sidebar).toContainText('Milestones');

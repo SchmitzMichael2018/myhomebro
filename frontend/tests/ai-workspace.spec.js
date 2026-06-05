@@ -280,6 +280,7 @@ test.describe('AI Workspace page', () => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('ai-workspace-hero')).toBeVisible();
+    await expect(page.getByTestId('workspace-conversation')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-quick-actions')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-capabilities')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-suggested')).not.toBeVisible();
@@ -290,43 +291,33 @@ test.describe('AI Workspace page', () => {
     await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
 
     await expect(page.getByRole('heading', { name: 'Start or continue work' })).toBeVisible();
-    const hero = page.getByTestId('ai-workspace-hero');
-    await expect(hero.getByRole('button', { name: 'Create an agreement' })).toBeVisible();
-    await expect(hero.getByRole('button', { name: 'Create a template' })).toBeVisible();
-    await expect(hero.getByRole('button', { name: 'Continue a project' })).toBeVisible();
-    await expect(hero.getByRole('button', { name: 'Plan milestones' })).toBeVisible();
-    await expect(hero.getByRole('button', { name: 'Find my next task' })).toBeVisible();
-    await expect(hero.getByRole('button', { name: 'Show work needing attention' })).toBeVisible();
-    await expect(hero.getByRole('button', { name: 'Kitchen remodel' })).not.toBeVisible();
-    await expect(hero.getByRole('button', { name: 'Roof replacement' })).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-hero-input')).toHaveAttribute(
+    await expect(page.getByTestId('workspace-conversation-input')).toHaveAttribute(
       'placeholder',
-      /Create agreements, use templates, continue projects, plan milestones/
+      /Describe the work/
     );
+    await expect(page.getByTestId('workspace-conversation-submit')).toContainText('Start intake');
+    await expect(page.getByTestId('ai-workspace-quick-action-start_agreement')).toContainText('Create Agreement');
+    await expect(page.getByTestId('ai-workspace-quick-action-apply_template')).toContainText('Use Template');
+    await expect(page.getByTestId('ai-workspace-quick-action-suggest_milestones')).toContainText('Plan Milestones');
+    await expect(page.getByTestId('ai-workspace-quick-action-navigate_app')).toContainText('Find My Next Task');
     await expect(page.getByText('Launch the right workflow without hunting for it.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'What AI can help with' })).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-summary')).toBeVisible();
   });
 
-  test('hero actions submit into workflow logic and open the copilot dock', async ({ page }) => {
+  test('conversation intake advances and the global assistant dock opens', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
-    await page.getByTestId('ai-workspace-hero-input').fill(
+    await page.getByTestId('workspace-conversation-input').fill(
       'Start agreement for Casey Prospect kitchen remodel'
     );
-    await page.getByTestId('ai-workspace-hero-submit').click();
+    await page.getByTestId('workspace-conversation-submit').click();
+    await expect(page.getByTestId('workspace-use-template')).toBeVisible();
+    await expect(page.getByTestId('workspace-build-scratch')).toBeVisible();
 
-    await page.waitForURL('**/app/agreements/new/wizard?step=1');
-    await expect(page.getByTestId('step1-job-description-input')).toHaveValue(
-      /Casey Prospect kitchen remodel/
-    );
-
-    await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    await page
-      .getByTestId('ai-workspace-hero')
-      .getByRole('button', { name: 'Open AI Copilot' })
-      .click();
+    await page.getByTestId('assistant-dock-open-button').click();
     await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+    await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Project Assistant');
   });
 
   test('quick action cards navigate to the expected flows', async ({ page }) => {
@@ -344,7 +335,10 @@ test.describe('AI Workspace page', () => {
     await page.waitForURL('**/app/agreements/new/wizard?step=2');
 
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('ai-workspace-quick-action-navigate_app').click();
+    const nextTaskAction = page.getByTestId('ai-workspace-quick-action-navigate_app');
+    await expect(nextTaskAction).toBeEnabled();
+    await nextTaskAction.click();
+    await expect.poll(() => page.getByTestId('ai-workspace-result-panel').count()).toBe(1);
     await expect(page.getByTestId('ai-workspace-result-panel')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-result-title')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-result-primary-cta')).toBeVisible();
@@ -366,16 +360,18 @@ test.describe('AI Workspace page', () => {
 
     await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
 
-    const hero = page.getByTestId('ai-workspace-hero');
-    await hero.getByRole('button', { name: 'Find my next task' }).click();
+    const nextTaskAction = page.getByTestId('ai-workspace-quick-action-navigate_app');
+    await expect(nextTaskAction).toBeEnabled();
+    await nextTaskAction.click();
 
+    await expect.poll(() => page.getByTestId('ai-workspace-result-panel').count()).toBe(1);
     await expect(page.getByTestId('ai-workspace-result-panel')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-result-title')).toContainText('Review and send draft agreements');
     await expect(page.getByTestId('ai-workspace-result-reason')).toContainText(
       'You have 3 draft agreements waiting. Completing them can unlock signatures, funding, and active work.'
     );
     await expect(page.getByTestId('ai-workspace-result-primary-cta')).toContainText('Open Agreements');
-    await expect(page.getByTestId('ai-workspace-result-secondary-cta')).toContainText('Open Copilot');
+    await expect(page.getByTestId('ai-workspace-result-secondary-cta')).toContainText('Open Assistant');
 
     await page.getByTestId('ai-workspace-result-secondary-cta').click();
     await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
@@ -386,7 +382,7 @@ test.describe('AI Workspace page', () => {
     await page.waitForURL('**/app/agreements');
   });
 
-  test('bottom Copilot bridge stays removed', async ({ page }) => {
+  test('bottom assistant bridge stays removed', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByText('Need help with current work?')).not.toBeVisible();

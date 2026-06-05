@@ -105,7 +105,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
         "Get help with invoice readiness, funding state, approvals, payouts, and dispute-safe payment steps.",
       statusText: "Payment workspace context loaded",
       promptPlaceholder:
-        'Examples: "Review this invoice" or "Help me understand payment status."',
+        'Examples: "Review this invoice" or "Show payment status."',
       nextActionText: "Next: Review payment status, approvals, funding, and payout workflow.",
       nextGuidanceTitle: "Payment guidance",
       nextGuidance:
@@ -185,16 +185,16 @@ function buildRouteContext(location) {
 
 function copilotLabelForRoute(route = "") {
   const workspaceMode = workspaceModeForRoute(route);
-  if (workspaceMode === "agreement_wizard") return "AI Copilot for Agreement Creation";
-  if (workspaceMode === "agreements") return "AI Copilot for Agreements";
-  if (workspaceMode === "milestones") return "AI Copilot for Milestones";
-  if (workspaceMode === "invoices") return "AI Copilot for Payments";
-  if (workspaceMode === "templates") return "AI Copilot for Templates";
-  if (workspaceMode === "disputes") return "AI Copilot for Dispute Resolution";
-  if (workspaceMode === "admin") return "AI Copilot for Admin";
-  if (workspaceMode === "leads") return "AI Copilot for Leads";
-  if (workspaceMode === "dashboard") return "AI Copilot for Dashboard";
-  return "AI Copilot";
+  if (workspaceMode === "agreement_wizard") return "Project Assistant for Agreement Creation";
+  if (workspaceMode === "agreements") return "Project Assistant for Agreements";
+  if (workspaceMode === "milestones") return "Project Assistant for Milestones";
+  if (workspaceMode === "invoices") return "Project Assistant for Payments";
+  if (workspaceMode === "templates") return "Project Assistant for Templates";
+  if (workspaceMode === "disputes") return "Project Assistant for Dispute Resolution";
+  if (workspaceMode === "admin") return "Project Assistant for Admin";
+  if (workspaceMode === "leads") return "Project Assistant for Leads";
+  if (workspaceMode === "dashboard") return "Project Assistant for Dashboard";
+  return "Project Assistant";
 }
 
 function buildNavigationAssistContext(workspaceMode = "general") {
@@ -240,7 +240,7 @@ export function GlobalCopilotTrigger() {
     <button
       type="button"
       data-testid="assistant-dock-open-button"
-      aria-label={isOpen ? "AI Copilot open" : "Open AI Copilot"}
+      aria-label={isOpen ? "Project Assistant open" : "Open Project Assistant"}
       aria-pressed={isOpen}
       onClick={() => openAssistant()}
       className={`inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-bold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
@@ -250,7 +250,7 @@ export function GlobalCopilotTrigger() {
       }`}
     >
       <Sparkles className="h-4 w-4" aria-hidden="true" />
-      <span className="hidden sm:inline">AI Copilot</span>
+      <span className="hidden sm:inline">Project Assistant</span>
     </button>
   );
 }
@@ -476,7 +476,7 @@ function DesktopAssistantDock({
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                AI Copilot
+                Project Assistant
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">{title}</div>
             </div>
@@ -542,7 +542,7 @@ export function AssistantDockProvider({ children }) {
   const routeWorkspaceMode = routeContext.workspace_mode;
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [dockTitle, setDockTitle] = useState("AI Copilot");
+  const [dockTitle, setDockTitle] = useState("Project Assistant");
   const [dockContext, setDockContext] = useState(routeContext);
   const [dockOnAction, setDockOnAction] = useState(null);
   const [pageAssistantOnAction, setPageAssistantOnAction] = useState(null);

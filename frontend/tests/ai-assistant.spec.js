@@ -616,12 +616,12 @@ test('desktop docked assistant panel opens and closes from app chrome', async ({
   await installBaseAuthMocks(page);
 
   await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('aside')).not.toContainText('AI Copilot');
+  await expect(page.locator('aside')).not.toContainText('Project Assistant');
   await expect(page.getByTestId('assistant-dock-open-button')).toBeVisible();
   await page.getByTestId('assistant-dock-open-button').click();
 
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
-  await expect(page.getByTestId('assistant-desktop-dock')).toContainText('AI Copilot');
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Project Assistant');
 
   await page.getByTestId('assistant-desktop-dock-close').click();
   await expect(page.getByTestId('assistant-desktop-dock')).not.toBeVisible();
@@ -743,30 +743,22 @@ test('agreement wizard assistant uses agreement context from the current workflo
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByTestId('agreement-wizard-ask-ai-button').click();
+  await page.getByTestId('assistant-dock-open-button').click();
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
   await expect(page.getByTestId('assistant-desktop-dock')).toContainText(
-    'AI Copilot for Agreement Creation'
+    'Project Assistant for Agreement Creation'
   );
 
   await page.getByTestId('start-with-ai-input-dock').fill('Help me finish this agreement');
-  await page.getByRole('button', { name: 'Ask Copilot' }).click();
+  await page.getByTestId('start-with-ai-submit-dock').click();
 
-  await expect(page.getByTestId('start-with-ai-next-action-label-dock')).toContainText(
-    'Next: Review the milestones below and click Save & Next when the plan looks right.'
+  await expect(page.getByTestId('project-assistant-panel')).toBeVisible();
+  await expect(page.getByTestId('project-assistant-notice')).toContainText(
+    'Use one of the available workflow actions'
   );
-  await page
-    .getByTestId('start-with-ai-assistant-dock')
-    .getByText('Assistant diagnostics')
-    .click();
-  await expect(page.getByTestId('start-with-ai-detected-intent-dock')).toContainText('Resume agreement');
-  await page.getByTestId('start-with-ai-structured-toggle-dock').click();
-  await expect(page.getByTestId('start-with-ai-structured-json-dock')).toContainText(
-    '"wizard_step_target": 2'
-  );
-  await expect(page.getByTestId('start-with-ai-structured-json-dock')).toContainText(
-    '"action_key": "open_wizard_step"'
-  );
+  await expect(page.getByTestId('project-assistant-action-step2_generate_milestone_plan')).toBeVisible();
+  await expect(page.getByTestId('project-assistant-action-step2_enter_project_total')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-assistant-dock')).not.toContainText('Something else');
 });
 
 test('lead inbox assistant uses lead context to trigger send intake', async ({ page }) => {
@@ -1417,7 +1409,7 @@ test('lead inbox consumes assistant create-lead prefill into quick add', async (
   await expect(page.getByTestId('quick-add-lead-phone')).toHaveValue('(555) 444-3333');
 });
 
-// ─── Templates Copilot: creation intent must never reach the orchestrator ─────
+// ─── Templates Assistant: creation intent must never reach the orchestrator ───
 
 function installTemplatesPageRoutes(page) {
   return Promise.all([
@@ -1527,7 +1519,7 @@ test('templates copilot: "create template" prompt renders a review-only draft wi
 
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
 
-  // Open the AI Copilot dock via the sidebar button.
+  // Open the Project Assistant dock via the sidebar button.
   await page.getByTestId('assistant-dock-open-button').first().click();
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
 
@@ -1759,7 +1751,7 @@ test('templates copilot state resets when navigating to agreements and restores 
   await page.waitForURL('**/app/agreements');
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
   await expect(page.getByTestId('assistant-desktop-dock')).toContainText(
-    'AI Copilot for Agreements'
+    'Project Assistant for Agreements'
   );
   await expect(page.getByTestId('start-with-ai-title-dock')).toContainText('Review this agreement');
   await expect(page.getByTestId('start-with-ai-assistant-dock')).toContainText(
@@ -1779,7 +1771,7 @@ test('templates copilot state resets when navigating to agreements and restores 
   await page.waitForURL('**/app/templates');
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
   await expect(page.getByTestId('assistant-desktop-dock')).toContainText(
-    'AI Copilot for Templates'
+    'Project Assistant for Templates'
   );
   await expect(page.getByTestId('start-with-ai-title-dock')).toContainText(
     'Review this template workflow'
