@@ -98,6 +98,29 @@ describe("planAssistantAction – commercial intents", () => {
     expect(plan.is_fallback).toBe(false);
     expect(plan.navigation_target).toBe("/app/agreements/39/wizard?step=2");
   });
+
+  it("uses Warranty as the next wizard action from Step 2 instead of Finalize", () => {
+    const plan = planAssistantAction({
+      input: "open the next step",
+      context: {
+        agreement_id: 39,
+        current_route: "/app/agreements/39/wizard?step=2",
+        agreement_summary: {
+          customer_name: "Jordan Demo",
+          project_summary: "Install flooring in kitchen and hallway.",
+          status: "draft",
+          ready_to_finalize: false,
+          milestone_count: 4,
+        },
+        milestone_summary: { count: 4 },
+      },
+    });
+
+    expect(plan.intent).toBe("resume_agreement");
+    expect(plan.wizard_step_target).toBe(3);
+    expect(plan.next_action.label).toBe("Open Warranty Step");
+    expect(plan.navigation_target).toBe("/app/agreements/39/wizard?step=3");
+  });
 });
 
 describe("planAssistantAction – candidate_intents", () => {

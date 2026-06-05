@@ -230,7 +230,8 @@ function detectIntent(input, preferredIntent, context) {
     text.includes("resume") ||
     text.includes("fix") ||
     text.includes("unstick") ||
-    text.includes("blocked")
+    text.includes("blocked") ||
+    /\b(open|go to|continue|next)\b.*\b(next step|step|warranty|finalize)\b/.test(text)
   ) {
     if (hasAgreementContext) return { intent: "resume_agreement", matchType: "strong_keyword", is_fallback: false };
     if (hasLeadContext) return { intent: "create_lead", matchType: "strong_keyword", is_fallback: false };
@@ -908,17 +909,50 @@ function buildClarificationQuestions(projectSummary, context) {
   });
 }
 
+function readWizardStepFromContext(context = {}) {
+  const match = clean(context.current_route).match(/[?&]step=(\d+)/);
+  const step = match ? Number(match[1]) : null;
+  return Number.isFinite(step) ? step : null;
+}
+
+function nextWizardStepAction(currentStep = null) {
+  if (currentStep === 1) {
+    return {
+      wizardStepTarget: 2,
+      nextAction: {
+        type: "open_wizard_step",
+        label: "Open Milestone Builder",
+        action_key: "open_wizard_step",
+      },
+    };
+  }
+  if (currentStep === 2) {
+    return {
+      wizardStepTarget: 3,
+      nextAction: {
+        type: "open_wizard_step",
+        label: "Open Warranty Step",
+        action_key: "open_wizard_step",
+      },
+    };
+  }
+  return {
+    wizardStepTarget: 4,
+    nextAction: {
+      type: "open_wizard_step",
+      label: "Open Finalize Step",
+      action_key: "open_wizard_step",
+    },
+  };
+}
+
 function buildResumeAgreementPlan(context, collectedData) {
   const agreement = context.agreement_summary;
   const milestone = context.milestone_summary;
   const missingFields = [];
   const blocked = [];
-  let wizardStepTarget = 4;
-  let nextAction = {
-    type: "open_wizard_step",
-    label: "Open Finalize Step",
-    action_key: "open_wizard_step",
-  };
+  const currentStep = readWizardStepFromContext(context);
+  let { wizardStepTarget, nextAction } = nextWizardStepAction(currentStep);
 
   if (!clean(agreement.customer_name || agreement.homeowner_name)) {
     missingFields.push("customer_name");
@@ -955,13 +989,12 @@ function buildResumeAgreementPlan(context, collectedData) {
       action_key: "review_clarifications",
     };
   } else if (!agreement.ready_to_finalize && clean(agreement.status).toLowerCase() === "draft") {
-    blocked.push("Finalize and signature review are still pending.");
-    wizardStepTarget = 4;
-    nextAction = {
-      type: "open_wizard_step",
-      label: "Open Finalize Step",
-      action_key: "open_wizard_step",
-    };
+    if (currentStep === 2) {
+      blocked.push("Warranty and document review are still pending.");
+    } else {
+      blocked.push("Finalize and signature review are still pending.");
+    }
+    ({ wizardStepTarget, nextAction } = nextWizardStepAction(currentStep));
   }
 
   return {

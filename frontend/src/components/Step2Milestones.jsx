@@ -3326,12 +3326,18 @@ export default function Step2Milestones({
 
     const nextRows = materializeAiSuggestedMilestones(mode);
 
+    if (milestoneRowsEqual(effectiveMilestones, nextRows)) {
+      toast("AI suggestions matched your current milestones.");
+      clearAiMilestonePreview({ clearSuggestedIds: false });
+      return;
+    }
+
     const nextIds = nextRows.map((row) => row?.id).filter(Boolean);
     setFallbackMilestones((prev) => (milestoneRowsEqual(prev, nextRows) ? prev : nextRows));
     setExpandedMilestoneId(nextRows[0]?.id || null);
     setNewMilestoneOpen(false);
-    setAiChangeSummary("AI suggested milestones are ready for review.");
-    onAiUpdateFeedback("AI suggested milestones are ready for review.");
+    setAiChangeSummary("AI updated the milestone plan for review.");
+    onAiUpdateFeedback("AI updated the milestone plan for review.");
     clearAiMilestonePreview({ clearSuggestedIds: false });
     setAiSuggestedMilestoneIds(nextIds);
     if (templateApplied) {
@@ -3362,7 +3368,7 @@ export default function Step2Milestones({
     return "";
   }
 
-  function startAiMilestoneGeneration(mode = "replace") {
+  function startAiMilestoneGeneration(mode = "replace", { applyImmediately = false } = {}) {
     setAiMilestoneGenerationBusy(true);
     setTimeout(() => {
       try {
@@ -3415,12 +3421,45 @@ export default function Step2Milestones({
           raw: { clarification_shaped: true },
         };
 
+        if (applyImmediately) {
+          const nextRows =
+            mode === "add_missing"
+              ? sortFallbackMilestones(
+                  dedupeMilestoneRows([...effectiveMilestones, ...adjustedRows], { existingRows: [] }).map((row, idx) => ({
+                    ...row,
+                    order: idx + 1,
+                  }))
+                )
+              : sortFallbackMilestones(adjustedRows.map((row, idx) => ({ ...row, order: idx + 1 })));
+          if (milestoneRowsEqual(effectiveMilestones, nextRows)) {
+            setAiMilestoneGenerationError("AI suggestions matched your current milestones.");
+            toast("AI suggestions matched your current milestones.");
+            return;
+          }
+          const nextIds = nextRows.map((row) => row?.id).filter(Boolean);
+          setFallbackMilestones((prev) => (milestoneRowsEqual(prev, nextRows) ? prev : nextRows));
+          setExpandedMilestoneId(nextRows[0]?.id || null);
+          setNewMilestoneOpen(false);
+          setAiPreview(null);
+          setAiMilestonePreviewMode("");
+          setAiMilestonePlanAnalysis(analysis);
+          setAiSuggestedMilestoneIds(nextIds);
+          const message = "AI updated the milestone plan for review.";
+          setAiChangeSummary(message);
+          onAiUpdateFeedback(message);
+          if (templateApplied) {
+            setMilestoneTemplatePromptVisible(true);
+          }
+          toast.success(message);
+          return;
+        }
+
         setAiPreview(preview);
         setAiMilestonePreviewMode(mode);
         setAiMilestonePlanAnalysis(analysis);
         setAiSuggestedMilestoneIds([]);
-        setAiChangeSummary("AI suggested milestones are ready for review.");
-        onAiUpdateFeedback("AI suggested milestones are ready for review.");
+        setAiChangeSummary("AI milestone preview is ready for review.");
+        onAiUpdateFeedback("AI milestone preview is ready for review.");
         setNewMilestoneOpen(false);
         toast.success(
           `Generated ${adjustedRows.length} suggested milestone${adjustedRows.length === 1 ? "" : "s"}.`
@@ -4773,6 +4812,20 @@ export default function Step2Milestones({
     return true;
   }
 
+  function runCopilotImproveMilestones() {
+    if (!agreementId) {
+      toast.error("Save the agreement before improving milestones.");
+      return true;
+    }
+    if (milestonesLocked) {
+      lockToast();
+      return true;
+    }
+    setAiMilestoneGenerationError("");
+    startAiMilestoneGeneration("replace", { applyImmediately: true });
+    return true;
+  }
+
   async function handleAssistantAction(plan) {
     const actionKey = resolveStep2CopilotAction(plan);
     if (actionKey === "save_as_template") {
@@ -4780,8 +4833,7 @@ export default function Step2Milestones({
       return true;
     }
     if (actionKey === "step2_improve_milestones") {
-      handleRunAiSuggest();
-      return true;
+      return runCopilotImproveMilestones();
     }
     if (actionKey === "step2_suggest_pricing" || safeStr(plan?.intent) === "estimate_project") {
       return runCopilotSuggestPricing();
