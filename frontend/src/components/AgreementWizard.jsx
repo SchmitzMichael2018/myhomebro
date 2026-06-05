@@ -499,6 +499,7 @@ export default function AgreementWizard() {
   const [loadingAgreement, setLoadingAgreement] = useState(false);
   const [activationSummary, setActivationSummary] = useState(null);
   const didResumeStepRef = useRef(false);
+  const forceStep2AfterTemplateApplyRef = useRef(null);
 
   const [dLocal, setDLocal] = useState(() => buildEmptyDLocal(resolvedProjectFamily));
 
@@ -1058,6 +1059,15 @@ export default function AgreementWizard() {
   useEffect(() => {
     if (!agreementId || !agreement) return;
     if (didResumeStepRef.current) return;
+
+    if (String(forceStep2AfterTemplateApplyRef.current || "") === String(agreementId)) {
+      didResumeStepRef.current = true;
+      if (step !== 2) {
+        goStep(2, { replace: true });
+      }
+      return;
+    }
+
     didResumeStepRef.current = true;
 
     const resumeStep = deriveWizardStepFromAgreement(agreement);
@@ -1783,9 +1793,19 @@ export default function AgreementWizard() {
         }));
       }
 
+      const appliedAgreementId = deriveAgreementId(hydratedAgreement || payload?.agreement || agreement, agreementIdParam);
+      if (appliedAgreementId) {
+        forceStep2AfterTemplateApplyRef.current = appliedAgreementId;
+        didResumeStepRef.current = false;
+        if (!agreementIdParam || String(agreementIdParam) !== String(appliedAgreementId)) {
+          navigate(`/app/agreements/${appliedAgreementId}/wizard?step=2`, { replace: true });
+          return;
+        }
+      }
+
       goStep(2);
     },
-    [refreshAgreement, loadMilestones, setAgreement, goStep]
+    [agreement, agreementIdParam, refreshAgreement, loadMilestones, navigate, setAgreement, goStep]
   );
   const wizardHint = useMemo(
     () => getAgreementWizardHint({ step, agreement }),

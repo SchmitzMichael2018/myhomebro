@@ -483,6 +483,9 @@ def _clean_stored_questions(questions: Any) -> list[dict]:
 
 
 class SelectedTemplateMiniSerializer(serializers.ModelSerializer):
+    can_update_from_agreement = serializers.SerializerMethodField()
+    owner_type = serializers.SerializerMethodField()
+
     class Meta:
         model = ProjectTemplate  # type: ignore
         fields = [
@@ -492,7 +495,24 @@ class SelectedTemplateMiniSerializer(serializers.ModelSerializer):
             "project_subtype",
             "estimated_days",
             "is_system",
+            "is_system_template",
+            "owner_type",
+            "can_update_from_agreement",
         ]
+
+    def get_owner_type(self, obj):
+        return "system" if getattr(obj, "is_system", False) or getattr(obj, "is_system_template", False) else "contractor"
+
+    def get_can_update_from_agreement(self, obj):
+        request = self.context.get("request") if hasattr(self, "context") else None
+        user = getattr(request, "user", None)
+        if not user or not getattr(user, "is_authenticated", False):
+            return False
+        if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+            return True
+        if getattr(obj, "is_system", False) or getattr(obj, "is_system_template", False):
+            return False
+        return bool(getattr(getattr(obj, "contractor", None), "user_id", None) == getattr(user, "id", None))
 
 
 class AgreementPDFVersionSerializer(serializers.ModelSerializer):

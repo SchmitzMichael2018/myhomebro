@@ -135,6 +135,7 @@ from .views.template_views import (
     TemplateSuggestTypeSubtypeView,
     TemplateCreateFromScopeView,
     TemplateVisibilityUpdateView,
+    UpdateSourceTemplateFromAgreementView,
 )
 
 from .views.agreements_amend import create_amendment
@@ -437,6 +438,11 @@ urlpatterns = [
         "agreements/<int:agreement_id>/save-as-template/",
         SaveAgreementAsTemplateView.as_view(),
         name="agreement-save-as-template",
+    ),
+    path(
+        "agreements/<int:agreement_id>/update-source-template/",
+        UpdateSourceTemplateFromAgreementView.as_view(),
+        name="agreement-update-source-template",
     ),
     path(
         "agreements/<int:agreement_id>/reset-step1/",

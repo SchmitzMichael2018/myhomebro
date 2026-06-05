@@ -4,7 +4,8 @@ from django.utils import timezone
 from datetime import timedelta
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner, Invoice
+from projects.models import Agreement, Contractor, Homeowner, Invoice, Milestone
+from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 
 
 class AgreementListPaginationTests(TestCase):
@@ -137,3 +138,80 @@ class AgreementListPaginationTests(TestCase):
 
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("Select at least one", response.data["detail"])
+
+    def test_update_source_template_from_agreement_updates_scope_and_milestones(self):
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Original Flooring Template",
+            project_type="Flooring",
+            project_subtype="Flooring Installation",
+            default_scope="Original weak scope.",
+        )
+        ProjectTemplateMilestone.objects.create(
+            template=template,
+            title="Old milestone",
+            description="Old details",
+            sort_order=1,
+        )
+        agreement = self._create_agreement(
+            "Improved Flooring Agreement",
+            project_type="Flooring",
+            project_subtype="Luxury Vinyl Plank",
+            description="Included Work:\n- Remove existing flooring\n- Install LVP in kitchen and hallway",
+        )
+        agreement.selected_template = template
+        agreement.selected_template_name_snapshot = template.name
+        agreement.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Prep and Level Subfloor",
+            description="Remove old flooring, inspect substrate, and level minor low spots.",
+            amount="750.00",
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Install LVP",
+            description="Install luxury vinyl plank through kitchen and hallway with transitions.",
+            amount="2250.00",
+        )
+
+        response = self.client.post(
+            f"/api/projects/agreements/{agreement.id}/update-source-template/",
+            {"template_id": template.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        template.refresh_from_db()
+        self.assertIn("Install LVP", template.default_scope)
+        self.assertEqual(template.name, "Original Flooring Template")
+        milestones = list(template.milestones.order_by("sort_order", "id"))
+        self.assertEqual(len(milestones), 2)
+        self.assertEqual(milestones[0].title, "Prep and Level Subfloor")
+        self.assertEqual(str(milestones[0].suggested_amount_fixed), "750.00")
+
+    def test_update_source_template_blocks_non_admin_system_template_update(self):
+        template = ProjectTemplate.objects.create(
+            name="System Flooring Template",
+            project_type="Flooring",
+            project_subtype="Flooring Installation",
+            default_scope="System scope.",
+            is_system=True,
+            is_system_template=True,
+            is_published=True,
+        )
+        agreement = self._create_agreement("System Template Agreement")
+        agreement.selected_template = template
+        agreement.selected_template_name_snapshot = template.name
+        agreement.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
+
+        response = self.client.post(
+            f"/api/projects/agreements/{agreement.id}/update-source-template/",
+            {"template_id": template.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertIn("Only admins", response.data["detail"])

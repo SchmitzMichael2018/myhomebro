@@ -9,11 +9,13 @@
 // - uses stored ai_scope questions as the primary clarification source
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 import ClarificationsModal from "./ClarificationsModal.jsx";
 import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
 import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
+import TemplateImprovementPrompt from "./TemplateImprovementPrompt.jsx";
 import CommercialPaymentOverviewPanel from "./step2/CommercialPaymentOverviewPanel.jsx";
 import AssignSubcontractorInline from "./AssignSubcontractorInline.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
@@ -619,6 +621,7 @@ function deriveSelectedTemplateMeta(agreement) {
     name: safeStr(name) || "Selected Template",
     project_type: safeStr(projectType),
     project_subtype: safeStr(projectSubtype),
+    can_update_from_agreement: Boolean(agreement?.selected_template?.can_update_from_agreement),
   };
 }
 
@@ -1157,6 +1160,7 @@ export default function Step2Milestones({
   projectFamilyContext = {},
   onAiUpdateFeedback = () => {},
 }) {
+  const navigate = useNavigate();
   const [overlapConfirm, setOverlapConfirm] = useState(null);
 
   const [materialsWho, setMaterialsWho] = useState("Homeowner");
@@ -1242,6 +1246,9 @@ export default function Step2Milestones({
   const [revealedSubcontractorMilestoneIds, setRevealedSubcontractorMilestoneIds] = useState([]);
 
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [milestoneTemplatePromptVisible, setMilestoneTemplatePromptVisible] = useState(false);
+  const [milestoneTemplateUpdateConfirmOpen, setMilestoneTemplateUpdateConfirmOpen] = useState(false);
+  const [milestoneTemplateUpdating, setMilestoneTemplateUpdating] = useState(false);
   const lastProjectClassRef = useRef("");
   const warnedMissingTotalCostRef = useRef(false);
 
@@ -2271,10 +2278,75 @@ export default function Step2Milestones({
 
   const selectedTemplateMeta = useMemo(() => deriveSelectedTemplateMeta(agreementMeta), [agreementMeta]);
   const templateApplied = !!selectedTemplateMeta;
+  const canUpdateSelectedTemplate = Boolean(selectedTemplateMeta?.can_update_from_agreement);
+  const selectedTemplateLabel = safeStr(
+    selectedTemplateMeta?.name ||
+      agreementMeta?.selected_template_name_snapshot ||
+      agreementMeta?.selected_template_name ||
+      agreementMeta?.project_title ||
+      agreementMeta?.title
+  );
   const agreementProjectStartDate = useMemo(
     () => toDateOnly(agreementMeta?.project_start_date || agreementMeta?.start || ""),
     [agreementMeta?.project_start_date, agreementMeta?.start]
   );
+
+  function buildTemplateDraftPrefillFromStep2() {
+    const title = safeStr(agreementMeta?.project_title || agreementMeta?.title);
+    return {
+      header: {
+        name: title ? `${title} Template` : `${selectedTemplateLabel || "Improved"} Template`,
+        project_type: safeStr(agreementMeta?.project_type),
+        project_subtype: safeStr(agreementMeta?.project_subtype),
+        description: selectedTemplateLabel
+          ? `Improved from ${selectedTemplateLabel}.`
+          : "Created from improved agreement milestones.",
+        default_scope:
+          safeStr(agreementMeta?.description) ||
+          safeStr(agreementMeta?.scope_of_work) ||
+          safeStr(agreementMeta?.project_description),
+        is_active: true,
+      },
+      milestones: effectiveMilestones.map((m, idx) => ({
+        title: safeStr(m?.title) || `Milestone ${idx + 1}`,
+        description: safeStr(m?.description),
+        sort_order: Number(m?.order || idx + 1) || idx + 1,
+        duration_days: m?.duration_days || m?.recommended_duration_days || null,
+        suggested_amount_fixed: safeStr(m?.amount),
+        suggested_amount_low: safeStr(m?.suggested_amount_low),
+        suggested_amount_high: safeStr(m?.suggested_amount_high),
+        normalized_milestone_type: safeStr(m?.normalized_milestone_type),
+        materials_hint: safeStr(m?.materials_hint),
+        pricing_advisory: Boolean(safeStr(m?.amount)),
+      })),
+      source_template_id: selectedTemplateMeta?.id || agreementMeta?.selected_template_id || undefined,
+    };
+  }
+
+  function handleSaveImprovedMilestonesAsNewTemplate() {
+    navigate("/app/templates", {
+      state: { templateDraftPrefill: buildTemplateDraftPrefillFromStep2() },
+    });
+    toast.success("New template draft created");
+  }
+
+  async function handleUpdateSourceTemplateFromMilestones() {
+    if (!agreementId || !selectedTemplateMeta?.id) return;
+    setMilestoneTemplateUpdating(true);
+    try {
+      await api.post(`/projects/agreements/${agreementId}/update-source-template/`, {
+        template_id: selectedTemplateMeta.id,
+      });
+      toast.success("Template updated");
+      setMilestoneTemplatePromptVisible(false);
+      setMilestoneTemplateUpdateConfirmOpen(false);
+      await refreshAgreementMeta();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not update template.");
+    } finally {
+      setMilestoneTemplateUpdating(false);
+    }
+  }
 
   useEffect(() => {
     setProjectStartDateDraft(agreementProjectStartDate || "");
@@ -2625,7 +2697,7 @@ export default function Step2Milestones({
     estimateProject,
   } = useAgreementMilestoneAI({
     agreementId,
-    locked: milestonesLocked || templateApplied,
+    locked: milestonesLocked,
     refreshAgreement: refreshAgreementMeta,
     refreshMilestones: refreshMilestonesSafe,
     onMilestonesReplaced: null,
@@ -3206,16 +3278,6 @@ export default function Step2Milestones({
       lockToast();
       return;
     }
-    if (templateApplied) {
-      toast(
-        "This agreement is template-driven. Use the template structure instead of applying AI milestone suggestions here.",
-        {
-          icon: "",
-        }
-      );
-      return;
-    }
-
     const { previewRows, analysis } = buildAiMilestonePreviewAnalysis(mode);
     if (!previewRows.length) {
       toast("No milestone suggestions are available to apply.");
@@ -3246,6 +3308,9 @@ export default function Step2Milestones({
     onAiUpdateFeedback("AI suggested milestones are ready for review.");
     clearAiMilestonePreview({ clearSuggestedIds: false });
     setAiSuggestedMilestoneIds(nextIds);
+    if (templateApplied) {
+      setMilestoneTemplatePromptVisible(true);
+    }
     toast.success(
       mode === "add_missing"
         ? `Added ${nextRows.length} milestone${nextRows.length === 1 ? "" : "s"} after skipping duplicates.`
@@ -3356,13 +3421,6 @@ export default function Step2Milestones({
       lockToast();
       return;
     }
-    if (templateApplied) {
-      toast("A template is already applied. Use the template-driven milestone structure instead of regenerating milestones with AI here.", {
-        icon: "",
-      });
-      return;
-    }
-
     if (effectiveMilestones.length) {
       setAiMilestoneApplyPrompt({
         existingCount: effectiveMilestones.length,
@@ -3381,13 +3439,6 @@ export default function Step2Milestones({
       lockToast();
       return;
     }
-    if (templateApplied) {
-      toast("This agreement is template-driven. AI bulk milestone replacement/appending is disabled here to avoid overwriting the template structure.", {
-        icon: "",
-      });
-      return;
-    }
-
     const st = String(spreadTotal || "").trim();
     if (spreadEnabled && st !== "" && !amountIsValidPositive(st)) {
       toast.error("Auto-spread total must be greater than $0.");
@@ -3403,6 +3454,9 @@ export default function Step2Milestones({
 
     toast.success(`Created ${result?.count || 0} milestones via AI.`);
     await refreshAfterAiBulkSuccess();
+    if (templateApplied) {
+      setMilestoneTemplatePromptVisible(true);
+    }
   }
 
   async function handleRefreshPricingEstimate() {
@@ -5124,7 +5178,7 @@ export default function Step2Milestones({
                 <button
                   type="button"
                   onClick={handleRunAiSuggest}
-                  disabled={aiLoading || aiMilestoneGenerationBusy || milestonesLocked || templateApplied}
+                  disabled={aiLoading || aiMilestoneGenerationBusy || milestonesLocked}
                   className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-50 disabled:opacity-60"
                   data-testid="step2-generate-suggested-milestones"
                 >
@@ -5165,6 +5219,19 @@ export default function Step2Milestones({
               <div className="mt-2 text-xs text-slate-500">
                 AI suggestions are advisory. Review before applying. MyHomeBro will avoid adding duplicate phases.
               </div>
+              {milestoneTemplatePromptVisible && templateApplied ? (
+                <TemplateImprovementPrompt
+                  testId="step2-template-improvement-prompt"
+                  message={`These milestone improvements can strengthen future ${
+                    selectedTemplateLabel || "template-based"
+                  } agreements.`}
+                  canUpdateSource={canUpdateSelectedTemplate}
+                  updating={milestoneTemplateUpdating}
+                  onSaveAsNew={handleSaveImprovedMilestonesAsNewTemplate}
+                  onUpdateSource={() => setMilestoneTemplateUpdateConfirmOpen(true)}
+                  onDismiss={() => setMilestoneTemplatePromptVisible(false)}
+                />
+              ) : null}
               {aiLoading || aiMilestoneGenerationBusy ? (
                 <div
                   className="mt-3 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs text-slate-600"
@@ -5252,7 +5319,7 @@ export default function Step2Milestones({
             <button
               type="button"
               onClick={handleRunAiSuggest}
-              disabled={aiLoading || aiMilestoneGenerationBusy || milestonesLocked || templateApplied}
+              disabled={aiLoading || aiMilestoneGenerationBusy || milestonesLocked}
               className="rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm font-medium text-rose-800 hover:bg-rose-50 disabled:opacity-60"
             >
               Try Again
@@ -5364,7 +5431,6 @@ export default function Step2Milestones({
               disabled={
                 aiLoading ||
                 milestonesLocked ||
-                templateApplied ||
                 aiMilestonePlanAnalysis?.blocked
               }
               className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
@@ -6992,7 +7058,7 @@ export default function Step2Milestones({
               <button
                 type="button"
                 onClick={handleRunAiSuggest}
-                disabled={milestonesLocked || aiLoading || aiMilestoneGenerationBusy || templateApplied}
+                disabled={milestonesLocked || aiLoading || aiMilestoneGenerationBusy}
                 className="rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-50 disabled:opacity-60"
                 data-testid="step2-empty-generate-milestones"
               >
@@ -7809,6 +7875,41 @@ export default function Step2Milestones({
         }
         milestones={effectiveMilestones}
       />
+
+      {milestoneTemplateUpdateConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          data-testid="step2-update-source-template-modal"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-slate-950">Update the source template?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              This will replace the reusable template scope and milestone plan with the improved version from this agreement.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMilestoneTemplateUpdateConfirmOpen(false)}
+                disabled={milestoneTemplateUpdating}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateSourceTemplateFromMilestones}
+                disabled={milestoneTemplateUpdating}
+                className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+                data-testid="step2-confirm-update-source-template"
+              >
+                {milestoneTemplateUpdating ? "Updating..." : "Update Template"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {false && saveTemplateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

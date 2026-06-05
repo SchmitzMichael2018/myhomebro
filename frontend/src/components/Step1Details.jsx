@@ -13,6 +13,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
+import TemplateImprovementPrompt from "./TemplateImprovementPrompt.jsx";
 import TemplateSearchSection from "./step1/TemplateSearchSection.jsx";
 import CustomerSection from "./step1/CustomerSection.jsx";
 import AddressSection from "./step1/AddressSection.jsx";
@@ -2549,6 +2550,9 @@ export default function Step1Details({
   const [classificationErr, setClassificationErr] = useState("");
   const [classificationMessage, setClassificationMessage] = useState("");
   const [classificationResult, setClassificationResult] = useState(null);
+  const [scopeTemplatePromptVisible, setScopeTemplatePromptVisible] = useState(false);
+  const [scopeTemplateUpdateConfirmOpen, setScopeTemplateUpdateConfirmOpen] = useState(false);
+  const [scopeTemplateUpdating, setScopeTemplateUpdating] = useState(false);
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
@@ -2986,6 +2990,9 @@ export default function Step1Details({
 
     await patchAgreement({ description: nextDescription, scope_of_work: nextDescription }, { silent: true });
     setAiPreview("");
+    if (appliedTemplateId) {
+      setScopeTemplatePromptVisible(true);
+    }
   }
 
   function commitClassificationResult(nextClassification, { note = "", silent = false } = {}) {
@@ -4200,6 +4207,66 @@ export default function Step1Details({
       dLocal?.selected_template_name_snapshot ||
       selectedTemplate?.name
   );
+  const canUpdateAppliedTemplate = Boolean(
+    agreement?.selected_template?.can_update_from_agreement ||
+      dLocal?.selected_template?.can_update_from_agreement ||
+      selectedTemplate?.can_update_from_agreement
+  );
+
+  function buildTemplateDraftPrefillFromStep1() {
+    const title = safeTrim(dLocal?.project_title || agreement?.project_title || agreement?.title);
+    const scope = safeTrim(dLocal?.description || agreement?.description || agreement?.scope_of_work);
+    return {
+      header: {
+        name: title ? `${title} Template` : `${appliedTemplateName || "Improved"} Template`,
+        project_type: safeTrim(dLocal?.project_type || agreement?.project_type),
+        project_subtype: safeTrim(dLocal?.project_subtype || agreement?.project_subtype),
+        description: appliedTemplateName
+          ? `Improved from ${appliedTemplateName}.`
+          : "Created from an improved agreement scope.",
+        default_scope: scope,
+        is_active: true,
+      },
+      milestones: Array.isArray(agreement?.milestones)
+        ? agreement.milestones.map((m, idx) => ({
+            title: m?.title || `Milestone ${idx + 1}`,
+            description: m?.description || "",
+            sort_order: m?.order || idx + 1,
+            duration_days: m?.duration_days || m?.recommended_duration_days || null,
+            suggested_amount_fixed: m?.amount || "",
+            pricing_advisory: Boolean(m?.amount),
+          }))
+        : [],
+      source_template_id: appliedTemplateId || undefined,
+    };
+  }
+
+  function handleSaveImprovedScopeAsNewTemplate() {
+    navigate("/app/templates", {
+      state: { templateDraftPrefill: buildTemplateDraftPrefillFromStep1() },
+    });
+    toast.success("New template draft created");
+  }
+
+  async function handleUpdateSourceTemplateFromScope() {
+    if (!agreementId || !appliedTemplateId) return;
+    setScopeTemplateUpdating(true);
+    try {
+      await api.post(`/projects/agreements/${agreementId}/update-source-template/`, {
+        template_id: appliedTemplateId,
+      });
+      toast.success("Template updated");
+      setScopeTemplatePromptVisible(false);
+      setScopeTemplateUpdateConfirmOpen(false);
+      if (typeof refreshAgreement === "function") {
+        await refreshAgreement();
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not update template.");
+    } finally {
+      setScopeTemplateUpdating(false);
+    }
+  }
   const clarificationContext = useMemo(
     () => ({
       projectTitle: safeTrim(dLocal?.project_title || agreement?.project_title),
@@ -7820,6 +7887,18 @@ export default function Step1Details({
                     onReject={() => setAiPreview("")}
                   />
                 ) : null}
+
+                {scopeTemplatePromptVisible && appliedTemplateId ? (
+                  <TemplateImprovementPrompt
+                    testId="step1-template-improvement-prompt"
+                    message="This agreement improved the original template scope."
+                    canUpdateSource={canUpdateAppliedTemplate}
+                    updating={scopeTemplateUpdating}
+                    onSaveAsNew={handleSaveImprovedScopeAsNewTemplate}
+                    onUpdateSource={() => setScopeTemplateUpdateConfirmOpen(true)}
+                    onDismiss={() => setScopeTemplatePromptVisible(false)}
+                  />
+                ) : null}
               </div>
             </div>
           </StepSection>
@@ -8145,6 +8224,41 @@ export default function Step1Details({
         milestoneCount={agreement?.milestone_count ?? agreement?.milestones?.length ?? null}
         scopeDescription={safeTrim(agreement?.ai_scope?.scope_text) || safeTrim(dLocal?.description)}
       />
+
+      {scopeTemplateUpdateConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          data-testid="step1-update-source-template-modal"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-slate-950">Update the source template?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              This will replace the reusable template scope and milestone plan with the improved version from this agreement.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setScopeTemplateUpdateConfirmOpen(false)}
+                disabled={scopeTemplateUpdating}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateSourceTemplateFromScope}
+                disabled={scopeTemplateUpdating}
+                className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+                data-testid="step1-confirm-update-source-template"
+              >
+                {scopeTemplateUpdating ? "Updating..." : "Update Template"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

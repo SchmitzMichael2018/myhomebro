@@ -1112,6 +1112,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
     const header = prefill?.header || {};
     const milestoneRows = Array.isArray(prefill?.milestones) ? prefill.milestones : [];
+    const sourceTemplateId = prefill?.source_template_id || header?.source_template_id || null;
 
     setSelectedId(null);
     setSelectedDetail(null);
@@ -1121,6 +1122,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     setEditMode(true);
     setActiveTab("setup");
     setTemplateAiPrompt("");
+    setDraftSourceTemplateId(sourceTemplateId);
     setEditHeader({
       ...buildBlankHeader(),
       ...header,

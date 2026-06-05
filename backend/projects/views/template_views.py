@@ -681,6 +681,133 @@ class SaveAgreementAsTemplateView(APIView):
         )
 
 
+def _milestone_duration_days(milestone) -> int:
+    start = getattr(milestone, "start_date", None)
+    end = getattr(milestone, "completion_date", None)
+    if start and end and end >= start:
+        return max((end - start).days + 1, 1)
+    return 1
+
+
+def _agreement_scope_text(agreement: Agreement) -> str:
+    return _safe_str(
+        getattr(agreement, "scope_of_work", "")
+        or getattr(agreement, "description", "")
+        or getattr(agreement, "project_description", "")
+    )
+
+
+class UpdateSourceTemplateFromAgreementView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, agreement_id: int):
+        contractor = get_request_contractor(request.user)
+        is_admin = _is_admin_user(request.user)
+        if contractor is None and not is_admin:
+            raise PermissionDenied("Only contractors or admins can update templates.")
+
+        try:
+            agreement = (
+                Agreement.objects.select_related("selected_template", "contractor", "contractor__user")
+                .prefetch_related("milestones")
+                .get(pk=agreement_id)
+            )
+        except Agreement.DoesNotExist:
+            raise ValidationError("Agreement not found.")
+
+        if contractor is not None and not agreement_belongs_to_contractor(agreement, contractor) and not is_admin:
+            raise PermissionDenied("You do not have access to this agreement.")
+
+        template = getattr(agreement, "selected_template", None)
+        if template is None:
+            raise ValidationError("This agreement does not have a source template.")
+
+        requested_template_id = request.data.get("template_id")
+        if requested_template_id not in (None, "", False) and str(requested_template_id) != str(template.id):
+            raise ValidationError("Template does not match this agreement's source template.")
+
+        if template.is_system_template or template.is_system:
+            if not is_admin:
+                raise PermissionDenied("Only admins can update system templates.")
+        elif not is_admin and (contractor is None or template.contractor_id != contractor.id):
+            raise PermissionDenied("You do not have permission to update this template.")
+
+        scope_text = _agreement_scope_text(agreement)
+        milestone_rows = list(agreement.milestones.all().order_by("order", "id"))
+        if not scope_text and not milestone_rows:
+            raise ValidationError("Agreement does not have scope or milestones to update the template.")
+
+        include_identity = bool(request.data.get("include_identity", False))
+        updated_fields = []
+
+        with transaction.atomic():
+            if scope_text and template.default_scope != scope_text:
+                template.default_scope = scope_text
+                updated_fields.append("default_scope")
+
+            if include_identity:
+                next_name = _safe_str(getattr(agreement, "project_title", "") or getattr(agreement, "title", ""))
+                next_type = _safe_str(getattr(agreement, "project_type", ""))
+                next_subtype = _safe_str(getattr(agreement, "project_subtype", ""))
+                if next_name and template.name != next_name:
+                    template.name = next_name
+                    updated_fields.append("name")
+                if next_type and template.project_type != next_type:
+                    template.project_type = next_type
+                    updated_fields.append("project_type")
+                if next_subtype and template.project_subtype != next_subtype:
+                    template.project_subtype = next_subtype
+                    updated_fields.append("project_subtype")
+
+            if milestone_rows:
+                template.milestones.all().delete()
+                sequential_offset = 0
+                for index, milestone in enumerate(milestone_rows, start=1):
+                    duration_days = _milestone_duration_days(milestone)
+                    amount = _to_decimal(getattr(milestone, "amount", None))
+                    low_amount = _to_decimal(getattr(milestone, "suggested_amount_low", None))
+                    high_amount = _to_decimal(getattr(milestone, "suggested_amount_high", None))
+                    ProjectTemplateMilestone.objects.create(
+                        template=template,
+                        title=_safe_str(getattr(milestone, "title", "")) or f"Milestone {index}",
+                        description=_safe_str(getattr(milestone, "description", "")),
+                        sort_order=getattr(milestone, "order", None) or index,
+                        start_offset=sequential_offset,
+                        duration_days=duration_days,
+                        recommended_days_from_start=sequential_offset + 1,
+                        recommended_duration_days=duration_days,
+                        suggested_amount_fixed=amount if amount > 0 else None,
+                        suggested_amount_percent=None,
+                        suggested_amount_low=low_amount if low_amount > 0 else None,
+                        suggested_amount_high=high_amount if high_amount > 0 else None,
+                        pricing_advisory=bool(amount > 0),
+                        normalized_milestone_type=_safe_str(getattr(milestone, "normalized_milestone_type", "")),
+                        pricing_confidence=_safe_str(getattr(milestone, "pricing_confidence", "")),
+                        pricing_source_note=_safe_str(getattr(milestone, "pricing_source_note", "")),
+                        materials_hint=_safe_str(getattr(milestone, "materials_hint", "")),
+                    )
+                    sequential_offset += max(duration_days, 1)
+                updated_fields.append("milestones")
+
+            if updated_fields:
+                concrete_fields = [
+                    field
+                    for field in updated_fields
+                    if field in {"default_scope", "name", "project_type", "project_subtype"}
+                ]
+                template.save(update_fields=list(dict.fromkeys([*concrete_fields, "updated_at"])))
+
+        template = _template_queryset().get(pk=template.pk)
+        return Response(
+            {
+                "detail": "Template updated.",
+                "updated_fields": list(dict.fromkeys(updated_fields)),
+                "template": ProjectTemplateDetailSerializer(template).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class TemplateSuggestPricingView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
