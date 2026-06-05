@@ -787,7 +787,14 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 "inspection_reviewed_by",
                 "payout_record",
             )
-                .filter(agreement__project__contractor=contractor)
+                .filter(
+                    Q(agreement__contractor=contractor)
+                    | Q(
+                        agreement__contractor__isnull=True,
+                        agreement__project__contractor=contractor,
+                    )
+                )
+                .distinct()
                 .order_by("order", "id")
             )
 

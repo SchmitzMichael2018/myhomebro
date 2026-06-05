@@ -1634,6 +1634,18 @@ export default function Step2Milestones({
     });
   }
 
+  function replaceLocalMilestoneFallbackId(previousId, milestone) {
+    setFallbackMilestones((prev) => {
+      const base = Array.isArray(prev) ? prev : Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
+      const normalized = normalizeMilestoneForLocalFallback(milestone);
+      if (!normalized?.id) return base;
+      const previousKey = String(previousId);
+      const nextRows = base.map((row) => (String(row?.id) === previousKey ? { ...row, ...normalized } : row));
+      const alreadyIncluded = nextRows.some((row) => String(row?.id) === String(normalized.id));
+      return sortFallbackMilestones(alreadyIncluded ? nextRows : [...nextRows, normalized]);
+    });
+  }
+
   function updateCardMilestoneField(milestoneId, field, value) {
     setFallbackMilestones((prev) => {
       const base = Array.isArray(prev) ? prev : Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
@@ -3879,7 +3891,7 @@ export default function Step2Milestones({
       const changedCount = stagedIds.filter(Boolean).length || nextRows.length;
       const feedback = timelineAdjusted
         ? "Timeline adjusted to start from today."
-        : `Adjusted timeline suggestions for ${changedCount} milestone${
+        : `Staged timeline suggestions for ${changedCount} milestone${
             changedCount === 1 ? "" : "s"
           }.`;
       setAiChangeSummary(feedback);
@@ -3930,7 +3942,7 @@ export default function Step2Milestones({
     {
       const feedback = `Updated suggested pricing for ${appliedCount} milestone${
         appliedCount === 1 ? "" : "s"
-      }.`;
+      } for review.`;
       setAiChangeSummary(feedback);
       onAiUpdateFeedback(feedback);
     }
@@ -4104,20 +4116,32 @@ export default function Step2Milestones({
 
       setEditBusy(true);
       try {
-        const result = await updateMilestone({
-          id: d.id,
+        const editPayload = {
           title,
           description: safeStr(d.description),
           start_date: d.start_date || null,
           completion_date: d.completion_date || null,
           amount: Number(d.amount),
           allow_overlap: true,
-        });
+        };
+        const wasPersisted = isPersistedMilestoneId(d.id);
+        const result = wasPersisted
+          ? await updateMilestone({
+              id: d.id,
+              ...editPayload,
+            })
+          : await saveMilestone({
+              ...(editMilestone || {}),
+              ...editPayload,
+              order: editForm.order || editMilestone?.order || effectiveMilestones.length + 1,
+            });
         markMilestonesUserModified();
         if (toDateOnly(d.start_date) || toDateOnly(d.completion_date)) {
-          markMilestoneDatesManual(d.id);
+          markMilestoneDatesManual(result?.milestone?.id || d.id);
         }
-        if (result?.refreshed === false) {
+        if (!wasPersisted && result?.milestone?.id) {
+          replaceLocalMilestoneFallbackId(d.id, result.milestone);
+        } else if (result?.refreshed === false) {
           applyLocalMilestoneFallback("update", result?.milestone);
         }
 
@@ -4272,19 +4296,31 @@ export default function Step2Milestones({
 
     setEditBusy(true);
     try {
-      const result = await updateMilestone({
-        id: editForm.id,
+      const editPayload = {
         title,
         description: safeStr(editForm.description),
         start_date: editForm.start_date || null,
         completion_date: editForm.completion_date || null,
         amount: Number(editForm.amount),
-      });
+      };
+      const wasPersisted = isPersistedMilestoneId(editForm.id);
+      const result = wasPersisted
+        ? await updateMilestone({
+            id: editForm.id,
+            ...editPayload,
+          })
+        : await saveMilestone({
+            ...(editMilestone || {}),
+            ...editPayload,
+            order: editForm.order || editMilestone?.order || effectiveMilestones.length + 1,
+          });
       markMilestonesUserModified();
       if (toDateOnly(editForm.start_date) || toDateOnly(editForm.completion_date)) {
-        markMilestoneDatesManual(editForm.id);
+        markMilestoneDatesManual(result?.milestone?.id || editForm.id);
       }
-      if (result?.refreshed === false) {
+      if (!wasPersisted && result?.milestone?.id) {
+        replaceLocalMilestoneFallbackId(editForm.id, result.milestone);
+      } else if (result?.refreshed === false) {
         applyLocalMilestoneFallback("update", result?.milestone);
       }
 
@@ -4919,7 +4955,7 @@ export default function Step2Milestones({
           className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
           data-testid="step2-pricing-feedback-banner"
         >
-          <div className="font-semibold">AI updated milestone work</div>
+          <div className="font-semibold">AI milestone guidance</div>
           <div className="mt-1 text-xs text-amber-800">{aiChangeSummary}</div>
         </div>
       ) : null}

@@ -212,6 +212,14 @@ async function installStep2AutoDraftRoutes(
 ) {
   await installBaseAuthMocks(page);
 
+  const sortItems = () =>
+    milestoneState.items.sort((a, b) => {
+      const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+      const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return Number(a?.id || 0) - Number(b?.id || 0);
+    });
+
   await page.route('**/api/projects/project-types/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -247,14 +255,6 @@ async function installStep2AutoDraftRoutes(
 
   await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
     const request = route.request();
-
-    const sortItems = () =>
-      milestoneState.items.sort((a, b) => {
-        const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
-        const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
-        if (orderA !== orderB) return orderA - orderB;
-        return Number(a?.id || 0) - Number(b?.id || 0);
-      });
 
     if (request.method() === 'GET') {
       sortItems();
@@ -332,6 +332,7 @@ async function installStep2AutoDraftRoutes(
 
     if (request.method() === 'PATCH' && index >= 0) {
       const payload = request.postDataJSON();
+      milestoneState.patchCount = (milestoneState.patchCount || 0) + 1;
       if (payload.sort_order != null && payload.order == null) {
         payload.order = payload.sort_order;
       }
@@ -371,6 +372,93 @@ async function installStep2AutoDraftRoutes(
     });
   });
 }
+
+test('step 2 edit modal persists milestone description and updates the card', async ({ page }) => {
+  const milestoneState = {
+    items: [
+      {
+        id: 801,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Demo & Prep',
+        description: 'Protect work area and demo existing finishes.',
+        amount: '4000.00',
+        start_date: '2026-04-01',
+        completion_date: '2026-04-02',
+        normalized_milestone_type: 'demolition',
+      },
+    ],
+    nextId: 900,
+    createCount: 0,
+    patchCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement: {
+      id: AGREEMENT_ID,
+      agreement_id: AGREEMENT_ID,
+      project_title: 'Kitchen Remodel Agreement',
+      title: 'Kitchen Remodel Agreement',
+      project_type: 'Remodel',
+      project_subtype: 'Kitchen Remodel',
+      payment_mode: 'escrow',
+      payment_structure: 'simple',
+      description: 'Kitchen remodel with upgraded finishes.',
+      total_cost: '25000.00',
+      pricing_strategy: 'fixed',
+      project_address_city: 'San Antonio',
+      project_address_state: 'TX',
+      start: '2026-04-01',
+      homeowner: null,
+      status: 'draft',
+      ai_scope: {
+        answers: {
+          clarifications_reviewed_step2: true,
+        },
+        questions: [],
+      },
+    },
+    projectTypes: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [{ id: 10, value: 'Kitchen Remodel', label: 'Kitchen Remodel', owner_type: 'system' }],
+    milestoneState,
+    estimateResponse: {
+      milestone_suggestions: [],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+      },
+      price_adjustments: [],
+      timeline_adjustments: [],
+      explanation_lines: [],
+      benchmark_source: 'seeded_only',
+      confidence_level: 'medium',
+      confidence_reasoning: 'Advisory guidance.',
+      source_metadata: {},
+    },
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const card = page.getByTestId('step2-milestone-card-801');
+  await expect(card).toBeVisible();
+  await page.getByTestId('step2-plan-details-toggle-801').click();
+  await expect(card).toContainText('Protect work area and demo existing finishes.');
+
+  await card.getByRole('button', { name: 'Edit' }).click();
+  const editModal = page.getByTestId('step2-edit-milestone-modal');
+  await expect(editModal).toBeVisible();
+  await editModal
+    .getByTestId('step2-edit-milestone-description')
+    .fill('Protect floors, remove existing finishes, and stage debris for disposal.');
+  await editModal.getByRole('button', { name: 'Save Changes' }).click();
+
+  await expect(page.getByText('Not found.')).toHaveCount(0);
+  await expect(editModal).toHaveCount(0);
+  expect(milestoneState.patchCount).toBeGreaterThan(0);
+  await expect(card).toContainText('Protect floors, remove existing finishes, and stage debris for disposal.');
+});
 
 test('step 2 estimate summary, details, budget guidance, and milestone advisory UI render without overwriting milestone amounts', async ({
   page,

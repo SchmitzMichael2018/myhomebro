@@ -354,6 +354,90 @@ class AgreementMilestoneAIRouteTests(TestCase):
         self.assertEqual(rows[1]["completion_date"], "2026-04-07")
         self.assertEqual(self.agreement.milestones.count(), 2)
 
+    def test_milestone_patch_uses_agreement_contractor_when_project_contractor_is_stale(self):
+        user_model = get_user_model()
+        other_user = user_model.objects.create_user(
+            email="other-contractor@example.com",
+            password="testpass123",
+        )
+        other_contractor = Contractor.objects.create(
+            user=other_user,
+            business_name="Other Contractor",
+        )
+        self.project.contractor = other_contractor
+        self.project.save(update_fields=["contractor"])
+
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Original Milestone",
+            description="Original description.",
+            amount="1000.00",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/milestones/{milestone.id}/",
+            {
+                "title": "Original Milestone",
+                "description": "Updated description from owner.",
+                "amount": "1000.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.json())
+        milestone.refresh_from_db()
+        self.assertEqual(milestone.description, "Updated description from owner.")
+
+    def test_milestone_patch_rejects_non_agreement_contractor(self):
+        user_model = get_user_model()
+        other_user = user_model.objects.create_user(
+            email="not-owner@example.com",
+            password="testpass123",
+        )
+        other_contractor = Contractor.objects.create(
+            user=other_user,
+            business_name="Not Owner Contractor",
+        )
+        self.project.contractor = other_contractor
+        self.project.save(update_fields=["contractor"])
+
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Protected Milestone",
+            description="Protected description.",
+            amount="1000.00",
+        )
+
+        self.client.force_authenticate(user=other_user)
+        response = self.client.patch(
+            f"/api/projects/milestones/{milestone.id}/",
+            {
+                "title": "Protected Milestone",
+                "description": "Non-owner update should not persist.",
+                "amount": "1000.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        milestone.refresh_from_db()
+        self.assertEqual(milestone.description, "Protected description.")
+
+    def test_milestone_patch_missing_returns_404(self):
+        response = self.client.patch(
+            "/api/projects/milestones/999999/",
+            {
+                "title": "Missing Milestone",
+                "description": "Should not be found.",
+                "amount": "1000.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+
 
 class AgreementMilestoneSuggestionShapingTests(TestCase):
     def setUp(self):
