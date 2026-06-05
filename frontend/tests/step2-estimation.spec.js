@@ -592,8 +592,8 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-pricing-summary-card')).toContainText(
     'Based on similar projects and milestone structure.'
   );
-  await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Generate Suggested Milestones');
   await expect(page.getByTestId('step2-generate-suggested-milestones')).toBeVisible();
+  await expect(page.getByTestId('step2-generate-suggested-milestones')).toContainText('Regenerate Plan');
   await expect(page.getByTestId('step2-suggest-milestone-pricing')).toBeVisible();
   await expect(page.getByTestId('step2-plan-guidance-card')).toContainText('Pricing is based on similar projects and milestone structure.');
   await expect(page.getByTestId('step2-rebalance-milestones')).toBeVisible();
