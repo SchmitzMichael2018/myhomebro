@@ -11,11 +11,11 @@ export default function TemplateImprovementPrompt({
 }) {
   return (
     <div
-      className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 shadow-sm"
+      className="mt-3 rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 shadow-sm dark:border-emerald-400/60 dark:bg-slate-950 dark:text-emerald-50"
       data-testid={testId}
     >
-      <div className="font-semibold">{message}</div>
-      <div className="mt-1 text-emerald-900/85">
+      <div className="font-semibold text-emerald-950 dark:text-white">{message}</div>
+      <div className="mt-1 text-emerald-900/85 dark:text-emerald-100">
         You improved this agreement. Want future agreements to start this strong?
       </div>
       <div className="mt-3 flex flex-wrap gap-2">

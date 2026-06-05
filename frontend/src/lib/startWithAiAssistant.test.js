@@ -78,6 +78,26 @@ describe("planAssistantAction – commercial intents", () => {
     const plan = planAssistantAction({ input: "set up a recurring service retainer" });
     expect(plan.intent).toBe("maintenance_contract");
   });
+
+  it("routes broad Step 2 milestone planning requests to milestone planning", () => {
+    const plan = planAssistantAction({
+      input:
+        "Split this project into milestone phases with updated descriptions, realistic pricing and schedules.",
+      context: {
+        agreement_id: 39,
+        current_route: "/app/agreements/39/wizard?step=2",
+        agreement_summary: {
+          project_summary: "Install flooring in kitchen and hallway.",
+          milestone_count: 3,
+        },
+        milestone_summary: { count: 3 },
+      },
+    });
+
+    expect(plan.intent).toBe("suggest_milestones");
+    expect(plan.is_fallback).toBe(false);
+    expect(plan.navigation_target).toBe("/app/agreements/39/wizard?step=2");
+  });
 });
 
 describe("planAssistantAction – candidate_intents", () => {

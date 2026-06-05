@@ -62,7 +62,20 @@ const INTENT_CONFIG = {
     requiredFields: ["project_summary"],
     destination: "/app/agreements/new/wizard?step=2",
     destinationLabel: "Open Milestone Builder",
-    summary: "Guide milestone drafting and pricing in the existing workflow.",
+    summary: "Guide milestone drafting, descriptions, pricing, and schedules in the existing workflow.",
+    keywords: [
+      "milestone",
+      "milestones",
+      "phase",
+      "phases",
+      "split",
+      "schedule",
+      "timeline",
+      "rebalance",
+      "realistic pricing",
+      "updated descriptions",
+      "work plan",
+    ],
   },
   collect_clarifications: {
     label: "Collect clarifications",
@@ -224,7 +237,14 @@ function detectIntent(input, preferredIntent, context) {
   }
 
   if (text.includes("clarif")) return { intent: "collect_clarifications", matchType: "partial_keyword", is_fallback: false };
-  if (text.includes("milestone")) return { intent: "suggest_milestones", matchType: "partial_keyword", is_fallback: false };
+  if (
+    text.includes("milestone") ||
+    /\b(split|break|organize)\b.*\b(project|work|job)\b.*\b(phase|phases|milestones?)\b/.test(text) ||
+    /\b(phase|phases|work plan|schedule|timeline)\b/.test(text) &&
+      /\b(price|pricing|cost|description|descriptions|realistic|update|improve|rebalance)\b/.test(text)
+  ) {
+    return { intent: "suggest_milestones", matchType: "strong_keyword", is_fallback: false };
+  }
   if (isTemplateCreationIntent(text)) return { intent: "template_guidance", matchType: "strong_keyword", is_fallback: false };
   if (text.includes("template")) return { intent: "apply_template", matchType: "partial_keyword", is_fallback: false };
   if (text.includes("customer")) return { intent: "create_customer", matchType: "partial_keyword", is_fallback: false };

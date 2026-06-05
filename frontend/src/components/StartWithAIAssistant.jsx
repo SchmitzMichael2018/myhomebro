@@ -1287,7 +1287,7 @@ export default function StartWithAIAssistant({
     });
   }
 
-  function navigateWithCandidateIntent(candidate) {
+  async function navigateWithCandidateIntent(candidate) {
     const target = candidate.destination || plan.navigation_target;
     if (!target) return;
     const candidatePlan = {
@@ -1295,6 +1295,10 @@ export default function StartWithAIAssistant({
       intent: candidate.intent,
       navigation_target: target,
     };
+    if (typeof onAction === "function") {
+      const handled = await onAction(candidatePlan);
+      if (handled === true) return;
+    }
     navigate(target, {
       state: buildAssistantNavigationState(candidatePlan, normalizedContext),
     });

@@ -14,6 +14,7 @@ import toast from "react-hot-toast";
 import api from "../api";
 import ClarificationsModal from "./ClarificationsModal.jsx";
 import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
+import { useAssistantDock } from "./AssistantDock.jsx";
 import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
 import TemplateImprovementPrompt from "./TemplateImprovementPrompt.jsx";
 import CommercialPaymentOverviewPanel from "./step2/CommercialPaymentOverviewPanel.jsx";
@@ -1161,6 +1162,12 @@ export default function Step2Milestones({
   onAiUpdateFeedback = () => {},
 }) {
   const navigate = useNavigate();
+  const {
+    isOpen: isAssistantDockOpen,
+    openAssistant,
+    updateAssistantContext,
+    updateAssistantOnAction,
+  } = useAssistantDock();
   const [overlapConfirm, setOverlapConfirm] = useState(null);
 
   const [materialsWho, setMaterialsWho] = useState("Homeowner");
@@ -2763,13 +2770,20 @@ export default function Step2Milestones({
   );
   const pricingSummaryRangeLow = parseAmountStrict(estimatePreview?.suggested_price_low);
   const pricingSummaryRangeHigh = parseAmountStrict(estimatePreview?.suggested_price_high);
+  const hasPricingSummaryRange =
+    Number.isFinite(pricingSummaryRangeLow) &&
+    pricingSummaryRangeLow > 0 &&
+    Number.isFinite(pricingSummaryRangeHigh) &&
+    pricingSummaryRangeHigh > 0;
   const pricingSummaryStatus = useMemo(() => {
-    if (!Number.isFinite(pricingSummaryRangeLow) || !Number.isFinite(pricingSummaryRangeHigh)) return "";
+    if (!hasPricingSummaryRange) return "No pricing guidance available yet.";
     if (total < pricingSummaryRangeLow) return "Below range";
     if (total > pricingSummaryRangeHigh) return "Above range";
     return "Within range";
-  }, [pricingSummaryRangeHigh, pricingSummaryRangeLow, total]);
-  const pricingSummarySource = "Based on similar projects and milestone structure.";
+  }, [hasPricingSummaryRange, pricingSummaryRangeHigh, pricingSummaryRangeLow, total]);
+  const pricingSummarySource = hasPricingSummaryRange
+    ? "Based on similar projects and milestone structure."
+    : "Complete projects and saved pricing history will improve future estimates.";
   const isAiPlanningMode =
     Boolean(aiChangeSummary) ||
     Boolean(assistantGuidedFlow?.guided_question) ||
@@ -4604,6 +4618,9 @@ export default function Step2Milestones({
 
   const assistantContext = useMemo(
     () => ({
+      page: "agreement_wizard",
+      workspace_mode: "agreement_wizard",
+      wizard_step: 2,
       current_route: agreementId
         ? `/app/agreements/${agreementId}/wizard?step=2`
         : "/app/agreements/new/wizard?step=2",
@@ -4632,7 +4649,10 @@ export default function Step2Milestones({
         project_class: projectClass,
         project_family_key: safeStr(projectContextSummary?.projectFamilyKey),
         project_family_label: safeStr(projectContextSummary?.projectFamilyLabel),
+        project_type: agreementMeta?.project_type || "",
+        project_subtype: agreementMeta?.project_subtype || "",
         payment_structure: agreementMeta?.payment_structure || "simple",
+        pricing_total: total,
         milestone_count: effectiveMilestones.length,
         pending_clarifications: Array.isArray(mergedClarificationQuestions)
           ? mergedClarificationQuestions
@@ -4653,7 +4673,14 @@ export default function Step2Milestones({
       },
       milestone_summary: {
         count: effectiveMilestones.length,
+        total,
         suggested_titles: effectiveMilestones.map((item) => item?.title).filter(Boolean),
+      },
+      pricing_guidance: {
+        available: Boolean(pricingBaselineTotal),
+        target_total: estimateBudgetValue || null,
+        baseline_total: pricingBaselineTotal || null,
+        has_range: hasPricingSummaryRange,
       },
       ai_panel: getAiPanelConfigForStep(2, {
         agreement: agreementMeta,
@@ -4681,13 +4708,93 @@ export default function Step2Milestones({
       projectClass,
       projectContextSummary?.projectFamilyKey,
       projectContextSummary?.projectFamilyLabel,
+      estimateBudgetValue,
+      hasPricingSummaryRange,
+      pricingBaselineTotal,
+      total,
     ]
   );
 
+  function resolveStep2CopilotAction(plan = {}) {
+    const explicitKey = safeStr(
+      plan?.assistant_action_key ||
+        plan?.action_key ||
+        plan?.next_action?.action_key
+    );
+    if (explicitKey && explicitKey !== "step2_copilot_request") return explicitKey;
+
+    if (safeStr(plan?.intent) === "estimate_project") return "step2_suggest_pricing";
+    if (safeStr(plan?.intent) === "suggest_milestones") return "step2_improve_milestones";
+
+    const text = safeStr(plan?.prompt || plan?.input || plan?.collected_data?.project_summary).toLowerCase();
+    if (!text) return explicitKey;
+    if (/\b(next step|open next|continue|warranty)\b/.test(text)) return "open_wizard_step";
+    if (/\b(rebalance|spread|allocate)\b/.test(text) && /\b(price|pricing|cost|amount|budget)\b/.test(text)) {
+      return "step2_rebalance_pricing";
+    }
+    if (/\b(price|pricing|estimate|cost|amount|budget|quote)\b/.test(text)) return "step2_suggest_pricing";
+    if (/\b(schedule|timeline|date|dates|duration)\b/.test(text)) return "step2_apply_timeline";
+    if (/\b(milestone|milestones|phase|phases|split|description|descriptions|work plan|improve)\b/.test(text)) {
+      return "step2_improve_milestones";
+    }
+    return explicitKey;
+  }
+
+  function notifyNoPricingGuidance() {
+    const message = "No pricing guidance available yet. Enter a target project total manually, then rebalance milestones.";
+    setAiChangeSummary(message);
+    onAiUpdateFeedback(message);
+    toast(message);
+  }
+
+  function runCopilotSuggestPricing() {
+    if (!pricingBaselineTotal) {
+      notifyNoPricingGuidance();
+      return true;
+    }
+    applyEstimateSuggestedAmounts();
+    return true;
+  }
+
+  function runCopilotRebalancePricing() {
+    if (!estimateBudgetValue && total > 0) {
+      setProjectBudgetInput(formatSuggestedAmountInput(total));
+      const message = "Loaded the current milestone total as the target. Review it, then rebalance milestones.";
+      setAiChangeSummary(message);
+      onAiUpdateFeedback(message);
+      toast(message);
+      return true;
+    }
+    if (!estimateBudgetValue) {
+      notifyNoPricingGuidance();
+      return true;
+    }
+    previewRebalanceMilestones();
+    return true;
+  }
+
   async function handleAssistantAction(plan) {
-    const actionKey = safeStr(plan?.assistant_action_key || plan?.action_key);
+    const actionKey = resolveStep2CopilotAction(plan);
     if (actionKey === "save_as_template") {
       await handleOpenSaveTemplate();
+      return true;
+    }
+    if (actionKey === "step2_improve_milestones") {
+      handleRunAiSuggest();
+      return true;
+    }
+    if (actionKey === "step2_suggest_pricing" || safeStr(plan?.intent) === "estimate_project") {
+      return runCopilotSuggestPricing();
+    }
+    if (actionKey === "step2_rebalance_pricing") {
+      return runCopilotRebalancePricing();
+    }
+    if (actionKey === "step2_apply_timeline") {
+      applyEstimateSuggestedTimeline();
+      return true;
+    }
+    if (actionKey === "open_wizard_step" || actionKey === "open_navigation_target") {
+      if (typeof onNext === "function") onNext();
       return true;
     }
     if (plan?.next_action?.action_key === "review_clarifications") {
@@ -4696,6 +4803,23 @@ export default function Step2Milestones({
     }
     return false;
   }
+
+  useEffect(() => {
+    updateAssistantContext(assistantContext);
+  }, [assistantContext, updateAssistantContext]);
+
+  useEffect(() => {
+    updateAssistantOnAction(handleAssistantAction);
+    return () => updateAssistantOnAction(null);
+  }, [assistantContext, updateAssistantOnAction]);
+
+  useEffect(() => {
+    if (!isAssistantDockOpen) return;
+    openAssistant({
+      context: assistantContext,
+      onAction: handleAssistantAction,
+    });
+  }, [assistantContext, isAssistantDockOpen, openAssistant]);
 
   async function handleApplyAssistantSuggestedMilestones() {
     if (!agreementId || !assistantSuggestionRows.length) return;
@@ -5167,9 +5291,9 @@ export default function Step2Milestones({
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-700">
                     <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
                       Suggested range:{" "}
-                      {Number.isFinite(pricingSummaryRangeLow) && Number.isFinite(pricingSummaryRangeHigh)
+                      {hasPricingSummaryRange
                         ? `${formatCurrency(pricingSummaryRangeLow)} - ${formatCurrency(pricingSummaryRangeHigh)}`
-                        : "Not available"}
+                        : "No pricing guidance available yet."}
                     </span>
                     <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
                       Current total: {formatCurrency(total)}

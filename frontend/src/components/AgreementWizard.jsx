@@ -1927,6 +1927,7 @@ export default function AgreementWizard() {
   );
   const handleAssistantAction = useCallback(
     (plan) => {
+      const nextWizardStep = step < 4 ? step + 1 : 4;
       if (plan?.wizard_step_target && plan.wizard_step_target !== step) {
         goStep(plan.wizard_step_target);
         return true;
@@ -1938,6 +1939,15 @@ export default function AgreementWizard() {
             plan?.next_action?.action_key ||
             ""
         ).trim();
+      if (
+        actionKey === "open_navigation_target" ||
+        actionKey === "open_wizard_step" ||
+        String(plan?.next_action?.label || "").trim() === "Open Requested Workflow" ||
+        String(plan?.primaryActionLabel || "").trim() === "Open the next step"
+      ) {
+        goStep(nextWizardStep);
+        return true;
+      }
       if (step === 1 && actionKey === "refine_and_setup") {
         const prompt = String(plan?.prompt || "").trim();
         if (!prompt) return true;
@@ -1957,7 +1967,7 @@ export default function AgreementWizard() {
       }
       return false;
     },
-    [step]
+    [goStep, step]
   );
 
   useEffect(() => {

@@ -571,13 +571,15 @@ export function getAiPanelConfigForStep(step, context = {}) {
       helperText:
         "Use AI to shape milestones, pricing, and timing without leaving the wizard.",
       quickActions: [
-        { label: "Suggest Milestones", intent: "suggest_milestones" },
-        { label: "Suggest Pricing", prompt: "Review this project and suggest milestone pricing." },
-        { label: "Adjust Timeline", prompt: "Suggest a milestone timeline for this agreement." },
-        { label: "Refine Scope", prompt: "Refine the milestone structure to make it easier to invoice and manage." },
+        { label: "Improve Milestones", actionKey: "step2_improve_milestones" },
+        { label: "Suggest Pricing", actionKey: "step2_suggest_pricing" },
+        { label: "Rebalance Pricing", actionKey: "step2_rebalance_pricing" },
+        { label: "Apply Timeline", actionKey: "step2_apply_timeline" },
       ],
       promptPlaceholder:
         'Example: "Split this project into milestone phases with realistic pricing and dates."',
+      submitButtonLabel: "Plan Milestones",
+      submitActionKey: "step2_copilot_request",
       nextActionText:
         "Next: Review the milestones below and click Save & Next when the plan looks right.",
     };
