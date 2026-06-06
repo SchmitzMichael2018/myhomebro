@@ -619,28 +619,115 @@ function buildCountSuggestion(milestones, context = {}) {
   };
 }
 
-function buildPricingStructureSuggestion(milestones) {
-  const rows = (Array.isArray(milestones) ? milestones : []).map((row, idx) => {
-    const text = `${row?.title || ""} ${row?.description || ""}`.toLowerCase();
-    let structure = "labor phase";
-    if (/\b(material|fixture|flooring|cabinet|shingle|paint|supply)\b/.test(text)) {
-      structure = "materials-heavy phase";
-    } else if (/\b(clean|walkthrough|closeout|final|punch)\b/.test(text)) {
-      structure = "retention/final walkthrough phase";
-    } else if (/\b(demo|prep|protect|layout|planning)\b/.test(text)) {
-      structure = "setup and preparation phase";
-    }
+function classifyAllocationRole(row) {
+  const text = `${row?.title || ""} ${row?.description || ""}`.toLowerCase();
+  if (/\b(clean|cleanup|walkthrough|closeout|close out|final|punch|trim|handoff)\b/.test(text)) {
     return {
-      title: safeTrim(row?.title) || `Milestone ${idx + 1}`,
-      structure,
-      note: "No fixed price suggested; enter advisory ranges manually when project history is available.",
+      structure: "retention/final walkthrough phase",
+      suggested: 10,
+      min: 5,
+      max: 15,
+    };
+  }
+  if (/\b(demo|demolition|prep|prepare|protect|layout|planning|level|leveling|substrate|surface)\b/.test(text)) {
+    return {
+      structure: "setup and preparation phase",
+      suggested: 20,
+      min: 15,
+      max: 25,
+    };
+  }
+  if (/\b(material|materials|fixture|fixtures|supply|supplies|procure|order|delivery|selection|staging)\b/.test(text)) {
+    return {
+      structure: "materials-heavy phase",
+      suggested: 20,
+      min: 15,
+      max: 30,
+    };
+  }
+  if (/\b(install|installation|build|construction|framing|paint|painting|repair|restore|replace|replacement)\b/.test(text)) {
+    return {
+      structure: "primary installation/build phase",
+      suggested: 50,
+      min: 40,
+      max: 60,
+    };
+  }
+  return {
+    structure: "labor phase",
+    suggested: 25,
+    min: 15,
+    max: 35,
+  };
+}
+
+function normalizeSuggestedAllocations(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const baseTotal = list.reduce((sum, row) => sum + Number(row?.suggested || 0), 0);
+  if (!list.length || baseTotal <= 0) return list;
+
+  let running = 0;
+  return list.map((row, idx) => {
+    const raw = (Number(row?.suggested || 0) / baseTotal) * 100;
+    const suggested = idx === list.length - 1 ? Math.max(0, 100 - running) : Math.round(raw);
+    running += suggested;
+    return {
+      ...row,
+      suggested,
     };
   });
+}
+
+function buildPricingStructureSuggestion(milestones) {
+  const rows = normalizeSuggestedAllocations(
+    (Array.isArray(milestones) ? milestones : []).map((row, idx) => {
+      const role = classifyAllocationRole(row);
+      return {
+        title: safeTrim(row?.title) || `Milestone ${idx + 1}`,
+        structure: role.structure,
+        suggested: role.suggested,
+        min: role.min,
+        max: role.max,
+        note:
+          "No dollar pricing is stored. These percentages guide milestone allocation when a project total is entered.",
+      };
+    })
+  );
 
   return {
     message:
-      "No pricing history available yet. You can enter advisory ranges manually or use project history once available.",
+      "No dollar pricing is stored. These percentages guide milestone allocation when a project total is entered.",
     rows,
+  };
+}
+
+function applyPricingStructureToMilestones(milestones, suggestionRows) {
+  const rows = Array.isArray(suggestionRows) ? suggestionRows : [];
+  return (Array.isArray(milestones) ? milestones : []).map((row, idx) => {
+    const suggestion = rows[idx];
+    if (!suggestion) return row;
+    return {
+      ...row,
+      pricing_advisory: true,
+      suggested_amount_percent: String(suggestion.suggested ?? ""),
+      suggested_amount_fixed: "",
+      suggested_amount_low: String(suggestion.min ?? ""),
+      suggested_amount_high: String(suggestion.max ?? ""),
+      pricing_source_note:
+        row?.pricing_source_note ||
+        "Suggested allocation percentage. No dollar pricing is stored on the template.",
+    };
+  });
+}
+
+function buildPricingStructureSuggestionPreview(milestones) {
+  const suggestion = buildPricingStructureSuggestion(milestones);
+  return {
+    ...suggestion,
+    rows: suggestion.rows.map((row) => ({
+      ...row,
+      allocationLabel: `${percentOrDash(row.suggested)} suggested (${percentOrDash(row.min)}-${percentOrDash(row.max)})`,
+    })),
   };
 }
 
@@ -1516,8 +1603,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   }
 
   function handleSuggestPricingStructure() {
-    setPricingStructurePreview(buildPricingStructureSuggestion(currentMilestones));
+    const suggestion = buildPricingStructureSuggestionPreview(currentMilestones);
+    setPricingStructurePreview(suggestion);
+    setEditMilestones((prev) => applyPricingStructureToMilestones(prev, suggestion.rows));
     setActiveTab("pricing");
+    toast.success("Suggested allocation percentages filled. Review and save the template.");
   }
 
   async function handleDeleteTemplate(template) {
@@ -3310,6 +3400,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               <div className="mt-1 text-xs text-slate-700">
                                 Suggested allocation role: {row.structure}
                               </div>
+                              {row.allocationLabel ? (
+                                <div className="mt-1 text-xs font-semibold text-amber-900">
+                                  {row.allocationLabel}
+                                </div>
+                              ) : null}
                               <div className="mt-1 text-xs text-slate-500">
                                 {row.note}
                               </div>
@@ -3532,7 +3627,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                             </span>
                           </div>
                         </div>
-                        {pricingTotals.percent > 100 || pricingTotals.low > 100 || pricingTotals.high > 100 ? (
+                        {pricingTotals.percent > 100 ? (
                           <div
                             data-testid="templates-allocation-warning"
                             className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800"

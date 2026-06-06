@@ -1079,9 +1079,14 @@ test('templates route and sidebar access support creating and editing reusable t
   await expect(page.getByTestId('templates-ai-suggest-pricing-structure-button')).toBeVisible();
   await page.getByTestId('templates-ai-suggest-pricing-structure-button').click();
   await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText(
-    'No pricing history available yet'
+    'No dollar pricing is stored'
   );
   await expect(page.getByTestId('templates-pricing-structure-preview')).not.toContainText('$0');
+  await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText('suggested');
+  await expect(page.getByTestId('templates-milestone-percent-1')).not.toHaveValue('');
+  await expect(page.getByTestId('templates-milestone-percent-2')).not.toHaveValue('');
+  await expect(page.getByText('Suggested total:')).toBeVisible();
+  await expect(page.getByText('100%')).toBeVisible();
   await page.getByTestId('templates-milestone-allocation-enabled-1').check();
   await page.getByTestId('templates-milestone-percent-1').fill('60');
   await page.getByTestId('templates-milestone-min-percent-1').fill('50');
