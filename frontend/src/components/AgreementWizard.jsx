@@ -2020,6 +2020,7 @@ export default function AgreementWizard() {
 
   useEffect(() => {
     if (!isAssistantDockOpen) return;
+    if (step === 2) return;
     openAssistant({
       context: assistantContext,
       onAction: handleAssistantAction,
@@ -2029,6 +2030,7 @@ export default function AgreementWizard() {
     handleAssistantAction,
     isAssistantDockOpen,
     openAssistant,
+    step,
   ]);
 
   return (

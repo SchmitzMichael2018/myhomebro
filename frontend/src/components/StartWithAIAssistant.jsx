@@ -96,6 +96,7 @@ function ProjectAssistantActionButton({ action, onSelect }) {
 function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
   const recommended = Array.isArray(actions?.recommended) ? actions.recommended : [];
   const additional = Array.isArray(actions?.additional) ? actions.additional : [];
+  const info = Array.isArray(actions?.info) ? actions.info.filter(Boolean) : [];
 
   return (
     <div className="space-y-4" data-testid="project-assistant-panel">
@@ -138,6 +139,17 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
           data-testid="project-assistant-notice"
         >
           {notice}
+        </div>
+      ) : null}
+
+      {info.length ? (
+        <div
+          className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-950"
+          data-testid="project-assistant-info"
+        >
+          {info.map((item, idx) => (
+            <div key={`${item}-${idx}`}>{item}</div>
+          ))}
         </div>
       ) : null}
 
@@ -1378,10 +1390,13 @@ export default function StartWithAIAssistant({
       source: "project_assistant_action",
     });
     if (handled === true) {
+      if (actionKey === "step2_enter_project_total") {
+        onClose?.();
+      }
       setProjectAssistantNotice("");
       return;
     }
-    setProjectAssistantNotice("That action is not available for the current wizard state.");
+    setProjectAssistantNotice("This workflow could not start from the current page state. Refresh the wizard step and try again.");
   }
 
   function safeActionKey(value) {

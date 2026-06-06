@@ -7,6 +7,19 @@ function toNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function hasValue(object, key) {
+  return object && Object.prototype.hasOwnProperty.call(object, key) && object[key] != null;
+}
+
+function firstNumber(...values) {
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
 export function readWizardStep(context = {}) {
   const direct = Number(context?.wizard_step);
   if (Number.isFinite(direct) && direct >= 1 && direct <= 4) return Math.floor(direct);
@@ -31,14 +44,15 @@ export function buildProjectAssistantSummary(context = {}) {
   const agreement = context?.agreement_summary || {};
   const milestoneSummary = context?.milestone_summary || {};
   const templateSummary = context?.template_summary || {};
-  const total =
-    toNumber(milestoneSummary.total) ||
-    toNumber(agreement.pricing_total) ||
-    toNumber(agreement.total_cost) ||
-    toNumber(agreement.total);
-  const milestoneCount =
-    toNumber(milestoneSummary.count) ||
-    toNumber(agreement.milestone_count);
+  const total = firstNumber(
+    milestoneSummary.total,
+    agreement.pricing_total,
+    agreement.total_cost,
+    agreement.total
+  );
+  const milestoneCount = hasValue(milestoneSummary, "count")
+    ? toNumber(milestoneSummary.count)
+    : toNumber(agreement.milestone_count);
   const templateName =
     clean(templateSummary.name) ||
     clean(context?.selected_template_name) ||
@@ -73,8 +87,11 @@ export function buildProjectAssistantActions(context = {}) {
   const agreement = context?.agreement_summary || {};
   const templateSummary = context?.template_summary || {};
   const pricingGuidance = context?.pricing_guidance || {};
+  const timelineGuidance = context?.timeline_guidance || {};
   const hasMilestones = summary.milestoneCount > 0;
   const hasTotal = summary.total > 0 || toNumber(pricingGuidance.target_total) > 0;
+  const hasGeneratedPlan = Boolean(context?.milestone_summary?.has_generated_preview);
+  const hasTimelineSuggestion = Boolean(timelineGuidance.available || context?.milestone_summary?.has_timeline_suggestion);
   const isTemplateBacked = Boolean(
     context?.template_id ||
       context?.selected_template_id ||
@@ -113,41 +130,9 @@ export function buildProjectAssistantActions(context = {}) {
   }
 
   if (summary.step === 2) {
-    const recommended = hasMilestones
-      ? [
-          action(
-            "step2_improve_descriptions",
-            "Improve Milestone Descriptions",
-            "Refresh milestone descriptions using the current scope."
-          ),
-          action(
-            "step2_regenerate_plan",
-            "Regenerate Milestone Plan",
-            "Generate an improved milestone plan for this agreement."
-          ),
-          action(
-            "step2_replace_plan",
-            "Replace Milestone Plan",
-            "Replace the current plan with a regenerated milestone sequence."
-          ),
-        ]
-      : [
-          action(
-            "step2_generate_milestone_plan",
-            "Generate Milestone Plan",
-            "Create milestone phases from the current scope."
-          ),
-        ];
+    const recommended = [];
 
-    if (hasTotal) {
-      recommended.push(
-        action(
-          "step2_rebalance_pricing",
-          "Rebalance Budget",
-          "Redistribute the current project total across milestone phases."
-        )
-      );
-    } else {
+    if (!hasTotal) {
       recommended.push(
         action(
           "step2_enter_project_total",
@@ -157,11 +142,73 @@ export function buildProjectAssistantActions(context = {}) {
       );
     }
 
+    if (hasMilestones) {
+      recommended.push(
+        action(
+          "step2_improve_descriptions",
+          "Improve Milestone Descriptions",
+          "Refresh milestone descriptions using the current scope."
+        )
+      );
+      if (!hasGeneratedPlan) {
+        recommended.push(
+          action(
+            "step2_regenerate_plan",
+            "Regenerate Milestone Plan",
+            "Generate a reviewable milestone plan before replacing anything."
+          )
+        );
+      }
+    } else {
+      recommended.push(
+        action(
+          "step2_generate_milestone_plan",
+          "Generate Milestone Plan",
+          "Create milestone phases from the current scope."
+        )
+      );
+    }
+
+    if (hasGeneratedPlan) {
+      recommended.push(
+        action(
+          "step2_review_generated_plan",
+          "Review / Replace Generated Plan",
+          "Open the regenerated milestone plan preview."
+        )
+      );
+    }
+
+    if (hasTotal && hasMilestones) {
+      recommended.push(
+        action(
+          "step2_rebalance_pricing",
+          "Rebalance Budget",
+          "Redistribute the current project total across milestone phases."
+        )
+      );
+    }
+
+    if (hasTimelineSuggestion && hasMilestones) {
+      recommended.push(
+        action(
+          "step2_apply_timeline",
+          "Apply Suggested Timeline",
+          "Apply the available milestone timeline suggestion."
+        )
+      );
+    }
+
     const additional = [
-      action("step2_build_timeline", "Build Timeline", "Apply suggested milestone dates."),
-      action("step2_compress_timeline", "Compress Timeline", "Apply a shorter suggested schedule where possible."),
-      action("step2_extend_timeline", "Extend Timeline", "Apply a more spacious suggested schedule."),
-      action("step2_save_plan_template", "Save Plan as Template", "Create a reusable template from this milestone plan."),
+      ...(hasMilestones
+        ? [
+            action(
+              "step2_save_plan_template",
+              "Save Plan as Template",
+              "Create a reusable template from this milestone plan."
+            ),
+          ]
+        : []),
     ];
 
     if (isTemplateBacked && canUpdateSource) {
@@ -174,7 +221,13 @@ export function buildProjectAssistantActions(context = {}) {
       );
     }
 
-    return { recommended, additional };
+    return {
+      recommended,
+      additional,
+      info: pricingGuidance.available === false
+        ? ["No pricing guidance available yet. Enter a project total manually, then rebalance milestones."]
+        : [],
+    };
   }
 
   if (summary.step === 3) {
@@ -227,7 +280,7 @@ export function matchProjectAssistantPromptToAction(prompt, context = {}) {
 
   if (step === 2) {
     if (/\b(milestone|milestones|phase|phases|split|description|descriptions|work plan|improve)\b/.test(text)) {
-      if (/\breplace\b/.test(text)) return find("step2_replace_plan");
+      if (/\breplace|review\b/.test(text)) return find("step2_review_generated_plan") || find("step2_regenerate_plan");
       if (/\bregenerate|new plan|redo\b/.test(text)) return find("step2_regenerate_plan");
       return find("step2_improve_descriptions") || find("step2_generate_milestone_plan");
     }
@@ -238,9 +291,7 @@ export function matchProjectAssistantPromptToAction(prompt, context = {}) {
       return find("step2_rebalance_pricing") || find("step2_enter_project_total");
     }
     if (/\b(schedule|timeline|date|dates|duration|compress|extend)\b/.test(text)) {
-      if (/\bcompress|shorter|faster\b/.test(text)) return find("step2_compress_timeline");
-      if (/\bextend|longer|slower|more time\b/.test(text)) return find("step2_extend_timeline");
-      return find("step2_build_timeline");
+      return find("step2_apply_timeline");
     }
   }
 

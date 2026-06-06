@@ -47,16 +47,50 @@ describe("project assistant action registry", () => {
 
     expect(keys).toContain("step2_improve_descriptions");
     expect(keys).toContain("step2_regenerate_plan");
-    expect(keys).toContain("step2_replace_plan");
+    expect(keys).not.toContain("step2_review_generated_plan");
     expect(keys).toContain("step2_rebalance_pricing");
+  });
+
+  it("keeps replace/review hidden until a generated preview exists", () => {
+    const actions = buildProjectAssistantActions(
+      step2Context({
+        milestone_summary: {
+          count: 4,
+          total: 9000,
+          has_generated_preview: true,
+          generated_preview_count: 4,
+        },
+      })
+    );
+    const keys = actions.recommended.map((action) => action.key);
+
+    expect(keys).toContain("step2_review_generated_plan");
+    expect(keys).not.toContain("step2_regenerate_plan");
   });
 
   it("asks for a project total instead of showing rebalance when total is zero", () => {
     const actions = buildProjectAssistantActions(step2Context());
     const keys = actions.recommended.map((action) => action.key);
 
-    expect(keys).toContain("step2_enter_project_total");
+    expect(keys[0]).toBe("step2_enter_project_total");
     expect(keys).not.toContain("step2_rebalance_pricing");
+  });
+
+  it("uses live milestone count even when it is zero", () => {
+    const summary = buildProjectAssistantSummary(
+      step2Context({
+        agreement_summary: {
+          project_title: "Kitchen Flooring Installation",
+          milestone_count: 3,
+        },
+        milestone_summary: {
+          count: 0,
+          total: 0,
+        },
+      })
+    );
+
+    expect(summary.milestoneCount).toBe(0);
   });
 
   it("shows update source template only when the template can be updated", () => {

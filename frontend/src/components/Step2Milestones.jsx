@@ -1291,7 +1291,11 @@ export default function Step2Milestones({
   const [estimateBanner, setEstimateBanner] = useState("");
   const [projectBudgetInput, setProjectBudgetInput] = useState("");
   const targetProjectTotalInputRef = useRef(null);
+  const aiMilestonePreviewCardRef = useRef(null);
   const targetProjectTotalTouchedRef = useRef(false);
+  const targetProjectTotalHighlightTimerRef = useRef(null);
+  const [targetProjectTotalHighlighted, setTargetProjectTotalHighlighted] = useState(false);
+  const [targetProjectTotalFocusRequest, setTargetProjectTotalFocusRequest] = useState(0);
   const [rebalancePrompt, setRebalancePrompt] = useState(null);
   const [manualAmountMilestoneIds, setManualAmountMilestoneIds] = useState([]);
   const [manualDateMilestoneIds, setManualDateMilestoneIds] = useState([]);
@@ -4716,12 +4720,19 @@ export default function Step2Milestones({
         count: effectiveMilestones.length,
         total,
         suggested_titles: effectiveMilestones.map((item) => item?.title).filter(Boolean),
+        has_generated_preview: hasAiMilestonePreview,
+        generated_preview_mode: aiMilestonePreviewMode || "",
+        generated_preview_count: aiMilestonePreview.length,
+        has_timeline_suggestion: Boolean(estimatePreview?.suggested_duration_days),
       },
       pricing_guidance: {
         available: Boolean(pricingBaselineTotal),
         target_total: estimateBudgetValue || null,
         baseline_total: pricingBaselineTotal || null,
         has_range: hasPricingSummaryRange,
+      },
+      timeline_guidance: {
+        available: Boolean(estimatePreview?.suggested_duration_days),
       },
       ai_panel: getAiPanelConfigForStep(2, {
         agreement: agreementMeta,
@@ -4743,19 +4754,51 @@ export default function Step2Milestones({
     [
       agreementId,
       agreementMeta,
+      aiMilestonePreview.length,
+      aiMilestonePreviewMode,
       canUpdateSelectedTemplate,
       effectiveMilestones,
+      hasAiMilestonePreview,
       mergedClarificationQuestions,
       aiChangeSummary,
       projectClass,
       projectContextSummary?.projectFamilyKey,
       projectContextSummary?.projectFamilyLabel,
       estimateBudgetValue,
+      estimatePreview?.suggested_duration_days,
       hasPricingSummaryRange,
       pricingBaselineTotal,
       total,
     ]
   );
+  useEffect(
+    () => () => {
+      if (targetProjectTotalHighlightTimerRef.current) {
+        window.clearTimeout(targetProjectTotalHighlightTimerRef.current);
+      }
+    },
+    []
+  );
+  useEffect(() => {
+    if (!targetProjectTotalFocusRequest) return;
+    const focusTargetTotal = (attempt = 0) => {
+      const el =
+        targetProjectTotalInputRef.current ||
+        (typeof document !== "undefined"
+          ? document.querySelector('[data-testid="step2-target-project-total"]')
+          : null);
+      if (!el) return;
+      el.scrollIntoView?.({ behavior: attempt === 0 ? "smooth" : "auto", block: "center" });
+      el.focus?.({ preventScroll: true });
+      try {
+        el.select?.();
+      } catch {}
+      if (typeof document !== "undefined" && document.activeElement !== el && attempt < 5) {
+        window.setTimeout(() => focusTargetTotal(attempt + 1), 50);
+      }
+    };
+    window.setTimeout(() => focusTargetTotal(0), 0);
+  }, [targetProjectTotalFocusRequest]);
 
   function resolveStep2CopilotAction(plan = {}) {
     const explicitKey = safeStr(
@@ -4825,13 +4868,29 @@ export default function Step2Milestones({
       return true;
     }
     setAiMilestoneGenerationError("");
-    startAiMilestoneGeneration("replace", { applyImmediately: true });
+    startAiMilestoneGeneration("replace");
+    return true;
+  }
+
+  function runCopilotReviewGeneratedPlan() {
+    if (!hasAiMilestonePreview) {
+      setAiMilestoneGenerationError("");
+      startAiMilestoneGeneration("replace");
+      return true;
+    }
+    aiMilestonePreviewCardRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     return true;
   }
 
   function runCopilotEnterProjectTotal() {
-    targetProjectTotalInputRef.current?.focus?.();
-    targetProjectTotalInputRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    if (targetProjectTotalHighlightTimerRef.current) {
+      window.clearTimeout(targetProjectTotalHighlightTimerRef.current);
+    }
+    setTargetProjectTotalHighlighted(true);
+    setTargetProjectTotalFocusRequest(Date.now());
+    targetProjectTotalHighlightTimerRef.current = window.setTimeout(() => {
+      setTargetProjectTotalHighlighted(false);
+    }, 2200);
     const message = "Enter a target project total, then rebalance milestone pricing.";
     setAiChangeSummary(message);
     onAiUpdateFeedback(message);
@@ -4853,10 +4912,12 @@ export default function Step2Milestones({
       actionKey === "step2_improve_milestones" ||
       actionKey === "step2_improve_descriptions" ||
       actionKey === "step2_generate_milestone_plan" ||
-      actionKey === "step2_regenerate_plan" ||
-      actionKey === "step2_replace_plan"
+      actionKey === "step2_regenerate_plan"
     ) {
       return runCopilotImproveMilestones();
+    }
+    if (actionKey === "step2_review_generated_plan" || actionKey === "step2_replace_plan") {
+      return runCopilotReviewGeneratedPlan();
     }
     if (actionKey === "step2_suggest_pricing" || safeStr(plan?.intent) === "estimate_project") {
       return runCopilotSuggestPricing();
@@ -4898,22 +4959,29 @@ export default function Step2Milestones({
     return false;
   }
 
+  const handleAssistantActionRef = useRef(handleAssistantAction);
+  handleAssistantActionRef.current = handleAssistantAction;
+  const stableAssistantAction = useCallback(
+    (plan) => handleAssistantActionRef.current?.(plan),
+    []
+  );
+
   useEffect(() => {
     updateAssistantContext(assistantContext);
   }, [assistantContext, updateAssistantContext]);
 
   useEffect(() => {
-    updateAssistantOnAction(handleAssistantAction);
+    updateAssistantOnAction(stableAssistantAction);
     return () => updateAssistantOnAction(null);
-  }, [assistantContext, updateAssistantOnAction]);
+  }, [assistantContext, stableAssistantAction, updateAssistantOnAction]);
 
   useEffect(() => {
     if (!isAssistantDockOpen) return;
     openAssistant({
       context: assistantContext,
-      onAction: handleAssistantAction,
+      onAction: stableAssistantAction,
     });
-  }, [assistantContext, isAssistantDockOpen, openAssistant]);
+  }, [assistantContext, isAssistantDockOpen, openAssistant, stableAssistantAction]);
 
   async function handleApplyAssistantSuggestedMilestones() {
     if (!agreementId || !assistantSuggestionRows.length) return;
@@ -5415,7 +5483,11 @@ export default function Step2Milestones({
                       setProjectBudgetInput(e.target.value);
                     }}
                     placeholder={safeStr(estimatePreview?.suggested_total_price) || "Enter target total"}
-                    className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-sky-400 focus:outline-none"
+                    className={`mt-2 w-full rounded-xl border px-3 py-2 text-sm text-slate-900 shadow-sm focus:outline-none ${
+                      targetProjectTotalHighlighted
+                        ? "border-amber-400 bg-amber-50 ring-4 ring-amber-200"
+                        : "border-slate-300 focus:border-sky-400"
+                    }`}
                     data-testid="step2-target-project-total"
                   />
                   <div className="mt-2 text-xs text-slate-600">
@@ -5592,12 +5664,13 @@ export default function Step2Milestones({
 
       {hasAiMilestonePreview ? (
         <section
+          ref={aiMilestonePreviewCardRef}
           className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 shadow-sm"
           data-testid="step2-ai-milestone-preview-card"
           aria-live="polite"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-sm font-semibold text-amber-950">Suggested milestones</div>
+            <div className="text-sm font-semibold text-amber-950">Review regenerated milestone plan</div>
             {effectiveMilestones.length ? (
               <span className="rounded-full border border-amber-200 bg-white px-2 py-1 text-[11px] font-semibold text-amber-700">
                 This will replace your current milestone plan.
@@ -5694,7 +5767,7 @@ export default function Step2Milestones({
               {aiMilestonePreviewMode === "add_missing"
                 ? "Add Missing Only"
                 : effectiveMilestones.length
-                ? "Replace Plan"
+                ? "Replace Current Plan"
                 : "Apply Suggested Milestones"}
             </button>
             <button
@@ -5703,7 +5776,7 @@ export default function Step2Milestones({
               disabled={aiLoading}
               className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
-              Cancel
+              Keep Current Plan
             </button>
           </div>
         </section>

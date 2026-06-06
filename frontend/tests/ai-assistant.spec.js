@@ -759,6 +759,20 @@ test('agreement wizard assistant uses agreement context from the current workflo
   await expect(page.getByTestId('project-assistant-action-step2_generate_milestone_plan')).toBeVisible();
   await expect(page.getByTestId('project-assistant-action-step2_enter_project_total')).toBeVisible();
   await expect(page.getByTestId('start-with-ai-assistant-dock')).not.toContainText('Something else');
+  await page.getByTestId('project-assistant-action-step2_enter_project_total').click();
+  await expect(page.getByTestId('step2-target-project-total')).toBeFocused();
+  await expect(page.getByTestId('assistant-desktop-dock')).not.toBeVisible();
+
+  await page.getByTestId('assistant-dock-open-button').click();
+  await expect(page.getByTestId('project-assistant-action-step2_generate_milestone_plan')).toBeVisible();
+  await page.getByTestId('project-assistant-action-step2_generate_milestone_plan').click();
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).toBeVisible();
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).toContainText(
+    'Review regenerated milestone plan'
+  );
+  await expect(page.getByTestId('step2-ai-milestone-preview-card')).toContainText(
+    'Apply Suggested Milestones'
+  );
 });
 
 test('lead inbox assistant uses lead context to trigger send intake', async ({ page }) => {
