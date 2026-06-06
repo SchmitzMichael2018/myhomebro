@@ -47,28 +47,137 @@ function milestoneDetail(row) {
   );
 }
 
-function bulletizePlainScope(text) {
-  const sanitized = normalizeScopeLine(text);
-  if (!sanitized) return "";
-  if (/^\s*(?:[-*]|Included Work:|Exclusions:|Customer Responsibilities:)/im.test(sanitized)) {
-    return sanitized;
+function sentenceParts(text) {
+  return safeTrim(text)
+    .split(/(?<=[.!?])\s+|(?:\s+;\s+)|(?:\s+\|\s+)/)
+    .map((line) => normalizeScopeLine(line).replace(/[.!?]+$/, ""))
+    .filter(Boolean);
+}
+
+function normalizedKey(text) {
+  return safeTrim(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(the|a|an|and|or|as|required|approved|agreed|project|work|areas?|scope)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function uniqueItems(items, limit = 12) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items.map((value) => normalizeScopeLine(value)).filter(Boolean)) {
+    const key = normalizedKey(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(item.replace(/[.!?]+$/, ""));
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function includedWorkItemsFromText(text) {
+  const source = normalizeScopeLine(text);
+  const sourceHaystack = source.toLowerCase();
+  if (!source) return [];
+
+  const items = [];
+
+  if (/\b(demo|demolish|remove|tear\s*out|tear-off|disposal)\b/.test(sourceHaystack)) {
+    items.push("Remove existing materials, finishes, or debris as required for the approved scope.");
+  }
+  if (/\bprotect|cover|mask|contain\b/.test(sourceHaystack)) {
+    items.push("Protect adjacent surfaces and work areas before active work begins.");
+  }
+  if (/\b(inspect|verify|confirm|layout|measure)\b/.test(sourceHaystack)) {
+    items.push("Inspect existing conditions and confirm layout, access, and work requirements.");
+  }
+  if (/\b(prep|prepare|level|substrate|subfloor|surface|waterproof)\b/.test(sourceHaystack)) {
+    items.push("Prepare substrates, surfaces, and work areas for the approved installation or repair.");
+  }
+  if (/\b(install|set|place|secure|replace)\b/.test(sourceHaystack) && /\b(floor|flooring|lvp|vinyl|hardwood|tile)\b/.test(sourceHaystack)) {
+    items.push("Install new flooring materials according to approved layout and manufacturer specifications.");
+  }
+  if (/\b(install|set|place|secure|replace)\b/.test(sourceHaystack) && /\b(trim|transition|baseboard|molding|threshold)\b/.test(sourceHaystack)) {
+    items.push("Install trim, transitions, and related finishing components.");
+  }
+  if (/\b(tile|vanity|tub|shower|fixture|cabinet|countertop|appliance|hardware)\b/.test(sourceHaystack)) {
+    items.push("Install approved finish materials, fixtures, and components included in the template scope.");
+  } else if (/\b(install|set|place|secure|replace)\b/.test(sourceHaystack)) {
+    items.push("Install approved materials and components according to the template scope.");
+  }
+  if (/\b(repair|patch|restore|correct|fix)\b/.test(sourceHaystack)) {
+    items.push("Repair affected materials and restore the work area to the agreed finish standard.");
+  }
+  if (/\b(paint|stain|prime|coat|finish)\b/.test(sourceHaystack)) {
+    items.push("Apply approved finish materials according to product specifications.");
+  }
+  if (/\b(clean|cleanup|walkthrough|walk\s*through|review|closeout|punch)\b/.test(sourceHaystack)) {
+    items.push("Perform final cleanup, quality review, and customer walkthrough.");
   }
 
-  const parts = sanitized
-    .split(/(?<=[.!?])\s+/)
-    .map((line) => normalizeScopeLine(line).replace(/[.!?]+$/, ""))
-    .filter(Boolean)
-    .slice(0, 10);
+  if (items.length) return items;
 
-  if (!parts.length) return sanitized;
+  return [source.length > 120 ? `${source.slice(0, 117).trim()}...` : source];
+}
+
+function inferMaterials(contextText = "") {
+  const haystack = contextText.toLowerCase();
+  if (/\b(floor|flooring|lvp|vinyl|hardwood|tile)\b/.test(haystack)) {
+    return ["Flooring materials", "Underlayment or substrate preparation materials", "Trim and transitions", "Fasteners and adhesives"];
+  }
+  if (/\b(paint|painting|stain|coating|trim)\b/.test(haystack)) {
+    return ["Paint, stain, or finish coatings", "Primer and patching materials", "Caulk and sealants", "Masking and protection materials"];
+  }
+  if (/\b(gutter|downspout)\b/.test(haystack)) {
+    return ["Gutters and downspouts", "Hangers, brackets, and fasteners", "Elbows, outlets, and extensions", "Sealants and connection materials"];
+  }
+  if (/\b(roof|roofing|shingle|flashing)\b/.test(haystack)) {
+    return ["Roofing materials", "Underlayment and flashing", "Fasteners and sealants", "Disposal and protection materials"];
+  }
+  if (/\b(fence|gate|privacy)\b/.test(haystack)) {
+    return ["Fence posts, rails, and panels or pickets", "Gate hardware", "Concrete and fasteners", "Stain or finish materials if included"];
+  }
+  if (/\b(deck|porch)\b/.test(haystack)) {
+    return ["Framing and decking materials", "Railing and stair components if included", "Structural fasteners and connectors", "Finish materials if included"];
+  }
+  if (/\b(drywall|ceiling|wall repair|plaster)\b/.test(haystack)) {
+    return ["Drywall or patch materials", "Tape and joint compound", "Primer and finish materials", "Protection and cleanup materials"];
+  }
+
+  return ["Approved project materials", "Standard fasteners, adhesives, and consumables", "Protection and cleanup materials"];
+}
+
+function buildStructuredScope({ includedItems, materialItems }) {
+  const included = uniqueItems(includedItems, 10);
+  const materials = uniqueItems(materialItems, 8);
+  const includedFallback = [
+    "Review existing conditions and confirm the approved work plan.",
+    "Prepare work areas and complete the agreed installation, repair, or service scope.",
+    "Perform final cleanup and customer walkthrough.",
+  ];
 
   return [
     "Included Work:",
-    ...parts.map((line) => `- ${line}`),
+    ...(included.length ? included : includedFallback).map((line) => `- ${line}.`),
     "",
     "Exclusions:",
-    "- Work outside the agreed template scope unless added by written change order.",
-    "- Permit fees, hidden conditions, and owner-selected upgrades unless specifically included.",
+    "- Structural repairs beyond minor surface preparation unless specifically included.",
+    "- Hazardous material remediation.",
+    "- Major electrical, plumbing, framing, or hidden-condition work unless added by written change order.",
+    "",
+    "Customer Responsibilities:",
+    "- Provide access to work areas.",
+    "- Remove personal belongings or fragile items from affected areas.",
+    "- Approve material selections and schedule coordination before work begins.",
+    "",
+    "Materials:",
+    ...(materials.length ? materials : inferMaterials()).map((line) => `- ${line}.`),
+    "",
+    "Assumptions:",
+    "- Existing conditions are suitable for standard work unless noted during inspection.",
+    "- Required materials, selections, and access are available before the scheduled work begins.",
+    "- Work is limited to the approved template scope and mutually agreed change orders.",
   ].join("\n");
 }
 
@@ -79,9 +188,6 @@ export function buildReusableScopeDraft({
   projectSubtype,
   milestones,
 } = {}) {
-  const sourceScope = safeTrim(scopeDescription);
-  if (sourceScope) return bulletizePlainScope(sourceScope);
-
   const reviewedMilestones = (Array.isArray(milestones) ? milestones : [])
     .filter(Boolean)
     .map((row, index) => ({
@@ -90,32 +196,27 @@ export function buildReusableScopeDraft({
     }))
     .filter((row) => row.title || row.detail);
 
-  const context = [projectSubtype, projectType, projectTitle]
+  const contextText = [
+    projectSubtype,
+    projectType,
+    projectTitle,
+    scopeDescription,
+    ...reviewedMilestones.flatMap((row) => [row.title, row.detail]),
+  ]
     .map((value) => normalizeScopeLine(value))
-    .find(Boolean);
-  const opening = context
-    ? `- Provide labor, coordination, and standard materials support for reusable ${context.toLowerCase()} work.`
-    : "- Provide labor, coordination, and standard materials support for the agreed project scope.";
+    .filter(Boolean)
+    .join(" ");
 
-  const included = reviewedMilestones.slice(0, 10).map((row) => {
-    const detail = row.detail || `Complete the ${row.title.toLowerCase()} phase according to the approved template plan`;
-    return `- ${row.title}: ${detail.replace(/[.!?]+$/, "")}.`;
+  const sourceScope = safeTrim(scopeDescription);
+  const includedSources = sourceScope
+    ? sentenceParts(sourceScope)
+    : reviewedMilestones.flatMap((row) => sentenceParts(row.detail || row.title));
+  const includedItems = includedSources.flatMap((line) => includedWorkItemsFromText(line));
+
+  return buildStructuredScope({
+    includedItems,
+    materialItems: inferMaterials(contextText),
   });
-
-  return [
-    "Included Work:",
-    opening,
-    ...(included.length
-      ? included
-      : ["- Review project conditions, prepare the work area, complete the agreed work, and perform final cleanup."]),
-    "",
-    "Exclusions:",
-    "- Work outside the agreed template scope unless added by written change order.",
-    "- Permit fees, hidden conditions, specialty engineering, and owner-selected upgrades unless specifically included.",
-    "",
-    "Customer Responsibilities:",
-    "- Provide access to the work area and timely decisions on selections, approvals, and schedule coordination.",
-  ].join("\n");
 }
 
 export default function SaveTemplateModal({

@@ -1972,10 +1972,12 @@ test('wizard save as template stores the current setup and supports reuse in a l
   await expect(page.getByTestId('save-template-name-input')).toBeVisible();
   await expect(page.getByTestId('save-template-scope-input')).toBeVisible();
   await expect(page.getByTestId('save-template-context-card')).toHaveClass(/bg-slate-950/);
-  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Complete bathroom remodel/);
-  await expect(page.getByTestId('save-template-scope-preview')).toContainText(
-    'Complete bathroom remodel'
-  );
+  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Included Work:/);
+  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Remove existing materials/);
+  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Customer Responsibilities:/);
+  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Materials:/);
+  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Assumptions:/);
+  await expect(page.getByTestId('save-template-scope-preview')).toContainText('Included Work:');
   await expect(page.getByTestId('save-template-milestone-preview')).toContainText(
     '1. Demo & prep'
   );
@@ -1988,7 +1990,7 @@ test('wizard save as template stores the current setup and supports reuse in a l
   await page.getByTestId('save-template-scope-input').fill('');
   await page.getByTestId('save-template-generate-reusable-scope').click();
   await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Included Work:/);
-  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Complete bathroom remodel/);
+  await expect(page.getByTestId('save-template-scope-input')).toHaveValue(/Materials:/);
 
   await page.getByTestId('save-template-name-input').fill('Bathroom Remodel Reusable');
   await page.getByTestId('save-template-scope-input').fill(
