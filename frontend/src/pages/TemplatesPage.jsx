@@ -620,13 +620,46 @@ function buildCountSuggestion(milestones, context = {}) {
 }
 
 function classifyAllocationRole(row) {
+  const title = `${row?.title || ""}`.toLowerCase();
   const text = `${row?.title || ""} ${row?.description || ""}`.toLowerCase();
+  if (/\b(install|installation|build|construction|framing|paint|painting|repair|restore|replace|replacement)\b/.test(title)) {
+    return {
+      structure: "primary installation/build phase",
+      suggested: 50,
+      min: 40,
+      max: 60,
+    };
+  }
   if (/\b(clean|cleanup|walkthrough|closeout|close out|final|punch|trim|handoff)\b/.test(text)) {
     return {
       structure: "retention/final walkthrough phase",
       suggested: 10,
       min: 5,
       max: 15,
+    };
+  }
+  if (/\b(demo|demolition|prep|prepare|protect|layout|planning|level|leveling|substrate|surface)\b/.test(title)) {
+    return {
+      structure: "setup and preparation phase",
+      suggested: 20,
+      min: 15,
+      max: 25,
+    };
+  }
+  if (/\b(material|materials|fixture|fixtures|supply|supplies|procure|order|delivery|selection|staging)\b/.test(title)) {
+    return {
+      structure: "materials-heavy phase",
+      suggested: 20,
+      min: 15,
+      max: 30,
+    };
+  }
+  if (/\b(install|installation|build|construction|framing|paint|painting|repair|restore|replace|replacement)\b/.test(text)) {
+    return {
+      structure: "primary installation/build phase",
+      suggested: 50,
+      min: 40,
+      max: 60,
     };
   }
   if (/\b(demo|demolition|prep|prepare|protect|layout|planning|level|leveling|substrate|surface)\b/.test(text)) {
@@ -643,14 +676,6 @@ function classifyAllocationRole(row) {
       suggested: 20,
       min: 15,
       max: 30,
-    };
-  }
-  if (/\b(install|installation|build|construction|framing|paint|painting|repair|restore|replace|replacement)\b/.test(text)) {
-    return {
-      structure: "primary installation/build phase",
-      suggested: 50,
-      min: 40,
-      max: 60,
     };
   }
   return {
@@ -671,9 +696,14 @@ function normalizeSuggestedAllocations(rows) {
     const raw = (Number(row?.suggested || 0) / baseTotal) * 100;
     const suggested = idx === list.length - 1 ? Math.max(0, 100 - running) : Math.round(raw);
     running += suggested;
+    const bandSpread = suggested >= 40 ? 10 : suggested >= 15 ? 5 : Math.min(5, suggested);
+    const min = Math.max(0, suggested - bandSpread);
+    const max = Math.min(100, suggested + bandSpread);
     return {
       ...row,
       suggested,
+      min,
+      max,
     };
   });
 }
@@ -3614,18 +3644,6 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               {percentOrDash(pricingTotals.percent)}
                             </span>
                           </div>
-                          <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                            Min total:{" "}
-                            <span className="font-semibold text-slate-900">
-                              {percentOrDash(pricingTotals.low)}
-                            </span>
-                          </div>
-                          <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                            Max total:{" "}
-                            <span className="font-semibold text-slate-900">
-                              {percentOrDash(pricingTotals.high)}
-                            </span>
-                          </div>
                         </div>
                         {pricingTotals.percent > 100 ? (
                           <div
@@ -3643,7 +3661,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                           </div>
                         ) : null}
                         <div className="mt-2 text-[11px] text-slate-500">
-                          Percentages describe how project value is typically distributed across milestones.
+                          Suggested percentages describe how project value is typically distributed across milestones. Min and Max are flexible bands, not totals.
                         </div>
                       </>
                     ) : (

@@ -1085,8 +1085,25 @@ test('templates route and sidebar access support creating and editing reusable t
   await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText('suggested');
   await expect(page.getByTestId('templates-milestone-percent-1')).not.toHaveValue('');
   await expect(page.getByTestId('templates-milestone-percent-2')).not.toHaveValue('');
+  await expect(page.getByTestId('templates-milestone-min-percent-1')).not.toHaveValue('');
+  await expect(page.getByTestId('templates-milestone-max-percent-1')).not.toHaveValue('');
+  const allocationRows = await page.evaluate(() => {
+    return [1, 2].map((idx) => ({
+      suggested: Number(document.querySelector(`[data-testid="templates-milestone-percent-${idx}"]`)?.value || 0),
+      min: Number(document.querySelector(`[data-testid="templates-milestone-min-percent-${idx}"]`)?.value || 0),
+      max: Number(document.querySelector(`[data-testid="templates-milestone-max-percent-${idx}"]`)?.value || 0),
+    }));
+  });
+  for (const row of allocationRows) {
+    expect(row.min).toBeLessThanOrEqual(row.suggested);
+    expect(row.suggested).toBeLessThanOrEqual(row.max);
+  }
+  expect(allocationRows[1].suggested).toBeGreaterThan(allocationRows[0].suggested);
   await expect(page.getByText('Suggested total:')).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
+  await expect(page.getByText('Min total:')).toHaveCount(0);
+  await expect(page.getByText('Max total:')).toHaveCount(0);
+  await expect(page.getByTestId('templates-allocation-warning')).toHaveCount(0);
   await page.getByTestId('templates-milestone-allocation-enabled-1').check();
   await page.getByTestId('templates-milestone-percent-1').fill('60');
   await page.getByTestId('templates-milestone-min-percent-1').fill('50');
@@ -1116,6 +1133,66 @@ test('templates route and sidebar access support creating and editing reusable t
   await expect(page.getByText('Suggested Allocation Summary')).toBeVisible();
   await expect(page.getByText('Suggested total:')).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
+});
+
+test('template allocation suggestions create valid flooring milestone percentages', async ({ page }) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Flooring Installation Allocation');
+  await page.getByTestId('templates-project-type-input').fill('Flooring');
+  await page.getByTestId('templates-project-subtype-input').fill('Luxury Vinyl Plank');
+  await page.getByTestId('templates-description-input').fill(
+    'Reusable flooring installation template with preparation, installation, and closeout phases.'
+  );
+
+  await page.getByTestId('templates-tab-milestones').click();
+  await page.getByTestId('templates-milestone-title-1').fill('Prep & materials');
+  await page.getByTestId('templates-milestone-description-1').fill(
+    'Confirm material selections, stage materials, and prepare access.'
+  );
+  await page.getByTestId('templates-add-milestone-button').click();
+  await page.getByTestId('templates-milestone-title-2').fill('Surface preparation');
+  await page.getByTestId('templates-milestone-description-2').fill(
+    'Prepare substrate and surface conditions for flooring installation.'
+  );
+  await page.getByTestId('templates-add-milestone-button').click();
+  await page.getByTestId('templates-milestone-title-3').fill('Flooring installation');
+  await page.getByTestId('templates-milestone-description-3').fill(
+    'Install flooring materials according to manufacturer requirements.'
+  );
+  await page.getByTestId('templates-add-milestone-button').click();
+  await page.getByTestId('templates-milestone-title-4').fill('Trim & cleanup');
+  await page.getByTestId('templates-milestone-description-4').fill(
+    'Install trim and transitions, clean the work area, and complete the walkthrough.'
+  );
+
+  await page.getByTestId('templates-tab-pricing').click();
+  await page.getByTestId('templates-ai-suggest-pricing-structure-button').click();
+
+  const rows = await page.evaluate(() => {
+    return [1, 2, 3, 4].map((idx) => ({
+      suggested: Number(document.querySelector(`[data-testid="templates-milestone-percent-${idx}"]`)?.value || 0),
+      min: Number(document.querySelector(`[data-testid="templates-milestone-min-percent-${idx}"]`)?.value || 0),
+      max: Number(document.querySelector(`[data-testid="templates-milestone-max-percent-${idx}"]`)?.value || 0),
+    }));
+  });
+
+  expect(rows.map((row) => row.suggested)).toEqual([20, 20, 50, 10]);
+  expect(rows.reduce((sum, row) => sum + row.suggested, 0)).toBe(100);
+  for (const row of rows) {
+    expect(row.min).toBeLessThanOrEqual(row.suggested);
+    expect(row.suggested).toBeLessThanOrEqual(row.max);
+  }
+  expect(rows[2].suggested).toBeGreaterThan(rows[0].suggested);
+  expect(rows[2].suggested).toBeGreaterThan(rows[1].suggested);
+  expect(rows[2].suggested).toBeGreaterThan(rows[3].suggested);
+  await expect(page.getByText('Suggested total:')).toBeVisible();
+  await expect(page.getByText('100%')).toBeVisible();
+  await expect(page.getByText('Min total:')).toHaveCount(0);
+  await expect(page.getByText('Max total:')).toHaveCount(0);
+  await expect(page.getByTestId('templates-allocation-warning')).toHaveCount(0);
 });
 
 test('saved templates can be applied in the wizard without conflicting with template, AI, or scratch flows', async ({
