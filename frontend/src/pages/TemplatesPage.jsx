@@ -402,15 +402,16 @@ function normalizeMilestoneForEdit(m, idx) {
 }
 
 function normalizeHeaderForEdit(detail) {
+  const reusableScope = detail?.default_scope || detail?.description || "";
   return {
     name: detail?.name ?? "",
     project_type: detail?.project_type ?? "",
     project_subtype: detail?.project_subtype ?? "",
-    description: detail?.description ?? "",
+    description: reusableScope,
     exclusions_text: detail?.exclusions_text ?? "",
     assumptions_text: detail?.assumptions_text ?? "",
     estimated_days: detail?.estimated_days ?? 1,
-    default_scope: detail?.default_scope ?? "",
+    default_scope: reusableScope,
     default_clarifications: Array.isArray(detail?.default_clarifications)
       ? detail.default_clarifications
       : [],
@@ -488,6 +489,146 @@ function buildTemplatePayload(header, milestones, extras = {}) {
   };
 }
 
+function cleanTemplateSentence(text) {
+  return safeTrim(text)
+    .replace(/\s+/g, " ")
+    .replace(/\b\d{1,6}\s+[A-Za-z0-9 .'-]+?\s+(?:street|st\.?|avenue|ave\.?|road|rd\.?|drive|dr\.?|lane|ln\.?|court|ct\.?|circle|cir\.?|boulevard|blvd\.?|place|pl\.?|way)\b/gi, "the project property")
+    .replace(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:,\s*\d{4})?\b/gi, "the scheduled project date")
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, "the scheduled project date")
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, "the scheduled project date")
+    .replace(/\b\d+(?:\.\d+)?\s*(?:sq\.?\s*ft\.?|square feet|linear feet|lf|ft\.?|feet|in\.?|inches|yards?|yds?)\b/gi, "project-specific quantities")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function titleFromMilestoneText(row, idx) {
+  const text = `${row?.title || ""} ${row?.description || ""}`.toLowerCase();
+  if (/\b(plan|measure|consult|selection|permit|layout)\b/.test(text)) return "Planning & Selections";
+  if (/\b(demo|remove|tear|protect|prep|prepare|level|surface|substrate|waterproof)\b/.test(text)) return "Preparation & Site Protection";
+  if (/\b(rough|framing|electrical|plumbing|mechanical)\b/.test(text)) return "Rough-In & Core Work";
+  if (/\b(install|build|set|place|replace|repair)\b/.test(text)) return "Primary Installation";
+  if (/\b(trim|finish|paint|stain|transition|fixture)\b/.test(text)) return "Finish Details";
+  if (/\b(clean|cleanup|walkthrough|walk\s*through|closeout|punch|final)\b/.test(text)) return "Final Cleanup & Walkthrough";
+  return `Reusable Phase ${idx + 1}`;
+}
+
+function descriptionFromMilestoneText(row, idx, context = {}) {
+  const text = `${row?.title || ""} ${row?.description || ""}`.toLowerCase();
+  const typeLabel = safeTrim(context?.project_subtype || context?.project_type || context?.name || "template");
+  if (/\b(plan|measure|consult|selection|permit|layout)\b/.test(text)) {
+    return "Confirm scope, access, selections, scheduling expectations, and any permit or site requirements before work begins.";
+  }
+  if (/\b(demo|remove|tear|protect|prep|prepare|level|surface|substrate|waterproof)\b/.test(text)) {
+    return "Protect adjacent areas, remove or prepare existing materials as needed, and ready surfaces for the approved work.";
+  }
+  if (/\b(rough|framing|electrical|plumbing|mechanical)\b/.test(text)) {
+    return "Complete rough-in or core construction activities required for the approved template scope.";
+  }
+  if (/\b(install|build|set|place|replace|repair)\b/.test(text)) {
+    return `Complete the primary ${typeLabel.toLowerCase()} work using approved materials, standard workmanship, and manufacturer guidance where applicable.`;
+  }
+  if (/\b(trim|finish|paint|stain|transition|fixture)\b/.test(text)) {
+    return "Install finish components, complete detail work, and address standard touch-ups within the approved scope.";
+  }
+  if (/\b(clean|cleanup|walkthrough|walk\s*through|closeout|punch|final)\b/.test(text)) {
+    return "Complete final cleanup, quality review, punch-list items, and customer walkthrough.";
+  }
+  return cleanTemplateSentence(row?.description) || "Complete this reusable project phase according to the approved template scope.";
+}
+
+function buildMilestoneImprovementSuggestions(milestones, context = {}) {
+  return (Array.isArray(milestones) ? milestones : []).map((row, idx) => ({
+    ...row,
+    title: titleFromMilestoneText(row, idx),
+    description: descriptionFromMilestoneText(row, idx, context),
+    sort_order: row?.sort_order || idx + 1,
+  }));
+}
+
+function idealMilestoneCount(currentCount, context = {}) {
+  const text = `${context?.name || ""} ${context?.project_type || ""} ${context?.project_subtype || ""} ${context?.description || ""}`.toLowerCase();
+  if (/\b(remodel|renovation|addition|kitchen|bathroom)\b/.test(text)) return 5;
+  if (/\b(deck|fence|roof|floor|flooring|gutter|siding|paint|painting)\b/.test(text)) return 4;
+  if (/\b(repair|service|inspection|assist|haul|junk)\b/.test(text)) return 3;
+  return Math.min(Math.max(Number(currentCount) || 3, 3), 5);
+}
+
+function buildCountSuggestion(milestones, context = {}) {
+  const current = Array.isArray(milestones) ? milestones : [];
+  const recommendedCount = idealMilestoneCount(current.length, context);
+  const improved = buildMilestoneImprovementSuggestions(current, context);
+  const baseRows = improved.length ? improved : [buildBlankMilestone(1)];
+  let proposed = baseRows.slice(0, recommendedCount);
+
+  while (proposed.length < recommendedCount) {
+    const idx = proposed.length;
+    const title =
+      idx === 0
+        ? "Planning & Selections"
+        : idx === recommendedCount - 1
+        ? "Final Cleanup & Walkthrough"
+        : idx === 1
+        ? "Preparation & Site Protection"
+        : "Primary Installation";
+    proposed.push({
+      ...buildBlankMilestone(idx + 1),
+      title,
+      description: descriptionFromMilestoneText({ title }, idx, context),
+    });
+  }
+
+  proposed = proposed.map((row, idx) => ({
+    ...row,
+    id: row?.id || null,
+    sort_order: idx + 1,
+  }));
+
+  const action =
+    recommendedCount > current.length
+      ? "add"
+      : recommendedCount < current.length
+      ? "merge"
+      : "keep";
+
+  return {
+    currentCount: current.length,
+    recommendedCount,
+    action,
+    proposed,
+    rationale:
+      action === "add"
+        ? "This template would be easier to reuse with a clearer setup, active work, and closeout sequence."
+        : action === "merge"
+        ? "This template may be easier to reuse if overlapping phases are merged into fewer contractor-friendly milestones."
+        : "The current milestone count looks reasonable; the suggested wording can still make it more reusable.",
+  };
+}
+
+function buildPricingStructureSuggestion(milestones) {
+  const rows = (Array.isArray(milestones) ? milestones : []).map((row, idx) => {
+    const text = `${row?.title || ""} ${row?.description || ""}`.toLowerCase();
+    let structure = "labor phase";
+    if (/\b(material|fixture|flooring|cabinet|shingle|paint|supply)\b/.test(text)) {
+      structure = "materials-heavy phase";
+    } else if (/\b(clean|walkthrough|closeout|final|punch)\b/.test(text)) {
+      structure = "retention/final walkthrough phase";
+    } else if (/\b(demo|prep|protect|layout|planning)\b/.test(text)) {
+      structure = "setup and preparation phase";
+    }
+    return {
+      title: safeTrim(row?.title) || `Milestone ${idx + 1}`,
+      structure,
+      note: "No fixed price suggested; enter advisory ranges manually when project history is available.",
+    };
+  });
+
+  return {
+    message:
+      "No pricing history available yet. You can enter advisory ranges manually or use project history once available.",
+    rows,
+  };
+}
+
 export default function TemplatesPage({ adminMode = false } = {}) {
   const location = useLocation();
   const { updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
@@ -532,6 +673,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
+  const [milestoneRewritePreview, setMilestoneRewritePreview] = useState(null);
+  const [milestoneCountPreview, setMilestoneCountPreview] = useState(null);
+  const [pricingStructurePreview, setPricingStructurePreview] = useState(null);
 
   const [aiBusy, setAiBusy] = useState(false);
   const [materialsRefreshing, setMaterialsRefreshing] = useState(false);
@@ -570,6 +714,12 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     );
   }, [assistantHandoff]);
   const isSystemDiscovery = !adminMode && discoverySource === "system";
+
+  function clearTemplateSuggestionPreviews() {
+    setMilestoneRewritePreview(null);
+    setMilestoneCountPreview(null);
+    setPricingStructurePreview(null);
+  }
 
   async function loadTemplates(options = {}) {
     try {
@@ -645,6 +795,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         if (cancelled) return;
         setSelectedDetail(data);
         setGeneratedAiDraft(null);
+        clearTemplateSuggestionPreviews();
         setEditHeader(normalizeHeaderForEdit(data));
         setEditMilestones(
           Array.isArray(data?.milestones) && data.milestones.length
@@ -904,6 +1055,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     setAiGenerationRecoveryMode(false);
     setAiGenerationRecoveryNote("");
     setAiGenerationStageIndex(-1);
+    clearTemplateSuggestionPreviews();
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
@@ -951,6 +1103,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     setAiGenerationRecoveryMode(false);
     setAiGenerationRecoveryNote("");
     setAiGenerationStageIndex(-1);
+    clearTemplateSuggestionPreviews();
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
@@ -995,6 +1148,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     setAiGenerationRecoveryMode(false);
     setAiGenerationRecoveryNote("");
     setAiGenerationStageIndex(-1);
+    clearTemplateSuggestionPreviews();
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
@@ -1118,6 +1272,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     setSelectedDetail(null);
     setDetailErr("");
     setGeneratedAiDraft(null);
+    clearTemplateSuggestionPreviews();
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
@@ -1317,6 +1472,38 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     );
   }
 
+  function handleImproveMilestoneLanguage() {
+    const preview = buildMilestoneImprovementSuggestions(currentMilestones, currentHeader);
+    setMilestoneRewritePreview(preview);
+    setMilestoneCountPreview(null);
+    setActiveTab("milestones");
+  }
+
+  function applyMilestoneRewritePreview() {
+    if (!Array.isArray(milestoneRewritePreview) || !milestoneRewritePreview.length) return;
+    setEditMilestones(milestoneRewritePreview.map((row, idx) => normalizeMilestoneForEdit(row, idx)));
+    setMilestoneRewritePreview(null);
+    toast.success("Milestone wording updated. Review and save the template.");
+  }
+
+  function handleSuggestMilestoneCount() {
+    setMilestoneCountPreview(buildCountSuggestion(currentMilestones, currentHeader));
+    setMilestoneRewritePreview(null);
+    setActiveTab("milestones");
+  }
+
+  function applyMilestoneCountPreview() {
+    if (!milestoneCountPreview?.proposed?.length) return;
+    setEditMilestones(milestoneCountPreview.proposed.map((row, idx) => normalizeMilestoneForEdit(row, idx)));
+    setMilestoneCountPreview(null);
+    toast.success("Milestone plan updated. Review and save the template.");
+  }
+
+  function handleSuggestPricingStructure() {
+    setPricingStructurePreview(buildPricingStructureSuggestion(currentMilestones));
+    setActiveTab("pricing");
+  }
+
   async function handleDeleteTemplate(template) {
     if (!template?.id) return;
     if (template?.is_system || template?.owner_type === "system") {
@@ -1444,6 +1631,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         setSelectedDetail(data);
         setEditHeader(normalizeHeaderForEdit(data));
         setGeneratedAiDraft(null);
+        clearTemplateSuggestionPreviews();
         setAiGenerationError("");
         setAiGenerationPartialSections([]);
         setAiGenerationRecoveryMode(false);
@@ -1460,6 +1648,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         setSelectedDetail(data);
         setEditHeader(normalizeHeaderForEdit(data));
         setGeneratedAiDraft(null);
+        clearTemplateSuggestionPreviews();
         setAiGenerationError("");
         setAiGenerationPartialSections([]);
         setAiGenerationRecoveryMode(false);
@@ -2860,7 +3049,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
                   {(editMode || creatingNew) ? (
                     <>
-                      <div className="mb-3">
+                      <div className="mb-3 flex flex-wrap gap-2">
                         <button
                           type="button"
                           onClick={addMilestone}
@@ -2869,7 +3058,104 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         >
                           Add Milestone
                         </button>
+                        <button
+                          type="button"
+                          onClick={handleImproveMilestoneLanguage}
+                          data-testid="templates-ai-improve-milestones-button"
+                          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                        >
+                          Improve Milestone Titles & Descriptions
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSuggestMilestoneCount}
+                          data-testid="templates-ai-suggest-milestone-count-button"
+                          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                        >
+                          Suggest Ideal Milestone Count
+                        </button>
                       </div>
+
+                      {Array.isArray(milestoneRewritePreview) && milestoneRewritePreview.length ? (
+                        <div
+                          data-testid="templates-milestone-improvement-preview"
+                          className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3"
+                        >
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">
+                            Review milestone wording suggestions
+                          </div>
+                          <div className="mt-2 space-y-2">
+                            {milestoneRewritePreview.map((row, idx) => (
+                              <div key={`rewrite-${idx}`} className="rounded-lg border border-sky-100 bg-white px-3 py-2">
+                                <div className="text-sm font-semibold text-slate-900">
+                                  {idx + 1}. {row?.title || `Milestone ${idx + 1}`}
+                                </div>
+                                <div className="mt-1 text-xs leading-5 text-slate-700">
+                                  {row?.description || "Reusable description suggestion pending."}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={applyMilestoneRewritePreview}
+                              data-testid="templates-apply-milestone-improvements"
+                              className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800"
+                            >
+                              Apply Suggested Wording
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMilestoneRewritePreview(null)}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {milestoneCountPreview ? (
+                        <div
+                          data-testid="templates-milestone-count-preview"
+                          className="mb-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3"
+                        >
+                          <div className="text-xs font-semibold uppercase tracking-wide text-violet-900">
+                            Review ideal milestone count
+                          </div>
+                          <div className="mt-2 text-sm text-violet-950">
+                            Recommended structure: {milestoneCountPreview.recommendedCount} milestones.
+                          </div>
+                          <div className="mt-1 text-xs leading-5 text-violet-900">
+                            {milestoneCountPreview.rationale}
+                          </div>
+                          <div className="mt-3 space-y-1 text-xs text-slate-700">
+                            {milestoneCountPreview.proposed.map((row, idx) => (
+                              <div key={`count-${idx}`}>
+                                {idx + 1}. {row?.title || `Milestone ${idx + 1}`}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={applyMilestoneCountPreview}
+                              data-testid="templates-apply-milestone-count"
+                              className="rounded-lg bg-violet-700 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-800"
+                            >
+                              Apply Suggested Structure
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setMilestoneCountPreview(null)}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="space-y-3">
                         {currentMilestones.map((m, idx) => (
@@ -2973,6 +3259,50 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                   <div className="mb-3 text-[11px] text-slate-500">
                     If you add advisory pricing, contractors can review it later without the template enforcing a fixed amount.
                   </div>
+
+                  {(editMode || creatingNew) ? (
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSuggestPricingStructure}
+                        data-testid="templates-ai-suggest-pricing-structure-button"
+                        className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                      >
+                        Suggest Advisory Pricing Structure
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {pricingStructurePreview ? (
+                    <div
+                      data-testid="templates-pricing-structure-preview"
+                      className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                        Advisory pricing structure
+                      </div>
+                      <div className="mt-2 text-sm leading-6 text-amber-950">
+                        {pricingStructurePreview.message}
+                      </div>
+                      {pricingStructurePreview.rows.length ? (
+                        <div className="mt-3 space-y-2">
+                          {pricingStructurePreview.rows.map((row, idx) => (
+                            <div key={`pricing-${idx}`} className="rounded-lg border border-amber-100 bg-white px-3 py-2">
+                              <div className="text-sm font-semibold text-slate-900">
+                                {row.title}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-700">
+                                Suggested structure: {row.structure}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {row.note}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {generatedPricingGuidance ? (
                     <div
@@ -3285,7 +3615,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
                   ) : null}
 
-                  <div className="mb-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+                  <div
+                    data-testid="templates-materials-helper-card"
+                    className="mb-3 rounded border border-sky-400/30 bg-slate-950 px-3 py-2 text-xs leading-5 text-sky-100 shadow-inner shadow-sky-950/30"
+                  >
                     Project-Level Materials should describe the overall categories commonly needed for the template.
                     <br />
                     Milestone Materials should describe what is typically needed for that phase of work.

@@ -1063,7 +1063,30 @@ test('templates route and sidebar access support creating and editing reusable t
   await page.getByTestId('templates-edit-button').click();
   await page.getByTestId('templates-name-input').fill('Cabinet Install Standard v2');
   await page.getByTestId('templates-tab-milestones').click();
+  await expect(page.getByTestId('templates-ai-improve-milestones-button')).toBeVisible();
+  await expect(page.getByTestId('templates-ai-suggest-milestone-count-button')).toBeVisible();
+  await page.getByTestId('templates-ai-improve-milestones-button').click();
+  await expect(page.getByTestId('templates-milestone-improvement-preview')).toContainText(
+    'Review milestone wording suggestions'
+  );
+  await page.getByTestId('templates-apply-milestone-improvements').click();
   await page.getByTestId('templates-milestone-title-2').fill('Install, align & close out');
+  await page.getByTestId('templates-ai-suggest-milestone-count-button').click();
+  await expect(page.getByTestId('templates-milestone-count-preview')).toContainText(
+    'Recommended structure'
+  );
+  await page.getByTestId('templates-tab-pricing').click();
+  await expect(page.getByTestId('templates-ai-suggest-pricing-structure-button')).toBeVisible();
+  await page.getByTestId('templates-ai-suggest-pricing-structure-button').click();
+  await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText(
+    'No pricing history available yet'
+  );
+  await expect(page.getByTestId('templates-pricing-structure-preview')).not.toContainText('$0');
+  await page.getByTestId('templates-tab-materials').click();
+  await expect(page.getByTestId('templates-materials-helper-card')).toHaveClass(/bg-slate-950/);
+  await expect(page.getByTestId('templates-materials-helper-card')).toContainText(
+    'Project-Level Materials should describe'
+  );
   await page.getByTestId('templates-save-button').click();
 
   await expect(page.getByText('Template updated.')).toBeVisible();
@@ -2021,7 +2044,10 @@ test('wizard save as template stores the current setup and supports reuse in a l
   const savedTemplate = store.templates.find((row) => row.name === 'Bathroom Remodel Reusable');
 
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId(`template-discovery-card-${savedTemplate.id}`)).toBeVisible();
+  await page.getByTestId(`template-discovery-card-${savedTemplate.id}`).click();
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    'Reusable bathroom remodel scope covering demo, waterproofing, tile, fixtures, and closeout.'
+  );
 
   await page.goto('/app/agreements/new/wizard?step=1', {
     waitUntil: 'domcontentloaded',
