@@ -16790,6 +16790,8 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
             sort_order=1,
             duration_days=1,
             suggested_amount_percent=Decimal("25.00"),
+            suggested_amount_low=Decimal("20.00"),
+            suggested_amount_high=Decimal("30.00"),
             pricing_advisory=True,
         )
         template.milestones.create(
@@ -16797,6 +16799,8 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
             sort_order=2,
             duration_days=2,
             suggested_amount_percent=Decimal("55.00"),
+            suggested_amount_low=Decimal("40.00"),
+            suggested_amount_high=Decimal("60.00"),
             pricing_advisory=True,
         )
         template.milestones.create(
@@ -16804,6 +16808,8 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
             sort_order=3,
             duration_days=1,
             suggested_amount_percent=Decimal("20.00"),
+            suggested_amount_low=Decimal("10.00"),
+            suggested_amount_high=Decimal("25.00"),
             pricing_advisory=True,
         )
 
@@ -16829,6 +16835,12 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertTrue(all(row.recommended_duration_days for row in rows))
         self.assertTrue(all("luxury vinyl plank" in row.description.lower() for row in rows))
         self.assertNotIn("No scope summary yet", rows[0].description)
+        self.assertEqual(rows[0].template_suggested_amount, Decimal("1500.00"))
+        self.assertEqual(rows[1].template_suggested_amount, Decimal("3300.00"))
+        self.assertEqual(rows[0].suggested_amount_low, Decimal("1200.00"))
+        self.assertEqual(rows[0].suggested_amount_high, Decimal("1800.00"))
+        self.assertEqual(rows[1].suggested_amount_low, Decimal("2400.00"))
+        self.assertEqual(rows[1].suggested_amount_high, Decimal("3600.00"))
 
     def test_apply_template_replace_modes_require_explicit_request(self):
         project = Project.objects.create(

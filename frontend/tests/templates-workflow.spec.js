@@ -1082,6 +1082,17 @@ test('templates route and sidebar access support creating and editing reusable t
     'No pricing history available yet'
   );
   await expect(page.getByTestId('templates-pricing-structure-preview')).not.toContainText('$0');
+  await page.getByTestId('templates-milestone-allocation-enabled-1').check();
+  await page.getByTestId('templates-milestone-percent-1').fill('60');
+  await page.getByTestId('templates-milestone-min-percent-1').fill('50');
+  await page.getByTestId('templates-milestone-max-percent-1').fill('70');
+  await page.getByTestId('templates-milestone-allocation-enabled-2').check();
+  await page.getByTestId('templates-milestone-percent-2').fill('50');
+  await expect(page.getByTestId('templates-allocation-warning')).toContainText(
+    'Allocation totals exceed 100%'
+  );
+  await page.getByTestId('templates-milestone-percent-2').fill('40');
+  await expect(page.getByTestId('templates-allocation-warning')).toHaveCount(0);
   await page.getByTestId('templates-tab-materials').click();
   await expect(page.getByTestId('templates-materials-helper-card')).toHaveClass(/bg-slate-950/);
   await expect(page.getByTestId('templates-materials-helper-card')).toContainText(
@@ -1096,6 +1107,10 @@ test('templates route and sidebar access support creating and editing reusable t
   await expect(page.getByRole('heading', { name: 'Cabinet Install Standard v2' })).toBeVisible();
   await page.getByTestId('templates-tab-milestones').click();
   await expect(page.getByText('2. Install, align & close out')).toBeVisible();
+  await page.getByTestId('templates-tab-pricing').click();
+  await expect(page.getByText('Suggested Allocation Summary')).toBeVisible();
+  await expect(page.getByText('Suggested total:')).toBeVisible();
+  await expect(page.getByText('100%')).toBeVisible();
 });
 
 test('saved templates can be applied in the wizard without conflicting with template, AI, or scratch flows', async ({

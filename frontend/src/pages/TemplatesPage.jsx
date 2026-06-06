@@ -92,10 +92,17 @@ function startDayLabel(v) {
 function hasAnyPricing(m) {
   return (
     !!m?.pricing_advisory ||
+    Number(m?.suggested_amount_percent) > 0 ||
     Number(m?.suggested_amount_fixed) > 0 ||
     Number(m?.suggested_amount_low) > 0 ||
     Number(m?.suggested_amount_high) > 0
   );
+}
+
+function percentOrDash(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return `${n.toFixed(n % 1 === 0 ? 0 : 1)}%`;
 }
 
 function normalizeClarificationText(item) {
@@ -335,6 +342,7 @@ function buildBlankMilestone(sortOrder = 1) {
     duration_days: "",
     pricing_advisory: false,
     normalized_milestone_type: "",
+    suggested_amount_percent: "",
     suggested_amount_fixed: "",
     suggested_amount_low: "",
     suggested_amount_high: "",
@@ -389,6 +397,7 @@ function normalizeMilestoneForEdit(m, idx) {
       `${m?.title ?? ""} ${m?.description ?? ""}`
     ),
     suggested_amount_fixed: m?.suggested_amount_fixed ?? "",
+    suggested_amount_percent: m?.suggested_amount_percent ?? "",
     suggested_amount_low: m?.suggested_amount_low ?? "",
     suggested_amount_high: m?.suggested_amount_high ?? "",
     pricing_confidence: m?.pricing_confidence ?? "",
@@ -463,8 +472,14 @@ function buildTemplatePayload(header, milestones, extras = {}) {
         m?.normalized_milestone_type ?? "",
         `${m?.title ?? ""} ${m?.description ?? ""}`
       ),
+      suggested_amount_percent:
+        m?.pricing_advisory && m?.suggested_amount_percent !== "" ? m?.suggested_amount_percent : null,
       suggested_amount_fixed:
-        m?.pricing_advisory && m?.suggested_amount_fixed !== "" ? m?.suggested_amount_fixed : null,
+        m?.suggested_amount_percent !== ""
+          ? null
+          : m?.pricing_advisory && m?.suggested_amount_fixed !== ""
+          ? m?.suggested_amount_fixed
+          : null,
       suggested_amount_low:
         m?.pricing_advisory && m?.suggested_amount_low !== "" ? m?.suggested_amount_low : null,
       suggested_amount_high:
@@ -869,12 +884,12 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   const pricingTotals = useMemo(() => {
     return currentMilestones.reduce(
       (acc, m) => {
-        acc.fixed += Number(m?.suggested_amount_fixed) || 0;
+        acc.percent += Number(m?.suggested_amount_percent) || 0;
         acc.low += Number(m?.suggested_amount_low) || 0;
         acc.high += Number(m?.suggested_amount_high) || 0;
         return acc;
       },
-      { fixed: 0, low: 0, high: 0 }
+      { percent: 0, low: 0, high: 0 }
     );
   }, [currentMilestones]);
 
@@ -1182,6 +1197,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     start_offset: m.start_offset ?? (idx === 0 ? 0 : ""),
                     duration_days: m.duration_days ?? "",
                     pricing_advisory: m.pricing_advisory ?? false,
+                    suggested_amount_percent: m.suggested_amount_percent ?? "",
                     suggested_amount_fixed: m.suggested_amount_fixed ?? "",
                     suggested_amount_low: m.suggested_amount_low ?? "",
                     suggested_amount_high: m.suggested_amount_high ?? "",
@@ -3254,10 +3270,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
               {activeTab === "pricing" ? (
                 <SectionCard title="Pricing">
                   <div className="mb-2 text-xs text-slate-500">
-                    Template pricing is advisory only. Reusable templates should not store enforced milestone prices.
+                    Template pricing stores suggested allocation percentages, not project-specific prices.
                   </div>
                   <div className="mb-3 text-[11px] text-slate-500">
-                    If you add advisory pricing, contractors can review it later without the template enforcing a fixed amount.
+                    Percentages describe how project value is typically distributed across milestones.
                   </div>
 
                   {(editMode || creatingNew) ? (
@@ -3268,7 +3284,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         data-testid="templates-ai-suggest-pricing-structure-button"
                         className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                       >
-                        Suggest Advisory Pricing Structure
+                        Suggest Allocation Structure
                       </button>
                     </div>
                   ) : null}
@@ -3279,7 +3295,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
                     >
                       <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
-                        Advisory pricing structure
+                        Suggested allocation structure
                       </div>
                       <div className="mt-2 text-sm leading-6 text-amber-950">
                         {pricingStructurePreview.message}
@@ -3292,7 +3308,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                 {row.title}
                               </div>
                               <div className="mt-1 text-xs text-slate-700">
-                                Suggested structure: {row.structure}
+                                Suggested allocation role: {row.structure}
                               </div>
                               <div className="mt-1 text-xs text-slate-500">
                                 {row.note}
@@ -3326,9 +3342,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       <thead className="bg-slate-50">
                         <tr className="text-left [&>*]:px-3 [&>*]:py-2">
                           <th>Milestone</th>
-                          <th>Advisory Amount</th>
-                          <th>Min</th>
-                          <th>Max</th>
+                          <th>Suggested %</th>
+                          <th>Min %</th>
+                          <th>Max %</th>
                           <th>Confidence</th>
                           <th>Source</th>
                         </tr>
@@ -3346,35 +3362,38 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                   <label className="flex items-center gap-2 text-xs font-medium text-slate-700">
                                     <input
                                       type="checkbox"
+                                      data-testid={`templates-milestone-allocation-enabled-${idx + 1}`}
                                       checked={!!m?.pricing_advisory}
                                       onChange={(e) =>
                                         updateMilestone(idx, { pricing_advisory: e.target.checked })
                                       }
                                     />
-                                    Advisory pricing
+                                    Suggested allocation
                                   </label>
                                   {m?.pricing_advisory ? (
                                     <input
                                       type="number"
                                       min="0"
+                                      max="100"
                                       step="0.01"
                                       className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
-                                      value={m?.suggested_amount_fixed || ""}
+                                      data-testid={`templates-milestone-percent-${idx + 1}`}
+                                      value={m?.suggested_amount_percent || ""}
                                       onChange={(e) =>
                                         updateMilestone(idx, {
                                           pricing_advisory: true,
-                                          suggested_amount_fixed: e.target.value,
+                                          suggested_amount_percent: e.target.value,
                                         })
                                       }
                                     />
                                   ) : (
-                                    <span className="text-xs text-slate-500">No fixed pricing stored.</span>
+                                    <span className="text-xs text-slate-500">No allocation stored.</span>
                                   )}
                                 </div>
                               ) : hasAnyPricing(m) && m?.pricing_advisory ? (
-                                toMoney(m?.suggested_amount_fixed) || "—"
+                                percentOrDash(m?.suggested_amount_percent)
                               ) : (
-                                <span className="text-xs text-slate-500">No fixed pricing stored.</span>
+                                <span className="text-xs text-slate-500">No allocation stored.</span>
                               )}
                             </td>
 
@@ -3384,8 +3403,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                   <input
                                     type="number"
                                     min="0"
+                                    max="100"
                                     step="0.01"
                                     className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+                                    data-testid={`templates-milestone-min-percent-${idx + 1}`}
                                     value={m?.suggested_amount_low || ""}
                                     onChange={(e) =>
                                       updateMilestone(idx, {
@@ -3398,7 +3419,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                   <span className="text-xs text-slate-500">—</span>
                                 )
                               ) : hasAnyPricing(m) && m?.pricing_advisory ? (
-                                toMoney(m?.suggested_amount_low) || "—"
+                                percentOrDash(m?.suggested_amount_low)
                               ) : (
                                 <span className="text-xs text-slate-500">—</span>
                               )}
@@ -3410,8 +3431,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                   <input
                                     type="number"
                                     min="0"
+                                    max="100"
                                     step="0.01"
                                     className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+                                    data-testid={`templates-milestone-max-percent-${idx + 1}`}
                                     value={m?.suggested_amount_high || ""}
                                     onChange={(e) =>
                                       updateMilestone(idx, {
@@ -3424,7 +3447,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                   <span className="text-xs text-slate-500">—</span>
                                 )
                               ) : hasAnyPricing(m) && m?.pricing_advisory ? (
-                                toMoney(m?.suggested_amount_high) || "—"
+                                percentOrDash(m?.suggested_amount_high)
                               ) : (
                                 <span className="text-xs text-slate-500">—</span>
                               )}
@@ -3470,10 +3493,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                     }
                                   />
                                 ) : (
-                                  <span className="text-xs text-slate-500">Advisory only</span>
+                                  <span className="text-xs text-slate-500">Allocation only</span>
                                 )
                               ) : (
-                                m?.pricing_advisory ? safeTrim(m?.pricing_source_note) || "—" : "Advisory only"
+                                m?.pricing_advisory ? safeTrim(m?.pricing_source_note) || "—" : "Allocation only"
                               )}
                             </td>
                           </tr>
@@ -3484,32 +3507,53 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
                   <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                      Advisory Pricing Summary
+                      Suggested Allocation Summary
                     </div>
 
                     {currentMilestones.some((row) => row?.pricing_advisory) ? (
                       <>
                         <div className="mt-2 flex flex-wrap gap-3 text-sm">
                           <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                            Min:{" "}
+                            Suggested total:{" "}
                             <span className="font-semibold text-slate-900">
-                              {moneyOrDash(pricingTotals.low)}
+                              {percentOrDash(pricingTotals.percent)}
                             </span>
                           </div>
                           <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                            Max:{" "}
+                            Min total:{" "}
                             <span className="font-semibold text-slate-900">
-                              {moneyOrDash(pricingTotals.high)}
+                              {percentOrDash(pricingTotals.low)}
+                            </span>
+                          </div>
+                          <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                            Max total:{" "}
+                            <span className="font-semibold text-slate-900">
+                              {percentOrDash(pricingTotals.high)}
                             </span>
                           </div>
                         </div>
+                        {pricingTotals.percent > 100 || pricingTotals.low > 100 || pricingTotals.high > 100 ? (
+                          <div
+                            data-testid="templates-allocation-warning"
+                            className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800"
+                          >
+                            Allocation totals exceed 100%. Reduce percentages before relying on this template.
+                          </div>
+                        ) : pricingTotals.percent > 0 && pricingTotals.percent < 90 ? (
+                          <div
+                            data-testid="templates-allocation-warning"
+                            className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
+                          >
+                            Allocation totals are significantly below 100%. Add remaining value or leave blank intentionally.
+                          </div>
+                        ) : null}
                         <div className="mt-2 text-[11px] text-slate-500">
-                          Advisory pricing is visible for review only. Templates should not enforce fixed dollar amounts.
+                          Percentages describe how project value is typically distributed across milestones.
                         </div>
                       </>
                     ) : (
                       <div className="mt-2 text-sm text-slate-600">
-                        No fixed pricing is stored on this template.
+                        No allocation percentages are stored on this template.
                       </div>
                     )}
                   </div>

@@ -221,16 +221,16 @@ def _build_milestone_amounts(template: ProjectTemplate, agreement_total: Decimal
         unresolved_indexes: list[int] = []
 
         for idx, row in enumerate(rows):
-            if getattr(row, "pricing_advisory", False) and row.suggested_amount_fixed is not None:
-                amt = _safe_decimal(row.suggested_amount_fixed)
-                amounts.append(amt)
-                remaining -= amt
-            elif row.suggested_amount_percent is not None and agreement_total > 0:
+            if row.suggested_amount_percent is not None and agreement_total > 0:
                 amt = (
                     agreement_total
                     * _safe_decimal(row.suggested_amount_percent)
                     / Decimal("100")
                 ).quantize(Decimal("0.01"))
+                amounts.append(amt)
+                remaining -= amt
+            elif getattr(row, "pricing_advisory", False) and row.suggested_amount_fixed is not None:
+                amt = _safe_decimal(row.suggested_amount_fixed)
                 amounts.append(amt)
                 remaining -= amt
             else:
@@ -878,9 +878,6 @@ def _workflow_profile_for_agreement(agreement: Agreement) -> dict[str, Any]:
 
 
 def _template_row_suggested_amount(row, agreement_total: Decimal) -> Decimal:
-    if getattr(row, "pricing_advisory", False) and row.suggested_amount_fixed is not None:
-        return _safe_decimal(row.suggested_amount_fixed)
-
     if row.suggested_amount_percent is not None and agreement_total > 0:
         return (
             agreement_total
@@ -888,7 +885,26 @@ def _template_row_suggested_amount(row, agreement_total: Decimal) -> Decimal:
             / Decimal("100")
         ).quantize(Decimal("0.01"))
 
+    if getattr(row, "pricing_advisory", False) and row.suggested_amount_fixed is not None:
+        return _safe_decimal(row.suggested_amount_fixed)
+
     return Decimal("0.00")
+
+
+def _template_row_range_amounts(row, agreement_total: Decimal) -> tuple[Optional[Decimal], Optional[Decimal]]:
+    if agreement_total > 0 and (
+        row.suggested_amount_percent is not None
+        or (row.suggested_amount_low is not None and row.suggested_amount_high is not None)
+    ):
+        low = (
+            agreement_total * _safe_decimal(row.suggested_amount_low) / Decimal("100")
+        ).quantize(Decimal("0.01")) if row.suggested_amount_low is not None else None
+        high = (
+            agreement_total * _safe_decimal(row.suggested_amount_high) / Decimal("100")
+        ).quantize(Decimal("0.01")) if row.suggested_amount_high is not None else None
+        return low, high
+
+    return row.suggested_amount_low, row.suggested_amount_high
 
 
 def _coerce_positive_int(value) -> Optional[int]:
@@ -1111,6 +1127,10 @@ def apply_template_to_agreement(
             row,
             spread_total_decimal if use_spread_total else pricing_basis_total,
         )
+        suggested_low_amount, suggested_high_amount = _template_row_range_amounts(
+            row,
+            spread_total_decimal if use_spread_total else pricing_basis_total,
+        )
         milestone_description = _build_enriched_template_milestone_description(
             agreement=agreement,
             template=template,
@@ -1135,8 +1155,8 @@ def apply_template_to_agreement(
             ),
             template_suggested_amount=template_suggested_amount if template_suggested_amount > 0 else None,
             ai_suggested_amount=amounts[idx - 1] if amounts[idx - 1] > 0 else None,
-            suggested_amount_low=row.suggested_amount_low,
-            suggested_amount_high=row.suggested_amount_high,
+            suggested_amount_low=suggested_low_amount,
+            suggested_amount_high=suggested_high_amount,
             pricing_confidence=(row.pricing_confidence or "").strip(),
             pricing_source_note=(row.pricing_source_note or "").strip(),
             recommended_days_from_start=hinted_offset,
