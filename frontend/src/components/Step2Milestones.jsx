@@ -8192,6 +8192,11 @@ export default function Step2Milestones({
         busy={saveTemplateBusy}
         defaultName={saveTemplateName}
         defaultDescription={saveTemplateDescription}
+        projectTitle={
+          safeStr(agreementMeta?.project?.title) ||
+          safeStr(agreementMeta?.project_title) ||
+          safeStr(agreementMeta?.title)
+        }
         projectType={safeStr(agreementMeta?.project_type)}
         projectSubtype={safeStr(agreementMeta?.project_subtype)}
         milestoneCount={effectiveMilestones.length}

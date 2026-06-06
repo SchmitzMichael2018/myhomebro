@@ -8219,6 +8219,7 @@ export default function Step1Details({
         busy={savingTemplate}
         defaultName={defaultTemplateName}
         defaultDescription=""
+        projectTitle={safeTrim(dLocal?.project_title) || safeTrim(dLocal?.title)}
         projectType={safeTrim(dLocal?.project_type)}
         projectSubtype={safeTrim(dLocal?.project_subtype)}
         milestoneCount={agreement?.milestone_count ?? agreement?.milestones?.length ?? null}
