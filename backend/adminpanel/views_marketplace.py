@@ -16,10 +16,10 @@ from rest_framework.views import APIView
 
 from .permissions import IsAdminUserRole
 from .utils import safe_get
-from projects.models import Contractor, ContractorPublicProfile
-from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
+from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
+from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, location_readiness, normalize_location_value
+from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness, normalize_location_value
 from projects.services.contractor_discovery import build_contractor_recommendations
 from projects.services.google_places_contractors import (
     project_type_to_places_query,
@@ -65,6 +65,130 @@ def _format_money(value: Any) -> str:
         return f"{Decimal(str(value or 0)).quantize(Decimal('0.01')):.2f}"
     except Exception:
         return "0.00"
+
+
+def _safe_dt(value: Any) -> str | None:
+    if not value:
+        return None
+    try:
+        return value.isoformat()
+    except Exception:
+        return None
+
+
+def _intake_title(intake: ProjectIntake) -> str:
+    return (
+        _safe_text(getattr(intake, "ai_project_title", ""))
+        or _safe_text(getattr(intake, "ai_project_type", ""))
+        or _safe_text(getattr(intake, "accomplishment_text", ""))[:80]
+        or f"Marketplace request #{intake.id}"
+    )
+
+
+def _marketplace_request_counts(intake: ProjectIntake) -> dict[str, int]:
+    return {
+        "invites": ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(),
+        "opportunities": ContractorOpportunity.objects.filter(intake_request=intake).count(),
+        "leads": PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(),
+    }
+
+
+def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
+    readiness = location_readiness(getattr(intake, "project_city", "") or getattr(intake, "customer_city", ""), getattr(intake, "project_state", "") or getattr(intake, "customer_state", ""))
+    counts = _marketplace_request_counts(intake)
+    cap = int(readiness.get("max_bids_per_request") or 5)
+    routed_count = max(counts.values() or [0])
+    at_cap = routed_count >= cap
+    enabled = bool(readiness.get("enabled"))
+    eligible_count = len(eligible_marketplace_listings(intake)) if enabled else 0
+    already_routed = routed_count > 0
+    routable_now = enabled and not at_cap and eligible_count > routed_count
+    if not enabled:
+        reason = "Marketplace is not enabled for this location yet."
+    elif at_cap:
+        reason = "Bid cap already reached."
+    elif eligible_count <= routed_count:
+        reason = "No additional eligible claimed contractors are available."
+    elif already_routed:
+        reason = "Partially routed. Additional eligible contractors can be routed."
+    else:
+        reason = "Ready to route to eligible contractors."
+
+    return {
+        "id": intake.id,
+        "request_title": _intake_title(intake),
+        "project_type": _safe_text(getattr(intake, "ai_project_type", "")),
+        "project_subtype": _safe_text(getattr(intake, "ai_project_subtype", "")),
+        "city": normalize_location_value(getattr(intake, "project_city", "") or getattr(intake, "customer_city", "")),
+        "state": normalize_location_value(getattr(intake, "project_state", "") or getattr(intake, "customer_state", "")),
+        "customer_name": _safe_text(getattr(intake, "customer_name", "")),
+        "customer_email": _safe_text(getattr(intake, "customer_email", "")),
+        "submitted_at": _safe_dt(getattr(intake, "post_submit_flow_selected_at", None) or getattr(intake, "submitted_at", None) or getattr(intake, "created_at", None)),
+        "marketplace_status": readiness.get("status"),
+        "marketplace_enabled": enabled,
+        "routed_status": "at_cap" if at_cap else "partially_routed" if already_routed else "not_routed",
+        "routable_now": routable_now,
+        "already_routed": already_routed,
+        "at_cap": at_cap,
+        "eligible_contractors": eligible_count,
+        "counts": counts,
+        "cap": cap,
+        "reason": reason,
+    }
+
+
+def _saved_marketplace_requests_payload() -> dict[str, Any]:
+    intakes = list(
+        ProjectIntake.objects.filter(post_submit_flow="multi_contractor")
+        .order_by("-post_submit_flow_selected_at", "-created_at", "-id")[:100]
+    )
+    rows = [_saved_marketplace_request_row(intake) for intake in intakes]
+    summary = {
+        "saved_not_routed": sum(1 for row in rows if row["routed_status"] == "not_routed"),
+        "routable_now": sum(1 for row in rows if row["routable_now"]),
+        "already_routed": sum(1 for row in rows if row["already_routed"]),
+        "blocked_disabled": sum(1 for row in rows if not row["marketplace_enabled"]),
+        "blocked_no_eligible_contractors": sum(
+            1
+            for row in rows
+            if row["marketplace_enabled"] and not row["at_cap"] and row["eligible_contractors"] <= max(row["counts"].values() or [0])
+        ),
+        "at_cap": sum(1 for row in rows if row["at_cap"]),
+    }
+    by_location: dict[tuple[str, str], dict[str, int]] = {}
+    for row in rows:
+        key = (row["city"], row["state"])
+        bucket = by_location.setdefault(
+            key,
+            {
+                "saved_not_routed": 0,
+                "routable_now": 0,
+                "already_routed": 0,
+                "blocked_disabled": 0,
+                "blocked_no_eligible_contractors": 0,
+                "at_cap": 0,
+            },
+        )
+        if row["routed_status"] == "not_routed":
+            bucket["saved_not_routed"] += 1
+        if row["routable_now"]:
+            bucket["routable_now"] += 1
+        if row["already_routed"]:
+            bucket["already_routed"] += 1
+        if not row["marketplace_enabled"]:
+            bucket["blocked_disabled"] += 1
+        if row["marketplace_enabled"] and not row["at_cap"] and row["eligible_contractors"] <= max(row["counts"].values() or [0]):
+            bucket["blocked_no_eligible_contractors"] += 1
+        if row["at_cap"]:
+            bucket["at_cap"] += 1
+    return {
+        "summary": summary,
+        "results": rows,
+        "by_location": {
+            f"{city}, {state}": {"city": city, "state": state, **counts}
+            for (city, state), counts in by_location.items()
+        },
+    }
 
 
 def _query_listings(request):
@@ -348,11 +472,26 @@ class AdminMarketplaceOverview(APIView):
                 for city, state in MarketplaceLocation.objects.values_list("city", "state")
             }
         )
+        saved_marketplace_requests = _saved_marketplace_requests_payload()
         location_rows = [
             location_readiness(city, state)
             for city, state in location_keys
             if city and state
         ]
+        for row in location_rows:
+            row["marketplace_backlog"] = saved_marketplace_requests["by_location"].get(
+                f"{row['city']}, {row['state']}",
+                {
+                    "city": row["city"],
+                    "state": row["state"],
+                    "saved_not_routed": 0,
+                    "routable_now": 0,
+                    "already_routed": 0,
+                    "blocked_disabled": 0,
+                    "blocked_no_eligible_contractors": 0,
+                    "at_cap": 0,
+                },
+            )
         status_order = {"enabled": 0, "ready": 1, "nearing_ready": 2, "not_ready": 3}
         location_rows.sort(
             key=lambda row: (
@@ -414,6 +553,7 @@ class AdminMarketplaceOverview(APIView):
                     "location_readiness": location_rows[:50],
                 },
                 "invite_analytics": invite_analytics,
+                "saved_marketplace_requests": saved_marketplace_requests,
             },
             status=status.HTTP_200_OK,
         )

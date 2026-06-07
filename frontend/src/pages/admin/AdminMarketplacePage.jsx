@@ -189,6 +189,22 @@ function readinessChecks(row) {
   ];
 }
 
+function formatDate(value) {
+  if (!value) return "Not submitted";
+  try {
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+  } catch {
+    return String(value);
+  }
+}
+
+function routeButtonCopy(row) {
+  if (row?.routable_now) return "Route Now";
+  if (!row?.marketplace_enabled) return "Marketplace disabled";
+  if (row?.at_cap) return "At cap";
+  return "Not routable";
+}
+
 export default function AdminMarketplacePage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -205,6 +221,8 @@ export default function AdminMarketplacePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [claimLinks, setClaimLinks] = useState({});
+  const [savedRequests, setSavedRequests] = useState({ summary: {}, results: [] });
+  const [routingIds, setRoutingIds] = useState({});
 
   useEffect(() => {
     if (whoLoading || !isAdmin) return undefined;
@@ -217,9 +235,15 @@ export default function AdminMarketplacePage() {
         if (active) setRows(directoryRows(data));
         try {
           const readiness = await api.get("/projects/admin/marketplace/");
-          if (active) setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
+          if (active) {
+            setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
+            setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
+          }
         } catch {
-          if (active) setReadinessRows([]);
+          if (active) {
+            setReadinessRows([]);
+            setSavedRequests({ summary: {}, results: [] });
+          }
         }
       } catch (error) {
         if (active) setStatus(error?.response?.data?.detail || "Failed to load marketplace health data.");
@@ -232,6 +256,13 @@ export default function AdminMarketplacePage() {
       active = false;
     };
   }, [whoLoading, isAdmin]);
+
+  async function refreshMarketplaceOverview() {
+    const readiness = await api.get("/projects/admin/marketplace/");
+    setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
+    setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
+    return readiness?.data;
+  }
 
   useEffect(() => {
     if (whoLoading || !isAdmin || currentView !== "listing" || !listingId) return undefined;
@@ -343,10 +374,54 @@ export default function AdminMarketplacePage() {
         const next = prev.filter((item) => !(item.city === data.city && item.state === data.state));
         return [data, ...next].sort((a, b) => String(a.status).localeCompare(String(b.status)) || String(a.city).localeCompare(String(b.city)));
       });
+      try {
+        await refreshMarketplaceOverview();
+      } catch {
+        // The location update succeeded; keep the local row update even if the overview refresh fails.
+      }
       setStatus(enabled ? `${row.city}, ${row.state} enabled for gated marketplace routing.` : `${row.city}, ${row.state} disabled for marketplace routing.`);
     } catch (error) {
       setStatus(error?.response?.data?.detail || "Could not update marketplace location.");
     }
+  }
+
+  async function routeSavedRequest(row) {
+    if (!row?.id || !row.routable_now) return;
+    setStatus("");
+    setRoutingIds((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      const { data } = await api.post("/projects/admin/marketplace/route-intake/", { intake_id: row.id });
+      await refreshMarketplaceOverview();
+      const createdCount = Number(data?.created_count || 0);
+      setStatus(`Routed ${createdCount} contractor ${createdCount === 1 ? "opportunity" : "opportunities"} for ${row.request_title}.`);
+    } catch (error) {
+      setStatus(error?.response?.data?.detail || "Could not route this marketplace request.");
+    } finally {
+      setRoutingIds((prev) => ({ ...prev, [row.id]: false }));
+    }
+  }
+
+  async function routeAllEligibleRequests() {
+    const rowsToRoute = (savedRequests.results || []).filter((row) => row.routable_now);
+    if (!rowsToRoute.length) return;
+    setStatus("");
+    let routed = 0;
+    let skipped = 0;
+    const errors = [];
+    for (const row of rowsToRoute) {
+      setRoutingIds((prev) => ({ ...prev, [row.id]: true }));
+      try {
+        const { data } = await api.post("/projects/admin/marketplace/route-intake/", { intake_id: row.id });
+        routed += Number(data?.created_count || 0);
+      } catch (error) {
+        skipped += 1;
+        errors.push(error?.response?.data?.detail || `Could not route request #${row.id}.`);
+      } finally {
+        setRoutingIds((prev) => ({ ...prev, [row.id]: false }));
+      }
+    }
+    await refreshMarketplaceOverview();
+    setStatus(errors.length ? `Routed ${routed}; ${skipped} request${skipped === 1 ? "" : "s"} skipped. ${errors[0]}` : `Routed ${routed} contractor opportunities across ${rowsToRoute.length} request${rowsToRoute.length === 1 ? "" : "s"}.`);
   }
 
   if (whoLoading) {
@@ -453,6 +528,9 @@ export default function AdminMarketplacePage() {
                           </div>
                         </td>
                         <td className={tableCellClass}>
+                          <div className="mb-2 text-xs text-sky-100/75">
+                            Backlog: {row.marketplace_backlog?.saved_not_routed || 0} saved | {row.marketplace_backlog?.routable_now || 0} routable | {row.marketplace_backlog?.at_cap || 0} at cap
+                          </div>
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
@@ -478,6 +556,100 @@ export default function AdminMarketplacePage() {
                     )) : (
                       <tr>
                         <td className={tableCellClass} colSpan={5}>No city readiness data yet. Import directory listings to start coverage tracking.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+
+            <Section
+              title="Saved Marketplace Requests"
+              sub="Requests saved for multi-contractor routing. Route only after the city is enabled and eligible claimed contractors are available."
+              testId="admin-marketplace-saved-requests"
+            >
+              <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="Saved Not Routed" value={savedRequests.summary?.saved_not_routed || 0} sub="Waiting on routing" testId="admin-marketplace-backlog-saved" />
+                <MetricCard label="Routable Now" value={savedRequests.summary?.routable_now || 0} sub="Enabled locations" tone="emerald" testId="admin-marketplace-backlog-routable" />
+                <MetricCard label="Already Routed" value={savedRequests.summary?.already_routed || 0} sub="Has invites or bids" testId="admin-marketplace-backlog-routed" />
+                <MetricCard label="Disabled Location" value={savedRequests.summary?.blocked_disabled || 0} sub="City not enabled" tone="amber" testId="admin-marketplace-backlog-disabled" />
+                <MetricCard label="No Eligible Contractors" value={savedRequests.summary?.blocked_no_eligible_contractors || 0} sub="Claimed supply gap" tone="amber" testId="admin-marketplace-backlog-no-eligible" />
+                <MetricCard label="At Cap" value={savedRequests.summary?.at_cap || 0} sub="Max bids reached" tone="emerald" testId="admin-marketplace-backlog-at-cap" />
+              </div>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-sm text-sky-100/70">
+                  {(savedRequests.results || []).length} saved marketplace request{(savedRequests.results || []).length === 1 ? "" : "s"} tracked.
+                </div>
+                <button
+                  type="button"
+                  data-testid="admin-marketplace-route-all-eligible"
+                  onClick={routeAllEligibleRequests}
+                  disabled={!(savedRequests.results || []).some((row) => row.routable_now) || Object.values(routingIds).some(Boolean)}
+                  className="rounded-xl border border-emerald-200/35 bg-emerald-300/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-300/25 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Route All Eligible Requests
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr>
+                      <th className={tableHeadClass}>Request</th>
+                      <th className={tableHeadClass}>Location</th>
+                      <th className={tableHeadClass}>Customer</th>
+                      <th className={tableHeadClass}>Routing Status</th>
+                      <th className={tableHeadClass}>Counts</th>
+                      <th className={tableHeadClass}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(savedRequests.results || []).length ? (savedRequests.results || []).map((row) => (
+                      <tr key={row.id} data-testid={`admin-marketplace-saved-request-${row.id}`} className="hover:bg-white/5">
+                        <td className={tableCellClass}>
+                          <div className="font-extrabold text-white">{row.request_title}</div>
+                          <div className="mt-1 text-xs text-sky-100/70">{row.project_type || "Project type pending"} {row.project_subtype ? `| ${row.project_subtype}` : ""}</div>
+                          <div className="mt-1 text-xs text-sky-100/55">Submitted {formatDate(row.submitted_at)}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="font-bold text-sky-50">{row.city}, {row.state}</div>
+                          <div className="mt-2">
+                            <Badge tone={row.marketplace_enabled ? "emerald" : "amber"}>{row.marketplace_enabled ? "Enabled" : "Disabled"}</Badge>
+                          </div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="font-bold text-sky-50">{row.customer_name || "Customer"}</div>
+                          <div className="mt-1 text-xs text-sky-100/70">{row.customer_email || "Email not listed"}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge tone={row.routable_now ? "emerald" : row.at_cap ? "sky" : row.marketplace_enabled ? "amber" : "rose"}>
+                              {String(row.routed_status || "not_routed").replace(/_/g, " ")}
+                            </Badge>
+                            <Badge>{String(row.marketplace_status || "not_ready").replace(/_/g, " ")}</Badge>
+                          </div>
+                          <div className="mt-2 max-w-sm text-xs text-sky-100/70">{row.reason || "No routing note available."}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="text-xs text-sky-100/80">
+                            {row.counts?.invites || 0} invites | {row.counts?.opportunities || 0} opportunities | {row.counts?.leads || 0} leads
+                          </div>
+                          <div className="mt-1 text-xs text-sky-100/65">{row.eligible_contractors || 0} eligible contractors | Cap {row.cap || 5}</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <button
+                            type="button"
+                            data-testid={`admin-marketplace-route-request-${row.id}`}
+                            onClick={() => routeSavedRequest(row)}
+                            disabled={!row.routable_now || routingIds[row.id]}
+                            className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {routingIds[row.id] ? "Routing..." : routeButtonCopy(row)}
+                          </button>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td className={tableCellClass} colSpan={6}>No saved marketplace requests yet.</td>
                       </tr>
                     )}
                   </tbody>

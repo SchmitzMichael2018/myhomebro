@@ -77,6 +77,109 @@ const directoryRows = [
 ];
 
 async function installMarketplaceMocks(page) {
+  let austinEnabled = false;
+  let requestRouted = false;
+  let routeCalls = 0;
+
+  function overviewPayload() {
+    const counts = requestRouted
+      ? { invites: 5, opportunities: 5, leads: 5 }
+      : { invites: 0, opportunities: 0, leads: 0 };
+    const savedRequest = {
+      id: 501,
+      request_title: 'Luxury Vinyl Plank Flooring',
+      project_type: 'Flooring',
+      project_subtype: 'Luxury Vinyl Plank',
+      city: 'Austin',
+      state: 'TX',
+      customer_name: 'Home Owner',
+      customer_email: 'homeowner@example.com',
+      submitted_at: '2026-05-18T14:00:00Z',
+      marketplace_status: austinEnabled ? 'enabled' : 'ready',
+      marketplace_enabled: austinEnabled,
+      routed_status: requestRouted ? 'at_cap' : 'not_routed',
+      routable_now: austinEnabled && !requestRouted,
+      already_routed: requestRouted,
+      at_cap: requestRouted,
+      eligible_contractors: 6,
+      counts,
+      cap: 5,
+      reason: austinEnabled
+        ? requestRouted
+          ? 'Bid cap already reached.'
+          : 'Ready to route to eligible contractors.'
+        : 'Marketplace is not enabled for this location yet.',
+    };
+    return {
+      coverage: {
+        location_readiness: [
+          {
+            city: 'Austin',
+            state: 'TX',
+            status: austinEnabled ? 'enabled' : 'ready',
+            enabled: austinEnabled,
+            manual_enabled: austinEnabled,
+            max_bids_per_request: 5,
+            counts: {
+              total_discovered: 22,
+              claimed_contractors: 20,
+              verified_contractors: 10,
+              stripe_ready_contractors: 5,
+              trade_categories: 6,
+              request_volume: 3,
+              avg_bids_per_request: 2.33,
+            },
+            missing_trade_coverage: ['hvac', 'windows'],
+            marketplace_backlog: {
+              saved_not_routed: requestRouted ? 0 : 1,
+              routable_now: austinEnabled && !requestRouted ? 1 : 0,
+              already_routed: requestRouted ? 1 : 0,
+              blocked_disabled: austinEnabled ? 0 : 1,
+              blocked_no_eligible_contractors: 0,
+              at_cap: requestRouted ? 1 : 0,
+            },
+          },
+          {
+            city: 'Dallas',
+            state: 'TX',
+            status: 'not_ready',
+            enabled: false,
+            manual_enabled: false,
+            counts: {
+              total_discovered: 1,
+              claimed_contractors: 0,
+              verified_contractors: 0,
+              stripe_ready_contractors: 0,
+              trade_categories: 1,
+              request_volume: 1,
+              avg_bids_per_request: 0,
+            },
+            missing_trade_coverage: ['roofing', 'flooring'],
+            marketplace_backlog: {
+              saved_not_routed: 0,
+              routable_now: 0,
+              already_routed: 0,
+              blocked_disabled: 0,
+              blocked_no_eligible_contractors: 0,
+              at_cap: 0,
+            },
+          },
+        ],
+      },
+      saved_marketplace_requests: {
+        summary: {
+          saved_not_routed: requestRouted ? 0 : 1,
+          routable_now: austinEnabled && !requestRouted ? 1 : 0,
+          already_routed: requestRouted ? 1 : 0,
+          blocked_disabled: austinEnabled ? 0 : 1,
+          blocked_no_eligible_contractors: 0,
+          at_cap: requestRouted ? 1 : 0,
+        },
+        results: [savedRequest],
+      },
+    };
+  }
+
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -97,8 +200,36 @@ async function installMarketplaceMocks(page) {
   await page.route('**/api/projects/admin/marketplace/**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const method = route.request().method();
+    if (method === 'POST' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/route-intake/')) {
+      routeCalls += 1;
+      const createdCount = requestRouted ? 0 : 5;
+      requestRouted = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          created_count: createdCount,
+          cap: 5,
+          cap_reached: true,
+          route_calls: routeCalls,
+          created: createdCount
+            ? Array.from({ length: 5 }, (_, index) => ({
+                id: index + 1,
+                contractor_id: index + 10,
+                contractor_opportunity_id: index + 100,
+                public_lead_id: index + 200,
+              }))
+            : [],
+          marketplace: { enabled: true, status: 'enabled' },
+        }),
+      });
+      return;
+    }
     if (method === 'POST' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/locations/')) {
       const body = route.request().postDataJSON();
+      if (body.city === 'Austin' && body.state === 'TX') {
+        austinEnabled = Boolean(body.enabled);
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -125,46 +256,7 @@ async function installMarketplaceMocks(page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        coverage: {
-          location_readiness: [
-            {
-              city: 'Austin',
-              state: 'TX',
-              status: 'ready',
-              enabled: false,
-              manual_enabled: false,
-              counts: {
-                total_discovered: 22,
-                claimed_contractors: 20,
-                verified_contractors: 10,
-                stripe_ready_contractors: 5,
-                trade_categories: 6,
-                request_volume: 3,
-                avg_bids_per_request: 2.33,
-              },
-              missing_trade_coverage: ['hvac', 'windows'],
-            },
-            {
-              city: 'Dallas',
-              state: 'TX',
-              status: 'not_ready',
-              enabled: false,
-              manual_enabled: false,
-              counts: {
-                total_discovered: 1,
-                claimed_contractors: 0,
-                verified_contractors: 0,
-                stripe_ready_contractors: 0,
-                trade_categories: 1,
-                request_volume: 1,
-                avg_bids_per_request: 0,
-              },
-              missing_trade_coverage: ['roofing', 'flooring'],
-            },
-          ],
-        },
-      }),
+      body: JSON.stringify(overviewPayload()),
     });
   });
 
@@ -267,6 +359,65 @@ test('admin marketplace health cards drill into directory and coverage filters',
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('admin-marketplace-high-rated-item-2').click();
   await expect(page).toHaveURL(/\/app\/admin\/marketplace\/listings\/2/);
+});
+
+test('admin marketplace routes saved requests after location enablement without duplicate UI state', async ({ page }) => {
+  await installMarketplaceMocks(page);
+
+  const routeRequests = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/projects/admin/marketplace/route-intake/')) {
+      routeRequests.push(request.postDataJSON());
+    }
+  });
+
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('admin-marketplace-saved-requests')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Luxury Vinyl Plank Flooring');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Marketplace is not enabled for this location yet.');
+  await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
+  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
+  await expect(page.getByTestId('admin-marketplace-backlog-disabled')).toContainText('1');
+
+  await page.getByTestId('admin-marketplace-location-enable-Austin-TX').click();
+  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Austin, TX enabled');
+  await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeEnabled();
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Ready to route to eligible contractors.');
+  await expect(page.getByTestId('admin-marketplace-backlog-routable')).toContainText('1');
+
+  await page.getByTestId('admin-marketplace-route-request-501').click();
+  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Routed 5 contractor opportunities');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 invites');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 opportunities');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 leads');
+  await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
+  await expect(page.getByTestId('admin-marketplace-route-request-501')).toContainText('At cap');
+  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
+  expect(routeRequests).toEqual([{ intake_id: 501 }]);
+});
+
+test('admin marketplace bulk routes only eligible saved requests', async ({ page }) => {
+  await installMarketplaceMocks(page);
+
+  const routeRequests = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/projects/admin/marketplace/route-intake/')) {
+      routeRequests.push(request.postDataJSON());
+    }
+  });
+
+  await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
+
+  await page.getByTestId('admin-marketplace-location-enable-Austin-TX').click();
+  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeEnabled();
+
+  await page.getByTestId('admin-marketplace-route-all-eligible').click();
+  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Routed 5 contractor opportunities across 1 request');
+  await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 leads');
+  await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
+  expect(routeRequests).toEqual([{ intake_id: 501 }]);
 });
 
 test('admin marketplace listing detail is a readiness view with Directory handoff', async ({ page }) => {

@@ -289,6 +289,16 @@ class MarketplaceGatingTests(TestCase):
         self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 0)
         self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 0)
 
+        self.client.force_authenticate(user=self.admin_user)
+        overview = self.client.get("/api/projects/admin/marketplace/")
+        self.assertEqual(overview.status_code, 200, overview.data)
+        saved = overview.json()["saved_marketplace_requests"]
+        self.assertEqual(saved["summary"]["saved_not_routed"], 1)
+        self.assertEqual(saved["summary"]["blocked_disabled"], 1)
+        self.assertEqual(saved["results"][0]["id"], intake.id)
+        self.assertFalse(saved["results"][0]["routable_now"])
+        self.assertEqual(saved["results"][0]["reason"], "Marketplace is not enabled for this location yet.")
+
     def test_enabled_city_invites_max_five_claimed_verified_contractors(self):
         MarketplaceLocation.objects.create(
             city="Austin",
