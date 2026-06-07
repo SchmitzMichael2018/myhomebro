@@ -12,6 +12,8 @@ from django.utils import timezone
 from projects.models import Contractor, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
+from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
+from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 
 
 DEFAULT_MIN_CLAIMED_CONTRACTORS = 20
@@ -95,7 +97,13 @@ def marketplace_thresholds(location: MarketplaceLocation | None = None) -> Marke
         min_trade_categories=int(location.min_trade_categories or _setting_int("MYHOMEBRO_MARKETPLACE_MIN_TRADE_CATEGORIES", DEFAULT_MIN_TRADE_CATEGORIES))
         if location
         else _setting_int("MYHOMEBRO_MARKETPLACE_MIN_TRADE_CATEGORIES", DEFAULT_MIN_TRADE_CATEGORIES),
-        max_bids_per_request=max(1, min(int(getattr(location, "max_bids_per_request", 0) or _setting_int("MYHOMEBRO_MARKETPLACE_MAX_BIDS_PER_REQUEST", DEFAULT_MAX_BIDS_PER_REQUEST)), 10)),
+        max_bids_per_request=max(
+            1,
+            min(
+                int(getattr(location, "max_bids_per_request", 0) or _setting_int("MYHOMEBRO_MARKETPLACE_MAX_BIDS_PER_REQUEST", DEFAULT_MAX_BIDS_PER_REQUEST)),
+                DEFAULT_MAX_BIDS_PER_REQUEST,
+            ),
+        ),
     )
 
 
@@ -309,6 +317,167 @@ def eligible_marketplace_listings(intake: ProjectIntake):
     ]
 
 
+def _project_address_from_intake(intake: ProjectIntake) -> str:
+    return ", ".join(
+        part
+        for part in [
+            normalize_location_value(getattr(intake, "project_address_line1", "")),
+            normalize_location_value(getattr(intake, "project_address_line2", "")),
+        ]
+        if part
+    )
+
+
+def _marketplace_selection_payload(intake: ProjectIntake, listing: ContractorDirectoryListing, readiness: dict[str, Any]) -> dict[str, Any]:
+    analysis = getattr(intake, "ai_analysis_payload", None) or {}
+    return {
+        **analysis,
+        "homeowner_name": normalize_location_value(getattr(intake, "customer_name", "")),
+        "homeowner_email": normalize_location_value(getattr(intake, "customer_email", "")),
+        "homeowner_phone": normalize_location_value(getattr(intake, "customer_phone", "")),
+        "project_title": normalize_location_value(getattr(intake, "ai_project_title", "")),
+        "project_type": normalize_location_value(getattr(intake, "ai_project_type", "")) or normalize_location_value(listing.primary_trade),
+        "project_subtype": normalize_location_value(getattr(intake, "ai_project_subtype", "")),
+        "project_description": normalize_location_value(getattr(intake, "accomplishment_text", "")),
+        "description": normalize_location_value(getattr(intake, "ai_description", "")) or normalize_location_value(getattr(intake, "accomplishment_text", "")),
+        "project_address": _project_address_from_intake(intake),
+        "project_address_line1": normalize_location_value(getattr(intake, "project_address_line1", "")),
+        "project_city": normalize_location_value(getattr(intake, "project_city", "")),
+        "project_state": normalize_location_value(getattr(intake, "project_state", "")),
+        "project_postal_code": normalize_location_value(getattr(intake, "project_postal_code", "")),
+        "timeline": normalize_location_value(getattr(intake, "desired_timing_text", "")),
+        "marketplace": {
+            "city": readiness.get("city"),
+            "state": readiness.get("state"),
+            "cap": readiness.get("max_bids_per_request"),
+            "listing_id": listing.id,
+            "business_name": listing.business_name,
+        },
+    }
+
+
+def _sync_opportunity_for_invite(
+    *,
+    intake: ProjectIntake,
+    listing: ContractorDirectoryListing,
+    invite: ContractorDiscoveryInvite,
+    readiness: dict[str, Any],
+):
+    contractor = listing.claimed_contractor
+    opportunity = create_or_update_opportunity_from_selection(
+        {
+            "selection": {"id": f"contractor:{contractor.id}"},
+            "intake_request": intake,
+            "payload": _marketplace_selection_payload(intake, listing, readiness),
+        }
+    )
+    entry = getattr(opportunity, "directory_entry", None)
+    if isinstance(entry, ContractorDirectoryEntry):
+        update_fields = []
+        listing_updates = {
+            "business_name": listing.business_name,
+            "city": listing.city,
+            "state": listing.state,
+            "zip_code": listing.zip_code,
+            "primary_service": listing.primary_trade,
+            "normalized_services": [normalize_trade(item) for item in (listing.trade_categories or []) if normalize_trade(item)],
+            "services": listing.trade_categories or [],
+            "profile_status": ContractorDirectoryEntry.PROFILE_REVIEWED,
+            "claimed": True,
+            "claimed_by_contractor": contractor,
+        }
+        for field, value in listing_updates.items():
+            if value in (None, "", []):
+                continue
+            if getattr(entry, field) != value:
+                setattr(entry, field, value)
+                update_fields.append(field)
+        if update_fields:
+            update_fields.append("last_seen_at")
+            entry.save(update_fields=list(dict.fromkeys(update_fields)))
+    return opportunity
+
+
+def _lead_analysis_for_marketplace(
+    *,
+    intake: ProjectIntake,
+    listing: ContractorDirectoryListing,
+    invite: ContractorDiscoveryInvite,
+    opportunity,
+    readiness: dict[str, Any],
+) -> dict[str, Any]:
+    analysis = getattr(intake, "ai_analysis_payload", None) or {}
+    original_description = normalize_location_value(getattr(intake, "accomplishment_text", ""))
+    refined_description = normalize_location_value(getattr(intake, "ai_description", ""))
+    return {
+        **analysis,
+        "marketplace_request": True,
+        "source_intake_id": intake.id,
+        "marketplace_invite_id": invite.id,
+        "contractor_opportunity_id": getattr(opportunity, "id", None),
+        "marketplace_status": "opportunity_sent",
+        "marketplace_city": readiness.get("city"),
+        "marketplace_state": readiness.get("state"),
+        "marketplace_bid_cap": readiness.get("max_bids_per_request"),
+        "directory_listing_id": listing.id,
+        "business_name": listing.business_name,
+        "original_description": original_description,
+        "refined_description": refined_description,
+        "project_scope_summary": refined_description or original_description or analysis.get("project_scope_summary", ""),
+        "project_type": normalize_location_value(getattr(intake, "ai_project_type", "")) or normalize_location_value(listing.primary_trade),
+        "project_subtype": normalize_location_value(getattr(intake, "ai_project_subtype", "")),
+        "request_path_label": "Marketplace Request",
+    }
+
+
+def _sync_public_lead_for_marketplace(
+    *,
+    intake: ProjectIntake,
+    listing: ContractorDirectoryListing,
+    invite: ContractorDiscoveryInvite,
+    opportunity,
+    readiness: dict[str, Any],
+) -> PublicContractorLead:
+    contractor = listing.claimed_contractor
+    profile = ensure_public_profile_for_contractor(contractor)
+    analysis = _lead_analysis_for_marketplace(
+        intake=intake,
+        listing=listing,
+        invite=invite,
+        opportunity=opportunity,
+        readiness=readiness,
+    )
+    defaults = {
+        "public_profile": profile,
+        "source": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+        "full_name": normalize_location_value(getattr(intake, "customer_name", "")) or "Marketplace Request",
+        "email": normalize_location_value(getattr(intake, "customer_email", "")),
+        "phone": normalize_location_value(getattr(intake, "customer_phone", "")),
+        "project_address": _project_address_from_intake(intake),
+        "city": normalize_location_value(getattr(intake, "project_city", "")),
+        "state": normalize_location_value(getattr(intake, "project_state", "")),
+        "zip_code": normalize_location_value(getattr(intake, "project_postal_code", "")),
+        "project_type": analysis["project_type"],
+        "project_description": normalize_location_value(getattr(intake, "accomplishment_text", "")) or analysis.get("project_scope_summary", ""),
+        "preferred_timeline": normalize_location_value(getattr(intake, "desired_timing_text", "")),
+        "budget_text": normalize_location_value(getattr(intake, "budget_range_text", "")),
+        "status": PublicContractorLead.STATUS_READY_FOR_REVIEW,
+        "internal_notes": f"Marketplace request routed from intake #{intake.id}.",
+        "ai_analysis": analysis,
+    }
+    lead = PublicContractorLead.objects.filter(
+        contractor=contractor,
+        ai_analysis__source_intake_id=intake.id,
+    ).first()
+    if lead is None:
+        lead = PublicContractorLead.objects.create(contractor=contractor, **defaults)
+    else:
+        for field, value in defaults.items():
+            setattr(lead, field, value)
+        lead.save(update_fields=[*defaults.keys(), "updated_at"])
+    return lead
+
+
 @transaction.atomic
 def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     intake = ProjectIntake.objects.select_for_update().get(pk=intake_id)
@@ -345,7 +514,24 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
 
     existing_contractors = set(existing_qs.exclude(contractor__isnull=True).values_list("contractor_id", flat=True))
     created = []
-    for listing in eligible_marketplace_listings(intake):
+    eligible_listings = eligible_marketplace_listings(intake)
+    for existing_invite in existing_qs.select_related("directory_listing", "contractor"):
+        if existing_invite.contractor_id and existing_invite.directory_listing_id:
+            opportunity = _sync_opportunity_for_invite(
+                intake=intake,
+                listing=existing_invite.directory_listing,
+                invite=existing_invite,
+                readiness=readiness,
+            )
+            _sync_public_lead_for_marketplace(
+                intake=intake,
+                listing=existing_invite.directory_listing,
+                invite=existing_invite,
+                opportunity=opportunity,
+                readiness=readiness,
+            )
+
+    for listing in eligible_listings:
         if len(created) + existing_count >= max_bids:
             break
         if listing.claimed_contractor_id in existing_contractors:
@@ -359,11 +545,26 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
             destination_email=getattr(listing.claimed_contractor, "email", "") or listing.email or "",
             destination_phone=getattr(listing.claimed_contractor, "phone", "") or listing.phone_number or "",
         )
+        opportunity = _sync_opportunity_for_invite(
+            intake=intake,
+            listing=listing,
+            invite=invite,
+            readiness=readiness,
+        )
+        lead = _sync_public_lead_for_marketplace(
+            intake=intake,
+            listing=listing,
+            invite=invite,
+            opportunity=opportunity,
+            readiness=readiness,
+        )
         created.append(
             {
                 "id": invite.id,
                 "contractor_id": listing.claimed_contractor_id,
                 "listing_id": listing.id,
+                "contractor_opportunity_id": opportunity.id,
+                "public_lead_id": lead.id,
                 "business_name": listing.business_name,
             }
         )
@@ -372,7 +573,7 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
     return {
         "created": created,
         "created_count": len(created),
-        "skipped_count": max(0, len(eligible_marketplace_listings(intake)) - len(created)),
+        "skipped_count": max(0, len(eligible_listings) - len(created) - existing_count),
         "cap": max_bids,
         "cap_reached": len(created) + existing_count >= max_bids,
         "marketplace": readiness,

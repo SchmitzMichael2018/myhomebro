@@ -7,8 +7,8 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Contractor
-from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
+from projects.models import Contractor, PublicContractorLead
+from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 
 
@@ -194,7 +194,7 @@ class AdminMarketplaceTests(TestCase):
 
         response = self.client.post(
             "/api/projects/admin/marketplace/locations/",
-            {"city": "Austin", "state": "TX", "enabled": True},
+            {"city": "Austin", "state": "TX", "enabled": True, "max_bids_per_request": 9},
             format="json",
         )
 
@@ -202,14 +202,20 @@ class AdminMarketplaceTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["status"], "enabled")
         self.assertTrue(payload["enabled"])
+        self.assertEqual(payload["max_bids_per_request"], 5)
         location = MarketplaceLocation.objects.get(city="Austin", state="TX")
         self.assertTrue(location.is_enabled)
+        self.assertEqual(location.max_bids_per_request, 5)
 
 
 class MarketplaceGatingTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         user_model = get_user_model()
+        self.admin_user = user_model.objects.create_superuser(
+            email="marketplace-gating-admin@example.com",
+            password="testpass123",
+        )
         self.contractors = []
         for index in range(6):
             user = user_model.objects.create_user(
@@ -280,6 +286,8 @@ class MarketplaceGatingTests(TestCase):
         self.assertFalse(response.json()["marketplace_available"])
         self.assertIn("not yet enabled", response.json()["marketplace"]["message"])
         self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 0)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 0)
+        self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 0)
 
     def test_enabled_city_invites_max_five_claimed_verified_contractors(self):
         MarketplaceLocation.objects.create(
@@ -308,6 +316,17 @@ class MarketplaceGatingTests(TestCase):
         self.assertEqual(invites.count(), 5)
         self.assertEqual(invites.filter(contractor__isnull=True).count(), 0)
         self.assertFalse(invites.filter(directory_listing__business_name="Unclaimed Flooring Listing").exists())
+        opportunities = ContractorOpportunity.objects.filter(intake_request=intake)
+        self.assertEqual(opportunities.count(), 5)
+        self.assertEqual(opportunities.filter(directory_entry__claimed_by_contractor__isnull=True).count(), 0)
+        leads = PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id)
+        self.assertEqual(leads.count(), 5)
+        self.assertEqual(leads.filter(status=PublicContractorLead.STATUS_READY_FOR_REVIEW).count(), 5)
+        self.assertEqual(
+            set(leads.values_list("contractor_id", flat=True)),
+            set(invites.values_list("contractor_id", flat=True)),
+        )
+        self.assertTrue(all(row.ai_analysis.get("marketplace_request") for row in leads))
 
         repeat = self.client.patch(
             f"/api/projects/public-intake/?token={intake.share_token}",
@@ -316,4 +335,52 @@ class MarketplaceGatingTests(TestCase):
         )
         self.assertEqual(repeat.status_code, 200, repeat.data)
         self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 5)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 5)
+        self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 5)
         self.assertTrue(repeat.json()["marketplace"]["cap_reached"])
+
+    def test_admin_can_route_saved_request_after_location_enabled_without_duplicates(self):
+        intake = self._intake()
+
+        disabled_response = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {"branch_flow": "multi_contractor"},
+            format="json",
+        )
+        self.assertEqual(disabled_response.status_code, 200, disabled_response.data)
+        self.assertFalse(disabled_response.json()["marketplace_available"])
+
+        MarketplaceLocation.objects.create(
+            city="Austin",
+            state="TX",
+            is_enabled=True,
+            min_claimed_contractors=1,
+            min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+            min_trade_categories=1,
+            max_bids_per_request=5,
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        route_response = self.client.post(
+            "/api/projects/admin/marketplace/route-intake/",
+            {"intake_id": intake.id},
+            format="json",
+        )
+
+        self.assertEqual(route_response.status_code, 200, route_response.data)
+        self.assertEqual(route_response.json()["created_count"], 5)
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 5)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 5)
+        self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 5)
+
+        retry_response = self.client.post(
+            "/api/projects/admin/marketplace/route-intake/",
+            {"intake_id": intake.id},
+            format="json",
+        )
+        self.assertEqual(retry_response.status_code, 200, retry_response.data)
+        self.assertTrue(retry_response.json()["cap_reached"])
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 5)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 5)
+        self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 5)

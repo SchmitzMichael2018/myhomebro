@@ -18,7 +18,8 @@ from .permissions import IsAdminUserRole
 from .utils import safe_get
 from projects.models import Contractor, ContractorPublicProfile
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
-from projects.services.marketplace_readiness import location_readiness, normalize_location_value
+from projects.models_project_intake import ProjectIntake
+from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, location_readiness, normalize_location_value
 from projects.services.contractor_discovery import build_contractor_recommendations
 from projects.services.google_places_contractors import (
     project_type_to_places_query,
@@ -450,9 +451,24 @@ class AdminMarketplaceLocationStatus(APIView):
         ]:
             if field in request.data:
                 value = _safe_int(request.data.get(field), 0)
-                setattr(location, field, value or None if field != "max_bids_per_request" else max(1, min(value or 5, 10)))
+                setattr(location, field, value or None if field != "max_bids_per_request" else max(1, min(value or 5, 5)))
         location.save()
         return Response(location_readiness(city, state), status=status.HTTP_200_OK)
+
+
+class AdminMarketplaceRouteIntake(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def post(self, request):
+        intake_id = _safe_int(request.data.get("intake_id"), 0)
+        if not intake_id:
+            return Response({"detail": "intake_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not ProjectIntake.objects.filter(pk=intake_id).exists():
+            return Response({"detail": "Project intake not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        result = create_marketplace_invites_for_intake(intake_id)
+        response_status = status.HTTP_200_OK if result.get("marketplace", {}).get("enabled") else status.HTTP_202_ACCEPTED
+        return Response(result, status=response_status)
 
 
 class AdminMarketplaceContractors(APIView):
