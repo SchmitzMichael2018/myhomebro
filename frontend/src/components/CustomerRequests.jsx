@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import AddressAutocomplete from "./AddressAutocomplete.jsx";
 
 const REQUEST_TYPES = [
   ["repair", "Repair"],
@@ -30,12 +31,15 @@ export default function CustomerRequests({
   requests = [],
   bids = [],
   propertyProfile = {},
+  propertyProfiles = [],
   onCreateRequest,
   onAcceptBid,
   acceptingBidId = "",
   creating = false,
 }) {
+  const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const [form, setForm] = useState({
+    property_id: propertyProfile?.id || "",
     request_type: "repair",
     title: "",
     description: "",
@@ -55,6 +59,19 @@ export default function CustomerRequests({
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
+  const applyProperty = (propertyId) => {
+    const selected = propertyOptions.find((property) => String(property.id) === String(propertyId));
+    setForm((prev) => ({
+      ...prev,
+      property_id: propertyId || "",
+      address_line1: selected?.address_line1 || prev.address_line1 || "",
+      address_line2: selected?.address_line2 || "",
+      city: selected?.city || prev.city || "",
+      state: selected?.state || prev.state || "",
+      postal_code: selected?.postal_code || prev.postal_code || "",
+    }));
+  };
+
   const submit = async (event) => {
     event.preventDefault();
     if (!form.title.trim() || !form.description.trim()) return;
@@ -65,6 +82,7 @@ export default function CustomerRequests({
       description: "",
       preferred_timeline: "",
       urgency: "normal",
+      property_id: form.property_id,
     }));
   };
 
@@ -161,6 +179,27 @@ export default function CustomerRequests({
       <form onSubmit={submit} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-5">
         <h3 className="text-lg font-semibold text-white">Create a Request</h3>
         <div className="mt-4 space-y-3">
+          <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3">
+            <label className="block text-sm font-medium text-amber-100">
+              Choose the property this request is for.
+              {propertyOptions.length ? (
+                <select
+                  data-testid="customer-request-property-selector"
+                  value={form.property_id}
+                  onChange={(event) => applyProperty(event.target.value)}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                >
+                  {propertyOptions.map((property) => (
+                    <option key={property.id} value={property.id}>
+                      {property.display_name || property.address || "Property"}{property.is_primary ? " - Primary Property" : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="mt-2 text-sm text-amber-50">No saved property yet. Enter the address for this request below.</div>
+              )}
+            </label>
+          </div>
           <label className="block text-sm font-medium text-slate-200">
             Type
             <select
@@ -213,6 +252,61 @@ export default function CustomerRequests({
                 onChange={(event) => update("preferred_timeline", event.target.value)}
                 className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                 placeholder="This week, next month..."
+              />
+            </label>
+          </div>
+          <label className="block text-sm font-medium text-slate-200">
+            Address search
+            <div className="mt-1">
+              <AddressAutocomplete
+                value={form.address_line1}
+                onChangeText={(value) => update("address_line1", value)}
+                onSelect={(address) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    address_line1: address.line1 || prev.address_line1,
+                    address_line2: address.line2 || "",
+                    city: address.city || prev.city,
+                    state: address.state || prev.state,
+                    postal_code: address.postal_code || prev.postal_code,
+                  }));
+                }}
+                placeholder="Search the request property address..."
+                testId="customer-request-address-autocomplete"
+              />
+            </div>
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+              Street
+              <input
+                value={form.address_line1}
+                onChange={(event) => update("address_line1", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              />
+            </label>
+            <label className="block text-sm font-medium text-slate-200">
+              City
+              <input
+                value={form.city}
+                onChange={(event) => update("city", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              />
+            </label>
+            <label className="block text-sm font-medium text-slate-200">
+              State
+              <input
+                value={form.state}
+                onChange={(event) => update("state", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              />
+            </label>
+            <label className="block text-sm font-medium text-slate-200">
+              ZIP
+              <input
+                value={form.postal_code}
+                onChange={(event) => update("postal_code", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
               />
             </label>
           </div>

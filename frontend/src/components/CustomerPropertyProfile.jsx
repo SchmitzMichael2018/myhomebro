@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import AddressAutocomplete from "./AddressAutocomplete.jsx";
 
 function formatDate(value) {
   if (!value) return "Date pending";
@@ -442,38 +443,118 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
 
 export default function CustomerPropertyProfile({
   profile = {},
+  profiles = [],
   projects = [],
   agreements = [],
   documents = [],
   payments = [],
   onSave,
+  onAdd,
   onUpload,
   saving = false,
   uploading = false,
   uploadError = "",
 }) {
-  const [form, setForm] = useState(profile || {});
+  const profileOptions = useMemo(() => (profiles.length ? profiles : profile?.id ? [profile] : []), [profiles, profile]);
+  const [selectedProfileId, setSelectedProfileId] = useState(profile?.id || profileOptions[0]?.id || "");
+  const selectedProfile =
+    String(profile?.id || "") === String(selectedProfileId || "")
+      ? profile
+      : profileOptions.find((row) => String(row.id) === String(selectedProfileId)) || profile || {};
+  const [form, setForm] = useState(selectedProfile || {});
+  const [addingProperty, setAddingProperty] = useState(false);
   const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
 
   useEffect(() => {
-    setForm(profile || {});
-  }, [profile]);
+    const nextId = profile?.id || profileOptions[0]?.id || "";
+    setSelectedProfileId(nextId);
+  }, [profile?.id, profileOptions]);
+
+  useEffect(() => {
+    setForm(selectedProfile || {});
+  }, [selectedProfileId]);
 
   const update = (field, value) => setForm((prev) => ({ ...(prev || {}), [field]: value }));
 
   return (
     <div data-testid="customer-property-profile" className="space-y-5">
-      <HomeRecordsDashboard profile={profile} projects={projects} agreements={agreements} documents={documents} payments={payments} />
+      <HomeRecordsDashboard profile={selectedProfile} projects={projects} agreements={agreements} documents={documents} payments={payments} />
+
+      <section data-testid="customer-property-manager" className="rounded-2xl border border-amber-300/35 bg-slate-950/60 p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">My Properties</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">Property Records</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+              Choose the property record you want to review or update. The primary property is used first for new requests.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="customer-property-add-button"
+            onClick={() => {
+              setAddingProperty(true);
+              const next = {
+                display_name: "New Property",
+                property_type: "single_family",
+                address_line1: "",
+                address_line2: "",
+                city: "",
+                state: "",
+                postal_code: "",
+                year_built: "",
+                square_feet: "",
+                notes: "",
+                is_primary: !profileOptions.length,
+              };
+              setSelectedProfileId("");
+              setForm(next);
+            }}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+          >
+            Add Property
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {profileOptions.map((property) => (
+            <button
+              key={property.id}
+              type="button"
+              data-testid={`customer-property-card-${property.id}`}
+              onClick={() => {
+                setAddingProperty(false);
+                setSelectedProfileId(property.id);
+              }}
+              className={`rounded-2xl border p-4 text-left ${
+                String(selectedProfileId) === String(property.id) && !addingProperty
+                  ? "border-amber-300/60 bg-amber-300/15"
+                  : "border-slate-700 bg-slate-900/60 hover:border-slate-500"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-sm font-semibold text-white">{property.display_name || "Property"}</div>
+                {property.is_primary ? (
+                  <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                    Primary Property
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-2 text-xs leading-5 text-slate-400">{property.address || "Address not set"}</div>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            onSave?.(form);
+            addingProperty ? onAdd?.(form) : onSave?.(form);
+            setAddingProperty(false);
           }}
           className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5"
         >
-          <h2 className="text-xl font-semibold text-white">Property Profile</h2>
+          <h2 className="text-xl font-semibold text-white">{addingProperty ? "Add Property" : "Property Profile"}</h2>
           <p className="mt-1 text-sm text-slate-300">
             Keep property details available for future repairs, maintenance, inspections, and project planning.
           </p>
@@ -501,6 +582,27 @@ export default function CustomerPropertyProfile({
               <option value="commercial">Commercial</option>
               <option value="other">Other</option>
             </select>
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Address search
+            <div className="mt-1">
+              <AddressAutocomplete
+                value={form?.address_line1 || ""}
+                onChangeText={(value) => update("address_line1", value)}
+                onSelect={(address) => {
+                  setForm((prev) => ({
+                    ...(prev || {}),
+                    address_line1: address.line1 || prev.address_line1 || "",
+                    address_line2: address.line2 || "",
+                    city: address.city || prev.city || "",
+                    state: address.state || prev.state || "",
+                    postal_code: address.postal_code || prev.postal_code || "",
+                  }));
+                }}
+                placeholder="Search this property address..."
+                testId="customer-property-address-autocomplete"
+              />
+            </div>
           </label>
           <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Street
@@ -569,6 +671,15 @@ export default function CustomerPropertyProfile({
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
             />
           </label>
+          <label className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3 text-sm font-medium text-slate-200 sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={!!form?.is_primary}
+              onChange={(event) => update("is_primary", event.target.checked)}
+              className="h-4 w-4 rounded border-slate-600 bg-slate-950"
+            />
+            Make this my Primary Property
+          </label>
           </div>
 
           <button
@@ -576,7 +687,7 @@ export default function CustomerPropertyProfile({
             disabled={saving}
             className="mt-5 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save property profile"}
+            {saving ? "Saving..." : addingProperty ? "Add property" : "Save property profile"}
           </button>
         </form>
 

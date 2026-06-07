@@ -59,6 +59,47 @@ const portalPayload = {
       },
     ],
   },
+  property_profiles: [
+    {
+      id: 1,
+      customer_email: "customer@example.com",
+      display_name: "Kitchen Remodel",
+      property_type: "single_family",
+      property_type_label: "Single Family",
+      address_line1: "123 Main St",
+      city: "Austin",
+      state: "TX",
+      postal_code: "78701",
+      address: "123 Main St, Austin, TX, 78701",
+      is_primary: true,
+      documents: [
+        {
+          id: "property-document-1",
+          title: "Roof warranty",
+          type_label: "Warranty",
+          filename: "roof-warranty.pdf",
+          date: "2026-04-14T12:00:00Z",
+          url: "/files/roof-warranty.pdf",
+        },
+      ],
+      photos: [],
+    },
+    {
+      id: 2,
+      customer_email: "customer@example.com",
+      display_name: "Lake House",
+      property_type: "single_family",
+      property_type_label: "Single Family",
+      address_line1: "44 Lake Dr",
+      city: "Austin",
+      state: "TX",
+      postal_code: "78703",
+      address: "44 Lake Dr, Austin, TX, 78703",
+      is_primary: false,
+      documents: [],
+      photos: [],
+    },
+  ],
   projects: [
     {
       id: 1,
@@ -610,6 +651,7 @@ test("customer portal is reachable from the landing page and loads secure record
   page,
 }) => {
   const consoleErrors = [];
+  let submittedRequestPayload = null;
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
   });
@@ -642,6 +684,49 @@ test("customer portal is reachable from the landing page and loads secure record
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(portalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/profile/") && method === "PATCH") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...portalPayload,
+          customer: {
+            ...portalPayload.customer,
+            full_name: "Pat Updated",
+            phone_number: "512-555-1212",
+            address_line1: "700 Customer Ln",
+          },
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/requests/") && method === "POST") {
+      submittedRequestPayload = JSON.parse(route.request().postData() || "{}");
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...portalPayload,
+          requests: [
+            {
+              id: "customer-request-9",
+              source_kind: "customer_request",
+              project_title: submittedRequestPayload.title,
+              status: "submitted",
+              status_label: "Submitted",
+              request_type_label: "Maintenance",
+              property_id: submittedRequestPayload.property_id,
+              property_name: "Lake House",
+              notes: submittedRequestPayload.description,
+            },
+            ...portalPayload.requests,
+          ],
+        }),
       });
       return;
     }
@@ -782,6 +867,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notification-101")).not.toContainText("Unread");
   await expect(page.getByTestId("customer-notification-101")).not.toHaveClass(/border-sky-300/);
 
+  await page.getByTestId("customer-dashboard-tab-account").click();
+  await expect(page.getByTestId("customer-account-panel")).toContainText("My Profile");
+  await expect(page.getByTestId("customer-profile-email")).toHaveValue("customer@example.com");
+  await expect(page.getByTestId("customer-profile-phone")).toBeVisible();
+  await expect(page.getByTestId("customer-account-logout")).toContainText("Log out");
+  await page.getByTestId("customer-profile-name").fill("Pat Updated");
+  await page.getByTestId("customer-profile-phone").fill("512-555-1212");
+  await page.getByTestId("customer-profile-address-line1").fill("700 Customer Ln");
+  await page.getByRole("button", { name: "Save profile" }).click();
+  await expect(page.getByTestId("customer-profile-phone")).toHaveValue("512-555-1212");
+
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByRole("heading", { name: "Project & Service Requests" })).toBeVisible();
   await expect(page.getByText("Use Requests to tell us what you need help with next.")).toBeVisible();
@@ -789,6 +885,15 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByText("Use this for repairs, maintenance, inspections, new projects, or follow-up work.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Contractor Responses" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Create a Request" })).toBeVisible();
+  await expect(page.getByText("Choose the property this request is for.")).toBeVisible();
+  await expect(page.getByTestId("customer-request-property-selector")).toBeVisible();
+  await page.getByTestId("customer-request-property-selector").selectOption("2");
+  await expect(page.getByLabel("Street").last()).toHaveValue("44 Lake Dr");
+  await page.getByLabel("Title").last().fill("Seasonal HVAC service");
+  await page.getByLabel("Details").fill("Please inspect the system before summer.");
+  await page.getByRole("button", { name: "Create Request" }).click();
+  await expect.poll(() => String(submittedRequestPayload?.property_id || "")).toBe("2");
+  await expect(page.getByTestId("customer-portal-requests")).toContainText("Seasonal HVAC service");
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Builder Co");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Partner Co");
@@ -855,6 +960,13 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-dashboard")).toContainText("Your home history, organized.");
   await expect(page.getByTestId("home-records-dashboard")).toContainText("Completed MyHomeBro projects automatically become part of your home record.");
+  await expect(page.getByTestId("customer-property-manager")).toContainText("My Properties");
+  await expect(page.getByTestId("customer-property-card-1")).toContainText("Primary Property");
+  await expect(page.getByTestId("customer-property-card-2")).toContainText("Lake House");
+  await page.getByTestId("customer-property-card-2").click();
+  await expect(page.getByLabel("Property name")).toHaveValue("Lake House");
+  await page.getByTestId("customer-property-add-button").click();
+  await expect(page.getByRole("button", { name: "Add property", exact: true })).toBeVisible();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("home-records-timeline")).toContainText("Water heater warranty");
   await expect(page.getByTestId("home-records-warranty-center")).toContainText("One-year workmanship warranty");

@@ -41,6 +41,7 @@ class PropertyProfile(models.Model):
     year_built = models.PositiveIntegerField(null=True, blank=True)
     square_feet = models.PositiveIntegerField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
+    is_primary = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

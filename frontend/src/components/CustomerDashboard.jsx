@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { Bell, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard } from "lucide-react";
+import { Bell, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, UserRound } from "lucide-react";
 import toast from "react-hot-toast";
 
-import api from "../api";
+import api, { clearAuth } from "../api";
 import logo from "../assets/myhomebro_logo.png";
+import AddressAutocomplete from "./AddressAutocomplete.jsx";
 import CustomerDocuments from "./CustomerDocuments.jsx";
 import CustomerProjectWorkspace from "./CustomerProjectWorkspace.jsx";
 import CustomerPropertyProfile from "./CustomerPropertyProfile.jsx";
@@ -17,6 +18,7 @@ const TABS = [
   ["payments", "Payments", CreditCard],
   ["documents", "Documents", FileText],
   ["notifications", "Notifications", Bell],
+  ["account", "Account", UserRound],
 ];
 
 function StatCard({ label, value, testId }) {
@@ -507,6 +509,170 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
   );
 }
 
+function AccountPanel({ portal, saving = false, onSave }) {
+  const customer = portal?.customer || {};
+  const account = portal?.account || {};
+  const [form, setForm] = useState({
+    full_name: customer.full_name || customer.name || "",
+    phone_number: customer.phone_number || "",
+    address_line1: customer.address_line1 || "",
+    address_line2: customer.address_line2 || "",
+    city: customer.city || "",
+    state: customer.state || "",
+    postal_code: customer.postal_code || "",
+  });
+
+  const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  return (
+    <section data-testid="customer-account-panel" className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <form
+        data-testid="customer-profile-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave?.(form);
+        }}
+        className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5"
+      >
+        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Account</div>
+        <h2 className="mt-1 text-xl font-semibold text-white">My Profile</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-300">
+          Keep your contact details current so project updates, payment notices, and property records stay connected to you.
+        </p>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-slate-200">
+            Name
+            <input
+              data-testid="customer-profile-name"
+              value={form.full_name}
+              onChange={(event) => update("full_name", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Email
+            <input
+              data-testid="customer-profile-email"
+              value={customer.email || account.email || ""}
+              readOnly
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-300 outline-none"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Phone number
+            <input
+              data-testid="customer-profile-phone"
+              value={form.phone_number}
+              onChange={(event) => update("phone_number", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Mailing address search
+            <div className="mt-1">
+              <AddressAutocomplete
+                value={form.address_line1}
+                onChangeText={(value) => update("address_line1", value)}
+                onSelect={(address) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    address_line1: address.line1 || prev.address_line1,
+                    address_line2: address.line2 || "",
+                    city: address.city || prev.city,
+                    state: address.state || prev.state,
+                    postal_code: address.postal_code || prev.postal_code,
+                  }));
+                }}
+                placeholder="Search your mailing address..."
+                testId="customer-profile-address-autocomplete"
+              />
+            </div>
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Mailing street
+            <input
+              data-testid="customer-profile-address-line1"
+              value={form.address_line1}
+              onChange={(event) => update("address_line1", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Unit / suite
+            <input
+              value={form.address_line2}
+              onChange={(event) => update("address_line2", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            City
+            <input
+              value={form.city}
+              onChange={(event) => update("city", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            State
+            <input
+              value={form.state}
+              onChange={(event) => update("state", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            ZIP
+            <input
+              value={form.postal_code}
+              onChange={(event) => update("postal_code", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+        </div>
+
+        <button
+          type="submit"
+          disabled={saving}
+          className="mt-5 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save profile"}
+        </button>
+      </form>
+
+      <aside className="space-y-4">
+        <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+          <h3 className="text-lg font-semibold text-white">Password</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            {account.has_usable_password
+              ? "Use password reset if you need to change your Customer Portal password."
+              : "Create a password from your secure portal link for faster access next time."}
+          </p>
+          <a
+            href="/portal"
+            className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+          >
+            Password help
+          </a>
+        </div>
+        <button
+          type="button"
+          data-testid="customer-account-logout"
+          onClick={() => {
+            clearAuth(false);
+            window.location.assign("/portal");
+          }}
+          className="inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
+        >
+          <LogOut size={16} />
+          Log out
+        </button>
+      </aside>
+    </section>
+  );
+}
+
 export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [creatingRequest, setCreatingRequest] = useState(false);
@@ -515,6 +681,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [uploadError, setUploadError] = useState("");
   const [acceptingBidId, setAcceptingBidId] = useState("");
   const [markingNotificationId, setMarkingNotificationId] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const customerName = portal?.customer?.name || "Customer";
   const notifications = portal?.notifications || [];
@@ -599,6 +766,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           requests={portal?.requests || []}
           bids={portal?.bids || []}
           propertyProfile={portal?.property_profile || {}}
+          propertyProfiles={portal?.property_profiles || []}
           creating={creatingRequest}
           acceptingBidId={acceptingBidId}
           onAcceptBid={async (bid) => {
@@ -636,6 +804,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       return (
         <CustomerPropertyProfile
           profile={portal?.property_profile || {}}
+          profiles={portal?.property_profiles || []}
           projects={portal?.projects || []}
           agreements={portal?.agreements || []}
           documents={portal?.documents || []}
@@ -655,6 +824,18 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               setSavingProperty(false);
             }
           }}
+          onAdd={async (payload) => {
+            setSavingProperty(true);
+            try {
+              const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/`, payload);
+              onPortalUpdate?.(data);
+              toast.success("Property added.");
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not add that property.");
+            } finally {
+              setSavingProperty(false);
+            }
+          }}
           onUpload={uploadPropertyFile}
         />
       );
@@ -670,6 +851,26 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         />
       );
     }
+    if (activeTab === "account") {
+      return (
+        <AccountPanel
+          portal={portal}
+          saving={savingProfile}
+          onSave={async (payload) => {
+            setSavingProfile(true);
+            try {
+              const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/profile/`, payload);
+              onPortalUpdate?.(data);
+              toast.success("Profile saved.");
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not save your profile.");
+            } finally {
+              setSavingProfile(false);
+            }
+          }}
+        />
+      );
+    }
     return (
       <CustomerDocuments
         documents={portal?.documents || []}
@@ -679,7 +880,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId]);
+  }, [activeTab, portal, creatingRequest, savingProperty, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, savingProfile]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

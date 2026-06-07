@@ -262,6 +262,7 @@ from .views.customer_portal import (
     CustomerPortalCreatePasswordView,
     CustomerPortalDrawDisputeView,
     CustomerPortalNotificationMarkReadView,
+    CustomerPortalProfileView,
     CustomerPortalPropertyProfileView,
     CustomerPortalPropertyUploadView,
     CustomerPortalRequestCreateView,
@@ -359,6 +360,7 @@ urlpatterns = [
     path("customer-portal/account/", CustomerPortalAccountView.as_view(), name="customer-portal-account"),
     path("customer-portal/<str:token>/create-password/", CustomerPortalCreatePasswordView.as_view(), name="customer-portal-create-password"),
     path("customer-portal/<str:token>/", CustomerPortalView.as_view(), name="customer-portal-detail"),
+    path("customer-portal/<str:token>/profile/", CustomerPortalProfileView.as_view(), name="customer-portal-profile"),
     path("customer-portal/<str:token>/requests/", CustomerPortalRequestCreateView.as_view(), name="customer-portal-request-create"),
     path("customer-portal/<str:token>/property/", CustomerPortalPropertyProfileView.as_view(), name="customer-portal-property"),
     path(

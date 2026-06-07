@@ -273,6 +273,18 @@ def _primary_homeowner_for_email(email: str):
     return Homeowner.objects.filter(email__iexact=email).order_by("-updated_at", "-created_at").first()
 
 
+def _get_or_create_homeowner_for_email(email: str):
+    normalized_email = email.lower().strip()
+    homeowner = _primary_homeowner_for_email(normalized_email)
+    if homeowner:
+        return homeowner
+    return Homeowner.objects.create(
+        full_name=normalized_email,
+        email=normalized_email,
+        status="active",
+    )
+
+
 def _profile_address_from_homeowner(homeowner) -> dict:
     if not homeowner:
         return {}
@@ -299,7 +311,12 @@ def _profile_address_from_project(project) -> dict:
 
 def _get_or_create_property_profile(email: str) -> PropertyProfile:
     normalized_email = email.lower().strip()
-    profile = PropertyProfile.objects.filter(customer_email__iexact=normalized_email).order_by("-updated_at", "-id").first()
+    profile = (
+        PropertyProfile.objects.filter(customer_email__iexact=normalized_email, is_primary=True)
+        .order_by("-updated_at", "-id")
+        .first()
+        or PropertyProfile.objects.filter(customer_email__iexact=normalized_email).order_by("-updated_at", "-id").first()
+    )
     if profile:
         return profile
 
@@ -316,12 +333,19 @@ def _get_or_create_property_profile(email: str) -> PropertyProfile:
         homeowner=homeowner,
         customer_email=normalized_email,
         display_name=display_name,
+        is_primary=True,
         **address,
     )
 
 
-def _property_profile_payload(email: str) -> dict:
-    profile = _get_or_create_property_profile(email)
+def _property_profiles_for_email(email: str):
+    normalized_email = email.lower().strip()
+    if not PropertyProfile.objects.filter(customer_email__iexact=normalized_email).exists():
+        _get_or_create_property_profile(normalized_email)
+    return PropertyProfile.objects.filter(customer_email__iexact=normalized_email).order_by("-is_primary", "-updated_at", "-id")
+
+
+def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
     address = ", ".join(
         part
         for part in [
@@ -370,10 +394,31 @@ def _property_profile_payload(email: str) -> dict:
         "year_built": profile.year_built,
         "square_feet": profile.square_feet,
         "notes": _safe_text(profile.notes),
+        "is_primary": bool(getattr(profile, "is_primary", False)),
         "documents": documents,
         "photos": photos,
         "updated_at": _safe_dt(profile.updated_at),
     }
+
+
+def _property_profile_payload(email: str, property_id: int | None = None) -> dict:
+    profiles = list(_property_profiles_for_email(email))
+    selected = None
+    if property_id:
+        selected = next((profile for profile in profiles if profile.id == property_id), None)
+    if selected is None:
+        selected = profiles[0] if profiles else _get_or_create_property_profile(email)
+    return _property_profile_payload_from_profile(selected)
+
+
+def _property_profiles_payload(email: str) -> list[dict]:
+    return [_property_profile_payload_from_profile(profile) for profile in _property_profiles_for_email(email)]
+
+
+def _property_profile_for_email_or_404(email: str, property_id):
+    if not property_id:
+        return _get_or_create_property_profile(email)
+    return get_object_or_404(PropertyProfile, pk=property_id, customer_email__iexact=email.lower().strip())
 
 
 def _customer_request_status_label(value: str) -> str:
@@ -417,6 +462,8 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "urgency": _safe_text(request_row.urgency),
                 "preferred_timeline": _safe_text(request_row.preferred_timeline),
                 "converted_project_id": getattr(request_row.converted_project, "id", None),
+                "property_id": getattr(getattr(request_row, "property_profile", None), "id", None),
+                "property_name": _safe_text(getattr(getattr(request_row, "property_profile", None), "display_name", "")),
             }
         )
     return rows
@@ -1051,6 +1098,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     payment_rows = _payments(email, request=request)
     document_rows = _documents(email, request=request)
     property_profile = _property_profile_payload(email)
+    property_profiles = _property_profiles_payload(email)
 
     summary = {
         "active_requests": sum(1 for row in request_rows if row.get("status") not in {"converted", "converted_to_project", "archived", "closed"}),
@@ -1065,6 +1113,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "customer": {
             "name": _customer_name(email),
             "email": email,
+            **_customer_profile_payload(email),
         },
         "account": _customer_account_payload(email),
         "summary": summary,
@@ -1075,7 +1124,22 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "payments": payment_rows,
         "documents": document_rows,
         "property_profile": property_profile,
+        "property_profiles": property_profiles,
         "notifications": _smart_notification_rows(email),
+    }
+
+
+def _customer_profile_payload(email: str) -> dict:
+    homeowner = _primary_homeowner_for_email(email)
+    user = User.objects.filter(email__iexact=email).first()
+    return {
+        "full_name": _safe_text(getattr(homeowner, "full_name", "")) or _safe_text(getattr(user, "get_full_name", lambda: "")()),
+        "phone_number": _safe_text(getattr(homeowner, "phone_number", "")),
+        "address_line1": _safe_text(getattr(homeowner, "street_address", "")),
+        "address_line2": _safe_text(getattr(homeowner, "address_line_2", "")),
+        "city": _safe_text(getattr(homeowner, "city", "")),
+        "state": _safe_text(getattr(homeowner, "state", "")),
+        "postal_code": _safe_text(getattr(homeowner, "zip_code", "")),
     }
 
 
@@ -2009,6 +2073,7 @@ class CustomerPortalNotificationMarkReadView(APIView):
 
 
 class CustomerPortalRequestSerializer(serializers.Serializer):
+    property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     request_type = serializers.ChoiceField(choices=[choice[0] for choice in CustomerRequest.REQUEST_TYPE_CHOICES])
     title = serializers.CharField(max_length=200)
     description = serializers.CharField()
@@ -2039,7 +2104,7 @@ class CustomerPortalRequestCreateView(APIView):
         serializer = CustomerPortalRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        profile = _get_or_create_property_profile(email)
+        profile = _property_profile_for_email_or_404(email, data.get("property_id"))
         homeowner = _primary_homeowner_for_email(email)
         address_defaults = {
             "address_line1": data.get("address_line1") or profile.address_line1,
@@ -2076,6 +2141,7 @@ class CustomerPortalRequestCreateView(APIView):
 
 
 class CustomerPortalPropertyProfileSerializer(serializers.Serializer):
+    id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     display_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     property_type = serializers.ChoiceField(
         choices=[choice[0] for choice in PropertyProfile.PROPERTY_TYPE_CHOICES],
@@ -2089,10 +2155,82 @@ class CustomerPortalPropertyProfileSerializer(serializers.Serializer):
     year_built = serializers.IntegerField(required=False, allow_null=True, min_value=1600, max_value=2200)
     square_feet = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=1000000)
     notes = serializers.CharField(required=False, allow_blank=True)
+    is_primary = serializers.BooleanField(required=False)
+
+
+class CustomerPortalProfileSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    state = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    postal_code = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
+
+class CustomerPortalProfileView(APIView):
+    permission_classes = [AllowAny]
+
+    def patch(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalProfileSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        homeowner = _get_or_create_homeowner_for_email(email)
+
+        field_map = {
+            "full_name": "full_name",
+            "phone_number": "phone_number",
+            "address_line1": "street_address",
+            "address_line2": "address_line_2",
+            "city": "city",
+            "state": "state",
+            "postal_code": "zip_code",
+        }
+        update_fields = []
+        for source, target in field_map.items():
+            if source not in data:
+                continue
+            setattr(homeowner, target, data[source])
+            update_fields.append(target)
+        if update_fields:
+            update_fields.append("updated_at")
+            homeowner.save(update_fields=sorted(set(update_fields)))
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 
 class CustomerPortalPropertyProfileView(APIView):
     permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalPropertyProfileSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        homeowner = _primary_homeowner_for_email(email)
+        should_be_primary = bool(data.pop("is_primary", False)) or not PropertyProfile.objects.filter(customer_email__iexact=email).exists()
+        data.pop("id", None)
+        profile = PropertyProfile.objects.create(
+            homeowner=homeowner,
+            customer_email=email.lower().strip(),
+            is_primary=should_be_primary,
+            **data,
+        )
+        if profile.is_primary:
+            PropertyProfile.objects.filter(customer_email__iexact=email).exclude(pk=profile.pk).update(is_primary=False)
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
 
     def patch(self, request, token: str):
         try:
@@ -2104,10 +2242,18 @@ class CustomerPortalPropertyProfileView(APIView):
 
         serializer = CustomerPortalPropertyProfileSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        profile = _get_or_create_property_profile(email)
+        data = dict(serializer.validated_data)
+        profile = _property_profile_for_email_or_404(email, data.pop("id", None))
+        make_primary = data.pop("is_primary", None)
         for field, value in serializer.validated_data.items():
+            if field in {"id", "is_primary"}:
+                continue
             setattr(profile, field, value if value is not None else None)
+        if make_primary is not None:
+            profile.is_primary = bool(make_primary)
         profile.save()
+        if profile.is_primary:
+            PropertyProfile.objects.filter(customer_email__iexact=email).exclude(pk=profile.pk).update(is_primary=False)
         create_smart_notification(
             event_type=SmartNotificationEvent.PROPERTY_PROFILE_UPDATED,
             recipient_email=email,

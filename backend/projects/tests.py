@@ -19284,6 +19284,36 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(response.data["account"]["has_usable_password"])
         self.assertTrue(response.data["account"]["portal_token"])
         self.assertTrue(all(row["project_title"] == "Kitchen Remodel" for row in response.data["agreements"]))
+        self.assertEqual(response.data["customer"]["phone_number"], self.customer_homeowner.phone_number)
+
+    def test_customer_portal_profile_update_is_token_scoped(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/profile/",
+            {
+                "full_name": "Pat Updated",
+                "phone_number": "512-555-1212",
+                "address_line1": "700 Customer Ln",
+                "city": "Austin",
+                "state": "TX",
+                "postal_code": "78702",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.customer_homeowner.refresh_from_db()
+        self.other_homeowner.refresh_from_db()
+        self.assertEqual(self.customer_homeowner.full_name, "Pat Updated")
+        self.assertEqual(self.customer_homeowner.phone_number, "512-555-1212")
+        self.assertEqual(self.customer_homeowner.street_address, "700 Customer Ln")
+        self.assertEqual(response.data["customer"]["phone_number"], "512-555-1212")
+
+        other_response = self.client.get(f"/api/projects/customer-portal/{other_token}/")
+        self.assertEqual(other_response.status_code, 200)
+        self.assertNotEqual(other_response.data["customer"]["phone_number"], "512-555-1212")
 
     def test_customer_portal_account_login_requires_connected_records(self):
         User = get_user_model()
@@ -19366,6 +19396,67 @@ class CustomerPortalAccessTests(TestCase):
             ).exists()
         )
 
+    def test_customer_portal_request_uses_selected_property_address(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        primary = PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Main House",
+            address_line1="123 Main St",
+            city="Austin",
+            state="TX",
+            postal_code="78701",
+            is_primary=True,
+        )
+        rental = PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Rental House",
+            address_line1="900 Rental Rd",
+            city="Round Rock",
+            state="TX",
+            postal_code="78664",
+        )
+        other_property = PropertyProfile.objects.create(
+            customer_email=self.other_homeowner.email,
+            homeowner=self.other_homeowner,
+            display_name="Other Customer Property",
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/",
+            {
+                "property_id": rental.id,
+                "request_type": "maintenance",
+                "title": "Seasonal HVAC service",
+                "description": "Please inspect the system before summer.",
+                "urgency": "normal",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        saved = CustomerRequest.objects.get(title="Seasonal HVAC service")
+        self.assertEqual(saved.property_profile, rental)
+        self.assertEqual(saved.address_line1, "900 Rental Rd")
+        self.assertEqual(saved.city, "Round Rock")
+        request_row = next(row for row in response.data["requests"] if row["project_title"] == "Seasonal HVAC service")
+        self.assertEqual(request_row["property_id"], rental.id)
+        self.assertEqual(request_row["property_name"], "Rental House")
+
+        rejected = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/",
+            {
+                "property_id": other_property.id,
+                "request_type": "repair",
+                "title": "Wrong property",
+                "description": "This should not save.",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(rejected.status_code, 404)
+        self.assertEqual(primary.customer_email, self.customer_email)
+
     def test_customer_portal_property_profile_is_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)
@@ -19403,6 +19494,74 @@ class CustomerPortalAccessTests(TestCase):
         other_response = self.client.get(f"/api/projects/customer-portal/{other_token}/")
         self.assertEqual(other_response.status_code, 200)
         self.assertNotEqual(other_response.data["property_profile"]["display_name"], "Main House")
+
+    def test_customer_portal_returns_multiple_customer_properties_and_primary_default(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Lake House",
+            address_line1="5 Lake Dr",
+            city="Austin",
+            state="TX",
+            postal_code="78703",
+        )
+        primary = PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Primary Home",
+            address_line1="8 Primary Way",
+            city="Austin",
+            state="TX",
+            postal_code="78704",
+            is_primary=True,
+        )
+        PropertyProfile.objects.create(
+            customer_email=self.other_homeowner.email,
+            homeowner=self.other_homeowner,
+            display_name="Other Customer Home",
+            is_primary=True,
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        property_names = [row["display_name"] for row in response.data["property_profiles"]]
+        self.assertIn("Primary Home", property_names)
+        self.assertIn("Lake House", property_names)
+        self.assertNotIn("Other Customer Home", property_names)
+        self.assertEqual(response.data["property_profile"]["id"], primary.id)
+        self.assertTrue(response.data["property_profile"]["is_primary"])
+
+    def test_customer_portal_can_add_property_and_mark_primary(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        existing = PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Existing Home",
+            is_primary=True,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/",
+            {
+                "display_name": "Rental Property",
+                "property_type": "townhome",
+                "address_line1": "11 Rental St",
+                "city": "Austin",
+                "state": "TX",
+                "postal_code": "78705",
+                "is_primary": True,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        existing.refresh_from_db()
+        created = PropertyProfile.objects.get(display_name="Rental Property")
+        self.assertFalse(existing.is_primary)
+        self.assertTrue(created.is_primary)
+        self.assertEqual(response.data["property_profile"]["display_name"], "Rental Property")
 
     def test_customer_portal_property_uploads_are_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
