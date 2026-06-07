@@ -94,6 +94,80 @@ async function installMarketplaceMocks(page) {
     });
   });
 
+  await page.route('**/api/projects/admin/marketplace/**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    const method = route.request().method();
+    if (method === 'POST' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/locations/')) {
+      const body = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          city: body.city,
+          state: body.state,
+          status: body.enabled ? 'enabled' : 'ready',
+          enabled: Boolean(body.enabled),
+          manual_enabled: Boolean(body.enabled),
+          counts: {
+            total_discovered: 22,
+            claimed_contractors: 20,
+            verified_contractors: 10,
+            stripe_ready_contractors: 5,
+            trade_categories: 6,
+            request_volume: 3,
+            avg_bids_per_request: 2.33,
+          },
+          missing_trade_coverage: [],
+        }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        coverage: {
+          location_readiness: [
+            {
+              city: 'Austin',
+              state: 'TX',
+              status: 'ready',
+              enabled: false,
+              manual_enabled: false,
+              counts: {
+                total_discovered: 22,
+                claimed_contractors: 20,
+                verified_contractors: 10,
+                stripe_ready_contractors: 5,
+                trade_categories: 6,
+                request_volume: 3,
+                avg_bids_per_request: 2.33,
+              },
+              missing_trade_coverage: ['hvac', 'windows'],
+            },
+            {
+              city: 'Dallas',
+              state: 'TX',
+              status: 'not_ready',
+              enabled: false,
+              manual_enabled: false,
+              counts: {
+                total_discovered: 1,
+                claimed_contractors: 0,
+                verified_contractors: 0,
+                stripe_ready_contractors: 0,
+                trade_categories: 1,
+                request_volume: 1,
+                avg_bids_per_request: 0,
+              },
+              missing_trade_coverage: ['roofing', 'flooring'],
+            },
+          ],
+        },
+      }),
+    });
+  });
+
   await page.route('**/api/projects/admin/contractor-directory/**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const method = route.request().method();
@@ -134,7 +208,7 @@ test('admin marketplace is an operations console, not a duplicate directory edit
 
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByText('Marketplace Operations')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Marketplace Operations' })).toBeVisible();
   await expect(page.getByText('Monitor contractor coverage, claim readiness, service gaps, and routing health')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-summary')).toBeVisible();
   await expect(page.getByText('Total Directory Listings')).toBeVisible();
@@ -147,6 +221,9 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByTestId('admin-marketplace-summary').getByText('Manual Review Needed')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-service-gaps').getByText('Plumbing')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-geo-gaps').getByText('Dallas, TX')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('City Readiness');
+  await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('Austin, TX');
+  await expect(page.getByTestId('admin-marketplace-location-readiness')).toContainText('20 claimed');
   await expect(page.getByTestId('admin-marketplace-metric-phone-ready')).toHaveClass(/cursor-pointer/);
 
   await expect(page.getByText('Import Enriched CSV')).toHaveCount(0);

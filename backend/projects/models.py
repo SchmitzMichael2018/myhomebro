@@ -22,6 +22,7 @@ from .models_contractor_discovery import (  # noqa: F401
     ContractorDirectoryListing,
     ContractorOpportunity,
     ContractorDiscoveryInvite,
+    MarketplaceLocation,
 )
 from .models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from .models_project_taxonomy import ProjectType, ProjectSubtype  # noqa: E402,F401

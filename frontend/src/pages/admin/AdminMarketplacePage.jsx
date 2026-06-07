@@ -199,6 +199,7 @@ export default function AdminMarketplacePage() {
   const listingId = params.id ? String(params.id) : "";
 
   const [rows, setRows] = useState([]);
+  const [readinessRows, setReadinessRows] = useState([]);
   const [listing, setListing] = useState(null);
   const [filters, setFilters] = useState({ q: "", city: "", state: "", service: "", claimed: "" });
   const [loading, setLoading] = useState(true);
@@ -214,6 +215,12 @@ export default function AdminMarketplacePage() {
       try {
         const { data } = await api.get(`${DIRECTORY_BASE}/`, { params: { limit: 500 } });
         if (active) setRows(directoryRows(data));
+        try {
+          const readiness = await api.get("/projects/admin/marketplace/");
+          if (active) setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
+        } catch {
+          if (active) setReadinessRows([]);
+        }
       } catch (error) {
         if (active) setStatus(error?.response?.data?.detail || "Failed to load marketplace health data.");
       } finally {
@@ -324,6 +331,24 @@ export default function AdminMarketplacePage() {
     setStatus("Claim link copied.");
   }
 
+  async function setLocationEnabled(row, enabled) {
+    setStatus("");
+    try {
+      const { data } = await api.post("/projects/admin/marketplace/locations/", {
+        city: row.city,
+        state: row.state,
+        enabled,
+      });
+      setReadinessRows((prev) => {
+        const next = prev.filter((item) => !(item.city === data.city && item.state === data.state));
+        return [data, ...next].sort((a, b) => String(a.status).localeCompare(String(b.status)) || String(a.city).localeCompare(String(b.city)));
+      });
+      setStatus(enabled ? `${row.city}, ${row.state} enabled for gated marketplace routing.` : `${row.city}, ${row.state} disabled for marketplace routing.`);
+    } catch (error) {
+      setStatus(error?.response?.data?.detail || "Could not update marketplace location.");
+    }
+  }
+
   if (whoLoading) {
     return <div className="p-6 text-slate-600">Checking admin access...</div>;
   }
@@ -387,6 +412,78 @@ export default function AdminMarketplacePage() {
               <MetricCard testId="admin-marketplace-metric-website-only" label="Website Only" value={health.websiteOnly} sub="Claim-link/manual review path" tone="amber" onClick={() => openDirectoryFilters({ contact_status: "website_only" })} />
               <MetricCard testId="admin-marketplace-metric-manual-review" label="Manual Review Needed" value={health.manualReviewNeeded} sub="No usable contact method yet" tone="amber" onClick={() => openDirectoryFilters({ contact_status: "manual_review_needed" })} />
             </section>
+
+            <Section
+              title="City Readiness"
+              sub="Marketplace routing stays gated until local contractor coverage meets thresholds and an admin enables the city. Google listings count as supply leads; only claimed approved contractors can receive bid invitations."
+              testId="admin-marketplace-location-readiness"
+            >
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr>
+                      <th className={tableHeadClass}>City</th>
+                      <th className={tableHeadClass}>Status</th>
+                      <th className={tableHeadClass}>Coverage</th>
+                      <th className={tableHeadClass}>Gaps</th>
+                      <th className={tableHeadClass}>Routing</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {readinessRows.length ? readinessRows.slice(0, 12).map((row) => (
+                      <tr key={`${row.city}-${row.state}`} data-testid={`admin-marketplace-location-${row.city}-${row.state}`} className="hover:bg-white/5">
+                        <td className={tableCellClass}>
+                          <div className="font-extrabold text-white">{row.city}, {row.state}</div>
+                          <div className="mt-1 text-xs text-sky-100/70">{row.counts?.request_volume || 0} request(s) | Avg {row.counts?.avg_bids_per_request || 0} bids/request</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <Badge tone={row.status === "enabled" ? "emerald" : row.status === "ready" ? "sky" : row.status === "nearing_ready" ? "amber" : "rose"}>
+                            {String(row.status || "not_ready").replace(/_/g, " ")}
+                          </Badge>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="text-xs text-sky-100/80">
+                            {row.counts?.total_discovered || 0} discovered | {row.counts?.claimed_contractors || 0} claimed | {row.counts?.verified_contractors || 0} verified | {row.counts?.stripe_ready_contractors || 0} Stripe-ready
+                          </div>
+                          <div className="mt-1 text-xs text-sky-100/65">{row.counts?.trade_categories || 0} trade categories represented</div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="max-w-md text-xs text-sky-100/75">
+                            {(row.missing_trade_coverage || []).slice(0, 6).join(", ") || "No core trade gaps detected"}
+                          </div>
+                        </td>
+                        <td className={tableCellClass}>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              data-testid={`admin-marketplace-location-enable-${row.city}-${row.state}`}
+                              onClick={() => setLocationEnabled(row, true)}
+                              disabled={row.status === "enabled"}
+                              className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Enable
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`admin-marketplace-location-disable-${row.city}-${row.state}`}
+                              onClick={() => setLocationEnabled(row, false)}
+                              disabled={!row.manual_enabled}
+                              className="rounded-lg border border-rose-200/30 bg-rose-300/10 px-3 py-1.5 text-xs font-extrabold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Disable
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td className={tableCellClass} colSpan={5}>No city readiness data yet. Import directory listings to start coverage tracking.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
 
             <div className="grid gap-6 xl:grid-cols-2">
               <Section title="Top Service Gaps" sub="Services with no claimed contractors yet." testId="admin-marketplace-service-gaps">

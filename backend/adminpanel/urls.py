@@ -20,6 +20,7 @@ from .views_marketplace import (
     AdminMarketplaceImport,
     AdminMarketplaceListingDetail,
     AdminMarketplaceListingInvite,
+    AdminMarketplaceLocationStatus,
     AdminMarketplaceOverview,
 )
 
@@ -43,6 +44,7 @@ urlpatterns = [
     path("users/password-reset/", AdminTriggerPasswordReset.as_view(), name="admin-trigger-password-reset"),
     path("fees/ledger/", AdminFeeLedger.as_view(), name="admin-fee-ledger"),
     path("marketplace/", AdminMarketplaceOverview.as_view(), name="admin-marketplace-overview"),
+    path("marketplace/locations/", AdminMarketplaceLocationStatus.as_view(), name="admin-marketplace-location-status"),
     path("marketplace/contractors/", AdminMarketplaceContractors.as_view(), name="admin-marketplace-contractors"),
     path("marketplace/import/", AdminMarketplaceImport.as_view(), name="admin-marketplace-import"),
     path("marketplace/listings/<int:listing_id>/", AdminMarketplaceListingDetail.as_view(), name="admin-marketplace-listing-detail"),

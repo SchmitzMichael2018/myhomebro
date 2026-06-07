@@ -19,6 +19,7 @@ from projects.services.invites_delivery import build_invite_url
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.project_titles import generate_project_title, normalize_project_classification
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
+from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, marketplace_enabled_for_intake
 
 
 def blank_to_none(value):
@@ -207,6 +208,7 @@ class PublicIntakeView(APIView):
 
         project_title = _generated_intake_title(intake)
         classification = _normalized_intake_classification(intake)
+        marketplace = marketplace_enabled_for_intake(intake)
         payload = {
             "id": intake.id,
             "token": intake.share_token,
@@ -265,6 +267,7 @@ class PublicIntakeView(APIView):
             "submitted_at": intake.submitted_at.isoformat() if intake.submitted_at else None,
             "sent_at": intake.sent_at.isoformat() if intake.sent_at else None,
             "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
+            "marketplace": marketplace,
         }
 
         return Response(payload, status=status.HTTP_200_OK)
@@ -350,6 +353,8 @@ class PublicIntakeView(APIView):
 
         branch_invites = []
         branch_error = None
+        branch_marketplace = None
+        create_marketplace_invites = False
 
         if branch_flow:
             if branch_flow not in self.BRANCH_CHOICES:
@@ -383,17 +388,21 @@ class PublicIntakeView(APIView):
                 ]
 
             if not isinstance(contractor_rows, list) or not contractor_rows:
-                return Response(
-                    {"detail": "Add at least one contractor contact before continuing."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                if branch_flow == "multi_contractor":
+                    branch_marketplace = marketplace_enabled_for_intake(intake)
+                    create_marketplace_invites = bool(branch_marketplace.get("enabled"))
+                else:
+                    return Response(
+                        {"detail": "Add at least one contractor contact before continuing."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
             homeowner_name = (intake.customer_name or "").strip()
             homeowner_email = (intake.customer_email or "").strip()
             homeowner_phone = (intake.customer_phone or "").strip()
             invite_message = (request.data.get("branch_message") or "").strip()
 
-            for row in contractor_rows:
+            for row in contractor_rows[:5]:
                 if not isinstance(row, dict):
                     continue
                 contractor_email = (row.get("email") or row.get("contractor_email") or "").strip().lower()
@@ -428,7 +437,7 @@ class PublicIntakeView(APIView):
                     }
                 )
 
-            if not branch_invites:
+            if not branch_invites and not create_marketplace_invites and not branch_marketplace:
                 branch_error = "Add at least one contractor contact before continuing."
 
         if branch_error:
@@ -440,6 +449,8 @@ class PublicIntakeView(APIView):
         branch_only_request = bool(branch_flow) and not has_intake_field_updates
         if branch_only_request:
             intake.save(update_fields=changed + ["updated_at"])
+            if create_marketplace_invites:
+                branch_marketplace = create_marketplace_invites_for_intake(intake.id)
             return Response(
                 {
                     "detail": "Intake updated successfully.",
@@ -447,6 +458,8 @@ class PublicIntakeView(APIView):
                     "status": intake.status,
                     "post_submit_flow": intake.post_submit_flow,
                     "branch_invites": branch_invites,
+                    "marketplace": branch_marketplace,
+                    "marketplace_available": bool((branch_marketplace or {}).get("marketplace", branch_marketplace or {}).get("enabled")),
                     "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
                     "ai_project_title": intake.ai_project_title,
                     "ai_project_type": intake.ai_project_type,
@@ -543,6 +556,8 @@ class PublicIntakeView(APIView):
         }:
             status_override = PublicContractorLead.STATUS_READY_FOR_REVIEW
         lead = sync_public_lead_from_project_intake(intake, status_override=status_override)
+        if create_marketplace_invites:
+            branch_marketplace = create_marketplace_invites_for_intake(intake.id)
 
         return Response(
             {
@@ -552,6 +567,8 @@ class PublicIntakeView(APIView):
                 "lead_id": getattr(lead, "id", None),
                 "post_submit_flow": intake.post_submit_flow,
                 "branch_invites": branch_invites,
+                "marketplace": branch_marketplace,
+                "marketplace_available": bool((branch_marketplace or {}).get("marketplace", branch_marketplace or {}).get("enabled")),
                 "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
                 "ai_project_title": intake.ai_project_title,
                 "ai_project_type": intake.ai_project_type,

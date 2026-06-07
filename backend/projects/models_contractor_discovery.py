@@ -662,3 +662,53 @@ class ContractorDiscoveryInvite(models.Model):
             "agreement_conversion": pct(agreements, sent),
             "escrow_conversion": pct(escrow_agreements, sent),
         }
+
+
+class MarketplaceLocation(models.Model):
+    STATUS_NOT_READY = "not_ready"
+    STATUS_NEARING_READY = "nearing_ready"
+    STATUS_READY = "ready"
+    STATUS_ENABLED = "enabled"
+    STATUS_CHOICES = [
+        (STATUS_NOT_READY, "Not Ready"),
+        (STATUS_NEARING_READY, "Nearing Ready"),
+        (STATUS_READY, "Ready"),
+        (STATUS_ENABLED, "Enabled"),
+    ]
+
+    city = models.CharField(max_length=120, db_index=True)
+    state = models.CharField(max_length=60, db_index=True)
+    is_enabled = models.BooleanField(default=False, db_index=True)
+    enabled_at = models.DateTimeField(null=True, blank=True)
+    disabled_at = models.DateTimeField(null=True, blank=True)
+    admin_notes = models.TextField(blank=True, default="")
+    min_claimed_contractors = models.PositiveSmallIntegerField(null=True, blank=True)
+    min_verified_contractors = models.PositiveSmallIntegerField(null=True, blank=True)
+    min_stripe_ready_contractors = models.PositiveSmallIntegerField(null=True, blank=True)
+    min_trade_categories = models.PositiveSmallIntegerField(null=True, blank=True)
+    max_bids_per_request = models.PositiveSmallIntegerField(default=5)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marketplace_location_updates",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["state", "city"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["city", "state"],
+                name="uniq_marketplace_location_city_state",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["state", "city"], name="projects_ma_state_c_0f4c3d_idx"),
+            models.Index(fields=["is_enabled", "state"], name="projects_ma_enabled_74726d_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.city}, {self.state}"

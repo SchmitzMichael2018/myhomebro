@@ -85,7 +85,7 @@ function emptyStateMessage(summary, radiusMiles = 25) {
   if (reason === "all_results_missing_coordinates") {
     return "Google returned possible matches, but they did not include usable map coordinates. Try adjusting the project location or search term.";
   }
-  return `We couldn’t find strong local matches within ${radiusLabel} of this project address. You can invite a contractor manually or adjust the project location.`;
+  return `We couldn't find strong local matches within ${radiusLabel} of this project address. You can invite a contractor manually or adjust the project location.`;
 }
 
 function isHomeAdditionText(text) {
@@ -561,7 +561,7 @@ export default function ContractorDiscoveryStep({
           {activeRadiusLabel}
         </div>
         <div className="text-sm text-slate-600">
-          {selectedTargets.length ? `${selectedTargets.length} selected` : "Select up to 5 contractors"}
+          {selectedTargets.length ? `${selectedTargets.length} selected` : "Select up to 5 vetted contractors"}
         </div>
       </div>
 
@@ -616,7 +616,7 @@ export default function ContractorDiscoveryStep({
                         }`}
                       >
                         {isVerified ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> : <MapPin className="h-3.5 w-3.5" aria-hidden="true" />}
-                        {isVerified ? "Verified on MyHomeBro" : "Local Business Listing"}
+                        {isVerified ? "Verified on MyHomeBro" : "Local supply lead"}
                       </span>
                       {card.rating ? <span>{Number(card.rating).toFixed(1)} rating</span> : null}
                       {card.review_count ? <span>{card.review_count} reviews</span> : null}
@@ -630,7 +630,7 @@ export default function ContractorDiscoveryStep({
                       ) : null}
                     </div>
                     {!isVerified ? (
-                      <div className="mt-2 text-xs font-medium text-slate-500">Not yet verified on MyHomeBro</div>
+                      <div className="mt-2 text-xs font-medium text-slate-500">Local listing only. This business must claim and be approved before bidding through MyHomeBro.</div>
                     ) : null}
                   </div>
                   <button

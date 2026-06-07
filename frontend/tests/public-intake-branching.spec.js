@@ -634,8 +634,8 @@ test("public intake contractor search auto-infers a specialty from the project d
   await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-10 of 12 contractors");
   await expect(page.locator('[data-testid^="public-intake-contractor-card-"]').first()).toContainText("Verified Kitchen Pros");
   await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("Verified on MyHomeBro");
-  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local Business Listing");
-  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Not yet verified on MyHomeBro");
+  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local supply lead");
+  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("must claim and be approved");
   await expect(page.getByTestId("public-intake-contractor-distance-listing:100")).toContainText("3.2 miles away");
   await expect(page.getByTestId("public-intake-contractor-source-badge-listing:100")).toHaveClass(/bg-emerald-600/);
   await expect(page.getByTestId("public-intake-contractor-source-badge-listing:101")).toHaveClass(/bg-slate-100/);

@@ -17,7 +17,8 @@ from rest_framework.views import APIView
 from .permissions import IsAdminUserRole
 from .utils import safe_get
 from projects.models import Contractor, ContractorPublicProfile
-from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite
+from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
+from projects.services.marketplace_readiness import location_readiness, normalize_location_value
 from projects.services.contractor_discovery import build_contractor_recommendations
 from projects.services.google_places_contractors import (
     project_type_to_places_query,
@@ -336,6 +337,30 @@ class AdminMarketplaceOverview(APIView):
         claimed_count = listings.filter(claimed_profile=True).count()
         unclaimed_count = listings.filter(claimed_profile=False).count()
         opted_out_count = listings.filter(Q(sms_opt_out=True) | Q(email_opt_out=True)).count()
+        location_keys = {
+            (normalize_location_value(city), normalize_location_value(state))
+            for city, state in listings.exclude(city="", state="").values_list("city", "state")
+        }
+        location_keys.update(
+            {
+                (normalize_location_value(city), normalize_location_value(state))
+                for city, state in MarketplaceLocation.objects.values_list("city", "state")
+            }
+        )
+        location_rows = [
+            location_readiness(city, state)
+            for city, state in location_keys
+            if city and state
+        ]
+        status_order = {"enabled": 0, "ready": 1, "nearing_ready": 2, "not_ready": 3}
+        location_rows.sort(
+            key=lambda row: (
+                status_order.get(row["status"], 9),
+                -int(row["counts"]["claimed_contractors"]),
+                row["state"],
+                row["city"],
+            )
+        )
 
         return Response(
             {
@@ -385,11 +410,49 @@ class AdminMarketplaceOverview(APIView):
                         for state, stats in sorted(by_state.items(), key=lambda item: (-item[1]["total"], item[0]))[:12]
                     ],
                     "gaps": gaps[:10],
+                    "location_readiness": location_rows[:50],
                 },
                 "invite_analytics": invite_analytics,
             },
             status=status.HTTP_200_OK,
         )
+
+
+class AdminMarketplaceLocationStatus(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def post(self, request):
+        city = normalize_location_value(request.data.get("city"))
+        state = normalize_location_value(request.data.get("state"))
+        if not city or not state:
+            return Response({"detail": "City and state are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        enabled = _safe_bool(request.data.get("enabled"))
+        location, _created = MarketplaceLocation.objects.get_or_create(
+            city=city,
+            state=state,
+            defaults={"updated_by": request.user},
+        )
+        location.is_enabled = enabled
+        location.updated_by = request.user
+        location.admin_notes = _safe_text(request.data.get("admin_notes")) or location.admin_notes
+        if enabled:
+            location.enabled_at = timezone.now()
+            location.disabled_at = None
+        else:
+            location.disabled_at = timezone.now()
+        for field in [
+            "min_claimed_contractors",
+            "min_verified_contractors",
+            "min_stripe_ready_contractors",
+            "min_trade_categories",
+            "max_bids_per_request",
+        ]:
+            if field in request.data:
+                value = _safe_int(request.data.get(field), 0)
+                setattr(location, field, value or None if field != "max_bids_per_request" else max(1, min(value or 5, 10)))
+        location.save()
+        return Response(location_readiness(city, state), status=status.HTTP_200_OK)
 
 
 class AdminMarketplaceContractors(APIView):

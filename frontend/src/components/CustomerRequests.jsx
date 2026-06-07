@@ -93,7 +93,7 @@ export default function CustomerRequests({
           <div>
             <h2 className="text-xl font-semibold text-white">Project & Service Requests</h2>
             <p className="mt-1 text-sm text-slate-300">
-              Use Requests to tell us what you need help with next. Saved requests stay private until you choose to send them to a contractor or marketplace. Use this for repairs, maintenance, inspections, new projects, or follow-up work.
+              Use Requests to tell us what you need help with next. Saved requests stay private until you choose to send them to a contractor or, where available, up to 5 vetted MyHomeBro marketplace contractors.
             </p>
           </div>
           <Badge>{requests.length} total</Badge>
@@ -124,7 +124,7 @@ export default function CustomerRequests({
 
         <div className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
           {internalRequests.length
-            ? "New portal requests are saved internally and are not published to the marketplace yet."
+            ? "New portal requests are saved internally first and are not broadcast to the marketplace unless routing is enabled and you choose that next step."
             : "Saved requests stay internal here first. They can later be prepared for contractor routing when you choose the next step."}
         </div>
 

@@ -3,12 +3,13 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models import Contractor
-from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite
+from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
+from projects.models_project_intake import ProjectIntake
 
 
 class AdminMarketplaceTests(TestCase):
@@ -79,6 +80,11 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(payload["summary"]["unclaimed_listings"], 1)
         self.assertEqual(payload["summary"]["total_invites"], 1)
         self.assertGreaterEqual(len(payload["coverage"]["gaps"]), 1)
+        self.assertGreaterEqual(len(payload["coverage"]["location_readiness"]), 1)
+        austin = next(row for row in payload["coverage"]["location_readiness"] if row["city"] == "Austin")
+        self.assertEqual(austin["counts"]["total_discovered"], 1)
+        self.assertEqual(austin["counts"]["claimed_contractors"], 1)
+        self.assertFalse(austin["enabled"])
 
     def test_marketplace_contractor_filters_support_claimed_and_compatibility(self):
         ContractorDiscoveryInvite.objects.create(
@@ -174,3 +180,140 @@ class AdminMarketplaceTests(TestCase):
         invite = ContractorDiscoveryInvite.objects.get(directory_listing=self.unclaimed_listing)
         self.assertEqual(invite.status, ContractorDiscoveryInvite.STATUS_SENT)
         self.assertIsNotNone(invite.sent_at)
+
+    @override_settings(
+        MYHOMEBRO_MARKETPLACE_MIN_CLAIMED_CONTRACTORS=1,
+        MYHOMEBRO_MARKETPLACE_MIN_VERIFIED_CONTRACTORS=1,
+        MYHOMEBRO_MARKETPLACE_MIN_STRIPE_READY_CONTRACTORS=1,
+        MYHOMEBRO_MARKETPLACE_MIN_TRADE_CATEGORIES=1,
+    )
+    def test_admin_can_enable_ready_marketplace_location(self):
+        self.claimed_contractor.charges_enabled = True
+        self.claimed_contractor.payouts_enabled = True
+        self.claimed_contractor.save(update_fields=["charges_enabled", "payouts_enabled", "updated_at"])
+
+        response = self.client.post(
+            "/api/projects/admin/marketplace/locations/",
+            {"city": "Austin", "state": "TX", "enabled": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        self.assertEqual(payload["status"], "enabled")
+        self.assertTrue(payload["enabled"])
+        location = MarketplaceLocation.objects.get(city="Austin", state="TX")
+        self.assertTrue(location.is_enabled)
+
+
+class MarketplaceGatingTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        user_model = get_user_model()
+        self.contractors = []
+        for index in range(6):
+            user = user_model.objects.create_user(
+                email=f"flooring-pro-{index}@example.com",
+                password="testpass123",
+            )
+            contractor = Contractor.objects.create(
+                user=user,
+                business_name=f"Flooring Pro {index}",
+                city="Austin",
+                state="TX",
+                charges_enabled=True,
+                payouts_enabled=True,
+            )
+            self.contractors.append(contractor)
+            ContractorDirectoryListing.objects.create(
+                source=ContractorDirectoryListing.SOURCE_MYHOMEBRO,
+                business_name=f"Flooring Pro {index}",
+                city="Austin",
+                state="TX",
+                primary_trade="flooring",
+                trade_categories=["flooring"],
+                claimed_profile=True,
+                claimed_contractor=contractor,
+                manually_reviewed=True,
+                google_review_count=50 - index,
+            )
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+            business_name="Unclaimed Flooring Listing",
+            city="Austin",
+            state="TX",
+            primary_trade="flooring",
+            trade_categories=["flooring"],
+            claimed_profile=False,
+            manually_reviewed=True,
+            google_review_count=99,
+        )
+
+    def _intake(self, *, city="Austin", state="TX"):
+        intake = ProjectIntake.objects.create(
+            initiated_by="homeowner",
+            lead_source=ProjectIntake.SOURCE_LANDING_PAGE if hasattr(ProjectIntake, "SOURCE_LANDING_PAGE") else "landing_page",
+            customer_name="Homeowner",
+            customer_email="homeowner@example.com",
+            project_city=city,
+            project_state=state,
+            project_postal_code="78701",
+            accomplishment_text="Install luxury vinyl plank flooring in kitchen and hallway.",
+            ai_project_type="Flooring",
+            ai_project_subtype="Luxury Vinyl Plank",
+        )
+        intake.ensure_share_token()
+        return intake
+
+    def test_gated_city_saves_request_without_broadcasting(self):
+        intake = self._intake(city="Dallas", state="TX")
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {"branch_flow": "multi_contractor"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        intake.refresh_from_db()
+        self.assertEqual(intake.post_submit_flow, "multi_contractor")
+        self.assertFalse(response.json()["marketplace_available"])
+        self.assertIn("not yet enabled", response.json()["marketplace"]["message"])
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 0)
+
+    def test_enabled_city_invites_max_five_claimed_verified_contractors(self):
+        MarketplaceLocation.objects.create(
+            city="Austin",
+            state="TX",
+            is_enabled=True,
+            min_claimed_contractors=1,
+            min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+            min_trade_categories=1,
+            max_bids_per_request=5,
+        )
+        intake = self._intake()
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {"branch_flow": "multi_contractor"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        self.assertTrue(payload["marketplace_available"])
+        self.assertEqual(payload["marketplace"]["created_count"], 5)
+        invites = ContractorDiscoveryInvite.objects.filter(public_intake=intake)
+        self.assertEqual(invites.count(), 5)
+        self.assertEqual(invites.filter(contractor__isnull=True).count(), 0)
+        self.assertFalse(invites.filter(directory_listing__business_name="Unclaimed Flooring Listing").exists())
+
+        repeat = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {"branch_flow": "multi_contractor"},
+            format="json",
+        )
+        self.assertEqual(repeat.status_code, 200, repeat.data)
+        self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 5)
+        self.assertTrue(repeat.json()["marketplace"]["cap_reached"])

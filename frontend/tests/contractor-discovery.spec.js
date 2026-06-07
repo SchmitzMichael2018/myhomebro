@@ -161,7 +161,8 @@ test("public intake surfaces contractor discovery and creates pending review opp
   const verifiedCard = page.getByTestId("public-intake-contractor-card-contractor:12");
   const listingCard = page.getByTestId("public-intake-contractor-card-listing:33");
   await expect(verifiedCard.getByText("Verified on MyHomeBro")).toBeVisible();
-  await expect(listingCard.getByText("Local Business Listing")).toBeVisible();
+  await expect(listingCard.getByText("Local supply lead")).toBeVisible();
+  await expect(listingCard.getByText("must claim and be approved")).toBeVisible();
   await expect(verifiedCard.getByTitle("Homeowner participates with contractor guidance and support.")).toBeVisible();
   await expect(verifiedCard.getByText("Inspection Capable")).toBeVisible();
 
