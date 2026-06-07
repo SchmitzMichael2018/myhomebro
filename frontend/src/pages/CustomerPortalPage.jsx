@@ -248,7 +248,7 @@ export default function CustomerPortalPage() {
   const payments = Array.isArray(portal?.payments) ? portal.payments : [];
   const documents = Array.isArray(portal?.documents) ? portal.documents : [];
 
-  const portalTitle = portal?.customer?.name ? `${portal.customer.name} - MyHomeBro Records` : "MyHomeBro Records";
+  const portalTitle = portal?.customer?.name ? `${portal.customer.name} - Customer Portal` : "Customer Portal";
   const compareBids = useMemo(() => {
     if (!compareRequest) return [];
     const key = compareRequest.comparison_key || "";
@@ -879,7 +879,7 @@ export default function CustomerPortalPage() {
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-10">
         <div className="mx-auto max-w-6xl rounded-3xl border bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">MyHomeBro Records</div>
+          <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Customer Portal</div>
           <div className="mt-3 text-2xl font-bold text-slate-900">Loading your records...</div>
           <div className="mt-2 text-sm text-slate-600">We are opening your secure portal.</div>
         </div>
@@ -891,7 +891,7 @@ export default function CustomerPortalPage() {
     return (
       <div className="min-h-screen bg-slate-50 px-4 py-10">
         <div className="mx-auto max-w-6xl rounded-3xl border bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">MyHomeBro Records</div>
+          <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Customer Portal</div>
           <div className="mt-3 text-2xl font-bold text-slate-900">We could not open that link</div>
           <div className="mt-2 text-sm text-slate-600">{loadError}</div>
           <div className="mt-6">
@@ -916,7 +916,7 @@ export default function CustomerPortalPage() {
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
           <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">MyHomeBro Records</div>
+              <div className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Customer Portal</div>
               <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
                 {portalTitle}
               </h1>

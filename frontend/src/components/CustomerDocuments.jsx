@@ -3,11 +3,14 @@ import { ExternalLink, FileText } from "lucide-react";
 
 export default function CustomerDocuments({ documents = [], propertyProfile = {}, onUpload, uploading = false, uploadError = "" }) {
   const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
+  const [expanded, setExpanded] = useState(false);
   const propertyDocuments = [
     ...(propertyProfile?.documents || []),
     ...(propertyProfile?.photos || []).map((photo) => ({ ...photo, type_label: "Property Photo" })),
   ];
   const allDocuments = [...documents, ...propertyDocuments.filter((item) => !documents.some((doc) => doc.id === item.id))];
+  const defaultCount = 9;
+  const visibleDocuments = expanded ? allDocuments : allDocuments.slice(0, defaultCount);
 
   return (
     <div data-testid="customer-portal-documents" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -87,7 +90,7 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {allDocuments.length ? (
-          allDocuments.map((document) => (
+          visibleDocuments.map((document) => (
             <div key={document.id} className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
               <div className="flex items-start gap-3">
                 <div className="rounded-xl border border-slate-600 bg-slate-950 p-2 text-sky-200">
@@ -122,6 +125,21 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
           </div>
         )}
       </div>
+      {allDocuments.length > defaultCount ? (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs font-semibold text-slate-400">
+            Showing {expanded ? allDocuments.length : defaultCount} of {allDocuments.length} documents
+          </div>
+          <button
+            type="button"
+            data-testid="customer-documents-show-more"
+            onClick={() => setExpanded((value) => !value)}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+          >
+            {expanded ? "Show less" : "Show more"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

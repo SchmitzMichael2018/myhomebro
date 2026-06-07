@@ -535,7 +535,7 @@ export default function CustomerRecordsPage() {
   return (
     <ContractorPageSurface
       eyebrow="Customers"
-      title="Customer Records"
+      title="Customers"
       subtitle="A single view of requests, bids, agreements, and payments across residential and commercial work."
       actions={
         <button

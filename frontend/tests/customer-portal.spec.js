@@ -489,6 +489,97 @@ const acceptedPortalPayload = {
   }),
 };
 
+const longPortalPayload = {
+  ...portalPayload,
+  property_profile: {
+    ...portalPayload.property_profile,
+    documents: [
+      ...portalPayload.property_profile.documents,
+      ...Array.from({ length: 8 }, (_, index) => ({
+        id: `property-extra-document-${index + 1}`,
+        title: `Extra warranty document ${index + 1}`,
+        type_label: index % 2 === 0 ? "Warranty" : "Permit",
+        filename: `extra-document-${index + 1}.pdf`,
+        date: `2026-04-${String(11 - index).padStart(2, "0")}T12:00:00Z`,
+        url: `/files/extra-document-${index + 1}.pdf`,
+      })),
+    ],
+    photos: [
+      ...portalPayload.property_profile.photos,
+      ...Array.from({ length: 3 }, (_, index) => ({
+        id: `property-extra-photo-${index + 1}`,
+        title: `Extra property photo ${index + 1}`,
+        type_label: "Property Photo",
+        filename: `extra-photo-${index + 1}.jpg`,
+        date: `2026-04-${String(8 - index).padStart(2, "0")}T12:00:00Z`,
+        url: `/files/extra-photo-${index + 1}.jpg`,
+      })),
+    ],
+  },
+  projects: [
+    ...portalPayload.projects,
+    {
+      id: "static-history-project",
+      title: "Older Deck Repair",
+      status: "completed",
+      status_label: "Completed",
+      contractor_name: "Builder Co",
+      completed_at: "2026-03-01T12:00:00Z",
+      total_cost: "2800.00",
+      milestones: [],
+    },
+  ],
+  agreements: [
+    ...portalPayload.agreements,
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `warranty-agreement-${index + 1}`,
+      project_title: `Warranty Project ${index + 1}`,
+      contractor_name: "Builder Co",
+      status: "completed",
+      status_label: "Completed",
+      completed_at: `2026-04-${String(10 - index).padStart(2, "0")}T12:00:00Z`,
+      updated_at: `2026-04-${String(10 - index).padStart(2, "0")}T12:00:00Z`,
+      total_cost: "1000.00",
+      warranty_text: `Reusable warranty language ${index + 1}.`,
+      warranty_type: "Workmanship",
+    })),
+  ],
+  payments: [
+    ...portalPayload.payments,
+    ...Array.from({ length: 6 }, (_, index) => ({
+      id: `paid-extra-${index + 1}`,
+      project_title: "Kitchen Remodel",
+      contractor_name: "Builder Co",
+      payment_mode: "direct",
+      payment_mode_label: "Direct Pay",
+      record_type_label: "Invoice",
+      record_type: "invoice",
+      date: `2026-03-${String(20 - index).padStart(2, "0")}T12:00:00Z`,
+      amount_label: `$${(100 + index * 25).toFixed(2)}`,
+      status_label: "Paid",
+      status: "paid",
+      action_target: `/invoice/paid-extra-${index + 1}`,
+      reference: `Paid receipt ${index + 1}`,
+      invoice_number: `Paid receipt ${index + 1}`,
+      dispute_status: "none",
+      dispute_status_label: "No dispute",
+    })),
+  ],
+  documents: [
+    ...portalPayload.documents,
+    ...Array.from({ length: 10 }, (_, index) => ({
+      id: `portal-extra-document-${index + 1}`,
+      title: `Portal extra document ${index + 1}`,
+      type_label: index % 2 === 0 ? "Agreement PDF" : "Receipt PDF",
+      project_title: "Kitchen Remodel",
+      filename: `portal-extra-document-${index + 1}.pdf`,
+      date: `2026-04-${String(9 - Math.min(index, 8)).padStart(2, "0")}T12:00:00Z`,
+      url: `/files/portal-extra-document-${index + 1}.pdf`,
+      agreement_id: 1,
+    })),
+  ],
+};
+
 test("customer portal is reachable from the landing page and loads secure records", async ({
   page,
 }) => {
@@ -643,8 +734,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
   await expect(page.getByTestId("customer-portal-create-password-prompt")).not.toBeVisible();
-  await expect(page.getByText("MyHomeBro Records")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Customer Workspace" })).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
+  await expect(page.getByText("track projects, payments, documents, warranties, and property records in one place.")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
@@ -658,6 +750,12 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notification-101")).not.toContainText("Unread");
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByRole("heading", { name: "Project & Service Requests" })).toBeVisible();
+  await expect(page.getByText("Use Requests to tell us what you need help with next.")).toBeVisible();
+  await expect(page.getByText("Saved requests stay private until you choose to send them to a contractor or marketplace.")).toBeVisible();
+  await expect(page.getByText("Use this for repairs, maintenance, inspections, new projects, or follow-up work.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Contractor Responses" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Create a Request" })).toBeVisible();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Builder Co");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Partner Co");
@@ -785,7 +883,8 @@ test("customer portal supports returning customer login", async ({ page }) => {
   await page.getByTestId("customer-portal-login-password-input").fill("CustomerPass123!");
   await page.getByTestId("customer-portal-login-button").click();
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Customer Workspace" })).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
 });
 
 test("customer portal login failure and token password creation states render", async ({ page }) => {
@@ -914,6 +1013,53 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-documents-empty")).toContainText("No documents yet");
+});
+
+test("customer portal limits long home records, payments, and documents without dead timeline links", async ({ page }) => {
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    if (route.request().method() === "GET" && requestUrl.includes("/customer-portal/long-token/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(longPortalPayload),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/long-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("home-records-timeline")).toBeVisible();
+  await expect(page.getByTestId(/home-records-timeline-(action|static)-/)).toHaveCount(5);
+  await expect(page.getByTestId("home-records-timeline")).not.toContainText("Older Deck Repair");
+  await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toHaveAttribute("href", "/files/scope-addendum.txt");
+  await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toContainText("View document");
+  await page.getByTestId("home-records-timeline-show-more").click();
+  await expect(page.getByTestId("home-records-timeline")).toContainText("Older Deck Repair");
+  await expect(page.getByTestId("home-records-timeline-static-project-static-history-project")).toBeVisible();
+  await expect(page.getByTestId("home-records-timeline-static-project-static-history-project")).not.toHaveAttribute("href", /#/);
+
+  await expect(page.getByTestId("home-records-important-documents")).not.toContainText("Extra warranty document 7");
+  await page.getByTestId("home-records-important-documents-show-more").click();
+  await expect(page.getByTestId("home-records-important-documents")).toContainText("Extra warranty document 7");
+
+  await expect(page.getByTestId("home-records-warranty-center")).not.toContainText("Warranty Project 5");
+  await page.getByTestId("home-records-warranty-show-more").click();
+  await expect(page.getByTestId("home-records-warranty-center")).toContainText("Warranty Project 5");
+
+  await page.getByTestId("customer-dashboard-tab-payments").click();
+  await expect(page.getByTestId("customer-portal-payments")).not.toContainText("Paid receipt 6");
+  await page.getByTestId("customer-payments-history-show-more").click();
+  await expect(page.getByTestId("customer-portal-payments")).toContainText("Paid receipt 6");
+
+  await page.getByTestId("customer-dashboard-tab-documents").click();
+  await expect(page.getByTestId("customer-portal-documents")).not.toContainText("Portal extra document 10");
+  await page.getByTestId("customer-documents-show-more").click();
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Portal extra document 10");
 });
 
 test("legacy customer portal aliases redirect to the active portal", async ({ page }) => {

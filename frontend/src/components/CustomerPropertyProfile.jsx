@@ -35,6 +35,25 @@ function Section({ title, eyebrow, children, testId }) {
   );
 }
 
+function ShowMoreControl({ total, visible, expanded, onToggle, noun = "items", testId }) {
+  if (total <= visible) return null;
+  return (
+    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-xs font-semibold text-slate-400">
+        Showing {expanded ? total : visible} of {total} {noun}
+      </div>
+      <button
+        type="button"
+        data-testid={testId}
+        onClick={onToggle}
+        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+      >
+        {expanded ? "Show less" : "Show more"}
+      </button>
+    </div>
+  );
+}
+
 function categoryForDocument(item) {
   const text = `${item?.type_label || ""} ${item?.title || ""} ${item?.filename || ""}`.toLowerCase();
   if (text.includes("agreement") || text.includes("contract")) return "Agreements";
@@ -123,6 +142,7 @@ function timelineRows({ profile, projects, agreements, documents, payments }) {
       type: "Completed Project",
       detail: `${project.contractor}${project.amount ? ` - ${money(project.amount)}` : ""}`,
       url: project.action,
+      actionLabel: project.action ? "View project" : "",
     });
   }
   for (const document of [...(documents || []), ...(profile?.documents || [])]) {
@@ -133,6 +153,7 @@ function timelineRows({ profile, projects, agreements, documents, payments }) {
       type: categoryForDocument(document),
       detail: document.project_title || document.filename || "Home record",
       url: document.url,
+      actionLabel: document.url ? "View document" : "",
     });
   }
   for (const photo of profile?.photos || []) {
@@ -143,6 +164,7 @@ function timelineRows({ profile, projects, agreements, documents, payments }) {
       type: "Photo",
       detail: photo.filename || "Home photo",
       url: photo.url,
+      actionLabel: photo.url ? "View document" : "",
     });
   }
   for (const agreement of warrantyRows(agreements, documents)) {
@@ -153,6 +175,7 @@ function timelineRows({ profile, projects, agreements, documents, payments }) {
       type: "Warranty",
       detail: agreement.contractor,
       url: agreement.documents[0]?.url || "",
+      actionLabel: agreement.documents[0]?.url ? "View warranty" : "",
     });
   }
   for (const payment of payments || []) {
@@ -165,12 +188,16 @@ function timelineRows({ profile, projects, agreements, documents, payments }) {
       type: String(payment.status || payment.status_label || "").toLowerCase().includes("paid") ? "Receipt" : "Invoice",
       detail: `${payment.project_title || "Project"}${payment.amount_label ? ` - ${payment.amount_label}` : ""}`,
       url: payment.receipt_url || payment.action_target || "",
+      actionLabel: payment.receipt_url ? "View receipt" : payment.action_target ? "View document" : "",
     });
   }
-  return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 12);
+  return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
 function HomeRecordsDashboard({ profile, projects, agreements, documents, payments }) {
+  const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const [documentsExpanded, setDocumentsExpanded] = useState(false);
+  const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
   const grouped = documentGroups(profile, documents);
   const warranties = warrantyRows(agreements, documents);
   const completedProjects = completedProjectRows(projects, agreements, documents);
@@ -180,7 +207,13 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
     ...grouped.Agreements,
     ...grouped["Invoices & Receipts"],
     ...grouped.Permits,
-  ].slice(0, 5);
+  ];
+  const timelineDefaultCount = 5;
+  const documentsDefaultCount = 5;
+  const warrantiesDefaultCount = 4;
+  const visibleTimeline = timelineExpanded ? timeline : timeline.slice(0, timelineDefaultCount);
+  const visibleImportantDocuments = documentsExpanded ? importantDocuments : importantDocuments.slice(0, documentsDefaultCount);
+  const visibleWarranties = warrantiesExpanded ? warranties : warranties.slice(0, warrantiesDefaultCount);
   const photoCount = (profile?.photos || []).length;
   const documentCount = Object.values(grouped).reduce((sum, rows) => sum + rows.length, 0);
 
@@ -220,24 +253,51 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
         <Section title="Property Timeline" eyebrow="History" testId="home-records-timeline">
           {timeline.length ? (
             <div className="space-y-3">
-              {timeline.map((item) => (
-                <a
-                  key={item.id}
-                  href={item.url || "#"}
-                  target={item.url ? "_blank" : undefined}
-                  rel={item.url ? "noreferrer" : undefined}
-                  className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 hover:border-amber-300/45 sm:grid-cols-[110px_minmax(0,1fr)]"
-                >
-                  <div className="text-xs font-semibold text-amber-100">{formatDate(item.date)}</div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{item.type}</span>
-                      <span className="text-sm font-semibold text-white">{item.title}</span>
+              {visibleTimeline.map((item) => {
+                const content = (
+                  <>
+                    <div className="text-xs font-semibold text-amber-100">{formatDate(item.date)}</div>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{item.type}</span>
+                        <span className="text-sm font-semibold text-white">{item.title}</span>
+                      </div>
+                      <div className="mt-1 text-sm text-slate-400">{item.detail}</div>
+                      {item.actionLabel ? (
+                        <div className="mt-2 text-xs font-semibold text-sky-100">{item.actionLabel}</div>
+                      ) : null}
                     </div>
-                    <div className="mt-1 text-sm text-slate-400">{item.detail}</div>
+                  </>
+                );
+                return item.url ? (
+                  <a
+                    key={item.id}
+                    data-testid={`home-records-timeline-action-${item.id}`}
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 hover:border-amber-300/45 sm:grid-cols-[110px_minmax(0,1fr)]"
+                  >
+                    {content}
+                  </a>
+                ) : (
+                  <div
+                    key={item.id}
+                    data-testid={`home-records-timeline-static-${item.id}`}
+                    className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 sm:grid-cols-[110px_minmax(0,1fr)]"
+                  >
+                    {content}
                   </div>
-                </a>
-              ))}
+                );
+              })}
+              <ShowMoreControl
+                total={timeline.length}
+                visible={timelineDefaultCount}
+                expanded={timelineExpanded}
+                onToggle={() => setTimelineExpanded((value) => !value)}
+                noun="timeline items"
+                testId="home-records-timeline-show-more"
+              />
             </div>
           ) : (
             <EmptyState title="No home history yet" testId="home-records-timeline-empty">
@@ -249,12 +309,21 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
         <Section title="Important Documents" eyebrow="Quick access" testId="home-records-important-documents">
           {importantDocuments.length ? (
             <div className="space-y-2">
-              {importantDocuments.map((document) => (
+              {visibleImportantDocuments.map((document) => (
                 <a key={`${document.id}-${document.url}`} href={document.url || "#"} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/45">
                   <div className="text-sm font-semibold text-white">{document.title}</div>
                   <div className="mt-1 text-xs text-slate-500">{categoryForDocument(document)} - {formatDate(document.date)}</div>
+                  <div className="mt-2 text-xs font-semibold text-sky-100">View document</div>
                 </a>
               ))}
+              <ShowMoreControl
+                total={importantDocuments.length}
+                visible={documentsDefaultCount}
+                expanded={documentsExpanded}
+                onToggle={() => setDocumentsExpanded((value) => !value)}
+                noun="documents"
+                testId="home-records-important-documents-show-more"
+              />
             </div>
           ) : (
             <EmptyState title="No important documents yet" testId="home-records-important-documents-empty">
@@ -267,7 +336,7 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
       <Section title="Warranty Center" eyebrow="Coverage" testId="home-records-warranty-center">
         {warranties.length ? (
           <div className="grid gap-3 lg:grid-cols-2">
-            {warranties.map((warranty) => (
+            {visibleWarranties.map((warranty) => (
               <article key={warranty.id} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
                 <div className="text-sm font-semibold text-white">{warranty.project}</div>
                 <div className="mt-1 text-xs text-slate-500">{warranty.contractor} - {formatDate(warranty.date)}</div>
@@ -286,6 +355,16 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
                 ) : null}
               </article>
             ))}
+            <div className="lg:col-span-2">
+              <ShowMoreControl
+                total={warranties.length}
+                visible={warrantiesDefaultCount}
+                expanded={warrantiesExpanded}
+                onToggle={() => setWarrantiesExpanded((value) => !value)}
+                noun="warranties"
+                testId="home-records-warranty-show-more"
+              />
+            </div>
           </div>
         ) : (
           <EmptyState title="No warranty details yet" testId="home-records-warranty-empty">

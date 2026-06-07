@@ -73,9 +73,9 @@ export default function CustomerRequests({
       <section data-testid="customer-portal-requests" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-white">Requests</h2>
+            <h2 className="text-xl font-semibold text-white">Project & Service Requests</h2>
             <p className="mt-1 text-sm text-slate-300">
-              Requests are saved internally first. When you are ready, MyHomeBro can help route them to contractors without publishing anything automatically.
+              Use Requests to tell us what you need help with next. Saved requests stay private until you choose to send them to a contractor or marketplace. Use this for repairs, maintenance, inspections, new projects, or follow-up work.
             </p>
           </div>
           <Badge>{requests.length} total</Badge>
@@ -112,7 +112,7 @@ export default function CustomerRequests({
 
         <div data-testid="customer-portal-bids" className="mt-6 border-t border-slate-700 pt-5">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-white">Bids received</h3>
+            <h3 className="text-lg font-semibold text-white">Contractor Responses</h3>
             <Badge>{bids.length} bids</Badge>
           </div>
           <div className="mt-3 space-y-3">
@@ -159,7 +159,7 @@ export default function CustomerRequests({
       </section>
 
       <form onSubmit={submit} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-5">
-        <h3 className="text-lg font-semibold text-white">New request</h3>
+        <h3 className="text-lg font-semibold text-white">Create a Request</h3>
         <div className="mt-4 space-y-3">
           <label className="block text-sm font-medium text-slate-200">
             Type
@@ -222,7 +222,7 @@ export default function CustomerRequests({
           disabled={creating || !form.title.trim() || !form.description.trim()}
           className="mt-4 w-full rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {creating ? "Saving..." : "Save request"}
+          {creating ? "Saving..." : "Create Request"}
         </button>
       </form>
     </div>

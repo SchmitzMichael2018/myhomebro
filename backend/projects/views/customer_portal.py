@@ -1764,21 +1764,39 @@ class CustomerPortalRequestLinkView(APIView):
         if _request_has_records(email):
             token = _portal_token(email)
             link = _portal_url(token)
-            subject = "Your MyHomeBro Records link"
+            portal_login_url = f"{_portal_frontend_base() or 'https://www.myhomebro.com'}/portal"
+            subject = "Your MyHomeBro Customer Portal Access Link"
             text_body = (
-                f"Hello,\n\n"
-                f"Your secure MyHomeBro records portal is ready:\n{link}\n\n"
-                "This link lets you review your requests, bids, agreements, payments, and documents.\n"
-                "If you did not request this link, you can ignore this email.\n\n"
-                "— MyHomeBro"
+                "Hello,\n\n"
+                "Your secure MyHomeBro Customer Portal is ready.\n\n"
+                "Access:\n"
+                "- Projects and milestones\n"
+                "- Payments and invoices\n"
+                "- Documents and warranties\n"
+                "- Property records and project history\n\n"
+                f"Access Customer Portal:\n{link}\n\n"
+                "If you did not request this link, you may safely ignore this email.\n\n"
+                "Returning customer?\n"
+                f"You can log in directly at:\n{portal_login_url}\n\n"
+                "-- MyHomeBro"
             )
             html_body = (
-                f"<p>Hello,</p>"
-                f"<p>Your secure MyHomeBro records portal is ready:</p>"
-                f"<p><a href=\"{link}\">{link}</a></p>"
-                "<p>This link lets you review your requests, bids, agreements, payments, and documents.</p>"
-                "<p>If you did not request this link, you can ignore this email.</p>"
-                "<p>— MyHomeBro</p>"
+                "<p>Hello,</p>"
+                "<p>Your secure MyHomeBro Customer Portal is ready.</p>"
+                "<p>Access:</p>"
+                "<ul>"
+                "<li>Projects and milestones</li>"
+                "<li>Payments and invoices</li>"
+                "<li>Documents and warranties</li>"
+                "<li>Property records and project history</li>"
+                "</ul>"
+                f"<p><a href=\"{link}\" style=\"display:inline-block;background:#fbbf24;color:#0f172a;"
+                "padding:12px 18px;border-radius:12px;font-weight:700;text-decoration:none;\">"
+                "Access Customer Portal</a></p>"
+                "<p>If you did not request this link, you may safely ignore this email.</p>"
+                "<p>Returning customer?</p>"
+                f"<p>You can log in directly at:<br><a href=\"{portal_login_url}\">{portal_login_url}</a></p>"
+                "<p>-- MyHomeBro</p>"
             )
             send_mail(
                 subject,

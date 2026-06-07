@@ -3,6 +3,7 @@ import { Bell, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, La
 import toast from "react-hot-toast";
 
 import api from "../api";
+import logo from "../assets/myhomebro_logo.png";
 import CustomerDocuments from "./CustomerDocuments.jsx";
 import CustomerProjectWorkspace from "./CustomerProjectWorkspace.jsx";
 import CustomerPropertyProfile from "./CustomerPropertyProfile.jsx";
@@ -82,10 +83,13 @@ function normalizeInvoiceMagicUrl(actionTarget = "") {
 }
 
 function PaymentsPanel({ payments = [] }) {
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const attention = payments.filter((payment) => {
     return !isPaidPayment(payment);
   });
   const paid = payments.filter((payment) => !attention.includes(payment));
+  const historyDefaultCount = 5;
+  const visiblePaid = historyExpanded ? paid : paid.slice(0, historyDefaultCount);
 
   return (
     <div data-testid="customer-portal-payments" className="space-y-5">
@@ -123,7 +127,7 @@ function PaymentsPanel({ payments = [] }) {
         </div>
         <div className="mt-4 space-y-3">
           {paid.length ? (
-            paid.map((payment) => (
+            visiblePaid.map((payment) => (
               <PaymentActionCard key={payment.id} payment={payment} compact />
             ))
           ) : payments.length ? null : (
@@ -132,6 +136,21 @@ function PaymentsPanel({ payments = [] }) {
             </EmptyState>
           )}
         </div>
+        {paid.length > historyDefaultCount ? (
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs font-semibold text-slate-400">
+              Showing {historyExpanded ? paid.length : historyDefaultCount} of {paid.length} payment records
+            </div>
+            <button
+              type="button"
+              data-testid="customer-payments-history-show-more"
+              onClick={() => setHistoryExpanded((value) => !value)}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+            >
+              {historyExpanded ? "Show less" : "Show more"}
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -668,10 +687,25 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         <header className="rounded-3xl border border-amber-200/20 bg-slate-900/80 p-5 shadow-2xl shadow-slate-950/40 sm:p-6 md:p-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">MyHomeBro Records</div>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">Customer Workspace</h1>
+              <div className="flex items-center gap-3">
+                <img
+                  src={logo}
+                  alt="MyHomeBro"
+                  data-testid="customer-dashboard-logo"
+                  className="h-12 w-12 rounded-2xl object-cover shadow-lg shadow-blue-950/30"
+                />
+                <div>
+                  <div className="text-xl font-bold tracking-tight text-white">
+                    MyHome<span className="text-amber-300">Bro</span>
+                  </div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">
+                    Customer Portal
+                  </div>
+                </div>
+              </div>
+              <h1 className="mt-5 text-2xl font-bold tracking-tight text-white sm:text-3xl">Customer Portal</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-                {customerName ? `${customerName}, you can ` : "You can "}track your project from agreement to completion, review payments before funds are released, and keep your project documents and home records in one place.
+                {customerName ? `${customerName}, ` : ""}track projects, payments, documents, warranties, and property records in one place.
               </p>
             </div>
             <div className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300 lg:w-auto">

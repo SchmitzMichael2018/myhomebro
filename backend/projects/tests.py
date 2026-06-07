@@ -19111,8 +19111,17 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(response.data["ok"])
         self.assertTrue(response.data["link_sent"])
         self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, "Your MyHomeBro Customer Portal Access Link")
+        self.assertIn("Your secure MyHomeBro Customer Portal is ready.", mail.outbox[0].body)
+        self.assertIn("Projects and milestones", mail.outbox[0].body)
+        self.assertIn("Payments and invoices", mail.outbox[0].body)
+        self.assertIn("Property records and project history", mail.outbox[0].body)
+        self.assertIn("Returning customer?", mail.outbox[0].body)
+        self.assertIn("/portal", mail.outbox[0].body)
         self.assertIn("/portal/", mail.outbox[0].body)
         self.assertIn(self.customer_email, mail.outbox[0].to)
+        self.assertTrue(mail.outbox[0].alternatives)
+        self.assertIn("Access Customer Portal", mail.outbox[0].alternatives[0][0])
 
         unknown = self.client.post(
             "/api/projects/customer-portal/request-link/",

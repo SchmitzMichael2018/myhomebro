@@ -154,7 +154,7 @@ export default function StartProjectIntake() {
           <div className="w-full max-w-2xl rounded-3xl border border-white/15 bg-white/10 p-2 shadow-2xl shadow-slate-950/35 backdrop-blur">
             <div className="rounded-[1.35rem] border border-slate-200/80 bg-white p-6 text-slate-900 shadow-xl">
               <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                MyHomeBro Records
+                Customer Portal
               </div>
               <h1 className="mt-3 text-2xl font-bold text-gray-900">Starting your project request</h1>
               {starting ? (
