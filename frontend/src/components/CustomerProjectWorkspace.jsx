@@ -329,6 +329,13 @@ export default function CustomerProjectWorkspace({
   onRefresh,
 }) {
   const [selectedId, setSelectedId] = useState(projects[0]?.id || null);
+  const [expandedGroups, setExpandedGroups] = useState({
+    needs_attention: true,
+    active: true,
+    draft: false,
+    completed: false,
+  });
+  const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
   const selected = projects.find((project) => String(project.id) === String(selectedId)) || projects[0] || null;
 
   const selectedAgreement = useMemo(() => {
@@ -393,6 +400,58 @@ export default function CustomerProjectWorkspace({
     .filter(isPaidPayment)
     .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
 
+  const groupedProjects = useMemo(() => {
+    const groups = {
+      needs_attention: [],
+      active: [],
+      draft: [],
+      completed: [],
+    };
+    const projectPaymentsFor = (project) =>
+      payments.filter((payment) => {
+        if (project.agreement_id && String(payment.agreement_id || "") === String(project.agreement_id)) return true;
+        return payment.project_title === project.title;
+      });
+    for (const project of projects) {
+      const status = `${project.status || ""} ${project.status_label || ""}`.toLowerCase();
+      const relatedPayments = projectPaymentsFor(project);
+      const needsAttention =
+        relatedPayments.some((payment) => !isPaidPayment(payment) || hasOpenDispute(payment)) ||
+        status.includes("signature") ||
+        status.includes("review") ||
+        status.includes("dispute") ||
+        status.includes("needs");
+      if (needsAttention) {
+        groups.needs_attention.push(project);
+      } else if (status.includes("complete") || status.includes("closed") || status.includes("archived")) {
+        groups.completed.push(project);
+      } else if (
+        status.includes("draft") ||
+        status.includes("pending") ||
+        status.includes("unsigned") ||
+        status.includes("proposal") ||
+        status.includes("inactive")
+      ) {
+        groups.draft.push(project);
+      } else {
+        groups.active.push(project);
+      }
+    }
+    return groups;
+  }, [payments, projects]);
+
+  const groupConfig = [
+    ["needs_attention", "Needs Attention", "Signatures, reviews, payments, or disputes waiting on you."],
+    ["active", "Active Projects", "Work that is underway or ready to follow."],
+    ["draft", "Draft / Pending", "Drafts, unsigned projects, inactive proposals, and pending starts."],
+    ["completed", "Completed / Archived", "Finished project records and archived work."],
+  ];
+
+  const openProject = (project) => {
+    setSelectedId(project.id);
+    setMobileWorkspaceOpen(true);
+  };
+
   if (!projects.length && !agreements.length) {
     return (
       <div data-testid="customer-project-workspace-empty" className="rounded-2xl border border-dashed border-slate-600 bg-slate-900/60 p-6 text-sm text-slate-300">
@@ -405,31 +464,93 @@ export default function CustomerProjectWorkspace({
   }
 
   return (
-    <div data-testid="customer-project-workspace" className="grid gap-4 xl:grid-cols-[330px_minmax(0,1fr)]">
-      <div className="space-y-2">
-        {projects.map((project) => (
-          <button
-            key={project.id}
-            type="button"
-            data-testid={`customer-project-card-${project.id}`}
-            onClick={() => setSelectedId(project.id)}
-            className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-              String(selected?.id) === String(project.id)
-                ? "border-amber-300/60 bg-amber-300/10 shadow-[inset_4px_0_0_rgba(251,191,36,0.65)]"
-                : "border-slate-700 bg-slate-950/50 hover:border-slate-500 hover:bg-slate-900"
-            }`}
-          >
-            <div className="text-sm font-semibold text-white">{project.title || "Project"}</div>
-            <div className="mt-1 text-xs leading-5 text-slate-400">{project.project_number || project.address || "Project workspace"}</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Badge tone={statusTone(project.status_label)}>{project.status_label || "Project"}</Badge>
-              {(project.milestones || []).length ? <Badge>{project.milestones.length} milestones</Badge> : null}
-            </div>
-          </button>
-        ))}
-      </div>
+    <div data-testid="customer-project-workspace" className="space-y-5">
+      <section data-testid="customer-projects-section-header" className="rounded-3xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.45))] p-5 shadow-2xl shadow-slate-950/25">
+        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Projects</div>
+        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Projects</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
+          Select a project to review milestones, payments, documents, warranties, and updates.
+        </p>
+        <ul className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-5">
+          {["Milestones", "Payments", "Documents", "Warranties", "Updates"].map((item) => (
+            <li key={item} className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 font-semibold text-slate-100">
+              {item}
+            </li>
+          ))}
+        </ul>
+      </section>
 
-      <div data-testid="customer-rich-project-workspace" className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside data-testid="customer-projects-navigation" className={`${mobileWorkspaceOpen ? "hidden xl:block" : "block"} space-y-4 rounded-2xl border border-slate-700 bg-slate-950/60 p-4`}>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200/80">Projects</div>
+            <h3 className="mt-1 text-lg font-semibold text-white">Project Navigation</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Select a project to review milestones, payments, documents, warranties, and updates.
+            </p>
+          </div>
+
+          {groupConfig.map(([key, title, description]) => {
+            const rows = groupedProjects[key] || [];
+            const expanded = expandedGroups[key];
+            return (
+              <section key={key} data-testid={`customer-project-group-${key}`} className="rounded-2xl border border-slate-700 bg-slate-900/45 p-3">
+                <button
+                  type="button"
+                  data-testid={`customer-project-group-toggle-${key}`}
+                  onClick={() => setExpandedGroups((current) => ({ ...current, [key]: !current[key] }))}
+                  className="flex w-full items-start justify-between gap-3 text-left"
+                >
+                  <span>
+                    <span className="block text-sm font-semibold text-white">{title} ({rows.length})</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-400">{description}</span>
+                  </span>
+                  <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-xs font-semibold text-slate-200">
+                    {expanded ? "Collapse" : "Expand"}
+                  </span>
+                </button>
+                {expanded ? (
+                  <div className="mt-3 space-y-2">
+                    {rows.length ? rows.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        data-testid={`customer-project-card-${project.id}`}
+                        onClick={() => openProject(project)}
+                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                          String(selected?.id) === String(project.id)
+                            ? "border-amber-300/60 bg-amber-300/10 shadow-[inset_4px_0_0_rgba(251,191,36,0.65)]"
+                            : "border-slate-700 bg-slate-950/50 hover:border-slate-500 hover:bg-slate-900"
+                        }`}
+                      >
+                        <div className="text-sm font-semibold text-white">{project.title || "Project"}</div>
+                        <div className="mt-1 text-xs leading-5 text-slate-400">{project.project_number || project.address || "Project workspace"}</div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Badge tone={statusTone(project.status_label)}>{project.status_label || "Project"}</Badge>
+                          {(project.milestones || []).length ? <Badge>{project.milestones.length} milestones</Badge> : null}
+                        </div>
+                      </button>
+                    )) : (
+                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">
+                        No projects in this group right now.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
+        </aside>
+
+      <div data-testid="customer-rich-project-workspace" className={`${mobileWorkspaceOpen ? "block" : "hidden xl:block"} space-y-4`}>
+        <button
+          type="button"
+          data-testid="customer-projects-back-button"
+          onClick={() => setMobileWorkspaceOpen(false)}
+          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white xl:hidden"
+        >
+          Back to Projects
+        </button>
         {selected ? (
           <>
             <section className="overflow-hidden rounded-3xl border border-slate-700 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.45))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
@@ -696,6 +817,7 @@ export default function CustomerProjectWorkspace({
             Select a project to review milestones, payments, documents, and updates.
           </div>
         )}
+      </div>
       </div>
     </div>
   );

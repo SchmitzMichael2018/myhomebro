@@ -519,6 +519,32 @@ const longPortalPayload = {
   projects: [
     ...portalPayload.projects,
     {
+      id: "active-project",
+      project_number: "PRJ-ACTIVE-001",
+      title: "Roof Replacement",
+      description: "Active roof replacement project.",
+      status: "active",
+      status_label: "Active",
+      address: "123 Main St, Austin, TX 78701",
+      contractor_name: "Builder Co",
+      agreement_id: 44,
+      agreement_url: "/agreements/magic/active-project-token",
+      total_cost: "9000.00",
+      milestones: [{ id: 44, title: "Roof install", status: "active", amount: "9000.00" }],
+    },
+    {
+      id: "draft-project",
+      project_number: "PRJ-DRAFT-001",
+      title: "Draft Patio Repair",
+      description: "Draft patio repair project.",
+      status: "draft",
+      status_label: "Draft",
+      address: "123 Main St, Austin, TX 78701",
+      contractor_name: "Builder Co",
+      total_cost: "0.00",
+      milestones: [],
+    },
+    {
       id: "static-history-project",
       title: "Older Deck Repair",
       status: "completed",
@@ -1031,6 +1057,37 @@ test("customer portal limits long home records, payments, and documents without 
 
   await page.goto("/portal/long-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+
+  await expect(page.getByRole("heading", { name: "Recent Activity" })).toBeVisible();
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await expect(page.getByTestId("customer-projects-section-header")).toContainText("Projects");
+  await expect(page.getByTestId("customer-projects-section-header")).toContainText("Select a project to review milestones, payments, documents, warranties, and updates.");
+  await expect(page.getByTestId("customer-projects-navigation")).toContainText("Project Navigation");
+  await expect(page.getByTestId("customer-project-group-needs_attention")).toContainText("Needs Attention (1)");
+  await expect(page.getByTestId("customer-project-group-active")).toContainText("Active Projects (1)");
+  await expect(page.getByTestId("customer-project-group-draft")).toContainText("Draft / Pending (1)");
+  await expect(page.getByTestId("customer-project-group-completed")).toContainText("Completed / Archived (1)");
+  await expect(page.getByTestId("customer-project-card-1")).toBeVisible();
+  await expect(page.getByTestId("customer-project-card-1")).toHaveClass(/border-amber-300/);
+  await expect(page.getByTestId("customer-project-card-active-project")).toBeVisible();
+  await expect(page.getByTestId("customer-project-card-draft-project")).not.toBeVisible();
+  await expect(page.getByTestId("customer-project-card-static-history-project")).not.toBeVisible();
+  await page.getByTestId("customer-project-group-toggle-draft").click();
+  await expect(page.getByTestId("customer-project-card-draft-project")).toBeVisible();
+  await page.getByTestId("customer-project-card-draft-project").click();
+  await expect(page.getByTestId("customer-project-card-draft-project")).toHaveClass(/border-amber-300/);
+  await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Draft Patio Repair");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await expect(page.getByTestId("customer-projects-navigation")).toBeVisible();
+  await expect(page.getByTestId("customer-rich-project-workspace")).not.toBeVisible();
+  await page.getByTestId("customer-project-card-1").click();
+  await expect(page.getByTestId("customer-rich-project-workspace")).toBeVisible();
+  await expect(page.getByTestId("customer-projects-back-button")).toBeVisible();
+  await page.getByTestId("customer-projects-back-button").click();
+  await expect(page.getByTestId("customer-projects-navigation")).toBeVisible();
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-timeline")).toBeVisible();
