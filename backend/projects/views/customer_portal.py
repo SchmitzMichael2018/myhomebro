@@ -21,6 +21,7 @@ from projects.models import (
     Agreement,
     AgreementFundingLink,
     DrawRequest,
+    DrawRequestStatus,
     ExternalPaymentRecord,
     Homeowner,
     Invoice,
@@ -32,6 +33,7 @@ from projects.models import (
 )
 from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
+from projects.models_dispute import Dispute
 from projects.models_project_intake import ProjectIntake
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
@@ -646,7 +648,11 @@ def _agreements(email: str, request=None) -> list[dict]:
                 "pdf_url": _agreement_pdf_url(agreement),
                 "updated_at": _safe_dt(getattr(agreement, "updated_at", None) or getattr(agreement, "created_at", None)),
                 "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
+                "payment_mode_label": _safe_text(getattr(agreement, "payment_mode", "")).replace("_", " ").title(),
                 "total_cost": _safe_text(getattr(agreement, "total_cost", "")),
+                "description": _safe_text(getattr(agreement, "description", "")),
+                "warranty_type": _safe_text(getattr(agreement, "warranty_type", "")),
+                "warranty_text": _safe_text(getattr(agreement, "warranty_text_snapshot", "")),
             }
         )
     rows.sort(key=lambda row: row.get("updated_at") or "", reverse=True)
@@ -705,21 +711,50 @@ def _projects(email: str) -> list[dict]:
                 "agreement_url": f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
                 "total_cost": _safe_text(getattr(agreement, "total_cost", "")) if agreement else "",
                 "milestones": milestone_rows,
+                "updates": _project_messages(agreement) if agreement else [],
                 "updated_at": _safe_dt(getattr(project, "updated_at", None) or getattr(project, "created_at", None)),
             }
         )
     return rows
 
 
+def _portal_dispute_public_url(dispute) -> str:
+    if not dispute or not getattr(dispute, "public_token", None):
+        return ""
+    return f"/disputes/{dispute.id}?token={dispute.public_token}"
+
+
+def _portal_dispute_status(dispute) -> tuple[str, str]:
+    if not dispute:
+        return "none", "No dispute"
+    value = _safe_text(getattr(dispute, "status", "open")).lower()
+    if value in {"initiated", "open"}:
+        return value or "open", "Dispute opened"
+    return value, value.replace("_", " ").title()
+
+
+def _draw_dispute(draw):
+    if not draw:
+        return None
+    return (
+        Dispute.objects.filter(
+            agreement=getattr(draw, "agreement", None),
+            description__icontains=f"draw_id={draw.id}",
+        )
+        .order_by("-created_at", "-id")
+        .first()
+    )
+
+
 def _payments(email: str, request=None) -> list[dict]:
     rows = []
     invoices = list(
-        Invoice.objects.select_related("agreement", "agreement__project", "agreement__homeowner").prefetch_related("receipt").filter(
+        Invoice.objects.select_related("agreement", "agreement__project", "agreement__homeowner", "agreement__contractor").prefetch_related("receipt").filter(
             Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email)
         ).order_by("-created_at", "-id")
     )
     draws = list(
-        DrawRequest.objects.select_related("agreement", "agreement__project", "agreement__homeowner").prefetch_related("external_payment_records").filter(
+        DrawRequest.objects.select_related("agreement", "agreement__project", "agreement__homeowner", "agreement__contractor").prefetch_related("external_payment_records").filter(
             Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email)
         ).order_by("-created_at", "-id")
     )
@@ -735,13 +770,19 @@ def _payments(email: str, request=None) -> list[dict]:
         rows.append(
             {
                 "id": f"invoice-{invoice.id}",
+                "record_id": invoice.id,
                 "record_type": "invoice",
                 "record_type_label": "Invoice",
                 "project_title": _agreement_title(agreement),
+                "contractor_name": _contractor_name(getattr(agreement, "contractor", None)),
+                "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
+                "payment_mode_label": _safe_text(getattr(agreement, "payment_mode", "")).replace("_", " ").title(),
                 "amount": _safe_text(getattr(invoice, "amount", "")),
                 "amount_label": f"${Decimal(str(getattr(invoice, 'amount', 0) or 0)):.2f}",
                 "status": _safe_text(getattr(invoice, "status", "")).lower(),
                 "status_label": status_text,
+                "dispute_status": "Dispute opened" if getattr(invoice, "disputed", False) or _safe_text(getattr(invoice, "status", "")).lower() == "disputed" else "No dispute",
+                "dispute_url": "",
                 "date": _safe_dt(
                     getattr(invoice, "escrow_released_at", None)
                     or getattr(invoice, "direct_pay_paid_at", None)
@@ -749,6 +790,8 @@ def _payments(email: str, request=None) -> list[dict]:
                     or getattr(invoice, "created_at", None)
                 ),
                 "reference": _safe_text(getattr(invoice, "invoice_number", "")),
+                "due_date": _safe_dt(getattr(invoice, "due_date", None)),
+                "invoice_number": _safe_text(getattr(invoice, "invoice_number", "")),
                 "agreement_id": getattr(agreement, "id", None),
                 "action_target": f"/invoice/{invoice.public_token}",
                 "receipt_url": _safe_text(getattr(getattr(receipt, "pdf_file", None), "url", "")),
@@ -758,6 +801,8 @@ def _payments(email: str, request=None) -> list[dict]:
 
     for draw in draws:
         agreement = getattr(draw, "agreement", None)
+        dispute = _draw_dispute(draw)
+        dispute_status, dispute_status_label = _portal_dispute_status(dispute)
         status_text = (
             "Paid"
             if getattr(draw, "paid_at", None) or getattr(draw, "status", "") in {"paid", "released"}
@@ -771,13 +816,20 @@ def _payments(email: str, request=None) -> list[dict]:
         rows.append(
             {
                 "id": f"draw-{draw.id}",
+                "record_id": draw.id,
                 "record_type": "draw_request",
                 "record_type_label": "Draw",
                 "project_title": _agreement_title(agreement),
+                "contractor_name": _contractor_name(getattr(agreement, "contractor", None)),
+                "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
+                "payment_mode_label": _safe_text(getattr(agreement, "payment_mode", "")).replace("_", " ").title(),
                 "amount": _safe_text(getattr(draw, "net_amount", "")),
                 "amount_label": f"${Decimal(str(getattr(draw, 'net_amount', 0) or 0)):.2f}",
                 "status": _safe_text(getattr(draw, "status", "")).lower(),
                 "status_label": status_text,
+                "dispute_status": dispute_status,
+                "dispute_status_label": dispute_status_label,
+                "dispute_url": _portal_dispute_public_url(dispute),
                 "date": _safe_dt(getattr(draw, "paid_at", None) or getattr(draw, "released_at", None) or getattr(draw, "created_at", None)),
                 "reference": _safe_text(getattr(draw, "stripe_transfer_id", "")) or _safe_text(getattr(external_payment, "reference_number", "")),
                 "agreement_id": getattr(agreement, "id", None),
@@ -2038,6 +2090,113 @@ class CustomerProjectDashboardView(APIView):
         payload = _project_dashboard_payload(project, agreement, request=request)
         payload["uploaded"] = uploaded
         return Response(payload, status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalDrawDisputeSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True)
+
+
+class CustomerPortalDrawDisputeView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, draw_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalDrawDisputeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        draw = get_object_or_404(
+            DrawRequest.objects.select_related(
+                "agreement",
+                "agreement__homeowner",
+                "agreement__project",
+                "agreement__project__homeowner",
+            ).prefetch_related("line_items", "line_items__milestone"),
+            pk=draw_id,
+        )
+        agreement = getattr(draw, "agreement", None)
+        if not agreement or _agreement_customer_email(agreement) != email.lower().strip():
+            return Response({"detail": "Draw request not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if _safe_text(getattr(draw, "status", "")).lower() in {DrawRequestStatus.RELEASED, DrawRequestStatus.PAID}:
+            return Response({"detail": "This payment has already been completed and cannot be disputed from the portal."}, status=status.HTTP_400_BAD_REQUEST)
+
+        reason = serializer.validated_data["reason"].strip()
+        description = serializer.validated_data.get("description", "").strip()
+        milestone = None
+        try:
+            first_line = draw.line_items.filter(milestone__isnull=False).first()
+            milestone = getattr(first_line, "milestone", None) if first_line else None
+        except Exception:
+            milestone = None
+
+        source_line = f"[Portal Source] draw_id={draw.id} draw_number={getattr(draw, 'draw_number', '')}"
+        full_description = "\n\n".join(part for part in [description, source_line] if part)
+
+        with transaction.atomic():
+            existing = (
+                Dispute.objects.select_for_update()
+                .filter(
+                    agreement=agreement,
+                    milestone=milestone,
+                    initiator="homeowner",
+                    status__in=["initiated", "open", "under_review"],
+                    description__icontains=f"draw_id={draw.id}",
+                )
+                .order_by("-created_at", "-id")
+                .first()
+            )
+            if existing:
+                dispute = existing
+            else:
+                dispute = Dispute.objects.create(
+                    agreement=agreement,
+                    milestone=milestone,
+                    initiator="homeowner",
+                    reason=reason,
+                    description=full_description,
+                    status="open",
+                    escrow_frozen=True,
+                )
+                dispute.set_response_deadline_now()
+                dispute.save(update_fields=[
+                    "public_token",
+                    "response_due_at",
+                    "deadline_hours",
+                    "deadline_tier",
+                    "last_activity_at",
+                    "status",
+                    "escrow_frozen",
+                    "updated_at",
+                ])
+
+            draw.homeowner_acted_at = timezone.now()
+            draw.homeowner_review_notes = "\n\n".join(part for part in [draw.homeowner_review_notes, f"Dispute opened: {reason}", description] if _safe_text(part))
+            draw.save(update_fields=["homeowner_acted_at", "homeowner_review_notes", "updated_at"])
+
+        public_url = f"/disputes/{dispute.id}?token={dispute.public_token}"
+        portal_payload = _build_customer_portal_payload(email, request=request)
+        return Response(
+            {
+                "ok": True,
+                "dispute": {
+                    "id": dispute.id,
+                    "status": dispute.status,
+                    "status_label": _safe_text(dispute.status).replace("_", " ").title(),
+                    "public_token": dispute.public_token,
+                    "public_url": public_url,
+                    "reason": dispute.reason,
+                },
+                "portal": portal_payload,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CustomerPortalBidAcceptView(APIView):

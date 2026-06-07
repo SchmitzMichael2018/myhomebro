@@ -53,6 +53,7 @@ from projects.models import (
     CustomerRequest,
     ExpenseRequest,
     DrawRequest,
+    DrawLineItem,
     DrawRequestStatus,
     ExternalPaymentRecord,
     ExternalPaymentStatus,
@@ -19346,6 +19347,74 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.status_code, 404)
         other_notification.refresh_from_db()
         self.assertEqual(other_notification.status, SmartNotification.STATUS_UNREAD)
+
+    def test_customer_portal_can_open_draw_dispute_for_own_review(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            title="Final walkthrough",
+            description="Ready for customer approval.",
+            amount=Decimal("3600.00"),
+            order=2,
+        )
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=2,
+            title="Final draw",
+            status=DrawRequestStatus.SUBMITTED,
+            gross_amount=Decimal("3600.00"),
+            net_amount=Decimal("3600.00"),
+        )
+        DrawLineItem.objects.create(
+            draw_request=draw,
+            milestone=milestone,
+            description="Final walkthrough",
+            scheduled_value=Decimal("3600.00"),
+            this_draw_amount=Decimal("3600.00"),
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/draws/{draw.id}/dispute/",
+            {
+                "reason": "Work needs correction",
+                "description": "The walkthrough items are not complete yet.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        dispute = Dispute.objects.get(agreement=self.agreement, milestone=milestone)
+        self.assertEqual(dispute.initiator, "homeowner")
+        self.assertEqual(dispute.status, "open")
+        self.assertTrue(dispute.escrow_frozen)
+        self.assertIn(f"draw_id={draw.id}", dispute.description)
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.SUBMITTED)
+        self.assertIn("Dispute opened", draw.homeowner_review_notes)
+
+        payment_row = next(row for row in response.data["portal"]["payments"] if row["id"] == f"draw-{draw.id}")
+        self.assertEqual(payment_row["dispute_status_label"], "Dispute opened")
+        self.assertIn(f"/disputes/{dispute.id}?token=", payment_row["dispute_url"])
+
+    def test_customer_portal_draw_dispute_rejects_other_customer_draw(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_draw = DrawRequest.objects.create(
+            agreement=self.other_agreement,
+            draw_number=1,
+            title="Other draw",
+            status=DrawRequestStatus.SUBMITTED,
+            gross_amount=Decimal("500.00"),
+            net_amount=Decimal("500.00"),
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/draws/{other_draw.id}/dispute/",
+            {"reason": "Work needs correction"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(Dispute.objects.filter(agreement=self.other_agreement).exists())
 
     def test_customer_portal_creates_rule_based_workflow_notifications_once(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

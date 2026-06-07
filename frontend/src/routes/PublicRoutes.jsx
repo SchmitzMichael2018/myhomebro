@@ -5,7 +5,7 @@
 // Keeps dispute routes and existing public pages.
 
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useParams } from "react-router-dom";
 
 import LandingPage from "../components/LandingPage.jsx";
 import LoginForm from "../components/LoginForm.jsx";
@@ -32,6 +32,11 @@ import SubcontractorInvitationAcceptPage from "../pages/SubcontractorInvitationA
 import CustomerPortalPage from "../pages/CustomerPortalPage.jsx"; // /portal
 import ContractorClaimPage from "../pages/ContractorClaimPage.jsx";
 
+function PortalTokenRedirect() {
+  const { token = "" } = useParams();
+  return <Navigate to={`/portal/${encodeURIComponent(token)}`} replace />;
+}
+
 export default function PublicRoutes() {
   return (
     <Routes>
@@ -53,9 +58,9 @@ export default function PublicRoutes() {
       <Route path="/portal" element={<CustomerPortalPage />} />
       <Route path="/portal/:token" element={<CustomerPortalPage />} />
       <Route path="/customer-portal" element={<Navigate to="/portal" replace />} />
-      <Route path="/customer-portal/:token" element={<Navigate to="/portal/:token" replace />} />
+      <Route path="/customer-portal/:token" element={<PortalTokenRedirect />} />
       <Route path="/my-records" element={<Navigate to="/portal" replace />} />
-      <Route path="/my-records/:token" element={<Navigate to="/portal/:token" replace />} />
+      <Route path="/my-records/:token" element={<PortalTokenRedirect />} />
 
       {/* Public intake */}
       <Route path="/start-project" element={<StartProjectIntake />} />

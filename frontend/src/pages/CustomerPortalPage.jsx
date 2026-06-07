@@ -643,6 +643,8 @@ export default function CustomerPortalPage() {
     );
   }
 
+  // Legacy fallback shell retained only as a defensive no-token/no-payload path.
+  // The active Customer Portal experience is CustomerDashboard above.
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6">
       <div className="mx-auto max-w-7xl">
