@@ -351,6 +351,10 @@ function installInterceptors(instance) {
       const config = error.config || {};
       const reqPath = pathOnly(config.url || "");
 
+      if (NO_AUTH_HEADER_PATHS.has(reqPath)) {
+        return Promise.reject(error);
+      }
+
       // ✅ FIX: if refresh itself 401s, do NOT attempt refresh again
       if (
         reqPath === "/auth/refresh/" ||

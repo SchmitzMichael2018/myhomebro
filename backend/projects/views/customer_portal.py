@@ -4,6 +4,8 @@ import hashlib
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.core import signing
 from django.core.mail import send_mail
 from django.db import transaction
@@ -12,7 +14,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -52,6 +54,7 @@ from projects.services.smart_notifications import create_smart_notification
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
+User = get_user_model()
 
 
 def _safe_text(value) -> str:
@@ -998,6 +1001,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
             "name": _customer_name(email),
             "email": email,
         },
+        "account": _customer_account_payload(email),
         "summary": summary,
         "requests": request_rows,
         "projects": project_rows,
@@ -1007,6 +1011,16 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "documents": document_rows,
         "property_profile": property_profile,
         "notifications": _smart_notification_rows(email),
+    }
+
+
+def _customer_account_payload(email: str) -> dict:
+    user = User.objects.filter(email__iexact=email).first()
+    return {
+        "email": email,
+        "has_user": bool(user),
+        "has_usable_password": bool(user and user.has_usable_password()),
+        "portal_token": _portal_token(email),
     }
 
 
@@ -1781,6 +1795,67 @@ class CustomerPortalRequestLinkView(APIView):
                 "ok": True,
                 "detail": "If we found records for that email, we sent a secure portal link.",
                 "link_sent": link_sent,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalAccountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        email = _safe_text(getattr(request.user, "email", "")).lower()
+        if not email:
+            return Response({"detail": "Your account does not have an email address."}, status=status.HTTP_400_BAD_REQUEST)
+        if not _request_has_records(email):
+            return Response({"detail": "No customer records are connected to this account email yet."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalCreatePasswordSerializer(serializers.Serializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True, min_length=8)
+
+    def validate(self, attrs):
+        if attrs.get("password") != attrs.get("password_confirm"):
+            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
+        email = self.context.get("email") or ""
+        user = User.objects.filter(email__iexact=email).first()
+        validate_password(attrs["password"], user=user)
+        return attrs
+
+
+class CustomerPortalCreatePasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not _request_has_records(email):
+            return Response({"detail": "No customer records are connected to this email."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CustomerPortalCreatePasswordSerializer(data=request.data, context={"email": email})
+        serializer.is_valid(raise_exception=True)
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            user = User.objects.create_user(email=email, password=serializer.validated_data["password"])
+        else:
+            user.set_password(serializer.validated_data["password"])
+            if not user.is_active:
+                user.is_active = True
+            user.save(update_fields=["password", "is_active"])
+
+        return Response(
+            {
+                "ok": True,
+                "detail": "Password created. You can log in with this email next time.",
+                "portal": _build_customer_portal_payload(email, request=request),
             },
             status=status.HTTP_200_OK,
         )

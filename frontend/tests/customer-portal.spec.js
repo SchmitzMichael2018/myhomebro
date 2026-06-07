@@ -5,6 +5,12 @@ const portalPayload = {
     name: "Pat Customer",
     email: "customer@example.com",
   },
+  account: {
+    email: "customer@example.com",
+    has_user: true,
+    has_usable_password: true,
+    portal_token: "customer-token",
+  },
   summary: {
     active_requests: 1,
     active_projects: 1,
@@ -621,7 +627,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByText("Project updates and milestones")).toBeVisible();
   await expect(page.getByText("Secure payment and invoice review")).toBeVisible();
   await expect(page.getByText("Documents, warranties, and home records")).toBeVisible();
-  await expect(page.getByTestId("customer-portal-access-card")).toContainText("Email me my secure access link");
+  await expect(page.getByTestId("customer-portal-access-card")).toContainText("Need a secure access link?");
   await expect(page.getByTestId("customer-portal-access-card")).toContainText("Only records connected to your email will be shown.");
   await expect(page.getByText("Projects & Payments")).toBeVisible();
   await expect(page.getByText("Documents & Warranties")).toBeVisible();
@@ -636,6 +642,7 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await expect(page.getByTestId("customer-portal-create-password-prompt")).not.toBeVisible();
   await expect(page.getByText("MyHomeBro Records")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Workspace" })).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
@@ -746,6 +753,99 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("We could not open that portal link"))).toHaveLength(0);
+});
+
+test("customer portal supports returning customer login", async ({ page }) => {
+  await page.route("**/api/auth/login/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        access: "customer-access-token",
+        refresh: "customer-refresh-token",
+        user: { email: "customer@example.com" },
+      }),
+    });
+  });
+  await page.route("**/api/projects/customer-portal/account/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(portalPayload),
+    });
+  });
+
+  await page.goto("/portal", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-portal-logo")).toBeVisible();
+  await expect(page.getByText("Customer Portal").first()).toBeVisible();
+  await expect(page.getByTestId("customer-portal-login-form")).toBeVisible();
+  await expect(page.getByTestId("customer-portal-email-input")).toBeVisible();
+  await expect(page.getByText("Need a secure access link?")).toBeVisible();
+  await page.getByTestId("customer-portal-login-email-input").fill("customer@example.com");
+  await page.getByTestId("customer-portal-login-password-input").fill("CustomerPass123!");
+  await page.getByTestId("customer-portal-login-button").click();
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer Workspace" })).toBeVisible();
+});
+
+test("customer portal login failure and token password creation states render", async ({ page }) => {
+  await page.route("**/api/auth/login/", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Invalid email or password." }),
+    });
+  });
+  const needsPasswordPayload = {
+    ...portalPayload,
+    account: {
+      email: "customer@example.com",
+      has_user: false,
+      has_usable_password: false,
+      portal_token: "customer-token",
+    },
+  };
+  const passwordCreatedPayload = {
+    ...portalPayload,
+    account: {
+      email: "customer@example.com",
+      has_user: true,
+      has_usable_password: true,
+      portal_token: "customer-token",
+    },
+  };
+  await page.route("**/api/projects/customer-portal/customer-token/", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(needsPasswordPayload),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/create-password/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, portal: passwordCreatedPayload }),
+    });
+  });
+
+  await page.goto("/portal", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-portal-login-email-input").fill("customer@example.com");
+  await page.getByTestId("customer-portal-login-password-input").fill("bad-password");
+  await page.getByTestId("customer-portal-login-button").click();
+  await expect(page.getByTestId("customer-portal-login-error")).toContainText("Invalid email or password.");
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await expect(page.getByTestId("customer-portal-create-password-prompt")).toContainText("Create a password for faster access next time.");
+  await page.getByTestId("customer-portal-create-password-input").fill("CustomerPass123!");
+  await page.getByTestId("customer-portal-create-password-confirm-input").fill("CustomerPass123!");
+  await page.getByRole("button", { name: "Create Password" }).click();
+  await expect(page.getByTestId("customer-portal-create-password-prompt")).not.toBeVisible();
 });
 
 test("customer portal access page handles errors and mobile layout", async ({ page }) => {

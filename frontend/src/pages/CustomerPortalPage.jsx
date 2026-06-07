@@ -3,9 +3,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ExternalLink, FileText, FolderKanban, Home, Mail, ShieldCheck, WalletCards } from "lucide-react";
 import toast from "react-hot-toast";
 
-import api from "../api";
+import api, { setTokens } from "../api";
 import CustomerDashboard from "../components/CustomerDashboard.jsx";
 import Modal from "../components/Modal.jsx";
+import logo from "../assets/myhomebro_logo.png";
 
 function formatDate(value) {
   if (!value) return "—";
@@ -192,6 +193,13 @@ export default function CustomerPortalPage() {
   const [requestingLink, setRequestingLink] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
   const [requestError, setRequestError] = useState("");
+  const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [passwordForm, setPasswordForm] = useState({ password: "", password_confirm: "" });
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [loading, setLoading] = useState(Boolean(token));
   const [loadError, setLoadError] = useState("");
   const [portal, setPortal] = useState(null);
@@ -514,6 +522,122 @@ export default function CustomerPortalPage() {
 
   const selectedPairs = detailPairs(selected?.kind, selected?.row);
 
+  const handleCustomerLogin = async (event) => {
+    event.preventDefault();
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const loginResponse = await api.post("/auth/login/", {
+        email: loginForm.email.trim().toLowerCase(),
+        password: loginForm.password,
+      });
+      const access = loginResponse.data?.access || loginResponse.data?.access_token;
+      const refresh = loginResponse.data?.refresh || loginResponse.data?.refresh_token;
+      if (!access) throw new Error("Login succeeded but no token was returned.");
+      setTokens(access, refresh || null, true);
+      const { data } = await api.get("/projects/customer-portal/account/");
+      setPortal(data);
+      toast.success("Welcome back to your Customer Portal.");
+    } catch (error) {
+      const message = error?.response?.data?.detail || "Invalid email or password.";
+      setLoginError(message);
+      toast.error(message);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleCreatePassword = async (event) => {
+    event.preventDefault();
+    if (!token) return;
+    setSavingPassword(true);
+    setPasswordError("");
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/create-password/`, passwordForm);
+      if (data?.portal) setPortal(data.portal);
+      setPasswordSaved(true);
+      setPasswordForm({ password: "", password_confirm: "" });
+      toast.success("Password created for next time.");
+    } catch (error) {
+      const responseData = error?.response?.data || {};
+      const message =
+        responseData?.detail ||
+        responseData?.password?.[0] ||
+        responseData?.password_confirm?.[0] ||
+        responseData?.non_field_errors?.[0] ||
+        "Could not create that password.";
+      setPasswordError(message);
+      toast.error(message);
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  if (portal) {
+    const showCreatePasswordPrompt = Boolean(token && portal?.account && !portal.account.has_usable_password && !passwordSaved);
+    return (
+      <div className="relative">
+        <CustomerDashboard
+          portal={portal}
+          token={token || portal?.account?.portal_token || ""}
+          onPortalUpdate={(nextPortal) => {
+            if (nextPortal) setPortal(nextPortal);
+          }}
+        />
+        {showCreatePasswordPrompt ? (
+          <div data-testid="customer-portal-create-password-prompt" className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-xl rounded-3xl border border-amber-300/45 bg-slate-950/95 p-5 text-white shadow-2xl shadow-slate-950/50 backdrop-blur">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Faster access next time</div>
+            <h2 className="mt-1 text-lg font-bold">Create a password for faster access next time.</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              This uses the verified customer email connected to this secure portal link.
+            </p>
+            <form onSubmit={handleCreatePassword} className="mt-4 grid gap-3 sm:grid-cols-2">
+              <input
+                data-testid="customer-portal-create-password-input"
+                type="password"
+                value={passwordForm.password}
+                onChange={(event) => setPasswordForm((prev) => ({ ...prev, password: event.target.value }))}
+                placeholder="Password"
+                className="min-h-11 rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                required
+              />
+              <input
+                data-testid="customer-portal-create-password-confirm-input"
+                type="password"
+                value={passwordForm.password_confirm}
+                onChange={(event) => setPasswordForm((prev) => ({ ...prev, password_confirm: event.target.value }))}
+                placeholder="Confirm password"
+                className="min-h-11 rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                required
+              />
+              {passwordError ? (
+                <div data-testid="customer-portal-create-password-error" className="sm:col-span-2 rounded-xl border border-rose-300/35 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
+                  {passwordError}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap gap-2 sm:col-span-2">
+                <button
+                  type="submit"
+                  disabled={savingPassword}
+                  className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-200 disabled:opacity-60"
+                >
+                  {savingPassword ? "Saving..." : "Create Password"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPasswordSaved(true)}
+                  className="rounded-xl border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
+                >
+                  Maybe later
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   if (!token) {
     const valueCards = [
       {
@@ -539,12 +663,10 @@ export default function CustomerPortalPage() {
         <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
           <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <Link to="/" className="inline-flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-200/35 bg-amber-300/15 text-sm font-black text-amber-100 shadow-[0_0_24px_rgba(251,191,36,0.14)]">
-                MHB
-              </span>
+              <img src={logo} alt="MyHomeBro" data-testid="customer-portal-logo" className="h-12 w-12 rounded-2xl object-cover shadow-lg shadow-blue-950/30" />
               <span>
-                <span className="block text-base font-bold tracking-tight">MyHomeBro</span>
-                <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-100/75">Customer Records</span>
+                <span className="block text-xl font-bold tracking-tight">MyHome<span className="text-amber-300">Bro</span></span>
+                <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-100/75">Customer Portal</span>
               </span>
             </Link>
             <nav className="flex flex-wrap gap-2">
@@ -604,19 +726,77 @@ export default function CustomerPortalPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-white/10 bg-slate-950/72 p-5 shadow-2xl shadow-slate-950/40 backdrop-blur sm:p-6" data-testid="customer-portal-access-card">
+            <section className="space-y-4 rounded-3xl border border-white/10 bg-slate-950/72 p-5 shadow-2xl shadow-slate-950/40 backdrop-blur sm:p-6" data-testid="customer-portal-access-card">
               <div className="flex items-start gap-3">
                 <div className="rounded-2xl border border-amber-200/40 bg-amber-300/15 p-3 text-amber-100">
-                  <Mail size={22} />
+                  <ShieldCheck size={22} />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold tracking-tight text-white">Email me my secure access link</h2>
+                  <h2 className="text-2xl font-bold tracking-tight text-white">Welcome back to MyHomeBro</h2>
                   <p className="mt-2 text-sm leading-6 text-slate-300">
-                    Enter the email address connected to your project. We'll send a secure link to access your customer records.
+                    Log in to open your Customer Portal, or use a secure access link if you have not created a password yet.
                   </p>
                 </div>
               </div>
-              <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+
+              <form onSubmit={handleCustomerLogin} data-testid="customer-portal-login-form" className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                <div className="text-sm font-bold text-white">Returning customer login</div>
+                <div className="mt-3 grid gap-3">
+                  <input
+                    data-testid="customer-portal-login-email-input"
+                    type="email"
+                    value={loginForm.email}
+                    onChange={(event) => {
+                      setLoginForm((prev) => ({ ...prev, email: event.target.value }));
+                      setLoginError("");
+                    }}
+                    placeholder="Email"
+                    className="min-h-12 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-base text-white outline-none placeholder:text-slate-500 focus:border-amber-300"
+                    required
+                  />
+                  <input
+                    data-testid="customer-portal-login-password-input"
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(event) => {
+                      setLoginForm((prev) => ({ ...prev, password: event.target.value }));
+                      setLoginError("");
+                    }}
+                    placeholder="Password"
+                    className="min-h-12 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-base text-white outline-none placeholder:text-slate-500 focus:border-amber-300"
+                    required
+                  />
+                  {loginError ? (
+                    <div data-testid="customer-portal-login-error" className="rounded-xl border border-rose-300/35 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                      {loginError}
+                    </div>
+                  ) : null}
+                  <button
+                    type="submit"
+                    data-testid="customer-portal-login-button"
+                    disabled={loginLoading}
+                    className="inline-flex min-h-12 items-center justify-center rounded-xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950 shadow-[0_12px_30px_rgba(251,191,36,0.2)] hover:bg-amber-200 disabled:opacity-60"
+                  >
+                    {loginLoading ? "Logging in..." : "Log In"}
+                  </button>
+                  <Link to="/forgot-password" className="text-sm font-semibold text-amber-100 hover:text-amber-50">
+                    Forgot Password?
+                  </Link>
+                </div>
+              </form>
+
+              <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl border border-sky-300/35 bg-sky-400/10 p-2 text-sky-100">
+                    <Mail size={18} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white">Need a secure access link?</div>
+                    <p className="mt-1 text-sm leading-6 text-slate-300">
+                      Enter the email address connected to your project. We'll send a secure link to access your customer records.
+                    </p>
+                  </div>
+                </div>
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <input
                     data-testid="customer-portal-email-input"
@@ -657,7 +837,7 @@ export default function CustomerPortalPage() {
                     }}
                     className="inline-flex min-h-12 items-center justify-center rounded-xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950 shadow-[0_12px_30px_rgba(251,191,36,0.2)] hover:bg-amber-200 disabled:opacity-60"
                   >
-                    {requestingLink ? "Sending..." : "Send Secure Link"}
+                    {requestingLink ? "Sending..." : "Email Me a Secure Link"}
                   </button>
                 </div>
                 {requestSent ? (
@@ -672,14 +852,14 @@ export default function CustomerPortalPage() {
                 ) : null}
               </div>
 
-              <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/55 p-4">
+              <div className="rounded-2xl border border-slate-700 bg-slate-900/55 p-4">
                 <div className="flex items-start gap-3 text-sm leading-6 text-slate-300">
                   <ShieldCheck className="mt-0.5 shrink-0 text-amber-100" size={18} />
                   <p>Only records connected to your email will be shown.</p>
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Link to="/start-project" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
                   <FolderKanban size={16} />
                   Start a Project
@@ -725,18 +905,6 @@ export default function CustomerPortalPage() {
           </div>
         </div>
       </div>
-    );
-  }
-
-  if (portal) {
-    return (
-      <CustomerDashboard
-        portal={portal}
-        token={token}
-        onPortalUpdate={(nextPortal) => {
-          if (nextPortal) setPortal(nextPortal);
-        }}
-      />
     );
   }
 

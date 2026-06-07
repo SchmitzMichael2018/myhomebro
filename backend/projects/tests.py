@@ -19166,6 +19166,64 @@ class CustomerPortalAccessTests(TestCase):
         agreement_row = response.data["agreements"][0]
         self.assertNotIn("detail", agreement_row)
         self.assertNotIn("stripe_account_id", agreement_row)
+        self.assertFalse(response.data["account"]["has_user"])
+        self.assertFalse(response.data["account"]["has_usable_password"])
+        self.assertTrue(response.data["account"]["portal_token"])
+
+    def test_customer_portal_account_login_returns_email_scoped_records(self):
+        User = get_user_model()
+        user = User.objects.create_user(email=self.customer_email, password="CustomerPass123!")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get("/api/projects/customer-portal/account/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["customer"]["email"], self.customer_email)
+        self.assertEqual(response.data["summary"]["active_projects"], 1)
+        self.assertTrue(response.data["account"]["has_user"])
+        self.assertTrue(response.data["account"]["has_usable_password"])
+        self.assertTrue(response.data["account"]["portal_token"])
+        self.assertTrue(all(row["project_title"] == "Kitchen Remodel" for row in response.data["agreements"]))
+
+    def test_customer_portal_account_login_requires_connected_records(self):
+        User = get_user_model()
+        user = User.objects.create_user(email="unconnected@example.com", password="CustomerPass123!")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.get("/api/projects/customer-portal/account/")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_customer_portal_token_can_create_customer_password(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/create-password/",
+            {
+                "password": "CustomerPass123!",
+                "password_confirm": "CustomerPass123!",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        user = get_user_model().objects.get(email=self.customer_email)
+        self.assertTrue(user.check_password("CustomerPass123!"))
+        self.assertTrue(response.data["portal"]["account"]["has_usable_password"])
+
+    def test_customer_portal_create_password_rejects_other_or_invalid_token(self):
+        response = self.client.post(
+            "/api/projects/customer-portal/not-a-valid-token/create-password/",
+            {
+                "password": "CustomerPass123!",
+                "password_confirm": "CustomerPass123!",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_customer_portal_can_save_internal_customer_request(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
