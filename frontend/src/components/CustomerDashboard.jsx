@@ -21,12 +21,20 @@ const TABS = [
   ["account", "Account", UserRound],
 ];
 
-function StatCard({ label, value, testId }) {
+function StatCard({ label, value, testId, onClick }) {
+  const Component = onClick ? "button" : "div";
   return (
-    <div data-testid={testId} className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+    <Component
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      data-testid={testId}
+      className={`rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-left ${
+        onClick ? "transition hover:border-amber-300/55 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/45" : ""
+      }`}
+    >
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-2 text-2xl font-bold text-white">{value}</div>
-    </div>
+    </Component>
   );
 }
 
@@ -307,14 +315,14 @@ function OverviewPanel({ portal, onOpenTab }) {
       </section>
 
       <div data-testid="customer-portal-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Projects" value={summary.active_projects ?? 0} testId="customer-portal-summary-projects" />
-        <StatCard label="Requests" value={summary.active_requests ?? 0} testId="customer-portal-summary-active-requests" />
-        <StatCard label="Agreements" value={summary.active_agreements ?? 0} testId="customer-portal-summary-agreements" />
-        <StatCard label="Payments" value={summary.payments ?? 0} testId="customer-portal-summary-payments" />
-        <StatCard label="Documents" value={summary.documents ?? 0} testId="customer-portal-summary-documents" />
+        <StatCard label="Projects" value={summary.active_projects ?? 0} testId="customer-portal-summary-projects" onClick={() => onOpenTab?.("projects")} />
+        <StatCard label="Requests" value={summary.active_requests ?? 0} testId="customer-portal-summary-active-requests" onClick={() => onOpenTab?.("requests")} />
+        <StatCard label="Agreements" value={summary.active_agreements ?? 0} testId="customer-portal-summary-agreements" onClick={() => onOpenTab?.("projects")} />
+        <StatCard label="Payments" value={summary.payments ?? 0} testId="customer-portal-summary-payments" onClick={() => onOpenTab?.("payments")} />
+        <StatCard label="Documents" value={summary.documents ?? 0} testId="customer-portal-summary-documents" onClick={() => onOpenTab?.("documents")} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-1">
         <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
           <h2 className="text-lg font-semibold text-white">Active Projects</h2>
           <div className="mt-3 space-y-3">
@@ -331,21 +339,11 @@ function OverviewPanel({ portal, onOpenTab }) {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
-          <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
-          <div className="mt-3 space-y-3">
-            {latestRequests.length ? latestRequests.map((request) => (
-              <div key={request.id} className="rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3">
-                <div className="text-sm font-semibold text-white">{request.project_title}</div>
-                <div className="mt-1 text-xs text-slate-500">{request.status_label || "Submitted"}</div>
-              </div>
-            )) : (
-              <EmptyState title="No requests yet" testId="customer-overview-requests-empty">
-                You can save repair, maintenance, DIY, inspection, emergency, or new project requests here. They stay internal until they are ready to route.
-              </EmptyState>
-            )}
-          </div>
-        </section>
+        {latestRequests.length ? null : (
+          <EmptyState title="No requests yet" testId="customer-overview-requests-empty">
+            You can save repair, maintenance, DIY, inspection, emergency, or new project requests here. They stay internal until they are ready to route.
+          </EmptyState>
+        )}
       </div>
     </div>
   );
@@ -446,7 +444,7 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
           <p className="mt-1 text-sm text-slate-300">Recent project, payment, request, and property updates.</p>
         </div>
         <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-[0_0_16px_rgba(56,189,248,0.12)]">
-          {unreadCount > 0 ? `${unreadCount} unread` : "All caught up"}
+          {unreadCount > 0 ? `${unreadCount} unread` : recent.length ? `${recent.length} recent` : "All caught up"}
         </span>
       </div>
 
@@ -938,12 +936,14 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           </nav>
         </header>
 
-        <NotificationPanel
-          notifications={notifications}
-          unreadCount={unreadCount}
-          markingId={markingNotificationId}
-          onMarkRead={markNotificationRead}
-        />
+        {activeTab === "overview" ? (
+          <NotificationPanel
+            notifications={notifications}
+            unreadCount={unreadCount}
+            markingId={markingNotificationId}
+            onMarkRead={markNotificationRead}
+          />
+        ) : null}
 
         <main className="mt-5">
           {tabContent}

@@ -853,7 +853,13 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("4");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("4");
+  await expect(page.getByTestId("customer-portal-summary-projects")).toHaveClass(/hover:border-amber/);
+  await page.getByTestId("customer-portal-summary-active-requests").click();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
+  await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent Activity");
+  await expect(page.getByRole("heading", { name: "Recent Activity" })).toHaveCount(1);
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent project, payment, request, and property updates.");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Payment received");
@@ -863,7 +869,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notification-102")).not.toContainText("Unread");
   await expect(page.getByTestId("customer-notification-102")).not.toHaveClass(/border-sky-300/);
   await page.getByTestId("customer-notification-mark-read-101").click();
-  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("All caught up");
+  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("2 recent");
   await expect(page.getByTestId("customer-notification-101")).not.toContainText("Unread");
   await expect(page.getByTestId("customer-notification-101")).not.toHaveClass(/border-sky-300/);
 
@@ -879,12 +885,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-profile-phone")).toHaveValue("512-555-1212");
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
+  await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
+  await expect(page.getByTestId("customer-request-create-panel")).toContainText("Tell us what you need help with next");
   await expect(page.getByRole("heading", { name: "Project & Service Requests" })).toBeVisible();
   await expect(page.getByText("Use Requests to tell us what you need help with next.")).toBeVisible();
-  await expect(page.getByText("Saved requests stay private until you choose to send them to a contractor or marketplace.")).toBeVisible();
-  await expect(page.getByText("Use this for repairs, maintenance, inspections, new projects, or follow-up work.")).toBeVisible();
+  await expect(page.getByText("up to 5 vetted MyHomeBro marketplace contractors")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Contractor Responses" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Create a Request" })).toBeVisible();
+  await expect(page.getByText("Create a Request")).toBeVisible();
   await expect(page.getByText("Choose the property this request is for.")).toBeVisible();
   await expect(page.getByTestId("customer-request-property-selector")).toBeVisible();
   await page.getByTestId("customer-request-property-selector").selectOption("2");

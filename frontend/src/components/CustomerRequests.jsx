@@ -87,7 +87,164 @@ export default function CustomerRequests({
   };
 
   return (
-    <div data-testid="customer-requests" className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+    <div data-testid="customer-requests" className="space-y-5">
+      <form onSubmit={submit} data-testid="customer-request-create-panel" className="rounded-2xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.14),transparent_34%),rgba(15,23,42,0.78)] p-5 shadow-xl shadow-slate-950/20">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Create a Request</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">Tell us what you need help with next</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+              Save repairs, maintenance, inspections, new projects, or follow-up work here first. Requests stay private until you choose to send or route them.
+            </p>
+          </div>
+          <Badge>Internal until routed</Badge>
+        </div>
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-3">
+            <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3">
+              <label className="block text-sm font-medium text-amber-100">
+                Choose the property this request is for.
+                {propertyOptions.length ? (
+                  <select
+                    data-testid="customer-request-property-selector"
+                    value={form.property_id}
+                    onChange={(event) => applyProperty(event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                  >
+                    {propertyOptions.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {property.display_name || property.address || "Property"}{property.is_primary ? " - Primary Property" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="mt-2 text-sm text-amber-50">No saved property yet. Enter the address for this request below.</div>
+                )}
+              </label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-200">
+                Type
+                <select
+                  value={form.request_type}
+                  onChange={(event) => update("request_type", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                >
+                  {REQUEST_TYPES.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Timeline
+                <input
+                  value={form.preferred_timeline}
+                  onChange={(event) => update("preferred_timeline", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                  placeholder="This week, next month..."
+                />
+              </label>
+            </div>
+            <label className="block text-sm font-medium text-slate-200">
+              Title
+              <input
+                value={form.title}
+                onChange={(event) => update("title", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                placeholder="Leaking sink, spring maintenance, deck inspection..."
+              />
+            </label>
+            <label className="block text-sm font-medium text-slate-200">
+              Details
+              <textarea
+                value={form.description}
+                onChange={(event) => update("description", event.target.value)}
+                rows={4}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                placeholder="Describe what is happening, where it is located, and what help you need."
+              />
+            </label>
+            <label className="block text-sm font-medium text-slate-200">
+              Urgency
+              <select
+                value={form.urgency}
+                onChange={(event) => update("urgency", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              >
+                <option value="normal">Normal</option>
+                <option value="soon">Soon</option>
+                <option value="urgent">Urgent</option>
+                <option value="emergency">Emergency</option>
+              </select>
+            </label>
+          </div>
+          <div className="space-y-3 rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+            <label className="block text-sm font-medium text-slate-200">
+              Address search
+              <div className="mt-1">
+                <AddressAutocomplete
+                  value={form.address_line1}
+                  onChangeText={(value) => update("address_line1", value)}
+                  onSelect={(address) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      address_line1: address.line1 || prev.address_line1,
+                      address_line2: address.line2 || "",
+                      city: address.city || prev.city,
+                      state: address.state || prev.state,
+                      postal_code: address.postal_code || prev.postal_code,
+                    }));
+                  }}
+                  placeholder="Search the request property address..."
+                  testId="customer-request-address-autocomplete"
+                />
+              </div>
+            </label>
+            <label className="block text-sm font-medium text-slate-200">
+              Street
+              <input
+                value={form.address_line1}
+                onChange={(event) => update("address_line1", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-200">
+                City
+                <input
+                  value={form.city}
+                  onChange={(event) => update("city", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                State
+                <input
+                  value={form.state}
+                  onChange={(event) => update("state", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+            </div>
+            <label className="block text-sm font-medium text-slate-200">
+              ZIP
+              <input
+                value={form.postal_code}
+                onChange={(event) => update("postal_code", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              />
+            </label>
+          </div>
+        </div>
+        <button
+          type="submit"
+          disabled={creating || !form.title.trim() || !form.description.trim()}
+          className="mt-5 w-full rounded-xl bg-amber-300 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-44"
+        >
+          {creating ? "Saving..." : "Create Request"}
+        </button>
+      </form>
+
       <section data-testid="customer-portal-requests" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -175,150 +332,6 @@ export default function CustomerRequests({
           </div>
         </div>
       </section>
-
-      <form onSubmit={submit} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-5">
-        <h3 className="text-lg font-semibold text-white">Create a Request</h3>
-        <div className="mt-4 space-y-3">
-          <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3">
-            <label className="block text-sm font-medium text-amber-100">
-              Choose the property this request is for.
-              {propertyOptions.length ? (
-                <select
-                  data-testid="customer-request-property-selector"
-                  value={form.property_id}
-                  onChange={(event) => applyProperty(event.target.value)}
-                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                >
-                  {propertyOptions.map((property) => (
-                    <option key={property.id} value={property.id}>
-                      {property.display_name || property.address || "Property"}{property.is_primary ? " - Primary Property" : ""}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className="mt-2 text-sm text-amber-50">No saved property yet. Enter the address for this request below.</div>
-              )}
-            </label>
-          </div>
-          <label className="block text-sm font-medium text-slate-200">
-            Type
-            <select
-              value={form.request_type}
-              onChange={(event) => update("request_type", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            >
-              {REQUEST_TYPES.map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm font-medium text-slate-200">
-            Title
-            <input
-              value={form.title}
-              onChange={(event) => update("title", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              placeholder="Leaking sink, spring maintenance, deck inspection..."
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-200">
-            Details
-            <textarea
-              value={form.description}
-              onChange={(event) => update("description", event.target.value)}
-              rows={4}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              placeholder="Describe what is happening, where it is located, and what help you need."
-            />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-slate-200">
-              Urgency
-              <select
-                value={form.urgency}
-                onChange={(event) => update("urgency", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              >
-                <option value="normal">Normal</option>
-                <option value="soon">Soon</option>
-                <option value="urgent">Urgent</option>
-                <option value="emergency">Emergency</option>
-              </select>
-            </label>
-            <label className="block text-sm font-medium text-slate-200">
-              Timeline
-              <input
-                value={form.preferred_timeline}
-                onChange={(event) => update("preferred_timeline", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                placeholder="This week, next month..."
-              />
-            </label>
-          </div>
-          <label className="block text-sm font-medium text-slate-200">
-            Address search
-            <div className="mt-1">
-              <AddressAutocomplete
-                value={form.address_line1}
-                onChangeText={(value) => update("address_line1", value)}
-                onSelect={(address) => {
-                  setForm((prev) => ({
-                    ...prev,
-                    address_line1: address.line1 || prev.address_line1,
-                    address_line2: address.line2 || "",
-                    city: address.city || prev.city,
-                    state: address.state || prev.state,
-                    postal_code: address.postal_code || prev.postal_code,
-                  }));
-                }}
-                placeholder="Search the request property address..."
-                testId="customer-request-address-autocomplete"
-              />
-            </div>
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
-              Street
-              <input
-                value={form.address_line1}
-                onChange={(event) => update("address_line1", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              />
-            </label>
-            <label className="block text-sm font-medium text-slate-200">
-              City
-              <input
-                value={form.city}
-                onChange={(event) => update("city", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              />
-            </label>
-            <label className="block text-sm font-medium text-slate-200">
-              State
-              <input
-                value={form.state}
-                onChange={(event) => update("state", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              />
-            </label>
-            <label className="block text-sm font-medium text-slate-200">
-              ZIP
-              <input
-                value={form.postal_code}
-                onChange={(event) => update("postal_code", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              />
-            </label>
-          </div>
-        </div>
-        <button
-          type="submit"
-          disabled={creating || !form.title.trim() || !form.description.trim()}
-          className="mt-4 w-full rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {creating ? "Saving..." : "Create Request"}
-        </button>
-      </form>
     </div>
   );
 }
