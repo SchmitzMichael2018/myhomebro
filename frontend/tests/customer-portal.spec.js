@@ -11,7 +11,7 @@ const portalPayload = {
     bids_received: 3,
     active_agreements: 1,
     payments: 4,
-    documents: 1,
+    documents: 4,
   },
   property_profile: {
     id: 1,
@@ -24,8 +24,34 @@ const portalPayload = {
     state: "TX",
     postal_code: "78701",
     address: "123 Main St, Austin, TX, 78701",
-    documents: [],
-    photos: [],
+    documents: [
+      {
+        id: "property-document-1",
+        title: "Roof warranty",
+        type_label: "Warranty",
+        filename: "roof-warranty.pdf",
+        date: "2026-04-14T12:00:00Z",
+        url: "/files/roof-warranty.pdf",
+      },
+      {
+        id: "property-document-2",
+        title: "Kitchen permit",
+        type_label: "Permit",
+        filename: "kitchen-permit.pdf",
+        date: "2026-04-13T12:00:00Z",
+        url: "/files/kitchen-permit.pdf",
+      },
+    ],
+    photos: [
+      {
+        id: "property-photo-1",
+        title: "Before kitchen photo",
+        type_label: "Property Photo",
+        filename: "before-kitchen.jpg",
+        date: "2026-04-12T12:00:00Z",
+        url: "/files/before-kitchen.jpg",
+      },
+    ],
   },
   projects: [
     {
@@ -33,14 +59,15 @@ const portalPayload = {
       project_number: "PRJ-20260415-001",
       title: "Kitchen Remodel",
       description: "Primary project",
-      status: "active",
-      status_label: "Active",
+      status: "completed",
+      status_label: "Completed",
       address: "123 Main St, Austin, TX 78701",
       contractor_name: "Builder Co",
       agreement_id: 1,
       agreement_token: "portal-token",
       agreement_url: "/agreements/magic/portal-token",
       total_cost: "15000.00",
+      completed_at: "2026-04-17T16:00:00Z",
       milestones: [{ id: 1, title: "Demo", status: "active", amount: "5000.00" }],
       updates: [
         {
@@ -148,8 +175,10 @@ const portalPayload = {
       contractor_name: "Builder Co",
       project_class_label: "Commercial",
       status_label: "Signed",
+      status: "completed",
       is_fully_signed: true,
       updated_at: "2026-04-15T16:00:00Z",
+      completed_at: "2026-04-17T16:00:00Z",
       agreement_token: "portal-token",
       action_target: "/agreements/magic/portal-token",
       pdf_url: "/files/agreement.pdf",
@@ -157,6 +186,7 @@ const portalPayload = {
       payment_mode_label: "Escrow",
       total_cost: "15000.00",
       warranty_text: "One-year workmanship warranty for covered remodel labor.",
+      warranty_type: "Workmanship",
     },
   ],
   payments: [
@@ -244,6 +274,36 @@ const portalPayload = {
       date: "2026-04-15T16:45:00Z",
       url: "/files/scope-addendum.txt",
     },
+    {
+      id: "agreement-pdf-1",
+      title: "Kitchen Remodel agreement PDF",
+      type_label: "Agreement PDF",
+      project_title: "Kitchen Remodel",
+      filename: "agreement.pdf",
+      date: "2026-04-15T16:10:00Z",
+      url: "/files/agreement.pdf",
+      agreement_id: 1,
+    },
+    {
+      id: "invoice-pdf-1",
+      title: "Invoice INV-20260415-0001 PDF",
+      type_label: "Invoice PDF",
+      project_title: "Kitchen Remodel",
+      filename: "invoice.pdf",
+      date: "2026-04-15T16:40:00Z",
+      url: "/files/invoice.pdf",
+      agreement_id: 1,
+    },
+    {
+      id: "receipt-pdf-1",
+      title: "Receipt R-001 PDF",
+      type_label: "Receipt PDF",
+      project_title: "Kitchen Remodel",
+      filename: "receipt.pdf",
+      date: "2026-04-15T17:40:00Z",
+      url: "/files/receipt.pdf",
+      agreement_id: 1,
+    },
   ],
   notifications: [
     {
@@ -298,6 +358,28 @@ const uploadedPortalPayload = {
         date: "2026-04-16T12:00:00Z",
         url: "/files/water-heater-warranty.pdf",
       },
+    ],
+  },
+};
+
+const uploadedPhotoPortalPayload = {
+  ...portalPayload,
+  summary: {
+    ...portalPayload.summary,
+    documents: 5,
+  },
+  property_profile: {
+    ...portalPayload.property_profile,
+    photos: [
+      {
+        id: "property-photo-9",
+        title: "Kitchen after photo",
+        type_label: "Property Photo",
+        filename: "kitchen-after.jpg",
+        date: "2026-04-16T13:00:00Z",
+        url: "/files/kitchen-after.jpg",
+      },
+      ...portalPayload.property_profile.photos,
     ],
   },
 };
@@ -459,6 +541,15 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/property/photos/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(uploadedPhotoPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/notifications/101/read/") && method === "POST") {
       await route.fulfill({
         status: 200,
@@ -539,7 +630,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("4");
-  await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("1");
+  await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("4");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Payment received");
   await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("1 unread");
@@ -611,6 +702,31 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Water heater warranty");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("water-heater-warranty.pdf");
 
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your home history, organized.");
+  await expect(page.getByTestId("home-records-dashboard")).toContainText("Completed MyHomeBro projects automatically become part of your home record.");
+  await expect(page.getByTestId("home-records-timeline")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("home-records-timeline")).toContainText("Water heater warranty");
+  await expect(page.getByTestId("home-records-warranty-center")).toContainText("One-year workmanship warranty");
+  await expect(page.getByTestId("home-records-completed-projects")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("home-records-completed-projects")).toContainText("Warranty on file");
+  await expect(page.getByTestId("home-records-document-groups")).toContainText("Agreements");
+  await expect(page.getByTestId("home-records-document-groups")).toContainText("Invoices & Receipts");
+  await expect(page.getByTestId("home-records-document-groups")).toContainText("Warranties");
+  await expect(page.getByTestId("home-records-document-groups")).toContainText("Permits");
+  await expect(page.getByTestId("home-records-document-groups")).toContainText("Photos");
+  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("No service history yet");
+  await expect(page.getByTestId("home-records-request-guidance")).toContainText("Use these records when starting a new project");
+  await page.getByLabel("File type").selectOption("photo");
+  await page.getByLabel("Title").fill("Kitchen after photo");
+  await page.getByTestId("customer-property-upload-file").setInputFiles({
+    name: "kitchen-after.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("photo"),
+  });
+  await page.getByRole("button", { name: "Upload property file" }).click();
+  await expect(page.getByTestId("customer-property-profile")).toContainText("Kitchen after photo");
+
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await page.getByTestId("customer-portal-bid-accept-lead-2").click();
   await expect(page.getByTestId("customer-portal-bid-open-lead-2")).toBeVisible();
@@ -649,6 +765,10 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-bids-empty")).toContainText("No bids yet");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your home history, organized.");
+  await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No home history yet");
+  await expect(page.getByTestId("home-records-warranty-empty")).toContainText("No warranty details yet");
+  await expect(page.getByTestId("home-records-completed-empty")).toContainText("No completed projects yet");
   await expect(page.getByTestId("customer-property-files-empty")).toContainText("No property files yet");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();

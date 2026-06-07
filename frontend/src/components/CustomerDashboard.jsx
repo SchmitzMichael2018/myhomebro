@@ -617,6 +617,10 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       return (
         <CustomerPropertyProfile
           profile={portal?.property_profile || {}}
+          projects={portal?.projects || []}
+          agreements={portal?.agreements || []}
+          documents={portal?.documents || []}
+          payments={portal?.payments || []}
           saving={savingProperty}
           uploading={uploadingPropertyFile}
           uploadError={uploadError}
