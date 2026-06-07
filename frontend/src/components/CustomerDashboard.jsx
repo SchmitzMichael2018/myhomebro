@@ -439,12 +439,12 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
         <div>
           <div className="flex items-center gap-2">
             <Bell size={18} className="text-sky-200" />
-            <h2 className="text-lg font-semibold text-white">Updates</h2>
+            <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
           </div>
-          <p className="mt-1 text-sm text-slate-300">Recent project, payment, request, and property notifications.</p>
+          <p className="mt-1 text-sm text-slate-300">Recent project, payment, request, and property updates.</p>
         </div>
         <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-[0_0_16px_rgba(56,189,248,0.12)]">
-          {unreadCount} unread
+          {unreadCount > 0 ? `${unreadCount} unread` : "All caught up"}
         </span>
       </div>
 

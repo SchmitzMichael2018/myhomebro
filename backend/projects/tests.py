@@ -19179,6 +19179,96 @@ class CustomerPortalAccessTests(TestCase):
         self.assertFalse(response.data["account"]["has_usable_password"])
         self.assertTrue(response.data["account"]["portal_token"])
 
+    def test_customer_portal_hides_contractor_only_internal_drafts(self):
+        internal_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Internal Contractor Draft",
+            description="Never sent to customer.",
+            status=ProjectStatus.DRAFT,
+        )
+        Agreement.objects.create(
+            project=internal_project,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            total_cost=Decimal("1000.00"),
+            description="Internal draft agreement",
+            status=ProjectStatus.DRAFT,
+            signed_by_contractor=False,
+            signed_by_homeowner=False,
+        )
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        project_titles = [row["title"] for row in response.data["projects"]]
+        agreement_titles = [row["project_title"] for row in response.data["agreements"]]
+        self.assertNotIn("Internal Contractor Draft", project_titles)
+        self.assertNotIn("Internal Contractor Draft", agreement_titles)
+
+    def test_customer_portal_shows_customer_facing_pending_and_payment_linked_records(self):
+        sent_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Awaiting Signature Project",
+            description="Customer needs to sign.",
+            status=ProjectStatus.DRAFT,
+        )
+        sent_agreement = Agreement.objects.create(
+            project=sent_project,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            total_cost=Decimal("3000.00"),
+            description="Agreement sent for signature.",
+            status=ProjectStatus.DRAFT,
+            signed_by_contractor=True,
+            signed_by_homeowner=False,
+        )
+        payment_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Invoice Visible Draft",
+            description="Draft with customer-visible invoice.",
+            status=ProjectStatus.DRAFT,
+        )
+        payment_agreement = Agreement.objects.create(
+            project=payment_project,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            total_cost=Decimal("4000.00"),
+            description="Payment-linked agreement.",
+            status=ProjectStatus.DRAFT,
+        )
+        Invoice.objects.create(
+            agreement=payment_agreement,
+            amount=Decimal("4000.00"),
+            status=InvoiceStatus.SENT,
+        )
+        completed_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Completed Standalone Project",
+            description="Completed project without agreement.",
+            status=ProjectStatus.COMPLETED,
+        )
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        projects_by_title = {row["title"]: row for row in response.data["projects"]}
+        agreements_by_title = {row["project_title"]: row for row in response.data["agreements"]}
+
+        self.assertEqual(projects_by_title["Awaiting Signature Project"]["customer_visible_reason"], "awaiting_signature")
+        self.assertEqual(agreements_by_title["Awaiting Signature Project"]["customer_visible_reason"], "awaiting_signature")
+        self.assertEqual(projects_by_title["Invoice Visible Draft"]["customer_visible_reason"], "payment_visible")
+        self.assertEqual(agreements_by_title["Invoice Visible Draft"]["customer_visible_reason"], "payment_visible")
+        self.assertEqual(projects_by_title["Completed Standalone Project"]["customer_visible_reason"], "completed_project")
+        self.assertNotIn("Completed Standalone Project", agreements_by_title)
+        self.assertIn("Invoice Visible Draft", [row["project_title"] for row in response.data["payments"]])
+        self.assertEqual(str(sent_agreement.homeowner_access_token), agreements_by_title["Awaiting Signature Project"]["agreement_token"])
+
     def test_customer_portal_account_login_returns_email_scoped_records(self):
         User = get_user_model()
         user = User.objects.create_user(email=self.customer_email, password="CustomerPass123!")

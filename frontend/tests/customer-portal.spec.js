@@ -768,12 +768,19 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("4");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("4");
+  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent Activity");
+  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent project, payment, request, and property updates.");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Payment received");
   await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("1 unread");
+  await expect(page.getByTestId("customer-notification-101")).toContainText("Unread");
+  await expect(page.getByTestId("customer-notification-101")).toHaveClass(/border-sky-300/);
+  await expect(page.getByTestId("customer-notification-102")).not.toContainText("Unread");
+  await expect(page.getByTestId("customer-notification-102")).not.toHaveClass(/border-sky-300/);
   await page.getByTestId("customer-notification-mark-read-101").click();
-  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("0 unread");
+  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("All caught up");
   await expect(page.getByTestId("customer-notification-101")).not.toContainText("Unread");
+  await expect(page.getByTestId("customer-notification-101")).not.toHaveClass(/border-sky-300/);
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByRole("heading", { name: "Project & Service Requests" })).toBeVisible();
@@ -1058,10 +1065,9 @@ test("customer portal limits long home records, payments, and documents without 
   await page.goto("/portal/long-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
 
-  await expect(page.getByRole("heading", { name: "Recent Activity" })).toBeVisible();
+  await expect(page.getByTestId("customer-notifications-panel").getByRole("heading", { name: "Recent Activity" })).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-projects").click();
-  await expect(page.getByTestId("customer-projects-section-header")).toContainText("Projects");
-  await expect(page.getByTestId("customer-projects-section-header")).toContainText("Select a project to review milestones, payments, documents, warranties, and updates.");
+  await expect(page.getByTestId("customer-projects-section-header")).toHaveCount(0);
   await expect(page.getByTestId("customer-projects-navigation")).toContainText("Project Navigation");
   await expect(page.getByTestId("customer-project-group-needs_attention")).toContainText("Needs Attention (1)");
   await expect(page.getByTestId("customer-project-group-active")).toContainText("Active Projects (1)");
@@ -1070,6 +1076,7 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-project-card-1")).toBeVisible();
   await expect(page.getByTestId("customer-project-card-1")).toHaveClass(/border-amber-300/);
   await expect(page.getByTestId("customer-project-card-active-project")).toBeVisible();
+  await expect(page.getByTestId("customer-project-workspace")).not.toContainText("Internal Contractor Draft");
   await expect(page.getByTestId("customer-project-card-draft-project")).not.toBeVisible();
   await expect(page.getByTestId("customer-project-card-static-history-project")).not.toBeVisible();
   await page.getByTestId("customer-project-group-toggle-draft").click();

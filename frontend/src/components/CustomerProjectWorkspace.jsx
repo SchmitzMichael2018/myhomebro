@@ -465,21 +465,6 @@ export default function CustomerProjectWorkspace({
 
   return (
     <div data-testid="customer-project-workspace" className="space-y-5">
-      <section data-testid="customer-projects-section-header" className="rounded-3xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.45))] p-5 shadow-2xl shadow-slate-950/25">
-        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Projects</div>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Projects</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
-          Select a project to review milestones, payments, documents, warranties, and updates.
-        </p>
-        <ul className="mt-4 grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-5">
-          {["Milestones", "Payments", "Documents", "Warranties", "Updates"].map((item) => (
-            <li key={item} className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 font-semibold text-slate-100">
-              {item}
-            </li>
-          ))}
-        </ul>
-      </section>
-
       <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
         <aside data-testid="customer-projects-navigation" className={`${mobileWorkspaceOpen ? "hidden xl:block" : "block"} space-y-4 rounded-2xl border border-slate-700 bg-slate-950/60 p-4`}>
           <div>

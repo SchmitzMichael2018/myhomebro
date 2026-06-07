@@ -627,6 +627,9 @@ def _agreements(email: str, request=None) -> list[dict]:
     )
     rows = []
     for agreement in agreements:
+        visible_reason = _agreement_customer_visible_reason(agreement, email)
+        if not visible_reason:
+            continue
         contractor = getattr(agreement, "contractor", None)
         homeowner = getattr(agreement, "homeowner", None)
         rows.append(
@@ -656,10 +659,68 @@ def _agreements(email: str, request=None) -> list[dict]:
                 "description": _safe_text(getattr(agreement, "description", "")),
                 "warranty_type": _safe_text(getattr(agreement, "warranty_type", "")),
                 "warranty_text": _safe_text(getattr(agreement, "warranty_text_snapshot", "")),
+                "customer_visible_reason": visible_reason,
             }
         )
     rows.sort(key=lambda row: row.get("updated_at") or "", reverse=True)
     return rows
+
+
+def _agreement_customer_visible_reason(agreement, email: str) -> str:
+    normalized_email = email.lower().strip()
+    status_value = _safe_text(getattr(agreement, "status", "")).lower()
+    project = getattr(agreement, "project", None)
+
+    if ProjectIntake.objects.filter(agreement=agreement, customer_email__iexact=normalized_email).exists():
+        return "customer_request"
+    if PublicContractorLead.objects.filter(converted_agreement=agreement, email__iexact=normalized_email).exists():
+        return "bid_customer_review"
+    if getattr(agreement, "signed_by_homeowner", False):
+        return "customer_signed"
+    if getattr(agreement, "signed_by_contractor", False):
+        return "awaiting_signature"
+    if status_value in {"signed", "funded", "in_progress", "completed", "cancelled"}:
+        return f"{status_value}_agreement"
+    if Invoice.objects.filter(agreement=agreement).exists():
+        return "payment_visible"
+    if DrawRequest.objects.filter(agreement=agreement).exists():
+        return "draw_visible"
+    if Dispute.objects.filter(agreement=agreement, is_archived=False).exists():
+        return "dispute_visible"
+    if SmartNotification.objects.filter(
+        recipient_email__iexact=normalized_email,
+        agreement=agreement,
+    ).exists():
+        return "notification_visible"
+    if getattr(agreement, "pdf_file", None) and getattr(agreement.pdf_file, "name", ""):
+        return "document_visible"
+    if AgreementAttachment.objects.filter(agreement=agreement, visible_to_homeowner=True).exists():
+        return "document_visible"
+    if project is not None:
+        project_status = _safe_text(getattr(project, "status", "")).lower()
+        if project_status in {"signed", "funded", "in_progress", "completed", "cancelled"}:
+            return f"{project_status}_project"
+        if SmartNotification.objects.filter(
+            recipient_email__iexact=normalized_email,
+            project=project,
+        ).exists():
+            return "notification_visible"
+    return ""
+
+
+def _project_customer_visible_reason(project, agreement, email: str) -> str:
+    if agreement is not None:
+        return _agreement_customer_visible_reason(agreement, email)
+    normalized_email = email.lower().strip()
+    status_value = _safe_text(getattr(project, "status", "")).lower()
+    if status_value in {"signed", "funded", "in_progress", "completed", "cancelled"}:
+        return f"{status_value}_project"
+    if SmartNotification.objects.filter(
+        recipient_email__iexact=normalized_email,
+        project=project,
+    ).exists():
+        return "notification_visible"
+    return ""
 
 
 def _projects(email: str) -> list[dict]:
@@ -677,6 +738,9 @@ def _projects(email: str) -> list[dict]:
     rows = []
     for project in projects:
         agreement = agreements_by_project.get(project.id)
+        visible_reason = _project_customer_visible_reason(project, agreement, email)
+        if not visible_reason:
+            continue
         milestone_rows = []
         if agreement:
             milestone_rows = [
@@ -716,6 +780,7 @@ def _projects(email: str) -> list[dict]:
                 "milestones": milestone_rows,
                 "updates": _project_messages(agreement) if agreement else [],
                 "updated_at": _safe_dt(getattr(project, "updated_at", None) or getattr(project, "created_at", None)),
+                "customer_visible_reason": visible_reason,
             }
         )
     return rows
