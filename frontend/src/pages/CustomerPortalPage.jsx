@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ExternalLink, FileText, Mail, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileText, FolderKanban, Home, Mail, ShieldCheck, WalletCards } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
@@ -191,6 +191,7 @@ export default function CustomerPortalPage() {
   const [requestEmail, setRequestEmail] = useState("");
   const [requestingLink, setRequestingLink] = useState(false);
   const [requestSent, setRequestSent] = useState(false);
+  const [requestError, setRequestError] = useState("");
   const [loading, setLoading] = useState(Boolean(token));
   const [loadError, setLoadError] = useState("");
   const [portal, setPortal] = useState(null);
@@ -514,35 +515,119 @@ export default function CustomerPortalPage() {
   const selectedPairs = detailPairs(selected?.kind, selected?.row);
 
   if (!token) {
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-10">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
-            <div className="flex items-start gap-3">
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-indigo-700">
-                <ShieldCheck size={22} />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-950">MyHomeBro Records</h1>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                  Request a secure link to your project records. We will email the link to the address on file and
-                  open your requests, bids, agreements, payments, and documents in one place.
-                </p>
-              </div>
-            </div>
+    const valueCards = [
+      {
+        title: "Projects & Payments",
+        copy: "Review agreements, invoices, escrow activity, and milestone progress.",
+        icon: WalletCards,
+      },
+      {
+        title: "Documents & Warranties",
+        copy: "Keep agreements, receipts, photos, and warranty details organized.",
+        icon: FileText,
+      },
+      {
+        title: "Property Records",
+        copy: "Build a history of completed work, service records, and important home documents.",
+        icon: Home,
+      },
+    ];
 
-            <div className="mt-6 grid gap-4 md:grid-cols-[1.4fr,1fr]">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <div className="text-sm font-semibold text-slate-900">Send secure access link</div>
-                <div className="mt-1 text-sm text-slate-600">Use the email address tied to your project.</div>
+    return (
+      <div data-testid="customer-portal-access-page" className="min-h-screen overflow-x-hidden bg-slate-950 text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(251,191,36,0.18),transparent_30%),radial-gradient(circle_at_88%_8%,rgba(56,189,248,0.16),transparent_28%),linear-gradient(135deg,#020617_0%,#0f172a_46%,#082f49_100%)]" />
+        <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+          <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <Link to="/" className="inline-flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-200/35 bg-amber-300/15 text-sm font-black text-amber-100 shadow-[0_0_24px_rgba(251,191,36,0.14)]">
+                MHB
+              </span>
+              <span>
+                <span className="block text-base font-bold tracking-tight">MyHomeBro</span>
+                <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-amber-100/75">Customer Records</span>
+              </span>
+            </Link>
+            <nav className="flex flex-wrap gap-2">
+              <Link
+                to="/start-project"
+                data-testid="customer-portal-start-project-link"
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+              >
+                Start a Project
+              </Link>
+              <Link
+                to="/"
+                data-testid="customer-portal-back-home-link"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-950/60 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
+              >
+                <ArrowLeft size={16} />
+                Back to Home
+              </Link>
+            </nav>
+          </header>
+
+          <main className="grid flex-1 items-center gap-8 py-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(390px,0.75fr)] lg:py-16">
+            <section className="min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-200/35 bg-amber-300/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-100">
+                <ShieldCheck size={14} />
+                Secure customer workspace
+              </div>
+              <h1 className="mt-5 text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
+                Customer Portal
+              </h1>
+              <p className="mt-5 max-w-3xl text-lg leading-8 text-slate-200">
+                Access your projects, payments, documents, warranties, and property records in one secure place.
+              </p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                {[
+                  "Project updates and milestones",
+                  "Secure payment and invoice review",
+                  "Documents, warranties, and home records",
+                ].map((item) => (
+                  <div key={item} className="rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-sm font-semibold leading-6 text-slate-100">
+                    <div className="mb-3 h-1.5 w-10 rounded-full bg-amber-300" />
+                    {item}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 grid gap-4 md:grid-cols-3">
+                {valueCards.map(({ title, copy, icon: Icon }) => (
+                  <article key={title} className="rounded-3xl border border-slate-700/80 bg-slate-900/60 p-5 shadow-xl shadow-slate-950/20 backdrop-blur">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-200/35 bg-amber-300/15 text-amber-100">
+                      <Icon size={20} />
+                    </div>
+                    <h2 className="mt-4 text-base font-bold text-white">{title}</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">{copy}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/10 bg-slate-950/72 p-5 shadow-2xl shadow-slate-950/40 backdrop-blur sm:p-6" data-testid="customer-portal-access-card">
+              <div className="flex items-start gap-3">
+                <div className="rounded-2xl border border-amber-200/40 bg-amber-300/15 p-3 text-amber-100">
+                  <Mail size={22} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold tracking-tight text-white">Email me my secure access link</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Enter the email address connected to your project. We'll send a secure link to access your customer records.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
                 <div className="mt-4 flex flex-col gap-3 sm:flex-row">
                   <input
                     data-testid="customer-portal-email-input"
                     type="email"
                     value={requestEmail}
-                    onChange={(e) => setRequestEmail(e.target.value)}
+                    onChange={(e) => {
+                      setRequestEmail(e.target.value);
+                      setRequestError("");
+                    }}
                     placeholder="you@example.com"
-                    className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-500"
+                    className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 text-base text-white outline-none placeholder:text-slate-500 focus:border-amber-300"
                   />
                   <button
                     type="button"
@@ -551,48 +636,60 @@ export default function CustomerPortalPage() {
                     onClick={async () => {
                       const email = requestEmail.trim();
                       if (!email) {
-                        toast.error("Please enter the email address on your project.");
+                        const message = "Please enter the email address connected to your project.";
+                        setRequestError(message);
+                        toast.error(message);
                         return;
                       }
                       setRequestingLink(true);
+                      setRequestError("");
                       try {
                         await api.post("/projects/customer-portal/request-link/", { email });
                         setRequestSent(true);
                         toast.success("If we found your records, we sent a secure link.");
                       } catch (error) {
-                        toast.error(error?.response?.data?.detail || "We could not send the link right now.");
+                        const message = error?.response?.data?.detail || "We could not send the link right now.";
+                        setRequestError(message);
+                        toast.error(message);
                       } finally {
                         setRequestingLink(false);
                       }
                     }}
-                    className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                    className="inline-flex min-h-12 items-center justify-center rounded-xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950 shadow-[0_12px_30px_rgba(251,191,36,0.2)] hover:bg-amber-200 disabled:opacity-60"
                   >
-                    {requestingLink ? "Sending..." : "Email me secure link"}
+                    {requestingLink ? "Sending..." : "Send Secure Link"}
                   </button>
                 </div>
                 {requestSent ? (
-                  <div data-testid="customer-portal-link-sent" className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  <div data-testid="customer-portal-link-sent" className="mt-4 rounded-xl border border-emerald-300/35 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
                     If we found a matching project record, a secure portal link is on the way.
+                  </div>
+                ) : null}
+                {requestError ? (
+                  <div data-testid="customer-portal-link-error" className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">
+                    {requestError}
                   </div>
                 ) : null}
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <div className="text-sm font-semibold text-slate-900">What you can review</div>
-                <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                  <li className="flex items-center gap-2"><FileText size={15} /> Requests, bids, agreements, payments, and documents</li>
-                  <li className="flex items-center gap-2"><Mail size={15} /> Secure link delivered to your email</li>
-                  <li className="flex items-center gap-2"><ShieldCheck size={15} /> Only your records are shown</li>
-                </ul>
+              <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/55 p-4">
+                <div className="flex items-start gap-3 text-sm leading-6 text-slate-300">
+                  <ShieldCheck className="mt-0.5 shrink-0 text-amber-100" size={18} />
+                  <p>Only records connected to your email will be shown.</p>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="mt-6 flex items-center gap-3 text-sm text-slate-600">
-            <Link to="/" className="font-semibold text-indigo-700 hover:text-indigo-900">Back to home</Link>
-            <span className="text-slate-300">|</span>
-            <Link to="/start-project" className="font-semibold text-indigo-700 hover:text-indigo-900">Start a project</Link>
-          </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <Link to="/start-project" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
+                  <FolderKanban size={16} />
+                  Start a Project
+                </Link>
+                <Link to="/" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-950/70 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">
+                  Back to Home
+                </Link>
+              </div>
+            </section>
+          </main>
         </div>
       </div>
     );

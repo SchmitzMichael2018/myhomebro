@@ -615,7 +615,19 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("landing-customer-portal-button").click();
   await expect(page).toHaveURL(/\/portal$/);
-  await expect(page.getByText("MyHomeBro Records")).toBeVisible();
+  await expect(page.getByTestId("customer-portal-access-page")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
+  await expect(page.getByText("Access your projects, payments, documents, warranties, and property records in one secure place.")).toBeVisible();
+  await expect(page.getByText("Project updates and milestones")).toBeVisible();
+  await expect(page.getByText("Secure payment and invoice review")).toBeVisible();
+  await expect(page.getByText("Documents, warranties, and home records")).toBeVisible();
+  await expect(page.getByTestId("customer-portal-access-card")).toContainText("Email me my secure access link");
+  await expect(page.getByTestId("customer-portal-access-card")).toContainText("Only records connected to your email will be shown.");
+  await expect(page.getByText("Projects & Payments")).toBeVisible();
+  await expect(page.getByText("Documents & Warranties")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Property Records" })).toBeVisible();
+  await expect(page.getByTestId("customer-portal-start-project-link")).toHaveAttribute("href", "/start-project");
+  await expect(page.getByTestId("customer-portal-back-home-link")).toHaveAttribute("href", "/");
   await expect(page.getByTestId("customer-portal-email-input")).toBeVisible();
 
   await page.getByTestId("customer-portal-email-input").fill("customer@example.com");
@@ -734,6 +746,29 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("We could not open that portal link"))).toHaveLength(0);
+});
+
+test("customer portal access page handles errors and mobile layout", async ({ page }) => {
+  await page.route("**/api/projects/customer-portal/request-link/", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Email service is unavailable." }),
+    });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/portal", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-portal-access-page")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(2);
+
+  await page.getByTestId("customer-portal-send-link-button").click();
+  await expect(page.getByTestId("customer-portal-link-error")).toContainText("Please enter the email address connected to your project.");
+  await page.getByTestId("customer-portal-email-input").fill("customer@example.com");
+  await page.getByTestId("customer-portal-send-link-button").click();
+  await expect(page.getByTestId("customer-portal-link-error")).toContainText("Email service is unavailable.");
 });
 
 test("customer portal shows friendly empty states", async ({ page }) => {
