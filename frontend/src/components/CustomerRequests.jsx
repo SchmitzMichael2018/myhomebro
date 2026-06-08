@@ -37,6 +37,7 @@ export default function CustomerRequests({
   acceptingBidId = "",
   creating = false,
 }) {
+  const [pendingAwardBid, setPendingAwardBid] = useState(null);
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const [form, setForm] = useState({
     property_id: propertyProfile?.id || "",
@@ -313,11 +314,11 @@ export default function CustomerRequests({
                         <button
                           type="button"
                           data-testid={`customer-portal-bid-accept-${bid.id}`}
-                          onClick={() => onAcceptBid?.(bid)}
+                          onClick={() => setPendingAwardBid(bid)}
                           disabled={acceptingBidId === bid.id}
                           className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-300 disabled:opacity-50"
                       >
-                          {acceptingBidId === bid.id ? "Accepting..." : "Accept"}
+                          {acceptingBidId === bid.id ? "Creating draft..." : "Award Bid"}
                         </button>
                       ) : null}
                     </div>
@@ -332,6 +333,53 @@ export default function CustomerRequests({
           </div>
         </div>
       </section>
+
+      {pendingAwardBid ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="customer-bid-award-title"
+          data-testid="customer-portal-bid-award-modal"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-amber-200/30 bg-slate-950 p-6 shadow-2xl">
+            <div className="text-xs font-bold uppercase tracking-[0.22em] text-amber-200">Award contractor</div>
+            <h3 id="customer-bid-award-title" className="mt-2 text-xl font-extrabold text-white">
+              Select this contractor?
+            </h3>
+            <p className="mt-3 text-sm leading-6 text-slate-200">
+              Selecting this contractor will create a project agreement draft.
+            </p>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+              <div className="font-semibold text-white">{pendingAwardBid.contractor_name || "Selected contractor"}</div>
+              <div>{pendingAwardBid.project_title || "Marketplace request"}</div>
+              <div>{pendingAwardBid.bid_amount_label || "Bid amount pending"}</div>
+            </div>
+            <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingAwardBid(null)}
+                className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="customer-portal-bid-award-confirm"
+                disabled={acceptingBidId === pendingAwardBid.id}
+                onClick={async () => {
+                  const bid = pendingAwardBid;
+                  setPendingAwardBid(null);
+                  await onAcceptBid?.(bid);
+                }}
+                className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-60"
+              >
+                {acceptingBidId === pendingAwardBid.id ? "Creating draft..." : "Create agreement draft"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

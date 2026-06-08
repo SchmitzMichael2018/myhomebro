@@ -1100,7 +1100,7 @@ export default function CustomerPortalPage() {
                             disabled={acceptingBidId === bid.id}
                             className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                           >
-                            {acceptingBidId === bid.id ? "Accepting..." : "Accept Bid"}
+                            {acceptingBidId === bid.id ? "Creating draft..." : "Award Bid"}
                           </button>
                         ) : (
                           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">

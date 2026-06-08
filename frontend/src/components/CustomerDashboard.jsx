@@ -837,9 +837,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
                 `/projects/customer-portal/${encodeURIComponent(token)}/bids/${encodeURIComponent(bidKey)}/accept/`
               );
               if (data?.portal) onPortalUpdate?.(data.portal);
-              toast.success(data?.created ? "Bid accepted." : "Bid already linked.");
+              toast.success(data?.created ? "Agreement draft created from awarded marketplace bid." : "Agreement draft already exists for this awarded bid.");
             } catch (error) {
-              toast.error(error?.response?.data?.detail || "Could not accept that bid.");
+              toast.error(error?.response?.data?.detail || "Could not award that bid.");
             } finally {
               setAcceptingBidId("");
             }

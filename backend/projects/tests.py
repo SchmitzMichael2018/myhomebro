@@ -19807,6 +19807,22 @@ class CustomerPortalAccessTests(TestCase):
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_comparison_accepts_bid_and_reuses_agreement(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.comparison_lead_one.ai_analysis = {
+            "suggested_description": "Complete the awarded office fitout scope.",
+            "milestones": [
+                {
+                    "title": "Planning & Materials",
+                    "description": "Confirm layout, materials, and work access.",
+                    "amount": "8000.00",
+                },
+                {
+                    "title": "Buildout Completion",
+                    "description": "Complete installation, punch list, and walkthrough.",
+                    "amount": "14000.00",
+                },
+            ],
+        }
+        self.comparison_lead_one.save(update_fields=["ai_analysis", "updated_at"])
         self.contractor.phone = "+12105550001"
         self.contractor.save(update_fields=["phone"])
         self.other_contractor.phone = "+12105550003"
@@ -19848,7 +19864,19 @@ class CustomerPortalAccessTests(TestCase):
         agreement_id = response.data["agreement_id"]
         self.assertIsNotNone(agreement_id)
         self.assertTrue(response.data["detail_url"].startswith("/agreements/magic/"))
+        self.assertEqual(response.data["award_status"], "agreement_draft_created")
+        self.assertEqual(response.data["banner"], "Agreement draft created from awarded marketplace bid.")
         self.assertTrue(response.data["portal"]["summary"]["active_agreements"] >= 2)
+
+        agreement = Agreement.objects.get(pk=agreement_id)
+        self.assertEqual(agreement.status, "draft")
+        self.assertEqual(agreement.step_status, "marketplace_award_draft")
+        self.assertEqual(agreement.total_cost, Decimal("22000.00"))
+        self.assertEqual(agreement.collaboration_summary_snapshot["source"], "marketplace_award")
+        self.assertEqual(agreement.source_lead_id, self.comparison_lead_one.id)
+        milestone_titles = list(agreement.milestones.order_by("order").values_list("title", flat=True))
+        self.assertEqual(milestone_titles, ["Planning & Materials", "Buildout Completion"])
+        self.assertEqual(agreement.milestones.count(), 2)
 
         portal = response.data["portal"]
         accepted_bid = next(row for row in portal["bids"] if row["bid_id"] == self.comparison_lead_one.id)
@@ -19938,6 +19966,9 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(repeat.status_code, 200)
         self.assertFalse(repeat.data["created"])
         self.assertEqual(repeat.data["agreement_id"], response.data["agreement_id"])
+        blocked_competitor = self.client.post(f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_two.id}/accept/")
+        self.assertEqual(blocked_competitor.status_code, 400)
+        self.assertIn("no longer available", blocked_competitor.data["detail"])
         self.assertEqual(
             Notification.objects.filter(
                 contractor=self.contractor,
@@ -20095,6 +20126,20 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn("your own request", response.data["detail"])
+
+    def test_customer_portal_bid_accept_creates_default_completion_milestone_without_bid_plan(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        agreement = Agreement.objects.get(pk=response.data["agreement_id"])
+        milestone = agreement.milestones.get()
+        self.assertEqual(milestone.title, "Project Completion")
+        self.assertEqual(milestone.amount, Decimal("22000.00"))
+        self.assertIn("Commercial office fitout bid", milestone.description)
 
     def test_customer_portal_rejects_invalid_token(self):
         response = self.client.get("/api/projects/customer-portal/not-a-valid-token/")

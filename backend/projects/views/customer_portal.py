@@ -36,6 +36,7 @@ from projects.models import (
 )
 from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
+from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
 from projects.models_project_intake import ProjectIntake
 from projects.serializers.base import AgreementDetailPublicSerializer
@@ -1941,6 +1942,89 @@ def _find_customer_bid_record(*, email: str, bid_key: str):
     raise signing.BadSignature("Invalid bid key.")
 
 
+def _source_intake_from_bid_lead(lead):
+    source_intake = getattr(lead, "source_intake", None)
+    if source_intake is not None:
+        return source_intake
+    analysis = getattr(lead, "ai_analysis", None) or {}
+    source_intake_id = analysis.get("source_intake_id")
+    if not source_intake_id:
+        return None
+    return ProjectIntake.objects.filter(pk=source_intake_id).first()
+
+
+def _awardable_bid_group(*, email: str, lead, source_intake) -> tuple[str, list[PublicContractorLead]]:
+    _, accepted_address, accepted_class = _request_identity_from_lead(lead)
+    accepted_key = _comparison_key(email, accepted_address, accepted_class)
+    candidates = list(
+        PublicContractorLead.objects.select_related("source_intake", "converted_agreement").filter(
+            Q(email__iexact=email) | Q(source_intake__customer_email__iexact=email)
+        ).exclude(pk=lead.pk)
+    )
+    if source_intake is not None:
+        candidates.extend(
+            PublicContractorLead.objects.select_related("source_intake", "converted_agreement").filter(
+                ai_analysis__source_intake_id=getattr(source_intake, "id", None)
+            ).exclude(pk=lead.pk)
+        )
+    seen = set()
+    grouped = []
+    for competitor in candidates:
+        if competitor.pk in seen:
+            continue
+        seen.add(competitor.pk)
+        _, competitor_address, competitor_class = _request_identity_from_lead(competitor)
+        competitor_key = _comparison_key(email, competitor_address, competitor_class)
+        competitor_source_intake = _source_intake_from_bid_lead(competitor)
+        if competitor_key == accepted_key or (
+            source_intake is not None
+            and competitor_source_intake is not None
+            and competitor_source_intake.id == source_intake.id
+        ):
+            grouped.append(competitor)
+    return accepted_key, grouped
+
+
+def _sync_marketplace_award_operational_statuses(*, lead, source_intake, agreement, competing_leads):
+    contractor = getattr(lead, "contractor", None)
+    analysis = getattr(lead, "ai_analysis", None) or {}
+    if source_intake is not None:
+        selected_opportunities = ContractorOpportunity.objects.filter(intake_request=source_intake)
+        if contractor is not None:
+            selected_opportunities.filter(directory_entry__claimed_by_contractor=contractor).update(
+                status=ContractorOpportunity.STATUS_CONVERTED,
+                accepted_at=timezone.now(),
+                accepted_by_contractor=contractor,
+                converted_customer=getattr(agreement, "homeowner", None),
+                converted_agreement=agreement,
+                updated_at=timezone.now(),
+            )
+        selected_opportunities.exclude(converted_agreement=agreement).exclude(
+            status__in=[ContractorOpportunity.STATUS_DECLINED, ContractorOpportunity.STATUS_EXPIRED]
+        ).update(status=ContractorOpportunity.STATUS_EXPIRED, updated_at=timezone.now())
+
+        invite_id = analysis.get("marketplace_invite_id")
+        if invite_id:
+            ContractorDiscoveryInvite.objects.filter(pk=invite_id, public_intake=source_intake).update(
+                status=ContractorDiscoveryInvite.STATUS_RESPONDED,
+                response_at=timezone.now(),
+                agreement=agreement,
+                updated_at=timezone.now(),
+            )
+        ContractorDiscoveryInvite.objects.filter(public_intake=source_intake).exclude(pk=invite_id).exclude(
+            status__in=[
+                ContractorDiscoveryInvite.STATUS_DECLINED,
+                ContractorDiscoveryInvite.STATUS_EXPIRED,
+                ContractorDiscoveryInvite.STATUS_OPTED_OUT,
+            ]
+        ).update(status=ContractorDiscoveryInvite.STATUS_EXPIRED, updated_at=timezone.now())
+
+    for competitor in competing_leads:
+        if competitor.status not in {PublicContractorLead.STATUS_ACCEPTED, PublicContractorLead.STATUS_REJECTED}:
+            competitor.status = PublicContractorLead.STATUS_CLOSED
+            competitor.save(update_fields=["status", "updated_at"])
+
+
 class CustomerPortalRequestLinkSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
@@ -2579,30 +2663,49 @@ class CustomerPortalBidAcceptView(APIView):
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
         lead = _find_customer_bid_record(email=email, bid_key=bid_key)
-        source_intake = getattr(lead, "source_intake", None)
+        source_intake = _source_intake_from_bid_lead(lead)
         if _safe_text(getattr(lead, "email", "")).lower() != email and _safe_text(getattr(source_intake, "customer_email", "")).lower() != email:
             return Response({"detail": "You can only choose bids for your own request."}, status=status.HTTP_403_FORBIDDEN)
         with transaction.atomic():
+            lead = (
+                PublicContractorLead.objects.select_for_update()
+                .select_related("contractor", "contractor__user", "converted_homeowner", "converted_agreement")
+                .get(pk=lead.pk)
+            )
+            source_intake = _source_intake_from_bid_lead(lead)
+            if _safe_text(getattr(lead, "email", "")).lower() != email and _safe_text(getattr(source_intake, "customer_email", "")).lower() != email:
+                return Response({"detail": "You can only choose bids for your own request."}, status=status.HTTP_403_FORBIDDEN)
+
+            already_linked = bool(getattr(lead, "converted_agreement_id", None))
+            blocked_statuses = {
+                PublicContractorLead.STATUS_REJECTED,
+                PublicContractorLead.STATUS_CLOSED,
+                PublicContractorLead.STATUS_ARCHIVED,
+            }
+            if not already_linked and lead.status in blocked_statuses:
+                return Response({"detail": "This bid is no longer available for award."}, status=status.HTTP_400_BAD_REQUEST)
+            contractor = getattr(lead, "contractor", None)
+            contractor_user = getattr(contractor, "user", None)
+            if not already_linked and contractor_user is not None and not getattr(contractor_user, "is_active", True):
+                return Response({"detail": "This contractor is not currently eligible for new marketplace awards."}, status=status.HTTP_400_BAD_REQUEST)
+
+            _, competing_group = _awardable_bid_group(email=email, lead=lead, source_intake=source_intake)
+            already_awarded = [
+                competitor for competitor in competing_group
+                if getattr(competitor, "converted_agreement_id", None)
+                or competitor.status == PublicContractorLead.STATUS_ACCEPTED
+            ]
+            if not already_linked and already_awarded:
+                return Response({"detail": "This marketplace request has already been awarded."}, status=status.HTTP_409_CONFLICT)
+
             homeowner = getattr(lead, "converted_homeowner", None)
             agreement, created = promote_public_lead_to_agreement(lead=lead, homeowner=homeowner)
-            _, accepted_address, accepted_class = _request_identity_from_lead(lead)
-
-            accepted_key = _comparison_key(email, accepted_address, accepted_class)
-            competing_bids = list(
-                PublicContractorLead.objects.select_related("source_intake", "converted_agreement").filter(
-                    Q(email__iexact=email) | Q(source_intake__customer_email__iexact=email)
-                ).exclude(pk=lead.pk)
+            _sync_marketplace_award_operational_statuses(
+                lead=lead,
+                source_intake=source_intake,
+                agreement=agreement,
+                competing_leads=competing_group,
             )
-            competing_group = []
-            for competitor in competing_bids:
-                _, competitor_address, competitor_class = _request_identity_from_lead(competitor)
-                competitor_key = _comparison_key(email, competitor_address, competitor_class)
-                if competitor_key != accepted_key:
-                    continue
-                if competitor.status not in {PublicContractorLead.STATUS_ACCEPTED, PublicContractorLead.STATUS_REJECTED}:
-                    competitor.status = PublicContractorLead.STATUS_CLOSED
-                    competitor.save(update_fields=["status", "updated_at"])
-                competing_group.append(competitor)
 
             create_bid_outcome_notifications(
                 accepted_lead=lead,
@@ -2614,6 +2717,8 @@ class CustomerPortalBidAcceptView(APIView):
             {
                 "ok": True,
                 "created": created,
+                "award_status": "agreement_draft_created",
+                "banner": "Agreement draft created from awarded marketplace bid.",
                 "agreement_id": getattr(agreement, "id", None),
                 "project_id": getattr(getattr(agreement, "project", None), "id", None),
                 "detail_url": f"/agreements/magic/{agreement.homeowner_access_token}",

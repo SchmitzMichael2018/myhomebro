@@ -1052,7 +1052,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-property-profile")).toContainText("Kitchen after photo");
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("customer-portal-bid-accept-lead-2")).toContainText("Award Bid");
   await page.getByTestId("customer-portal-bid-accept-lead-2").click();
+  await expect(page.getByTestId("customer-portal-bid-award-modal")).toContainText("Selecting this contractor will create a project agreement draft.");
+  await page.getByTestId("customer-portal-bid-award-confirm").click();
   await expect(page.getByTestId("customer-portal-bid-open-lead-2")).toBeVisible();
 
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });

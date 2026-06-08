@@ -711,6 +711,9 @@ export default function AgreementWizard() {
   const isOpportunityDraftAgreement = String(
     agreement?.collaboration_summary_snapshot?.source || ""
   ).toLowerCase() === "contractor_opportunity";
+  const isMarketplaceAwardDraftAgreement = String(
+    agreement?.collaboration_summary_snapshot?.source || ""
+  ).toLowerCase() === "marketplace_award";
   const showOpportunityDraftBanner = Boolean(
     isOpportunityDraftAgreement &&
       !activationSummary?.guide_sections?.draft_agreement?.dismissed &&
@@ -2184,6 +2187,16 @@ export default function AgreementWizard() {
           >
             Dismiss
           </button>
+        </div>
+      ) : null}
+
+      {isMarketplaceAwardDraftAgreement ? (
+        <div
+          data-testid="marketplace-award-draft-banner"
+          className="mt-4 rounded-xl border border-amber-200/40 bg-amber-300/15 px-4 py-3 text-sm text-amber-50"
+        >
+          <div className="font-semibold">Agreement draft created from awarded marketplace bid.</div>
+          <div className="mt-1">Review the scope, price, milestones, and customer details before sending.</div>
         </div>
       ) : null}
 
