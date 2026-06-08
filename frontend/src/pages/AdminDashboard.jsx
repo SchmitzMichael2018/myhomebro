@@ -792,6 +792,7 @@ export default function AdminDashboard() {
                       <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goToDisputes("active")} />
                       <ActionItem icon="🛟" title="User Tools" desc="Send password reset emails for user accounts." onClick={() => goTo("support")} />
                       <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
+                      <ActionItem icon="💸" title="Escrow Reimbursements" desc="Review approved reimbursement release requests." onClick={() => navigate("/app/admin/reimbursements")} />
                       <ActionItem
                         icon="🗺️"
                         title="Marketplace"

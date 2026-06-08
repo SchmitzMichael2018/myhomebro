@@ -123,6 +123,8 @@ def validate_reimbursement(expense: ExpenseRequest, *, require_receipt: bool = T
         return ReimbursementValidation(False, "Escrow must be funded before reimbursement requests.", ledger)
     if agreement_has_escrow_hold(agreement):
         return ReimbursementValidation(False, "Escrow is on hold because a dispute is open.", ledger)
+    if getattr(expense, "status", "") == ExpenseRequest.Status.HELD:
+        return ReimbursementValidation(False, "This reimbursement is on admin hold.", ledger)
     if money(expense.amount) <= Decimal("0.00"):
         return ReimbursementValidation(False, "Amount must be greater than zero.", ledger)
     if require_receipt:
@@ -132,6 +134,17 @@ def validate_reimbursement(expense: ExpenseRequest, *, require_receipt: bool = T
     if money(expense.amount) > money(ledger.get("available")):
         return ReimbursementValidation(False, "Requested amount exceeds available escrow.", ledger)
     return ReimbursementValidation(True, "", ledger)
+
+
+def _release_validation(locked: ExpenseRequest) -> ReimbursementValidation:
+    if locked.status == ExpenseRequest.Status.HELD:
+        return ReimbursementValidation(False, "This reimbursement is on admin hold.", escrow_ledger(locked.agreement, exclude_reimbursement_id=locked.id))
+    validation = validate_reimbursement(locked, require_receipt=False)
+    if not validation.ok:
+        if "exceeds available escrow" in validation.detail:
+            return ReimbursementValidation(False, "Current escrow availability is insufficient.", validation.ledger)
+        return validation
+    return validation
 
 
 @transaction.atomic
@@ -197,7 +210,7 @@ def mark_reimbursement_released(expense: ExpenseRequest, *, stripe_transfer_id: 
         return locked
     if locked.status not in {ExpenseRequest.Status.PENDING_RELEASE, ExpenseRequest.Status.APPROVED, ExpenseRequest.Status.HOMEOWNER_ACCEPTED}:
         raise ValueError("Only approved reimbursements can be released.")
-    validation = validate_reimbursement(locked, require_receipt=False)
+    validation = _release_validation(locked)
     if not validation.ok:
         raise ValueError(validation.detail)
     locked.status = ExpenseRequest.Status.RELEASED
@@ -206,4 +219,69 @@ def mark_reimbursement_released(expense: ExpenseRequest, *, stripe_transfer_id: 
     if stripe_transfer_id:
         locked.stripe_transfer_id = stripe_transfer_id
     locked.save(update_fields=["status", "released_at", "paid_at", "stripe_transfer_id", "updated_at"])
+    return locked
+
+
+@transaction.atomic
+def record_manual_reimbursement_release(expense: ExpenseRequest, *, reviewed_by=None, stripe_transfer_id: str = "") -> ExpenseRequest:
+    locked = ExpenseRequest.objects.select_for_update().select_related("agreement").get(pk=expense.pk)
+    if locked.status == ExpenseRequest.Status.RELEASED or locked.released_at:
+        raise ValueError("This reimbursement has already been released.")
+    if locked.status == ExpenseRequest.Status.HELD:
+        raise ValueError("This reimbursement is on admin hold.")
+    if locked.status not in {ExpenseRequest.Status.PENDING_RELEASE, ExpenseRequest.Status.APPROVED, ExpenseRequest.Status.HOMEOWNER_ACCEPTED}:
+        raise ValueError("Only approved reimbursements can be released.")
+    validation = _release_validation(locked)
+    if not validation.ok:
+        locked.release_error = validation.detail
+        locked.save(update_fields=["release_error", "updated_at"])
+        raise ValueError(validation.detail)
+    locked.status = ExpenseRequest.Status.RELEASED
+    locked.released_at = timezone.now()
+    locked.paid_at = locked.released_at
+    locked.reviewed_by = reviewed_by or locked.reviewed_by
+    locked.release_error = ""
+    if stripe_transfer_id:
+        locked.stripe_transfer_id = stripe_transfer_id
+    locked.save(update_fields=["status", "released_at", "paid_at", "reviewed_by", "release_error", "stripe_transfer_id", "updated_at"])
+    return locked
+
+
+@transaction.atomic
+def place_reimbursement_hold(expense: ExpenseRequest, *, reviewed_by=None, reason: str = "") -> ExpenseRequest:
+    locked = ExpenseRequest.objects.select_for_update().get(pk=expense.pk)
+    if locked.status == ExpenseRequest.Status.RELEASED or locked.released_at:
+        raise ValueError("Released reimbursements cannot be placed on hold.")
+    if locked.request_kind != ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT:
+        raise ValueError("Only escrow reimbursements can be placed on hold.")
+    locked.status = ExpenseRequest.Status.HELD
+    locked.held_at = timezone.now()
+    locked.held_by = reviewed_by
+    locked.hold_reason = (reason or "").strip()
+    locked.release_error = ""
+    locked.save(update_fields=["status", "held_at", "held_by", "hold_reason", "release_error", "updated_at"])
+    return locked
+
+
+@transaction.atomic
+def clear_reimbursement_hold(expense: ExpenseRequest, *, reviewed_by=None) -> ExpenseRequest:
+    locked = ExpenseRequest.objects.select_for_update().get(pk=expense.pk)
+    if locked.status != ExpenseRequest.Status.HELD:
+        raise ValueError("This reimbursement is not on hold.")
+    locked.status = ExpenseRequest.Status.PENDING_RELEASE if locked.approved_at else ExpenseRequest.Status.SUBMITTED
+    locked.hold_cleared_at = timezone.now()
+    locked.hold_cleared_by = reviewed_by
+    locked.save(update_fields=["status", "hold_cleared_at", "hold_cleared_by", "updated_at"])
+    return locked
+
+
+@transaction.atomic
+def clear_reimbursement_release_error(expense: ExpenseRequest) -> ExpenseRequest:
+    locked = ExpenseRequest.objects.select_for_update().get(pk=expense.pk)
+    if locked.status == ExpenseRequest.Status.RELEASED or locked.released_at:
+        raise ValueError("Released reimbursements do not need retry.")
+    locked.release_error = ""
+    if locked.approved_at and locked.status not in {ExpenseRequest.Status.HELD, ExpenseRequest.Status.PENDING_RELEASE}:
+        locked.status = ExpenseRequest.Status.PENDING_RELEASE
+    locked.save(update_fields=["release_error", "status", "updated_at"])
     return locked

@@ -25,6 +25,7 @@ class ExpenseRequest(models.Model):
         APPROVED = "approved", "Approved"
         DENIED = "denied", "Denied"
         CANCELLED = "cancelled", "Cancelled"
+        HELD = "held", "Held"
         PENDING_RELEASE = "pending_release", "Pending Release"
         RELEASED = "released", "Released"
         HOMEOWNER_ACCEPTED = "homeowner_accepted", "Customer Accepted"
@@ -110,6 +111,23 @@ class ExpenseRequest(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True)
     released_at = models.DateTimeField(null=True, blank=True)
     denial_reason = models.TextField(blank=True, default="")
+    held_at = models.DateTimeField(null=True, blank=True)
+    hold_cleared_at = models.DateTimeField(null=True, blank=True)
+    hold_reason = models.TextField(blank=True, default="")
+    held_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="held_expense_requests",
+    )
+    hold_cleared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cleared_expense_request_holds",
+    )
     available_escrow_at_approval = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     stripe_transfer_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     escrow_source_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
