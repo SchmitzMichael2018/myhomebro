@@ -101,6 +101,118 @@ async function mockAdminDashboard(page) {
             view: 'agreements',
           },
         ],
+        operations: {
+          marketplace: {
+            kpis: {
+              ready_cities: 3,
+              enabled_cities: 2,
+              verification_queue: 4,
+              saved_request_backlog: 5,
+              active_opportunities: 7,
+              open_bids: 9,
+            },
+            routing_queue: [
+              {
+                id: 501,
+                title: 'Kitchen flooring request',
+                city: 'Austin',
+                state: 'TX',
+                customer: 'Casey Prospect',
+                submitted_at: '2026-03-25T12:00:00Z',
+              },
+            ],
+            health: {
+              average_bids_per_request: 2.4,
+              requests_with_zero_bids: 1,
+              awarded_requests: 3,
+              agreement_conversion_rate: 42.8,
+            },
+          },
+          payments: {
+            kpis: {
+              escrow_funded_today: '1200.00',
+              pending_reimbursement_releases: 2,
+              held_reimbursements: 1,
+              failed_releases: 1,
+            },
+            pending_releases: [
+              {
+                id: 701,
+                project: 'Kitchen Remodel',
+                contractor: 'Summit Renovations',
+                customer: 'Casey Prospect',
+                amount: '125.00',
+                status: 'pending_release',
+              },
+            ],
+            held: [],
+            failed: [
+              {
+                id: 702,
+                project: 'Roof Repair',
+                contractor: 'Lakefront Builders',
+                customer: 'Morgan Owner',
+                amount: '90.00',
+                status: 'approved',
+                release_error: 'Stripe transfer failed',
+              },
+            ],
+          },
+          maintenance: {
+            kpis: {
+              active_contracts: 4,
+              upcoming_work_orders: 3,
+              overdue_work_orders: 1,
+              completed_this_month: 8,
+            },
+            overdue: [
+              {
+                id: 801,
+                title: 'Quarterly filter service',
+                contractor: 'Summit Renovations',
+                customer: 'Casey Prospect',
+                scheduled_date: '2026-03-20',
+              },
+            ],
+            upcoming: [],
+            recently_completed: [],
+          },
+          disputes: {
+            kpis: {
+              open_disputes: 1,
+              escalated_disputes: 1,
+              awaiting_review: 1,
+            },
+            awaiting_admin_review: [
+              {
+                id: 901,
+                project: 'Kitchen Remodel',
+                contractor: 'Summit Renovations',
+                status: 'under_review',
+                age_days: 3,
+              },
+            ],
+            awaiting_response: [],
+            open: [],
+            resolved_recently: [],
+          },
+          users: {
+            kpis: {
+              new_contractors_awaiting_activation: 6,
+              contractors_pending_stripe: 3,
+              contractors_pending_verification: 4,
+              new_homeowners: 5,
+            },
+            activation_funnel: {
+              registered: 12,
+              profile_complete: 8,
+              stripe_ready: 5,
+              verified: 4,
+              marketplace_eligible: 3,
+            },
+            contractor_activation: [],
+          },
+        },
       }),
     });
   });
@@ -448,6 +560,7 @@ async function mockAdminDashboard(page) {
 }
 
 test('owner admin dashboard smoke renders overview and core admin views', async ({ page }) => {
+  test.setTimeout(60000);
   await mockAdminDashboard(page);
 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
@@ -476,6 +589,17 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-stat-open-disputes')).toContainText('1');
   await expect(page.getByTestId('admin-growth-insights')).toBeVisible();
   await expect(page.getByTestId('admin-revenue-summary')).toBeVisible();
+  await expect(page.getByTestId('admin-operations-center')).toBeVisible();
+  await expect(page.getByTestId('admin-ops-marketplace-backlog')).toContainText('5');
+  await expect(page.getByTestId('admin-ops-reimbursements')).toContainText('2');
+  await expect(page.getByTestId('admin-ops-maintenance')).toContainText('1');
+  await expect(page.getByTestId('admin-ops-disputes')).toContainText('1');
+  await expect(page.getByTestId('admin-ops-activation')).toContainText('6');
+  await expect(page.getByTestId('admin-ops-routing-queue')).toContainText('Kitchen flooring request');
+  await expect(page.getByTestId('admin-ops-reimbursement-queue')).toContainText('Stripe transfer failed');
+  await expect(page.getByTestId('admin-ops-maintenance-queue')).toContainText('Quarterly filter service');
+  await expect(page.getByTestId('admin-ops-dispute-queue')).toContainText('Kitchen Remodel');
+  await expect(page.getByTestId('admin-ops-activation-funnel')).toContainText('Eligible');
 
   await page.goto('/app/admin?view=support', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('button', { name: 'User Tools', exact: true })).toHaveClass(/bg-white/);

@@ -100,7 +100,7 @@ from projects.models_attachments import AgreementAttachment
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
-from projects.models_contractor_discovery import ContractorDirectoryListing
+from projects.models_contractor_discovery import ContractorDirectoryListing, MarketplaceLocation
 from receipts.models import Receipt
 from projects.models_subcontractor import (
     SubcontractorInvitation,
@@ -20797,6 +20797,59 @@ class AdminGeoTests(TestCase):
         all_payload = all_response.json()
         self.assertEqual(all_payload["count"], 2)
         self.assertEqual(all_payload["filter_label"], "All disputes")
+
+    def test_admin_overview_returns_operations_queues(self):
+        MarketplaceLocation.objects.create(city="Austin", state="TX", is_enabled=True)
+        ProjectIntake.objects.create(
+            initiated_by="homeowner",
+            status="submitted",
+            post_submit_flow="multi_contractor",
+            customer_name="Ops Customer",
+            customer_email="ops-customer@example.com",
+            project_city="Austin",
+            project_state="TX",
+            accomplishment_text="Need flooring help.",
+            submitted_at=timezone.now(),
+        )
+        ExpenseRequest.objects.create(
+            agreement=self.geo_agreement,
+            description="Approved reimbursement",
+            amount=Decimal("125.00"),
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            status=ExpenseRequest.Status.PENDING_RELEASE,
+            approved_at=timezone.now(),
+        )
+        MaintenanceWorkOrder.objects.create(
+            maintenance_agreement=self.geo_agreement,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Past due service visit",
+            scheduled_date=timezone.now().date() - timedelta(days=2),
+            status=MaintenanceWorkOrder.STATUS_SCHEDULED,
+        )
+        Dispute.objects.create(
+            agreement=self.geo_agreement,
+            initiator="homeowner",
+            reason="Operational review",
+            description="Open dispute for operations.",
+            status="under_review",
+            escrow_frozen=True,
+        )
+
+        response = self.client.get("/api/projects/admin/overview/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        operations = response.json()["operations"]
+        self.assertGreaterEqual(operations["marketplace"]["kpis"]["enabled_cities"], 1)
+        self.assertGreaterEqual(operations["marketplace"]["kpis"]["saved_request_backlog"], 1)
+        self.assertTrue(operations["marketplace"]["routing_queue"])
+        self.assertGreaterEqual(operations["payments"]["kpis"]["pending_reimbursement_releases"], 1)
+        self.assertEqual(operations["payments"]["pending_releases"][0]["amount"], "125.00")
+        self.assertGreaterEqual(operations["maintenance"]["kpis"]["overdue_work_orders"], 1)
+        self.assertEqual(operations["maintenance"]["overdue"][0]["title"], "Past due service visit")
+        self.assertGreaterEqual(operations["disputes"]["kpis"]["awaiting_review"], 1)
+        self.assertTrue(operations["disputes"]["awaiting_admin_review"])
+        self.assertIn("activation_funnel", operations["users"])
 
     def test_admin_agreements_support_escrow_in_flight_filter(self):
         self.geo_agreement.escrow_funded_amount = Decimal("400.00")

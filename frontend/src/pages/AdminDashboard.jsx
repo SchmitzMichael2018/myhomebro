@@ -276,6 +276,40 @@ const ActionItem = ({ icon, title, desc, onClick, tone = "neutral", testId }) =>
   );
 };
 
+const OpsQueue = ({ title, subtitle, rows = [], empty, onViewAll, renderRow, testId }) => (
+  <div data-testid={testId} className="rounded-2xl border border-white/10 bg-[#0b2a58]/90 p-4 shadow-[0_16px_34px_rgba(2,8,23,0.24)]">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <div className="text-sm font-extrabold text-white">{title}</div>
+        {subtitle ? <div className="mt-0.5 text-xs text-sky-100/70">{subtitle}</div> : null}
+      </div>
+      {onViewAll ? (
+        <button type="button" onClick={onViewAll} className="shrink-0 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-extrabold text-sky-50 hover:bg-white/15">
+          View all
+        </button>
+      ) : null}
+    </div>
+    <div className="mt-3 space-y-2">
+      {rows.length ? (
+        rows.slice(0, 4).map((row, index) => (
+          <div key={row.id || `${title}-${index}`} className="rounded-xl border border-white/10 bg-white/8 p-3">
+            {renderRow(row)}
+          </div>
+        ))
+      ) : (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-sky-100/65">{empty}</div>
+      )}
+    </div>
+  </div>
+);
+
+const OpsRowTitle = ({ title, meta }) => (
+  <>
+    <div className="text-sm font-extrabold text-white">{title}</div>
+    {meta ? <div className="mt-1 text-xs text-sky-100/70">{meta}</div> : null}
+  </>
+);
+
 const alertToneClass = {
   bad: "border-rose-200 bg-rose-50 text-rose-900",
   warn: "border-amber-200 bg-amber-50 text-amber-900",
@@ -521,6 +555,12 @@ export default function AdminDashboard() {
   const topCategories = overview?.top_categories || [];
   const topRegions = overview?.top_regions || [];
   const insights = overview?.insights || [];
+  const operations = overview?.operations || {};
+  const opsMarketplace = operations.marketplace || {};
+  const opsPayments = operations.payments || {};
+  const opsMaintenance = operations.maintenance || {};
+  const opsDisputes = operations.disputes || {};
+  const opsUsers = operations.users || {};
 
   const tracker = goals?.salary_tracker || {};
   const goal = goals?.goal || {};
@@ -816,6 +856,133 @@ export default function AdminDashboard() {
                   <StatCard testId="admin-stat-active-agreements" label="Active Agreements" value={fmtNumber(summary.active_agreements || 0)} sub={`${fmtNumber(summary.agreements_this_month || 0)} created this month`} onClick={() => goTo("agreements")} />
                     <StatCard testId="admin-stat-open-disputes" label="Open Disputes" value={fmtNumber(summary.open_disputes || 0)} sub="Operator queue" tone={Number(summary.open_disputes || 0) > 0 ? "warn" : "good"} onClick={() => goToDisputes("active")} />
                   <StatCard testId="admin-stat-month-fees" label="Fees This Month" value={fmtMoney(moneyBlock.platform_fee_this_month || 0)} sub="Platform revenue" onClick={() => goTo("fee_audit")} />
+                </div>
+              </BorderedSection>
+
+              <BorderedSection
+                title="Operations Center"
+                subtitle="What needs attention right now across marketplace, payments, maintenance, disputes, and activation."
+                testId="admin-operations-center"
+              >
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <StatCard
+                    testId="admin-ops-marketplace-backlog"
+                    label="Saved Request Backlog"
+                    value={fmtNumber(opsMarketplace.kpis?.saved_request_backlog || 0)}
+                    sub={`${fmtNumber(opsMarketplace.kpis?.active_opportunities || 0)} active opportunities`}
+                    tone={Number(opsMarketplace.kpis?.saved_request_backlog || 0) > 0 ? "warn" : "good"}
+                    onClick={() => navigate("/app/admin/marketplace")}
+                  />
+                  <StatCard
+                    testId="admin-ops-reimbursements"
+                    label="Pending Releases"
+                    value={fmtNumber(opsPayments.kpis?.pending_reimbursement_releases || 0)}
+                    sub={`${fmtNumber(opsPayments.kpis?.failed_releases || 0)} failed release(s)`}
+                    tone={Number(opsPayments.kpis?.failed_releases || 0) > 0 ? "bad" : Number(opsPayments.kpis?.pending_reimbursement_releases || 0) > 0 ? "warn" : "good"}
+                    onClick={() => navigate("/app/admin/reimbursements")}
+                  />
+                  <StatCard
+                    testId="admin-ops-maintenance"
+                    label="Overdue Work Orders"
+                    value={fmtNumber(opsMaintenance.kpis?.overdue_work_orders || 0)}
+                    sub={`${fmtNumber(opsMaintenance.kpis?.upcoming_work_orders || 0)} upcoming`}
+                    tone={Number(opsMaintenance.kpis?.overdue_work_orders || 0) > 0 ? "bad" : "good"}
+                    onClick={() => goTo("agreements")}
+                  />
+                  <StatCard
+                    testId="admin-ops-disputes"
+                    label="Awaiting Review"
+                    value={fmtNumber(opsDisputes.kpis?.awaiting_review || 0)}
+                    sub={`${fmtNumber(opsDisputes.kpis?.open_disputes || 0)} open disputes`}
+                    tone={Number(opsDisputes.kpis?.awaiting_review || 0) > 0 ? "warn" : "good"}
+                    onClick={() => goToDisputes("active")}
+                  />
+                  <StatCard
+                    testId="admin-ops-activation"
+                    label="Contractor Activation"
+                    value={fmtNumber(opsUsers.kpis?.new_contractors_awaiting_activation || 0)}
+                    sub={`${fmtNumber(opsUsers.kpis?.contractors_pending_stripe || 0)} pending Stripe`}
+                    tone={Number(opsUsers.kpis?.new_contractors_awaiting_activation || 0) > 0 ? "warn" : "good"}
+                    onClick={() => navigate("/app/admin/marketplace/verification")}
+                  />
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <OpsQueue
+                    testId="admin-ops-routing-queue"
+                    title="Marketplace Routing Queue"
+                    subtitle={`${fmtNumber(opsMarketplace.kpis?.enabled_cities || 0)} enabled city/cities | Avg ${opsMarketplace.health?.average_bids_per_request || 0} bids/request`}
+                    rows={opsMarketplace.routing_queue || []}
+                    empty="No saved marketplace requests are waiting for routing."
+                    onViewAll={() => navigate("/app/admin/marketplace")}
+                    renderRow={(row) => (
+                      <OpsRowTitle
+                        title={row.title || `Request #${row.id}`}
+                        meta={`${row.city || "Unknown city"}, ${row.state || "Unknown state"} | ${row.customer || "Customer"} | ${fmtDateTime(row.submitted_at)}`}
+                      />
+                    )}
+                  />
+                  <OpsQueue
+                    testId="admin-ops-reimbursement-queue"
+                    title="Reimbursement Release Queue"
+                    subtitle={`${fmtNumber(opsPayments.kpis?.held_reimbursements || 0)} held | ${fmtNumber(opsPayments.kpis?.failed_releases || 0)} failed`}
+                    rows={[...(opsPayments.failed || []), ...(opsPayments.held || []), ...(opsPayments.pending_releases || [])]}
+                    empty="No reimbursement releases need admin action."
+                    onViewAll={() => navigate("/app/admin/reimbursements")}
+                    renderRow={(row) => (
+                      <OpsRowTitle
+                        title={`${row.project || "Reimbursement"} - ${fmtMoney(row.amount || 0)}`}
+                        meta={`${row.contractor || "Contractor"} | ${row.customer || "Customer"} | ${titleCase(row.status || "pending")}${row.release_error ? ` | ${row.release_error}` : ""}`}
+                      />
+                    )}
+                  />
+                  <OpsQueue
+                    testId="admin-ops-maintenance-queue"
+                    title="Maintenance Work Orders"
+                    subtitle={`${fmtNumber(opsMaintenance.kpis?.completed_this_month || 0)} completed this month`}
+                    rows={[...(opsMaintenance.overdue || []), ...(opsMaintenance.upcoming || [])]}
+                    empty="No upcoming or overdue maintenance work orders."
+                    onViewAll={() => goTo("agreements")}
+                    renderRow={(row) => (
+                      <OpsRowTitle
+                        title={row.title || `Work order #${row.id}`}
+                        meta={`${row.contractor || "Contractor"} | ${row.customer || "Customer"} | Scheduled ${row.scheduled_date || "unscheduled"}`}
+                      />
+                    )}
+                  />
+                  <OpsQueue
+                    testId="admin-ops-dispute-queue"
+                    title="Dispute Operations"
+                    subtitle={`${fmtNumber(opsDisputes.kpis?.escalated_disputes || 0)} escrow hold/escalated`}
+                    rows={[...(opsDisputes.awaiting_admin_review || []), ...(opsDisputes.awaiting_response || []), ...(opsDisputes.open || [])]}
+                    empty="No open disputes need admin attention."
+                    onViewAll={() => goToDisputes("active")}
+                    renderRow={(row) => (
+                      <OpsRowTitle
+                        title={row.project || `Dispute #${row.id}`}
+                        meta={`${titleCase(row.status || "open")} | ${row.age_days || 0} day(s) old | ${row.contractor || "Contractor"}`}
+                      />
+                    )}
+                  />
+                </div>
+
+                <div data-testid="admin-ops-activation-funnel" className="mt-4 rounded-2xl border border-white/10 bg-[#0b2a58]/90 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-extrabold text-white">Contractor Activation Funnel</div>
+                      <div className="mt-1 text-xs text-sky-100/70">Registered to profile complete to Stripe ready to verified to marketplace eligible.</div>
+                    </div>
+                    <button type="button" onClick={() => navigate("/app/admin/marketplace/verification")} className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-extrabold text-sky-50 hover:bg-white/15">
+                      Review verification
+                    </button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-5">
+                    <ThinStat label="Registered" value={fmtNumber(opsUsers.activation_funnel?.registered || 0)} />
+                    <ThinStat label="Profile Complete" value={fmtNumber(opsUsers.activation_funnel?.profile_complete || 0)} />
+                    <ThinStat label="Stripe Ready" value={fmtNumber(opsUsers.activation_funnel?.stripe_ready || 0)} />
+                    <ThinStat label="Verified" value={fmtNumber(opsUsers.activation_funnel?.verified || 0)} />
+                    <ThinStat label="Eligible" value={fmtNumber(opsUsers.activation_funnel?.marketplace_eligible || 0)} />
+                  </div>
                 </div>
               </BorderedSection>
 

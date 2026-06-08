@@ -59,6 +59,11 @@ ContractorReview = _get_first_model([("projects", "ContractorReview")])
 ContractorGalleryItem = _get_first_model([("projects", "ContractorGalleryItem")])
 Project = _get_first_model([("projects", "Project")])
 SubcontractorInvitation = _get_first_model([("projects", "SubcontractorInvitation")])
+ProjectIntake = _get_first_model([("projects", "ProjectIntake")])
+ContractorOpportunity = _get_first_model([("projects", "ContractorOpportunity")])
+MarketplaceLocation = _get_first_model([("projects", "MarketplaceLocation")])
+ExpenseRequest = _get_first_model([("projects", "ExpenseRequest")])
+MaintenanceWorkOrder = _get_first_model([("projects", "MaintenanceWorkOrder")])
 
 # Dispute may be a model or derived from invoices
 Dispute = _get_first_model([("projects", "Dispute")])
@@ -387,6 +392,346 @@ def _agreement_escrow_status(agreement) -> str:
     return "none"
 
 
+def _iso(value):
+    if not value:
+        return None
+    try:
+        return value.isoformat()
+    except Exception:
+        return str(value)
+
+
+def _display_name(*values) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _project_title_for_agreement(agreement) -> str:
+    project = getattr(agreement, "project", None)
+    return _display_name(
+        getattr(project, "title", ""),
+        getattr(agreement, "project_title", ""),
+        getattr(agreement, "title", ""),
+        f"Agreement #{getattr(agreement, 'id', '')}",
+    )
+
+
+def _admin_operations_payload(today, month_start) -> dict:
+    operations = {
+        "marketplace": {
+            "kpis": {
+                "ready_cities": 0,
+                "enabled_cities": 0,
+                "verification_queue": 0,
+                "saved_request_backlog": 0,
+                "active_opportunities": 0,
+                "open_bids": 0,
+            },
+            "verification_queue": [],
+            "routing_queue": [],
+            "health": {
+                "average_bids_per_request": 0,
+                "requests_with_zero_bids": 0,
+                "awarded_requests": 0,
+                "agreement_conversion_rate": 0,
+            },
+        },
+        "payments": {
+            "kpis": {
+                "escrow_funded_today": "0.00",
+                "pending_reimbursement_releases": 0,
+                "held_reimbursements": 0,
+                "failed_releases": 0,
+            },
+            "pending_releases": [],
+            "held": [],
+            "failed": [],
+        },
+        "maintenance": {
+            "kpis": {
+                "active_contracts": 0,
+                "upcoming_work_orders": 0,
+                "overdue_work_orders": 0,
+                "completed_this_month": 0,
+            },
+            "upcoming": [],
+            "overdue": [],
+            "recently_completed": [],
+        },
+        "disputes": {
+            "kpis": {
+                "open_disputes": 0,
+                "escalated_disputes": 0,
+                "awaiting_review": 0,
+            },
+            "open": [],
+            "awaiting_response": [],
+            "awaiting_admin_review": [],
+            "resolved_recently": [],
+        },
+        "users": {
+            "kpis": {
+                "new_contractors_awaiting_activation": 0,
+                "contractors_pending_stripe": 0,
+                "contractors_pending_verification": 0,
+                "new_homeowners": 0,
+            },
+            "activation_funnel": {
+                "registered": 0,
+                "profile_complete": 0,
+                "stripe_ready": 0,
+                "verified": 0,
+                "marketplace_eligible": 0,
+            },
+            "contractor_activation": [],
+        },
+    }
+
+    if MarketplaceLocation is not None:
+        location_rows = list(MarketplaceLocation.objects.all())
+        operations["marketplace"]["kpis"]["enabled_cities"] = sum(1 for row in location_rows if bool(getattr(row, "is_enabled", False)))
+        operations["marketplace"]["kpis"]["ready_cities"] = sum(
+            1
+            for row in location_rows
+            if bool(getattr(row, "is_enabled", False)) or str(getattr(row, "status", "") or "").lower() in {"ready", "enabled"}
+        )
+
+    if Contractor is not None:
+        pending_statuses = {"pending_review", "rejected", "suspended"}
+        contractor_qs = Contractor.objects.select_related("user").order_by("-created_at", "-id")
+        operations["marketplace"]["kpis"]["verification_queue"] = contractor_qs.filter(
+            marketplace_verification_status__in=list(pending_statuses)
+        ).count()
+        for contractor in contractor_qs.filter(marketplace_verification_status__in=list(pending_statuses))[:8]:
+            user = getattr(contractor, "user", None)
+            operations["marketplace"]["verification_queue"].append(
+                {
+                    "id": contractor.id,
+                    "name": _contractor_display(contractor),
+                    "email": getattr(user, "email", ""),
+                    "status": getattr(contractor, "marketplace_verification_status", ""),
+                    "updated_at": _iso(safe_get(contractor, ["updated_at", "created_at"], None)),
+                    "url": "/app/admin/marketplace/verification",
+                }
+            )
+
+        operations["users"]["activation_funnel"]["registered"] = contractor_qs.count()
+        operations["users"]["activation_funnel"]["profile_complete"] = contractor_qs.exclude(business_name="").count()
+        operations["users"]["activation_funnel"]["stripe_ready"] = contractor_qs.filter(
+            charges_enabled=True,
+            payouts_enabled=True,
+            stripe_deauthorized_at__isnull=True,
+        ).count()
+        operations["users"]["activation_funnel"]["verified"] = contractor_qs.filter(marketplace_verification_status="verified").count()
+        operations["users"]["activation_funnel"]["marketplace_eligible"] = contractor_qs.filter(
+            marketplace_verification_status="verified",
+            charges_enabled=True,
+            payouts_enabled=True,
+            stripe_deauthorized_at__isnull=True,
+        ).count()
+        operations["users"]["kpis"]["contractors_pending_stripe"] = contractor_qs.exclude(
+            charges_enabled=True,
+            payouts_enabled=True,
+            stripe_deauthorized_at__isnull=True,
+        ).count()
+        operations["users"]["kpis"]["contractors_pending_verification"] = contractor_qs.exclude(
+            marketplace_verification_status="verified"
+        ).count()
+        activation_rows = []
+        for contractor in contractor_qs[:25]:
+            missing = []
+            if not getattr(contractor, "business_name", ""):
+                missing.append("profile")
+            if not getattr(contractor, "city", "") or not getattr(contractor, "state", ""):
+                missing.append("service_area")
+            skills_count = 0
+            try:
+                skills_count = contractor.skills.count()
+            except Exception:
+                skills_count = 0
+            if not skills_count:
+                missing.append("trade")
+            if not (getattr(contractor, "charges_enabled", False) and getattr(contractor, "payouts_enabled", False)):
+                missing.append("stripe")
+            if getattr(contractor, "marketplace_verification_status", "") != "verified":
+                missing.append("verification")
+            if missing:
+                activation_rows.append(
+                    {
+                        "id": contractor.id,
+                        "name": _contractor_display(contractor),
+                        "missing": missing,
+                        "status": getattr(contractor, "marketplace_verification_status", ""),
+                        "url": "/app/admin/marketplace/verification",
+                    }
+                )
+        operations["users"]["contractor_activation"] = activation_rows[:8]
+        operations["users"]["kpis"]["new_contractors_awaiting_activation"] = len(activation_rows)
+
+    if Homeowner is not None:
+        try:
+            operations["users"]["kpis"]["new_homeowners"] = Homeowner.objects.filter(created_at__date__gte=month_start).count()
+        except Exception:
+            operations["users"]["kpis"]["new_homeowners"] = Homeowner.objects.count()
+
+    if ProjectIntake is not None:
+        intake_qs = ProjectIntake.objects.all()
+        saved_backlog = intake_qs.filter(post_submit_flow="multi_contractor", public_lead__isnull=True, agreement__isnull=True)
+        operations["marketplace"]["kpis"]["saved_request_backlog"] = saved_backlog.count()
+        operations["marketplace"]["routing_queue"] = [
+            {
+                "id": intake.id,
+                "title": _display_name(getattr(intake, "ai_project_title", ""), getattr(intake, "accomplishment_text", ""), f"Request #{intake.id}"),
+                "city": _display_name(getattr(intake, "project_city", ""), getattr(intake, "customer_city", "")),
+                "state": _display_name(getattr(intake, "project_state", ""), getattr(intake, "customer_state", "")),
+                "customer": _display_name(getattr(intake, "customer_name", ""), getattr(intake, "customer_email", "")),
+                "submitted_at": _iso(safe_get(intake, ["submitted_at", "created_at"], None)),
+                "url": "/app/admin/marketplace",
+            }
+            for intake in saved_backlog.order_by("-submitted_at", "-created_at", "-id")[:8]
+        ]
+
+    if ContractorOpportunity is not None:
+        operations["marketplace"]["kpis"]["active_opportunities"] = ContractorOpportunity.objects.filter(
+            status__in=["pending", "accepted"]
+        ).count()
+
+    if PublicContractorLead is not None:
+        open_bid_statuses = ["new", "ready_for_review", "pending_customer_response", "follow_up", "qualified"]
+        lead_qs = PublicContractorLead.objects.all()
+        operations["marketplace"]["kpis"]["open_bids"] = lead_qs.filter(status__in=open_bid_statuses).count()
+        request_count = ProjectIntake.objects.count() if ProjectIntake is not None else 0
+        bid_count = lead_qs.count()
+        operations["marketplace"]["health"]["average_bids_per_request"] = round(bid_count / request_count, 2) if request_count else 0
+        if ProjectIntake is not None:
+            routed_ids = set(
+                lead_qs.exclude(ai_analysis__source_intake_id__isnull=True).values_list("ai_analysis__source_intake_id", flat=True)
+            )
+            operations["marketplace"]["health"]["requests_with_zero_bids"] = ProjectIntake.objects.exclude(id__in=routed_ids).count()
+        operations["marketplace"]["health"]["awarded_requests"] = lead_qs.filter(converted_agreement__isnull=False).count()
+        operations["marketplace"]["health"]["agreement_conversion_rate"] = round(
+            (operations["marketplace"]["health"]["awarded_requests"] / bid_count) * 100,
+            2,
+        ) if bid_count else 0
+
+    if Agreement is not None:
+        try:
+            operations["payments"]["kpis"]["escrow_funded_today"] = _fmt_money(
+                _to_dec(Agreement.objects.filter(escrow_funded_at__date=today).aggregate(total=Sum("escrow_funded_amount")).get("total"))
+            )
+        except Exception:
+            operations["payments"]["kpis"]["escrow_funded_today"] = "0.00"
+        operations["maintenance"]["kpis"]["active_contracts"] = Agreement.objects.filter(
+            Q(agreement_mode="maintenance") | Q(recurring_service_enabled=True),
+        ).exclude(maintenance_status__in=["cancelled", "completed"]).count()
+
+    if ExpenseRequest is not None:
+        reimbursement_qs = ExpenseRequest.objects.filter(request_kind="escrow_reimbursement", is_archived=False).select_related(
+            "agreement", "agreement__project", "agreement__contractor", "agreement__homeowner"
+        )
+        pending_release = reimbursement_qs.filter(status__in=["pending_release", "approved", "homeowner_accepted"])
+        held = reimbursement_qs.filter(status="held")
+        failed = reimbursement_qs.exclude(release_error="")
+        operations["payments"]["kpis"]["pending_reimbursement_releases"] = pending_release.count()
+        operations["payments"]["kpis"]["held_reimbursements"] = held.count()
+        operations["payments"]["kpis"]["failed_releases"] = failed.count()
+
+        def reimbursement_row(expense) -> dict:
+            agreement = getattr(expense, "agreement", None)
+            contractor = getattr(agreement, "contractor", None) if agreement else None
+            homeowner = getattr(agreement, "homeowner", None) if agreement else None
+            return {
+                "id": expense.id,
+                "project": _project_title_for_agreement(agreement) if agreement else f"Reimbursement #{expense.id}",
+                "contractor": _contractor_display(contractor) if contractor else "",
+                "customer": _display_name(getattr(homeowner, "full_name", ""), getattr(homeowner, "email", "")),
+                "amount": _fmt_money(_to_dec(getattr(expense, "amount", 0))),
+                "status": getattr(expense, "status", ""),
+                "approved_at": _iso(getattr(expense, "approved_at", None)),
+                "release_error": getattr(expense, "release_error", ""),
+                "hold_reason": getattr(expense, "hold_reason", ""),
+                "url": f"/app/admin/reimbursements?reimbursement={expense.id}",
+            }
+
+        operations["payments"]["pending_releases"] = [reimbursement_row(row) for row in pending_release.order_by("-approved_at", "-updated_at", "-id")[:8]]
+        operations["payments"]["held"] = [reimbursement_row(row) for row in held.order_by("-held_at", "-updated_at", "-id")[:8]]
+        operations["payments"]["failed"] = [reimbursement_row(row) for row in failed.order_by("-updated_at", "-id")[:8]]
+
+    if MaintenanceWorkOrder is not None:
+        work_qs = MaintenanceWorkOrder.objects.select_related("maintenance_agreement", "maintenance_agreement__project", "contractor", "homeowner", "property_profile")
+        active_statuses = ["scheduled", "in_progress"]
+        upcoming = work_qs.filter(status__in=active_statuses, scheduled_date__gte=today)
+        overdue = work_qs.filter(status__in=active_statuses, scheduled_date__lt=today)
+        completed = work_qs.filter(status="completed", completed_at__date__gte=month_start)
+        operations["maintenance"]["kpis"]["upcoming_work_orders"] = upcoming.count()
+        operations["maintenance"]["kpis"]["overdue_work_orders"] = overdue.count()
+        operations["maintenance"]["kpis"]["completed_this_month"] = completed.count()
+
+        def work_order_row(work_order) -> dict:
+            agreement = getattr(work_order, "maintenance_agreement", None)
+            property_profile = getattr(work_order, "property_profile", None)
+            homeowner = getattr(work_order, "homeowner", None)
+            return {
+                "id": work_order.id,
+                "title": getattr(work_order, "title", "") or f"Work order #{work_order.id}",
+                "property": _display_name(getattr(property_profile, "display_name", ""), getattr(property_profile, "address_line1", "")),
+                "contractor": _contractor_display(getattr(work_order, "contractor", None)),
+                "customer": _display_name(getattr(homeowner, "full_name", ""), getattr(homeowner, "email", "")),
+                "scheduled_date": _iso(getattr(work_order, "scheduled_date", None)),
+                "completed_at": _iso(getattr(work_order, "completed_at", None)),
+                "status": getattr(work_order, "status", ""),
+                "agreement_id": getattr(agreement, "id", None),
+                "url": f"/app/admin/agreements/{getattr(agreement, 'id', '')}" if agreement else "",
+            }
+
+        operations["maintenance"]["upcoming"] = [work_order_row(row) for row in upcoming.order_by("scheduled_date", "id")[:8]]
+        operations["maintenance"]["overdue"] = [work_order_row(row) for row in overdue.order_by("scheduled_date", "id")[:8]]
+        operations["maintenance"]["recently_completed"] = [work_order_row(row) for row in completed.order_by("-completed_at", "-id")[:8]]
+
+    if Dispute is not None:
+        dispute_qs = Dispute.objects.select_related("agreement", "agreement__project", "agreement__contractor", "agreement__homeowner").filter(is_archived=False)
+        open_qs = [row for row in dispute_qs if _is_active_dispute_status(getattr(row, "status", ""))]
+        operations["disputes"]["kpis"]["open_disputes"] = len(open_qs)
+        operations["disputes"]["kpis"]["escalated_disputes"] = sum(1 for row in open_qs if getattr(row, "escrow_frozen", False))
+        operations["disputes"]["kpis"]["awaiting_review"] = sum(
+            1
+            for row in open_qs
+            if str(getattr(row, "status", "") or "").lower() in {"initiated", "open", "under_review"}
+        )
+
+        def dispute_row(dispute) -> dict:
+            agreement = getattr(dispute, "agreement", None)
+            contractor = getattr(agreement, "contractor", None) if agreement else None
+            homeowner = getattr(agreement, "homeowner", None) if agreement else None
+            created_at = getattr(dispute, "created_at", None)
+            age_days = (today - created_at.date()).days if created_at else 0
+            return {
+                "id": dispute.id,
+                "project": _project_title_for_agreement(agreement) if agreement else f"Dispute #{dispute.id}",
+                "contractor": _contractor_display(contractor) if contractor else "",
+                "customer": _display_name(getattr(homeowner, "full_name", ""), getattr(homeowner, "email", "")),
+                "status": getattr(dispute, "status", ""),
+                "age_days": age_days,
+                "created_at": _iso(created_at),
+                "agreement_id": getattr(agreement, "id", None),
+                "url": "/app/admin/disputes",
+            }
+
+        sorted_open = sorted(open_qs, key=lambda row: safe_get(row, ["created_at"], now()), reverse=True)
+        operations["disputes"]["open"] = [dispute_row(row) for row in sorted_open[:8]]
+        operations["disputes"]["awaiting_response"] = [dispute_row(row) for row in sorted_open if not getattr(row, "responded_at", None)][:8]
+        operations["disputes"]["awaiting_admin_review"] = [dispute_row(row) for row in sorted_open if str(getattr(row, "status", "") or "").lower() == "under_review"][:8]
+        operations["disputes"]["resolved_recently"] = [
+            dispute_row(row)
+            for row in dispute_qs.filter(Q(status__startswith="resolved") | Q(status="canceled")).order_by("-resolved_at", "-updated_at", "-id")[:8]
+        ]
+
+    return operations
+
+
 # -------------------------------------------------------------------
 # Views
 # -------------------------------------------------------------------
@@ -442,6 +787,7 @@ class AdminOverview(APIView):
             "top_categories": [],
             "top_regions": [],
             "insights": [],
+            "operations": {},
             "admin_views": {
                 "contractors": "contractors",
                 "subcontractors": "subcontractors",
@@ -757,6 +1103,7 @@ class AdminOverview(APIView):
                 "view": "contractors",
             })
         data["insights"] = insights[:6]
+        data["operations"] = _admin_operations_payload(today, month_start)
 
         return Response(data, status=status.HTTP_200_OK)
 
