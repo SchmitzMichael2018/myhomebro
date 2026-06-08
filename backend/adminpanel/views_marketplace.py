@@ -427,7 +427,7 @@ def _compatibility_reasons(listing: ContractorDirectoryListing) -> list[str]:
     if contractor and getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED:
         reasons.append("MyHomeBro verified")
     if contractor and getattr(contractor, "marketplace_preferred", False) and getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED:
-        reasons.append("Preferred contractor")
+        reasons.append("Preferred status reviewed")
     return list(dict.fromkeys(reasons))
 
 
@@ -513,7 +513,7 @@ def _serialize_listing(listing: ContractorDirectoryListing, *, include_invites: 
         "last_synced_at": listing.last_synced_at.isoformat() if listing.last_synced_at else None,
         "created_at": listing.created_at.isoformat() if listing.created_at else None,
         "updated_at": listing.updated_at.isoformat() if listing.updated_at else None,
-        "label": "MyHomeBro Verified" if profile and getattr(profile, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED else "Claimed Contractor" if listing.claimed_profile else "Local Business Listing",
+        "label": "Profile Reviewed" if profile and getattr(profile, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED else "Claimed Contractor" if listing.claimed_profile else "Local Business Listing",
         "claimed": bool(listing.claimed_profile),
         "invite_available": bool(listing.phone_number or listing.email or listing.claimed_contractor_id),
         "phone_available": bool(listing.phone_number),
@@ -523,7 +523,7 @@ def _serialize_listing(listing: ContractorDirectoryListing, *, include_invites: 
             "summary": "Admin-managed marketplace listing.",
             "badges": [
                 "DIY Assistance Available" if listing.assisted_diy_friendly else None,
-                "Escrow Friendly" if listing.escrow_friendly else None,
+                "Escrow Workflow Compatible" if listing.escrow_friendly else None,
                 "Inspection Services" if listing.inspection_capable else None,
                 "Rescue Project Assistance" if listing.rescue_project_friendly else None,
             ],
@@ -537,7 +537,7 @@ def _serialize_listing(listing: ContractorDirectoryListing, *, include_invites: 
                 else None,
                 {
                     "key": "escrow",
-                    "label": "Escrow Friendly",
+                    "label": "Escrow Workflow Compatible",
                     "description": "Works with milestone-based protection.",
                 }
                 if listing.escrow_friendly
@@ -1181,7 +1181,7 @@ class AdminMarketplaceListingInvite(APIView):
             "Claim your contractor profile to:\n"
             "- receive project requests\n"
             "- manage your profile\n"
-            "- participate in escrow-protected projects\n"
+            "- participate in milestone-based escrow workflow projects\n"
             "- review Assisted DIY opportunities\n"
             "- receive collaborative project matches\n\n"
             f"Claim profile:\n{claim_link}\n\n"

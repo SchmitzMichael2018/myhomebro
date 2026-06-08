@@ -257,9 +257,9 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
         className="overflow-hidden rounded-3xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.5))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6"
       >
         <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Home Records</div>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Your home history, organized.</h2>
+        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Your property records, organized.</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
-          Keep project documents, warranties, photos, and service records in one place. Completed MyHomeBro projects automatically become part of your home record.
+          Keep project documents, warranties, photos, and service records in one place. Completed MyHomeBro projects can be saved as part of your property record.
         </p>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
@@ -337,7 +337,7 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
               />
             </div>
           ) : (
-            <EmptyState title="No home history yet" testId="home-records-timeline-empty">
+            <EmptyState title="No property timeline yet" testId="home-records-timeline-empty">
               Uploaded records, warranties, receipts, photos, and completed projects will build a timeline here.
             </EmptyState>
           )}
@@ -433,7 +433,7 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
           </div>
         ) : (
           <EmptyState title="No completed projects yet" testId="home-records-completed-empty">
-            Completed MyHomeBro projects will appear here with contractor, warranty, payment, and document history.
+            Completed MyHomeBro projects will appear here with contractor, warranty, payment, and document details when available.
           </EmptyState>
         )}
       </Section>

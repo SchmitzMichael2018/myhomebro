@@ -315,7 +315,7 @@ test('contractor dashboard surfaces recommended project matches with compatibili
           tier: 'Strong Match',
           score: 91,
           summary: 'Strong fit for this project and working style.',
-          badges: ['DIY Assistance Available', 'Escrow Friendly'],
+          badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
           reasons: ['Offers Assisted DIY support.', 'Accepts escrow milestone payments.'],
         },
       },

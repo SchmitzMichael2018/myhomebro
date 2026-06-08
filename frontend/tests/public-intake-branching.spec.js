@@ -480,8 +480,8 @@ test("public intake contractor search auto-infers a specialty from the project d
               source: "myhomebro",
               business_name: "Verified Kitchen Pros",
               claimed: true,
-              label: "MyHomeBro Verified",
-              source_label: "MyHomeBro Verified",
+              label: "Profile Reviewed",
+              source_label: "Profile Reviewed",
               rating: 4.9,
               review_count: 19,
               website_url: "https://example.com",
@@ -630,7 +630,7 @@ test("public intake contractor search auto-infers a specialty from the project d
     /kitchen remodeling contractor|cabinet installer|countertop installer/,
     { timeout: 15000 }
   );
-  await expect(page.getByText("Verified contractors are active MyHomeBro members.")).toBeVisible();
+  await expect(page.getByText("Profile-reviewed contractors are active MyHomeBro members whose marketplace eligibility has been reviewed.")).toBeVisible();
   await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-10 of 12 contractors");
   await expect(page.locator('[data-testid^="public-intake-contractor-card-"]').first()).toContainText("Verified Kitchen Pros");
   await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("Verified on MyHomeBro");

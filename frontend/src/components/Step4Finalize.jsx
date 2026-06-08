@@ -1839,7 +1839,7 @@ export default function Step4Finalize({
             <div>
               <div className="text-sm font-semibold text-slate-900">Payment Mode</div>
               <div className="mt-1 text-sm text-slate-600">
-                Confirm whether this agreement should use protected escrow or direct invoice payments now that pricing and milestones are set.
+                Confirm whether this agreement should use milestone-based escrow funding or direct invoice payments now that pricing and milestones are set.
               </div>
             </div>
             <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
@@ -1858,9 +1858,9 @@ export default function Step4Finalize({
                   : "border-slate-200 bg-white hover:bg-slate-50"
               } disabled:opacity-60`}
             >
-              <div className="font-semibold text-slate-900">Escrow (Protected)</div>
+              <div className="font-semibold text-slate-900">Escrow (Milestone Hold)</div>
               <div className="mt-1 text-sm text-slate-600">
-                Funds are held until milestones are approved, with dispute protection built in.
+                Funds are held until milestones are approved or any review process is resolved.
               </div>
             </button>
 
@@ -2289,7 +2289,7 @@ export default function Step4Finalize({
 
           <div className="rounded border bg-slate-50 p-3 text-[12px] text-slate-700">
             <div className="font-semibold mb-1">
-              {isProgressPayments ? "Progress Payments" : isDirectPay ? "Direct Pay" : "Escrow (Protected)"}
+              {isProgressPayments ? "Progress Payments" : isDirectPay ? "Direct Pay" : "Escrow (Milestone Hold)"}
             </div>
             {isProgressPayments ? (
               <>

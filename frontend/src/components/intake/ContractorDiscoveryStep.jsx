@@ -496,12 +496,12 @@ export default function ContractorDiscoveryStep({
       <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
         <div className="text-sm font-semibold text-slate-900">Payment and collaboration context</div>
         <div className="mt-1 text-sm text-slate-600">
-          {modeLabel} projects can emphasize contractor fit, payment protection, inspection support, and homeowner participation preferences.
+          {modeLabel} projects can emphasize contractor fit, milestone payment workflow preferences, inspection support, and customer participation preferences.
         </div>
       </div>
 
       <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-        Verified contractors are active MyHomeBro members. Local business listings are nearby companies discovered from public business data.
+        Profile-reviewed contractors are active MyHomeBro members whose marketplace eligibility has been reviewed. Local business listings are nearby companies discovered from public business data.
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -561,7 +561,7 @@ export default function ContractorDiscoveryStep({
           {activeRadiusLabel}
         </div>
         <div className="text-sm text-slate-600">
-          {selectedTargets.length ? `${selectedTargets.length} selected` : "Select up to 5 vetted contractors"}
+          {selectedTargets.length ? `${selectedTargets.length} selected` : "Select up to 5 contractors"}
         </div>
       </div>
 
@@ -664,7 +664,7 @@ export default function ContractorDiscoveryStep({
                   ))}
                   {card.escrow_friendly ? (
                     <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
-                      Escrow Friendly
+                      Escrow Workflow Compatible
                     </span>
                   ) : null}
                   {card.assisted_diy_friendly ? (

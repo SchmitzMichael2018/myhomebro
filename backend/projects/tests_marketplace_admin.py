@@ -107,7 +107,7 @@ class AdminMarketplaceTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["results"][0]["id"], self.claimed_listing.id)
-        self.assertEqual(payload["results"][0]["label"], "MyHomeBro Verified")
+        self.assertEqual(payload["results"][0]["label"], "Profile Reviewed")
         self.assertIn("DIY Assistance Available", payload["results"][0]["compatibility_profile"]["badges"])
 
     @patch("adminpanel.views_marketplace.build_contractor_recommendations")

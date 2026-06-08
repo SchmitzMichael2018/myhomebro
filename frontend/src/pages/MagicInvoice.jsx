@@ -531,7 +531,7 @@ function InnerMagicInvoice() {
               Homeowner: <b>{invoice.homeowner_name || "—"}</b>
             </div>
             <div className="mt-1 text-xs text-slate-500">
-              Payment mode: <b>{isDirectPay ? "Direct Pay" : "Escrow (Protected)"}</b>
+              Payment mode: <b>{isDirectPay ? "Direct Pay" : "Escrow (Milestone Hold)"}</b>
             </div>
           </div>
 

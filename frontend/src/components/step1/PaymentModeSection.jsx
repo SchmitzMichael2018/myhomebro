@@ -59,15 +59,15 @@ export default function PaymentModeSection({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <PaymentChoice
           mode="escrow"
-          title="Escrow (Protected)"
-          desc="Customer funds escrow first. You complete milestones → customer approves → funds release."
+          title="Escrow (Milestone Hold)"
+          desc="Customer funds the project first. Funds are held until milestone approval and any review steps are complete."
           selected={paymentMode === "escrow"}
           locked={locked}
           onChange={onChangeMode}
         />
         <PaymentChoice
           mode="direct"
-          title="Direct Pay (Fast)"
+          title="Direct Pay"
           desc="No escrow hold. You generate a pay link per invoice and the customer pays you directly via Stripe."
           selected={paymentMode === "direct"}
           locked={locked}
@@ -76,7 +76,7 @@ export default function PaymentModeSection({
       </div>
 
       <div className="mt-2 text-xs text-gray-500">
-        Tip: Use <b>Escrow</b> for higher-trust protection. Use <b>Direct Pay</b> for subcontractor-style billing.
+        Tip: Use <b>Escrow</b> when both parties want milestone-based funding and approval steps. Use <b>Direct Pay</b> for invoice-based billing.
       </div>
     </div>
   );

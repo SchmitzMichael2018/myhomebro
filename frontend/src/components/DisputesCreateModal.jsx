@@ -90,7 +90,7 @@ export default function DisputesCreateModal({ open, onClose }) {
     try {
       // ✅ BACKEND ROUTE IS pay-fee (hyphen) per views/dispute.py
       await api.post(`/projects/disputes/${created.id}/pay-fee/`);
-      toast.success("Fee paid — escrow frozen.");
+      toast.success("Fee paid - escrow hold active.");
       setStep(4);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Payment failed.");
@@ -220,11 +220,11 @@ export default function DisputesCreateModal({ open, onClose }) {
             <>
               <div data-testid="dispute-fee-step" className="text-slate-700">
                 Dispute <strong>#{created.id}</strong> created. A fee of{" "}
-                <strong>{money(created.fee_amount || 0)}</strong> is required to proceed and freeze escrow.
+                <strong>{money(created.fee_amount || 0)}</strong> is required to continue the review process and place an escrow hold where applicable.
               </div>
               <div className="flex justify-end">
                 <button className="mhb-btn primary" onClick={payFee} disabled={busy}>
-                  {busy ? "Processing…" : "Pay Fee & Freeze Escrow"}
+                  {busy ? "Processing…" : "Pay Fee & Place Escrow Hold"}
                 </button>
               </div>
             </>
@@ -233,7 +233,7 @@ export default function DisputesCreateModal({ open, onClose }) {
           {step === 4 && created && (
             <>
               <div className="text-slate-700">
-                Escrow is now <strong>frozen</strong>. Upload supporting evidence (agreements, milestone docs, photos,
+                An escrow hold is now active where applicable. Upload supporting evidence (agreements, milestone docs, photos,
                 receipts).
               </div>
               <div className="grid md:grid-cols-2 gap-8">

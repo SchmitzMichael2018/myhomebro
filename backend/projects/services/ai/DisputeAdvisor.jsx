@@ -195,7 +195,7 @@ export default function DisputeAIAdvisor({ disputeId, enabled }) {
 
           <div className="text-sm text-slate-800">
             <b>Dispute status:</b> {dispute?.status || "—"}{" "}
-            {dispute?.escrow_frozen ? " • 🧊 escrow frozen" : ""}
+            {dispute?.escrow_frozen ? " - escrow hold active" : ""}
           </div>
 
           <div className="flex flex-wrap gap-2">

@@ -6879,7 +6879,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   agreement = { ...agreement, payment_mode: 'direct' };
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Direct Pay');
 
-  await page.getByRole('button', { name: 'Escrow (Protected)' }).click();
+  await page.getByRole('button', { name: 'Escrow (Milestone Hold)' }).click();
   await expect.poll(() => patchPayloads.some((payload) => payload.payment_mode === 'escrow')).toBeTruthy();
   agreement = { ...agreement, payment_mode: 'escrow' };
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Escrow');

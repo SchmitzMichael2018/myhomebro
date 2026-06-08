@@ -578,8 +578,8 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         "source": ContractorDirectoryListing.SOURCE_MYHOMEBRO,
         "business_name": profile.business_name_public or contractor.business_name or contractor.name or "",
         "claimed": claimed,
-        "label": "MyHomeBro Verified" if is_verified else "Claimed Contractor",
-        "source_label": "MyHomeBro Verified" if is_verified else "Claimed Contractor",
+        "label": "Profile Reviewed" if is_verified else "Claimed Contractor",
+        "source_label": "Profile Reviewed" if is_verified else "Claimed Contractor",
         "contractor_verified": is_verified,
         "contractor_preferred": is_preferred,
         "rating": round(float(getattr(contractor, "average_rating", 0) or 0), 2) if getattr(contractor, "review_count", 0) else None,
@@ -646,7 +646,7 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
             card = _build_card_from_contractors(contractor, profile, project)
             card["id"] = f"listing:{listing.id}"
             card["source"] = listing.source
-            card["label"] = "MyHomeBro Verified" if card.get("contractor_verified") else "Claimed Contractor"
+            card["label"] = "Profile Reviewed" if card.get("contractor_verified") else "Claimed Contractor"
             card["claimed"] = True
             card["directory_listing_id"] = listing.id
             card["source_priority"] = 250
@@ -716,7 +716,7 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
             "tier": match.get("tier", "Limited Match"),
             "summary": "Local business listing discovered through MyHomeBro.",
             "badges": [
-                "Escrow Friendly" if match.get("escrow_friendly") else None,
+                "Escrow Workflow Compatible" if match.get("escrow_friendly") else None,
                 "Inspection Services Available" if match.get("inspection_capable") else None,
             ],
             "ways_i_work": [],

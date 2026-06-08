@@ -99,7 +99,7 @@ function projectClassLabel(val) {
 
 function paymentModeLabel(mode) {
   const m = normalizePaymentMode(mode);
-  return m === "direct" ? "Direct Pay" : "Escrow (Protected)";
+  return m === "direct" ? "Direct Pay" : "Escrow (Milestone Hold)";
 }
 
 function paymentProtectionLabel(value) {

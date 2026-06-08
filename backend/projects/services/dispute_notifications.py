@@ -140,7 +140,7 @@ def email_contractor_status_update(dispute, contractor_email: str, event_label: 
         f"Dispute #{dispute.id} has an update.\n\n"
         f"Project: {project_title}\n"
         f"Status: {dispute.status}\n"
-        f"Escrow frozen: {'Yes' if dispute.escrow_frozen else 'No'}\n\n"
+        f"Escrow hold active: {'Yes' if dispute.escrow_frozen else 'No'}\n\n"
         f"{extra}\n\n"
         f"— MyHomeBro"
     )
@@ -165,7 +165,7 @@ def email_admin_dispute_update(dispute, admin_email: str, event_label: str) -> b
         f"Initiator: {dispute.initiator}\n"
         f"Status: {dispute.status}\n"
         f"Fee paid: {'Yes' if dispute.fee_paid else 'No'}\n"
-        f"Escrow frozen: {'Yes' if dispute.escrow_frozen else 'No'}\n\n"
+        f"Escrow hold active: {'Yes' if dispute.escrow_frozen else 'No'}\n\n"
         f"— MyHomeBro"
     )
 

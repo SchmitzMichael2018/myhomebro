@@ -4029,8 +4029,9 @@ class ContractorPublicPresenceApiTests(TestCase):
             longitude=-97.7431,
             limit=5,
         )
-        verified = next(row for row in payload["results"] if row["label"] == "MyHomeBro Verified")
-        self.assertEqual(verified["public_email"], self.contractor_user.email)
+        claimed = next(row for row in payload["results"] if row["id"] == f"contractor:{self.contractor.id}")
+        self.assertEqual(claimed["label"], "Claimed Contractor")
+        self.assertEqual(claimed["public_email"], self.contractor_user.email)
 
         self.profile.show_email_public = False
         self.profile.save(update_fields=["show_email_public", "updated_at"])
@@ -4048,8 +4049,9 @@ class ContractorPublicPresenceApiTests(TestCase):
             longitude=-97.7431,
             limit=5,
         )
-        verified = next(row for row in payload["results"] if row["label"] == "MyHomeBro Verified")
-        self.assertEqual(verified["public_email"], "")
+        claimed = next(row for row in payload["results"] if row["id"] == f"contractor:{self.contractor.id}")
+        self.assertEqual(claimed["label"], "Claimed Contractor")
+        self.assertEqual(claimed["public_email"], "")
 
     @patch("projects.services.contractor_discovery._iter_contractors_for_public_profiles", return_value=[])
     @patch(
@@ -4227,8 +4229,8 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertRegex(payload["summary"]["search_query"].lower(), r"kitchen remodeling contractor|countertop installer")
         results = payload["results"]
         self.assertGreaterEqual(len(results), 3)
-        self.assertEqual(results[0]["label"], "MyHomeBro Verified")
-        self.assertEqual(results[0]["source_label"], "MyHomeBro Verified")
+        self.assertEqual(results[0]["label"], "Claimed Contractor")
+        self.assertEqual(results[0]["source_label"], "Claimed Contractor")
         self.assertEqual(results[0]["phone"], "512-555-0100")
         self.assertEqual(results[0]["public_email"], "hello@brightbuild.example")
         listing_row = next(row for row in results if row["id"] == f"listing:{listing.id}")

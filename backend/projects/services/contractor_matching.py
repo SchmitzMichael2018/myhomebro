@@ -186,7 +186,7 @@ def build_contractor_compatibility_profile(contractor, profile=None) -> dict[str
     if accepts_diy_assistance:
         badges.append("Collaborative Projects")
     if escrow_friendly:
-        badges.append("Escrow Friendly")
+        badges.append("Escrow Workflow Compatible")
     if rescue_project_friendly:
         badges.append("Rescue Project Assistance")
     if inspection_capable and "Inspection Services Available" not in badges:
@@ -491,7 +491,7 @@ def score_contractor_project_match(contractor, project_payload: Any, profile=Non
 
     badge_labels = list(dict.fromkeys([
         *compatibility.get("badges", []),
-        "Escrow Friendly" if compatibility.get("escrow_friendly") else None,
+        "Escrow Workflow Compatible" if compatibility.get("escrow_friendly") else None,
         "Rescue Project Assistance" if compatibility.get("rescue_project_friendly") else None,
         "Inspection Services Available" if compatibility.get("inspection_capable") else None,
     ]))

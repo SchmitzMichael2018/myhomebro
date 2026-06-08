@@ -25,7 +25,7 @@ test("public intake surfaces contractor discovery and creates pending review opp
               source: "myhomebro_verified",
               business_name: "Bright Build Co",
               claimed: true,
-              label: "MyHomeBro Verified",
+              label: "Profile Reviewed",
               rating: 4.9,
               review_count: 45,
               website_url: "https://bright.example.com",

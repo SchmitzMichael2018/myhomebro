@@ -758,7 +758,7 @@ function DetailsModal({
           <DeadlineBadge dispute={dispute} now={now} />
           {dispute.escrow_frozen ? (
             <Badge tone="info" className="bg-slate-900 text-white">
-              🧊 Escrow Frozen
+              Escrow Hold Active
             </Badge>
           ) : null}
           {hasAnyResponse(dispute) && !isClosed(dispute) ? <Badge tone="good">Response received</Badge> : null}
@@ -1110,7 +1110,7 @@ export default function DisputesPages() {
       return;
     }
 
-    if (!window.confirm(`Cancel dispute #${d.id}? This will unfreeze escrow.`)) return;
+    if (!window.confirm(`Cancel dispute #${d.id}? This will remove the escrow hold if one is active.`)) return;
 
     try {
       await api.patch(`/projects/disputes/${d.id}/cancel/`, {});
@@ -1124,7 +1124,7 @@ export default function DisputesPages() {
   const payFee = async (d) => {
     try {
       await api.post(`/projects/disputes/${d.id}/pay-fee/`);
-      toast.success("Fee paid. Escrow frozen.");
+      toast.success("Fee paid. Escrow hold active.");
       refreshAll();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Payment failed.");
@@ -1255,14 +1255,14 @@ export default function DisputesPages() {
         <DeadlineBadge dispute={d} now={now} />
 
         {d.escrow_frozen ? (
-          <Badge tone="info" className="bg-slate-900 text-white" title="Escrow is currently frozen">
-            🧊 Frozen
+          <Badge tone="info" className="bg-slate-900 text-white" title="Escrow hold is currently active">
+            Escrow Hold
           </Badge>
         ) : null}
 
         {!isClosed(d) ? (
           !d.fee_paid ? (
-            <button className="mhb-btn" onClick={() => payFee(d)} title="Pay dispute fee (freezes escrow)" type="button">
+            <button className="mhb-btn" onClick={() => payFee(d)} title="Pay dispute fee and place an escrow hold where applicable" type="button">
               Pay Fee
             </button>
           ) : (
@@ -1517,7 +1517,7 @@ export default function DisputesPages() {
   const pageTitle = isAdmin ? "Admin Dispute Center" : "Dispute Center";
   const pageSubtitle = isAdmin
     ? "Overdue disputes are prioritized automatically."
-    : "Initiate disputes, pay fee to freeze escrow, propose resolutions, and manage evidence.";
+    : "Initiate disputes, pay the required fee when applicable, submit resolution proposals, and manage evidence.";
 
   const showNewButton = supportsDisputesApi && !isAdmin;
   const ShellComponent = isAdmin ? PageShell : ContractorPageSurface;

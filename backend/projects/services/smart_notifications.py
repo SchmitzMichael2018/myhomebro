@@ -22,7 +22,7 @@ DEFAULT_TEMPLATES = {
     ),
     SmartNotificationEvent.MARKETPLACE_REQUEST_ROUTED: SmartNotificationTemplate(
         title="Request routed to contractors",
-        message="{request_title} was routed to vetted contractors in your area.",
+        message="{request_title} was routed to eligible contractors in your area.",
     ),
     SmartNotificationEvent.CUSTOMER_BID_RECEIVED: SmartNotificationTemplate(
         title="New bid received",

@@ -302,11 +302,11 @@ def marketplace_enabled_for_intake(intake: ProjectIntake) -> dict[str, Any]:
             "state": normalize_location_value(state),
             "status": MarketplaceLocation.STATUS_NOT_READY,
             "enabled": False,
-            "message": "We need a project city and state before routing this request to vetted contractors.",
+            "message": "We need a project city and state before routing this request to eligible contractors.",
         }
     readiness = location_readiness(city, state)
     if readiness["enabled"]:
-        readiness["message"] = f"Marketplace routing is enabled in {readiness['city']}, {readiness['state']}. We can invite up to {readiness['max_bids_per_request']} vetted contractors."
+        readiness["message"] = f"Marketplace routing is enabled in {readiness['city']}, {readiness['state']}. We can invite up to {readiness['max_bids_per_request']} eligible contractors."
     else:
         readiness["message"] = f"Marketplace matching is not yet enabled in {readiness['city']}, {readiness['state']}. Your request is saved and can be routed when local coverage is ready."
     return readiness

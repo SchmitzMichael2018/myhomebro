@@ -235,7 +235,7 @@ function marketplaceStatusFromProfile(profile = {}, stripe = {}) {
       key: "preferred",
       label: "Preferred",
       tone: "success",
-      reason: "You are verified and marked preferred for marketplace opportunities.",
+      reason: "Profile and marketplace eligibility were reviewed. Preferred status reflects platform participation and administrative review.",
     };
   }
   if (raw === "verified") {
@@ -243,7 +243,7 @@ function marketplaceStatusFromProfile(profile = {}, stripe = {}) {
       key: "verified",
       label: "Verified",
       tone: "success",
-      reason: "You are eligible for marketplace opportunities in enabled locations.",
+      reason: "Profile and marketplace eligibility were reviewed for enabled locations.",
     };
   }
   if (raw === "pending_review") {
@@ -1588,7 +1588,7 @@ function ContractorActivationChecklist({
     {
       key: "verification",
       title: "Submit/complete verification",
-      description: "Submit marketplace verification so customers can compare and award bids confidently.",
+      description: "Submit marketplace verification so customers can see reviewed profile and eligibility information.",
       completeText:
         verificationStatus === "verified" ? "Marketplace verification is approved." : "Marketplace verification is in review.",
       complete: verificationComplete,
@@ -4127,7 +4127,7 @@ export default function ContractorDashboard() {
                     label: "Strong Matches",
                     value: contractorMatchOpportunities.counts.strong,
                     tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-                    description: "Top-fit leads for your current profile.",
+                    description: "Leads aligned with your current profile.",
                   },
                   {
                     label: "Assisted DIY",
@@ -4145,7 +4145,7 @@ export default function ContractorDashboard() {
                     label: "Escrow Compatible",
                     value: contractorMatchOpportunities.counts.escrow,
                     tone: "border-sky-200 bg-sky-50 text-sky-700",
-                    description: "Projects aligned with milestone payment protection.",
+                    description: "Projects aligned with milestone-based payment workflows.",
                   },
                 ].map((item) => (
                   <div key={item.label} className={`rounded-xl border p-4 ${item.tone}`}>

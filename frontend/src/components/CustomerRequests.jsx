@@ -75,8 +75,8 @@ function comparisonHighlights(bids) {
     if (lowestPrice != null && price === lowestPrice) badges.push("Lowest price");
     if (Number.isFinite(shortestTimeline) && time === shortestTimeline) badges.push("Shortest timeline");
     if (mostMilestones > 0 && milestoneCount === mostMilestones) badges.push("Most detailed milestone plan");
-    if (bid.contractor_preferred) badges.push("Preferred contractor");
-    if (bid.contractor_verified) badges.push("Verified contractor");
+    if (bid.contractor_preferred) badges.push("Preferred status reviewed");
+    if (bid.contractor_verified) badges.push("Profile reviewed");
     acc[bid.id] = badges;
     return acc;
   }, {});
@@ -332,7 +332,7 @@ export default function CustomerRequests({
           <div>
             <h2 className="text-xl font-semibold text-white">Project & Service Requests</h2>
             <p className="mt-1 text-sm text-slate-300">
-              Use Requests to tell us what you need help with next. Saved requests stay private until you choose to send them to a contractor or, where available, up to 5 vetted MyHomeBro marketplace contractors.
+              Use Requests to tell us what you need help with next. Saved requests stay private until you choose to send them to a contractor or, where available, up to 5 marketplace contractors.
             </p>
           </div>
           <Badge>{requests.length} total</Badge>
@@ -387,7 +387,7 @@ export default function CustomerRequests({
                 <div className="text-xs font-bold uppercase tracking-[0.22em] text-amber-200">Bid Comparison</div>
                 <h3 className="mt-1 text-xl font-extrabold text-white">{activeComparisonRequest.project_title || "Marketplace Request"}</h3>
                 <p className="mt-1 text-sm leading-6 text-slate-300">
-                  Compare up to 5 vetted contractor bids before selecting who should create the agreement draft.
+                  Compare up to 5 contractor bids before selecting who should create the agreement draft.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

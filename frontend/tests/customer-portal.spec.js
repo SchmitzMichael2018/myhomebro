@@ -1006,7 +1006,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-create-panel")).toContainText("Tell us what you need help with next");
   await expect(page.getByRole("heading", { name: "Project & Service Requests" })).toBeVisible();
   await expect(page.getByText("Use Requests to tell us what you need help with next.")).toBeVisible();
-  await expect(page.getByText("up to 5 vetted MyHomeBro marketplace contractors")).toBeVisible();
+  await expect(page.getByText("up to 5 marketplace contractors")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Contractor Responses" })).toBeVisible();
   await expect(page.getByText("Create a Request")).toBeVisible();
   await expect(page.getByText("Choose the property this request is for.")).toBeVisible();
@@ -1026,8 +1026,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Partner Co");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Lowest price");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Most detailed milestone plan");
-  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Verified contractor");
-  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Preferred contractor");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Profile reviewed");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Preferred status reviewed");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("One-year workmanship warranty.");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Builder Co");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Partner Co");
@@ -1092,8 +1092,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-documents")).toContainText("water-heater-warranty.pdf");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
-  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your home history, organized.");
-  await expect(page.getByTestId("home-records-dashboard")).toContainText("Completed MyHomeBro projects automatically become part of your home record.");
+  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your property records, organized.");
+  await expect(page.getByTestId("home-records-dashboard")).toContainText("Completed MyHomeBro projects can be saved as part of your property record.");
   await expect(page.getByTestId("customer-property-manager")).toContainText("My Properties");
   await expect(page.getByTestId("customer-property-card-1")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-property-card-2")).toContainText("Lake House");
@@ -1338,8 +1338,8 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-bids-empty")).toContainText("No bids yet");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
-  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your home history, organized.");
-  await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No home history yet");
+  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your property records, organized.");
+  await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No property timeline yet");
   await expect(page.getByTestId("home-records-warranty-empty")).toContainText("No warranty details yet");
   await expect(page.getByTestId("home-records-completed-empty")).toContainText("No completed projects yet");
   await expect(page.getByTestId("customer-property-files-empty")).toContainText("No property files yet");

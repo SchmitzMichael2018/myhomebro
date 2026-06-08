@@ -889,7 +889,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   story.append(Paragraph(f"<b>Customer Address:</b> {h_addr or '---'}", s_val))
   story.append(Paragraph(f"<b>Project Address:</b> {p_addr or '---'}", s_val))
   story.append(Paragraph(f"<b>Type:</b> {type_line}", s_val))
-  story.append(Paragraph(f"<b>Payment Mode:</b> {'Direct Pay' if payment_mode == 'direct' else 'Escrow (Protected)'}", s_val))
+  story.append(Paragraph(f"<b>Payment Mode:</b> {'Direct Pay' if payment_mode == 'direct' else 'Escrow (Milestone Hold)'}", s_val))
   story.append(Paragraph(f"<b>Schedule:</b> {schedule_line}", s_val))
   story.append(Paragraph(f"<b>Status:</b> {status_line}", s_small))
   story.append(Spacer(1, 12))
@@ -1247,7 +1247,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     ["Agreement ID", str(getattr(ag, "id", "")) or "—"],
     ["Amendment Number", str(ag_amend_num or 0)],
     ["PDF Version", f"v{ag_pdf_ver}" if ag_pdf_ver is not None else "—"],
-    ["Payment Mode", "Direct Pay" if payment_mode == "direct" else "Escrow (Protected)"],
+    ["Payment Mode", "Direct Pay" if payment_mode == "direct" else "Escrow (Milestone Hold)"],
     ["Original Created", _fmt_dt(ag_created)],
     ["Last Amended", _fmt_dt(ag_amended)],
     ["Generated At", localtime().strftime("%Y-%m-%d %H:%M")],

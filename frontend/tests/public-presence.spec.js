@@ -32,14 +32,14 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
       compatibility_profile: {
         tier: 'Strong Match',
         summary: 'Good fit for collaborative projects and homeowner participation.',
-        badges: ['DIY Assistance Available', 'Escrow Friendly'],
+        badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
         ways_i_work: [
           { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
           { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
         ],
         reasons: ['Comfortable working alongside homeowners.', 'Accepts escrow milestone payments.'],
       },
-      compatibility_badges: ['DIY Assistance Available', 'Escrow Friendly'],
+      compatibility_badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
       ways_i_work: [
         { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
         { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
@@ -102,7 +102,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
           tier: 'Strong Match',
           score: 86,
           summary: 'Strong fit for this project and working style.',
-          badges: ['DIY Assistance Available', 'Escrow Friendly'],
+          badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
           reasons: ['Offers Assisted DIY support.', 'Accepts escrow milestone payments.'],
         },
         created_at: '2026-03-25T11:00:00Z',
@@ -471,14 +471,14 @@ test('public contractor profile surfaces compatibility badges and ways I work', 
         compatibility_profile: {
           tier: 'Strong Match',
           summary: 'Good fit for collaborative projects and homeowner participation.',
-          badges: ['DIY Assistance Available', 'Escrow Friendly'],
+          badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
           ways_i_work: [
             { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
             { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
           ],
           reasons: ['Comfortable working alongside homeowners.', 'Accepts escrow milestone payments.'],
         },
-        compatibility_badges: ['DIY Assistance Available', 'Escrow Friendly'],
+        compatibility_badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
         ways_i_work: [
           { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
           { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
@@ -512,7 +512,7 @@ test('public contractor profile surfaces compatibility badges and ways I work', 
   await expect(page.getByTestId('public-profile-compatibility')).toBeVisible();
   await expect(page.getByTestId('public-profile-compatibility')).toContainText('Ways I Work');
   await expect(page.getByTestId('public-profile-compatibility')).toContainText('DIY Assistance Available');
-  await expect(page.getByTestId('public-profile-compatibility')).toContainText('Escrow Friendly');
+  await expect(page.getByTestId('public-profile-compatibility')).toContainText('Escrow Workflow Compatible');
   await expect(page.getByTestId('public-profile-compatibility')).toContainText('Good fit for collaborative projects');
 });
 
@@ -547,14 +547,14 @@ test('landing-source intake and public-profile intake land in the same contracto
       compatibility_profile: {
         tier: 'Strong Match',
         summary: 'Good fit for collaborative projects and homeowner participation.',
-        badges: ['DIY Assistance Available', 'Escrow Friendly'],
+        badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
         ways_i_work: [
           { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
           { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },
         ],
         reasons: ['Comfortable working alongside homeowners.', 'Accepts escrow milestone payments.'],
       },
-      compatibility_badges: ['DIY Assistance Available', 'Escrow Friendly'],
+      compatibility_badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
       ways_i_work: [
         { key: 'assisted_diy', label: 'DIY Assistance Available', description: 'Guided DIY assistance available.' },
         { key: 'consultation', label: 'Consultation Available', description: 'Advice, planning, and guidance are available.' },

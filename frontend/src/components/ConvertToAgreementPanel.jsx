@@ -544,8 +544,8 @@ export default function ConvertToAgreementPanel({ open, row, onClose }) {
                     onChange={(event) => updateDraft({ paymentMode: event.target.value, escrowEnabled: event.target.value !== "direct" })}
                     className={fieldClassName()}
                   >
-                    <option value="escrow">Escrow (Protected)</option>
-                    <option value="direct">Direct Pay (Fast)</option>
+                    <option value="escrow">Escrow (Milestone Hold)</option>
+                    <option value="direct">Direct Pay</option>
                   </select>
                 </label>
                 <label className="mt-4 block text-sm font-medium text-slate-700">
