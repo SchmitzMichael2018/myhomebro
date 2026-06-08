@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.db import transaction
 from django.utils import timezone
@@ -15,6 +15,16 @@ def money(value) -> Decimal:
         return Decimal(str(value or "0")).quantize(Decimal("0.01"))
     except (InvalidOperation, TypeError, ValueError):
         return Decimal("0.00")
+
+
+def _to_cents(value) -> int:
+    try:
+        return int(
+            (Decimal(str(value or "0")) * Decimal("100"))
+            .quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+    except Exception:
+        return 0
 
 
 def _invoice_released_amount(agreement: Agreement) -> Decimal:
@@ -147,6 +157,190 @@ def _release_validation(locked: ExpenseRequest) -> ReimbursementValidation:
     return validation
 
 
+def _contractor_stripe_release_blocker(contractor) -> str:
+    if not contractor:
+        return "Agreement is missing contractor."
+    if getattr(contractor, "stripe_deauthorized_at", None):
+        return "Contractor Stripe account is disconnected."
+    stripe_account_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
+    if not stripe_account_id or not stripe_account_id.startswith("acct_"):
+        return "Contractor is not connected to Stripe."
+    if not bool(getattr(contractor, "charges_enabled", False)):
+        return "Contractor Stripe account is not charges-enabled."
+    if not bool(getattr(contractor, "payouts_enabled", False)):
+        return "Contractor Stripe account is not payouts-enabled."
+    if not bool(getattr(contractor, "details_submitted", False)):
+        return "Contractor Stripe account setup is incomplete."
+    if int(getattr(contractor, "requirements_due_count", 0) or 0) > 0:
+        return "Contractor Stripe account has outstanding requirements."
+    return ""
+
+
+def _select_escrow_source_payment(agreement: Agreement, amount_cents: int):
+    try:
+        from payments.models import Payment
+    except Exception:
+        return None
+
+    payments = (
+        Payment.objects.select_for_update()
+        .filter(
+            agreement=agreement,
+            status="succeeded",
+        )
+        .exclude(stripe_charge_id__isnull=True)
+        .exclude(stripe_charge_id="")
+        .order_by("created_at", "id")
+    )
+    for payment in payments:
+        payment_amount_cents = int(getattr(payment, "amount_cents", 0) or 0)
+        if payment_amount_cents >= int(amount_cents or 0):
+            return payment
+    return payments.first()
+
+
+def _release_idempotency_key(expense: ExpenseRequest) -> str:
+    return f"escrow-reimbursement-release:{expense.id}"
+
+
+def _stripe_object_id(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return str(value.get("id") or "")
+    return str(getattr(value, "id", "") or "")
+
+
+def _mark_release_failure(expense_id: int, message: str) -> None:
+    ExpenseRequest.objects.filter(pk=expense_id).update(
+        status=ExpenseRequest.Status.PENDING_RELEASE,
+        release_error=message,
+        updated_at=timezone.now(),
+    )
+    try:
+        expense = ExpenseRequest.objects.select_related("agreement", "agreement__contractor").get(pk=expense_id)
+        from projects.models import Notification
+        from projects.services.workflow_notifications import notify_reimbursement_contractor_update
+
+        notify_reimbursement_contractor_update(
+            expense=expense,
+            event_type=Notification.EVENT_REIMBURSEMENT_HELD,
+            reason=message,
+        )
+    except Exception:
+        pass
+
+
+def release_reimbursement_transfer(expense: ExpenseRequest, *, reviewed_by=None) -> ExpenseRequest:
+    transfer = None
+    source_payment_intent_id = ""
+    failure_message = ""
+    locked_id = expense.id
+
+    with transaction.atomic():
+        locked = (
+            ExpenseRequest.objects.select_for_update()
+            .select_related("agreement", "agreement__contractor")
+            .get(pk=expense.pk)
+        )
+        if locked.status == ExpenseRequest.Status.RELEASED or locked.released_at:
+            return locked
+        if locked.stripe_transfer_id:
+            locked.status = ExpenseRequest.Status.RELEASED
+            locked.released_at = locked.released_at or timezone.now()
+            locked.paid_at = locked.paid_at or locked.released_at
+            locked.release_error = ""
+            locked.save(update_fields=["status", "released_at", "paid_at", "release_error", "updated_at"])
+            return locked
+        if locked.status not in {
+            ExpenseRequest.Status.PENDING_RELEASE,
+            ExpenseRequest.Status.APPROVED,
+            ExpenseRequest.Status.HOMEOWNER_ACCEPTED,
+        }:
+            raise ValueError("Only approved reimbursements can be released.")
+
+        validation = _release_validation(locked)
+        if not validation.ok:
+            raise ValueError(validation.detail)
+
+        agreement = locked.agreement
+        contractor = getattr(agreement, "contractor", None) if agreement else None
+        stripe_blocker = _contractor_stripe_release_blocker(contractor)
+        if stripe_blocker:
+            raise ValueError(stripe_blocker)
+
+        amount_cents = _to_cents(locked.amount)
+        if amount_cents <= 0:
+            raise ValueError("Reimbursement amount is invalid.")
+        source_payment = _select_escrow_source_payment(agreement, amount_cents)
+        if source_payment is None:
+            raise ValueError("No escrow funding charge has enough remaining capacity to release this reimbursement.")
+        source_charge_id = str(getattr(source_payment, "stripe_charge_id", "") or "").strip()
+        if not source_charge_id:
+            raise ValueError("Escrow funding charge is missing, so Stripe cannot create the reimbursement transfer.")
+        source_payment_intent_id = str(getattr(source_payment, "stripe_payment_intent_id", "") or "")
+
+        try:
+            import stripe
+
+            transfer = stripe.Transfer.create(
+                amount=int(amount_cents),
+                currency="usd",
+                destination=str(getattr(contractor, "stripe_account_id", "") or "").strip(),
+                source_transaction=source_charge_id,
+                idempotency_key=_release_idempotency_key(locked),
+                metadata={
+                    "kind": "escrow_reimbursement_release",
+                    "expense_request_id": str(locked.id),
+                    "agreement_id": str(locked.agreement_id),
+                    "contractor_id": str(getattr(contractor, "id", "") or ""),
+                    "amount_cents": str(amount_cents),
+                    "source_payment_intent_id": source_payment_intent_id,
+                    "source_charge_id": source_charge_id,
+                },
+            )
+        except Exception as exc:
+            failure_message = str(exc)
+
+        if not failure_message:
+            locked.status = ExpenseRequest.Status.RELEASED
+            locked.released_at = timezone.now()
+            locked.paid_at = locked.released_at
+            locked.reviewed_by = reviewed_by or locked.reviewed_by
+            locked.release_error = ""
+            locked.stripe_transfer_id = _stripe_object_id(transfer)
+            locked.escrow_source_payment_intent_id = source_payment_intent_id
+            locked.save(update_fields=[
+                "status",
+                "released_at",
+                "paid_at",
+                "reviewed_by",
+                "release_error",
+                "stripe_transfer_id",
+                "escrow_source_payment_intent_id",
+                "updated_at",
+            ])
+            locked_id = locked.id
+
+    if failure_message:
+        _mark_release_failure(locked_id, f"Stripe reimbursement transfer failed: {failure_message}")
+        raise ValueError(f"Stripe reimbursement transfer failed: {failure_message}")
+
+    released = ExpenseRequest.objects.select_related("agreement").get(pk=locked_id)
+    try:
+        from projects.models import Notification
+        from projects.services.workflow_notifications import notify_reimbursement_contractor_update
+
+        notify_reimbursement_contractor_update(
+            expense=released,
+            event_type=Notification.EVENT_REIMBURSEMENT_RELEASED,
+            actor_user=reviewed_by,
+        )
+    except Exception:
+        pass
+    return released
+
+
 @transaction.atomic
 def submit_reimbursement(expense: ExpenseRequest) -> ExpenseRequest:
     locked = ExpenseRequest.objects.select_for_update().select_related("agreement").get(pk=expense.pk)
@@ -170,6 +364,19 @@ def submit_reimbursement(expense: ExpenseRequest) -> ExpenseRequest:
 @transaction.atomic
 def approve_reimbursement(expense: ExpenseRequest, *, reviewed_by=None) -> ExpenseRequest:
     locked = ExpenseRequest.objects.select_for_update().select_related("agreement").get(pk=expense.pk)
+    if locked.status == ExpenseRequest.Status.RELEASED or locked.released_at:
+        return locked
+    if locked.status in {
+        ExpenseRequest.Status.PENDING_RELEASE,
+        ExpenseRequest.Status.APPROVED,
+        ExpenseRequest.Status.HOMEOWNER_ACCEPTED,
+    }:
+        try:
+            return release_reimbursement_transfer(locked, reviewed_by=reviewed_by)
+        except ValueError as exc:
+            ExpenseRequest.objects.filter(pk=locked.pk).update(release_error=str(exc), updated_at=timezone.now())
+            locked.refresh_from_db()
+            return locked
     if locked.status not in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER}:
         raise ValueError("Only submitted reimbursement requests can be approved.")
     validation = validate_reimbursement(locked)
@@ -203,6 +410,11 @@ def approve_reimbursement(expense: ExpenseRequest, *, reviewed_by=None) -> Expen
         )
     except Exception:
         pass
+    try:
+        locked = release_reimbursement_transfer(locked, reviewed_by=reviewed_by)
+    except ValueError as exc:
+        ExpenseRequest.objects.filter(pk=locked.pk).update(release_error=str(exc), updated_at=timezone.now())
+        locked.refresh_from_db()
     return locked
 
 

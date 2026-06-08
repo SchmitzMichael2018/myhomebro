@@ -19,6 +19,7 @@ from projects.services.escrow_reimbursements import (
     escrow_ledger,
     place_reimbursement_hold,
     record_manual_reimbursement_release,
+    release_reimbursement_transfer,
     serialize_ledger,
 )
 
@@ -84,6 +85,20 @@ def _release_blockers(expense: ExpenseRequest, ledger: dict | None = None) -> li
         blockers.append("Not approved for release.")
     if expense.agreement and agreement_has_escrow_hold(expense.agreement):
         blockers.append("Agreement escrow is frozen by an active dispute.")
+    contractor = getattr(getattr(expense, "agreement", None), "contractor", None)
+    if contractor is not None:
+        if getattr(contractor, "stripe_deauthorized_at", None):
+            blockers.append("Contractor Stripe account is disconnected.")
+        elif not str(getattr(contractor, "stripe_account_id", "") or "").startswith("acct_"):
+            blockers.append("Contractor is not connected to Stripe.")
+        elif not bool(getattr(contractor, "charges_enabled", False)):
+            blockers.append("Contractor Stripe account is not charges-enabled.")
+        elif not bool(getattr(contractor, "payouts_enabled", False)):
+            blockers.append("Contractor Stripe account is not payouts-enabled.")
+        elif not bool(getattr(contractor, "details_submitted", False)):
+            blockers.append("Contractor Stripe account setup is incomplete.")
+        elif int(getattr(contractor, "requirements_due_count", 0) or 0) > 0:
+            blockers.append("Contractor Stripe account has outstanding requirements.")
     ledger = ledger if ledger is not None else _current_ledger(expense, exclude_reimbursement=True)
     try:
         available = Decimal(str(ledger.get("available") or "0"))
@@ -245,7 +260,7 @@ class AdminReimbursementRecordRelease(APIView):
             ExpenseRequest.objects.filter(pk=expense.pk).update(release_error=str(exc))
             expense.refresh_from_db()
             return Response({"detail": str(exc), "reimbursement": _row(expense, request, include_detail=True)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"detail": "Release recorded.", "reimbursement": _row(updated, request, include_detail=True)}, status=status.HTTP_200_OK)
+        return Response({"detail": "Manual release recorded.", "reimbursement": _row(updated, request, include_detail=True)}, status=status.HTTP_200_OK)
 
 
 class AdminReimbursementHold(APIView):
@@ -281,7 +296,9 @@ class AdminReimbursementRetryRelease(APIView):
     def post(self, request, reimbursement_id: int):
         expense = get_object_or_404(_reimbursement_queryset(), pk=reimbursement_id)
         try:
-            updated = clear_reimbursement_release_error(expense)
+            clear_reimbursement_release_error(expense)
+            updated = release_reimbursement_transfer(expense, reviewed_by=request.user)
         except ValueError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"detail": "Release error cleared for retry.", "reimbursement": _row(updated, request, include_detail=True)}, status=status.HTTP_200_OK)
+            expense.refresh_from_db()
+            return Response({"detail": str(exc), "reimbursement": _row(expense, request, include_detail=True)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Reimbursement released.", "reimbursement": _row(updated, request, include_detail=True)}, status=status.HTTP_200_OK)

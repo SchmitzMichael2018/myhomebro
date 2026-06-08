@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -11,6 +12,7 @@ from projects.models import Agreement, Contractor, ExpenseRequest, Homeowner, In
 from projects.models_dispute import Dispute
 from projects.services.escrow_reimbursements import escrow_ledger
 from projects.views.customer_portal import _portal_token
+from payments.models import Payment
 
 
 class EscrowReimbursementRequestTests(TestCase):
@@ -65,6 +67,30 @@ class EscrowReimbursementRequestTests(TestCase):
                 "receipt": receipt or self._receipt(),
             },
             format="multipart",
+        )
+
+    def _make_contractor_stripe_ready(self):
+        self.contractor.stripe_account_id = "acct_test_reimburse"
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
+        self.contractor.requirements_due_count = 0
+        self.contractor.save(update_fields=[
+            "stripe_account_id",
+            "charges_enabled",
+            "payouts_enabled",
+            "details_submitted",
+            "requirements_due_count",
+        ])
+
+    def _funding_payment(self, amount_cents=100000):
+        return Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_reimbursement_fund",
+            stripe_charge_id="ch_reimbursement_fund",
+            amount_cents=amount_cents,
+            currency="usd",
+            status="succeeded",
         )
 
     def test_contractor_can_submit_escrow_reimbursement_with_receipt(self):
@@ -161,6 +187,148 @@ class EscrowReimbursementRequestTests(TestCase):
         ledger = escrow_ledger(self.agreement)
         self.assertEqual(ledger["reimbursement_pending"], Decimal("200.00"))
         self.assertEqual(ledger["available"], Decimal("800.00"))
+
+    def test_customer_portal_approval_triggers_stripe_transfer_when_safe(self):
+        self._make_contractor_stripe_ready()
+        self._funding_payment()
+        response = self._create_reimbursement(amount="200.00")
+        self.assertEqual(response.status_code, 201, response.data)
+        reimbursement_id = response.data["id"]
+        token = _portal_token(self.homeowner.email)
+
+        with patch("stripe.Transfer.create", return_value={"id": "tr_reimbursement_auto_123"}) as transfer_create:
+            approve = self.client.post(
+                f"/api/projects/customer-portal/{token}/reimbursements/{reimbursement_id}/approve/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(approve.status_code, 200, approve.data)
+        self.assertEqual(approve.data["status"], ExpenseRequest.Status.RELEASED)
+        expense = ExpenseRequest.objects.get(pk=reimbursement_id)
+        self.assertEqual(expense.status, ExpenseRequest.Status.RELEASED)
+        self.assertEqual(expense.stripe_transfer_id, "tr_reimbursement_auto_123")
+        self.assertIsNotNone(expense.released_at)
+        self.assertEqual(expense.escrow_source_payment_intent_id, "pi_reimbursement_fund")
+        transfer_create.assert_called_once()
+        kwargs = transfer_create.call_args.kwargs
+        self.assertEqual(kwargs["amount"], 20000)
+        self.assertEqual(kwargs["destination"], "acct_test_reimburse")
+        self.assertEqual(kwargs["source_transaction"], "ch_reimbursement_fund")
+        self.assertEqual(kwargs["idempotency_key"], f"escrow-reimbursement-release:{reimbursement_id}")
+
+    def test_duplicate_customer_approval_does_not_double_transfer(self):
+        self._make_contractor_stripe_ready()
+        self._funding_payment()
+        response = self._create_reimbursement(amount="125.00")
+        reimbursement_id = response.data["id"]
+        token = _portal_token(self.homeowner.email)
+
+        with patch("stripe.Transfer.create", return_value={"id": "tr_reimbursement_once"}) as transfer_create:
+            first = self.client.post(
+                f"/api/projects/customer-portal/{token}/reimbursements/{reimbursement_id}/approve/",
+                {},
+                format="json",
+            )
+            second = self.client.post(
+                f"/api/projects/customer-portal/{token}/reimbursements/{reimbursement_id}/approve/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(second.data["status"], ExpenseRequest.Status.RELEASED)
+        transfer_create.assert_called_once()
+        expense = ExpenseRequest.objects.get(pk=reimbursement_id)
+        self.assertEqual(expense.stripe_transfer_id, "tr_reimbursement_once")
+
+    def test_stripe_transfer_failure_stores_retryable_error(self):
+        self._make_contractor_stripe_ready()
+        self._funding_payment()
+        response = self._create_reimbursement(amount="125.00")
+        reimbursement_id = response.data["id"]
+        token = _portal_token(self.homeowner.email)
+
+        with patch("stripe.Transfer.create", side_effect=Exception("stripe timeout")):
+            approve = self.client.post(
+                f"/api/projects/customer-portal/{token}/reimbursements/{reimbursement_id}/approve/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(approve.status_code, 200, approve.data)
+        expense = ExpenseRequest.objects.get(pk=reimbursement_id)
+        self.assertEqual(expense.status, ExpenseRequest.Status.PENDING_RELEASE)
+        self.assertIn("stripe timeout", expense.release_error)
+        self.assertFalse(expense.stripe_transfer_id)
+
+    def test_restricted_contractor_stripe_account_blocks_auto_transfer_but_keeps_approval(self):
+        self.contractor.stripe_account_id = "acct_restricted"
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = False
+        self.contractor.details_submitted = True
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
+        self._funding_payment()
+        response = self._create_reimbursement(amount="125.00")
+        reimbursement_id = response.data["id"]
+        token = _portal_token(self.homeowner.email)
+
+        with patch("stripe.Transfer.create") as transfer_create:
+            approve = self.client.post(
+                f"/api/projects/customer-portal/{token}/reimbursements/{reimbursement_id}/approve/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(approve.status_code, 200, approve.data)
+        transfer_create.assert_not_called()
+        expense = ExpenseRequest.objects.get(pk=reimbursement_id)
+        self.assertEqual(expense.status, ExpenseRequest.Status.PENDING_RELEASE)
+        self.assertIn("not payouts-enabled", expense.release_error)
+
+    def test_approval_blocks_if_escrow_becomes_insufficient_before_release(self):
+        response = self._create_reimbursement(amount="300.00")
+        reimbursement_id = response.data["id"]
+        Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("800.00"),
+            status=InvoiceStatus.PAID,
+            escrow_released=True,
+        )
+        token = _portal_token(self.homeowner.email)
+
+        approve = self.client.post(
+            f"/api/projects/customer-portal/{token}/reimbursements/{reimbursement_id}/approve/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(approve.status_code, 400, approve.data)
+        self.assertIn("exceeds available escrow", approve.data["detail"])
+
+    def test_customer_approval_blocks_active_dispute_before_transfer(self):
+        response = self._create_reimbursement(amount="125.00")
+        reimbursement_id = response.data["id"]
+        Dispute.objects.create(
+            agreement=self.agreement,
+            initiator="homeowner",
+            reason="Work issue",
+            status="open",
+            escrow_frozen=True,
+        )
+        token = _portal_token(self.homeowner.email)
+
+        with patch("stripe.Transfer.create") as transfer_create:
+            approve = self.client.post(
+                f"/api/projects/customer-portal/{token}/reimbursements/{reimbursement_id}/approve/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(approve.status_code, 400, approve.data)
+        self.assertIn("Escrow is on hold", approve.data["detail"])
+        transfer_create.assert_not_called()
 
     def test_customer_portal_denial_records_reason(self):
         response = self._create_reimbursement(amount="75.00")
@@ -367,15 +535,20 @@ class AdminEscrowReimbursementTests(EscrowReimbursementRequestTests):
         self.assertEqual(clear.status_code, 200, clear.data)
         self.assertEqual(release_after_clear.status_code, 200, release_after_clear.data)
 
-    def test_admin_retry_clears_failed_release_error_without_creating_transfer(self):
+    def test_admin_retry_release_succeeds_after_failed_transfer(self):
         expense = self._approved_reimbursement(amount="125.00")
-        expense.release_error = "temporary manual review failure"
+        self._make_contractor_stripe_ready()
+        self._funding_payment()
+        expense.release_error = "temporary stripe failure"
         expense.save(update_fields=["release_error"])
         self.client.force_authenticate(self.admin)
 
-        response = self.client.post(f"/api/projects/admin/reimbursements/{expense.id}/retry-release/", {}, format="json")
+        with patch("stripe.Transfer.create", return_value={"id": "tr_retry_reimbursement_123"}) as transfer_create:
+            response = self.client.post(f"/api/projects/admin/reimbursements/{expense.id}/retry-release/", {}, format="json")
 
         self.assertEqual(response.status_code, 200, response.data)
         expense.refresh_from_db()
         self.assertEqual(expense.release_error, "")
-        self.assertEqual(expense.status, ExpenseRequest.Status.PENDING_RELEASE)
+        self.assertEqual(expense.status, ExpenseRequest.Status.RELEASED)
+        self.assertEqual(expense.stripe_transfer_id, "tr_retry_reimbursement_123")
+        transfer_create.assert_called_once()

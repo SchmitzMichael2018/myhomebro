@@ -2903,9 +2903,11 @@ class CustomerPortalReimbursementApproveView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             {
-                "detail": "Reimbursement approved and queued for escrow release.",
+                "detail": "Reimbursement approved and released." if expense.status == ExpenseRequest.Status.RELEASED else "Reimbursement approved and queued for escrow release.",
                 "reimbursement_id": expense.id,
                 "status": expense.status,
+                "stripe_transfer_id": expense.stripe_transfer_id,
+                "release_error": expense.release_error,
                 "portal": _build_customer_portal_payload(email, request=request),
             },
             status=status.HTTP_200_OK,

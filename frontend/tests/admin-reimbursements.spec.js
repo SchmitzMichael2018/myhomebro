@@ -82,7 +82,7 @@ async function installAdminMocks(page) {
   });
 }
 
-test('admin reimbursement dashboard reviews, holds, clears, and records release', async ({ page }) => {
+test('admin reimbursement dashboard reviews, holds, clears, and releases reimbursement', async ({ page }) => {
   await installAdminMocks(page);
   let row = { ...baseRow };
   let detail = { ...detailRow };
@@ -125,10 +125,10 @@ test('admin reimbursement dashboard reviews, holds, clears, and records release'
       return;
     }
 
-    if (method === 'POST' && url.includes('/admin/reimbursements/99/record-release/')) {
-      row = { ...row, status: 'released', status_label: 'Released', released_at: '2026-06-01T12:00:00Z', stripe_transfer_id: 'manual-transfer-123', can_release: false, release_blockers: ['Already released.'] };
+    if (method === 'POST' && url.includes('/admin/reimbursements/99/retry-release/')) {
+      row = { ...row, status: 'released', status_label: 'Released', released_at: '2026-06-01T12:00:00Z', stripe_transfer_id: 'tr_retry_123', can_release: false, release_blockers: ['Already released.'] };
       detail = { ...detail, ...row, ledger_breakdown: row.current_ledger };
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ detail: 'Release recorded.', reimbursement: detail }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ detail: 'Reimbursement released.', reimbursement: detail }) });
       return;
     }
 
@@ -153,12 +153,13 @@ test('admin reimbursement dashboard reviews, holds, clears, and records release'
 
   await page.getByTestId('admin-reimbursement-place-hold').click();
   await expect(page.getByTestId('admin-reimbursement-detail')).toContainText('Held');
-  await expect(page.getByTestId('admin-reimbursement-record-release')).toBeDisabled();
+  await expect(page.getByTestId('admin-reimbursement-retry-release')).toBeDisabled();
   await page.getByTestId('admin-reimbursement-clear-hold').click();
   await expect(page.getByTestId('admin-reimbursement-detail')).toContainText('Pending Release');
-  await expect(page.getByTestId('admin-reimbursement-record-release')).toBeEnabled();
+  await expect(page.getByTestId('admin-reimbursement-retry-release')).toBeEnabled();
+  await expect(page.getByTestId('admin-reimbursement-record-release')).toContainText('Manual Fallback Record');
 
-  await page.getByTestId('admin-reimbursement-record-release').click();
+  await page.getByTestId('admin-reimbursement-retry-release').click();
   await expect(page.getByTestId('admin-reimbursement-detail')).toContainText('Released');
-  await expect(page.getByTestId('admin-reimbursement-detail')).toContainText('manual-transfer-123');
+  await expect(page.getByTestId('admin-reimbursement-detail')).toContainText('tr_retry_123');
 });

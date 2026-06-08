@@ -96,16 +96,16 @@ export default function AdminReimbursementsPage() {
   const recordRelease = async () => {
     if (!selected) return;
     const transferId = window.prompt("Transfer/reference ID (optional):") || "";
-    if (!window.confirm("Record this escrow reimbursement as released? This records an audit reference only and does not create a Stripe transfer.")) return;
+    if (!window.confirm("Manually record this escrow reimbursement as released? This is a fallback audit action and does not create a Stripe transfer.")) return;
     setBusy("release");
     try {
       const { data } = await api.post(`/projects/admin/reimbursements/${selected.id}/record-release/`, { stripe_transfer_id: transferId });
       refreshDetail(data?.reimbursement);
-      toast.success("Release recorded.");
+      toast.success("Manual release recorded.");
       load();
     } catch (error) {
       refreshDetail(error?.response?.data?.reimbursement);
-      toast.error(error?.response?.data?.detail || "Could not record release.");
+      toast.error(error?.response?.data?.detail || "Could not record manual release.");
     } finally {
       setBusy("");
     }
@@ -149,10 +149,11 @@ export default function AdminReimbursementsPage() {
     try {
       const { data } = await api.post(`/projects/admin/reimbursements/${selected.id}/retry-release/`, {});
       refreshDetail(data?.reimbursement);
-      toast.success("Release error cleared.");
+      toast.success("Reimbursement released.");
       load();
     } catch (error) {
-      toast.error(error?.response?.data?.detail || "Could not clear release error.");
+      refreshDetail(error?.response?.data?.reimbursement);
+      toast.error(error?.response?.data?.detail || "Could not release reimbursement.");
     } finally {
       setBusy("");
     }
@@ -170,7 +171,7 @@ export default function AdminReimbursementsPage() {
           <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-200/80">Admin Payments</div>
           <h1 className="mt-2 text-3xl font-black">Escrow Reimbursements</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-sky-100/80">
-            Review customer-approved material and expense reimbursements before manual release. Recording a release here is audit-only and does not create a Stripe transfer.
+            Customer approvals now attempt an automatic Stripe Connect transfer. Use this queue to retry failed releases, hold risky reimbursements, or manually record a fallback release.
           </p>
         </header>
 
@@ -313,15 +314,17 @@ export default function AdminReimbursementsPage() {
             ) : null}
 
             <div className="mt-6 flex flex-wrap gap-2">
-              <button type="button" className={primaryButtonClass} disabled={!selected.can_release || Boolean(busy)} onClick={recordRelease} data-testid="admin-reimbursement-record-release">
-                Record Release
+              <button type="button" className={primaryButtonClass} disabled={!selected.can_release || Boolean(busy)} onClick={retryRelease} data-testid="admin-reimbursement-retry-release">
+                {selected.release_error ? "Retry Release" : "Release Now"}
+              </button>
+              <button type="button" className={buttonClass} disabled={Boolean(busy) || selected.status === "released"} onClick={recordRelease} data-testid="admin-reimbursement-record-release">
+                Manual Fallback Record
               </button>
               {selected.status === "held" ? (
                 <button type="button" className={buttonClass} disabled={Boolean(busy)} onClick={clearHold} data-testid="admin-reimbursement-clear-hold">Clear Hold</button>
               ) : (
                 <button type="button" className={buttonClass} disabled={Boolean(busy) || selected.status === "released"} onClick={placeHold} data-testid="admin-reimbursement-place-hold">Place Hold</button>
               )}
-              {selected.release_error ? <button type="button" className={buttonClass} disabled={Boolean(busy)} onClick={retryRelease} data-testid="admin-reimbursement-retry-release">Clear Error for Retry</button> : null}
             </div>
           </aside>
         ) : null}
