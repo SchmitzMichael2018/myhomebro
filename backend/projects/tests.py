@@ -12544,9 +12544,11 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.agreement.signed_by_contractor = True
         self.agreement.signed_by_homeowner = True
         self.contractor.stripe_account_id = "acct_ready_release"
+        self.contractor.charges_enabled = True
         self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
         self.agreement.escrow_funded_amount = Decimal("5000.00")
-        self.contractor.save(update_fields=["stripe_account_id", "payouts_enabled"])
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
         self.agreement.save(
             update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner", "escrow_funded_amount"]
         )
@@ -12627,9 +12629,11 @@ class ProgressPaymentWorkflowTests(TestCase):
     def test_release_escrow_draw_handles_transfer_failure_gracefully(self):
         self.agreement.payment_mode = "escrow"
         self.contractor.stripe_account_id = "acct_ready_release"
+        self.contractor.charges_enabled = True
         self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
         self.agreement.escrow_funded_amount = Decimal("5000.00")
-        self.contractor.save(update_fields=["stripe_account_id", "payouts_enabled"])
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
         self.agreement.save(update_fields=["payment_mode", "escrow_funded_amount"])
         Payment.objects.create(
             agreement=self.agreement,
@@ -12657,6 +12661,156 @@ class ProgressPaymentWorkflowTests(TestCase):
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
         self.assertEqual(draw.transfer_failure_reason, "transfer failed")
+
+    def test_release_escrow_draw_blocks_restricted_connected_account_without_transfer(self):
+        self.agreement.payment_mode = "escrow"
+        self.contractor.stripe_account_id = "acct_restricted_release"
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = False
+        self.contractor.details_submitted = True
+        self.agreement.escrow_funded_amount = Decimal("5000.00")
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
+        self.agreement.save(update_fields=["payment_mode", "escrow_funded_amount"])
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_escrow_fund_restricted",
+            stripe_charge_id="ch_escrow_fund_restricted",
+            amount_cents=500000,
+            currency="usd",
+            status="succeeded",
+        )
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=17,
+            status=DrawRequestStatus.AWAITING_RELEASE,
+            title="Restricted Account Draw",
+            gross_amount=Decimal("1200.00"),
+            retainage_amount=Decimal("120.00"),
+            net_amount=Decimal("1080.00"),
+            current_requested_amount=Decimal("1200.00"),
+        )
+
+        with patch("projects.services.draw_requests.stripe.Transfer.create") as transfer_create:
+            with self.assertRaisesMessage(ValueError, "not payouts-enabled"):
+                release_escrow_draw(draw_request_id=draw.id)
+
+        transfer_create.assert_not_called()
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
+
+    def test_magic_invoice_approval_blocks_insufficient_escrow_without_transfer(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.status = "funded"
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("100.00")
+        self.contractor.stripe_account_id = "acct_invoice_ready"
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
+        self.agreement.save(update_fields=["payment_mode", "status", "escrow_funded", "escrow_funded_amount"])
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_invoice_fund_small",
+            stripe_charge_id="ch_invoice_fund_small",
+            amount_cents=10000,
+            currency="usd",
+            status="succeeded",
+        )
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("250.00"),
+            status=InvoiceStatus.PENDING,
+        )
+
+        with override_settings(STRIPE_SECRET_KEY="sk_test_dummy"):
+            with patch("stripe.Transfer.create") as transfer_create:
+                response = self.client.patch(f"/api/projects/invoices/magic/{invoice.public_token}/approve/", {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "INSUFFICIENT_ESCROW")
+        transfer_create.assert_not_called()
+        invoice.refresh_from_db()
+        self.assertFalse(invoice.escrow_released)
+        self.assertEqual(invoice.status, InvoiceStatus.PENDING)
+
+    def test_magic_invoice_approval_blocks_restricted_connected_account_without_transfer(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.status = "funded"
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("1000.00")
+        self.contractor.stripe_account_id = "acct_invoice_restricted"
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = False
+        self.contractor.details_submitted = True
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
+        self.agreement.save(update_fields=["payment_mode", "status", "escrow_funded", "escrow_funded_amount"])
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_invoice_fund_ready",
+            stripe_charge_id="ch_invoice_fund_ready",
+            amount_cents=100000,
+            currency="usd",
+            status="succeeded",
+        )
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("250.00"),
+            status=InvoiceStatus.PENDING,
+        )
+
+        with override_settings(STRIPE_SECRET_KEY="sk_test_dummy"):
+            with patch("stripe.Transfer.create") as transfer_create:
+                response = self.client.patch(f"/api/projects/invoices/magic/{invoice.public_token}/approve/", {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        transfer_create.assert_not_called()
+        invoice.refresh_from_db()
+        self.assertFalse(invoice.escrow_released)
+        self.assertEqual(invoice.status, InvoiceStatus.PENDING)
+
+    @override_settings(STRIPE_WEBHOOK_SECRET="whsec_test")
+    def test_duplicate_escrow_funding_webhook_does_not_increment_funded_amount(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.escrow_funded_amount = Decimal("100.00")
+        self.agreement.save(update_fields=["payment_mode", "escrow_funded_amount"])
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_duplicate_escrow",
+            stripe_charge_id="ch_duplicate_escrow",
+            amount_cents=10000,
+            currency="usd",
+            status="succeeded",
+        )
+
+        from payments.webhooks import stripe_webhook
+
+        request = RequestFactory().post(
+            "/api/payments/webhooks/stripe/",
+            data=b'{"id":"evt_duplicate"}',
+            content_type="application/json",
+            HTTP_STRIPE_SIGNATURE="test-signature",
+        )
+        event = {
+            "type": "payment_intent.succeeded",
+            "data": {
+                "object": {
+                    "id": "pi_duplicate_escrow",
+                    "amount_received": 10000,
+                    "currency": "usd",
+                    "metadata": {"agreement_id": str(self.agreement.id)},
+                    "charges": {"data": [{"id": "ch_duplicate_escrow"}]},
+                }
+            },
+        }
+
+        with patch("stripe.Webhook.construct_event", return_value=event):
+            response = stripe_webhook(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.agreement.refresh_from_db()
+        self.assertEqual(self.agreement.escrow_funded_amount, Decimal("100.00"))
+        self.assertEqual(Payment.objects.filter(stripe_payment_intent_id="pi_duplicate_escrow").count(), 1)
 
     def test_transfer_created_and_failed_webhooks_update_draw_tracking(self):
         draw = DrawRequest.objects.create(

@@ -1273,6 +1273,7 @@ def stripe_webhook(request):
         Agreement = _get_model("projects", "Agreement")
         Milestone = _get_model("projects", "Milestone")
         AgreementFundingLink = _get_model("projects", "AgreementFundingLink")
+        PaymentModel = _get_model("payments", "Payment")
 
         if Agreement is None:
             log.error("Agreement model not available in webhook.")
@@ -1346,6 +1347,22 @@ def stripe_webhook(request):
             if Milestone is not None:
                 total_required = _compute_total_required_for_agreement(Agreement, Milestone, ag)
             was_escrow_funded = bool(getattr(ag, "escrow_funded", False))
+            already_recorded = False
+            if PaymentModel is not None:
+                try:
+                    already_recorded = PaymentModel.objects.select_for_update().filter(stripe_payment_intent_id=pi_id).exists()
+                except Exception:
+                    already_recorded = False
+            if already_recorded:
+                log.info("Escrow payment already recorded: agreement=%s pi=%s", agreement_id, pi_id)
+                if link is not None:
+                    try:
+                        link.used_at = link.used_at or now()
+                        link.is_active = False
+                        link.save(update_fields=["used_at", "is_active"])
+                    except Exception:
+                        log.exception("Failed marking duplicate AgreementFundingLink used for id=%s", getattr(link, "id", None))
+                return HttpResponse(status=200)
 
             # If total_cost missing, backfill from milestones (best-effort)
             try:

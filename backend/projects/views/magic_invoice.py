@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -61,6 +62,115 @@ def _agreement_has_active_dispute(agreement) -> bool:
         return agreement.disputes.filter(status__in=("initiated", "open", "under_review")).exists()
     except Exception:
         return False
+
+
+def _contractor_stripe_release_blocker(contractor) -> str:
+    if not contractor:
+        return "Agreement is missing contractor."
+    if getattr(contractor, "stripe_deauthorized_at", None):
+        return "Contractor Stripe account is disconnected."
+    stripe_account_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
+    if not stripe_account_id or not stripe_account_id.startswith("acct_"):
+        return "Contractor is not connected to Stripe."
+    if not bool(getattr(contractor, "charges_enabled", False)):
+        return "Contractor Stripe account is not charges-enabled."
+    if not bool(getattr(contractor, "payouts_enabled", False)):
+        return "Contractor Stripe account is not payouts-enabled."
+    if not bool(getattr(contractor, "details_submitted", False)):
+        return "Contractor Stripe account setup is incomplete."
+    if int(getattr(contractor, "requirements_due_count", 0) or 0) > 0:
+        return "Contractor Stripe account has outstanding requirements."
+    return ""
+
+
+def _released_invoice_amount_cents(agreement_id: int, *, exclude_invoice_id: int | None = None) -> int:
+    qs = Invoice.objects.filter(
+        agreement_id=agreement_id,
+        escrow_released=True,
+    ).exclude(milestone_title_snapshot="Escrow Funding Payment")
+    if exclude_invoice_id:
+        qs = qs.exclude(id=exclude_invoice_id)
+    total = qs.aggregate(total=Sum("amount")).get("total") or Decimal("0.00")
+    return _to_cents(total)
+
+
+def _released_draw_amount_cents(agreement_id: int) -> int:
+    try:
+        from projects.models import DrawRequest, DrawRequestStatus
+    except Exception:
+        return 0
+    total = (
+        DrawRequest.objects.filter(
+            agreement_id=agreement_id,
+            status__in=[DrawRequestStatus.RELEASED, DrawRequestStatus.PAID],
+        )
+        .aggregate(total=Sum("net_amount"))
+        .get("total")
+        or Decimal("0.00")
+    )
+    return _to_cents(total)
+
+
+def _reimbursement_reserved_or_released_cents(agreement) -> int:
+    try:
+        from projects.models import ExpenseRequest
+    except Exception:
+        return 0
+    statuses = {
+        ExpenseRequest.Status.APPROVED,
+        ExpenseRequest.Status.PENDING_RELEASE,
+        ExpenseRequest.Status.HOMEOWNER_ACCEPTED,
+        ExpenseRequest.Status.RELEASED,
+        ExpenseRequest.Status.PAID,
+    }
+    total = (
+        ExpenseRequest.objects.filter(
+            agreement=agreement,
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            is_archived=False,
+            status__in=statuses,
+        )
+        .aggregate(total=Sum("amount"))
+        .get("total")
+        or Decimal("0.00")
+    )
+    return _to_cents(total)
+
+
+def _available_escrow_for_invoice_cents(invoice: Invoice) -> int:
+    agreement = getattr(invoice, "agreement", None)
+    if agreement is None:
+        return 0
+    funded = _to_cents(getattr(agreement, "escrow_funded_amount", Decimal("0.00")))
+    consumed = (
+        _released_invoice_amount_cents(invoice.agreement_id, exclude_invoice_id=invoice.id)
+        + _released_draw_amount_cents(invoice.agreement_id)
+        + _reimbursement_reserved_or_released_cents(agreement)
+    )
+    return max(funded - consumed, 0)
+
+
+def _select_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents: int):
+    try:
+        from payments.models import Payment
+    except Exception:
+        return None
+
+    payments = (
+        Payment.objects.select_for_update()
+        .filter(
+            agreement_id=invoice.agreement_id,
+            status="succeeded",
+        )
+        .exclude(stripe_charge_id__isnull=True)
+        .exclude(stripe_charge_id="")
+        .order_by("created_at", "id")
+    )
+    for payment in payments:
+        amount_cents = int(getattr(payment, "amount_cents", 0) or 0)
+        if amount_cents >= int(payout_cents or 0):
+            return payment
+    return None
 
 
 def _orchestrate_subcontractor_payout_for_invoice(invoice: Invoice, *, actor_user=None) -> None:
@@ -190,10 +300,8 @@ class MagicInvoiceApproveView(APIView):
             return Response({"detail": "This invoice cannot be approved in its current status."}, status=400)
 
         contractor = getattr(agreement, "contractor", None)
-        if not contractor:
-            return Response({"detail": "Agreement is missing contractor."}, status=400)
-
-        if not bool(getattr(contractor, "stripe_connected", False)):
+        stripe_blocker = _contractor_stripe_release_blocker(contractor)
+        if stripe_blocker:
             return Response(
                 build_stripe_requirement_payload(
                     contractor,
@@ -201,13 +309,13 @@ class MagicInvoiceApproveView(APIView):
                     action_label="Release Invoice Payment",
                     source="magic_invoice_approve",
                     return_path=f"/invoice/{invoice.public_token}",
-                ),
+                )
+                if contractor
+                else {"detail": stripe_blocker, "code": "STRIPE_ACCOUNT_NOT_READY"},
                 status=409,
             )
 
         destination_acct = getattr(contractor, "stripe_account_id", None)
-        if not destination_acct or not str(destination_acct).startswith("acct_"):
-            return Response({"detail": "Contractor is not connected to Stripe."}, status=400)
 
         stripe_secret = getattr(settings, "STRIPE_SECRET_KEY", None) or ""
         if not stripe_secret:
@@ -251,24 +359,17 @@ class MagicInvoiceApproveView(APIView):
 
         if escrow_funded:
             payout_cents = amount_cents - platform_fee_cents
-            source_payment_intent_id = ""
-            source_charge_id = ""
-            try:
-                from payments.models import Payment  # type: ignore
-
-                source_payment = (
-                    Payment.objects.filter(agreement_id=invoice.agreement_id, status="succeeded")
-                    .exclude(stripe_charge_id__isnull=True)
-                    .exclude(stripe_charge_id="")
-                    .order_by("created_at", "id")
-                    .first()
+            available_cents = _available_escrow_for_invoice_cents(invoice)
+            if available_cents < amount_cents:
+                return Response(
+                    {
+                        "detail": "Escrow funds are not sufficient to release this invoice.",
+                        "code": "INSUFFICIENT_ESCROW",
+                        "available_cents": available_cents,
+                        "invoice_amount_cents": amount_cents,
+                    },
+                    status=409,
                 )
-                if source_payment is not None:
-                    source_payment_intent_id = str(getattr(source_payment, "stripe_payment_intent_id", "") or "")
-                    source_charge_id = str(getattr(source_payment, "stripe_charge_id", "") or "")
-            except Exception:
-                source_payment_intent_id = ""
-                source_charge_id = ""
 
             if getattr(invoice, "stripe_transfer_id", None):
                 with transaction.atomic():
@@ -358,15 +459,24 @@ class MagicInvoiceApproveView(APIView):
                     status=200,
                 )
 
-            if getattr(invoice, "stripe_transfer_id", None):
+            source_payment = _select_escrow_source_payment_for_invoice(invoice, payout_cents)
+            if source_payment is None:
                 return Response(
                     {
-                        "invoice": InvoiceSerializer(invoice, context={"request": request}).data,
-                        "mode": "escrow_release",
-                        "stripe_transfer_id": invoice.stripe_transfer_id,
-                        "detail": "Already released (idempotent).",
+                        "detail": "No escrow funding charge has enough remaining capacity to release this invoice.",
+                        "code": "ESCROW_SOURCE_UNAVAILABLE",
                     },
-                    status=200,
+                    status=409,
+                )
+            source_payment_intent_id = str(getattr(source_payment, "stripe_payment_intent_id", "") or "")
+            source_charge_id = str(getattr(source_payment, "stripe_charge_id", "") or "")
+            if not source_charge_id:
+                return Response(
+                    {
+                        "detail": "Escrow funding charge is missing, so Stripe cannot create the release transfer.",
+                        "code": "ESCROW_SOURCE_CHARGE_MISSING",
+                    },
+                    status=409,
                 )
 
             try:
@@ -374,7 +484,7 @@ class MagicInvoiceApproveView(APIView):
                     amount=int(payout_cents),
                     currency="usd",
                     destination=str(destination_acct),
-                    **({"source_transaction": source_charge_id} if source_charge_id else {}),
+                    source_transaction=source_charge_id,
                     idempotency_key=f"escrow-release-invoice:{invoice.id}",
                     metadata={
                         "kind": "milestone_escrow_release",

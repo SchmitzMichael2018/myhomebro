@@ -54,7 +54,14 @@ def contractor_first_value_reached(contractor: Contractor | None) -> bool:
 def contractor_stripe_ready(contractor: Contractor | None) -> bool:
     if contractor is None:
         return False
-    return bool(getattr(contractor, "payouts_enabled", False) and getattr(contractor, "details_submitted", False))
+    if getattr(contractor, "stripe_deauthorized_at", None):
+        return False
+    return bool(
+        getattr(contractor, "charges_enabled", False)
+        and getattr(contractor, "payouts_enabled", False)
+        and getattr(contractor, "details_submitted", False)
+        and int(getattr(contractor, "requirements_due_count", 0) or 0) <= 0
+    )
 
 
 def normalize_stripe_onboarding_status(value: Any) -> str:
@@ -123,6 +130,8 @@ def determine_onboarding_step(contractor: Contractor | None) -> str:
 
 
 def determine_onboarding_status(contractor: Contractor | None) -> str:
+    if contractor is not None and str(getattr(contractor, "stripe_account_id", "") or "").strip() and not contractor_stripe_ready(contractor):
+        return "in_progress"
     step = determine_onboarding_step(contractor)
     if step == ONBOARDING_STEP_COMPLETE:
         return "complete"
@@ -224,6 +233,8 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
     }
     stripe_prompt_dismissed = bool(contractor.stripe_prompt_dismissed_at)
     return {
+        "business_name": str(getattr(contractor, "business_name", "") or "").strip(),
+        "contractor_name": getattr(contractor, "name", "") or str(getattr(contractor, "business_name", "") or "").strip(),
         "status": contractor.contractor_onboarding_status or determine_onboarding_status(contractor),
         "step": step_value,
         "profile_basics_complete": contractor_profile_basics_complete(contractor),

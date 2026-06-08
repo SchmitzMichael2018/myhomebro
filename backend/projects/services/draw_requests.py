@@ -218,6 +218,25 @@ def _agreement_customer(agreement) -> Tuple[Optional[object], str, str]:
     return customer, email, str(name or "Customer").strip()
 
 
+def _contractor_stripe_release_blocker(contractor) -> str:
+    if contractor is None:
+        return "Draw request is missing a contractor."
+    stripe_account_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
+    if getattr(contractor, "stripe_deauthorized_at", None):
+        return "Contractor Stripe account is disconnected."
+    if not stripe_account_id:
+        return "Contractor has no Stripe Connect account."
+    if not bool(getattr(contractor, "charges_enabled", False)):
+        return "Contractor Stripe account is not charges-enabled."
+    if not bool(getattr(contractor, "payouts_enabled", False)):
+        return "Contractor Stripe account is not payouts-enabled."
+    if not bool(getattr(contractor, "details_submitted", False)):
+        return "Contractor Stripe account setup is incomplete."
+    if int(getattr(contractor, "requirements_due_count", 0) or 0) > 0:
+        return "Contractor Stripe account has outstanding requirements."
+    return ""
+
+
 def build_public_draw_link(draw: DrawRequest) -> str:
     token = getattr(draw, "public_token", None)
     if not token:
@@ -310,9 +329,10 @@ def create_direct_checkout_for_draw(draw: DrawRequest) -> str:
         raise ValueError("Draw request amount must be greater than 0.")
 
     contractor = getattr(agreement, "contractor", None)
+    stripe_blocker = _contractor_stripe_release_blocker(contractor)
+    if stripe_blocker:
+        raise ValueError(stripe_blocker)
     stripe_account_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
-    if not stripe_account_id:
-        raise ValueError("Contractor has no Stripe Connect account.")
 
     _customer, customer_email, customer_name = _agreement_customer(agreement)
     if not customer_email:
@@ -612,9 +632,10 @@ def release_escrow_draw(
 
         agreement = getattr(draw, "agreement", None)
         contractor = getattr(agreement, "contractor", None) if agreement else None
+        stripe_blocker = _contractor_stripe_release_blocker(contractor)
+        if stripe_blocker:
+            raise ValueError(stripe_blocker)
         stripe_account_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
-        if not stripe_account_id:
-            raise ValueError("Contractor does not have a Stripe account ready for escrow release.")
 
         if _available_escrow_amount_cents(draw) < _to_cents(getattr(draw, "net_amount", None)):
             raise ValueError("Escrow funds are not sufficient to release this draw.")
