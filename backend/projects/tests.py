@@ -19549,6 +19549,9 @@ class CustomerPortalAccessTests(TestCase):
         self.assertNotIn("Internal Contractor Draft", project_titles)
         self.assertNotIn("Internal Contractor Draft", agreement_titles)
 
+        direct = self.client.get(f"/api/projects/customer-portal/project/{internal_project.id}/?token={token}")
+        self.assertEqual(direct.status_code, 404, direct.data)
+
     def test_customer_portal_shows_customer_facing_pending_and_payment_linked_records(self):
         sent_project = Project.objects.create(
             contractor=self.contractor,
@@ -20337,6 +20340,34 @@ class CustomerPortalAccessTests(TestCase):
             ContractorActivityEvent.objects.filter(event_type="sms_sent", agreement_id=response.data["agreement_id"]).count(),
             3,
         )
+
+    def test_customer_portal_rejects_marketplace_award_when_contractor_suspended(self):
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = True
+        self.contractor.marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+        self.contractor.save(
+            update_fields=[
+                "charges_enabled",
+                "payouts_enabled",
+                "marketplace_verification_status",
+                "updated_at",
+            ]
+        )
+        self.comparison_lead_one.ai_analysis = {
+            "marketplace_request": True,
+            "source_intake_id": self.comparison_intake.id,
+        }
+        self.comparison_lead_one.save(update_fields=["ai_analysis", "updated_at"])
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/"
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("suspended", response.data["detail"].lower())
+        self.comparison_lead_one.refresh_from_db()
+        self.assertFalse(self.comparison_lead_one.converted_agreement_id)
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_bid_accept_respects_sms_opt_outs(self):

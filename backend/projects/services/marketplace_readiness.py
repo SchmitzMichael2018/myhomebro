@@ -13,6 +13,7 @@ from projects.models import Contractor, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
+from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.workflow_notifications import notify_customer_bid_received, notify_marketplace_request_routed
 
@@ -319,11 +320,7 @@ def eligible_marketplace_listings(intake: ProjectIntake):
     rows = []
     for listing in qs:
         contractor = listing.claimed_contractor
-        if (
-            _contractor_suspended(contractor)
-            or not _contractor_marketplace_verified(contractor)
-            or not _contractor_stripe_ready(contractor)
-        ):
+        if contractor_marketplace_action_block_reason(contractor):
             continue
         listing_trades = _listing_trades(listing)
         if request_trades and listing_trades and not (request_trades & listing_trades):

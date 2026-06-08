@@ -57,6 +57,7 @@ from projects.services.bid_notifications import create_bid_outcome_notifications
 from projects.services.escrow_reimbursements import approve_reimbursement, deny_reimbursement, escrow_ledger, serialize_ledger
 from projects.services.smart_notifications import create_smart_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
+from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -2605,6 +2606,8 @@ class CustomerProjectDashboardView(APIView):
         customer_email = _project_customer_email(project, agreement)
         if not customer_email or customer_email != email.lower().strip():
             raise LookupError("This project link does not match your records.")
+        if not _project_customer_visible_reason(project, agreement, email):
+            raise LookupError("This project is not visible in your customer portal.")
         return project, agreement, email
 
     def get(self, request, project_id: int):
@@ -2816,6 +2819,15 @@ class CustomerPortalBidAcceptView(APIView):
             contractor_user = getattr(contractor, "user", None)
             if not already_linked and contractor_user is not None and not getattr(contractor_user, "is_active", True):
                 return Response({"detail": "This contractor is not currently eligible for new marketplace awards."}, status=status.HTTP_400_BAD_REQUEST)
+            analysis = getattr(lead, "ai_analysis", None) or {}
+            marketplace_bid = bool(
+                analysis.get("marketplace_request")
+                or (source_intake is not None and getattr(source_intake, "post_submit_flow", "") == "multi_contractor")
+            )
+            if marketplace_bid and not already_linked:
+                block_reason = contractor_marketplace_action_block_reason(contractor)
+                if block_reason:
+                    return Response({"detail": block_reason}, status=status.HTTP_400_BAD_REQUEST)
 
             _, competing_group = _awardable_bid_group(email=email, lead=lead, source_intake=source_intake)
             already_awarded = [

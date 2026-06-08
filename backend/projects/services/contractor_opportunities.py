@@ -15,6 +15,7 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
+from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.project_titles import generate_project_title, normalize_project_classification
 from projects.utils import categorize_project, load_legal_text
 
@@ -351,6 +352,10 @@ def accept_contractor_opportunity(opportunity: ContractorOpportunity, contractor
     linked = opportunity.directory_entry.claimed_by_contractor_id == contractor.id
     if not linked:
         raise PermissionError("This opportunity is not linked to your contractor profile.")
+
+    block_reason = contractor_marketplace_action_block_reason(contractor)
+    if block_reason:
+        raise PermissionError(block_reason)
 
     if opportunity.status == ContractorOpportunity.STATUS_CONVERTED and opportunity.converted_agreement_id:
         return {

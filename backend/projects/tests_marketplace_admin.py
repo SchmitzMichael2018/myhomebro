@@ -458,6 +458,35 @@ class MarketplaceGatingTests(TestCase):
         self.assertNotIn(self.contractors[1].id, invited_contractors)
         self.assertEqual(len(invited_contractors), 4)
 
+    def test_suspended_contractor_cannot_accept_existing_marketplace_opportunity(self):
+        MarketplaceLocation.objects.create(
+            city="Austin",
+            state="TX",
+            is_enabled=True,
+            min_claimed_contractors=1,
+            min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+            min_trade_categories=1,
+            max_bids_per_request=5,
+        )
+        intake = self._intake()
+        create_marketplace_invites_for_intake(intake.id)
+        opportunity = ContractorOpportunity.objects.get(
+            intake_request=intake,
+            directory_entry__claimed_by_contractor=self.contractors[0],
+        )
+        self.contractors[0].marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+        self.contractors[0].save(update_fields=["marketplace_verification_status", "updated_at"])
+        self.client.force_authenticate(user=self.contractors[0].user)
+
+        response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/")
+
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertIn("suspended", response.data["detail"].lower())
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_PENDING)
+        self.assertIsNone(opportunity.converted_agreement_id)
+
     def test_preferred_verified_contractors_rank_before_non_preferred_eligible_contractors(self):
         self.contractors[4].marketplace_preferred = True
         self.contractors[4].save(update_fields=["marketplace_preferred", "updated_at"])
