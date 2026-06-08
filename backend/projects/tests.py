@@ -19171,6 +19171,14 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(comparison_row["bids_count"], 2)
         self.assertEqual(comparison_row["action_label"], "Compare bids")
         self.assertFalse(comparison_row["agreement_token"])
+        comparison_payload = next(row for row in response.data["bid_comparisons"] if row["comparison_key"] == comparison_row["comparison_key"])
+        self.assertEqual(comparison_payload["project_title"], "Office Fitout")
+        self.assertEqual(comparison_payload["bid_count"], 2)
+        self.assertEqual(comparison_payload["status"], "open")
+        self.assertEqual(len(comparison_payload["bids"]), 2)
+        self.assertIn("contractor_verified", comparison_payload["bids"][0])
+        self.assertIn("milestone_count", comparison_payload["bids"][0])
+        self.assertIn("warranty_summary", comparison_payload["bids"][0])
 
         agreement_row = response.data["agreements"][0]
         self.assertNotIn("detail", agreement_row)
@@ -19882,6 +19890,7 @@ class CustomerPortalAccessTests(TestCase):
         accepted_bid = next(row for row in portal["bids"] if row["bid_id"] == self.comparison_lead_one.id)
         competing_bid = next(row for row in portal["bids"] if row["bid_id"] == self.comparison_lead_two.id)
         comparison_row = next(row for row in portal["requests"] if row["project_title"] == "Office Fitout")
+        comparison_payload = next(row for row in portal["bid_comparisons"] if row["comparison_key"] == comparison_row["comparison_key"])
 
         self.assertEqual(accepted_bid["status"], "awarded")
         self.assertEqual(accepted_bid["status_label"], "Awarded")
@@ -19891,6 +19900,10 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(competing_bid["status_note"], "Another contractor was selected for this project.")
         self.assertEqual(comparison_row["action_label"], "Open Agreement")
         self.assertTrue(comparison_row["agreement_token"])
+        self.assertEqual(comparison_payload["status"], "awarded")
+        self.assertEqual(comparison_payload["awarded_bid_id"], accepted_bid["id"])
+        self.assertEqual(comparison_payload["awarded_contractor"], "Builder Co")
+        self.assertEqual(comparison_payload["agreement_id"], agreement_id)
 
         winner_notifications = Notification.objects.filter(
             contractor=self.contractor,

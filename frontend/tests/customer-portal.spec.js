@@ -177,6 +177,11 @@ const portalPayload = {
       bid_id: 2,
       project_title: "Office Fitout",
       contractor_name: "Builder Co",
+      contractor_business_name: "Builder Co",
+      contractor_contact_name: "Jordan Builder",
+      contractor_verified: true,
+      contractor_preferred: true,
+      service_area: "Austin, TX",
       project_class_label: "Commercial",
       bid_amount_label: "$22,000.00",
       submitted_at: "2026-04-15T15:20:00Z",
@@ -191,6 +196,8 @@ const portalPayload = {
       proposal_summary: "Office fitout bid from Builder Co.",
       payment_structure_summary: "Bid summary",
       milestone_preview: ["Demo", "Buildout", "Closeout"],
+      milestone_count: 3,
+      warranty_summary: "One-year workmanship warranty.",
       can_accept: true,
     },
     {
@@ -198,6 +205,11 @@ const portalPayload = {
       bid_id: 3,
       project_title: "Office Fitout",
       contractor_name: "Partner Co",
+      contractor_business_name: "Partner Co",
+      contractor_contact_name: "Alex Partner",
+      contractor_verified: false,
+      contractor_preferred: false,
+      service_area: "Austin, TX",
       project_class_label: "Commercial",
       bid_amount_label: "$20,500.00",
       submitted_at: "2026-04-15T15:25:00Z",
@@ -211,8 +223,19 @@ const portalPayload = {
       timeline: "Q2",
       proposal_summary: "Office fitout bid from Partner Co.",
       payment_structure_summary: "Bid summary",
-      milestone_preview: ["Demo", "Buildout", "Closeout"],
+      milestone_preview: ["Demo", "Buildout", "Closeout", "Final walkthrough"],
+      milestone_count: 4,
+      warranty_summary: "Two-year service warranty.",
       can_accept: true,
+    },
+  ],
+  bid_comparisons: [
+    {
+      comparison_key: "compare-key",
+      project_title: "Office Fitout",
+      bid_count: 2,
+      status: "open",
+      bids: [],
     },
   ],
   agreements: [
@@ -957,6 +980,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect.poll(() => String(submittedRequestPayload?.property_id || "")).toBe("2");
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Seasonal HVAC service");
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("customer-portal-request-compare-request-2")).toContainText("Compare Bids");
+  await page.getByTestId("customer-portal-request-compare-request-2").click();
+  await expect(page.getByTestId("customer-bid-comparison")).toContainText("Bid Comparison");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Builder Co");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Partner Co");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Lowest price");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Most detailed milestone plan");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Verified contractor");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Preferred contractor");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("One-year workmanship warranty.");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Builder Co");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Partner Co");
 
@@ -1053,10 +1086,12 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-portal-bid-accept-lead-2")).toContainText("Award Bid");
-  await page.getByTestId("customer-portal-bid-accept-lead-2").click();
+  await page.getByTestId("customer-bid-comparison-award-lead-2").click();
   await expect(page.getByTestId("customer-portal-bid-award-modal")).toContainText("Selecting this contractor will create a project agreement draft.");
   await page.getByTestId("customer-portal-bid-award-confirm").click();
   await expect(page.getByTestId("customer-portal-bid-open-lead-2")).toBeVisible();
+  await expect(page.getByTestId("customer-bid-comparison")).toContainText("Awarded Contractor");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Not Selected");
 
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
 

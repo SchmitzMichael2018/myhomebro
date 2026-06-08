@@ -108,6 +108,8 @@ def _request_identity_from_intake(intake) -> tuple[str, str, str]:
 def _request_identity_from_lead(lead) -> tuple[str, str, str]:
     source_intake = getattr(lead, "source_intake", None)
     analysis = getattr(lead, "ai_analysis", None) or {}
+    if source_intake is None and analysis.get("source_intake_id"):
+        source_intake = ProjectIntake.objects.filter(pk=analysis.get("source_intake_id")).first()
     request_title = ""
     if source_intake is not None:
         source_agreement = getattr(source_intake, "agreement", None)
@@ -589,7 +591,7 @@ def _bid_rows(email: str) -> list[dict]:
     seen = set()
     for lead in leads:
         linked_agreement = getattr(lead, "converted_agreement", None)
-        source_intake = getattr(lead, "source_intake", None)
+        source_intake = _source_intake_from_bid_lead(lead)
         key = ("lead", lead.id)
         if key in seen:
             continue
@@ -609,6 +611,27 @@ def _bid_rows(email: str) -> list[dict]:
         )
         submitted_at = getattr(lead, "accepted_at", None) or getattr(lead, "converted_at", None) or getattr(lead, "created_at", None)
         contractor = getattr(lead, "contractor", None)
+        public_profile = getattr(lead, "public_profile", None)
+        milestone_rows = [
+            row
+            for row in (analysis.get("milestones") or [])
+            if isinstance(row, dict) and _safe_text(row.get("title") or row.get("name"))
+        ]
+        service_area = ", ".join(
+            part
+            for part in [
+                _safe_text(getattr(contractor, "city", "")) or _safe_text(getattr(public_profile, "city", "")),
+                _safe_text(getattr(contractor, "state", "")) or _safe_text(getattr(public_profile, "state", "")),
+            ]
+            if part
+        )
+        warranty_summary = (
+            _safe_text(analysis.get("warranty_summary"))
+            or _safe_text(analysis.get("warranty"))
+            or _safe_text(analysis.get("warranty_text"))
+            or _safe_text(getattr(linked_agreement, "warranty_text_snapshot", ""))
+            or _safe_text(getattr(linked_agreement, "warranty_type", ""))
+        )
         rows.append(
             {
                 "id": f"lead-{lead.id}",
@@ -620,6 +643,20 @@ def _bid_rows(email: str) -> list[dict]:
                 "project_title": request_title,
                 "project_address": request_address,
                 "contractor_name": _contractor_name(contractor),
+                "contractor_business_name": _safe_text(getattr(contractor, "business_name", "")) or _contractor_name(contractor),
+                "contractor_contact_name": _safe_text(getattr(contractor, "contact_name", "")) or _safe_text(getattr(getattr(contractor, "user", None), "get_full_name", lambda: "")()),
+                "contractor_verified": bool(
+                    getattr(contractor, "details_submitted", False)
+                    or getattr(contractor, "charges_enabled", False)
+                    or getattr(contractor, "payouts_enabled", False)
+                    or getattr(public_profile, "is_verified", False)
+                ),
+                "contractor_preferred": bool(
+                    getattr(contractor, "has_completed_guided_activation", False)
+                    or getattr(public_profile, "is_featured", False)
+                    or getattr(public_profile, "is_preferred", False)
+                ),
+                "service_area": service_area or _safe_text(getattr(lead, "city", "")),
                 "project_class": _safe_text(getattr(linked_agreement, "project_class", "")) or infer_project_class(
                     getattr(lead, "project_type", ""),
                     getattr(lead, "project_description", ""),
@@ -651,9 +688,10 @@ def _bid_rows(email: str) -> list[dict]:
                 ),
                 "milestone_preview": [
                     _safe_text(row.get("title") or row.get("name"))
-                    for row in (analysis.get("milestones") or [])[:3]
-                    if isinstance(row, dict) and _safe_text(row.get("title") or row.get("name"))
+                    for row in milestone_rows[:3]
                 ],
+                "milestone_count": len(milestone_rows),
+                "warranty_summary": warranty_summary,
                 "next_action": bid_next_action(
                     status=status,
                     linked_agreement_id=getattr(linked_agreement, "id", None),
@@ -667,6 +705,42 @@ def _bid_rows(email: str) -> list[dict]:
 
     rows.sort(key=lambda row: row.get("submitted_at") or "", reverse=True)
     return rows
+
+
+def _bid_comparisons(request_rows: list[dict], bid_rows: list[dict]) -> list[dict]:
+    request_by_key = {
+        _safe_text(row.get("comparison_key")): row
+        for row in request_rows
+        if _safe_text(row.get("comparison_key"))
+    }
+    grouped: dict[str, list[dict]] = {}
+    for bid in bid_rows:
+        key = _safe_text(bid.get("comparison_key"))
+        if not key:
+            continue
+        grouped.setdefault(key, []).append(bid)
+
+    comparisons = []
+    for key, bids in grouped.items():
+        request_row = request_by_key.get(key, {})
+        awarded = next((bid for bid in bids if bid.get("is_awarded") or bid.get("linked_agreement_id")), None)
+        comparisons.append(
+            {
+                "comparison_key": key,
+                "request_id": request_row.get("request_id") or request_row.get("id") or "",
+                "project_title": request_row.get("project_title") or (bids[0].get("project_title") if bids else ""),
+                "project_address": request_row.get("project_address") or (bids[0].get("request_address") if bids else ""),
+                "bid_count": len(bids),
+                "status": "awarded" if awarded else "open",
+                "awarded_bid_id": awarded.get("id") if awarded else "",
+                "awarded_contractor": awarded.get("contractor_name") if awarded else "",
+                "agreement_id": awarded.get("linked_agreement_id") if awarded else None,
+                "agreement_token": awarded.get("linked_agreement_token") if awarded else "",
+                "bids": bids,
+            }
+        )
+    comparisons.sort(key=lambda row: (row.get("status") != "open", row.get("project_title") or ""))
+    return comparisons
 
 
 def _agreements(email: str, request=None) -> list[dict]:
@@ -1158,6 +1232,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     _ensure_portal_workflow_notifications(email)
     bid_rows = _bid_rows(email)
     request_rows = _request_rows(email, bid_rows=bid_rows)
+    bid_comparison_rows = _bid_comparisons(request_rows, bid_rows)
     project_rows = _projects(email)
     agreement_rows = _agreements(email, request=request)
     payment_rows = _payments(email, request=request)
@@ -1183,6 +1258,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "account": _customer_account_payload(email),
         "summary": summary,
         "requests": request_rows,
+        "bid_comparisons": bid_comparison_rows,
         "projects": project_rows,
         "bids": bid_rows,
         "agreements": agreement_rows,
