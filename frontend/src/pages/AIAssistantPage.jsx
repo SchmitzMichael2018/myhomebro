@@ -13,8 +13,6 @@ import {
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
-import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
-import { produceStructuredAssistantPlan } from "../lib/assistantReasoning.js";
 
 const WORKSPACE_CONTEXT = {
   current_route: "/app/assistant",
@@ -26,23 +24,26 @@ const QUICK_ACTIONS = [
   {
     key: "start_agreement",
     title: "Create Agreement",
-    description: "Open Agreement Wizard Step 1, where project drafting and AI setup live.",
+    description: "Start a new agreement in the guided wizard.",
     icon: FileSignature,
     mode: "route",
+    route: "/app/agreements/new/wizard?step=1",
   },
   {
     key: "apply_template",
     title: "Use Template",
-    description: "Begin from a reusable project template instead of building the structure by hand.",
+    description: "Browse reusable templates and choose a starting structure.",
     icon: ClipboardList,
     mode: "route",
+    route: "/app/templates",
   },
   {
     key: "suggest_milestones",
     title: "Plan Milestones",
-    description: "Open the milestone planning workflow for agreement phase, price, and timing review.",
+    description: "Open milestone planning for phase, price, and timing review.",
     icon: ListChecks,
     mode: "route",
+    route: "/app/agreements/new/wizard?step=2",
   },
   {
     key: "continue_project",
@@ -71,16 +72,16 @@ const CAPABILITY_ROWS = [
 
 const OWNERSHIP_CARDS = [
   {
-    title: "Workspace launches work",
-    body: "Start, resume, and organize the right workflow from one command center.",
+    title: "Launch work",
+    body: "Start agreement, template, milestone, and task workflows from one place.",
   },
   {
-    title: "Agreement Wizard drafts projects",
-    body: "Use the wizard when you need AI-generated project details, scopes, templates, and milestones.",
+    title: "Continue work",
+    body: "Jump back into recent drafts, active agreements, and reusable templates.",
   },
   {
-    title: "Project Assistant guides pages",
-    body: "Open the page-local guide when you want step actions for the work already in front of you.",
+    title: "Find work",
+    body: "Surface the next useful action across agreements, milestones, and leads.",
   },
 ];
 
@@ -358,8 +359,8 @@ function WorkflowLauncherHero() {
         Launch Work. Continue Work. Find Work.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-        AI Workspace routes you to the right workflow and surfaces active work. Agreement Wizard
-        owns project drafting; Project Assistant helps you finish the page you are already on.
+        AI Workspace routes you to the right workflow and surfaces active work. Start here to
+        create an agreement, open a template, plan milestones, or find the next useful task.
       </p>
       <div className="mt-6 grid gap-3 md:grid-cols-3">
         {OWNERSHIP_CARDS.map((card) => (
@@ -468,24 +469,6 @@ export default function AIAssistantPage() {
 
   const quickActions = useMemo(() => QUICK_ACTIONS, []);
 
-  async function routeWithAi(preferredIntent = "", input = "") {
-    const busyValue = preferredIntent || "hero";
-    setBusyKey(busyValue);
-    setResult(null);
-    try {
-      const plan = await produceStructuredAssistantPlan({
-        preferredIntent,
-        input,
-        context: WORKSPACE_CONTEXT,
-      });
-      navigate(plan.navigation_target, {
-        state: buildAssistantNavigationState(plan, WORKSPACE_CONTEXT),
-      });
-    } finally {
-      setBusyKey("");
-    }
-  }
-
   async function runWorkspaceAnalysis(analyzeMode) {
     setBusyKey(analyzeMode);
     setResult(null);
@@ -522,7 +505,7 @@ export default function AIAssistantPage() {
     if (action.mode === "analyze") {
       runWorkspaceAnalysis(action.analyzeMode);
     } else {
-      routeWithAi(action.key);
+      navigate(action.route);
     }
   }
 
@@ -547,12 +530,11 @@ export default function AIAssistantPage() {
               How To Use It
             </div>
             <h3 className="mt-4 text-2xl font-bold tracking-tight">
-              A launcher, not a second drafting flow.
+              Choose the right next workflow.
             </h3>
             <p className="mt-3 text-sm leading-6 text-sky-50/90">
-              Start here when you know the kind of work you want to do. The actual drafting,
-              template application, milestone planning, and page-specific help happen inside the
-              dedicated workflows.
+              Start here when you know the kind of work you want to do. The workspace opens the
+              right tool, keeps recent work close, and helps you find tasks that need attention.
             </p>
             <div className="mt-6 space-y-3">
               {CAPABILITY_ROWS.map((row) => (

@@ -293,6 +293,7 @@ test.describe('AI Workspace page', () => {
     await expect(page.getByRole('heading', { name: 'Launch Work. Continue Work. Find Work.' })).toBeVisible();
     await expect(page.getByTestId('workspace-conversation-input')).not.toBeVisible();
     await expect(page.getByText('AI Workspace routes you to the right workflow')).toBeVisible();
+    await expect(page.getByText('Choose the right next workflow.')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-quick-action-start_agreement')).toContainText('Create Agreement');
     await expect(page.getByTestId('ai-workspace-quick-action-apply_template')).toContainText('Use Template');
     await expect(page.getByTestId('ai-workspace-quick-action-suggest_milestones')).toContainText('Plan Milestones');
@@ -300,6 +301,8 @@ test.describe('AI Workspace page', () => {
     await expect(page.getByTestId('ai-workspace-quick-action-navigate_app')).toContainText('Find My Next Task');
     await expect(page.getByText('Launch the right workflow without hunting for it.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'What AI can help with' })).not.toBeVisible();
+    await expect(page.getByText('A launcher, not a second drafting flow.')).not.toBeVisible();
+    await expect(page.getByText('Agreement Wizard owns project drafting')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-summary')).toBeVisible();
   });
 
