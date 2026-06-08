@@ -17,6 +17,7 @@ import {
   Target,
   ListTodo,
   CheckCircle2,
+  Circle,
   BadgeDollarSign,
   BadgeCheck,
   WalletMinimal,
@@ -35,6 +36,8 @@ import {
   ChevronRight,
   Sparkles,
   ArrowRight,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import {
   buildUnifiedPaymentRecords,
@@ -138,6 +141,145 @@ function inRange(dateObj, from, to) {
 }
 const currency = (n) =>
   Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+function activationValue(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return String(value);
+    if (value === true) return "true";
+  }
+  return "";
+}
+
+function hasContractorTradeInfo(profile = {}) {
+  if (Array.isArray(profile?.skills)) return profile.skills.length > 0;
+  return Boolean(
+    activationValue(
+      profile?.trade,
+      profile?.trade_name,
+      profile?.specialty,
+      profile?.project_type,
+      profile?.primary_trade
+    )
+  );
+}
+
+function hasContractorServiceArea(profile = {}) {
+  return Boolean(
+    activationValue(
+      profile?.city,
+      profile?.state,
+      profile?.zip,
+      profile?.postal_code,
+      profile?.address,
+      profile?.service_area,
+      profile?.service_area_text
+    )
+  );
+}
+
+function isStripeReadyForActivation(profile = {}, stripe = {}) {
+  const onboarding = profile?.onboarding || {};
+  return Boolean(
+    stripe?.connected ||
+      stripe?.stripe_ready ||
+      stripe?.onboarding?.stripe_ready ||
+      onboarding?.stripe_ready ||
+      profile?.stripe_ready ||
+      (profile?.stripe_connected && profile?.charges_enabled && profile?.payouts_enabled) ||
+      (profile?.stripe_status?.connected &&
+        profile?.stripe_status?.charges_enabled &&
+        profile?.stripe_status?.payouts_enabled)
+  );
+}
+
+function marketplaceStatusFromProfile(profile = {}, stripe = {}) {
+  const raw = String(profile?.marketplace_verification_status || profile?.verification_status || "").toLowerCase();
+  const stripeReady = isStripeReadyForActivation(profile, stripe);
+  const hasServiceArea = hasContractorServiceArea(profile);
+  const hasTrade = hasContractorTradeInfo(profile);
+  if (raw === "suspended") {
+    return {
+      key: "suspended",
+      label: "Suspended",
+      tone: "danger",
+      reason: "Marketplace access is suspended. Contact support before accepting new marketplace work.",
+    };
+  }
+  if (!stripeReady) {
+    return {
+      key: "stripe",
+      label: "Stripe action needed",
+      tone: "warning",
+      reason: "Connect Stripe before marketplace-funded projects can move forward.",
+    };
+  }
+  if (!hasServiceArea) {
+    return {
+      key: "service_area",
+      label: "Missing service area",
+      tone: "warning",
+      reason: "Add your service city, state, or ZIP so marketplace requests can be matched locally.",
+    };
+  }
+  if (!hasTrade) {
+    return {
+      key: "trade",
+      label: "Missing trade/category",
+      tone: "warning",
+      reason: "Select at least one trade category so relevant requests can find you.",
+    };
+  }
+  if (raw === "verified" && profile?.marketplace_preferred) {
+    return {
+      key: "preferred",
+      label: "Preferred",
+      tone: "success",
+      reason: "You are verified and marked preferred for marketplace opportunities.",
+    };
+  }
+  if (raw === "verified") {
+    return {
+      key: "verified",
+      label: "Verified",
+      tone: "success",
+      reason: "You are eligible for marketplace opportunities in enabled locations.",
+    };
+  }
+  if (raw === "pending_review") {
+    return {
+      key: "pending",
+      label: "Pending review",
+      tone: "info",
+      reason: "Your marketplace verification is waiting for review.",
+    };
+  }
+  if (raw === "rejected") {
+    return {
+      key: "rejected",
+      label: "Not eligible",
+      tone: "danger",
+      reason: profile?.marketplace_verification_rejected_reason || "Verification needs attention before marketplace eligibility.",
+    };
+  }
+  return {
+    key: "not_eligible",
+    label: "Not eligible",
+    tone: "warning",
+    reason: "Complete the required setup steps to become marketplace eligible.",
+  };
+}
+
+function activationToneClasses(tone = "slate") {
+  const map = {
+    success: "border-emerald-300/35 bg-emerald-400/10 text-emerald-100",
+    warning: "border-amber-300/35 bg-amber-300/10 text-amber-100",
+    danger: "border-rose-300/35 bg-rose-400/10 text-rose-100",
+    info: "border-sky-300/35 bg-sky-400/10 text-sky-100",
+    slate: "border-slate-600 bg-slate-900/70 text-slate-200",
+  };
+  return map[tone] || map.slate;
+}
 
 function getMilestoneDueDate(m) {
   return (
@@ -1314,6 +1456,250 @@ function DashboardGreeting({ firstName, daysSince, briefingItems, profileScore, 
         </button>
       </div>
     </div>
+  );
+}
+
+function ActivationChecklistItem({ item, onNavigate }) {
+  const complete = Boolean(item.complete);
+  return (
+    <article
+      data-testid={`contractor-activation-check-${item.key}`}
+      className={`rounded-2xl border p-4 ${
+        complete
+          ? "border-emerald-300/25 bg-emerald-400/10"
+          : item.required
+          ? "border-amber-300/25 bg-slate-950/55"
+          : "border-slate-700 bg-slate-950/40"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 ${complete ? "text-emerald-300" : "text-slate-500"}`}>
+          {complete ? <CheckCircle2 className="h-5 w-5" aria-hidden="true" /> : <Circle className="h-5 w-5" aria-hidden="true" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-sm font-bold text-white">{item.title}</h4>
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${complete ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" : "border-slate-600 bg-slate-900 text-slate-300"}`}>
+              {complete ? "Complete" : item.required ? "Required" : "Optional"}
+            </span>
+          </div>
+          <p className="mt-1 text-sm leading-5 text-sky-100/70">
+            {complete ? item.completeText || "Done." : item.description}
+          </p>
+          {!complete && item.blockedReason ? (
+            <p className="mt-2 text-xs font-semibold text-amber-100">{item.blockedReason}</p>
+          ) : null}
+          {!complete && item.href ? (
+            <button
+              type="button"
+              onClick={() => onNavigate?.(item.href)}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white transition hover:border-amber-300/50 hover:bg-white/15"
+              data-testid={`contractor-activation-action-${item.key}`}
+            >
+              {item.actionLabel || "Complete step"}
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ContractorActivationChecklist({
+  contractorProfile,
+  stripeStatus,
+  agreements = [],
+  publicLeads = [],
+  onNavigate,
+}) {
+  if (!contractorProfile) return null;
+
+  const stripeReady = isStripeReadyForActivation(contractorProfile, stripeStatus);
+  const hasBusiness = Boolean(
+    activationValue(
+      contractorProfile.business_name,
+      contractorProfile.company_name,
+      contractorProfile.display_name,
+      contractorProfile.name
+    )
+  );
+  const hasServiceArea = hasContractorServiceArea(contractorProfile);
+  const hasTrade = hasContractorTradeInfo(contractorProfile);
+  const verificationStatus = String(
+    contractorProfile.marketplace_verification_status || contractorProfile.verification_status || "unverified"
+  ).toLowerCase();
+  const verificationComplete = ["verified", "pending_review"].includes(verificationStatus);
+  const hasLogo = Boolean(
+    activationValue(contractorProfile.logo, contractorProfile.logo_url, contractorProfile.public_profile?.logo_url)
+  );
+  const hasCompliance = Boolean(
+    activationValue(
+      contractorProfile.license_number,
+      contractorProfile.license_file,
+      contractorProfile.insurance_file,
+      contractorProfile.insurance_status?.has_insurance
+    )
+  );
+  const hasFirstTemplateOrAgreement = Number(agreements.length || 0) > 0;
+  const hasOpportunity = Number(publicLeads.length || 0) > 0;
+  const status = marketplaceStatusFromProfile(contractorProfile, stripeStatus);
+  const requiredItems = [
+    {
+      key: "business-profile",
+      title: "Complete business profile",
+      description: "Add the business name and contact details customers will see on agreements and invoices.",
+      completeText: "Business identity is ready for customer-facing records.",
+      complete: hasBusiness,
+      required: true,
+      href: "/app/profile",
+      actionLabel: "Open Profile",
+    },
+    {
+      key: "service-area",
+      title: "Add service area",
+      description: "Set your city, state, ZIP, and service radius for local marketplace matching.",
+      completeText: "Service area is available for local matching.",
+      complete: hasServiceArea,
+      required: true,
+      href: "/app/profile",
+      actionLabel: "Add Service Area",
+    },
+    {
+      key: "trade-category",
+      title: "Add trade/category",
+      description: "Select the trades you offer so requests, templates, and compliance guidance stay relevant.",
+      completeText: "Trade profile is ready.",
+      complete: hasTrade,
+      required: true,
+      href: "/app/profile",
+      actionLabel: "Choose Trades",
+    },
+    {
+      key: "stripe",
+      title: "Connect Stripe",
+      description: "Connect Stripe before escrow, invoice, and payout workflows can fully activate.",
+      completeText: "Stripe is connected for payment workflows.",
+      complete: stripeReady,
+      required: true,
+      href: "/app/onboarding/stripe",
+      actionLabel: "Connect Stripe",
+    },
+    {
+      key: "verification",
+      title: "Submit/complete verification",
+      description: "Submit marketplace verification so customers can compare and award bids confidently.",
+      completeText:
+        verificationStatus === "verified" ? "Marketplace verification is approved." : "Marketplace verification is in review.",
+      complete: verificationComplete,
+      required: true,
+      href: "/app/public-presence",
+      actionLabel: "Open Marketplace Profile",
+      blockedReason: !stripeReady ? "Stripe setup may be required before marketplace eligibility is complete." : "",
+    },
+  ];
+  const optionalItems = [
+    {
+      key: "logo",
+      title: "Add logo/profile photo",
+      description: "Add a brand image for customer-facing agreements, invoices, and profile pages.",
+      complete: hasLogo,
+      href: "/app/profile",
+      actionLabel: "Add Logo",
+    },
+    {
+      key: "license-insurance",
+      title: "Add insurance/license details",
+      description: "Upload license or insurance details where they apply to your trade and state.",
+      complete: hasCompliance,
+      href: "/app/profile",
+      actionLabel: "Add Compliance Details",
+    },
+    {
+      key: "first-template",
+      title: "Create first template",
+      description: "Save a reusable scope and milestone plan so future agreements start faster.",
+      complete: hasFirstTemplateOrAgreement,
+      href: "/app/templates",
+      actionLabel: "Open Templates",
+    },
+    {
+      key: "first-opportunity",
+      title: "Review first opportunity",
+      description: "Marketplace leads and customer opportunities will appear here once you are eligible.",
+      complete: hasOpportunity,
+      href: "/app/bids",
+      actionLabel: "Open Opportunities",
+    },
+  ];
+
+  return (
+    <DashboardCard
+      testId="contractor-activation-checklist"
+      tone="premium"
+      className="p-5 shadow-[0_24px_55px_rgba(2,8,23,0.34)]"
+    >
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div>
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-300/35 bg-amber-300/15 text-amber-100">
+              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Activation</div>
+              <h2 className="mt-1 text-2xl font-black text-white">Get marketplace ready</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-sky-100/72">
+                Finish the essentials that let customers find you, compare bids, sign agreements, and pay through MyHomeBro.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-3 lg:grid-cols-2">
+            {requiredItems.map((item) => (
+              <ActivationChecklistItem key={item.key} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
+          <div className="mt-5">
+            <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-100/55">Optional next steps</div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              {optionalItems.map((item) => (
+                <ActivationChecklistItem key={item.key} item={item} onNavigate={onNavigate} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <aside
+          data-testid="contractor-marketplace-eligibility-panel"
+          className="rounded-3xl border border-white/10 bg-slate-950/55 p-5"
+        >
+          <div className="flex items-start gap-3">
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${activationToneClasses(status.tone)}`}>
+              {status.tone === "danger" ? <ShieldAlert className="h-5 w-5" /> : <BadgeCheck className="h-5 w-5" />}
+            </span>
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-100/55">Marketplace eligibility</div>
+              <div className="mt-1 text-xl font-black text-white">{status.label}</div>
+              <p className="mt-2 text-sm leading-6 text-sky-100/72">{status.reason}</p>
+            </div>
+          </div>
+          <div className="mt-5 space-y-2 text-sm">
+            {[
+              ["Business profile", hasBusiness],
+              ["Service area", hasServiceArea],
+              ["Trade/category", hasTrade],
+              ["Stripe ready", stripeReady],
+              ["Verification", verificationComplete],
+            ].map(([label, complete]) => (
+              <div key={label} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                <span className="text-sky-100/75">{label}</span>
+                <span className={complete ? "font-bold text-emerald-200" : "font-bold text-amber-100"}>
+                  {complete ? "Ready" : "Needed"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </DashboardCard>
   );
 }
 
@@ -2704,6 +3090,14 @@ export default function ContractorDashboard() {
                 },
               })
             }
+          />
+
+          <ContractorActivationChecklist
+            contractorProfile={contractorProfile}
+            stripeStatus={onboardingStripe}
+            agreements={agreements}
+            publicLeads={publicLeads}
+            onNavigate={navigate}
           />
 
           <DashboardCard

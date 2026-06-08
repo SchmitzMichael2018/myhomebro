@@ -958,6 +958,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("4");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("4");
+  await expect(page.getByTestId("customer-activation-checklist")).toContainText("Get your customer workspace ready");
+  await expect(page.getByTestId("customer-activation-check-property-profile")).toContainText("Complete");
+  await expect(page.getByTestId("customer-activation-check-documents")).toContainText("Complete");
+  await expect(page.getByTestId("customer-activation-check-first-request")).toContainText("Complete");
+  await expect(page.getByTestId("customer-activation-check-payments")).toContainText("Fund escrow or review payments");
+  await page.getByTestId("customer-activation-action-payments").click();
+  await expect(page.getByTestId("customer-dashboard-tab-payments")).toHaveClass(/border-amber/);
+  await page.getByTestId("customer-dashboard-tab-overview").click();
+  await page.getByTestId("customer-activation-action-property-details").click();
+  await expect(page.getByTestId("customer-dashboard-tab-property")).toHaveClass(/border-amber/);
+  await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-portal-summary-projects")).toHaveClass(/hover:border-amber/);
   await page.getByTestId("customer-portal-summary-active-requests").click();
   await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);

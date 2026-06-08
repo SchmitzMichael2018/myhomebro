@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Bell, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, UserRound } from "lucide-react";
+import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, UserRound } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -312,6 +312,178 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
   );
 }
 
+function propertyHasAddress(profile = {}) {
+  return Boolean(
+    String(profile.address_line1 || "").trim() &&
+      String(profile.city || "").trim() &&
+      String(profile.state || "").trim()
+  );
+}
+
+function propertyHasDetails(profile = {}) {
+  return Boolean(
+    String(profile.display_name || "").trim() ||
+      String(profile.property_type || "").trim() ||
+      Number(profile.year_built || 0) > 0 ||
+      Number(profile.square_feet || 0) > 0 ||
+      String(profile.notes || "").trim()
+  );
+}
+
+function customerHasDocuments(portal = {}) {
+  const documents = Array.isArray(portal.documents) ? portal.documents : [];
+  const profiles = Array.isArray(portal.property_profiles) ? portal.property_profiles : [];
+  return (
+    documents.length > 0 ||
+    profiles.some((profile) => {
+      const docs = Array.isArray(profile.documents) ? profile.documents : [];
+      const photos = Array.isArray(profile.photos) ? profile.photos : [];
+      return docs.length > 0 || photos.length > 0;
+    })
+  );
+}
+
+function agreementNeedsCustomerAction(agreement = {}) {
+  const status = String(
+    agreement.status || agreement.signature_status || agreement.agreement_status || agreement.state || ""
+  ).toLowerCase();
+  return (
+    status.includes("signature") ||
+    status.includes("sent") ||
+    agreement.requires_signature === true ||
+    agreement.signed_by_homeowner === false ||
+    agreement.customer_action_required === true
+  );
+}
+
+function CustomerActivationChecklist({ portal, onOpenTab }) {
+  const property = portal?.property_profile || {};
+  const properties = Array.isArray(portal?.property_profiles) ? portal.property_profiles : [];
+  const requests = Array.isArray(portal?.requests) ? portal.requests : [];
+  const payments = Array.isArray(portal?.payments) ? portal.payments : [];
+  const agreements = Array.isArray(portal?.agreements) ? portal.agreements : [];
+  const openPayments = payments.filter((payment) => !isPaidPayment(payment));
+  const hasProperty = propertyHasAddress(property) || properties.some(propertyHasAddress);
+  const hasDetails = propertyHasDetails(property) || properties.some(propertyHasDetails);
+  const hasDocs = customerHasDocuments(portal);
+  const hasRequest = requests.length > 0;
+  const hasAgreementAction = agreements.some(agreementNeedsCustomerAction);
+  const hasEscrowAction = openPayments.length > 0;
+  const items = [
+    {
+      key: "property-profile",
+      title: "Confirm property profile",
+      description: "Add the property address so requests, documents, warranties, and project records stay organized.",
+      completeText: "Property address is connected.",
+      complete: hasProperty,
+      tab: "property",
+      actionLabel: "Open Property",
+    },
+    {
+      key: "property-details",
+      title: "Add property details",
+      description: "Add property type, year built, square footage, and notes when helpful.",
+      completeText: "Property details have a useful starting point.",
+      complete: hasDetails,
+      tab: "property",
+      actionLabel: "Edit Details",
+    },
+    {
+      key: "documents",
+      title: "Upload home documents/photos",
+      description: "Store photos, receipts, permits, warranties, and documents for future project planning.",
+      completeText: "Home records include documents or photos.",
+      complete: hasDocs,
+      tab: "documents",
+      actionLabel: "Upload Records",
+    },
+    {
+      key: "first-request",
+      title: "Create first project/service request",
+      description: "Save a repair, maintenance, inspection, or new project request when you are ready.",
+      completeText: "At least one request is saved.",
+      complete: hasRequest,
+      tab: "requests",
+      actionLabel: "Create Request",
+    },
+    {
+      key: "agreements",
+      title: "Review agreements needing action",
+      description: "Sent agreements and signature requests appear in Projects when they need your review.",
+      completeText: hasAgreementAction ? "Agreement action is available." : "No agreement action is waiting.",
+      complete: !hasAgreementAction,
+      tab: "projects",
+      actionLabel: "Open Projects",
+      actionActive: hasAgreementAction,
+    },
+    {
+      key: "payments",
+      title: "Fund escrow or review payments",
+      description: "Invoices, escrow funding, and milestone releases appear in Payments when action is needed.",
+      completeText: hasEscrowAction ? "Payment action is available." : "No payment action is waiting.",
+      complete: !hasEscrowAction,
+      tab: "payments",
+      actionLabel: "Open Payments",
+      actionActive: hasEscrowAction,
+    },
+  ];
+
+  return (
+    <section
+      data-testid="customer-activation-checklist"
+      className="rounded-2xl border border-sky-300/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),rgba(15,23,42,0.72)] p-5"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Setup checklist</div>
+          <h2 className="mt-1 text-xl font-semibold text-white">Get your customer workspace ready</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+            Confirm your property record, upload important documents, and create a request when you are ready for the next project.
+          </p>
+        </div>
+        <Badge tone="gold">{items.filter((item) => item.complete).length} of {items.length} complete</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {items.map((item) => {
+          const complete = Boolean(item.complete);
+          return (
+            <article
+              key={item.key}
+              data-testid={`customer-activation-check-${item.key}`}
+              className={`rounded-2xl border p-4 ${complete ? "border-emerald-300/25 bg-emerald-400/10" : "border-slate-700 bg-slate-950/55"}`}
+            >
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 ${complete ? "text-emerald-300" : "text-slate-500"}`}>
+                  {complete ? <CheckCircle2 className="h-5 w-5" aria-hidden="true" /> : <Circle className="h-5 w-5" aria-hidden="true" />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-white">{item.title}</h3>
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${complete ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" : "border-amber-300/35 bg-amber-300/10 text-amber-100"}`}>
+                      {complete ? "Complete" : "Recommended"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-5 text-slate-300">
+                    {complete ? item.completeText : item.description}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid={`customer-activation-action-${item.key}`}
+                    onClick={() => onOpenTab?.(item.tab)}
+                    className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
+                  >
+                    {item.actionLabel}
+                  </button>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function OverviewPanel({ portal, onOpenTab }) {
   const summary = portal?.summary || {};
   const latestRequests = (portal?.requests || []).slice(0, 3);
@@ -374,6 +546,8 @@ function OverviewPanel({ portal, onOpenTab }) {
           )}
         </div>
       </section>
+
+      <CustomerActivationChecklist portal={portal} onOpenTab={onOpenTab} />
 
       <div data-testid="customer-portal-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Projects" value={summary.active_projects ?? 0} testId="customer-portal-summary-projects" onClick={() => onOpenTab?.("projects")} />

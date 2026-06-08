@@ -20,6 +20,25 @@ async function mockAuth(page) {
     });
   });
 
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        business_name: '',
+        city: '',
+        state: '',
+        skills: [],
+        contractor_onboarding_status: 'complete',
+        marketplace_verification_status: 'unverified',
+        stripe_connected: false,
+        charges_enabled: false,
+        payouts_enabled: false,
+      }),
+    });
+  });
+
   await page.route('**/api/payments/onboarding/status/', async (route) => {
     await route.fulfill({
       status: 200,
@@ -159,6 +178,62 @@ test('traditional contractors do not see homeowner-selection guidance by default
   await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('We prepared your business profile');
 });
 
+test('contractor dashboard shows marketplace activation checklist and eligibility blockers', async ({ page }) => {
+  await mockAuth(page);
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 42,
+        business_name: 'Ready Roofing',
+        city: 'Austin',
+        state: 'TX',
+        skills: ['Roofing'],
+        marketplace_verification_status: 'pending_review',
+        marketplace_preferred: false,
+        stripe_connected: false,
+        charges_enabled: false,
+        payouts_enabled: false,
+        contractor_onboarding_status: 'complete',
+      }),
+    });
+  });
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ onboarding_status: 'not_started', connected: false }),
+    });
+  });
+  await page.route('**/api/projects/agreements/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [{ id: 88, project_title: 'Roof inspection' }] }),
+    });
+  });
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(activationSummary({ should_show_activation_guide: false })),
+    });
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('contractor-activation-checklist')).toContainText('Get marketplace ready');
+  await expect(page.getByTestId('contractor-activation-check-business-profile')).toContainText('Complete');
+  await expect(page.getByTestId('contractor-activation-check-service-area')).toContainText('Complete');
+  await expect(page.getByTestId('contractor-activation-check-trade-category')).toContainText('Complete');
+  await expect(page.getByTestId('contractor-activation-check-stripe')).toContainText('Required');
+  await expect(page.getByTestId('contractor-activation-action-stripe')).toContainText('Connect Stripe');
+  await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Stripe action needed');
+  await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Stripe ready');
+  await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Needed');
+});
+
 test('dashboard renders operational hierarchy without persistent smart activation section', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mockAuth(page);
@@ -193,7 +268,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(page.getByText('Project Context')).toHaveCount(0);
   await expect(page.getByText('Recommended Project Matches')).toHaveCount(0);
   await expect(page.getByText('Open lead inbox')).toHaveCount(0);
-  await expect(page.getByText('Next Actions')).toHaveCount(1);
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Next Actions');
 
   const quickBox = await page.getByTestId('dashboard-quick-actions-row').boundingBox();
   const nextBox = await page.getByTestId('dashboard-next-actions').boundingBox();
