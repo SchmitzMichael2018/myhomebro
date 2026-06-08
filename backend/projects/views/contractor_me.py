@@ -13,6 +13,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from projects.models import Contractor, Skill
 from projects.services.compliance import get_profile_compliance_snapshot, sync_legacy_contractor_compliance_records
 from projects.services.contractor_capabilities import get_contractor_capability_flags
+from projects.services.contractor_reviews import contractor_performance_summary
 from projects.services.contractor_onboarding import (
     build_onboarding_snapshot,
     update_onboarding_progress,
@@ -163,6 +164,7 @@ class ContractorMeView(APIView):
         sms_status = get_sms_status_payload(contractor=c)
         sms_automation = build_sms_automation_summary(contractor=c)
         capability_flags = get_contractor_capability_flags(c)
+        performance_summary = contractor_performance_summary(c)
 
         payload = {
             "id": c.id,
@@ -246,6 +248,8 @@ class ContractorMeView(APIView):
 
             # included-by-default AI status
             "ai": ai_summary,
+            "performance_summary": performance_summary,
+            "performance": performance_summary,
         }
 
         public_profile = getattr(c, "public_profile", None)

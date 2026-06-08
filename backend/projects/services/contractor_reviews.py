@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Q, Avg
 from django.utils import timezone
 
 from projects.models import Agreement, ContractorPublicProfile, ContractorReview, DrawRequest, ExpenseRequest, Homeowner, Invoice, Milestone, ProjectStatus
+from projects.models_contractor_discovery import ContractorOpportunity
 from projects.models_dispute import Dispute
 from projects.models_learning import MilestonePerformanceSnapshot
 
@@ -174,22 +173,95 @@ def moderate_review(review: ContractorReview, *, action: str, moderator=None, no
     return review
 
 
+def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    try:
+        number = float(value)
+    except Exception:
+        number = 0.0
+    return max(low, min(high, number))
+
+
+def _percent(value: float | None) -> int | None:
+    if value is None:
+        return None
+    return int(round(_clamp(value) * 100))
+
+
+def _average(values) -> float | None:
+    numbers = [float(value) for value in values if value is not None]
+    if not numbers:
+        return None
+    return round(sum(numbers) / len(numbers), 2)
+
+
+def _confidence_level(*, completed_projects: int, review_count: int, completed_milestones: int, marketplace_bid_count: int) -> str:
+    activity_points = completed_projects + min(completed_milestones, 20) / 5 + min(marketplace_bid_count, 20) / 4
+    if completed_projects >= 10 and review_count >= 10 and activity_points >= 16:
+        return "high"
+    if completed_projects >= 3 or review_count >= 3 or marketplace_bid_count >= 5 or completed_milestones >= 10:
+        return "medium"
+    return "low"
+
+
+def _confidence_label(level: str) -> str:
+    return {
+        "high": "High Confidence",
+        "medium": "Medium Confidence",
+        "low": "Low Confidence",
+    }.get(level, "Low Confidence")
+
+
+def _build_performance_insights(summary: dict) -> list[dict]:
+    insights: list[dict] = []
+    review_count = int(summary.get("review_count") or 0)
+    avg = summary.get("average_rating")
+    dispute_rate = float(summary.get("dispute_rate") or 0)
+    on_time_rate = summary.get("on_time_milestone_rate")
+    win_rate = summary.get("marketplace_bid_win_rate")
+    payment_issues = int(summary.get("reimbursement_issue_count") or 0) + int(summary.get("payment_issue_count") or 0)
+
+    if avg is not None and review_count >= 3 and float(avg) >= 4.7:
+        insights.append({"tone": "positive", "title": "Strong customer satisfaction", "body": "Recent approved reviews point to a consistently strong customer experience."})
+    if review_count < 3:
+        insights.append({"tone": "info", "title": "Build review confidence", "body": "More completed projects and approved reviews will make this score more reliable."})
+    if dispute_rate >= 0.15:
+        insights.append({"tone": "warning", "title": "Reduce dispute risk", "body": "Open or recent disputes are pulling down reliability. Review scope clarity and customer expectations."})
+    if on_time_rate is not None and on_time_rate < 0.8:
+        insights.append({"tone": "warning", "title": "Improve milestone completion timing", "body": "Milestone snapshots show delayed completion. Tighten schedules or set clearer timeline expectations."})
+    if win_rate is not None and summary.get("marketplace_bid_count", 0) >= 5 and win_rate < 0.2:
+        insights.append({"tone": "info", "title": "Improve bid conversion", "body": "Bid win rate is low. Review proposal detail, timing, and pricing clarity."})
+    if payment_issues:
+        insights.append({"tone": "warning", "title": "Resolve payment release issues", "body": "Reimbursement or payment release issues should be reviewed before scaling more marketplace work."})
+    if not insights:
+        insights.append({"tone": "neutral", "title": "No major performance flags", "body": "Current available data does not show a clear performance issue."})
+    return insights[:5]
+
+
 def contractor_performance_summary(contractor) -> dict:
     agreement_qs = Agreement.objects.filter(contractor=contractor)
+    agreement_count = agreement_qs.count()
     completed_projects = agreement_qs.filter(status=ProjectStatus.COMPLETED).count()
     dispute_count = Dispute.objects.filter(agreement__contractor=contractor).exclude(status="canceled").count()
-    agreement_count = agreement_qs.count()
     snapshots = MilestonePerformanceSnapshot.objects.filter(contractor=contractor)
     completed_milestones = snapshots.filter(contractor_completed_at__isnull=False).count()
     delayed_milestones = snapshots.filter(is_delayed=True).count()
     on_time_rate = None
     if completed_milestones:
         on_time_rate = round((completed_milestones - delayed_milestones) / completed_milestones, 3)
+    avg_completion_lag = _average(snapshots.exclude(planned_vs_actual_completion_days__isnull=True).values_list("planned_vs_actual_completion_days", flat=True)[:200])
     review_stats = ContractorReview.objects.filter(contractor=contractor, is_verified=True, is_public=True).aggregate(
         review_count=Count("id"),
+        average_rating=Avg("rating"),
     )
+    review_count = int(review_stats.get("review_count") or getattr(contractor, "review_count", 0) or 0)
+    average_rating = review_stats.get("average_rating")
+    if average_rating is None and getattr(contractor, "review_count", 0):
+        average_rating = getattr(contractor, "average_rating", None)
     bid_count = 0
     win_count = 0
+    opportunity_count = ContractorOpportunity.objects.filter(
+        Q(accepted_by_contractor=contractor) | Q(directory_entry__claimed_by_contractor=contractor)
+    ).distinct().count()
     try:
         from projects.models import PublicContractorLead
 
@@ -197,17 +269,77 @@ def contractor_performance_summary(contractor) -> dict:
         win_count = PublicContractorLead.objects.filter(contractor=contractor, converted_agreement__isnull=False).count()
     except Exception:
         pass
-    return {
-        "average_rating": round(float(getattr(contractor, "average_rating", 0) or 0), 2) if getattr(contractor, "review_count", 0) else None,
-        "review_count": int(review_stats.get("review_count") or getattr(contractor, "review_count", 0) or 0),
+    reimbursement_issue_count = ExpenseRequest.objects.filter(
+        agreement__contractor=contractor,
+    ).filter(Q(status=ExpenseRequest.Status.HELD) | ~Q(release_error="")).count()
+    payment_issue_count = Invoice.objects.filter(agreement__contractor=contractor).filter(
+        Q(status__in=["failed", "disputed"]) | Q(disputed=True)
+    ).count()
+    completion_rate = round(completed_projects / agreement_count, 3) if agreement_count else None
+    dispute_rate = round(dispute_count / agreement_count, 3) if agreement_count else 0
+    marketplace_win_rate = round(win_count / bid_count, 3) if bid_count else None
+
+    # Advisory score formula, 0-100:
+    # Customer Satisfaction 35%: approved review rating, neutral when sparse.
+    # Reliability 30%: dispute rate and completion rate.
+    # Delivery 20%: milestone on-time rate and average completion lag when available.
+    # Marketplace 15%: bid win rate once enough bids exist.
+    # Missing data uses neutral defaults so new contractors are low-confidence, not unfairly low-score.
+    satisfaction_base = _clamp((float(average_rating) / 5) if average_rating is not None else 0.78)
+    reliability_base = _clamp(((1 - min(dispute_rate * 2, 1)) * 0.65) + ((completion_rate if completion_rate is not None else 0.75) * 0.35))
+    delivery_base = on_time_rate if on_time_rate is not None else 0.75
+    if avg_completion_lag is not None and avg_completion_lag > 0:
+        delivery_base = _clamp(float(delivery_base) - min(float(avg_completion_lag) * 0.03, 0.25))
+    delivery_base = _clamp(delivery_base)
+    marketplace_base = marketplace_win_rate if marketplace_win_rate is not None else 0.75
+    component_scores = {
+        "customer_satisfaction": round(satisfaction_base * 35, 1),
+        "reliability": round(reliability_base * 30, 1),
+        "delivery": round(delivery_base * 20, 1),
+        "marketplace": round(_clamp(marketplace_base) * 15, 1),
+    }
+    performance_score = int(round(sum(component_scores.values())))
+    confidence = _confidence_level(
+        completed_projects=completed_projects,
+        review_count=review_count,
+        completed_milestones=completed_milestones,
+        marketplace_bid_count=bid_count,
+    )
+    summary = {
+        "performance_score": performance_score,
+        "score": performance_score,
+        "score_components": component_scores,
+        "score_formula": "35% customer satisfaction, 30% reliability, 20% delivery, 15% marketplace conversion; sparse data uses neutral defaults and lowers confidence instead of hard-penalizing score.",
+        "confidence": confidence,
+        "confidence_label": _confidence_label(confidence),
+        "average_rating": round(float(average_rating), 2) if average_rating is not None else None,
+        "review_rating": round(float(average_rating), 2) if average_rating is not None else None,
+        "review_count": review_count,
         "completed_projects": completed_projects,
         "completed_milestones": completed_milestones,
         "dispute_count": dispute_count,
-        "dispute_rate": round(dispute_count / agreement_count, 3) if agreement_count else 0,
+        "dispute_rate": dispute_rate,
+        "completion_rate": completion_rate,
         "on_time_milestone_rate": on_time_rate,
+        "on_time_milestone_percent": _percent(on_time_rate),
         "delayed_milestones": delayed_milestones,
+        "avg_milestone_completion_lag_days": avg_completion_lag,
+        "average_completion_lag_days": avg_completion_lag,
+        "marketplace_opportunities": opportunity_count,
         "marketplace_bid_count": bid_count,
         "marketplace_bid_win_count": win_count,
-        "marketplace_bid_win_rate": round(win_count / bid_count, 3) if bid_count else None,
-        "data_status": "limited" if completed_projects < 3 or int(getattr(contractor, "review_count", 0) or 0) < 3 else "established",
+        "marketplace_bid_win_rate": marketplace_win_rate,
+        "marketplace_bid_win_percent": _percent(marketplace_win_rate),
+        "reimbursement_issue_count": reimbursement_issue_count,
+        "payment_issue_count": payment_issue_count,
+        "data_status": "limited" if confidence == "low" else "established" if confidence == "high" else "developing",
     }
+    summary["insights"] = _build_performance_insights(summary)
+    summary["learning_signals"] = {
+        "consistently_strong_reviews": bool(summary["average_rating"] is not None and summary["average_rating"] >= 4.7 and review_count >= 3),
+        "timeline_risk": bool(on_time_rate is not None and on_time_rate < 0.8),
+        "dispute_risk": bool(dispute_rate >= 0.15),
+        "marketplace_conversion_risk": bool(marketplace_win_rate is not None and bid_count >= 5 and marketplace_win_rate < 0.2),
+        "payment_release_risk": bool(reimbursement_issue_count or payment_issue_count),
+    }
+    return summary

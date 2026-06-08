@@ -35,6 +35,27 @@ async function mockAuth(page) {
         stripe_connected: false,
         charges_enabled: false,
         payouts_enabled: false,
+        performance_summary: {
+          performance_score: 82,
+          confidence_label: 'Medium Confidence',
+          average_rating: 4.8,
+          review_count: 7,
+          completed_projects: 5,
+          completed_milestones: 18,
+          marketplace_bid_count: 6,
+          marketplace_bid_win_percent: 50,
+          dispute_count: 0,
+          dispute_rate: 0,
+          on_time_milestone_percent: 94,
+          delayed_milestones: 1,
+          insights: [
+            {
+              tone: 'positive',
+              title: 'Strong customer satisfaction',
+              body: 'Recent approved reviews point to a consistently strong customer experience.',
+            },
+          ],
+        },
       }),
     });
   });
@@ -196,6 +217,27 @@ test('contractor dashboard shows marketplace activation checklist and eligibilit
         charges_enabled: false,
         payouts_enabled: false,
         contractor_onboarding_status: 'complete',
+        performance_summary: {
+          performance_score: 82,
+          confidence_label: 'Medium Confidence',
+          average_rating: 4.8,
+          review_count: 7,
+          completed_projects: 5,
+          completed_milestones: 18,
+          marketplace_bid_count: 6,
+          marketplace_bid_win_percent: 50,
+          dispute_count: 0,
+          dispute_rate: 0,
+          on_time_milestone_percent: 94,
+          delayed_milestones: 1,
+          insights: [
+            {
+              tone: 'positive',
+              title: 'Strong customer satisfaction',
+              body: 'Recent approved reviews point to a consistently strong customer experience.',
+            },
+          ],
+        },
       }),
     });
   });
@@ -232,6 +274,13 @@ test('contractor dashboard shows marketplace activation checklist and eligibilit
   await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Stripe action needed');
   await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Stripe ready');
   await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Needed');
+  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('Contractor performance insights');
+  await expect(page.getByTestId('dashboard-performance-score')).toContainText('82/100');
+  await expect(page.getByTestId('dashboard-performance-confidence')).toContainText('Medium Confidence');
+  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('Advisory score');
+  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('Win rate');
+  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('50%');
+  await expect(page.getByTestId('dashboard-performance-insight-0')).toContainText('Strong customer satisfaction');
 });
 
 test('dashboard renders operational hierarchy without persistent smart activation section', async ({ page }) => {

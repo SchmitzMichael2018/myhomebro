@@ -142,6 +142,24 @@ function inRange(dateObj, from, to) {
 const currency = (n) =>
   Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
+function percentLabel(rate, percent) {
+  if (typeof percent === "number" && Number.isFinite(percent)) return `${Math.round(percent)}%`;
+  if (typeof rate === "number" && Number.isFinite(rate)) return `${Math.round(rate * 100)}%`;
+  return "Not enough data";
+}
+
+function scoreLabel(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return `${Math.round(value)}/100`;
+  return "New";
+}
+
+function performanceInsightClass(tone = "neutral") {
+  if (tone === "positive") return "border-emerald-300/20 bg-emerald-300/10 text-emerald-50";
+  if (tone === "warning") return "border-amber-300/25 bg-amber-300/10 text-amber-50";
+  if (tone === "info") return "border-sky-300/20 bg-sky-300/10 text-sky-50";
+  return "border-white/10 bg-white/5 text-sky-50";
+}
+
 function activationValue(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -1703,6 +1721,91 @@ function ContractorActivationChecklist({
   );
 }
 
+function ContractorPerformancePanel({ performance }) {
+  if (!performance) return null;
+  const score = performance.performance_score ?? performance.score;
+  const rating = performance.average_rating ?? performance.review_rating;
+  const insights = Array.isArray(performance.insights) ? performance.insights : [];
+  const metrics = [
+    {
+      label: "Customer rating",
+      value: rating ? `${Number(rating).toFixed(1)} / 5` : "New",
+      helper: `${performance.review_count || 0} approved reviews`,
+    },
+    {
+      label: "Completed projects",
+      value: performance.completed_projects || 0,
+      helper: `${performance.completed_milestones || 0} milestone snapshots`,
+    },
+    {
+      label: "Win rate",
+      value: percentLabel(performance.marketplace_bid_win_rate, performance.marketplace_bid_win_percent),
+      helper: `${performance.marketplace_bid_count || 0} marketplace bids`,
+    },
+    {
+      label: "Dispute rate",
+      value: percentLabel(performance.dispute_rate),
+      helper: `${performance.dispute_count || 0} disputes recorded`,
+    },
+    {
+      label: "On-time rate",
+      value: percentLabel(performance.on_time_milestone_rate, performance.on_time_milestone_percent),
+      helper: `${performance.delayed_milestones || 0} delayed milestones`,
+    },
+  ];
+
+  return (
+    <DashboardCard
+      testId="dashboard-performance-panel"
+      className="border border-white/10 bg-[#061d42]/95 p-5 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
+    >
+      <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="rounded-3xl border border-amber-300/25 bg-amber-300/10 p-5">
+          <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Performance</div>
+          <div className="mt-3 text-5xl font-black text-white" data-testid="dashboard-performance-score">
+            {scoreLabel(score)}
+          </div>
+          <div className="mt-2 text-sm font-bold text-amber-100" data-testid="dashboard-performance-confidence">
+            {performance.confidence_label || "Low Confidence"}
+          </div>
+          <p className="mt-3 text-sm leading-6 text-sky-100/75">
+            Advisory score for marketplace review and self-improvement. It is not an automatic eligibility gate.
+          </p>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-black text-white">Contractor performance insights</h2>
+            <p className="mt-1 text-sm leading-6 text-sky-100/72">
+              Built from approved reviews, completed projects, disputes, milestone timing, bids, and payment signals.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
+            {metrics.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">{item.label}</div>
+                <div className="mt-2 text-lg font-black text-white">{item.value}</div>
+                <div className="mt-1 text-xs leading-5 text-sky-100/65">{item.helper}</div>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {(insights.length ? insights : [{ tone: "neutral", title: "More data needed", body: "Complete projects and request reviews to build a stronger performance profile." }]).map((item, index) => (
+              <div
+                key={`${item.title}-${index}`}
+                data-testid={`dashboard-performance-insight-${index}`}
+                className={`rounded-2xl border p-3 text-sm leading-6 ${performanceInsightClass(item.tone)}`}
+              >
+                <div className="font-black text-white">{item.title}</div>
+                <div className="mt-1 opacity-85">{item.body}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </DashboardCard>
+  );
+}
+
 /* ========================================================================== */
 /* =============================== MAIN VIEW ================================= */
 /* ========================================================================== */
@@ -3099,6 +3202,8 @@ export default function ContractorDashboard() {
             publicLeads={publicLeads}
             onNavigate={navigate}
           />
+
+          <ContractorPerformancePanel performance={contractorProfile?.performance_summary || contractorProfile?.performance} />
 
           <DashboardCard
             testId="dashboard-kpi-strip"

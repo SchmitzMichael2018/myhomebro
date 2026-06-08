@@ -50,6 +50,12 @@ function reviews(row) {
   return row.review_count ?? row.google_review_count ?? 0;
 }
 
+function percentText(rate, percent) {
+  if (typeof percent === "number" && Number.isFinite(percent)) return `${Math.round(percent)}%`;
+  if (typeof rate === "number" && Number.isFinite(rate)) return `${Math.round(rate * 100)}%`;
+  return "n/a";
+}
+
 function website(row) {
   return row.website || row.website_url || "";
 }
@@ -891,11 +897,22 @@ export default function AdminMarketplacePage() {
                         </div>
                       </td>
                       <td className={tableCellClass}>
-                        <div className="text-xs text-sky-100/80">
-                          {row.performance_summary?.completed_projects || 0} completed | {row.performance_summary?.dispute_count || 0} disputes
-                        </div>
-                        <div className="mt-1 text-xs text-sky-100/65">
-                          Rating {row.performance_summary?.review_rating || "New"} ({row.performance_summary?.review_count || 0} reviews)
+                        <div
+                          className="space-y-1 text-xs text-sky-100/80"
+                          data-testid={`admin-marketplace-verification-performance-${row.id}`}
+                        >
+                          <div className="font-black text-white">
+                            Score {row.performance_summary?.performance_score ?? row.performance_summary?.score ?? "New"} · {row.performance_summary?.confidence_label || "Low Confidence"}
+                          </div>
+                          <div>
+                            {row.performance_summary?.completed_projects || 0} completed | {row.performance_summary?.dispute_count || 0} disputes
+                          </div>
+                          <div className="text-sky-100/65">
+                            Rating {row.performance_summary?.review_rating || row.performance_summary?.average_rating || "New"} ({row.performance_summary?.review_count || 0} reviews)
+                          </div>
+                          <div className="text-sky-100/65">
+                            Win {percentText(row.performance_summary?.marketplace_bid_win_rate, row.performance_summary?.marketplace_bid_win_percent)} | On-time {percentText(row.performance_summary?.on_time_milestone_rate, row.performance_summary?.on_time_milestone_percent)}
+                          </div>
                         </div>
                       </td>
                       <td className={tableCellClass}>

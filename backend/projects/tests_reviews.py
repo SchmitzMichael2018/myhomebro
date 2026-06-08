@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models import Agreement, Contractor, ContractorPublicProfile, ContractorReview, Homeowner, Milestone, Project, ProjectStatus
+from projects.models_learning import MilestonePerformanceSnapshot
 from projects.services.contractor_reviews import contractor_performance_summary
 from projects.views.customer_portal import _portal_token
 
@@ -47,7 +48,7 @@ class ContractorReviewFoundationTests(TestCase):
             status=ProjectStatus.COMPLETED,
             total_cost="12000.00",
         )
-        Milestone.objects.create(
+        self.milestone = Milestone.objects.create(
             agreement=self.agreement,
             title="Final walkthrough",
             order=1,
@@ -173,6 +174,18 @@ class ContractorReviewFoundationTests(TestCase):
             rating=4,
             is_verified=True,
             moderation_status=ContractorReview.MODERATION_APPROVED,
+            is_public=True,
+            published_at=timezone.now(),
+        )
+        MilestonePerformanceSnapshot.objects.create(
+            agreement=self.agreement,
+            milestone=self.milestone,
+            milestone_title="Final walkthrough",
+            contractor=self.contractor,
+            planned_completion_date=timezone.now().date(),
+            contractor_completed_at=timezone.now(),
+            is_delayed=False,
+            state_signature="review-foundation-on-time",
         )
         self.contractor.refresh_from_db()
 
@@ -181,5 +194,29 @@ class ContractorReviewFoundationTests(TestCase):
         self.assertEqual(summary["review_count"], 1)
         self.assertEqual(summary["average_rating"], 4.0)
         self.assertEqual(summary["completed_projects"], 1)
+        self.assertGreaterEqual(summary["performance_score"], 0)
+        self.assertLessEqual(summary["performance_score"], 100)
+        self.assertEqual(summary["confidence"], "low")
+        self.assertIn("customer_satisfaction", summary["score_components"])
+        self.assertIn("reliability", summary["score_components"])
+        self.assertIn("delivery", summary["score_components"])
+        self.assertIn("marketplace", summary["score_components"])
+        self.assertEqual(summary["on_time_milestone_rate"], 1.0)
         self.assertIn("dispute_rate", summary)
         self.assertIn("data_status", summary)
+        self.assertIn("learning_signals", summary)
+        self.assertTrue(summary["insights"])
+
+    def test_performance_summary_uses_neutral_sparse_defaults(self):
+        new_user = User.objects.create_user(email="new-contractor@example.com", password="pass")
+        new_contractor = Contractor.objects.create(user=new_user, business_name="New Contractor")
+
+        summary = contractor_performance_summary(new_contractor)
+
+        self.assertEqual(summary["review_count"], 0)
+        self.assertEqual(summary["completed_projects"], 0)
+        self.assertEqual(summary["confidence"], "low")
+        self.assertGreater(summary["performance_score"], 0)
+        self.assertLessEqual(summary["performance_score"], 100)
+        self.assertEqual(summary["data_status"], "limited")
+        self.assertTrue(any(item["title"] == "Build review confidence" for item in summary["insights"]))

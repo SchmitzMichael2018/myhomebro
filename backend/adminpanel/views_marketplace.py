@@ -17,13 +17,12 @@ from rest_framework.views import APIView
 
 from .permissions import IsAdminUserRole
 from .utils import safe_get
-from projects.models import Agreement, Contractor, ContractorPublicProfile, PublicContractorLead
+from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
-from projects.models_dispute import Dispute
-from projects.models_learning import MilestonePerformanceSnapshot
 from projects.models_project_intake import ProjectIntake
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness, normalize_location_value
 from projects.services.workflow_notifications import notify_contractor_verification_status
+from projects.services.contractor_reviews import contractor_performance_summary
 from projects.services.contractor_discovery import build_contractor_recommendations
 from projects.services.google_places_contractors import (
     project_type_to_places_query,
@@ -255,33 +254,6 @@ def _contractor_missing_requirements(contractor: Contractor) -> list[str]:
     return missing
 
 
-def _contractor_performance_summary(contractor: Contractor) -> dict[str, Any]:
-    completed_projects = Agreement.objects.filter(contractor=contractor, status__iexact="completed").count()
-    dispute_count = Dispute.objects.filter(agreement__contractor=contractor).exclude(status="canceled").count()
-    agreement_count = max(Agreement.objects.filter(contractor=contractor).count(), 1)
-    snapshots = MilestonePerformanceSnapshot.objects.filter(contractor=contractor)
-    delayed_count = snapshots.filter(is_delayed=True).count()
-    avg_completion_lag = None
-    avg_approval_lag = None
-    completion_values = [row for row in snapshots.exclude(planned_vs_actual_completion_days__isnull=True).values_list("planned_vs_actual_completion_days", flat=True)[:200]]
-    approval_values = [row for row in snapshots.exclude(completion_to_approval_seconds__isnull=True).values_list("completion_to_approval_seconds", flat=True)[:200]]
-    if completion_values:
-        avg_completion_lag = round(sum(completion_values) / len(completion_values), 2)
-    if approval_values:
-        avg_approval_lag = round((sum(approval_values) / len(approval_values)) / 86400, 2)
-    return {
-        "completed_projects": completed_projects,
-        "dispute_count": dispute_count,
-        "dispute_rate": round(dispute_count / agreement_count, 3),
-        "delayed_milestones": delayed_count,
-        "avg_milestone_completion_lag_days": avg_completion_lag,
-        "avg_payment_approval_lag_days": avg_approval_lag,
-        "review_rating": round(float(contractor.average_rating or 0), 2) if contractor.review_count else None,
-        "review_count": int(contractor.review_count or 0),
-        "escrow_reimbursement_flags": 0,
-    }
-
-
 def _serialize_verification_contractor(contractor: Contractor) -> dict[str, Any]:
     missing_requirements = _contractor_missing_requirements(contractor)
     status_value = contractor.marketplace_verification_status or Contractor.MARKETPLACE_UNVERIFIED
@@ -325,7 +297,7 @@ def _serialize_verification_contractor(contractor: Contractor) -> dict[str, Any]
             and not missing_requirements
             and _contractor_stripe_ready(contractor)
         ),
-        "performance_summary": _contractor_performance_summary(contractor),
+        "performance_summary": contractor_performance_summary(contractor),
     }
 
 

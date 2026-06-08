@@ -102,10 +102,14 @@ async function installMarketplaceMocks(page) {
       missing_requirements: [],
       eligible_for_marketplace: false,
       performance_summary: {
+        performance_score: 91,
+        confidence_label: 'High Confidence',
         completed_projects: 8,
         dispute_count: 0,
         review_rating: 4.9,
         review_count: 12,
+        marketplace_bid_win_percent: 67,
+        on_time_milestone_percent: 96,
       },
     },
     {
@@ -129,10 +133,14 @@ async function installMarketplaceMocks(page) {
       missing_requirements: ['insurance'],
       eligible_for_marketplace: false,
       performance_summary: {
+        performance_score: 71,
+        confidence_label: 'Low Confidence',
         completed_projects: 1,
         dispute_count: 1,
         review_rating: null,
         review_count: 0,
+        marketplace_bid_win_percent: null,
+        on_time_milestone_percent: null,
       },
     },
   ];
@@ -483,6 +491,10 @@ test('admin marketplace verification queue filters and updates trust controls', 
   await expect(page.getByTestId('admin-marketplace-verification-view')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('Claimed Roofing Pro');
   await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('pending review');
+  await expect(page.getByTestId('admin-marketplace-verification-performance-11')).toContainText('Score 91');
+  await expect(page.getByTestId('admin-marketplace-verification-performance-11')).toContainText('High Confidence');
+  await expect(page.getByTestId('admin-marketplace-verification-performance-11')).toContainText('Win 67%');
+  await expect(page.getByTestId('admin-marketplace-verification-performance-11')).toContainText('On-time 96%');
   await expect(page.getByTestId('admin-marketplace-verification-row-12')).toContainText('Partner Flooring Co');
 
   await page.getByTestId('admin-marketplace-verification-status-filter').selectOption('pending_review');

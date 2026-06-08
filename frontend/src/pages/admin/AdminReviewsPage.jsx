@@ -286,10 +286,12 @@ export default function AdminReviewsPage() {
             <div className="mt-5 rounded-2xl border border-white/10 bg-white/10 p-4" data-testid="admin-review-performance">
               <div className="text-sm font-black text-white">Contractor Performance Summary</div>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <Metric label="Score" value={`${selected.performance_summary?.performance_score ?? selected.performance_summary?.score ?? "New"}`} />
+                <Metric label="Confidence" value={selected.performance_summary?.confidence_label ?? "Low Confidence"} />
                 <Metric label="Avg Rating" value={selected.performance_summary?.average_rating ?? 0} />
                 <Metric label="Reviews" value={selected.performance_summary?.review_count ?? 0} />
                 <Metric label="Completed Projects" value={selected.performance_summary?.completed_projects ?? 0} />
-                <Metric label="Dispute Rate" value={`${selected.performance_summary?.dispute_rate ?? 0}%`} />
+                <Metric label="Dispute Rate" value={`${Math.round(Number(selected.performance_summary?.dispute_rate || 0) * 100)}%`} />
               </div>
             </div>
 
