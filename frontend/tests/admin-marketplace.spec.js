@@ -80,6 +80,80 @@ async function installMarketplaceMocks(page) {
   let austinEnabled = false;
   let requestRouted = false;
   let routeCalls = 0;
+  let verificationRows = [
+    {
+      id: 11,
+      business_name: 'Claimed Roofing Pro',
+      email: 'hello@claimedroofing.example',
+      phone: '(555) 123-4567',
+      active: true,
+      claimed: true,
+      service_area: 'Austin, TX',
+      city: 'Austin',
+      state: 'TX',
+      trades: ['Roofing'],
+      stripe_ready: true,
+      charges_enabled: true,
+      payouts_enabled: true,
+      license_on_file: true,
+      insurance_on_file: true,
+      verification_status: 'pending_review',
+      preferred: false,
+      missing_requirements: [],
+      eligible_for_marketplace: false,
+      performance_summary: {
+        completed_projects: 8,
+        dispute_count: 0,
+        review_rating: 4.9,
+        review_count: 12,
+      },
+    },
+    {
+      id: 12,
+      business_name: 'Partner Flooring Co',
+      email: 'partner@example.com',
+      phone: '(555) 222-3333',
+      active: true,
+      claimed: true,
+      service_area: 'Austin, TX',
+      city: 'Austin',
+      state: 'TX',
+      trades: ['Flooring'],
+      stripe_ready: false,
+      charges_enabled: false,
+      payouts_enabled: false,
+      license_on_file: false,
+      insurance_on_file: false,
+      verification_status: 'verified',
+      preferred: false,
+      missing_requirements: ['insurance'],
+      eligible_for_marketplace: false,
+      performance_summary: {
+        completed_projects: 1,
+        dispute_count: 1,
+        review_rating: null,
+        review_count: 0,
+      },
+    },
+  ];
+
+  function verificationPayload(url = new URL('https://example.test/')) {
+    let rows = verificationRows;
+    const status = url.searchParams.get('status') || '';
+    if (status) rows = rows.filter((row) => row.verification_status === status);
+    return {
+      summary: {
+        total: rows.length,
+        pending_review: rows.filter((row) => row.verification_status === 'pending_review').length,
+        verified: rows.filter((row) => row.verification_status === 'verified').length,
+        preferred: rows.filter((row) => row.preferred).length,
+        rejected: rows.filter((row) => row.verification_status === 'rejected').length,
+        suspended: rows.filter((row) => row.verification_status === 'suspended').length,
+        stripe_ready: rows.filter((row) => row.stripe_ready).length,
+      },
+      results: rows,
+    };
+  }
 
   function overviewPayload() {
     const counts = requestRouted
@@ -200,6 +274,46 @@ async function installMarketplaceMocks(page) {
   await page.route('**/api/projects/admin/marketplace/**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const method = route.request().method();
+    if (requestUrl.pathname.endsWith('/api/projects/admin/marketplace/verification/')) {
+      if (method === 'POST') {
+        const body = route.request().postDataJSON();
+        verificationRows = verificationRows.map((row) => {
+          if (row.id !== body.contractor_id) return row;
+          if (body.action === 'verify') {
+            return { ...row, verification_status: 'verified', eligible_for_marketplace: row.stripe_ready && !row.missing_requirements.length };
+          }
+          if (body.action === 'mark_preferred') {
+            return { ...row, preferred: true };
+          }
+          if (body.action === 'suspend') {
+            return { ...row, verification_status: 'suspended', preferred: false, eligible_for_marketplace: false };
+          }
+          if (body.action === 'unsuspend') {
+            return { ...row, verification_status: 'unverified', preferred: false, eligible_for_marketplace: false };
+          }
+          if (body.action === 'remove_preferred') {
+            return { ...row, preferred: false };
+          }
+          if (body.action === 'reject') {
+            return { ...row, verification_status: 'rejected', preferred: false, eligible_for_marketplace: false };
+          }
+          return row;
+        });
+        const updated = verificationRows.find((row) => row.id === body.contractor_id);
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(updated),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(verificationPayload(requestUrl)),
+      });
+      return;
+    }
     if (method === 'POST' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/route-intake/')) {
       routeCalls += 1;
       const createdCount = requestRouted ? 0 : 5;
@@ -359,6 +473,34 @@ test('admin marketplace health cards drill into directory and coverage filters',
   await page.goto('/app/admin/marketplace', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('admin-marketplace-high-rated-item-2').click();
   await expect(page).toHaveURL(/\/app\/admin\/marketplace\/listings\/2/);
+});
+
+test('admin marketplace verification queue filters and updates trust controls', async ({ page }) => {
+  await installMarketplaceMocks(page);
+
+  await page.goto('/app/admin/marketplace/verification', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('admin-marketplace-verification-view')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('Claimed Roofing Pro');
+  await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('pending review');
+  await expect(page.getByTestId('admin-marketplace-verification-row-12')).toContainText('Partner Flooring Co');
+
+  await page.getByTestId('admin-marketplace-verification-status-filter').selectOption('pending_review');
+  await page.getByTestId('admin-marketplace-verification-apply-filters').click();
+  await expect(page.getByTestId('admin-marketplace-verification-row-11')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-verification-row-12')).toHaveCount(0);
+
+  await page.getByTestId('admin-marketplace-verification-notes-11').fill('Admin reviewed profile.');
+  await page.getByTestId('admin-marketplace-verify-11').click();
+  await expect(page.getByTestId('admin-marketplace-status')).toContainText('verify complete');
+  await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('verified');
+
+  await page.getByTestId('admin-marketplace-mark-preferred-11').click();
+  await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('Preferred');
+
+  await page.getByTestId('admin-marketplace-suspend-11').click();
+  await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('suspended');
+  await expect(page.getByTestId('admin-marketplace-mark-preferred-11')).toBeDisabled();
 });
 
 test('admin marketplace routes saved requests after location enablement without duplicate UI state', async ({ page }) => {

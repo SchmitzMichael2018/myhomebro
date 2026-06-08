@@ -18845,6 +18845,8 @@ class CustomerPortalAccessTests(TestCase):
         self.contractor = Contractor.objects.create(
             user=self.contractor_user,
             business_name="Builder Co",
+            marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
+            marketplace_preferred=True,
         )
         self.public_profile = ContractorPublicProfile.objects.create(
             contractor=self.contractor,
@@ -18859,6 +18861,7 @@ class CustomerPortalAccessTests(TestCase):
         self.other_contractor = Contractor.objects.create(
             user=self.other_contractor_user,
             business_name="Partner Co",
+            marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
         )
         self.other_public_profile = ContractorPublicProfile.objects.create(
             contractor=self.other_contractor,
@@ -19176,7 +19179,12 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(comparison_payload["bid_count"], 2)
         self.assertEqual(comparison_payload["status"], "open")
         self.assertEqual(len(comparison_payload["bids"]), 2)
-        self.assertIn("contractor_verified", comparison_payload["bids"][0])
+        builder_bid = next(row for row in comparison_payload["bids"] if row["contractor_name"] == "Builder Co")
+        partner_bid = next(row for row in comparison_payload["bids"] if row["contractor_name"] == "Partner Co")
+        self.assertTrue(builder_bid["contractor_verified"])
+        self.assertTrue(builder_bid["contractor_preferred"])
+        self.assertTrue(partner_bid["contractor_verified"])
+        self.assertFalse(partner_bid["contractor_preferred"])
         self.assertIn("milestone_count", comparison_payload["bids"][0])
         self.assertIn("warranty_summary", comparison_payload["bids"][0])
 

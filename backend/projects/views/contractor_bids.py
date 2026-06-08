@@ -680,6 +680,22 @@ class ContractorBidsView(APIView):
             "commercial_count": sum(
                 1 for row in filtered_rows if row.get("project_class") == AgreementProjectClass.COMMERCIAL
             ),
+            "marketplace_eligibility": {
+                "verification_status": getattr(contractor, "marketplace_verification_status", "unverified") or "unverified",
+                "preferred": bool(
+                    getattr(contractor, "marketplace_preferred", False)
+                    and getattr(contractor, "marketplace_verification_status", "") == contractor.MARKETPLACE_VERIFIED
+                ),
+                "stripe_ready": bool(contractor.charges_enabled and contractor.payouts_enabled and not contractor.stripe_deauthorized_at),
+                "charges_enabled": bool(contractor.charges_enabled),
+                "payouts_enabled": bool(contractor.payouts_enabled),
+                "action_needed": not bool(
+                    getattr(contractor, "marketplace_verification_status", "") == contractor.MARKETPLACE_VERIFIED
+                    and contractor.charges_enabled
+                    and contractor.payouts_enabled
+                    and not contractor.stripe_deauthorized_at
+                ),
+            },
         }
 
         return Response(

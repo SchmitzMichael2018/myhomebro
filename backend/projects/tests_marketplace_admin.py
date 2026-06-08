@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from projects.models import Contractor, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
+from projects.services.marketplace_readiness import eligible_marketplace_listings
 
 
 class AdminMarketplaceTests(TestCase):
@@ -28,6 +29,7 @@ class AdminMarketplaceTests(TestCase):
             business_name="Claimed Pro LLC",
             city="Austin",
             state="TX",
+            marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
         )
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin_user)
@@ -207,6 +209,78 @@ class AdminMarketplaceTests(TestCase):
         self.assertTrue(location.is_enabled)
         self.assertEqual(location.max_bids_per_request, 5)
 
+    def test_admin_verification_actions_update_contractor_trust_state(self):
+        self.claimed_contractor.marketplace_verification_status = Contractor.MARKETPLACE_PENDING_REVIEW
+        self.claimed_contractor.marketplace_preferred = False
+        self.claimed_contractor.save(update_fields=["marketplace_verification_status", "marketplace_preferred", "updated_at"])
+
+        response = self.client.post(
+            "/api/projects/admin/marketplace/verification/",
+            {"contractor_id": self.claimed_contractor.id, "action": "verify", "notes": "Profile reviewed."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.claimed_contractor.refresh_from_db()
+        self.assertEqual(self.claimed_contractor.marketplace_verification_status, Contractor.MARKETPLACE_VERIFIED)
+        self.assertEqual(self.claimed_contractor.marketplace_verified_by, self.admin_user)
+        self.assertIsNotNone(self.claimed_contractor.marketplace_verified_at)
+
+        preferred = self.client.post(
+            "/api/projects/admin/marketplace/verification/",
+            {"contractor_id": self.claimed_contractor.id, "action": "mark_preferred", "reason": "High quality work."},
+            format="json",
+        )
+        self.assertEqual(preferred.status_code, 200, preferred.data)
+        self.claimed_contractor.refresh_from_db()
+        self.assertTrue(self.claimed_contractor.marketplace_preferred)
+        self.assertEqual(self.claimed_contractor.marketplace_preferred_by, self.admin_user)
+
+        suspended = self.client.post(
+            "/api/projects/admin/marketplace/verification/",
+            {"contractor_id": self.claimed_contractor.id, "action": "suspend", "reason": "Insurance issue."},
+            format="json",
+        )
+        self.assertEqual(suspended.status_code, 200, suspended.data)
+        self.claimed_contractor.refresh_from_db()
+        self.assertEqual(self.claimed_contractor.marketplace_verification_status, Contractor.MARKETPLACE_SUSPENDED)
+        self.assertFalse(self.claimed_contractor.marketplace_preferred)
+
+        unsuspended = self.client.post(
+            "/api/projects/admin/marketplace/verification/",
+            {"contractor_id": self.claimed_contractor.id, "action": "unsuspend"},
+            format="json",
+        )
+        self.assertEqual(unsuspended.status_code, 200, unsuspended.data)
+        self.claimed_contractor.refresh_from_db()
+        self.assertEqual(self.claimed_contractor.marketplace_verification_status, Contractor.MARKETPLACE_UNVERIFIED)
+
+    def test_admin_cannot_mark_unverified_or_suspended_contractor_preferred(self):
+        self.claimed_contractor.marketplace_verification_status = Contractor.MARKETPLACE_UNVERIFIED
+        self.claimed_contractor.save(update_fields=["marketplace_verification_status", "updated_at"])
+
+        response = self.client.post(
+            "/api/projects/admin/marketplace/verification/",
+            {"contractor_id": self.claimed_contractor.id, "action": "mark_preferred"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Only verified contractors", response.json()["detail"])
+
+    def test_non_admin_cannot_change_marketplace_verification(self):
+        user_model = get_user_model()
+        non_admin = user_model.objects.create_user(email="not-admin@example.com", password="testpass123")
+        self.client.force_authenticate(user=non_admin)
+
+        response = self.client.post(
+            "/api/projects/admin/marketplace/verification/",
+            {"contractor_id": self.claimed_contractor.id, "action": "suspend"},
+            format="json",
+        )
+
+        self.assertIn(response.status_code, {403, 404})
+
 
 class MarketplaceGatingTests(TestCase):
     def setUp(self):
@@ -229,6 +303,7 @@ class MarketplaceGatingTests(TestCase):
                 state="TX",
                 charges_enabled=True,
                 payouts_enabled=True,
+                marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
             )
             self.contractors.append(contractor)
             ContractorDirectoryListing.objects.create(
@@ -348,6 +423,47 @@ class MarketplaceGatingTests(TestCase):
         self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 5)
         self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 5)
         self.assertTrue(repeat.json()["marketplace"]["cap_reached"])
+
+    def test_suspended_and_rejected_contractors_are_excluded_from_marketplace_routing(self):
+        self.contractors[0].marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+        self.contractors[0].save(update_fields=["marketplace_verification_status", "updated_at"])
+        self.contractors[1].marketplace_verification_status = Contractor.MARKETPLACE_REJECTED
+        self.contractors[1].save(update_fields=["marketplace_verification_status", "updated_at"])
+        MarketplaceLocation.objects.create(
+            city="Austin",
+            state="TX",
+            is_enabled=True,
+            min_claimed_contractors=1,
+            min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+            min_trade_categories=1,
+            max_bids_per_request=5,
+        )
+        intake = self._intake()
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {"branch_flow": "multi_contractor"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        invited_contractors = set(
+            ContractorDiscoveryInvite.objects.filter(public_intake=intake).values_list("contractor_id", flat=True)
+        )
+        self.assertNotIn(self.contractors[0].id, invited_contractors)
+        self.assertNotIn(self.contractors[1].id, invited_contractors)
+        self.assertEqual(len(invited_contractors), 4)
+
+    def test_preferred_verified_contractors_rank_before_non_preferred_eligible_contractors(self):
+        self.contractors[4].marketplace_preferred = True
+        self.contractors[4].save(update_fields=["marketplace_preferred", "updated_at"])
+        intake = self._intake()
+
+        ordered = eligible_marketplace_listings(intake)
+
+        self.assertGreaterEqual(len(ordered), 5)
+        self.assertEqual(ordered[0].claimed_contractor_id, self.contractors[4].id)
 
     def test_admin_can_route_saved_request_after_location_enabled_without_duplicates(self):
         intake = self._intake()

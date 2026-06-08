@@ -136,6 +136,7 @@ export function protectedRoutes() {
         <Route element={<RoleGate allow={["admin"]} />}>
           <Route path="admin" element={<AdminDashboard />} />
           <Route path="admin/marketplace" element={<AdminMarketplacePage />} />
+          <Route path="admin/marketplace/verification" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/contractors" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/import" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/listings/:id" element={<AdminMarketplacePage />} />

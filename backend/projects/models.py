@@ -236,6 +236,19 @@ class Contractor(models.Model):
         (ACTIVATION_HOMEOWNER_SELECTED, "Homeowner Selected"),
     ]
 
+    MARKETPLACE_UNVERIFIED = "unverified"
+    MARKETPLACE_PENDING_REVIEW = "pending_review"
+    MARKETPLACE_VERIFIED = "verified"
+    MARKETPLACE_REJECTED = "rejected"
+    MARKETPLACE_SUSPENDED = "suspended"
+    MARKETPLACE_VERIFICATION_STATUS_CHOICES = [
+        (MARKETPLACE_UNVERIFIED, "Unverified"),
+        (MARKETPLACE_PENDING_REVIEW, "Pending Review"),
+        (MARKETPLACE_VERIFIED, "Verified"),
+        (MARKETPLACE_REJECTED, "Rejected"),
+        (MARKETPLACE_SUSPENDED, "Suspended"),
+    ]
+
     SERVICE_RADIUS_CHOICES = [
         (5, "5"),
         (10, "10"),
@@ -304,6 +317,40 @@ class Contractor(models.Model):
     has_completed_guided_activation = models.BooleanField(default=False)
     first_opportunity_seen_at = models.DateTimeField(null=True, blank=True)
     first_draft_agreement_seen_at = models.DateTimeField(null=True, blank=True)
+    marketplace_verification_status = models.CharField(
+        max_length=32,
+        choices=MARKETPLACE_VERIFICATION_STATUS_CHOICES,
+        default=MARKETPLACE_UNVERIFIED,
+        db_index=True,
+    )
+    marketplace_verification_notes = models.TextField(blank=True, default="")
+    marketplace_verification_rejected_reason = models.TextField(blank=True, default="")
+    marketplace_verified_at = models.DateTimeField(null=True, blank=True)
+    marketplace_verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="marketplace_verified_contractors",
+    )
+    marketplace_suspended_at = models.DateTimeField(null=True, blank=True)
+    marketplace_suspended_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="marketplace_suspended_contractors",
+    )
+    marketplace_preferred = models.BooleanField(default=False, db_index=True)
+    marketplace_preferred_reason = models.TextField(blank=True, default="")
+    marketplace_preferred_at = models.DateTimeField(null=True, blank=True)
+    marketplace_preferred_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="marketplace_preferred_contractors",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -351,6 +398,18 @@ class Contractor(models.Model):
     @property
     def activation_started(self) -> bool:
         return bool(self.first_project_started_at or self.first_agreement_created_at)
+
+    @property
+    def marketplace_is_verified(self) -> bool:
+        return self.marketplace_verification_status == self.MARKETPLACE_VERIFIED
+
+    @property
+    def marketplace_is_suspended(self) -> bool:
+        return self.marketplace_verification_status == self.MARKETPLACE_SUSPENDED
+
+    @property
+    def marketplace_is_preferred(self) -> bool:
+        return bool(self.marketplace_preferred and self.marketplace_is_verified and not self.marketplace_is_suspended)
 
 
 class ContractorWorkspaceContext(models.Model):

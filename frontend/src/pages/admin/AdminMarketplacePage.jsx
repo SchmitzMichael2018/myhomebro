@@ -17,6 +17,7 @@ const tableCellClass = "border-b border-white/10 px-3 py-3 align-top text-sm tex
 
 function viewKey(pathname) {
   if (pathname.includes("/marketplace/listings/")) return "listing";
+  if (pathname.includes("/marketplace/verification")) return "verification";
   if (pathname.includes("/marketplace/contractors")) return "coverage";
   if (pathname.includes("/marketplace/import")) return "directory";
   return "overview";
@@ -223,6 +224,11 @@ export default function AdminMarketplacePage() {
   const [claimLinks, setClaimLinks] = useState({});
   const [savedRequests, setSavedRequests] = useState({ summary: {}, results: [] });
   const [routingIds, setRoutingIds] = useState({});
+  const [verificationRows, setVerificationRows] = useState([]);
+  const [verificationSummary, setVerificationSummary] = useState({});
+  const [verificationFilters, setVerificationFilters] = useState({ status: "", preferred: "", stripe_ready: "", missing: "", q: "" });
+  const [verificationNotes, setVerificationNotes] = useState({});
+  const [verificationActionIds, setVerificationActionIds] = useState({});
 
   useEffect(() => {
     if (whoLoading || !isAdmin) return undefined;
@@ -245,6 +251,18 @@ export default function AdminMarketplacePage() {
             setSavedRequests({ summary: {}, results: [] });
           }
         }
+        try {
+          const verification = await api.get("/projects/admin/marketplace/verification/");
+          if (active) {
+            setVerificationRows(verification?.data?.results || []);
+            setVerificationSummary(verification?.data?.summary || {});
+          }
+        } catch {
+          if (active) {
+            setVerificationRows([]);
+            setVerificationSummary({});
+          }
+        }
       } catch (error) {
         if (active) setStatus(error?.response?.data?.detail || "Failed to load marketplace health data.");
       } finally {
@@ -262,6 +280,17 @@ export default function AdminMarketplacePage() {
     setReadinessRows(readiness?.data?.coverage?.location_readiness || []);
     setSavedRequests(readiness?.data?.saved_marketplace_requests || { summary: {}, results: [] });
     return readiness?.data;
+  }
+
+  async function refreshVerification() {
+    const params = {};
+    Object.entries(verificationFilters).forEach(([key, value]) => {
+      if (String(value || "").trim()) params[key] = value;
+    });
+    const { data } = await api.get("/projects/admin/marketplace/verification/", { params });
+    setVerificationRows(data?.results || []);
+    setVerificationSummary(data?.summary || {});
+    return data;
   }
 
   useEffect(() => {
@@ -424,6 +453,28 @@ export default function AdminMarketplacePage() {
     setStatus(errors.length ? `Routed ${routed}; ${skipped} request${skipped === 1 ? "" : "s"} skipped. ${errors[0]}` : `Routed ${routed} contractor opportunities across ${rowsToRoute.length} request${rowsToRoute.length === 1 ? "" : "s"}.`);
   }
 
+  async function applyVerificationAction(row, action) {
+    if (!row?.id || verificationActionIds[row.id]) return;
+    const note = verificationNotes[row.id] || "";
+    setStatus("");
+    setVerificationActionIds((prev) => ({ ...prev, [row.id]: action }));
+    try {
+      const { data } = await api.post("/projects/admin/marketplace/verification/", {
+        contractor_id: row.id,
+        action,
+        notes: note,
+        reason: note,
+      });
+      setVerificationRows((prev) => prev.map((item) => (item.id === row.id ? data : item)));
+      await refreshMarketplaceOverview();
+      setStatus(`${data.business_name || "Contractor"} ${action.replace(/_/g, " ")} complete.`);
+    } catch (error) {
+      setStatus(error?.response?.data?.detail || "Could not update contractor verification.");
+    } finally {
+      setVerificationActionIds((prev) => ({ ...prev, [row.id]: "" }));
+    }
+  }
+
   if (whoLoading) {
     return <div className="p-6 text-slate-600">Checking admin access...</div>;
   }
@@ -457,6 +508,9 @@ export default function AdminMarketplacePage() {
               <button type="button" className="rounded-xl border border-sky-200/30 bg-sky-300/10 px-4 py-2 text-sm font-extrabold text-sky-50 hover:bg-sky-300/20" onClick={() => go("contractors")}>
                 Coverage View
               </button>
+              <button type="button" className="rounded-xl border border-emerald-200/30 bg-emerald-300/10 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-300/20" onClick={() => go("verification")}>
+                Verification Queue
+              </button>
               <button type="button" className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-sky-50" onClick={() => navigate("/app/admin/contractor-directory")}>
                 Open Contractor Directory
               </button>
@@ -465,6 +519,7 @@ export default function AdminMarketplacePage() {
           <div className="mt-5 flex flex-wrap gap-2" data-testid="admin-marketplace-tabs">
             <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "overview" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("")}>Overview</button>
             <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "coverage" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("contractors")}>Marketplace Coverage</button>
+            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "verification" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("verification")}>Verification</button>
             <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "directory" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("import")}>Directory Console</button>
           </div>
           {status ? <div data-testid="admin-marketplace-status" className="mt-4 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-sky-50">{status}</div> : null}
@@ -713,6 +768,215 @@ export default function AdminMarketplacePage() {
               <Section title="Claimed Missing Service Radius" sub="Routing health issue before geographic matching." testId="admin-marketplace-radius-gaps">
                 <HealthList rows={health.claimedMissingRadius} empty="Claimed contractors have service radius data." onSelect={(row) => go(`listings/${row.id}`)} testPrefix="admin-marketplace-radius-item" />
               </Section>
+            </div>
+          </main>
+        ) : null}
+
+        {currentView === "verification" ? (
+          <main className="space-y-4" data-testid="admin-marketplace-verification-view">
+            <Section
+              title="Contractor Verification"
+              sub="Admin approval controls marketplace eligibility. Preferred status improves customer trust and ranking, but never bypasses eligibility or bid caps."
+              testId="admin-marketplace-verification"
+            >
+              <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="Pending" value={verificationSummary.pending_review || 0} sub="Needs admin review" tone="amber" testId="admin-marketplace-verification-pending" />
+                <MetricCard label="Verified" value={verificationSummary.verified || 0} sub="Eligible if Stripe/trade match" tone="emerald" testId="admin-marketplace-verification-verified" />
+                <MetricCard label="Preferred" value={verificationSummary.preferred || 0} sub="Ranking boost only" tone="emerald" testId="admin-marketplace-verification-preferred" />
+                <MetricCard label="Rejected" value={verificationSummary.rejected || 0} sub="Blocked from routing" tone="amber" testId="admin-marketplace-verification-rejected" />
+                <MetricCard label="Suspended" value={verificationSummary.suspended || 0} sub="Blocked from routing" tone="amber" testId="admin-marketplace-verification-suspended" />
+                <MetricCard label="Stripe Ready" value={verificationSummary.stripe_ready || 0} sub="Can receive payments" testId="admin-marketplace-verification-stripe" />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <input
+                  data-testid="admin-marketplace-verification-search"
+                  className={inputClass}
+                  placeholder="Search contractors..."
+                  value={verificationFilters.q}
+                  onChange={(event) => setVerificationFilters((prev) => ({ ...prev, q: event.target.value }))}
+                />
+                <select
+                  data-testid="admin-marketplace-verification-status-filter"
+                  className={inputClass}
+                  value={verificationFilters.status}
+                  onChange={(event) => setVerificationFilters((prev) => ({ ...prev, status: event.target.value }))}
+                >
+                  <option value="">All statuses</option>
+                  <option value="pending_review">Pending review</option>
+                  <option value="verified">Verified</option>
+                  <option value="unverified">Unverified</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+                <select
+                  data-testid="admin-marketplace-verification-preferred-filter"
+                  className={inputClass}
+                  value={verificationFilters.preferred}
+                  onChange={(event) => setVerificationFilters((prev) => ({ ...prev, preferred: event.target.value }))}
+                >
+                  <option value="">All preferred states</option>
+                  <option value="true">Preferred</option>
+                  <option value="false">Not preferred</option>
+                </select>
+                <select
+                  data-testid="admin-marketplace-verification-stripe-filter"
+                  className={inputClass}
+                  value={verificationFilters.stripe_ready}
+                  onChange={(event) => setVerificationFilters((prev) => ({ ...prev, stripe_ready: event.target.value }))}
+                >
+                  <option value="">All Stripe states</option>
+                  <option value="true">Stripe ready</option>
+                  <option value="false">Stripe missing</option>
+                </select>
+                <select
+                  data-testid="admin-marketplace-verification-missing-filter"
+                  className={inputClass}
+                  value={verificationFilters.missing}
+                  onChange={(event) => setVerificationFilters((prev) => ({ ...prev, missing: event.target.value }))}
+                >
+                  <option value="">All requirements</option>
+                  <option value="license">Missing license</option>
+                  <option value="insurance">Missing insurance</option>
+                  <option value="trade/category">Missing trade/category</option>
+                </select>
+                <button
+                  type="button"
+                  data-testid="admin-marketplace-verification-apply-filters"
+                  onClick={refreshVerification}
+                  className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-sky-50"
+                >
+                  Apply Filters
+                </button>
+              </div>
+            </Section>
+
+            <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#061d42]/95 shadow-[0_22px_50px_rgba(2,8,23,0.28)]">
+              <table className="min-w-full">
+                <thead>
+                  <tr>
+                    <th className={tableHeadClass}>Contractor</th>
+                    <th className={tableHeadClass}>Eligibility</th>
+                    <th className={tableHeadClass}>Requirements</th>
+                    <th className={tableHeadClass}>Performance</th>
+                    <th className={tableHeadClass}>Admin Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {verificationRows.length ? verificationRows.map((row) => (
+                    <tr key={row.id} data-testid={`admin-marketplace-verification-row-${row.id}`} className="hover:bg-white/5">
+                      <td className={tableCellClass}>
+                        <div className="font-extrabold text-white">{row.business_name}</div>
+                        <div className="mt-1 text-xs text-sky-100/75">{row.email || "Email missing"} {row.phone ? `| ${row.phone}` : ""}</div>
+                        <div className="mt-1 text-xs text-sky-100/65">{row.service_area || "Service area missing"}</div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <div className="flex flex-wrap gap-1">
+                          <Badge tone={row.verification_status === "verified" ? "emerald" : row.verification_status === "suspended" || row.verification_status === "rejected" ? "rose" : "amber"}>
+                            {String(row.verification_status || "unverified").replace(/_/g, " ")}
+                          </Badge>
+                          {row.preferred ? <Badge tone="emerald">Preferred</Badge> : null}
+                          <Badge tone={row.stripe_ready ? "emerald" : "amber"}>{row.stripe_ready ? "Stripe ready" : "Stripe missing"}</Badge>
+                          <Badge tone={row.eligible_for_marketplace ? "emerald" : "slate"}>{row.eligible_for_marketplace ? "Eligible" : "Not eligible"}</Badge>
+                        </div>
+                        <div className="mt-2 text-xs text-sky-100/65">{(row.trades || []).join(", ") || "Trade/category missing"}</div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <div className="flex flex-wrap gap-1">
+                          {(row.missing_requirements || []).length ? (row.missing_requirements || []).map((item) => (
+                            <Badge key={item} tone="amber">{item}</Badge>
+                          )) : <Badge tone="emerald">Requirements met</Badge>}
+                        </div>
+                        <div className="mt-2 text-xs text-sky-100/65">
+                          License {row.license_on_file ? "on file" : "missing"} | Insurance {row.insurance_on_file ? "on file" : "missing"}
+                        </div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <div className="text-xs text-sky-100/80">
+                          {row.performance_summary?.completed_projects || 0} completed | {row.performance_summary?.dispute_count || 0} disputes
+                        </div>
+                        <div className="mt-1 text-xs text-sky-100/65">
+                          Rating {row.performance_summary?.review_rating || "New"} ({row.performance_summary?.review_count || 0} reviews)
+                        </div>
+                      </td>
+                      <td className={tableCellClass}>
+                        <textarea
+                          data-testid={`admin-marketplace-verification-notes-${row.id}`}
+                          className={`${inputClass} mb-2 min-h-[68px] w-full`}
+                          placeholder="Admin note or reason"
+                          value={verificationNotes[row.id] || ""}
+                          onChange={(event) => setVerificationNotes((prev) => ({ ...prev, [row.id]: event.target.value }))}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            data-testid={`admin-marketplace-verify-${row.id}`}
+                            onClick={() => applyVerificationAction(row, "verify")}
+                            disabled={verificationActionIds[row.id] || row.verification_status === "verified"}
+                            className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Verify
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`admin-marketplace-reject-${row.id}`}
+                            onClick={() => applyVerificationAction(row, "reject")}
+                            disabled={verificationActionIds[row.id] || row.verification_status === "rejected"}
+                            className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1.5 text-xs font-extrabold text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                          {row.verification_status === "suspended" ? (
+                            <button
+                              type="button"
+                              data-testid={`admin-marketplace-unsuspend-${row.id}`}
+                              onClick={() => applyVerificationAction(row, "unsuspend")}
+                              disabled={verificationActionIds[row.id]}
+                              className="rounded-lg border border-sky-200/30 bg-sky-300/10 px-3 py-1.5 text-xs font-extrabold text-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Unsuspend
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              data-testid={`admin-marketplace-suspend-${row.id}`}
+                              onClick={() => applyVerificationAction(row, "suspend")}
+                              disabled={verificationActionIds[row.id]}
+                              className="rounded-lg border border-rose-200/30 bg-rose-300/10 px-3 py-1.5 text-xs font-extrabold text-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Suspend
+                            </button>
+                          )}
+                          {row.preferred ? (
+                            <button
+                              type="button"
+                              data-testid={`admin-marketplace-remove-preferred-${row.id}`}
+                              onClick={() => applyVerificationAction(row, "remove_preferred")}
+                              disabled={verificationActionIds[row.id]}
+                              className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-extrabold text-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Remove Preferred
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              data-testid={`admin-marketplace-mark-preferred-${row.id}`}
+                              onClick={() => applyVerificationAction(row, "mark_preferred")}
+                              disabled={verificationActionIds[row.id] || row.verification_status !== "verified"}
+                              className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1.5 text-xs font-extrabold text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Mark Preferred
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td className={tableCellClass} colSpan={5}>No contractor verification rows match these filters.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </main>
         ) : null}

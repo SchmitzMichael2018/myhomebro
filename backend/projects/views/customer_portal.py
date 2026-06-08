@@ -22,6 +22,7 @@ from receipts.models import Receipt
 from projects.models import (
     Agreement,
     AgreementFundingLink,
+    Contractor,
     DrawRequest,
     DrawRequestStatus,
     ExpenseRequest,
@@ -646,15 +647,15 @@ def _bid_rows(email: str) -> list[dict]:
                 "contractor_business_name": _safe_text(getattr(contractor, "business_name", "")) or _contractor_name(contractor),
                 "contractor_contact_name": _safe_text(getattr(contractor, "contact_name", "")) or _safe_text(getattr(getattr(contractor, "user", None), "get_full_name", lambda: "")()),
                 "contractor_verified": bool(
-                    getattr(contractor, "details_submitted", False)
-                    or getattr(contractor, "charges_enabled", False)
-                    or getattr(contractor, "payouts_enabled", False)
-                    or getattr(public_profile, "is_verified", False)
+                    contractor
+                    and getattr(contractor, "marketplace_verification_status", "")
+                    == Contractor.MARKETPLACE_VERIFIED
                 ),
                 "contractor_preferred": bool(
-                    getattr(contractor, "has_completed_guided_activation", False)
-                    or getattr(public_profile, "is_featured", False)
-                    or getattr(public_profile, "is_preferred", False)
+                    contractor
+                    and getattr(contractor, "marketplace_verification_status", "")
+                    == Contractor.MARKETPLACE_VERIFIED
+                    and getattr(contractor, "marketplace_preferred", False)
                 ),
                 "service_area": service_area or _safe_text(getattr(lead, "city", "")),
                 "project_class": _safe_text(getattr(linked_agreement, "project_class", "")) or infer_project_class(

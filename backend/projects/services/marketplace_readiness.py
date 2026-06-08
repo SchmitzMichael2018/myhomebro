@@ -149,11 +149,36 @@ def _contractor_stripe_ready(contractor: Contractor | None) -> bool:
 
 def _contractor_suspended(contractor: Contractor | None) -> bool:
     user = getattr(contractor, "user", None)
-    return bool(contractor and user and not getattr(user, "is_active", True))
+    return bool(
+        contractor
+        and (
+            getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_SUSPENDED
+            or (user and not getattr(user, "is_active", True))
+        )
+    )
+
+
+def _contractor_marketplace_verified(contractor: Contractor | None) -> bool:
+    return bool(contractor and getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED)
+
+
+def _contractor_marketplace_preferred(contractor: Contractor | None) -> bool:
+    return bool(
+        contractor
+        and getattr(contractor, "marketplace_preferred", False)
+        and _contractor_marketplace_verified(contractor)
+        and not _contractor_suspended(contractor)
+    )
 
 
 def _listing_verified(listing: ContractorDirectoryListing) -> bool:
-    return bool(listing.claimed_profile and listing.claimed_contractor_id and listing.manually_reviewed)
+    return bool(
+        listing.claimed_profile
+        and listing.claimed_contractor_id
+        and listing.manually_reviewed
+        and _contractor_marketplace_verified(listing.claimed_contractor)
+        and not _contractor_suspended(listing.claimed_contractor)
+    )
 
 
 def _request_trades(intake: ProjectIntake) -> set[str]:
@@ -203,6 +228,8 @@ def location_readiness(city: str, state: str) -> dict[str, Any]:
         row
         for row in claimed_entries
         if row.profile_status == ContractorDirectoryEntry.PROFILE_REVIEWED
+        and _contractor_marketplace_verified(row.claimed_by_contractor)
+        and not _contractor_suspended(row.claimed_by_contractor)
     ]
     stripe_ready = [row for row in verified if _contractor_stripe_ready(row.claimed_contractor)]
     stripe_ready_entries = [row for row in verified_entries if _contractor_stripe_ready(row.claimed_by_contractor)]
@@ -291,7 +318,11 @@ def eligible_marketplace_listings(intake: ProjectIntake):
     rows = []
     for listing in qs:
         contractor = listing.claimed_contractor
-        if _contractor_suspended(contractor) or not _contractor_stripe_ready(contractor):
+        if (
+            _contractor_suspended(contractor)
+            or not _contractor_marketplace_verified(contractor)
+            or not _contractor_stripe_ready(contractor)
+        ):
             continue
         listing_trades = _listing_trades(listing)
         if request_trades and listing_trades and not (request_trades & listing_trades):
@@ -301,6 +332,7 @@ def eligible_marketplace_listings(intake: ProjectIntake):
                 "listing": listing,
                 "trade_match": bool(request_trades & listing_trades) if request_trades and listing_trades else False,
                 "stripe_ready": _contractor_stripe_ready(contractor),
+                "preferred": _contractor_marketplace_preferred(contractor),
             }
         )
     return [
@@ -309,6 +341,7 @@ def eligible_marketplace_listings(intake: ProjectIntake):
             rows,
             key=lambda item: (
                 not item["trade_match"],
+                -int(item["preferred"]),
                 -int(item["stripe_ready"]),
                 -int(item["listing"].google_review_count or 0),
                 item["listing"].business_name.lower(),

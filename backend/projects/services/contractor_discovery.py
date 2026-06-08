@@ -571,13 +571,17 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
         _safe_text(profile.city or contractor.city),
         _safe_text(profile.state or contractor.state),
     ]
+    is_verified = getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED
+    is_preferred = bool(getattr(contractor, "marketplace_preferred", False) and is_verified)
     return {
         "id": f"contractor:{contractor.id}",
         "source": ContractorDirectoryListing.SOURCE_MYHOMEBRO,
         "business_name": profile.business_name_public or contractor.business_name or contractor.name or "",
         "claimed": claimed,
-        "label": "MyHomeBro Verified",
-        "source_label": "MyHomeBro Verified",
+        "label": "MyHomeBro Verified" if is_verified else "Claimed Contractor",
+        "source_label": "MyHomeBro Verified" if is_verified else "Claimed Contractor",
+        "contractor_verified": is_verified,
+        "contractor_preferred": is_preferred,
         "rating": round(float(getattr(contractor, "average_rating", 0) or 0), 2) if getattr(contractor, "review_count", 0) else None,
         "review_count": int(getattr(contractor, "review_count", 0) or 0),
         "website_url": _safe_text(getattr(profile, "website_url", "")),
@@ -642,7 +646,7 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
             card = _build_card_from_contractors(contractor, profile, project)
             card["id"] = f"listing:{listing.id}"
             card["source"] = listing.source
-            card["label"] = "MyHomeBro Verified"
+            card["label"] = "MyHomeBro Verified" if card.get("contractor_verified") else "Claimed Contractor"
             card["claimed"] = True
             card["directory_listing_id"] = listing.id
             card["source_priority"] = 250
@@ -672,8 +676,10 @@ def _build_card_from_listing(listing: ContractorDirectoryListing, project: dict[
         "source": listing.source,
         "business_name": listing.business_name or listing.normalized_business_name or "",
         "claimed": bool(listing.claimed_profile and listing.claimed_contractor_id),
-        "label": "MyHomeBro Verified" if listing.claimed_profile and listing.claimed_contractor_id else "Local Business Listing",
-        "source_label": "MyHomeBro Verified" if listing.claimed_profile and listing.claimed_contractor_id else "Local Business Listing",
+        "label": "Local Business Listing",
+        "source_label": "Local Business Listing",
+        "contractor_verified": False,
+        "contractor_preferred": False,
         "rating": listing.google_rating,
         "review_count": int(listing.google_review_count or 0),
         "website_url": _safe_text(listing.website_url),

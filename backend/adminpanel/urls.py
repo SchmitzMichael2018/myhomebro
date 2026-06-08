@@ -23,6 +23,7 @@ from .views_marketplace import (
     AdminMarketplaceLocationStatus,
     AdminMarketplaceOverview,
     AdminMarketplaceRouteIntake,
+    AdminMarketplaceVerification,
 )
 from .views_reimbursements import (
     AdminReimbursementClearHold,
@@ -61,6 +62,7 @@ urlpatterns = [
     path("marketplace/", AdminMarketplaceOverview.as_view(), name="admin-marketplace-overview"),
     path("marketplace/locations/", AdminMarketplaceLocationStatus.as_view(), name="admin-marketplace-location-status"),
     path("marketplace/route-intake/", AdminMarketplaceRouteIntake.as_view(), name="admin-marketplace-route-intake"),
+    path("marketplace/verification/", AdminMarketplaceVerification.as_view(), name="admin-marketplace-verification"),
     path("marketplace/contractors/", AdminMarketplaceContractors.as_view(), name="admin-marketplace-contractors"),
     path("marketplace/import/", AdminMarketplaceImport.as_view(), name="admin-marketplace-import"),
     path("marketplace/listings/<int:listing_id>/", AdminMarketplaceListingDetail.as_view(), name="admin-marketplace-listing-detail"),

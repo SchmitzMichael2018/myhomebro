@@ -381,6 +381,7 @@ export default function ContractorBidsPage() {
   const [actionBusyId, setActionBusyId] = useState("");
   const [copiedRefId, setCopiedRefId] = useState("");
   const [contractorBrandVoice, setContractorBrandVoice] = useState({});
+  const [serverSummary, setServerSummary] = useState({});
 
   useEffect(() => {
     return () => {
@@ -398,6 +399,7 @@ export default function ContractorBidsPage() {
       if (!mountedRef.current) return;
       const nextRows = Array.isArray(data?.results) ? data.results : [];
       setRows(nextRows);
+      setServerSummary(data?.summary || {});
       setContractorBrandVoice(meResponse?.data?.public_profile || {});
       if (keepSelectedBidId) {
         const nextSelected = nextRows.find((row) => String(row.bid_id) === String(keepSelectedBidId));
@@ -408,6 +410,7 @@ export default function ContractorBidsPage() {
       console.error(err);
       toast.error(err?.response?.data?.detail || "Failed to load bids.");
       setRows([]);
+      setServerSummary({});
       setContractorBrandVoice({});
     } finally {
       if (mountedRef.current) setLoading(false);
@@ -463,6 +466,9 @@ export default function ContractorBidsPage() {
 
     return counts;
   }, [rows]);
+  const marketplaceEligibility = serverSummary?.marketplace_eligibility || {};
+  const marketplaceStatus = normalize(marketplaceEligibility.verification_status || "unverified");
+  const marketplaceStatusLabel = marketplaceStatus.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
   const activeStageLabel =
     activeWorkspaceTab === "new_lead"
@@ -782,6 +788,34 @@ export default function ContractorBidsPage() {
           Public Leads
         </button>
       </div>
+
+      <section
+        data-testid="contractor-marketplace-eligibility-status"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Marketplace Eligibility</div>
+            <div className="mt-1 text-sm text-slate-700">
+              Status: <span className="font-semibold text-slate-950">{marketplaceStatusLabel}</span>
+              {marketplaceEligibility.preferred ? <span className="ml-2 font-semibold text-emerald-700">Preferred</span> : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <span className={`rounded-full border px-3 py-1 ${marketplaceStatus === "verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : marketplaceStatus === "suspended" || marketplaceStatus === "rejected" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+              {marketplaceStatusLabel}
+            </span>
+            <span className={`rounded-full border px-3 py-1 ${marketplaceEligibility.stripe_ready ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+              {marketplaceEligibility.stripe_ready ? "Stripe ready" : "Stripe setup needed"}
+            </span>
+            {marketplaceEligibility.action_needed ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">Action needed before new routed opportunities</span>
+            ) : (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">Eligible for matching</span>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section className="grid gap-4 md:grid-cols-5">
         <SummaryCard label="New Leads" value={String(summary.new_leads)} tone="slate" testId="bids-summary-new-leads" />

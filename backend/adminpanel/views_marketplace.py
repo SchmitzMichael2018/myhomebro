@@ -4,6 +4,7 @@ from collections import defaultdict
 from decimal import Decimal
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.http import Http404
@@ -16,8 +17,10 @@ from rest_framework.views import APIView
 
 from .permissions import IsAdminUserRole
 from .utils import safe_get
-from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
+from projects.models import Agreement, Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
+from projects.models_dispute import Dispute
+from projects.models_learning import MilestonePerformanceSnapshot
 from projects.models_project_intake import ProjectIntake
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness, normalize_location_value
 from projects.services.contractor_discovery import build_contractor_recommendations
@@ -191,6 +194,140 @@ def _saved_marketplace_requests_payload() -> dict[str, Any]:
     }
 
 
+def _contractor_stripe_ready(contractor: Contractor) -> bool:
+    return bool(contractor.charges_enabled and contractor.payouts_enabled and not contractor.stripe_deauthorized_at)
+
+
+def _contractor_claimed(contractor: Contractor) -> bool:
+    return bool(
+        ContractorDirectoryListing.objects.filter(claimed_contractor=contractor, claimed_profile=True).exists()
+        or contractor.directory_entries.filter(claimed=True).exists()
+        or contractor.activation_type in {
+            Contractor.ACTIVATION_PREFILLED_DIRECTORY,
+            Contractor.ACTIVATION_HOMEOWNER_SELECTED,
+            Contractor.ACTIVATION_TRADITIONAL_SIGNUP,
+        }
+    )
+
+
+def _contractor_trade_labels(contractor: Contractor) -> list[str]:
+    values = set()
+    for listing in ContractorDirectoryListing.objects.filter(claimed_contractor=contractor):
+        if _safe_text(listing.primary_trade):
+            values.add(_safe_text(listing.primary_trade))
+        for item in listing.trade_categories or []:
+            if _safe_text(item):
+                values.add(_safe_text(item))
+    for entry in contractor.directory_entries.all():
+        if _safe_text(entry.primary_service):
+            values.add(_safe_text(entry.primary_service))
+        for item in (entry.normalized_services or []) + (entry.services or []):
+            if _safe_text(item):
+                values.add(_safe_text(item))
+    for skill in contractor.skills.all():
+        if _safe_text(getattr(skill, "name", "")):
+            values.add(_safe_text(skill.name))
+    return sorted(values)
+
+
+def _contractor_missing_requirements(contractor: Contractor) -> list[str]:
+    missing = []
+    claimed = _contractor_claimed(contractor)
+    if not claimed:
+        missing.append("claimed profile")
+    if not _safe_text(contractor.business_name):
+        missing.append("business name")
+    if not (_safe_text(contractor.phone) or _safe_text(getattr(contractor.user, "email", ""))):
+        missing.append("contact")
+    if not (_safe_text(contractor.city) and _safe_text(contractor.state)):
+        missing.append("service area")
+    if not _contractor_trade_labels(contractor):
+        missing.append("trade/category")
+    if _safe_bool(getattr(settings, "MYHOMEBRO_MARKETPLACE_REQUIRE_LICENSE_ON_FILE", False)) and not (
+        _safe_text(contractor.license_number) or contractor.license_file
+    ):
+        missing.append("license")
+    if _safe_bool(getattr(settings, "MYHOMEBRO_MARKETPLACE_REQUIRE_INSURANCE_ON_FILE", False)) and not contractor.insurance_file:
+        missing.append("insurance")
+    if _safe_bool(getattr(settings, "MYHOMEBRO_MARKETPLACE_REQUIRE_STRIPE_READY_FOR_VERIFICATION", False)) and not _contractor_stripe_ready(contractor):
+        missing.append("Stripe ready")
+    return missing
+
+
+def _contractor_performance_summary(contractor: Contractor) -> dict[str, Any]:
+    completed_projects = Agreement.objects.filter(contractor=contractor, status__iexact="completed").count()
+    dispute_count = Dispute.objects.filter(agreement__contractor=contractor).exclude(status="canceled").count()
+    agreement_count = max(Agreement.objects.filter(contractor=contractor).count(), 1)
+    snapshots = MilestonePerformanceSnapshot.objects.filter(contractor=contractor)
+    delayed_count = snapshots.filter(is_delayed=True).count()
+    avg_completion_lag = None
+    avg_approval_lag = None
+    completion_values = [row for row in snapshots.exclude(planned_vs_actual_completion_days__isnull=True).values_list("planned_vs_actual_completion_days", flat=True)[:200]]
+    approval_values = [row for row in snapshots.exclude(completion_to_approval_seconds__isnull=True).values_list("completion_to_approval_seconds", flat=True)[:200]]
+    if completion_values:
+        avg_completion_lag = round(sum(completion_values) / len(completion_values), 2)
+    if approval_values:
+        avg_approval_lag = round((sum(approval_values) / len(approval_values)) / 86400, 2)
+    return {
+        "completed_projects": completed_projects,
+        "dispute_count": dispute_count,
+        "dispute_rate": round(dispute_count / agreement_count, 3),
+        "delayed_milestones": delayed_count,
+        "avg_milestone_completion_lag_days": avg_completion_lag,
+        "avg_payment_approval_lag_days": avg_approval_lag,
+        "review_rating": round(float(contractor.average_rating or 0), 2) if contractor.review_count else None,
+        "review_count": int(contractor.review_count or 0),
+        "escrow_reimbursement_flags": 0,
+    }
+
+
+def _serialize_verification_contractor(contractor: Contractor) -> dict[str, Any]:
+    missing_requirements = _contractor_missing_requirements(contractor)
+    status_value = contractor.marketplace_verification_status or Contractor.MARKETPLACE_UNVERIFIED
+    user = contractor.user
+    service_area = ", ".join(part for part in [_safe_text(contractor.city), _safe_text(contractor.state)] if part)
+    listing_count = ContractorDirectoryListing.objects.filter(claimed_contractor=contractor).count()
+    return {
+        "id": contractor.id,
+        "business_name": _safe_text(contractor.business_name) or contractor.name or f"Contractor #{contractor.id}",
+        "contact_name": contractor.name,
+        "email": _safe_text(getattr(user, "email", "")),
+        "phone": _safe_text(contractor.phone),
+        "active": bool(getattr(user, "is_active", True)),
+        "claimed": _contractor_claimed(contractor),
+        "claimed_listing_count": listing_count,
+        "service_area": service_area,
+        "city": _safe_text(contractor.city),
+        "state": _safe_text(contractor.state),
+        "trades": _contractor_trade_labels(contractor),
+        "stripe_ready": _contractor_stripe_ready(contractor),
+        "charges_enabled": bool(contractor.charges_enabled),
+        "payouts_enabled": bool(contractor.payouts_enabled),
+        "details_submitted": bool(contractor.details_submitted),
+        "license_on_file": bool(_safe_text(contractor.license_number) or contractor.license_file),
+        "insurance_on_file": bool(contractor.insurance_file),
+        "verification_status": status_value,
+        "verification_notes": _safe_text(contractor.marketplace_verification_notes),
+        "rejected_reason": _safe_text(contractor.marketplace_verification_rejected_reason),
+        "verified_at": _safe_dt(contractor.marketplace_verified_at),
+        "verified_by": _safe_text(getattr(contractor.marketplace_verified_by, "email", "")),
+        "suspended_at": _safe_dt(contractor.marketplace_suspended_at),
+        "suspended_by": _safe_text(getattr(contractor.marketplace_suspended_by, "email", "")),
+        "preferred": bool(contractor.marketplace_preferred),
+        "preferred_reason": _safe_text(contractor.marketplace_preferred_reason),
+        "preferred_at": _safe_dt(contractor.marketplace_preferred_at),
+        "preferred_by": _safe_text(getattr(contractor.marketplace_preferred_by, "email", "")),
+        "missing_requirements": missing_requirements,
+        "eligible_for_marketplace": bool(
+            status_value == Contractor.MARKETPLACE_VERIFIED
+            and getattr(user, "is_active", True)
+            and not missing_requirements
+            and _contractor_stripe_ready(contractor)
+        ),
+        "performance_summary": _contractor_performance_summary(contractor),
+    }
+
+
 def _query_listings(request):
     qs = ContractorDirectoryListing.objects.select_related("claimed_contractor", "claimed_contractor__user")
     q = _safe_text(request.query_params.get("q"))
@@ -272,6 +409,7 @@ def _query_listings(request):
 
 def _compatibility_reasons(listing: ContractorDirectoryListing) -> list[str]:
     reasons = []
+    contractor = getattr(listing, "claimed_contractor", None)
     tags = [str(tag).strip() for tag in (listing.compatibility_tags or []) if str(tag).strip()]
     if listing.assisted_diy_friendly:
         reasons.append("Assisted DIY friendly")
@@ -285,8 +423,10 @@ def _compatibility_reasons(listing: ContractorDirectoryListing) -> list[str]:
         reasons.append(f"Collaboration score {int(round(float(listing.collaboration_score)))}")
     for tag in tags[:3]:
         reasons.append(tag)
-    if listing.claimed_profile:
+    if contractor and getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED:
         reasons.append("MyHomeBro verified")
+    if contractor and getattr(contractor, "marketplace_preferred", False) and getattr(contractor, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED:
+        reasons.append("Preferred contractor")
     return list(dict.fromkeys(reasons))
 
 
@@ -349,6 +489,9 @@ def _serialize_listing(listing: ContractorDirectoryListing, *, include_invites: 
         "claimed_profile": bool(listing.claimed_profile),
         "claimed_contractor_id": listing.claimed_contractor_id,
         "claimed_contractor_name": safe_get(profile, ["business_name", "name"], None) if profile else None,
+        "contractor_verification_status": getattr(profile, "marketplace_verification_status", "") if profile else "",
+        "contractor_verified": bool(profile and getattr(profile, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED),
+        "contractor_preferred": bool(profile and getattr(profile, "marketplace_preferred", False) and getattr(profile, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED),
         "sms_opt_out": bool(listing.sms_opt_out),
         "email_opt_out": bool(listing.email_opt_out),
         "manually_reviewed": bool(listing.manually_reviewed),
@@ -369,7 +512,7 @@ def _serialize_listing(listing: ContractorDirectoryListing, *, include_invites: 
         "last_synced_at": listing.last_synced_at.isoformat() if listing.last_synced_at else None,
         "created_at": listing.created_at.isoformat() if listing.created_at else None,
         "updated_at": listing.updated_at.isoformat() if listing.updated_at else None,
-        "label": "MyHomeBro Verified" if listing.claimed_profile else "Local Business Listing",
+        "label": "MyHomeBro Verified" if profile and getattr(profile, "marketplace_verification_status", "") == Contractor.MARKETPLACE_VERIFIED else "Claimed Contractor" if listing.claimed_profile else "Local Business Listing",
         "claimed": bool(listing.claimed_profile),
         "invite_available": bool(listing.phone_number or listing.email or listing.claimed_contractor_id),
         "phone_available": bool(listing.phone_number),
@@ -609,6 +752,160 @@ class AdminMarketplaceRouteIntake(APIView):
         result = create_marketplace_invites_for_intake(intake_id)
         response_status = status.HTTP_200_OK if result.get("marketplace", {}).get("enabled") else status.HTTP_202_ACCEPTED
         return Response(result, status=response_status)
+
+
+class AdminMarketplaceVerification(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request):
+        qs = Contractor.objects.select_related(
+            "user",
+            "marketplace_verified_by",
+            "marketplace_suspended_by",
+            "marketplace_preferred_by",
+        ).prefetch_related("skills", "directory_entries")
+        status_filter = _safe_text(request.query_params.get("status")).lower()
+        preferred_filter = _safe_text(request.query_params.get("preferred")).lower()
+        stripe_filter = _safe_text(request.query_params.get("stripe_ready")).lower()
+        missing_filter = _safe_text(request.query_params.get("missing")).lower()
+        q = _safe_text(request.query_params.get("q")).lower()
+        if status_filter and status_filter != "all":
+            qs = qs.filter(marketplace_verification_status=status_filter)
+        if preferred_filter in {"1", "true", "yes"}:
+            qs = qs.filter(marketplace_preferred=True)
+        elif preferred_filter in {"0", "false", "no"}:
+            qs = qs.filter(marketplace_preferred=False)
+        if stripe_filter in {"1", "true", "yes"}:
+            qs = qs.filter(charges_enabled=True, payouts_enabled=True, stripe_deauthorized_at__isnull=True)
+        elif stripe_filter in {"0", "false", "no"}:
+            qs = qs.exclude(charges_enabled=True, payouts_enabled=True, stripe_deauthorized_at__isnull=True)
+
+        rows = [_serialize_verification_contractor(contractor) for contractor in qs.order_by("marketplace_verification_status", "-marketplace_preferred", "business_name", "id")[:500]]
+        if missing_filter:
+            rows = [row for row in rows if missing_filter in {item.lower() for item in row["missing_requirements"]}]
+        if q:
+            rows = [
+                row
+                for row in rows
+                if q
+                in " ".join(
+                    [
+                        row["business_name"],
+                        row["email"],
+                        row["service_area"],
+                        " ".join(row["trades"]),
+                        row["verification_status"],
+                    ]
+                ).lower()
+            ]
+        summary = {
+            "total": len(rows),
+            "pending_review": sum(1 for row in rows if row["verification_status"] == Contractor.MARKETPLACE_PENDING_REVIEW),
+            "verified": sum(1 for row in rows if row["verification_status"] == Contractor.MARKETPLACE_VERIFIED),
+            "preferred": sum(1 for row in rows if row["preferred"]),
+            "rejected": sum(1 for row in rows if row["verification_status"] == Contractor.MARKETPLACE_REJECTED),
+            "suspended": sum(1 for row in rows if row["verification_status"] == Contractor.MARKETPLACE_SUSPENDED),
+            "stripe_ready": sum(1 for row in rows if row["stripe_ready"]),
+            "missing_license": sum(1 for row in rows if "license" in row["missing_requirements"]),
+            "missing_insurance": sum(1 for row in rows if "insurance" in row["missing_requirements"]),
+        }
+        return Response({"summary": summary, "results": rows}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        contractor_id = _safe_int(request.data.get("contractor_id"), 0)
+        action = _safe_text(request.data.get("action")).lower()
+        notes = _safe_text(request.data.get("notes"))
+        reason = _safe_text(request.data.get("reason")) or notes
+        if not contractor_id:
+            return Response({"detail": "contractor_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        contractor = Contractor.objects.select_related("user").filter(pk=contractor_id).first()
+        if contractor is None:
+            return Response({"detail": "Contractor not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        now = timezone.now()
+        update_fields = ["marketplace_verification_status", "marketplace_verification_notes", "updated_at"]
+        if notes:
+            contractor.marketplace_verification_notes = notes
+
+        if action == "verify":
+            missing = _contractor_missing_requirements(contractor)
+            if missing:
+                return Response(
+                    {"detail": f"Cannot verify until missing requirements are resolved: {', '.join(missing)}."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            contractor.marketplace_verification_status = Contractor.MARKETPLACE_VERIFIED
+            contractor.marketplace_verified_at = now
+            contractor.marketplace_verified_by = request.user
+            contractor.marketplace_verification_rejected_reason = ""
+            update_fields += ["marketplace_verified_at", "marketplace_verified_by", "marketplace_verification_rejected_reason"]
+        elif action == "reject":
+            contractor.marketplace_verification_status = Contractor.MARKETPLACE_REJECTED
+            contractor.marketplace_verification_rejected_reason = reason
+            contractor.marketplace_preferred = False
+            contractor.marketplace_preferred_reason = ""
+            contractor.marketplace_preferred_at = None
+            contractor.marketplace_preferred_by = None
+            update_fields += [
+                "marketplace_verification_rejected_reason",
+                "marketplace_preferred",
+                "marketplace_preferred_reason",
+                "marketplace_preferred_at",
+                "marketplace_preferred_by",
+            ]
+        elif action == "suspend":
+            contractor.marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+            contractor.marketplace_suspended_at = now
+            contractor.marketplace_suspended_by = request.user
+            contractor.marketplace_preferred = False
+            contractor.marketplace_preferred_reason = ""
+            contractor.marketplace_preferred_at = None
+            contractor.marketplace_preferred_by = None
+            update_fields += [
+                "marketplace_suspended_at",
+                "marketplace_suspended_by",
+                "marketplace_preferred",
+                "marketplace_preferred_reason",
+                "marketplace_preferred_at",
+                "marketplace_preferred_by",
+            ]
+        elif action == "unsuspend":
+            if contractor.marketplace_verification_status == Contractor.MARKETPLACE_SUSPENDED:
+                contractor.marketplace_verification_status = Contractor.MARKETPLACE_UNVERIFIED
+            contractor.marketplace_suspended_at = None
+            contractor.marketplace_suspended_by = None
+            update_fields += ["marketplace_suspended_at", "marketplace_suspended_by"]
+        elif action == "mark_preferred":
+            if contractor.marketplace_verification_status != Contractor.MARKETPLACE_VERIFIED:
+                return Response({"detail": "Only verified contractors can be marked preferred."}, status=status.HTTP_400_BAD_REQUEST)
+            if getattr(contractor.user, "is_active", True) is False:
+                return Response({"detail": "Inactive contractors cannot be marked preferred."}, status=status.HTTP_400_BAD_REQUEST)
+            contractor.marketplace_preferred = True
+            contractor.marketplace_preferred_reason = reason
+            contractor.marketplace_preferred_at = now
+            contractor.marketplace_preferred_by = request.user
+            update_fields += [
+                "marketplace_preferred",
+                "marketplace_preferred_reason",
+                "marketplace_preferred_at",
+                "marketplace_preferred_by",
+            ]
+        elif action == "remove_preferred":
+            contractor.marketplace_preferred = False
+            contractor.marketplace_preferred_reason = reason
+            contractor.marketplace_preferred_at = None
+            contractor.marketplace_preferred_by = None
+            update_fields += [
+                "marketplace_preferred",
+                "marketplace_preferred_reason",
+                "marketplace_preferred_at",
+                "marketplace_preferred_by",
+            ]
+        else:
+            return Response({"detail": "Unsupported verification action."}, status=status.HTTP_400_BAD_REQUEST)
+
+        contractor.save(update_fields=list(dict.fromkeys(update_fields)))
+        return Response(_serialize_verification_contractor(contractor), status=status.HTTP_200_OK)
 
 
 class AdminMarketplaceContractors(APIView):
