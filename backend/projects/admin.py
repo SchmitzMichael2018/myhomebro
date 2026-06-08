@@ -203,9 +203,9 @@ if PublicContractorLead is not None:
 if ContractorReview is not None:
     @admin.register(ContractorReview)
     class ContractorReviewAdmin(admin.ModelAdmin):
-        list_display = ("id", "contractor", "customer_name", "rating", "is_verified", "is_public", "submitted_at")
-        search_fields = ("customer_name", "title", "review_text", "contractor__business_name")
-        list_filter = ("is_verified", "is_public", "rating")
+        list_display = ("id", "contractor", "customer_name", "customer_email", "rating", "moderation_status", "is_verified", "is_public", "submitted_at", "published_at")
+        search_fields = ("customer_name", "customer_email", "title", "review_text", "contractor__business_name")
+        list_filter = ("moderation_status", "is_verified", "is_public", "rating")
 
 
 # ─────────────────────────────────────────────────────────────

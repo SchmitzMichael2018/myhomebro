@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordResetForm
 from django.db.models import Count, Max, Q, Sum
 from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 
 from rest_framework.views import APIView
@@ -22,6 +23,7 @@ from .permissions import IsAdminUserRole
 from .utils import safe_get
 from projects.api.ai_agreement_views import _persist_pricing_estimates, suggest_pricing_refresh
 from projects.services.agreements.contractor_signing import send_signature_request_to_homeowner
+from projects.services.contractor_reviews import contractor_performance_summary, moderate_review
 from projects.services.dispute_status import is_terminal_dispute_status
 
 User = get_user_model()
@@ -1755,6 +1757,69 @@ class AdminFeeLedger(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+def _review_row(review) -> dict:
+    contractor = getattr(review, "contractor", None)
+    agreement = getattr(review, "agreement", None)
+    project = getattr(agreement, "project", None) if agreement else None
+    return {
+        "id": getattr(review, "id", None),
+        "contractor_id": getattr(contractor, "id", None),
+        "contractor_name": safe_get(contractor, "business_name", "") or safe_get(contractor, "name", "") or f"Contractor #{getattr(contractor, 'id', '')}",
+        "agreement_id": getattr(agreement, "id", None),
+        "project_title": safe_get(project, "title", "") or (f"Agreement #{getattr(agreement, 'id', '')}" if agreement else ""),
+        "customer_name": getattr(review, "customer_name", "") or "",
+        "customer_email": getattr(review, "customer_email", "") or "",
+        "rating": getattr(review, "rating", None),
+        "title": getattr(review, "title", "") or "",
+        "review_text": getattr(review, "review_text", "") or "",
+        "project_type": getattr(review, "project_type", "") or "",
+        "project_subtype": getattr(review, "project_subtype", "") or "",
+        "moderation_status": getattr(review, "moderation_status", "") or "",
+        "moderation_status_label": review.get_moderation_status_display() if hasattr(review, "get_moderation_status_display") else getattr(review, "moderation_status", "") or "",
+        "moderation_notes": getattr(review, "moderation_notes", "") or "",
+        "is_public": bool(getattr(review, "is_public", False)),
+        "is_verified": bool(getattr(review, "is_verified", False)),
+        "submitted_at": getattr(review, "submitted_at", None),
+        "published_at": getattr(review, "published_at", None),
+        "performance_summary": contractor_performance_summary(contractor) if contractor is not None else {},
+    }
+
+
+class AdminContractorReviews(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request):
+        if ContractorReview is None:
+            return Response({"count": 0, "results": []}, status=status.HTTP_200_OK)
+        qs = ContractorReview.objects.select_related("contractor", "agreement", "agreement__project").order_by("-submitted_at", "-id")
+        moderation_status = (request.query_params.get("status") or "").strip()
+        if moderation_status:
+            qs = qs.filter(moderation_status=moderation_status)
+        return Response({"count": qs.count(), "results": [_review_row(row) for row in qs[:100]]}, status=status.HTTP_200_OK)
+
+
+class AdminContractorReviewModerate(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def post(self, request, review_id: int):
+        if ContractorReview is None:
+            raise Http404
+        review = get_object_or_404(
+            ContractorReview.objects.select_related("contractor", "agreement", "agreement__project"),
+            pk=review_id,
+        )
+        try:
+            updated = moderate_review(
+                review,
+                action=request.data.get("action", ""),
+                moderator=request.user,
+                notes=request.data.get("moderation_notes", ""),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"detail": "Review updated.", "review": _review_row(updated)}, status=status.HTTP_200_OK)
 
 
 class AdminDisputes(APIView):

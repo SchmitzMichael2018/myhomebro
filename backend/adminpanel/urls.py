@@ -2,6 +2,8 @@ from django.urls import path
 from .views import (
     AdminOverview,
     AdminContractors,
+    AdminContractorReviewModerate,
+    AdminContractorReviews,
     AdminSubcontractors,
     AdminHomeowners,
     AdminAgreements,
@@ -39,6 +41,8 @@ urlpatterns = [
     path("goals/", AdminGoals.as_view(), name="admin-goals"),
 
     path("contractors/", AdminContractors.as_view(), name="admin-contractors"),
+    path("contractor-reviews/", AdminContractorReviews.as_view(), name="admin-contractor-reviews"),
+    path("contractor-reviews/<int:review_id>/moderate/", AdminContractorReviewModerate.as_view(), name="admin-contractor-review-moderate"),
     path("subcontractors/", AdminSubcontractors.as_view(), name="admin-subcontractors"),
     path("homeowners/", AdminHomeowners.as_view(), name="admin-homeowners"),
     path("agreements/", AdminAgreements.as_view(), name="admin-agreements"),

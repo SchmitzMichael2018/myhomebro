@@ -419,6 +419,11 @@ export default function CustomerRequests({
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {highlights.map((label) => <HighlightBadge key={label}>{label}</HighlightBadge>)}
+                      {Number(bid.contractor_review_count || 0) > 0 ? (
+                        <HighlightBadge>
+                          {Number(bid.contractor_rating || 0).toFixed(2)} rating · {bid.contractor_review_count} review{Number(bid.contractor_review_count || 0) === 1 ? "" : "s"}
+                        </HighlightBadge>
+                      ) : null}
                     </div>
                     <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                       <div>

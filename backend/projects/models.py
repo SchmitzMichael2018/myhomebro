@@ -797,6 +797,17 @@ class PublicContractorLead(models.Model):
 
 
 class ContractorReview(models.Model):
+    MODERATION_PENDING = "pending"
+    MODERATION_APPROVED = "approved"
+    MODERATION_HIDDEN = "hidden"
+    MODERATION_REJECTED = "rejected"
+    MODERATION_CHOICES = [
+        (MODERATION_PENDING, "Pending Review"),
+        (MODERATION_APPROVED, "Approved / Published"),
+        (MODERATION_HIDDEN, "Hidden"),
+        (MODERATION_REJECTED, "Rejected"),
+    ]
+
     contractor = models.ForeignKey(
         "projects.Contractor",
         on_delete=models.CASCADE,
@@ -809,6 +820,13 @@ class ContractorReview(models.Model):
     )
     agreement = models.ForeignKey(
         "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_reviews",
+    )
+    homeowner = models.ForeignKey(
+        "projects.Homeowner",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -829,9 +847,28 @@ class ContractorReview(models.Model):
         related_name="linked_contractor_reviews",
     )
     customer_name = models.CharField(max_length=255)
+    customer_email = models.EmailField(blank=True, default="", db_index=True)
+    project_type = models.CharField(max_length=120, blank=True, default="")
+    project_subtype = models.CharField(max_length=120, blank=True, default="")
     rating = models.PositiveSmallIntegerField()
     title = models.CharField(max_length=255, blank=True, default="")
     review_text = models.TextField(blank=True, default="")
+    moderation_status = models.CharField(
+        max_length=20,
+        choices=MODERATION_CHOICES,
+        default=MODERATION_PENDING,
+        db_index=True,
+    )
+    moderation_notes = models.TextField(blank=True, default="")
+    moderated_at = models.DateTimeField(null=True, blank=True)
+    moderated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="moderated_contractor_reviews",
+    )
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
     is_verified = models.BooleanField(default=False)
     is_public = models.BooleanField(default=True)
     submitted_at = models.DateTimeField(default=timezone.now)
@@ -840,6 +877,13 @@ class ContractorReview(models.Model):
 
     class Meta:
         ordering = ["-is_verified", "-submitted_at", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "customer_email"],
+                condition=Q(agreement__isnull=False) & ~Q(customer_email=""),
+                name="uniq_contractor_review_agreement_customer_email",
+            )
+        ]
 
     def clean(self):
         super().clean()
@@ -852,6 +896,24 @@ class ContractorReview(models.Model):
                 raise ValidationError(
                     {"linked_milestone": "Linked invoice and milestone must belong to the same agreement."}
                 )
+        if self.is_public and self.is_verified and self.moderation_status == self.MODERATION_PENDING:
+            self.moderation_status = self.MODERATION_APPROVED
+        if self.moderation_status == self.MODERATION_APPROVED and not self.published_at:
+            self.published_at = timezone.now()
+        if self.moderation_status != self.MODERATION_APPROVED:
+            self.published_at = None
+
+    def save(self, *args, **kwargs):
+        if self.is_public and self.is_verified and self.moderation_status == self.MODERATION_PENDING:
+            self.moderation_status = self.MODERATION_APPROVED
+        if self.moderation_status == self.MODERATION_APPROVED:
+            self.is_public = True
+            if not self.published_at:
+                self.published_at = timezone.now()
+        elif self.moderation_status in {self.MODERATION_PENDING, self.MODERATION_HIDDEN, self.MODERATION_REJECTED}:
+            self.is_public = False
+            self.published_at = None
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.customer_name} ({self.rating}/5)"

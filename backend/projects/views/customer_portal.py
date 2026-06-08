@@ -23,6 +23,7 @@ from projects.models import (
     Agreement,
     AgreementFundingLink,
     Contractor,
+    ContractorReview,
     DrawRequest,
     DrawRequestStatus,
     ExpenseRequest,
@@ -55,6 +56,7 @@ from projects.services.bid_workflow import (
 )
 from projects.services.bid_notifications import create_bid_outcome_notifications
 from projects.services.escrow_reimbursements import approve_reimbursement, deny_reimbursement, escrow_ledger, serialize_ledger
+from projects.services.contractor_reviews import review_eligibility, serialize_review, submit_customer_review
 from projects.services.smart_notifications import create_smart_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
@@ -661,6 +663,8 @@ def _bid_rows(email: str) -> list[dict]:
                     == Contractor.MARKETPLACE_VERIFIED
                     and getattr(contractor, "marketplace_preferred", False)
                 ),
+                "contractor_rating": round(float(getattr(contractor, "average_rating", 0) or 0), 2) if contractor and int(getattr(contractor, "review_count", 0) or 0) else None,
+                "contractor_review_count": int(getattr(contractor, "review_count", 0) or 0) if contractor else 0,
                 "service_area": service_area or _safe_text(getattr(lead, "city", "")),
                 "project_class": _safe_text(getattr(linked_agreement, "project_class", "")) or infer_project_class(
                     getattr(lead, "project_type", ""),
@@ -910,9 +914,30 @@ def _projects(email: str) -> list[dict]:
                 "updates": _project_messages(agreement) if agreement else [],
                 "updated_at": _safe_dt(getattr(project, "updated_at", None) or getattr(project, "created_at", None)),
                 "customer_visible_reason": visible_reason,
+                "review": _portal_review_state(agreement, email) if agreement else {
+                    "eligible": False,
+                    "reason": "Agreement is not ready for review yet.",
+                    "message": "Share feedback about your project experience.",
+                    "existing_review": None,
+                    "submitted": False,
+                    "agreement_id": None,
+                },
             }
         )
     return rows
+
+
+def _portal_review_state(agreement, email: str) -> dict:
+    eligibility = review_eligibility(agreement, email)
+    existing = eligibility.get("existing_review")
+    return {
+        "eligible": bool(eligibility.get("eligible")),
+        "reason": _safe_text(eligibility.get("reason")),
+        "message": "Share feedback about your project experience.",
+        "existing_review": existing,
+        "submitted": bool(existing),
+        "agreement_id": getattr(agreement, "id", None) if agreement else None,
+    }
 
 
 def _portal_dispute_public_url(dispute) -> str:
@@ -2029,17 +2054,7 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
             "funding_url": funding_link,
         },
         "notifications": activity_rows,
-        "review": {
-            "eligible": bool(all(row.get("completed") for row in milestones) and milestones),
-            "message": "Leave a review when the work is finished and everything looks good.",
-            "url": (
-                request.build_absolute_uri(f"/contractors/{profile.slug}?review=1")
-                if request and profile and getattr(profile, "slug", "")
-                else _safe_text(getattr(profile, "public_url_path", "")) + "?review=1"
-                if profile and getattr(profile, "slug", "")
-                else ""
-            ),
-        },
+        "review": _portal_review_state(agreement, _safe_text(getattr(getattr(agreement, "homeowner", None), "email", ""))),
     }
 
 
@@ -2875,6 +2890,43 @@ class CustomerPortalBidAcceptView(APIView):
                 "portal": _build_customer_portal_payload(email, request=request),
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalReviewSubmitView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, agreement_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        agreement = get_object_or_404(
+            Agreement.objects.select_related("project", "homeowner", "contractor", "contractor__public_profile"),
+            Q(homeowner__email__iexact=email) | Q(project__homeowner__email__iexact=email),
+            pk=agreement_id,
+        )
+        try:
+            review = submit_customer_review(
+                agreement=agreement,
+                customer_email=email,
+                customer_name=request.data.get("customer_name") or getattr(getattr(agreement, "homeowner", None), "full_name", ""),
+                rating=request.data.get("rating"),
+                title=request.data.get("title", ""),
+                review_text=request.data.get("review_text", ""),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "detail": "Thanks for your feedback. It will appear publicly after review.",
+                "review": serialize_review(review),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_201_CREATED,
         )
 
 

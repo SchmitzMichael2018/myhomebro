@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { CheckCircle2, ExternalLink, FileText, MessageSquare } from "lucide-react";
+import { CheckCircle2, ExternalLink, FileText, MessageSquare, Star } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
@@ -94,6 +94,111 @@ function canReviewReimbursement(payment) {
 function hasOpenDispute(payment) {
   const value = String(payment?.dispute_status || payment?.dispute_status_label || "").toLowerCase();
   return value && !value.includes("no dispute") && value !== "none";
+}
+
+function ReviewPromptCard({ project, token, onPortalUpdate }) {
+  const review = project?.review || {};
+  const [form, setForm] = useState({ rating: 5, title: "", review_text: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const agreementId = review.agreement_id || project?.agreement_id;
+  const existing = review.existing_review;
+
+  const submit = async () => {
+    if (!token || !agreementId) return;
+    setSubmitting(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/agreements/${encodeURIComponent(agreementId)}/review/`,
+        form
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success("Thanks for sharing your feedback.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not submit that review.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (existing) {
+    return (
+      <Section title="Project Review" eyebrow="Feedback" testId="customer-project-review-submitted">
+        <div className="rounded-2xl border border-emerald-300/35 bg-emerald-400/10 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="emerald">Feedback shared</Badge>
+            <Badge>{existing.status_label || "Pending Review"}</Badge>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-emerald-50">
+            Thank you for sharing feedback about your project experience. Public display depends on moderation status.
+          </p>
+          <div className="mt-3 text-sm font-semibold text-white">{existing.rating}/5 {existing.title ? `· ${existing.title}` : ""}</div>
+        </div>
+      </Section>
+    );
+  }
+
+  if (!review.eligible) {
+    return null;
+  }
+
+  return (
+    <Section title="Share Feedback" eyebrow="Project review" testId="customer-project-review-prompt">
+      <div className="rounded-2xl border border-amber-300/40 bg-amber-300/10 p-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl border border-amber-200/40 bg-amber-300/15 p-2 text-amber-100">
+            <Star size={18} />
+          </div>
+          <div>
+            <h4 className="text-base font-semibold text-white">Share feedback about your project experience.</h4>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              Your review helps future customers understand completed project experiences. MyHomeBro does not guarantee contractor quality.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
+          <label className="block text-sm font-semibold text-slate-200">
+            Rating
+            <select
+              value={form.rating}
+              onChange={(event) => setForm((current) => ({ ...current, rating: Number(event.target.value || 5) }))}
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+            >
+              {[5, 4, 3, 2, 1].map((rating) => (
+                <option key={rating} value={rating}>{rating} star{rating === 1 ? "" : "s"}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-semibold text-slate-200">
+            Review title
+            <input
+              value={form.title}
+              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+              placeholder="Optional short summary"
+            />
+          </label>
+        </div>
+        <label className="mt-3 block text-sm font-semibold text-slate-200">
+          Written review
+          <textarea
+            value={form.review_text}
+            onChange={(event) => setForm((current) => ({ ...current, review_text: event.target.value }))}
+            rows={4}
+            className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+            placeholder="What went well? What should future customers know?"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting}
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-200 disabled:opacity-60"
+        >
+          {submitting ? "Submitting..." : "Submit Review"}
+        </button>
+      </div>
+    </Section>
+  );
 }
 
 function ProjectReviewCard({ payment, token, onPortalUpdate }) {
@@ -643,6 +748,8 @@ export default function CustomerProjectWorkspace({
                 </div>
               </Section>
             )}
+
+            <ReviewPromptCard project={selected} token={token} onPortalUpdate={onRefresh} />
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.85fr)]">
               <div className="space-y-4">

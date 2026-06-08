@@ -213,6 +213,7 @@ class PublicContractorReviewSerializer(serializers.ModelSerializer):
             "title",
             "review_text",
             "is_verified",
+            "published_at",
             "linked_invoice_id",
             "linked_milestone_id",
             "submitted_at",
@@ -238,17 +239,24 @@ class ContractorReviewSerializer(serializers.ModelSerializer):
             "agreement",
             "linked_invoice",
             "linked_milestone",
+            "homeowner",
+            "customer_email",
+            "project_type",
+            "project_subtype",
             "customer_name",
             "rating",
             "title",
             "review_text",
+            "moderation_status",
+            "moderation_notes",
+            "published_at",
             "is_verified",
             "is_public",
             "submitted_at",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at", "is_verified"]
+        read_only_fields = ["id", "created_at", "updated_at", "is_verified", "published_at"]
 
     def validate_rating(self, value):
         if value < 1 or value > 5:

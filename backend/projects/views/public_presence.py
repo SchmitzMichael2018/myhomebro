@@ -940,10 +940,15 @@ class PublicContractorReviewsView(APIView):
         if linked_milestone is not None:
             agreement = agreement or linked_milestone.agreement
         is_verified = bool(linked_invoice or linked_milestone)
+        homeowner = getattr(agreement, "homeowner", None) if agreement else None
         ContractorReview.objects.create(
             contractor=profile.contractor,
             public_profile=profile,
             agreement=agreement,
+            homeowner=homeowner,
+            customer_email="",
+            project_type=getattr(agreement, "project_type", "") if agreement else "",
+            project_subtype=getattr(agreement, "project_subtype", "") if agreement else "",
             customer_name=serializer.validated_data["customer_name"],
             rating=serializer.validated_data["rating"],
             title=serializer.validated_data.get("title", ""),
@@ -951,7 +956,7 @@ class PublicContractorReviewsView(APIView):
             linked_invoice=linked_invoice,
             linked_milestone=linked_milestone,
             is_verified=is_verified,
-            is_public=is_verified,
+            moderation_status=ContractorReview.MODERATION_APPROVED if is_verified else ContractorReview.MODERATION_PENDING,
         )
         message = (
             "Thanks for your verified review. It will appear on the public profile."

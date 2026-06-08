@@ -117,6 +117,14 @@ const portalPayload = {
       total_cost: "15000.00",
       completed_at: "2026-04-17T16:00:00Z",
       milestones: [{ id: 1, title: "Demo", status: "active", amount: "5000.00" }],
+      review: {
+        eligible: true,
+        reason: "Project is complete.",
+        message: "Share feedback about your project experience.",
+        existing_review: null,
+        submitted: false,
+        agreement_id: 1,
+      },
       updates: [
         {
           id: 501,
@@ -182,6 +190,8 @@ const portalPayload = {
       contractor_contact_name: "Jordan Builder",
       contractor_verified: true,
       contractor_preferred: true,
+      contractor_rating: 4.75,
+      contractor_review_count: 8,
       service_area: "Austin, TX",
       project_class_label: "Commercial",
       bid_amount_label: "$22,000.00",
@@ -757,6 +767,7 @@ test("customer portal is reachable from the landing page and loads secure record
 }) => {
   const consoleErrors = [];
   let submittedRequestPayload = null;
+  let submittedReviewPayload = null;
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
   });
@@ -789,6 +800,43 @@ test("customer portal is reachable from the landing page and loads secure record
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(portalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/agreements/1/review/") && method === "POST") {
+      submittedReviewPayload = JSON.parse(route.request().postData() || "{}");
+      const reviewedPortalPayload = {
+        ...portalPayload,
+        projects: portalPayload.projects.map((project) =>
+          project.agreement_id === 1
+            ? {
+                ...project,
+                review: {
+                  ...project.review,
+                  eligible: false,
+                  submitted: true,
+                  existing_review: {
+                    id: 77,
+                    rating: Number(submittedReviewPayload.rating || 0),
+                    title: submittedReviewPayload.title,
+                    review_text: submittedReviewPayload.review_text,
+                    moderation_status: "pending",
+                    published_at: null,
+                  },
+                },
+              }
+            : project
+        ),
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Review submitted.",
+          review: reviewedPortalPayload.projects[0].review.existing_review,
+          portal: reviewedPortalPayload,
+        }),
       });
       return;
     }
@@ -1024,6 +1072,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-bid-comparison")).toContainText("Bid Comparison");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Builder Co");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Partner Co");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("4.75 rating");
+  await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("8 reviews");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Lowest price");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Most detailed milestone plan");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-2")).toContainText("Profile reviewed");
@@ -1036,6 +1086,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-workspace")).toContainText("Kitchen Remodel");
   await page.getByTestId("customer-project-card-1").click();
   await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Track your project from agreement to completion.");
+  await expect(page.getByTestId("customer-project-review-prompt")).toContainText("Share feedback about your project experience.");
+  await page.getByTestId("customer-project-review-prompt").getByLabel("Rating").selectOption("5");
+  await page.getByTestId("customer-project-review-prompt").getByLabel("Review title").fill("Professional project experience");
+  await page.getByTestId("customer-project-review-prompt").getByLabel("Written review").fill("The contractor kept the project clean and communicated clearly.");
+  await page.getByTestId("customer-project-review-prompt").getByRole("button", { name: "Submit Review" }).click();
+  await expect.poll(() => submittedReviewPayload?.rating).toBe(5);
+  await expect(submittedReviewPayload?.title).toBe("Professional project experience");
+  await expect(page.getByTestId("customer-project-review-submitted")).toContainText("Thank you for sharing feedback");
   await expect(page.getByTestId("customer-project-needs-attention")).toContainText("Review the completed work");
   await expect(page.getByTestId("customer-project-review-draw-2")).toContainText("$3,600.00");
   await expect(page.getByTestId("customer-project-review-dispute-draw-2")).toContainText("Open Dispute");
