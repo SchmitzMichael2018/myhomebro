@@ -68,6 +68,26 @@ class ContractorOpportunityFlowTests(TestCase):
         self.intake.ensure_share_token()
         self.client = APIClient()
 
+    def _make_contractor_marketplace_eligible(self, contractor=None):
+        contractor = contractor or self.contractor
+        contractor.marketplace_verification_status = Contractor.MARKETPLACE_VERIFIED
+        contractor.charges_enabled = True
+        contractor.payouts_enabled = True
+        contractor.details_submitted = True
+        contractor.stripe_account_id = contractor.stripe_account_id or f"acct_test_{contractor.id}"
+        contractor.stripe_deauthorized_at = None
+        contractor.save(
+            update_fields=[
+                "marketplace_verification_status",
+                "charges_enabled",
+                "payouts_enabled",
+                "details_submitted",
+                "stripe_account_id",
+                "stripe_deauthorized_at",
+                "updated_at",
+            ]
+        )
+
     def test_selecting_contractor_creates_pending_opportunity_without_customer_or_agreement(self):
         response = self.client.post(
             "/api/projects/public-intake/select-contractor/",
@@ -116,6 +136,7 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(opportunity.project_title, "Flooring Replacement Project")
         self.assertNotEqual(opportunity.project_title.lower(), "untitled project")
 
+        self._make_contractor_marketplace_eligible()
         self.client.force_authenticate(self.contractor_user)
         accept = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
 
@@ -159,6 +180,7 @@ class ContractorOpportunityFlowTests(TestCase):
             format="json",
         )
         opportunity = ContractorOpportunity.objects.get()
+        self._make_contractor_marketplace_eligible()
         self.client.force_authenticate(self.contractor_user)
 
         first = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
@@ -189,6 +211,49 @@ class ContractorOpportunityFlowTests(TestCase):
         response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
 
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Agreement.objects.count(), 0)
+
+    def test_unverified_contractor_cannot_accept_opportunity(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        self.client.force_authenticate(self.contractor_user)
+
+        response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("not verified", response.data["detail"].lower())
+        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Agreement.objects.count(), 0)
+
+    def test_stripe_incomplete_contractor_cannot_accept_opportunity(self):
+        self.contractor.marketplace_verification_status = Contractor.MARKETPLACE_VERIFIED
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = False
+        self.contractor.save(
+            update_fields=[
+                "marketplace_verification_status",
+                "charges_enabled",
+                "payouts_enabled",
+                "updated_at",
+            ]
+        )
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        self.client.force_authenticate(self.contractor_user)
+
+        response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("stripe setup", response.data["detail"].lower())
         self.assertEqual(Homeowner.objects.count(), 0)
         self.assertEqual(Agreement.objects.count(), 0)
 
@@ -242,8 +307,10 @@ class ContractorOpportunityFlowTests(TestCase):
             format="json",
         )
         opportunity = ContractorOpportunity.objects.get()
+        self._make_contractor_marketplace_eligible()
         self.client.force_authenticate(self.contractor_user)
-        self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
+        accept = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
+        self.assertEqual(accept.status_code, 200)
 
         response = self.client.get("/api/projects/contractor-opportunities/", {"status": "converted"})
 
