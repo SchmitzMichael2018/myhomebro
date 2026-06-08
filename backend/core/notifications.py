@@ -11,7 +11,7 @@
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.contrib.auth import get_user_model
 from twilio.rest import Client as TwilioClient
@@ -207,16 +207,16 @@ def send_notification(recipient, subject, template_prefix, context):
             # Django expects a single string; the mail backend will format it
             headers["Reply-To"] = ", ".join(reply_to_list)
 
-        # Send email via Django's send_mail
-        send_mail(
+        email = EmailMultiAlternatives(
             subject=subject,
-            message=text_body,
+            body=text_body,
             from_email=from_email,
-            recipient_list=[recipient.email],
-            html_message=html_body,
-            fail_silently=False,
+            to=[recipient.email],
             headers=headers,
         )
+        if html_body:
+            email.attach_alternative(html_body, "text/html")
+        email.send(fail_silently=False)
 
         logger.info(
             "Sent email to %s using from=%s reply_to=%s template_prefix=%s",
