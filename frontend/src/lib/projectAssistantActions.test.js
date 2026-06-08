@@ -4,6 +4,7 @@ import {
   buildProjectAssistantSummary,
   matchProjectAssistantPromptToAction,
 } from "./projectAssistantActions.js";
+import { buildProjectAssistantGuideState } from "../components/StartWithAIAssistant.jsx";
 
 function step2Context(overrides = {}) {
   return {
@@ -122,5 +123,38 @@ describe("project assistant action registry", () => {
     expect(action.actionKey).toBe("open_wizard_step");
     expect(action.label).toBe("Open Warranty Step");
     expect(action.targetStep).toBe(3);
+  });
+
+  it("builds a Step 2 workflow guide instead of chat-first guidance", () => {
+    const context = step2Context({ milestone_summary: { count: 4, total: 10000 } });
+    const summary = buildProjectAssistantSummary(context);
+    const actions = buildProjectAssistantActions(context);
+    const guide = buildProjectAssistantGuideState(summary, actions);
+
+    expect(guide.currentStep).toBe(2);
+    expect(guide.status).toBe("You're reviewing milestones.");
+    expect(guide.currentPurpose).toContain("Check the amounts");
+    expect(guide.steps.map((step) => step.status)).toEqual([
+      "complete",
+      "current",
+      "upcoming",
+      "upcoming",
+    ]);
+    expect(guide.continueAction.actionKey).toBe("open_wizard_step");
+    expect(guide.continueAction.targetStep).toBe(3);
+    expect(guide.continueAction.label).toBe("Continue to Warranty");
+  });
+
+  it("surfaces missing project total as a milestone planning attention item", () => {
+    const context = step2Context({ milestone_summary: { count: 3, total: 0 } });
+    const guide = buildProjectAssistantGuideState(
+      buildProjectAssistantSummary(context),
+      buildProjectAssistantActions(context)
+    );
+
+    expect(guide.attention).toContain(
+      "Project total is still empty, so budget rebalance is not available yet."
+    );
+    expect(guide.nextAction).toBe("Enter Project Total");
   });
 });

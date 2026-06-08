@@ -750,7 +750,7 @@ function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, is
     headline: safeText(panelConfig.headline) || "Review this template workflow",
     helperText:
       safeText(panelConfig.helperText) ||
-      "Use Copilot to pressure-test reusable workflow structure without changing the template fields.",
+      "Use Project Assistant to pressure-test reusable workflow structure without changing the template fields.",
     status: isPlanning ? "Reviewing template context" : safeText(panelConfig.statusText) || "Template context loaded",
     statusDetail: safeText(panelConfig.statusDetail) || statusDetailParts.join(" · "),
     quickActions: Array.isArray(panelConfig.quickActions) ? panelConfig.quickActions : [],
@@ -769,7 +769,7 @@ function buildTemplatePanelState({ context = {}, panelConfig = {}, plan = {}, is
     nextActionText:
       safeText(panelConfig.nextActionText) ||
       firstSuggestion,
-    nextGuidanceTitle: "What Copilot is checking",
+    nextGuidanceTitle: "What Project Assistant is checking",
     nextGuidance: "",
     showPrimaryAction: false,
     primaryActionLabel: "Review Template",

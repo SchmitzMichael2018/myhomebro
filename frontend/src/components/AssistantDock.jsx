@@ -48,7 +48,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
         "Next: Review agreement details, milestones, funding, signatures, and payment workflow readiness.",
       nextGuidanceTitle: "Agreement creation guidance",
       nextGuidance:
-        "Copilot is checking the draft agreement, milestone structure, funding state, signatures, amendments, invoices, and payment workflow steps.",
+        "Project Assistant is checking the draft agreement, milestone structure, funding state, signatures, amendments, invoices, and payment workflow steps.",
     };
   }
 
@@ -63,7 +63,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
       nextActionText: "Next: Review reusable workflow structure before saving or publishing.",
       nextGuidanceTitle: "Workflow intelligence",
       nextGuidance:
-        "Copilot is checking reusable workflow structure, not agreement signature or funding readiness.",
+        "Project Assistant is checking reusable workflow structure, not agreement signature or funding readiness.",
     };
   }
 
@@ -79,7 +79,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
         "Next: Review the agreement, milestone, funding, signature, and payment workflow details.",
       nextGuidanceTitle: "Agreement guidance",
       nextGuidance:
-        "Copilot is checking agreement readiness, milestone structure, funding, signatures, amendments, invoices, and payment workflow steps.",
+        "Project Assistant is checking agreement readiness, milestone structure, funding, signatures, amendments, invoices, and payment workflow steps.",
     };
   }
 
@@ -94,7 +94,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
       nextActionText: "Next: Review milestone sequence, completion criteria, and invoice readiness.",
       nextGuidanceTitle: "Milestone guidance",
       nextGuidance:
-        "Copilot is checking schedule, completion evidence, approvals, and invoice handoff.",
+        "Project Assistant is checking schedule, completion evidence, approvals, and invoice handoff.",
     };
   }
 
@@ -109,7 +109,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
       nextActionText: "Next: Review payment status, approvals, funding, and payout workflow.",
       nextGuidanceTitle: "Payment guidance",
       nextGuidance:
-        "Copilot is checking invoice approval, funding, escrow or direct-pay state, payout readiness, and dispute context.",
+        "Project Assistant is checking invoice approval, funding, escrow or direct-pay state, payout readiness, and dispute context.",
     };
   }
 
@@ -123,7 +123,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
         'Examples: "What needs attention today?" or "Help me prioritize open work."',
       nextActionText: "Next: Review active work, blockers, and follow-up priorities.",
       nextGuidanceTitle: "Dashboard guidance",
-      nextGuidance: "Copilot is checking cross-workspace priorities and next actions.",
+      nextGuidance: "Project Assistant is checking cross-workspace priorities and next actions.",
     };
   }
 
@@ -139,7 +139,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
         "Next: Review evidence, agreement requirements, timeline, and escalation options.",
       nextGuidanceTitle: "Dispute resolution guidance",
       nextGuidance:
-        "Copilot is prepared to help review dispute evidence, summarize history, explain agreement requirements, suggest next steps, and outline escalation guidance.",
+        "Project Assistant is prepared to help review dispute evidence, summarize history, explain agreement requirements, suggest next steps, and outline escalation guidance.",
     };
   }
 
@@ -154,7 +154,7 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
       nextActionText: "Next: Review admin priorities, records, and operational follow-up.",
       nextGuidanceTitle: "Admin guidance",
       nextGuidance:
-        "Copilot is checking administrative context, routing, contractor records, marketplace health, and support follow-up.",
+        "Project Assistant is checking administrative context, routing, contractor records, marketplace health, and support follow-up.",
     };
   }
 

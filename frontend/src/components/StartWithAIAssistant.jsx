@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Bot,
+  CheckCircle2,
   Compass,
   Sparkles,
   ArrowRight,
@@ -93,10 +94,211 @@ function ProjectAssistantActionButton({ action, onSelect }) {
   );
 }
 
+const WIZARD_GUIDE_STEPS = [
+  {
+    step: 1,
+    title: "Confirm project details",
+    purpose: "Set the project title, type, subtype, scope, customer, and location.",
+  },
+  {
+    step: 2,
+    title: "Review milestones",
+    purpose: "Check the milestone descriptions, amounts, timing, and customer-facing plan.",
+  },
+  {
+    step: 3,
+    title: "Add warranty/documents",
+    purpose: "Add warranty language, attachments, and clarifications that protect the work.",
+  },
+  {
+    step: 4,
+    title: "Review and send",
+    purpose: "Preview the final agreement, confirm required details, then send for signature.",
+  },
+];
+
+function stepGuideCopy(step, summary = {}, actions = {}) {
+  const recommended = Array.isArray(actions?.recommended) ? actions.recommended : [];
+  const info = Array.isArray(actions?.info) ? actions.info.filter(Boolean) : [];
+  const next = recommended[0];
+
+  if (step === 1) {
+    const missing = [];
+    if (!summary.projectType) missing.push("Project type or subtype is missing.");
+    return {
+      status: summary.projectType ? "Project details are taking shape." : "Project details need a quick review.",
+      currentPurpose: "This step defines the agreement identity and scope before milestones are planned.",
+      attention: missing.length ? missing : ["Confirm the scope, customer, and location before continuing."],
+      nextAction: next?.label || "Continue to Milestones",
+      blocker: missing.length ? missing[0] : "No blockers found.",
+    };
+  }
+
+  if (step === 2) {
+    const attention = [];
+    if (!summary.milestoneCount) attention.push("No milestones are saved yet.");
+    if (summary.milestoneCount > 0 && !summary.total) {
+      attention.push("Project total is still empty, so budget rebalance is not available yet.");
+    }
+    return {
+      status: "You're reviewing milestones.",
+      currentPurpose: "Check the amounts, timing, and milestone descriptions before continuing.",
+      attention: attention.length ? attention : ["Milestone structure is ready for review."],
+      nextAction: next?.label || "Continue to Warranty",
+      blocker: attention[0] || "No blockers found.",
+      info,
+    };
+  }
+
+  if (step === 3) {
+    return {
+      status: "You're reviewing protection details.",
+      currentPurpose: "Add warranty language, attachments, and clarifications before final review.",
+      attention: ["Confirm warranty language and supporting documents before continuing."],
+      nextAction: next?.label || "Continue to Finalize",
+      blocker: "No blockers found.",
+    };
+  }
+
+  return {
+    status: "You're on final review.",
+    currentPurpose: "Confirm the agreement is ready before signatures and customer delivery.",
+    attention: ["Preview the PDF and verify missing information before sending."],
+    nextAction: next?.label || "Preview PDF",
+    blocker: "No blockers found.",
+  };
+}
+
+export function buildProjectAssistantGuideState(summary = {}, actions = {}) {
+  const step = Math.min(Math.max(Number(summary?.step || 1), 1), 4);
+  const guide = stepGuideCopy(step, summary, actions);
+  const nextStep = Math.min(step + 1, 4);
+  const continueLabel =
+    step === 1
+      ? "Continue to Milestones"
+      : step === 2
+      ? "Continue to Warranty"
+      : step === 3
+      ? "Continue to Finalize"
+      : "Stay on Final Review";
+
+  return {
+    currentStep: step,
+    steps: WIZARD_GUIDE_STEPS.map((item) => ({
+      ...item,
+      status:
+        item.step < step
+          ? "complete"
+          : item.step === step
+          ? "current"
+          : "upcoming",
+    })),
+    status: guide.status,
+    currentPurpose: guide.currentPurpose,
+    attention: Array.isArray(guide.attention) ? guide.attention : [],
+    nextAction: guide.nextAction,
+    blocker: guide.blocker,
+    info: Array.isArray(guide.info) ? guide.info : [],
+    continueAction:
+      step < 4
+        ? {
+            key: "open_wizard_step",
+            actionKey: "open_wizard_step",
+            label: continueLabel,
+            targetStep: nextStep,
+          }
+        : null,
+  };
+}
+
+function ProjectAssistantGuide({ guide }) {
+  return (
+    <div
+      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+      data-testid="project-assistant-step-guide"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Step Guide
+          </div>
+          <div className="mt-2 text-sm font-semibold text-slate-950">
+            {guide.status}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            {guide.currentPurpose}
+          </p>
+        </div>
+        <CompactBadge>Step {guide.currentStep} of 4</CompactBadge>
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        {guide.steps.map((item) => (
+          <div
+            key={item.step}
+            className={`rounded-xl border px-3 py-3 ${
+              item.status === "current"
+                ? "border-amber-300 bg-amber-50"
+                : item.status === "complete"
+                ? "border-emerald-200 bg-emerald-50"
+                : "border-slate-200 bg-white"
+            }`}
+            data-testid={`project-assistant-guide-step-${item.step}`}
+          >
+            <div className="flex items-start gap-2">
+              {item.status === "complete" ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              ) : (
+                <span
+                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                    item.status === "current"
+                      ? "bg-amber-500 text-white"
+                      : "bg-slate-200 text-slate-600"
+                  }`}
+                >
+                  {item.step}
+                </span>
+              )}
+              <div>
+                <div
+                  className={`text-sm font-semibold ${
+                    item.status === "current" ? "text-amber-950" : "text-slate-950"
+                  }`}
+                >
+                  Step {item.step}: {item.title}
+                </div>
+                {item.status === "current" ? (
+                  <div className="mt-1 text-xs leading-5 text-amber-900">
+                    {item.purpose}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-white bg-white px-3 py-3">
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          Needs attention
+        </div>
+        <div className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
+          {guide.attention.length ? (
+            guide.attention.map((item, idx) => <div key={`${item}-${idx}`}>{item}</div>)
+          ) : (
+            <div>No blockers found.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
   const recommended = Array.isArray(actions?.recommended) ? actions.recommended : [];
   const additional = Array.isArray(actions?.additional) ? actions.additional : [];
   const info = Array.isArray(actions?.info) ? actions.info.filter(Boolean) : [];
+  const guide = buildProjectAssistantGuideState(summary, actions);
 
   return (
     <div className="space-y-4" data-testid="project-assistant-panel">
@@ -133,6 +335,8 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
         </div>
       </div>
 
+      <ProjectAssistantGuide guide={guide} />
+
       {notice ? (
         <div
           className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -156,7 +360,7 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
       {recommended.length ? (
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Recommended Actions
+            Step Actions
           </div>
           <div className="mt-2 grid grid-cols-1 gap-2">
             {recommended.map((action) => (
@@ -173,7 +377,7 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
       {additional.length ? (
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Additional Actions
+            Other Helpful Actions
           </div>
           <div className="mt-2 grid grid-cols-1 gap-2">
             {additional.map((action) => (
@@ -185,6 +389,18 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
             ))}
           </div>
         </div>
+      ) : null}
+
+      {guide.continueAction ? (
+        <button
+          type="button"
+          data-testid="project-assistant-continue-step"
+          onClick={() => onAction(guide.continueAction)}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+        >
+          {guide.continueAction.label}
+          <ArrowRight className="h-4 w-4" />
+        </button>
       ) : null}
     </div>
   );
@@ -1097,11 +1313,12 @@ export default function StartWithAIAssistant({
   }, [workspaceRouteSignature]);
 
   useEffect(() => {
+    if (isAgreementWizardAssistant) return undefined;
     const handle = window.setTimeout(() => {
       inputRef.current?.focus();
     }, 0);
     return () => window.clearTimeout(handle);
-  }, [mode, contextSignature]);
+  }, [mode, contextSignature, isAgreementWizardAssistant]);
 
   useEffect(() => {
     return () => {
@@ -1151,6 +1368,7 @@ export default function StartWithAIAssistant({
   const showDiagnostics =
     import.meta.env.DEV ||
     (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG_ASSISTANT === true);
+  const showPromptForm = !isAgreementWizardAssistant;
   const visibleQuickActions = isContextualMode ? [] : userFacingPanel.quickActions;
   const sectionEyebrow = isAgreementWizardAssistant
     ? "Project Assistant"
@@ -1167,8 +1385,6 @@ export default function StartWithAIAssistant({
     ? "Generate reusable exclusions and assumptions for this template."
     : isTemplatesContextualMode
     ? "Ask for reusable workflow structure, milestones, exclusions, assumptions, or advisory pricing guidance."
-    : isAgreementWizardAssistant
-    ? "Optional chat is secondary. Workflow buttons above are the primary actions."
     : isContextualMode
     ? "Get contextual help for the step you're on right now."
     : "Describe the work you want to start, plan, or organize.";
@@ -1196,8 +1412,6 @@ export default function StartWithAIAssistant({
     ? 'Optional: add sequencing guidance like "include permit review and punch list."'
     : isFieldAwareExclusionsMode
     ? 'Optional: add boundary guidance like "exclude owner-supplied fixtures and permit fees."'
-    : isAgreementWizardAssistant
-    ? "Optional: ask for one of the available actions, such as improving milestones or opening the next step."
     : userFacingPanel.promptPlaceholder;
   const submitLabel = isFieldAwareDescriptionMode
     ? "Generate Description"
@@ -1205,7 +1419,7 @@ export default function StartWithAIAssistant({
     ? "Generate Milestones"
     : isFieldAwareExclusionsMode
     ? "Generate Exclusions"
-    : panelConfig.submitButtonLabel || (isAgreementWizardAssistant ? "Ask Project Assistant" : isContextualMode ? "Ask Assistant" : "Start with AI");
+    : panelConfig.submitButtonLabel || (isContextualMode ? "Ask Assistant" : "Start with AI");
 
   useEffect(() => {
     setFieldDraft("");
@@ -1386,6 +1600,7 @@ export default function StartWithAIAssistant({
     const handled = await onAction({
       assistant_action_key: actionKey,
       action_key: actionKey,
+      wizard_step_target: action?.targetStep,
       prompt: action?.prompt || action?.label || "",
       source: "project_assistant_action",
     });
@@ -1738,66 +1953,68 @@ export default function StartWithAIAssistant({
           </div>
         ) : null}
 
-        <form onSubmit={submitPrompt}>
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
-            <textarea
-              ref={inputRef}
-              data-testid={testId("start-with-ai-input")}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-              className="w-full resize-none bg-transparent px-2 py-2 text-base text-slate-900 outline-none"
-              placeholder={promptPlaceholder}
-            />
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
-              <div className="text-xs text-slate-500">
-                {inputHelperText}
+        {showPromptForm ? (
+          <form onSubmit={submitPrompt}>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
+              <textarea
+                ref={inputRef}
+                data-testid={testId("start-with-ai-input")}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                rows={4}
+                className="w-full resize-none bg-transparent px-2 py-2 text-base text-slate-900 outline-none"
+                placeholder={promptPlaceholder}
+              />
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                <div className="text-xs text-slate-500">
+                  {inputHelperText}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid={testId("assistant-voice-button")}
+                    onClick={handleVoiceInput}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {voiceStatus === "listening" || voiceStatus === "transcribing" ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                    {voiceStatus === "listening" ? "Listening" : "Voice"}
+                  </button>
+                  <button
+                    type="submit"
+                    data-testid={testId("start-with-ai-submit")}
+                    disabled={isPlanning}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    {isPlanning
+                      ? "Working..."
+                      : submitLabel}
+                    {isPlanning ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  data-testid={testId("assistant-voice-button")}
-                  onClick={handleVoiceInput}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  {voiceStatus === "listening" || voiceStatus === "transcribing" ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mic className="h-4 w-4" />
-                  )}
-                  {voiceStatus === "listening" ? "Listening" : "Voice"}
-                </button>
-                <button
-                  type="submit"
-                  data-testid={testId("start-with-ai-submit")}
-                  disabled={isPlanning}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-                >
-                  {isPlanning
-                    ? "Working..."
-                    : submitLabel}
-                  {isPlanning ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="h-4 w-4" />
-                  )}
-                </button>
+              <div
+                data-testid={testId("assistant-voice-status")}
+                className={`mt-2 px-2 text-xs ${
+                  voiceStatus === "failed" || voiceStatus === "unsupported"
+                    ? "text-rose-600"
+                    : voiceStatus === "listening" || voiceStatus === "transcribing"
+                    ? "text-indigo-600"
+                    : "text-slate-500"
+                }`}
+              >
+                {voiceStatusLabel(voiceStatus)}
               </div>
             </div>
-            <div
-              data-testid={testId("assistant-voice-status")}
-              className={`mt-2 px-2 text-xs ${
-                voiceStatus === "failed" || voiceStatus === "unsupported"
-                  ? "text-rose-600"
-                  : voiceStatus === "listening" || voiceStatus === "transcribing"
-                  ? "text-indigo-600"
-                  : "text-slate-500"
-              }`}
-            >
-              {voiceStatusLabel(voiceStatus)}
-            </div>
-          </div>
-        </form>
+          </form>
+        ) : null}
 
         {!isAgreementWizardAssistant && userFacingPanel.feedback ? (
           <ResultBlock title="AI Updated" testId={testId("start-with-ai-updated")}>
