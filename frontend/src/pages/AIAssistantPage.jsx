@@ -6,7 +6,6 @@ import {
   Compass,
   FileSignature,
   ListChecks,
-  LoaderCircle,
   Sparkles,
   X,
 } from "lucide-react";
@@ -16,7 +15,6 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import { buildAssistantNavigationState } from "../components/StartWithAIAssistant.jsx";
 import { produceStructuredAssistantPlan } from "../lib/assistantReasoning.js";
-import WorkspaceConversation from "../components/WorkspaceConversation.jsx";
 
 const WORKSPACE_CONTEXT = {
   current_route: "/app/assistant",
@@ -24,21 +22,11 @@ const WORKSPACE_CONTEXT = {
   workspace_mode: "dashboard",
 };
 
-const HERO_CHIPS = [
-  { label: "Create an agreement", mode: "route", intent: "start_agreement" },
-  { label: "Use a template", mode: "route", intent: "apply_template" },
-  { label: "Create a template", mode: "route", intent: "template_guidance" },
-  { label: "Continue a project", mode: "analyze", analyzeMode: "continue_project" },
-  { label: "Plan milestones", mode: "route", intent: "suggest_milestones" },
-  { label: "Find my next task", mode: "analyze", analyzeMode: "next_task" },
-  { label: "Show work needing attention", mode: "analyze", analyzeMode: "next_task" },
-];
-
 const QUICK_ACTIONS = [
   {
     key: "start_agreement",
     title: "Create Agreement",
-    description: "Start a new agreement draft and move into the wizard with AI-prefilled setup.",
+    description: "Open Agreement Wizard Step 1, where project drafting and AI setup live.",
     icon: FileSignature,
     mode: "route",
   },
@@ -52,9 +40,17 @@ const QUICK_ACTIONS = [
   {
     key: "suggest_milestones",
     title: "Plan Milestones",
-    description: "Shape milestone phases, pricing, and scope before the draft moves forward.",
+    description: "Open the milestone planning workflow for agreement phase, price, and timing review.",
     icon: ListChecks,
     mode: "route",
+  },
+  {
+    key: "continue_project",
+    title: "Continue Existing Project",
+    description: "Find a recent draft or active project and jump back into the right workflow.",
+    icon: ArrowRight,
+    mode: "analyze",
+    analyzeMode: "continue_project",
   },
   {
     key: "navigate_app",
@@ -70,8 +66,29 @@ const CAPABILITY_ROWS = [
   "Launch agreement, template, milestone, and task workflows from one place",
   "Continue active projects without hunting through the sidebar",
   "Find work that needs attention and route to the right next step",
-  "Use the global Project Assistant for help with the work you're currently doing",
+  "Use Project Assistant on each page to complete the current task step by step",
 ];
+
+const OWNERSHIP_CARDS = [
+  {
+    title: "Workspace launches work",
+    body: "Start, resume, and organize the right workflow from one command center.",
+  },
+  {
+    title: "Agreement Wizard drafts projects",
+    body: "Use the wizard when you need AI-generated project details, scopes, templates, and milestones.",
+  },
+  {
+    title: "Project Assistant guides pages",
+    body: "Open the page-local guide when you want step actions for the work already in front of you.",
+  },
+];
+
+function listFromResponse(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
+}
 
 async function fetchWorkspaceSignals() {
   const [agreementsRes, milestonesRes, leadsRes] = await Promise.allSettled([
@@ -81,15 +98,53 @@ async function fetchWorkspaceSignals() {
   ]);
   return {
     agreements: agreementsRes.status === "fulfilled"
-      ? (agreementsRes.value?.data?.results ?? [])
+      ? listFromResponse(agreementsRes.value?.data)
       : [],
     milestones: milestonesRes.status === "fulfilled"
-      ? (milestonesRes.value?.data?.results ?? [])
+      ? listFromResponse(milestonesRes.value?.data)
       : [],
     leads: leadsRes.status === "fulfilled"
-      ? (leadsRes.value?.data?.results ?? [])
+      ? listFromResponse(leadsRes.value?.data)
       : [],
   };
+}
+
+async function fetchRecentWork() {
+  const [agreementsRes, templatesRes] = await Promise.allSettled([
+    api.get("/projects/agreements/", { params: { page_size: 8 } }),
+    api.get("/projects/templates/discover/", { params: { page_size: 6 } }),
+  ]);
+  const agreements =
+    agreementsRes.status === "fulfilled" ? listFromResponse(agreementsRes.value?.data) : [];
+  const templates =
+    templatesRes.status === "fulfilled" ? listFromResponse(templatesRes.value?.data) : [];
+
+  const agreementItems = agreements
+    .filter((item) =>
+      ["draft", "sent", "signed", "active", "in_progress"].includes(String(item?.status || "").toLowerCase())
+    )
+    .slice(0, 5)
+    .map((item) => ({
+      key: `agreement-${item.id}`,
+      title: item.project_title || item.title || item.name || "Agreement",
+      eyebrow: String(item.status || "agreement").replaceAll("_", " "),
+      meta: [item.customer_name, item.homeowner_name, item.updated_at ? "Recently updated" : ""]
+        .filter(Boolean)
+        .join(" · "),
+      route: `/app/agreements/${item.id}`,
+      actionLabel: String(item.status || "").toLowerCase() === "draft" ? "Continue" : "Open",
+    }));
+
+  const templateItems = templates.slice(0, Math.max(0, 5 - agreementItems.length)).map((item) => ({
+    key: `template-${item.id}`,
+    title: item.name || "Template",
+    eyebrow: "template",
+    meta: [item.project_type, item.project_subtype].filter(Boolean).join(" · "),
+    route: "/app/templates",
+    actionLabel: "Open",
+  }));
+
+  return [...agreementItems, ...templateItems].slice(0, 5);
 }
 
 function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
@@ -289,19 +344,126 @@ function QuickActionCard({ action, busyKey, onSelect }) {
   );
 }
 
+function WorkflowLauncherHero() {
+  return (
+    <div
+      data-testid="ai-workspace-hero"
+      className="rounded-[32px] border border-slate-900/10 bg-white p-6 shadow-sm md:p-8"
+    >
+      <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-800">
+        <Sparkles className="h-3.5 w-3.5" />
+        Command Center
+      </div>
+      <h2 className="mt-4 text-3xl font-bold tracking-tight text-[#18395f]">
+        Launch Work. Continue Work. Find Work.
+      </h2>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+        AI Workspace routes you to the right workflow and surfaces active work. Agreement Wizard
+        owns project drafting; Project Assistant helps you finish the page you are already on.
+      </p>
+      <div className="mt-6 grid gap-3 md:grid-cols-3">
+        {OWNERSHIP_CARDS.map((card) => (
+          <div
+            key={card.title}
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+          >
+            <div className="text-sm font-semibold text-slate-950">{card.title}</div>
+            <div className="mt-1 text-xs leading-5 text-slate-600">{card.body}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RecentWorkSection({ items, loading, onNavigate, onFindNext }) {
+  return (
+    <section data-testid="ai-workspace-recent-work">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+            Continue Work
+          </div>
+          <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
+            Recent work
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Jump back into recent drafts, active agreements, or templates without starting over.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onFindNext}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-900"
+          data-testid="ai-workspace-find-next-secondary"
+        >
+          Find My Next Task
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {loading ? (
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
+            Loading recent work...
+          </div>
+        ) : items.length ? (
+          items.map((item) => (
+            <div
+              key={item.key}
+              data-testid={`ai-workspace-recent-work-${item.key}`}
+              className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                {item.eyebrow}
+              </div>
+              <div className="mt-2 text-base font-semibold text-slate-950">{item.title}</div>
+              {item.meta ? <div className="mt-1 text-sm text-slate-600">{item.meta}</div> : null}
+              <button
+                type="button"
+                onClick={() => onNavigate(item.route)}
+                className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                {item.actionLabel}
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-sm leading-6 text-slate-600">
+            No recent work found yet. Create an agreement, open a template, or use Find My Next
+            Task to choose a starting point.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function AIAssistantPage() {
   const navigate = useNavigate();
   const { openAssistant } = useAssistantDock();
-  const [prompt, setPrompt] = useState("");
   const [busyKey, setBusyKey] = useState("");
   const [result, setResult] = useState(null);
-
-  const [contractorProfile, setContractorProfile] = useState(null);
+  const [recentWork, setRecentWork] = useState([]);
+  const [recentLoading, setRecentLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/projects/contractors/me/")
-      .then((res) => setContractorProfile(res.data || {}))
-      .catch(() => setContractorProfile({}));
+    let cancelled = false;
+    setRecentLoading(true);
+    fetchRecentWork()
+      .then((items) => {
+        if (!cancelled) setRecentWork(items);
+      })
+      .catch(() => {
+        if (!cancelled) setRecentWork([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRecentLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const quickActions = useMemo(() => QUICK_ACTIONS, []);
@@ -356,22 +518,6 @@ export default function AIAssistantPage() {
     if (route) navigate(route);
   }
 
-  function handleHeroSubmit(event) {
-    event.preventDefault();
-    const cleanPrompt = String(prompt || "").trim();
-    if (!cleanPrompt) return;
-    setResult(null);
-    routeWithAi("", cleanPrompt);
-  }
-
-  function handleChipAction(chip) {
-    if (chip.mode === "analyze") {
-      runWorkspaceAnalysis(chip.analyzeMode);
-    } else {
-      setPrompt(chip.label);
-    }
-  }
-
   function handleQuickActionSelect(action) {
     if (action.mode === "analyze") {
       runWorkspaceAnalysis(action.analyzeMode);
@@ -384,31 +530,29 @@ export default function AIAssistantPage() {
     <ContractorPageSurface
       eyebrow="AI Workspace"
       title="AI Workspace"
-      subtitle="Launch and organize work."
+      subtitle="Launch, continue, and organize work."
       variant="operational"
       className="mhb-ai-workspace"
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
-          {/* WorkspaceConversation replaces the old textarea hero */}
-          <div data-testid="ai-workspace-hero">
-            <WorkspaceConversation contractorProfile={contractorProfile} />
-          </div>
+          <WorkflowLauncherHero />
 
           <div
             className="rounded-[32px] border border-slate-900/10 bg-[linear-gradient(160deg,#0f172a_0%,#163B70_60%,#1f5fa8_100%)] p-6 text-white shadow-sm md:p-8"
             data-testid="ai-workspace-summary"
           >
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">
-              <Sparkles className="h-3.5 w-3.5" />
-              What This Does
+            <Sparkles className="h-3.5 w-3.5" />
+              How To Use It
             </div>
             <h3 className="mt-4 text-2xl font-bold tracking-tight">
-              AI Workspace launches workflows and organizes the work already in motion.
+              A launcher, not a second drafting flow.
             </h3>
             <p className="mt-3 text-sm leading-6 text-sky-50/90">
-              Start or continue work here. Use the global Project Assistant when you want help with the
-              page, form, agreement, template, invoice, or task you're currently working on.
+              Start here when you know the kind of work you want to do. The actual drafting,
+              template application, milestone planning, and page-specific help happen inside the
+              dedicated workflows.
             </p>
             <div className="mt-6 space-y-3">
               {CAPABILITY_ROWS.map((row) => (
@@ -434,7 +578,7 @@ export default function AIAssistantPage() {
         <section data-testid="ai-workspace-quick-actions">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Quick Actions
+              Launch Work
             </div>
             <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
               Launch the right workflow without hunting for it.
@@ -456,6 +600,12 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
+        <RecentWorkSection
+          items={recentWork}
+          loading={recentLoading}
+          onNavigate={handleResultNavigate}
+          onFindNext={() => runWorkspaceAnalysis("next_task")}
+        />
       </div>
     </ContractorPageSurface>
   );

@@ -280,40 +280,35 @@ test.describe('AI Workspace page', () => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('ai-workspace-hero')).toBeVisible();
-    await expect(page.getByTestId('workspace-conversation')).toBeVisible();
+    await expect(page.getByTestId('workspace-conversation')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-quick-actions')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-capabilities')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-suggested')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-recent-work')).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-recent-work')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-popular-templates')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-footer')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-open-copilot')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
 
-    await expect(page.getByRole('heading', { name: 'Start or continue work' })).toBeVisible();
-    await expect(page.getByTestId('workspace-conversation-input')).toHaveAttribute(
-      'placeholder',
-      /Describe the work/
-    );
-    await expect(page.getByTestId('workspace-conversation-submit')).toContainText('Start intake');
+    await expect(page.getByRole('heading', { name: 'Launch Work. Continue Work. Find Work.' })).toBeVisible();
+    await expect(page.getByTestId('workspace-conversation-input')).not.toBeVisible();
+    await expect(page.getByText('AI Workspace routes you to the right workflow')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-quick-action-start_agreement')).toContainText('Create Agreement');
     await expect(page.getByTestId('ai-workspace-quick-action-apply_template')).toContainText('Use Template');
     await expect(page.getByTestId('ai-workspace-quick-action-suggest_milestones')).toContainText('Plan Milestones');
+    await expect(page.getByTestId('ai-workspace-quick-action-continue_project')).toContainText('Continue Existing Project');
     await expect(page.getByTestId('ai-workspace-quick-action-navigate_app')).toContainText('Find My Next Task');
     await expect(page.getByText('Launch the right workflow without hunting for it.')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'What AI can help with' })).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-summary')).toBeVisible();
   });
 
-  test('conversation intake advances and the global assistant dock opens', async ({ page }) => {
+  test('workspace no longer renders drafting intake and the global assistant dock opens', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
-    await page.getByTestId('workspace-conversation-input').fill(
-      'Start agreement for Casey Prospect kitchen remodel'
-    );
-    await page.getByTestId('workspace-conversation-submit').click();
-    await expect(page.getByTestId('workspace-use-template')).toBeVisible();
-    await expect(page.getByTestId('workspace-build-scratch')).toBeVisible();
+    await expect(page.getByTestId('workspace-conversation')).not.toBeVisible();
+    await expect(page.getByTestId('workspace-conversation-input')).not.toBeVisible();
+    await expect(page.getByText('Describe the work')).not.toBeVisible();
 
     await page.getByTestId('assistant-dock-open-button').click();
     await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
@@ -335,6 +330,14 @@ test.describe('AI Workspace page', () => {
     await page.waitForURL('**/app/agreements/new/wizard?step=2');
 
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
+    const continueAction = page.getByTestId('ai-workspace-quick-action-continue_project');
+    await expect(continueAction).toBeEnabled();
+    await continueAction.click();
+    await expect.poll(() => page.getByTestId('ai-workspace-result-panel').count()).toBe(1);
+    await expect(page.getByTestId('ai-workspace-result-panel')).toBeVisible();
+    await expect(page.getByTestId('ai-workspace-result-title')).toContainText('Complete your draft agreement');
+
+    await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
     const nextTaskAction = page.getByTestId('ai-workspace-quick-action-navigate_app');
     await expect(nextTaskAction).toBeEnabled();
     await nextTaskAction.click();
@@ -344,15 +347,14 @@ test.describe('AI Workspace page', () => {
     await expect(page.getByTestId('ai-workspace-result-primary-cta')).toBeVisible();
   });
 
-  test('duplicate dashboard, recent work, and template browser sections stay removed', async ({ page }) => {
+  test('duplicate dashboard and template browser sections stay removed while recent work renders once', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('ai-workspace-suggested')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-recent-work')).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-recent-work')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-popular-templates')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-recent-work-901')).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-recent-work-agreement-901')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-template-301')).not.toBeVisible();
-    await expect(page.getByText('Kitchen Remodel Starter')).not.toBeVisible();
   });
 
   test('Find my next task chip shows analysis result with no immediate routing', async ({ page }) => {
