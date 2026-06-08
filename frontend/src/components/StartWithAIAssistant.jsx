@@ -302,34 +302,36 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
 
   return (
     <div className="space-y-4" data-testid="project-assistant-panel">
-      <div
-        className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-4 text-white"
-        data-testid="project-assistant-summary"
-      >
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
-          Current Project
-        </div>
-        <div className="mt-2 text-base font-semibold text-white">{summary.title}</div>
-        {summary.projectType ? (
-          <div className="mt-1 text-xs text-slate-300">{summary.projectType}</div>
-        ) : null}
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
-            <div className="text-slate-300">Step</div>
-            <div className="mt-1 font-semibold text-white">{summary.step} of 4</div>
+      <div data-testid="project-assistant-current-project">
+        <div
+          className="rounded-2xl border border-slate-200 bg-slate-950 px-4 py-4 text-white"
+          data-testid="project-assistant-summary"
+        >
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
+            Current Project
           </div>
-          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
-            <div className="text-slate-300">Milestones</div>
-            <div className="mt-1 font-semibold text-white">{summary.milestoneCount}</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
-            <div className="text-slate-300">Total</div>
-            <div className="mt-1 font-semibold text-white">{formatAssistantCurrency(summary.total)}</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
-            <div className="text-slate-300">Template</div>
-            <div className="mt-1 truncate font-semibold text-white" title={summary.templateStatus}>
-              {summary.templateStatus}
+          <div className="mt-2 text-base font-semibold text-white">{summary.title}</div>
+          {summary.projectType ? (
+            <div className="mt-1 text-xs text-slate-300">{summary.projectType}</div>
+          ) : null}
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+              <div className="text-slate-300">Step</div>
+              <div className="mt-1 font-semibold text-white">{summary.step} of 4</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+              <div className="text-slate-300">Milestones</div>
+              <div className="mt-1 font-semibold text-white">{summary.milestoneCount}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+              <div className="text-slate-300">Total</div>
+              <div className="mt-1 font-semibold text-white">{formatAssistantCurrency(summary.total)}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/10 px-3 py-2">
+              <div className="text-slate-300">Template</div>
+              <div className="mt-1 truncate font-semibold text-white" title={summary.templateStatus}>
+                {summary.templateStatus}
+              </div>
             </div>
           </div>
         </div>
@@ -358,7 +360,7 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
       ) : null}
 
       {recommended.length ? (
-        <div>
+        <div data-testid="project-assistant-step-actions">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             Step Actions
           </div>
@@ -375,7 +377,7 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
       ) : null}
 
       {additional.length ? (
-        <div>
+        <div data-testid="project-assistant-other-actions">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
             Other Helpful Actions
           </div>
