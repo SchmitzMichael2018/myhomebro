@@ -798,7 +798,7 @@ function AdminAgreementCommandCenter({
   );
 }
 
-export default function AgreementDetail({ adminMode = false }) {
+export default function AgreementDetail({ adminMode = false, initialAgreement = null, isMagicLink = false }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -807,8 +807,8 @@ export default function AgreementDetail({ adminMode = false }) {
   const activeTab = useMemo(() => new URLSearchParams(location.search).get("tab") || "", [location.search]);
   const adminTab = useMemo(() => normalizeAdminTab(activeTab), [activeTab]);
 
-  const [agreement, setAgreement] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [agreement, setAgreement] = useState(initialAgreement || null);
+  const [loading, setLoading] = useState(!initialAgreement);
   const [sigOpen, setSigOpen] = useState(false);
   const [escrowOpen, setEscrowOpen] = useState(false);
   const [clientSecret, setClientSecret] = useState("");
@@ -913,6 +913,15 @@ export default function AgreementDetail({ adminMode = false }) {
     : "";
 
   const fetchAgreement = async () => {
+    if (isMagicLink && initialAgreement) {
+      setAgreement(initialAgreement);
+      setLoading(false);
+      return;
+    }
+    if (!id) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const { data } = await api.get(`/projects/agreements/${id}/`);
@@ -959,7 +968,7 @@ export default function AgreementDetail({ adminMode = false }) {
   useEffect(() => {
     fetchAgreement();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, isMagicLink, initialAgreement]);
 
   useEffect(() => {
     if (!isProgressPayments || !isExecuted) {
