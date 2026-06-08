@@ -111,7 +111,7 @@ from projects.models_subcontractor import (
     SubcontractorQuoteRequest,
     SubcontractorQuoteRequestStatus,
 )
-from projects.models_dispute import Dispute
+from projects.models_dispute import Dispute, DisputeWorkOrder
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.project_learning import (
     capture_agreement_outcome_snapshot,
@@ -21060,6 +21060,119 @@ class DisputeMutationSafetyTests(TestCase):
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("Only terminal disputes can be archived.", str(response.data["detail"]))
 
+    def _active_dispute(self, reason="Resolution test"):
+        return Dispute.objects.create(
+            agreement=self.agreement,
+            milestone=None,
+            initiator="homeowner",
+            reason=reason,
+            description="Resolution rule coverage.",
+            status="under_review",
+            fee_amount=Decimal("10.00"),
+            fee_paid=True,
+            escrow_frozen=True,
+        )
+
+    def test_contractor_prevails_resolution_records_release_eligibility_without_moving_money(self):
+        active_dispute = self._active_dispute("Contractor prevails")
+
+        response = self.admin_client.post(
+            f"/api/projects/disputes/{active_dispute.id}/resolve/",
+            {
+                "resolution_type": Dispute.RESOLUTION_CONTRACTOR_PREVAILS,
+                "resolution_notes": "Work accepted after review.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        active_dispute.refresh_from_db()
+        self.assertEqual(active_dispute.status, "resolved_contractor")
+        self.assertEqual(active_dispute.resolution_type, Dispute.RESOLUTION_CONTRACTOR_PREVAILS)
+        self.assertEqual(active_dispute.financial_disposition, Dispute.FINANCIAL_ELIGIBLE_RELEASE)
+        self.assertFalse(active_dispute.escrow_frozen)
+        self.assertEqual(active_dispute.resolved_by, self.admin_user)
+        self.assertEqual(self.agreement.invoices.count(), 0)
+
+    def test_customer_prevails_resolution_records_refund_eligibility_without_moving_money(self):
+        active_dispute = self._active_dispute("Customer prevails")
+
+        response = self.admin_client.post(
+            f"/api/projects/disputes/{active_dispute.id}/resolve/",
+            {
+                "resolution_type": Dispute.RESOLUTION_CUSTOMER_PREVAILS,
+                "resolution_notes": "Work rejected after review.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        active_dispute.refresh_from_db()
+        self.assertEqual(active_dispute.status, "resolved_homeowner")
+        self.assertEqual(active_dispute.resolution_type, Dispute.RESOLUTION_CUSTOMER_PREVAILS)
+        self.assertEqual(active_dispute.financial_disposition, Dispute.FINANCIAL_ELIGIBLE_REFUND)
+        self.assertFalse(active_dispute.escrow_frozen)
+
+    def test_partial_resolution_records_amounts_and_manual_financial_review(self):
+        active_dispute = self._active_dispute("Partial")
+
+        response = self.admin_client.post(
+            f"/api/projects/disputes/{active_dispute.id}/resolve/",
+            {
+                "resolution_type": Dispute.RESOLUTION_PARTIAL,
+                "approved_amount": "125.00",
+                "disputed_remainder": "75.00",
+                "resolution_notes": "Partial approval after evidence review.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        active_dispute.refresh_from_db()
+        self.assertEqual(active_dispute.status, "resolved_partial")
+        self.assertEqual(active_dispute.financial_disposition, Dispute.FINANCIAL_PARTIAL_MANUAL)
+        self.assertEqual(active_dispute.approved_amount, Decimal("125.00"))
+        self.assertEqual(active_dispute.disputed_remainder, Decimal("75.00"))
+        self.assertFalse(active_dispute.escrow_frozen)
+
+    def test_rework_required_keeps_escrow_held_and_creates_work_order(self):
+        active_dispute = self._active_dispute("Rework")
+
+        response = self.admin_client.post(
+            f"/api/projects/disputes/{active_dispute.id}/resolve/",
+            {
+                "resolution_type": Dispute.RESOLUTION_REWORK_REQUIRED,
+                "resolution_notes": "Correct the trim before release review.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        active_dispute.refresh_from_db()
+        self.assertEqual(active_dispute.status, "under_review")
+        self.assertEqual(active_dispute.resolution_type, Dispute.RESOLUTION_REWORK_REQUIRED)
+        self.assertEqual(active_dispute.financial_disposition, Dispute.FINANCIAL_MANUAL_REVIEW)
+        self.assertTrue(active_dispute.escrow_frozen)
+        self.assertTrue(DisputeWorkOrder.objects.filter(dispute=active_dispute, status="open").exists())
+
+    def test_administrative_closure_records_no_financial_action(self):
+        active_dispute = self._active_dispute("Administrative closure")
+
+        response = self.admin_client.post(
+            f"/api/projects/disputes/{active_dispute.id}/resolve/",
+            {
+                "resolution_type": Dispute.RESOLUTION_ADMIN_CLOSURE,
+                "resolution_notes": "Duplicate issue closed externally.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        active_dispute.refresh_from_db()
+        self.assertEqual(active_dispute.status, "canceled")
+        self.assertEqual(active_dispute.financial_disposition, Dispute.FINANCIAL_NO_ACTION)
+        self.assertFalse(active_dispute.escrow_frozen)
+
     def test_unrelated_user_cannot_create_dispute_for_agreement(self):
         response = self.other_client.post(
             "/api/projects/disputes/",
@@ -21110,6 +21223,23 @@ class DisputeMutationSafetyTests(TestCase):
                 event_type=Notification.EVENT_DISPUTE_UPDATED,
             ).exists()
         )
+
+    def test_ai_dispute_prompt_enforces_advisory_boundaries(self):
+        from projects.ai.disputes_recommendation import build_dispute_recommendation_prompt
+
+        active_dispute = self._active_dispute("AI boundary")
+        prompt = build_dispute_recommendation_prompt(
+            dispute=active_dispute,
+            evidence_context={"agreement": {"scope": "Repair trim"}, "evidence": []},
+        )
+
+        system = prompt["system"]
+        self.assertIn("Advisory only", system)
+        self.assertIn("Humans decide all outcomes", system)
+        self.assertIn("Never determine fault", system)
+        self.assertIn("Never instruct the platform to release funds", system)
+        recommendation_required = prompt["json_schema"]["schema"]["properties"]["recommendation"]["required"]
+        self.assertIn("advisory_boundary", recommendation_required)
 
 
 class TemplateRecommendationRelevanceTests(TestCase):

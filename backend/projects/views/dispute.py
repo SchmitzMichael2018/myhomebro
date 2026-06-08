@@ -260,6 +260,72 @@ def _block_if_terminal(dispute: Dispute):
     return None
 
 
+def _resolution_type_from_legacy_outcome(outcome: str) -> str:
+    outcome = str(outcome or "").strip().lower()
+    if outcome == "contractor":
+        return Dispute.RESOLUTION_CONTRACTOR_PREVAILS
+    if outcome == "homeowner":
+        return Dispute.RESOLUTION_CUSTOMER_PREVAILS
+    if outcome == "canceled":
+        return Dispute.RESOLUTION_ADMIN_CLOSURE
+    return ""
+
+
+def _default_financial_disposition(resolution_type: str) -> str:
+    mapping = {
+        Dispute.RESOLUTION_CONTRACTOR_PREVAILS: Dispute.FINANCIAL_ELIGIBLE_RELEASE,
+        Dispute.RESOLUTION_CUSTOMER_PREVAILS: Dispute.FINANCIAL_ELIGIBLE_REFUND,
+        Dispute.RESOLUTION_PARTIAL: Dispute.FINANCIAL_PARTIAL_MANUAL,
+        Dispute.RESOLUTION_REWORK_REQUIRED: Dispute.FINANCIAL_MANUAL_REVIEW,
+        Dispute.RESOLUTION_ADMIN_CLOSURE: Dispute.FINANCIAL_NO_ACTION,
+    }
+    return mapping.get(resolution_type, Dispute.FINANCIAL_MANUAL_REVIEW)
+
+
+def _status_for_resolution_type(resolution_type: str, fallback_outcome: str = "") -> str:
+    mapping = {
+        Dispute.RESOLUTION_CONTRACTOR_PREVAILS: "resolved_contractor",
+        Dispute.RESOLUTION_CUSTOMER_PREVAILS: "resolved_homeowner",
+        Dispute.RESOLUTION_PARTIAL: "resolved_partial",
+        Dispute.RESOLUTION_REWORK_REQUIRED: "under_review",
+        Dispute.RESOLUTION_ADMIN_CLOSURE: "canceled",
+    }
+    if resolution_type in mapping:
+        return mapping[resolution_type]
+    fallback_outcome = str(fallback_outcome or "").strip().lower()
+    if fallback_outcome == "contractor":
+        return "resolved_contractor"
+    if fallback_outcome == "homeowner":
+        return "resolved_homeowner"
+    return "canceled"
+
+
+def _ensure_rework_work_order(dispute: Dispute, *, notes: str = "", linked_milestone_id: int | None = None):
+    title = f"Rework required - Dispute #{dispute.id}"
+    origin_title = str(getattr(getattr(dispute, "milestone", None), "title", "") or "").strip()
+    if origin_title:
+        title = f"Rework - {origin_title} (Dispute #{dispute.id})"
+    work_order, _created = DisputeWorkOrder.objects.get_or_create(
+        dispute=dispute,
+        agreement=dispute.agreement,
+        defaults={
+            "title": title,
+            "notes": notes,
+            "status": "open",
+        },
+    )
+    update_fields = []
+    if notes and notes not in str(work_order.notes or ""):
+        work_order.notes = "\n\n".join(part for part in [work_order.notes, notes] if str(part or "").strip())
+        update_fields.append("notes")
+    if linked_milestone_id and not work_order.rework_milestone_id:
+        work_order.rework_milestone_id = linked_milestone_id
+        update_fields.append("rework_milestone_id")
+    if update_fields:
+        work_order.save(update_fields=update_fields)
+    return work_order
+
+
 def _block_if_archived(dispute: Dispute):
     if bool(getattr(dispute, "is_archived", False)):
         return Response({"detail": "This dispute is archived and cannot be modified."}, status=400)
@@ -567,24 +633,42 @@ class DisputeViewSet(viewsets.ModelViewSet):
         ser = DisputeResolveSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
 
-        outcome = ser.validated_data["outcome"]
+        outcome = ser.validated_data.get("outcome", "")
+        resolution_type = ser.validated_data.get("resolution_type") or _resolution_type_from_legacy_outcome(outcome)
         admin_notes = (ser.validated_data.get("admin_notes") or "").strip()
+        resolution_notes = (ser.validated_data.get("resolution_notes") or admin_notes).strip()
+        financial_disposition = (
+            ser.validated_data.get("financial_disposition")
+            or _default_financial_disposition(resolution_type)
+        )
+        linked_rework_milestone_id = ser.validated_data.get("linked_rework_milestone_id")
 
         now = timezone.now()
         dispute.admin_notes = admin_notes
+        dispute.resolution_type = resolution_type
+        dispute.resolution_notes = resolution_notes
+        dispute.resolved_by = request.user
+        dispute.financial_disposition = financial_disposition
+        dispute.approved_amount = ser.validated_data.get("approved_amount")
+        dispute.disputed_remainder = ser.validated_data.get("disputed_remainder")
+        dispute.linked_rework_milestone_id = linked_rework_milestone_id
 
-        if outcome == "contractor":
-            dispute.status = "resolved_contractor"
-        elif outcome == "homeowner":
-            dispute.status = "resolved_homeowner"
-        else:
-            dispute.status = "canceled"
-
-        dispute.escrow_frozen = False
+        dispute.status = _status_for_resolution_type(resolution_type, outcome)
+        dispute.escrow_frozen = resolution_type == Dispute.RESOLUTION_REWORK_REQUIRED
         dispute.resolved_at = now
         dispute.last_activity_at = now
+        if resolution_type == Dispute.RESOLUTION_REWORK_REQUIRED:
+            work_order = _ensure_rework_work_order(
+                dispute,
+                notes=resolution_notes,
+                linked_milestone_id=linked_rework_milestone_id,
+            )
+            if not linked_rework_milestone_id and getattr(work_order, "rework_milestone_id", None):
+                dispute.linked_rework_milestone_id = work_order.rework_milestone_id
         dispute.save(update_fields=[
-            "admin_notes", "status", "escrow_frozen", "resolved_at",
+            "admin_notes", "resolution_type", "resolution_notes", "resolved_by",
+            "financial_disposition", "approved_amount", "disputed_remainder",
+            "linked_rework_milestone_id", "status", "escrow_frozen", "resolved_at",
             "last_activity_at", "updated_at"
         ])
         try:

@@ -105,6 +105,13 @@ class DisputeSerializer(serializers.ModelSerializer):
             "responded_at",
             "admin_notes",
             "resolved_at",
+            "resolution_type",
+            "resolution_notes",
+            "resolved_by",
+            "financial_disposition",
+            "approved_amount",
+            "disputed_remainder",
+            "linked_rework_milestone_id",
             "attachments",
             "created_by",
             "created_at",
@@ -135,6 +142,13 @@ class DisputeSerializer(serializers.ModelSerializer):
             "responded_at",
             "admin_notes",
             "resolved_at",
+            "resolution_type",
+            "resolution_notes",
+            "resolved_by",
+            "financial_disposition",
+            "approved_amount",
+            "disputed_remainder",
+            "linked_rework_milestone_id",
             "attachments",
             "created_by",
             "created_at",
@@ -205,13 +219,50 @@ class DisputeRespondSerializer(serializers.Serializer):
 
 class DisputeResolveSerializer(serializers.Serializer):
     outcome = serializers.ChoiceField(
-        choices=["contractor", "homeowner", "canceled"]
+        choices=["contractor", "homeowner", "canceled"],
+        required=False,
+    )
+    resolution_type = serializers.ChoiceField(
+        choices=[
+            Dispute.RESOLUTION_CONTRACTOR_PREVAILS,
+            Dispute.RESOLUTION_CUSTOMER_PREVAILS,
+            Dispute.RESOLUTION_PARTIAL,
+            Dispute.RESOLUTION_REWORK_REQUIRED,
+            Dispute.RESOLUTION_ADMIN_CLOSURE,
+        ],
+        required=False,
+    )
+    financial_disposition = serializers.ChoiceField(
+        choices=[
+            Dispute.FINANCIAL_ELIGIBLE_RELEASE,
+            Dispute.FINANCIAL_ELIGIBLE_REFUND,
+            Dispute.FINANCIAL_PARTIAL_MANUAL,
+            Dispute.FINANCIAL_MANUAL_REVIEW,
+            Dispute.FINANCIAL_NO_ACTION,
+        ],
+        required=False,
     )
     admin_notes = serializers.CharField(
         required=False,
         allow_blank=True,
         max_length=20000,
     )
+    resolution_notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=20000,
+    )
+    approved_amount = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    disputed_remainder = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    linked_rework_milestone_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if not attrs.get("resolution_type") and not attrs.get("outcome"):
+            raise serializers.ValidationError("Resolution type is required.")
+        resolution_type = attrs.get("resolution_type")
+        if resolution_type == Dispute.RESOLUTION_PARTIAL and "approved_amount" not in attrs:
+            raise serializers.ValidationError("Approved amount is required for partial resolution.")
+        return attrs
 
 
 class DisputePublicSerializer(serializers.ModelSerializer):
@@ -235,6 +286,11 @@ class DisputePublicSerializer(serializers.ModelSerializer):
             "status",
             "fee_paid",
             "escrow_frozen",
+            "resolution_type",
+            "financial_disposition",
+            "approved_amount",
+            "disputed_remainder",
+            "linked_rework_milestone_id",
             "proposal",
             "proposal_sent_at",
             "homeowner_response",

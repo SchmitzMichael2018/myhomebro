@@ -205,7 +205,7 @@ function getFilterKeyBase(d) {
   const status = String(d?.status || "").toLowerCase();
 
   if (status === "canceled") return "canceled";
-  if (status === "resolved_contractor" || status === "resolved_homeowner") return "resolved";
+  if (status === "resolved_contractor" || status === "resolved_homeowner" || status === "resolved_partial") return "resolved";
   if (status === "under_review") return "under_review";
 
   if (!d?.fee_paid) return "waiting_fee";
@@ -926,13 +926,17 @@ function RespondModal({ open, dispute, onClose, onSubmitted }) {
 }
 
 function ResolveModal({ open, dispute, onClose, onResolved }) {
-  const [outcome, setOutcome] = useState("contractor");
+  const [resolutionType, setResolutionType] = useState("contractor_prevails");
+  const [approvedAmount, setApprovedAmount] = useState("");
+  const [disputedRemainder, setDisputedRemainder] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setOutcome("contractor");
+      setResolutionType("contractor_prevails");
+      setApprovedAmount("");
+      setDisputedRemainder("");
       setNotes("");
     }
   }, [open]);
@@ -945,8 +949,15 @@ function ResolveModal({ open, dispute, onClose, onResolved }) {
     setBusy(true);
     try {
       await api.post(`/projects/disputes/${dispute.id}/resolve/`, {
-        outcome,
+        resolution_type: resolutionType,
+        resolution_notes: notes,
         admin_notes: notes,
+        ...(resolutionType === "partial_resolution"
+          ? {
+              approved_amount: approvedAmount,
+              disputed_remainder: disputedRemainder,
+            }
+          : {}),
       });
       toast.success("Dispute resolved.");
       onResolved?.();
@@ -961,21 +972,52 @@ function ResolveModal({ open, dispute, onClose, onResolved }) {
   return (
     <ModalShell title={`Admin Resolve — Dispute #${dispute.id}`} onClose={onClose}>
       <div>
-        <label className="block text-sm text-slate-600 mb-1">Outcome</label>
+        <label className="block text-sm text-slate-600 mb-1">Resolution Option</label>
         <select
           className="w-full border rounded px-3 py-2"
-          value={outcome}
-          onChange={(e) => setOutcome(e.target.value)}
+          value={resolutionType}
+          onChange={(e) => setResolutionType(e.target.value)}
           disabled={busy}
         >
-          <option value="contractor">Contractor wins (release)</option>
-          <option value="homeowner">Homeowner wins (refund)</option>
-          <option value="canceled">Cancel dispute</option>
+          <option value="contractor_prevails">Contractor Prevails - eligible for release review</option>
+          <option value="customer_prevails">Customer Prevails - eligible for refund review</option>
+          <option value="partial_resolution">Partial Resolution - manual financial review</option>
+          <option value="rework_required">Rework Required - keep escrow held</option>
+          <option value="administrative_closure">Administrative Closure - no financial action</option>
         </select>
       </div>
 
+      {resolutionType === "partial_resolution" ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">Approved Amount</label>
+            <input
+              className="w-full border rounded px-3 py-2"
+              value={approvedAmount}
+              onChange={(e) => setApprovedAmount(e.target.value)}
+              disabled={busy}
+              placeholder="125.00"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-slate-600 mb-1">Disputed Remainder</label>
+            <input
+              className="w-full border rounded px-3 py-2"
+              value={disputedRemainder}
+              onChange={(e) => setDisputedRemainder(e.target.value)}
+              disabled={busy}
+              placeholder="75.00"
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+        This records a human admin resolution and financial disposition only. It does not release, refund, split, or transfer funds.
+      </div>
+
       <div>
-        <label className="block text-sm text-slate-600 mb-1">Admin Notes</label>
+        <label className="block text-sm text-slate-600 mb-1">Resolution Notes</label>
         <textarea
           className="w-full border rounded px-3 py-2"
           rows={5}

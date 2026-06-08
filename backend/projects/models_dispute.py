@@ -78,7 +78,34 @@ class Dispute(models.Model):
         ("under_review", "Under Review"),
         ("resolved_contractor", "Resolved - Contractor"),
         ("resolved_homeowner", "Resolved - Homeowner"),
+        ("resolved_partial", "Resolved - Partial"),
         ("canceled", "Canceled"),
+    )
+
+    RESOLUTION_CONTRACTOR_PREVAILS = "contractor_prevails"
+    RESOLUTION_CUSTOMER_PREVAILS = "customer_prevails"
+    RESOLUTION_PARTIAL = "partial_resolution"
+    RESOLUTION_REWORK_REQUIRED = "rework_required"
+    RESOLUTION_ADMIN_CLOSURE = "administrative_closure"
+    RESOLUTION_TYPE_CHOICES = (
+        (RESOLUTION_CONTRACTOR_PREVAILS, "Contractor Prevails"),
+        (RESOLUTION_CUSTOMER_PREVAILS, "Customer Prevails"),
+        (RESOLUTION_PARTIAL, "Partial Resolution"),
+        (RESOLUTION_REWORK_REQUIRED, "Rework Required"),
+        (RESOLUTION_ADMIN_CLOSURE, "Administrative Closure"),
+    )
+
+    FINANCIAL_ELIGIBLE_RELEASE = "eligible_for_release"
+    FINANCIAL_ELIGIBLE_REFUND = "eligible_for_refund"
+    FINANCIAL_PARTIAL_MANUAL = "partial_manual_review"
+    FINANCIAL_MANUAL_REVIEW = "manual_review_required"
+    FINANCIAL_NO_ACTION = "no_financial_action"
+    FINANCIAL_DISPOSITION_CHOICES = (
+        (FINANCIAL_ELIGIBLE_RELEASE, "Eligible for Release"),
+        (FINANCIAL_ELIGIBLE_REFUND, "Eligible for Refund"),
+        (FINANCIAL_PARTIAL_MANUAL, "Partial Manual Review"),
+        (FINANCIAL_MANUAL_REVIEW, "Manual Review Required"),
+        (FINANCIAL_NO_ACTION, "No Financial Action"),
     )
 
     INITIATOR_CHOICES = (
@@ -120,6 +147,31 @@ class Dispute(models.Model):
 
     admin_notes = models.TextField(blank=True, default="")
     resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_type = models.CharField(
+        max_length=40,
+        choices=RESOLUTION_TYPE_CHOICES,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+    resolution_notes = models.TextField(blank=True, default="")
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_disputes",
+    )
+    financial_disposition = models.CharField(
+        max_length=40,
+        choices=FINANCIAL_DISPOSITION_CHOICES,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+    approved_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    disputed_remainder = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    linked_rework_milestone_id = models.BigIntegerField(null=True, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
