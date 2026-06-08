@@ -14,6 +14,7 @@ from projects.models_contractor_discovery import ContractorDirectoryEntry, Contr
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
+from projects.services.workflow_notifications import notify_customer_bid_received, notify_marketplace_request_routed
 
 
 DEFAULT_MIN_CLAIMED_CONTRACTORS = 20
@@ -547,6 +548,7 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
 
     existing_contractors = set(existing_qs.exclude(contractor__isnull=True).values_list("contractor_id", flat=True))
     created = []
+    routed_leads = []
     eligible_listings = eligible_marketplace_listings(intake)
     for existing_invite in existing_qs.select_related("directory_listing", "contractor"):
         if existing_invite.contractor_id and existing_invite.directory_listing_id:
@@ -556,13 +558,14 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
                 invite=existing_invite,
                 readiness=readiness,
             )
-            _sync_public_lead_for_marketplace(
+            lead = _sync_public_lead_for_marketplace(
                 intake=intake,
                 listing=existing_invite.directory_listing,
                 invite=existing_invite,
                 opportunity=opportunity,
                 readiness=readiness,
             )
+            routed_leads.append(lead)
 
     for listing in eligible_listings:
         if len(created) + existing_count >= max_bids:
@@ -591,6 +594,8 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
             opportunity=opportunity,
             readiness=readiness,
         )
+        routed_leads.append(lead)
+        notify_customer_bid_received(lead=lead)
         created.append(
             {
                 "id": invite.id,
@@ -602,6 +607,9 @@ def create_marketplace_invites_for_intake(intake_id: int) -> dict[str, Any]:
             }
         )
         existing_contractors.add(listing.claimed_contractor_id)
+
+    if routed_leads:
+        notify_marketplace_request_routed(intake=intake, leads=routed_leads)
 
     return {
         "created": created,

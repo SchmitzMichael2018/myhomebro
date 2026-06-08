@@ -158,6 +158,12 @@ def submit_reimbursement(expense: ExpenseRequest) -> ExpenseRequest:
     locked.submitted_at = locked.submitted_at or timezone.now()
     locked.contractor_signed_at = locked.contractor_signed_at or locked.submitted_at
     locked.save(update_fields=["request_kind", "status", "submitted_at", "contractor_signed_at", "updated_at"])
+    try:
+        from projects.services.workflow_notifications import notify_reimbursement_submitted
+
+        notify_reimbursement_submitted(expense=locked)
+    except Exception:
+        pass
     return locked
 
 
@@ -186,6 +192,17 @@ def approve_reimbursement(expense: ExpenseRequest, *, reviewed_by=None) -> Expen
             "updated_at",
         ]
     )
+    try:
+        from projects.models import Notification
+        from projects.services.workflow_notifications import notify_reimbursement_contractor_update
+
+        notify_reimbursement_contractor_update(
+            expense=locked,
+            event_type=Notification.EVENT_REIMBURSEMENT_APPROVED,
+            actor_user=reviewed_by,
+        )
+    except Exception:
+        pass
     return locked
 
 
@@ -200,6 +217,18 @@ def deny_reimbursement(expense: ExpenseRequest, *, reviewed_by=None, reason: str
     locked.reviewed_by = reviewed_by
     locked.denial_reason = (reason or "").strip()
     locked.save(update_fields=["status", "denied_at", "homeowner_acted_at", "reviewed_by", "denial_reason", "updated_at"])
+    try:
+        from projects.models import Notification
+        from projects.services.workflow_notifications import notify_reimbursement_contractor_update
+
+        notify_reimbursement_contractor_update(
+            expense=locked,
+            event_type=Notification.EVENT_REIMBURSEMENT_DENIED,
+            actor_user=reviewed_by,
+            reason=locked.denial_reason,
+        )
+    except Exception:
+        pass
     return locked
 
 
@@ -219,6 +248,16 @@ def mark_reimbursement_released(expense: ExpenseRequest, *, stripe_transfer_id: 
     if stripe_transfer_id:
         locked.stripe_transfer_id = stripe_transfer_id
     locked.save(update_fields=["status", "released_at", "paid_at", "stripe_transfer_id", "updated_at"])
+    try:
+        from projects.models import Notification
+        from projects.services.workflow_notifications import notify_reimbursement_contractor_update
+
+        notify_reimbursement_contractor_update(
+            expense=locked,
+            event_type=Notification.EVENT_REIMBURSEMENT_RELEASED,
+        )
+    except Exception:
+        pass
     return locked
 
 
@@ -244,6 +283,17 @@ def record_manual_reimbursement_release(expense: ExpenseRequest, *, reviewed_by=
     if stripe_transfer_id:
         locked.stripe_transfer_id = stripe_transfer_id
     locked.save(update_fields=["status", "released_at", "paid_at", "reviewed_by", "release_error", "stripe_transfer_id", "updated_at"])
+    try:
+        from projects.models import Notification
+        from projects.services.workflow_notifications import notify_reimbursement_contractor_update
+
+        notify_reimbursement_contractor_update(
+            expense=locked,
+            event_type=Notification.EVENT_REIMBURSEMENT_RELEASED,
+            actor_user=reviewed_by,
+        )
+    except Exception:
+        pass
     return locked
 
 
@@ -260,6 +310,18 @@ def place_reimbursement_hold(expense: ExpenseRequest, *, reviewed_by=None, reaso
     locked.hold_reason = (reason or "").strip()
     locked.release_error = ""
     locked.save(update_fields=["status", "held_at", "held_by", "hold_reason", "release_error", "updated_at"])
+    try:
+        from projects.models import Notification
+        from projects.services.workflow_notifications import notify_reimbursement_contractor_update
+
+        notify_reimbursement_contractor_update(
+            expense=locked,
+            event_type=Notification.EVENT_REIMBURSEMENT_HELD,
+            actor_user=reviewed_by,
+            reason=locked.hold_reason,
+        )
+    except Exception:
+        pass
     return locked
 
 

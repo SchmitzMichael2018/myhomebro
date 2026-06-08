@@ -23,6 +23,7 @@ from projects.models_dispute import Dispute
 from projects.models_learning import MilestonePerformanceSnapshot
 from projects.models_project_intake import ProjectIntake
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings, location_readiness, normalize_location_value
+from projects.services.workflow_notifications import notify_contractor_verification_status
 from projects.services.contractor_discovery import build_contractor_recommendations
 from projects.services.google_places_contractors import (
     project_type_to_places_query,
@@ -905,6 +906,15 @@ class AdminMarketplaceVerification(APIView):
             return Response({"detail": "Unsupported verification action."}, status=status.HTTP_400_BAD_REQUEST)
 
         contractor.save(update_fields=list(dict.fromkeys(update_fields)))
+        try:
+            notify_contractor_verification_status(
+                contractor=contractor,
+                action=action,
+                actor_user=request.user,
+                reason=reason,
+            )
+        except Exception:
+            pass
         return Response(_serialize_verification_contractor(contractor), status=status.HTTP_200_OK)
 
 

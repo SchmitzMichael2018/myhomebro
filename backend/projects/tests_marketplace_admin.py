@@ -7,10 +7,11 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Contractor, PublicContractorLead
+from projects.models import Contractor, Notification, PublicContractorLead
+from projects.models_customer_portal import SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
-from projects.services.marketplace_readiness import eligible_marketplace_listings
+from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings
 
 
 class AdminMarketplaceTests(TestCase):
@@ -30,6 +31,8 @@ class AdminMarketplaceTests(TestCase):
             city="Austin",
             state="TX",
             marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
+            charges_enabled=True,
+            payouts_enabled=True,
         )
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin_user)
@@ -510,3 +513,81 @@ class MarketplaceGatingTests(TestCase):
         self.assertEqual(ContractorDiscoveryInvite.objects.filter(public_intake=intake).count(), 5)
         self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake).count(), 5)
         self.assertEqual(PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).count(), 5)
+
+    def test_marketplace_routing_creates_customer_and_contractor_notifications_once(self):
+        MarketplaceLocation.objects.create(
+            city="Austin",
+            state="TX",
+            is_enabled=True,
+            min_claimed_contractors=1,
+            min_verified_contractors=1,
+            min_stripe_ready_contractors=1,
+            min_trade_categories=1,
+            max_bids_per_request=5,
+        )
+        intake = self._intake()
+
+        result = create_marketplace_invites_for_intake(intake.id)
+
+        self.assertEqual(result["created_count"], 5)
+        lead = PublicContractorLead.objects.filter(ai_analysis__source_intake_id=intake.id).first()
+        self.assertIsNotNone(lead)
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor_id=lead.contractor_id,
+                public_lead=lead,
+                event_type=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
+            ).exists()
+        )
+        self.assertEqual(
+            SmartNotification.objects.filter(
+                recipient_email="homeowner@example.com",
+                event_type=SmartNotificationEvent.MARKETPLACE_REQUEST_ROUTED,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            SmartNotification.objects.filter(
+                recipient_email="homeowner@example.com",
+                event_type=SmartNotificationEvent.CUSTOMER_BID_RECEIVED,
+            ).count(),
+            5,
+        )
+
+        create_marketplace_invites_for_intake(intake.id)
+
+        self.assertEqual(
+            Notification.objects.filter(event_type=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED).count(),
+            5,
+        )
+        self.assertEqual(
+            SmartNotification.objects.filter(event_type=SmartNotificationEvent.MARKETPLACE_REQUEST_ROUTED).count(),
+            1,
+        )
+
+    def test_verification_action_notifies_only_target_contractor(self):
+        target = self.contractors[0]
+        other = self.contractors[1]
+        target.marketplace_verification_status = Contractor.MARKETPLACE_PENDING_REVIEW
+        target.save(update_fields=["marketplace_verification_status", "updated_at"])
+        self.client.force_authenticate(user=self.admin_user)
+
+        response = self.client.post(
+            "/api/projects/admin/marketplace/verification/",
+            {"contractor_id": target.id, "action": "verify", "notes": "Looks good."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=target,
+                event_type=Notification.EVENT_MARKETPLACE_VERIFICATION_APPROVED,
+            ).exists()
+        )
+        self.assertFalse(
+            Notification.objects.filter(
+                contractor=other,
+                event_type=Notification.EVENT_MARKETPLACE_VERIFICATION_APPROVED,
+            ).exists()
+        )

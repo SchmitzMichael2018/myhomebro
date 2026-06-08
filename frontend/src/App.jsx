@@ -3,7 +3,7 @@
 // v2026-02-24 — ✅ Fix /app routing: remove DashboardRouter shadow route so ProtectedRoutes / AgreementWizard render
 
 import React, { useEffect, useRef } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { clearExpiredConversations } from "./lib/conversationStorage.js";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
@@ -33,6 +33,11 @@ import PublicRoutes from "./routes/PublicRoutes.jsx";
 import "./styles/ui.css";
 import "./styles/modal.css";
 
+function LegacyPortalTokenRedirect() {
+  const { token = "" } = useParams();
+  return <Navigate to={`/portal/${encodeURIComponent(token)}`} replace />;
+}
+
 export default function App() {
   const cleanedRef = useRef(false);
   useEffect(() => {
@@ -49,6 +54,10 @@ export default function App() {
           {/* ✅ Legacy redirects (pre-/app routing) */}
           <Route path="/customers" element={<Navigate to="/app/customers" replace />} />
           <Route path="/customers/:id/edit" element={<Navigate to="/app/customers/:id/edit" replace />} />
+          <Route path="/customer-portal" element={<Navigate to="/portal" replace />} />
+          <Route path="/customer-portal/:token" element={<LegacyPortalTokenRedirect />} />
+          <Route path="/my-records" element={<Navigate to="/portal" replace />} />
+          <Route path="/my-records/:token" element={<LegacyPortalTokenRedirect />} />
 
           {/* 🔐 Public password reset */}
           <Route path="/forgot-password" element={<ForgotPassword />} />

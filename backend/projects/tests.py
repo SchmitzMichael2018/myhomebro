@@ -7988,6 +7988,98 @@ class ContractorNotificationTests(TestCase):
         self.assertEqual(mark_all_response.status_code, 200)
         self.assertGreaterEqual(mark_all_response.data["updated"], 0)
 
+    def test_reimbursement_workflow_creates_customer_and_contractor_notifications(self):
+        from projects.services.escrow_reimbursements import approve_reimbursement, submit_reimbursement
+
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("5000.00")
+        self.agreement.save(
+            update_fields=[
+                "signed_by_contractor",
+                "signed_by_homeowner",
+                "escrow_funded",
+                "escrow_funded_amount",
+                "updated_at",
+            ]
+        )
+        expense = ExpenseRequest.objects.create(
+            agreement=self.agreement,
+            milestone=self.milestone,
+            description="Flooring materials",
+            amount=Decimal("250.00"),
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            receipt=SimpleUploadedFile("receipt.txt", b"receipt", content_type="text/plain"),
+            created_by=self.contractor_user,
+        )
+
+        submitted = submit_reimbursement(expense)
+
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                recipient_email=self.homeowner.email,
+                event_type=SmartNotificationEvent.REIMBURSEMENT_SUBMITTED,
+                metadata__dedupe_key=f"reimbursement_submitted:{submitted.id}",
+            ).exists()
+        )
+        approve_reimbursement(submitted, reviewed_by=None)
+
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                event_type=Notification.EVENT_REIMBURSEMENT_APPROVED,
+                link__contains=f"reimbursement={submitted.id}",
+            ).exists()
+        )
+        self.assertFalse(
+            Notification.objects.filter(
+                contractor=self.other_contractor,
+                event_type=Notification.EVENT_REIMBURSEMENT_APPROVED,
+            ).exists()
+        )
+
+    def test_dispute_workflow_notifies_contractor_and_customer_only(self):
+        self.client.force_authenticate(user=self.contractor_user)
+
+        response = self.client.post(
+            "/api/projects/disputes/",
+            {
+                "agreement": self.agreement.id,
+                "milestone": self.milestone.id,
+                "initiator": "contractor",
+                "reason": "scope",
+                "description": "Customer requested work outside the agreement.",
+                "fee_amount": "25.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        dispute_id = response.data["id"]
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                event_type=Notification.EVENT_DISPUTE_OPENED,
+            ).exists()
+        )
+        self.assertFalse(
+            Notification.objects.filter(
+                contractor=self.other_contractor,
+                event_type=Notification.EVENT_DISPUTE_OPENED,
+            ).exists()
+        )
+        customer_dispute_notifications = list(
+            SmartNotification.objects.filter(
+                recipient_email=self.homeowner.email,
+                event_type=SmartNotificationEvent.DISPUTE_OPENED,
+            )
+        )
+        self.assertTrue(
+            any(f"dispute:{dispute_id}" in str(row.metadata.get("dedupe_key", "")) for row in customer_dispute_notifications)
+        )
+
 
 class SubcontractorCompletionReviewTests(TestCase):
     def setUp(self):

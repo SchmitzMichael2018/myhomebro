@@ -202,10 +202,23 @@ class CustomerRequest(models.Model):
 class SmartNotificationEvent(models.TextChoices):
     CUSTOMER_REQUEST_SUBMITTED = "customer_request_submitted", "Customer Request Submitted"
     PROPERTY_PROFILE_UPDATED = "property_profile_updated", "Property Profile Updated"
+    MARKETPLACE_REQUEST_ROUTED = "marketplace_request_routed", "Marketplace Request Routed"
+    CUSTOMER_BID_RECEIVED = "customer_bid_received", "Customer Bid Received"
+    BID_AWARDED = "bid_awarded", "Bid Awarded"
     AGREEMENT_NEEDS_SIGNATURE = "agreement_needs_signature", "Agreement Needs Signature"
+    AGREEMENT_SIGNED = "agreement_signed", "Agreement Signed"
     ESCROW_NEEDS_FUNDING = "escrow_needs_funding", "Escrow Needs Funding"
+    ESCROW_FUNDED = "escrow_funded", "Escrow Funded"
     MILESTONE_NEEDS_APPROVAL = "milestone_needs_approval", "Milestone Needs Approval"
     PAYMENT_RECEIVED = "payment_received", "Payment Received"
+    REIMBURSEMENT_SUBMITTED = "reimbursement_submitted", "Reimbursement Submitted"
+    REIMBURSEMENT_APPROVED = "reimbursement_approved", "Reimbursement Approved"
+    REIMBURSEMENT_DENIED = "reimbursement_denied", "Reimbursement Denied"
+    REIMBURSEMENT_RELEASED = "reimbursement_released", "Reimbursement Released"
+    REIMBURSEMENT_HELD = "reimbursement_held", "Reimbursement Held"
+    DISPUTE_OPENED = "dispute_opened", "Dispute Opened"
+    DISPUTE_UPDATED = "dispute_updated", "Dispute Updated"
+    DISPUTE_RESOLVED = "dispute_resolved", "Dispute Resolved"
     REQUEST_MARKETPLACE_READY = "request_marketplace_ready", "Request Marketplace Ready"
 
 

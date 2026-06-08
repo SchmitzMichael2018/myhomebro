@@ -20,13 +20,33 @@ DEFAULT_TEMPLATES = {
         title="Property profile updated",
         message="Your property profile was updated.",
     ),
+    SmartNotificationEvent.MARKETPLACE_REQUEST_ROUTED: SmartNotificationTemplate(
+        title="Request routed to contractors",
+        message="{request_title} was routed to vetted contractors in your area.",
+    ),
+    SmartNotificationEvent.CUSTOMER_BID_RECEIVED: SmartNotificationTemplate(
+        title="New bid received",
+        message="{contractor_name} submitted a bid for {request_title}.",
+    ),
+    SmartNotificationEvent.BID_AWARDED: SmartNotificationTemplate(
+        title="Contractor selected",
+        message="{contractor_name} was selected for {project_title}.",
+    ),
     SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE: SmartNotificationTemplate(
         title="Agreement needs signature",
         message="{project_title} is waiting for a customer signature.",
     ),
+    SmartNotificationEvent.AGREEMENT_SIGNED: SmartNotificationTemplate(
+        title="Agreement signed",
+        message="{project_title} is fully signed.",
+    ),
     SmartNotificationEvent.ESCROW_NEEDS_FUNDING: SmartNotificationTemplate(
         title="Escrow needs funding",
         message="{project_title} is ready for escrow funding.",
+    ),
+    SmartNotificationEvent.ESCROW_FUNDED: SmartNotificationTemplate(
+        title="Escrow funded",
+        message="Escrow funding was received for {project_title}.",
     ),
     SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL: SmartNotificationTemplate(
         title="Milestone needs approval",
@@ -35,6 +55,38 @@ DEFAULT_TEMPLATES = {
     SmartNotificationEvent.PAYMENT_RECEIVED: SmartNotificationTemplate(
         title="Payment received",
         message="A payment was received for {project_title}.",
+    ),
+    SmartNotificationEvent.REIMBURSEMENT_SUBMITTED: SmartNotificationTemplate(
+        title="Reimbursement needs review",
+        message="{reimbursement_title} is ready for your review.",
+    ),
+    SmartNotificationEvent.REIMBURSEMENT_APPROVED: SmartNotificationTemplate(
+        title="Reimbursement approved",
+        message="{reimbursement_title} was approved.",
+    ),
+    SmartNotificationEvent.REIMBURSEMENT_DENIED: SmartNotificationTemplate(
+        title="Reimbursement denied",
+        message="{reimbursement_title} was denied.",
+    ),
+    SmartNotificationEvent.REIMBURSEMENT_RELEASED: SmartNotificationTemplate(
+        title="Reimbursement released",
+        message="{reimbursement_title} was released from escrow.",
+    ),
+    SmartNotificationEvent.REIMBURSEMENT_HELD: SmartNotificationTemplate(
+        title="Reimbursement on hold",
+        message="{reimbursement_title} was placed on hold.",
+    ),
+    SmartNotificationEvent.DISPUTE_OPENED: SmartNotificationTemplate(
+        title="Dispute opened",
+        message="A dispute was opened for {project_title}.",
+    ),
+    SmartNotificationEvent.DISPUTE_UPDATED: SmartNotificationTemplate(
+        title="Dispute updated",
+        message="A dispute was updated for {project_title}.",
+    ),
+    SmartNotificationEvent.DISPUTE_RESOLVED: SmartNotificationTemplate(
+        title="Dispute resolved",
+        message="A dispute was resolved for {project_title}.",
     ),
     SmartNotificationEvent.REQUEST_MARKETPLACE_READY: SmartNotificationTemplate(
         title="Request ready for marketplace",

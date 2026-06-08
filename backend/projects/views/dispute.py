@@ -33,6 +33,8 @@ from ..services.ai.evidence_context import build_dispute_evidence_context
 
 # ✅ Phase 2: AI summary (read-only, evidence-based)
 from ..services.ai.dispute_summary import generate_dispute_ai_summary
+from ..models import Notification
+from ..services.workflow_notifications import notify_dispute_event
 
 # Optional emails (safe to import if you have them)
 try:
@@ -297,6 +299,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
         if email_admin_dispute_update:
             from django.conf import settings as dj_settings
             email_admin_dispute_update(dispute, getattr(dj_settings, "DISPUTE_ADMIN_EMAIL", "") or "", "Dispute created")
+        try:
+            notify_dispute_event(
+                dispute=dispute,
+                event_type=Notification.EVENT_DISPUTE_OPENED,
+                actor_user=request.user,
+            )
+        except Exception:
+            pass
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=201)
 
@@ -351,6 +361,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
         if email_admin_dispute_update:
             from django.conf import settings as dj_settings
             email_admin_dispute_update(dispute, getattr(dj_settings, "DISPUTE_ADMIN_EMAIL", "") or "", "Fee paid / escrow frozen")
+        try:
+            notify_dispute_event(
+                dispute=dispute,
+                event_type=Notification.EVENT_DISPUTE_UPDATED,
+                actor_user=request.user,
+            )
+        except Exception:
+            pass
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
 
@@ -415,6 +433,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
 
         if proposal_sent and email_homeowner_proposal_sent:
             email_homeowner_proposal_sent(dispute)
+        try:
+            notify_dispute_event(
+                dispute=dispute,
+                event_type=Notification.EVENT_DISPUTE_UPDATED,
+                actor_user=request.user,
+            )
+        except Exception:
+            pass
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
 
@@ -436,6 +462,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
         dispute.resolved_at = now
         dispute.last_activity_at = now
         dispute.save(update_fields=["status", "escrow_frozen", "resolved_at", "last_activity_at", "updated_at"])
+        try:
+            notify_dispute_event(
+                dispute=dispute,
+                event_type=Notification.EVENT_DISPUTE_RESOLVED,
+                actor_user=request.user,
+            )
+        except Exception:
+            pass
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
 
@@ -504,6 +538,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
             "admin_notes", "status", "escrow_frozen", "resolved_at",
             "last_activity_at", "updated_at"
         ])
+        try:
+            notify_dispute_event(
+                dispute=dispute,
+                event_type=Notification.EVENT_DISPUTE_RESOLVED,
+                actor_user=request.user,
+            )
+        except Exception:
+            pass
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
 

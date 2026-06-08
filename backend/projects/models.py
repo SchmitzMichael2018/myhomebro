@@ -2004,6 +2004,18 @@ class Notification(models.Model):
     EVENT_DRAW_RELEASED = "draw_released"
     EVENT_BID_AWARDED = "bid_awarded"
     EVENT_BID_NOT_SELECTED = "bid_not_selected"
+    EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED = "contractor_opportunity_received"
+    EVENT_MARKETPLACE_VERIFICATION_APPROVED = "marketplace_verification_approved"
+    EVENT_MARKETPLACE_VERIFICATION_REJECTED = "marketplace_verification_rejected"
+    EVENT_MARKETPLACE_VERIFICATION_SUSPENDED = "marketplace_verification_suspended"
+    EVENT_REIMBURSEMENT_SUBMITTED = "reimbursement_submitted"
+    EVENT_REIMBURSEMENT_APPROVED = "reimbursement_approved"
+    EVENT_REIMBURSEMENT_DENIED = "reimbursement_denied"
+    EVENT_REIMBURSEMENT_RELEASED = "reimbursement_released"
+    EVENT_REIMBURSEMENT_HELD = "reimbursement_held"
+    EVENT_DISPUTE_OPENED = "dispute_opened"
+    EVENT_DISPUTE_UPDATED = "dispute_updated"
+    EVENT_DISPUTE_RESOLVED = "dispute_resolved"
     EVENT_QUOTE_REQUEST_RECEIVED = "quote_request_received"
     EVENT_AGREEMENT_SIGNED = "agreement_signed"
     EVENT_ESCROW_FUNDED = "escrow_funded"
@@ -2021,6 +2033,18 @@ class Notification(models.Model):
         (EVENT_DRAW_RELEASED, "Draw Released"),
         (EVENT_BID_AWARDED, "Bid Awarded"),
         (EVENT_BID_NOT_SELECTED, "Bid Not Selected"),
+        (EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED, "Contractor Opportunity Received"),
+        (EVENT_MARKETPLACE_VERIFICATION_APPROVED, "Marketplace Verification Approved"),
+        (EVENT_MARKETPLACE_VERIFICATION_REJECTED, "Marketplace Verification Rejected"),
+        (EVENT_MARKETPLACE_VERIFICATION_SUSPENDED, "Marketplace Verification Suspended"),
+        (EVENT_REIMBURSEMENT_SUBMITTED, "Reimbursement Submitted"),
+        (EVENT_REIMBURSEMENT_APPROVED, "Reimbursement Approved"),
+        (EVENT_REIMBURSEMENT_DENIED, "Reimbursement Denied"),
+        (EVENT_REIMBURSEMENT_RELEASED, "Reimbursement Released"),
+        (EVENT_REIMBURSEMENT_HELD, "Reimbursement Held"),
+        (EVENT_DISPUTE_OPENED, "Dispute Opened"),
+        (EVENT_DISPUTE_UPDATED, "Dispute Updated"),
+        (EVENT_DISPUTE_RESOLVED, "Dispute Resolved"),
         (EVENT_QUOTE_REQUEST_RECEIVED, "Quote Request Received"),
         (EVENT_AGREEMENT_SIGNED, "Agreement Signed"),
         (EVENT_ESCROW_FUNDED, "Escrow Funded"),
