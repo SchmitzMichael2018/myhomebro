@@ -139,7 +139,14 @@ class ContractorReviewFoundationTests(TestCase):
         list_response = self.client.get("/api/projects/admin/contractor-reviews/")
         self.assertEqual(list_response.status_code, 200)
         self.assertEqual(list_response.data["count"], 1)
+        self.assertEqual(list_response.data["summary"]["pending"], 1)
         self.assertEqual(list_response.data["results"][0]["moderation_status"], ContractorReview.MODERATION_PENDING)
+        filtered_response = self.client.get(
+            "/api/projects/admin/contractor-reviews/",
+            {"contractor": "Review Builders", "rating": "5", "status": "pending"},
+        )
+        self.assertEqual(filtered_response.status_code, 200)
+        self.assertEqual(filtered_response.data["count"], 1)
         response = self.client.post(
             f"/api/projects/admin/contractor-reviews/{review.id}/moderate/",
             {"action": "approve", "moderation_notes": "Looks valid."},

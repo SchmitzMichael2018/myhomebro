@@ -12,6 +12,7 @@ import AdminDashboard from "../pages/AdminDashboard.jsx";
 import AdminContractorDirectory from "../pages/admin/AdminContractorDirectory.jsx";
 import AdminMarketplacePage from "../pages/admin/AdminMarketplacePage.jsx";
 import AdminReimbursementsPage from "../pages/admin/AdminReimbursementsPage.jsx";
+import AdminReviewsPage from "../pages/admin/AdminReviewsPage.jsx";
 
 /* Employee pages */
 import EmployeeDashboard from "../pages/EmployeeDashboard.jsx";
@@ -141,6 +142,7 @@ export function protectedRoutes() {
           <Route path="admin/marketplace/import" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/listings/:id" element={<AdminMarketplacePage />} />
           <Route path="admin/reimbursements" element={<AdminReimbursementsPage />} />
+          <Route path="admin/reviews" element={<AdminReviewsPage />} />
           <Route path="admin/contractor-directory" element={<AdminContractorDirectory />} />
           <Route path="admin/agreements/:id" element={<AgreementDetail adminMode />} />
           <Route path="admin/templates" element={<AdminTemplatesPage />} />

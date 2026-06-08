@@ -315,6 +315,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <SubItem to="/app/admin" label="Overview" />
               <SubItem to="/app/admin/marketplace" label="Marketplace" />
               <SubItem to="/app/admin/reimbursements" label="Reimbursements" />
+              <SubItem to="/app/admin/reviews" label="Review Moderation" />
               <SubItem to="/app/admin/contractor-directory" label="Directory" />
               <SubItem to="/app/admin/templates" label="Templates" />
               <SubItem to="/app/admin?view=goals" label="Goals (CEO)" />

@@ -560,6 +560,7 @@ export default function AdminDashboard() {
   const opsPayments = operations.payments || {};
   const opsMaintenance = operations.maintenance || {};
   const opsDisputes = operations.disputes || {};
+  const opsReviews = operations.reviews || {};
   const opsUsers = operations.users || {};
 
   const tracker = goals?.salary_tracker || {};
@@ -833,6 +834,7 @@ export default function AdminDashboard() {
                       <ActionItem icon="🛟" title="User Tools" desc="Send password reset emails for user accounts." onClick={() => goTo("support")} />
                       <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
                       <ActionItem icon="💸" title="Escrow Reimbursements" desc="Review approved reimbursement release requests." onClick={() => navigate("/app/admin/reimbursements")} />
+                      <ActionItem icon="★" title="Review Moderation" desc="Approve, hide, or reject customer reviews." onClick={() => navigate("/app/admin/reviews")} />
                       <ActionItem
                         icon="🗺️"
                         title="Marketplace"
@@ -864,7 +866,7 @@ export default function AdminDashboard() {
                 subtitle="What needs attention right now across marketplace, payments, maintenance, disputes, and activation."
                 testId="admin-operations-center"
               >
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
                   <StatCard
                     testId="admin-ops-marketplace-backlog"
                     label="Saved Request Backlog"
@@ -896,6 +898,14 @@ export default function AdminDashboard() {
                     sub={`${fmtNumber(opsDisputes.kpis?.open_disputes || 0)} open disputes`}
                     tone={Number(opsDisputes.kpis?.awaiting_review || 0) > 0 ? "warn" : "good"}
                     onClick={() => goToDisputes("active")}
+                  />
+                  <StatCard
+                    testId="admin-ops-review-moderation"
+                    label="Pending Reviews"
+                    value={fmtNumber(opsReviews.kpis?.pending_reviews || 0)}
+                    sub={`${fmtNumber(opsReviews.kpis?.recently_approved || 0)} approved recently`}
+                    tone={Number(opsReviews.kpis?.pending_reviews || 0) > 0 ? "warn" : "good"}
+                    onClick={() => navigate("/app/admin/reviews")}
                   />
                   <StatCard
                     testId="admin-ops-activation"

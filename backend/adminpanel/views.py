@@ -474,6 +474,14 @@ def _admin_operations_payload(today, month_start) -> dict:
             "awaiting_admin_review": [],
             "resolved_recently": [],
         },
+        "reviews": {
+            "kpis": {
+                "pending_reviews": 0,
+                "recently_approved": 0,
+                "hidden_or_rejected": 0,
+            },
+            "pending": [],
+        },
         "users": {
             "kpis": {
                 "new_contractors_awaiting_activation": 0,
@@ -729,6 +737,19 @@ def _admin_operations_payload(today, month_start) -> dict:
         operations["disputes"]["resolved_recently"] = [
             dispute_row(row)
             for row in dispute_qs.filter(Q(status__startswith="resolved") | Q(status="canceled")).order_by("-resolved_at", "-updated_at", "-id")[:8]
+        ]
+
+    if ContractorReview is not None:
+        review_qs = ContractorReview.objects.select_related("contractor", "agreement", "agreement__project")
+        operations["reviews"]["kpis"]["pending_reviews"] = review_qs.filter(moderation_status="pending").count()
+        operations["reviews"]["kpis"]["recently_approved"] = review_qs.filter(
+            moderation_status="approved",
+            moderated_at__date__gte=today - timedelta(days=7),
+        ).count()
+        operations["reviews"]["kpis"]["hidden_or_rejected"] = review_qs.filter(moderation_status__in=["hidden", "rejected"]).count()
+        operations["reviews"]["pending"] = [
+            _review_row(row)
+            for row in review_qs.filter(moderation_status="pending").order_by("-submitted_at", "-id")[:8]
         ]
 
     return operations
@@ -1766,9 +1787,9 @@ def _review_row(review) -> dict:
     return {
         "id": getattr(review, "id", None),
         "contractor_id": getattr(contractor, "id", None),
-        "contractor_name": safe_get(contractor, "business_name", "") or safe_get(contractor, "name", "") or f"Contractor #{getattr(contractor, 'id', '')}",
+        "contractor_name": getattr(contractor, "business_name", "") or getattr(contractor, "name", "") or f"Contractor #{getattr(contractor, 'id', '')}",
         "agreement_id": getattr(agreement, "id", None),
-        "project_title": safe_get(project, "title", "") or (f"Agreement #{getattr(agreement, 'id', '')}" if agreement else ""),
+        "project_title": getattr(project, "title", "") or (f"Agreement #{getattr(agreement, 'id', '')}" if agreement else ""),
         "customer_name": getattr(review, "customer_name", "") or "",
         "customer_email": getattr(review, "customer_email", "") or "",
         "rating": getattr(review, "rating", None),
@@ -1792,12 +1813,41 @@ class AdminContractorReviews(APIView):
 
     def get(self, request):
         if ContractorReview is None:
-            return Response({"count": 0, "results": []}, status=status.HTTP_200_OK)
+            return Response({"count": 0, "summary": {}, "results": []}, status=status.HTTP_200_OK)
         qs = ContractorReview.objects.select_related("contractor", "agreement", "agreement__project").order_by("-submitted_at", "-id")
         moderation_status = (request.query_params.get("status") or "").strip()
         if moderation_status:
             qs = qs.filter(moderation_status=moderation_status)
-        return Response({"count": qs.count(), "results": [_review_row(row) for row in qs[:100]]}, status=status.HTTP_200_OK)
+        contractor = (request.query_params.get("contractor") or "").strip()
+        if contractor:
+            qs = qs.filter(
+                Q(contractor__business_name__icontains=contractor)
+                | Q(contractor__user__email__icontains=contractor)
+                | Q(customer_name__icontains=contractor)
+                | Q(customer_email__icontains=contractor)
+            )
+        rating = (request.query_params.get("rating") or "").strip()
+        if rating:
+            try:
+                qs = qs.filter(rating=int(rating))
+            except (TypeError, ValueError):
+                pass
+        date_from = parse_date(request.query_params.get("date_from", ""))
+        date_to = parse_date(request.query_params.get("date_to", ""))
+        if date_from:
+            qs = qs.filter(submitted_at__date__gte=date_from)
+        if date_to:
+            qs = qs.filter(submitted_at__date__lte=date_to)
+
+        summary_source = ContractorReview.objects.all()
+        summary = {
+            "pending": summary_source.filter(moderation_status="pending").count(),
+            "approved": summary_source.filter(moderation_status="approved").count(),
+            "hidden": summary_source.filter(moderation_status="hidden").count(),
+            "rejected": summary_source.filter(moderation_status="rejected").count(),
+            "recently_approved": summary_source.filter(moderation_status="approved", moderated_at__date__gte=now().date() - timedelta(days=7)).count(),
+        }
+        return Response({"count": qs.count(), "summary": summary, "results": [_review_row(row) for row in qs[:100]]}, status=status.HTTP_200_OK)
 
 
 class AdminContractorReviewModerate(APIView):
