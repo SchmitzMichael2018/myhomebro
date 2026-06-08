@@ -39,6 +39,7 @@ from projects.models import (
     AgreementDraftIntelligenceSnapshot,
     ContractorEditEvent,
     MilestonePerformanceSnapshot,
+    MaintenanceWorkOrder,
     SignedAgreementSnapshot,
     ProjectOutcomeSnapshot,
     Contractor,
@@ -190,6 +191,7 @@ from projects.services.recurring_maintenance import (
     ensure_recurring_milestones,
     handle_milestone_recurring_state_change,
 )
+from projects.services.maintenance_work_orders import complete_work_order, ensure_work_orders_for_agreement
 from projects.services.milestone_lifecycle import agreement_milestones_are_active, milestone_lifecycle_state
 from projects.views.customer_portal import PORTAL_TOKEN_SALT
 from projects.services.subcontractor_compliance import (
@@ -18717,6 +18719,84 @@ class RecurringMaintenanceTests(TestCase):
         self.assertEqual(preview["agreement_mode"], "maintenance")
         self.assertEqual(preview["recurrence_pattern"], "quarterly")
         self.assertGreaterEqual(len(preview["preview_occurrences"]), 1)
+
+    def test_recurring_occurrence_creates_idempotent_work_order(self):
+        first = ensure_work_orders_for_agreement(self.agreement, horizon=1)
+        second = ensure_work_orders_for_agreement(self.agreement, horizon=1)
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 1)
+        self.assertEqual(MaintenanceWorkOrder.objects.filter(maintenance_agreement=self.agreement).count(), 1)
+        work_order = MaintenanceWorkOrder.objects.get(maintenance_agreement=self.agreement)
+        self.assertEqual(work_order.status, MaintenanceWorkOrder.STATUS_SCHEDULED)
+        self.assertEqual(work_order.title, "HVAC Tune-Up - Visit 1")
+        self.assertTrue(work_order.generated_from_schedule)
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                recipient_email__iexact=self.homeowner.email,
+                event_type=SmartNotificationEvent.MAINTENANCE_WORK_ORDER_SCHEDULED,
+            ).exists()
+        )
+
+    def test_work_order_completion_updates_milestone_and_generates_next_visit(self):
+        ensure_work_orders_for_agreement(self.agreement, horizon=1)
+        work_order = MaintenanceWorkOrder.objects.get(maintenance_agreement=self.agreement)
+
+        complete_work_order(work_order, completed_by=self.user, notes="Filter changed and coils inspected.")
+
+        work_order.refresh_from_db()
+        self.assertEqual(work_order.status, MaintenanceWorkOrder.STATUS_COMPLETED)
+        self.assertIsNotNone(work_order.completed_at)
+        self.assertIn("Filter changed", work_order.notes)
+        work_order.source_milestone.refresh_from_db()
+        self.assertTrue(work_order.source_milestone.completed)
+        self.assertEqual(
+            MaintenanceWorkOrder.objects.filter(maintenance_agreement=self.agreement).count(),
+            2,
+        )
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                recipient_email__iexact=self.homeowner.email,
+                event_type=SmartNotificationEvent.MAINTENANCE_WORK_ORDER_COMPLETED,
+            ).exists()
+        )
+
+    def test_maintenance_work_order_generate_endpoint_is_contractor_scoped(self):
+        response = self.client.post(
+            "/api/projects/maintenance-work-orders/generate/",
+            {"agreement_id": self.agreement.id, "horizon": 1},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["count"], 1)
+
+        other_user = get_user_model().objects.create_user(email="other-maint@example.com", password="testpass123")
+        Contractor.objects.create(user=other_user, business_name="Other Maintenance Co")
+        self.client.force_authenticate(user=other_user)
+        blocked = self.client.post(
+            "/api/projects/maintenance-work-orders/generate/",
+            {"agreement_id": self.agreement.id, "horizon": 1},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 404)
+
+    def test_customer_portal_payload_includes_maintenance_work_orders(self):
+        PropertyProfile.objects.create(
+            homeowner=self.homeowner,
+            customer_email=self.homeowner.email,
+            display_name="Primary Home",
+            address_line1="100 Service Lane",
+            is_primary=True,
+        )
+        ensure_work_orders_for_agreement(self.agreement, horizon=1)
+        token = _portal_token(self.homeowner.email)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["summary"]["maintenance_work_orders"], 1)
+        self.assertEqual(len(response.data["maintenance_work_orders"]), 1)
+        self.assertEqual(response.data["maintenance_work_orders"][0]["property_name"], "Primary Home")
 
 
 class AgreementStep1RecurringFieldSaveTests(TestCase):

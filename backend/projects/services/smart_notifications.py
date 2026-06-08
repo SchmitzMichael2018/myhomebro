@@ -92,6 +92,18 @@ DEFAULT_TEMPLATES = {
         title="Request ready for marketplace",
         message="{request_title} is ready for marketplace routing.",
     ),
+    SmartNotificationEvent.MAINTENANCE_WORK_ORDER_SCHEDULED: SmartNotificationTemplate(
+        title="Maintenance visit scheduled",
+        message="{work_order_title} is scheduled for {project_title}.",
+    ),
+    SmartNotificationEvent.MAINTENANCE_WORK_ORDER_COMPLETED: SmartNotificationTemplate(
+        title="Maintenance visit completed",
+        message="{work_order_title} was completed for {project_title}.",
+    ),
+    SmartNotificationEvent.MAINTENANCE_CONTRACT_CANCELLED: SmartNotificationTemplate(
+        title="Maintenance contract cancelled",
+        message="{project_title} maintenance service was cancelled.",
+    ),
 }
 
 

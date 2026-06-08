@@ -13,6 +13,7 @@ ACTION_NEEDED_CATEGORIES = {
     Notification.EVENT_REIMBURSEMENT_HELD,
     Notification.EVENT_DISPUTE_OPENED,
     Notification.EVENT_DISPUTE_UPDATED,
+    Notification.EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED,
 }
 
 
@@ -40,6 +41,9 @@ ACTION_LABELS = {
     Notification.EVENT_DRAW_CHANGES_REQUESTED: "Open Draw",
     Notification.EVENT_DRAW_PAID: "Open Draw",
     Notification.EVENT_DRAW_RELEASED: "Open Draw",
+    Notification.EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED: "Open Agreement",
+    Notification.EVENT_MAINTENANCE_WORK_ORDER_COMPLETED: "Open Agreement",
+    Notification.EVENT_MAINTENANCE_CONTRACT_CANCELLED: "Open Agreement",
 }
 
 
@@ -60,6 +64,9 @@ ACTION_URLS = {
     Notification.EVENT_DRAW_CHANGES_REQUESTED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/dashboard",
     Notification.EVENT_DRAW_PAID: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/dashboard",
     Notification.EVENT_DRAW_RELEASED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/dashboard",
+    Notification.EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED: lambda notification: f"/app/agreements/{notification.agreement_id}/wizard?step=2" if notification.agreement_id else "/app/agreements",
+    Notification.EVENT_MAINTENANCE_WORK_ORDER_COMPLETED: lambda notification: f"/app/agreements/{notification.agreement_id}/wizard?step=2" if notification.agreement_id else "/app/agreements",
+    Notification.EVENT_MAINTENANCE_CONTRACT_CANCELLED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/agreements",
 }
 
 

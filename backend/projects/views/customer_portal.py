@@ -39,6 +39,7 @@ from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
+from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
@@ -55,6 +56,7 @@ from projects.services.bid_workflow import (
 from projects.services.bid_notifications import create_bid_outcome_notifications
 from projects.services.escrow_reimbursements import approve_reimbursement, deny_reimbursement, escrow_ledger, serialize_ledger
 from projects.services.smart_notifications import create_smart_notification
+from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -1098,6 +1100,52 @@ def _payments(email: str, request=None) -> list[dict]:
     return rows
 
 
+def _maintenance_work_order_rows(email: str, request=None) -> list[dict]:
+    rows = []
+    for work_order in customer_visible_work_order_queryset(email).order_by("-scheduled_date", "-created_at", "-id"):
+        agreement = getattr(work_order, "maintenance_agreement", None)
+        project = getattr(agreement, "project", None) if agreement else None
+        contractor = getattr(work_order, "contractor", None)
+        property_profile = getattr(work_order, "property_profile", None)
+        source_milestone = getattr(work_order, "source_milestone", None)
+        attachment_rows = []
+        for attachment in getattr(work_order, "attachments", []).all():
+            file_obj = getattr(attachment, "file", None)
+            attachment_rows.append(
+                {
+                    "id": attachment.id,
+                    "title": _safe_text(attachment.original_name) or "Work order attachment",
+                    "filename": _safe_text(getattr(file_obj, "name", "")).rsplit("/", 1)[-1],
+                    "url": _safe_text(getattr(file_obj, "url", "")),
+                    "date": _safe_dt(getattr(attachment, "uploaded_at", None)),
+                }
+            )
+        rows.append(
+            {
+                "id": work_order.id,
+                "agreement_id": getattr(agreement, "id", None),
+                "project_id": getattr(project, "id", None),
+                "project_title": _agreement_title(agreement) if agreement else "Maintenance service",
+                "contractor_name": _contractor_name(contractor),
+                "property_id": getattr(property_profile, "id", None),
+                "property_name": _safe_text(getattr(property_profile, "display_name", "")) or _safe_text(getattr(property_profile, "address_line1", "")),
+                "title": _safe_text(work_order.title),
+                "description": _safe_text(work_order.description),
+                "scheduled_date": _safe_dt(work_order.scheduled_date),
+                "completed_at": _safe_dt(work_order.completed_at),
+                "status": _safe_text(work_order.status),
+                "status_label": work_order.get_status_display(),
+                "notes": _safe_text(work_order.notes),
+                "generated_from_schedule": bool(work_order.generated_from_schedule),
+                "source_milestone_id": getattr(source_milestone, "id", None),
+                "service_period_start": _safe_dt(getattr(source_milestone, "service_period_start", None)),
+                "service_period_end": _safe_dt(getattr(source_milestone, "service_period_end", None)),
+                "attachments": attachment_rows,
+            }
+        )
+    return rows
+
+
 def _documents(email: str, request=None) -> list[dict]:
     rows = []
     profile = _get_or_create_property_profile(email)
@@ -1237,6 +1285,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     project_rows = _projects(email)
     agreement_rows = _agreements(email, request=request)
     payment_rows = _payments(email, request=request)
+    maintenance_work_order_rows = _maintenance_work_order_rows(email, request=request)
     document_rows = _documents(email, request=request)
     property_profile = _property_profile_payload(email)
     property_profiles = _property_profiles_payload(email)
@@ -1248,6 +1297,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "active_agreements": sum(1 for row in agreement_rows if row.get("status") not in {"archived", "cancelled"}),
         "payments": len(payment_rows),
         "documents": len(document_rows),
+        "maintenance_work_orders": len(maintenance_work_order_rows),
     }
 
     return {
@@ -1264,6 +1314,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "bids": bid_rows,
         "agreements": agreement_rows,
         "payments": payment_rows,
+        "maintenance_work_orders": maintenance_work_order_rows,
         "documents": document_rows,
         "property_profile": property_profile,
         "property_profiles": property_profiles,

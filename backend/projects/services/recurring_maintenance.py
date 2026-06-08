@@ -282,6 +282,9 @@ def ensure_rule_occurrences(rule: Milestone, *, horizon: int = 1) -> list[Milest
             },
             dedupe_key=f"recurring_occurrence_generated:{occurrence.id}",
         )
+        from projects.services.maintenance_work_orders import ensure_work_order_for_milestone
+
+        ensure_work_order_for_milestone(occurrence)
 
     next_upcoming = _current_upcoming_occurrences(rule)
     next_date = next_upcoming[0].scheduled_service_date if next_upcoming else None

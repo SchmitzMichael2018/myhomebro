@@ -316,6 +316,7 @@ from projects.api.ai_agreement_views import (
 from .views_template_recommend import TemplateRecommendView
 from .views.project_taxonomy import ProjectTypeViewSet, ProjectSubtypeViewSet
 from .views.warranty import AgreementWarrantyViewSet
+from .views.maintenance_work_orders import MaintenanceWorkOrderViewSet
 
 app_name = "projects_api"
 
@@ -337,6 +338,7 @@ router.register(r"warranties", AgreementWarrantyViewSet, basename="warranties")
 router.register(r"intakes", ProjectIntakeViewSet, basename="project-intakes")
 router.register(r"support-tickets", SupportTicketViewSet, basename="support-tickets")
 router.register(r"subcontractor-quotes", SubcontractorQuoteRequestViewSet, basename="subcontractor-quotes")
+router.register(r"maintenance-work-orders", MaintenanceWorkOrderViewSet, basename="maintenance-work-orders")
 
 milestone_router = NestedDefaultRouter(
     router, r"milestones", lookup="milestone", trailing_slash="/?"

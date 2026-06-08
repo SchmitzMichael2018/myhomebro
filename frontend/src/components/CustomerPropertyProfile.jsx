@@ -133,7 +133,26 @@ function completedProjectRows(projects, agreements, documents) {
     });
 }
 
-function timelineRows({ profile, projects, agreements, documents, payments }) {
+function maintenanceRows(workOrders = []) {
+  return (workOrders || [])
+    .map((workOrder) => ({
+      id: workOrder.id,
+      title: workOrder.title || "Maintenance visit",
+      projectTitle: workOrder.project_title || "Maintenance service",
+      contractor: workOrder.contractor_name || "Your contractor",
+      propertyName: workOrder.property_name || "",
+      description: workOrder.description || "",
+      scheduledDate: workOrder.scheduled_date,
+      completedAt: workOrder.completed_at,
+      status: workOrder.status || "",
+      statusLabel: workOrder.status_label || "Scheduled",
+      notes: workOrder.notes || "",
+      attachments: workOrder.attachments || [],
+    }))
+    .sort((a, b) => String(b.completedAt || b.scheduledDate || "").localeCompare(String(a.completedAt || a.scheduledDate || "")));
+}
+
+function timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders }) {
   const rows = [];
   for (const project of completedProjectRows(projects, agreements, documents)) {
     rows.push({
@@ -192,17 +211,30 @@ function timelineRows({ profile, projects, agreements, documents, payments }) {
       actionLabel: payment.receipt_url ? "View receipt" : payment.action_target ? "View document" : "",
     });
   }
+  for (const workOrder of maintenanceRows(maintenanceWorkOrders)) {
+    const attachment = workOrder.attachments?.[0] || {};
+    rows.push({
+      id: `maintenance-${workOrder.id}`,
+      date: workOrder.completedAt || workOrder.scheduledDate,
+      title: workOrder.title,
+      type: workOrder.status === "completed" ? "Completed Maintenance" : "Scheduled Maintenance",
+      detail: `${workOrder.projectTitle} - ${workOrder.contractor}`,
+      url: attachment.url || "",
+      actionLabel: attachment.url ? "View service record" : "",
+    });
+  }
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, agreements, documents, payments }) {
+function HomeRecordsDashboard({ profile, projects, agreements, documents, payments, maintenanceWorkOrders }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
   const grouped = documentGroups(profile, documents);
   const warranties = warrantyRows(agreements, documents);
   const completedProjects = completedProjectRows(projects, agreements, documents);
-  const timeline = timelineRows({ profile, projects, agreements, documents, payments });
+  const maintenance = maintenanceRows(maintenanceWorkOrders);
+  const timeline = timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders });
   const importantDocuments = [
     ...grouped.Warranties,
     ...grouped.Agreements,
@@ -246,6 +278,10 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
           <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
             <div className="text-xs uppercase tracking-wide text-slate-400">Completed Projects</div>
             <div className="mt-1 text-sm font-semibold text-white">{completedProjects.length}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Maintenance Visits</div>
+            <div className="mt-1 text-sm font-semibold text-white">{maintenance.length}</div>
           </div>
         </div>
       </section>
@@ -425,10 +461,49 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
         </div>
       </Section>
 
-      <Section title="Maintenance & Service History" eyebrow="Future ready" testId="home-records-maintenance-history">
-        <EmptyState title="No service history yet" testId="home-records-maintenance-empty">
-          Maintenance visits, service records, and recurring care history will appear here as those workflows are connected.
-        </EmptyState>
+      <Section title="Maintenance & Service History" eyebrow="Recurring care" testId="home-records-maintenance-history">
+        {maintenance.length ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {maintenance.map((workOrder) => (
+              <article key={workOrder.id} data-testid="home-records-maintenance-work-order" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{workOrder.title}</div>
+                    <div className="mt-1 text-xs text-slate-400">{workOrder.projectTitle} - {workOrder.contractor}</div>
+                  </div>
+                  <span className="rounded-full border border-amber-300/35 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
+                    {workOrder.statusLabel}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                  <div>
+                    <span className="text-slate-500">Scheduled</span>
+                    <div className="font-semibold text-slate-100">{formatDate(workOrder.scheduledDate)}</div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Completed</span>
+                    <div className="font-semibold text-slate-100">{workOrder.completedAt ? formatDate(workOrder.completedAt) : "Not completed yet"}</div>
+                  </div>
+                </div>
+                {workOrder.description ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{workOrder.description}</p> : null}
+                {workOrder.notes ? <p className="mt-3 rounded-xl border border-slate-700 bg-slate-950/55 p-3 text-sm leading-6 text-slate-300">{workOrder.notes}</p> : null}
+                {workOrder.attachments?.length ? (
+                  <div className="mt-3 space-y-2">
+                    {workOrder.attachments.map((attachment) => (
+                      <a key={attachment.id} href={attachment.url || "#"} target="_blank" rel="noreferrer" className="block text-sm font-semibold text-sky-100 hover:text-sky-50">
+                        {attachment.title || attachment.filename || "Service record"}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No service history yet" testId="home-records-maintenance-empty">
+            Scheduled maintenance visits, completed service records, and recurring care history will appear here when a maintenance agreement starts.
+          </EmptyState>
+        )}
       </Section>
 
       <section data-testid="home-records-request-guidance" className="rounded-2xl border border-amber-300/35 bg-amber-300/10 p-5">
@@ -448,6 +523,7 @@ export default function CustomerPropertyProfile({
   agreements = [],
   documents = [],
   payments = [],
+  maintenanceWorkOrders = [],
   onSave,
   onAdd,
   onUpload,
@@ -478,7 +554,14 @@ export default function CustomerPropertyProfile({
 
   return (
     <div data-testid="customer-property-profile" className="space-y-5">
-      <HomeRecordsDashboard profile={selectedProfile} projects={projects} agreements={agreements} documents={documents} payments={payments} />
+      <HomeRecordsDashboard
+        profile={selectedProfile}
+        projects={projects}
+        agreements={agreements}
+        documents={documents}
+        payments={payments}
+        maintenanceWorkOrders={maintenanceWorkOrders}
+      />
 
       <section data-testid="customer-property-manager" className="rounded-2xl border border-amber-300/35 bg-slate-950/60 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">

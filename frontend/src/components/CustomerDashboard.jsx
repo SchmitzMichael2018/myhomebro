@@ -868,6 +868,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           agreements={portal?.agreements || []}
           documents={portal?.documents || []}
           payments={portal?.payments || []}
+          maintenanceWorkOrders={portal?.maintenance_work_orders || []}
           saving={savingProperty}
           uploading={uploadingPropertyFile}
           uploadError={uploadError}

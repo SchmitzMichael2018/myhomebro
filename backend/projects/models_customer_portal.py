@@ -219,6 +219,9 @@ class SmartNotificationEvent(models.TextChoices):
     DISPUTE_OPENED = "dispute_opened", "Dispute Opened"
     DISPUTE_UPDATED = "dispute_updated", "Dispute Updated"
     DISPUTE_RESOLVED = "dispute_resolved", "Dispute Resolved"
+    MAINTENANCE_WORK_ORDER_SCHEDULED = "maintenance_work_order_scheduled", "Maintenance Work Order Scheduled"
+    MAINTENANCE_WORK_ORDER_COMPLETED = "maintenance_work_order_completed", "Maintenance Work Order Completed"
+    MAINTENANCE_CONTRACT_CANCELLED = "maintenance_contract_cancelled", "Maintenance Contract Cancelled"
     REQUEST_MARKETPLACE_READY = "request_marketplace_ready", "Request Marketplace Ready"
 
 

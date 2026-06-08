@@ -2016,6 +2016,9 @@ class Notification(models.Model):
     EVENT_DISPUTE_OPENED = "dispute_opened"
     EVENT_DISPUTE_UPDATED = "dispute_updated"
     EVENT_DISPUTE_RESOLVED = "dispute_resolved"
+    EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED = "maintenance_work_order_scheduled"
+    EVENT_MAINTENANCE_WORK_ORDER_COMPLETED = "maintenance_work_order_completed"
+    EVENT_MAINTENANCE_CONTRACT_CANCELLED = "maintenance_contract_cancelled"
     EVENT_QUOTE_REQUEST_RECEIVED = "quote_request_received"
     EVENT_AGREEMENT_SIGNED = "agreement_signed"
     EVENT_ESCROW_FUNDED = "escrow_funded"
@@ -2045,6 +2048,9 @@ class Notification(models.Model):
         (EVENT_DISPUTE_OPENED, "Dispute Opened"),
         (EVENT_DISPUTE_UPDATED, "Dispute Updated"),
         (EVENT_DISPUTE_RESOLVED, "Dispute Resolved"),
+        (EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED, "Maintenance Work Order Scheduled"),
+        (EVENT_MAINTENANCE_WORK_ORDER_COMPLETED, "Maintenance Work Order Completed"),
+        (EVENT_MAINTENANCE_CONTRACT_CANCELLED, "Maintenance Contract Cancelled"),
         (EVENT_QUOTE_REQUEST_RECEIVED, "Quote Request Received"),
         (EVENT_AGREEMENT_SIGNED, "Agreement Signed"),
         (EVENT_ESCROW_FUNDED, "Escrow Funded"),
@@ -2668,3 +2674,4 @@ from .models_compliance import (
     ContractorComplianceRecord,
 )  # noqa: E402,F401
 from .models_support import SupportMessage, SupportTicket, SupportTicketMessage  # noqa: E402,F401
+from .models_maintenance import MaintenanceWorkOrder, MaintenanceWorkOrderAttachment  # noqa: E402,F401

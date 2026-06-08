@@ -18,6 +18,7 @@ const portalPayload = {
     active_agreements: 1,
     payments: 4,
     documents: 4,
+    maintenance_work_orders: 1,
   },
   property_profile: {
     id: 1,
@@ -373,6 +374,33 @@ const portalPayload = {
       date: "2026-04-15T17:40:00Z",
       url: "/files/receipt.pdf",
       agreement_id: 1,
+    },
+  ],
+  maintenance_work_orders: [
+    {
+      id: 1,
+      agreement_id: 1,
+      project_id: 1,
+      project_title: "Kitchen Remodel",
+      contractor_name: "Builder Co",
+      property_id: 1,
+      property_name: "Kitchen Remodel",
+      title: "Quarterly service visit",
+      description: "Inspect finishes and address routine maintenance items.",
+      scheduled_date: "2026-05-01",
+      completed_at: "2026-05-02T14:00:00Z",
+      status: "completed",
+      status_label: "Completed",
+      notes: "Service completed and records updated.",
+      attachments: [
+        {
+          id: 1,
+          title: "Service record",
+          filename: "service-record.pdf",
+          url: "/files/service-record.pdf",
+          date: "2026-05-02T14:00:00Z",
+        },
+      ],
     },
   ],
   notifications: [
@@ -1072,7 +1100,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Warranties");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Permits");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Photos");
-  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("No service history yet");
+  await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
+  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Quarterly service visit");
+  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Completed");
+  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Service completed and records updated.");
   await expect(page.getByTestId("home-records-request-guidance")).toContainText("Use these records when starting a new project");
   await page.getByLabel("File type").selectOption("photo");
   await page.getByLabel("Title").fill("Kitchen after photo");
@@ -1364,10 +1395,12 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("home-records-timeline")).toBeVisible();
   await expect(page.getByTestId(/home-records-timeline-(action|static)-/)).toHaveCount(5);
   await expect(page.getByTestId("home-records-timeline")).not.toContainText("Older Deck Repair");
-  await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toHaveAttribute("href", "/files/scope-addendum.txt");
-  await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toContainText("View document");
+  await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
+  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Quarterly service visit");
   await page.getByTestId("home-records-timeline-show-more").click();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Older Deck Repair");
+  await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toHaveAttribute("href", "/files/scope-addendum.txt");
+  await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toContainText("View document");
   await expect(page.getByTestId("home-records-timeline-static-project-static-history-project")).toBeVisible();
   await expect(page.getByTestId("home-records-timeline-static-project-static-history-project")).not.toHaveAttribute("href", /#/);
 
