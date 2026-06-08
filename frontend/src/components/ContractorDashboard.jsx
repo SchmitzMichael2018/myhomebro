@@ -640,6 +640,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
     amount: "",
     incurred_date: new Date().toISOString().slice(0, 10),
     notes_to_homeowner: "",
+    request_kind: "direct_expense",
+    category: "materials",
     file: null,
   });
 
@@ -668,6 +670,10 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       toast.error("Description and amount are required.");
       return;
     }
+    if (form.request_kind === "escrow_reimbursement" && (!form.agreement || !form.file)) {
+      toast.error("Escrow reimbursements require an agreement and receipt or proof.");
+      return;
+    }
     try {
       setSub(true);
       const fd = new FormData();
@@ -676,15 +682,23 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       fd.append("amount", form.amount);
       if (form.incurred_date) fd.append("incurred_date", form.incurred_date);
       if (form.notes_to_homeowner) fd.append("notes_to_homeowner", form.notes_to_homeowner);
+      fd.append("request_kind", form.request_kind);
+      fd.append("category", form.category);
       if (form.file) fd.append("receipt", form.file);
 
-      const createRes = await api.post("/projects/expenses/", fd, {
+      const createRes = await api.post("/projects/expense-requests/", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       const created = createRes.data;
 
-      await api.post(`/projects/expenses/${created.id}/contractor_sign/`);
-      await api.post(`/projects/expenses/${created.id}/send_to_homeowner/`);
+      if (form.request_kind === "escrow_reimbursement") {
+        toast.success("Reimbursement submitted for customer approval.");
+        onClose(true);
+        return;
+      }
+
+      await api.post(`/projects/expense-requests/${created.id}/contractor_sign/`);
+      await api.post(`/projects/expense-requests/${created.id}/send_to_homeowner/`);
 
       toast.success("Expense sent to customer.");
       onClose(true);
@@ -695,6 +709,11 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       setSub(false);
     }
   };
+
+  const primaryExpenseActionLabel =
+    form.request_kind === "escrow_reimbursement"
+      ? "Submit for Approval"
+      : "Sign & Send to Customer";
 
   return (
     <Modal
@@ -740,6 +759,35 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
             />
           </div>
 
+          <div>
+            <label className="block text-sm text-gray-700 mb-1">Request Type</label>
+            <select
+              name="request_kind"
+              value={form.request_kind}
+              onChange={onChange}
+              className="w-full border rounded-lg px-3 py-2"
+            >
+              <option value="direct_expense">Customer Direct Pay</option>
+              <option value="escrow_reimbursement">Escrow Reimbursement</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-700 mb-1">Category</label>
+            <select
+              name="category"
+              value={form.category}
+              onChange={onChange}
+              className="w-full border rounded-lg px-3 py-2"
+            >
+              <option value="materials">Materials</option>
+              <option value="permit">Permit</option>
+              <option value="rental">Rental</option>
+              <option value="delivery">Delivery</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
           <div className="md:col-span-2">
             <label className="block text-sm text-gray-700 mb-1">Description</label>
             <input
@@ -770,6 +818,13 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
         </div>
 
+        {form.request_kind === "escrow_reimbursement" ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Escrow reimbursements require a signed, funded escrow agreement and receipt or
+            proof. The customer must approve before any escrow release is recorded.
+          </div>
+        ) : null}
+
         <div>
           <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
           <textarea
@@ -792,7 +847,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
               sub ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"
             }`}
           >
-            {sub ? "Sending…" : "Sign & Send to Customer"}
+            {sub ? "Sending…" : primaryExpenseActionLabel}
           </button>
         </div>
       </form>

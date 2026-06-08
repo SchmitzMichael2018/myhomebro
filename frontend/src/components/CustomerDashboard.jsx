@@ -83,6 +83,16 @@ function hasOpenDispute(payment) {
   return value && !value.includes("no dispute") && value !== "none";
 }
 
+function isReimbursementPayment(payment) {
+  const type = String(payment?.record_type || payment?.record_type_label || "").toLowerCase();
+  return type.includes("reimbursement");
+}
+
+function canReviewReimbursement(payment) {
+  const status = String(payment?.status || "").toLowerCase();
+  return isReimbursementPayment(payment) && (payment?.can_approve || ["submitted", "sent_to_homeowner"].includes(status));
+}
+
 function normalizeInvoiceMagicUrl(actionTarget = "") {
   const value = String(actionTarget || "");
   const invoiceMatch = value.match(/\/invoice\/([^/?#]+)/);
@@ -92,7 +102,7 @@ function normalizeInvoiceMagicUrl(actionTarget = "") {
   return value;
 }
 
-function PaymentsPanel({ payments = [] }) {
+function PaymentsPanel({ payments = [], token = "", onPortalUpdate }) {
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const attention = payments.filter((payment) => {
     return !isPaidPayment(payment);
@@ -118,7 +128,7 @@ function PaymentsPanel({ payments = [] }) {
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {attention.length ? (
             attention.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} />
+              <PaymentActionCard key={payment.id} payment={payment} token={token} onPortalUpdate={onPortalUpdate} />
             ))
           ) : (
             <div className="lg:col-span-2">
@@ -138,7 +148,7 @@ function PaymentsPanel({ payments = [] }) {
         <div className="mt-4 space-y-3">
           {paid.length ? (
             visiblePaid.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} compact />
+              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} />
             ))
           ) : payments.length ? null : (
             <EmptyState title="No payment records yet" testId="customer-payments-empty">
@@ -166,11 +176,35 @@ function PaymentsPanel({ payments = [] }) {
   );
 }
 
-function PaymentActionCard({ payment, compact = false }) {
+function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdate }) {
+  const [busyAction, setBusyAction] = useState("");
   const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
   const target = payment.receipt_url || invoiceUrl || "#";
   const disputeUrl = isInvoicePayment(payment) && invoiceUrl ? `${invoiceUrl}?action=dispute` : "";
   const paid = isPaidPayment(payment);
+
+  async function runReimbursementAction(action) {
+    if (!token || !payment?.record_id) return;
+    const payload = {};
+    if (action === "deny") {
+      const reason = window.prompt("Reason for denying this reimbursement?");
+      if (!reason) return;
+      payload.denial_reason = reason;
+    }
+    setBusyAction(action);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${token}/reimbursements/${payment.record_id}/${action === "approve" ? "approve" : "deny"}/`, payload);
+      if (data?.portal && typeof onPortalUpdate === "function") {
+        onPortalUpdate(data.portal);
+      }
+      toast.success(action === "approve" ? "Reimbursement approved" : "Reimbursement denied");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update reimbursement.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
   return (
     <article data-testid={`customer-payment-action-${payment.id}`} className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${compact ? "" : "shadow-xl shadow-slate-950/20"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -192,6 +226,11 @@ function PaymentActionCard({ payment, compact = false }) {
             {hasOpenDispute(payment) ? <span className="text-rose-100">Issue: {payment.dispute_status_label || payment.dispute_status}</span> : null}
           </div>
           {payment.notes ? <p className="mt-2 text-sm text-slate-300">{payment.notes}</p> : null}
+          {isReimbursementPayment(payment) && payment.escrow_ledger?.available ? (
+            <p className="mt-2 text-xs text-amber-100">
+              Available escrow before this request: ${payment.escrow_ledger.available}. Approval queues release from escrow and reduces funds available for later milestone releases.
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-col gap-2 sm:items-end">
           <div className="text-lg font-bold text-white">{payment.amount_label || "$0.00"}</div>
@@ -243,6 +282,28 @@ function PaymentActionCard({ payment, compact = false }) {
                 Track Issue Status
                 <ExternalLink size={14} />
               </a>
+            ) : null}
+            {canReviewReimbursement(payment) ? (
+              <>
+                <button
+                  type="button"
+                  data-testid={`customer-payment-approve-reimbursement-${payment.record_id}`}
+                  onClick={() => runReimbursementAction("approve")}
+                  disabled={Boolean(busyAction)}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
+                >
+                  {busyAction === "approve" ? "Approving..." : "Approve Reimbursement"}
+                </button>
+                <button
+                  type="button"
+                  data-testid={`customer-payment-deny-reimbursement-${payment.record_id}`}
+                  onClick={() => runReimbursementAction("deny")}
+                  disabled={Boolean(busyAction)}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
+                >
+                  {busyAction === "deny" ? "Denying..." : "Deny"}
+                </button>
+              </>
             ) : null}
           </div>
         </div>
@@ -838,7 +899,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         />
       );
     }
-    if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} />;
+    if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} token={token} onPortalUpdate={onPortalUpdate} />;
     if (activeTab === "notifications") {
       return (
         <NotificationsCenter

@@ -81,6 +81,16 @@ function isReviewablePayment(payment) {
   return type.includes("draw") && (status.includes("submitted") || status.includes("review") || status.includes("pending"));
 }
 
+function isReimbursementPayment(payment) {
+  const type = String(payment?.record_type || payment?.record_type_label || "").toLowerCase();
+  return type.includes("reimbursement");
+}
+
+function canReviewReimbursement(payment) {
+  const status = String(payment?.status || "").toLowerCase();
+  return isReimbursementPayment(payment) && (payment?.can_approve || ["submitted", "sent_to_homeowner"].includes(status));
+}
+
 function hasOpenDispute(payment) {
   const value = String(payment?.dispute_status || payment?.dispute_status_label || "").toLowerCase();
   return value && !value.includes("no dispute") && value !== "none";
@@ -336,6 +346,7 @@ export default function CustomerProjectWorkspace({
     completed: false,
   });
   const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
+  const [reimbursementAction, setReimbursementAction] = useState("");
   const selected = projects.find((project) => String(project.id) === String(selectedId)) || projects[0] || null;
 
   const selectedAgreement = useMemo(() => {
@@ -399,6 +410,34 @@ export default function CustomerProjectWorkspace({
   const paidTotal = projectPayments
     .filter(isPaidPayment)
     .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
+
+  const runReimbursementAction = async (payment, action) => {
+    if (!token || !payment?.record_id) return;
+    const payload = {};
+    if (action === "deny") {
+      const reason = window.prompt("Reason for denying this reimbursement?");
+      if (!reason) return;
+      payload.denial_reason = reason;
+    }
+    const actionKey = `${action}-${payment.record_id}`;
+    setReimbursementAction(actionKey);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${token}/reimbursements/${payment.record_id}/${action === "approve" ? "approve" : "deny"}/`,
+        payload
+      );
+      if (data?.portal) {
+        onRefresh?.(data.portal);
+      } else {
+        onRefresh?.();
+      }
+      toast.success(action === "approve" ? "Reimbursement approved" : "Reimbursement denied");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update reimbursement.");
+    } finally {
+      setReimbursementAction("");
+    }
+  };
 
   const groupedProjects = useMemo(() => {
     const groups = {
@@ -742,6 +781,28 @@ export default function CustomerProjectWorkspace({
                                 Track Issue Status
                                 <ExternalLink size={14} />
                               </a>
+                            ) : null}
+                            {canReviewReimbursement(payment) ? (
+                              <>
+                                <button
+                                  type="button"
+                                  data-testid={`customer-project-payment-approve-reimbursement-${payment.record_id}`}
+                                  onClick={() => runReimbursementAction(payment, "approve")}
+                                  disabled={Boolean(reimbursementAction)}
+                                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
+                                >
+                                  {reimbursementAction === `approve-${payment.record_id}` ? "Approving..." : "Approve Reimbursement"}
+                                </button>
+                                <button
+                                  type="button"
+                                  data-testid={`customer-project-payment-deny-reimbursement-${payment.record_id}`}
+                                  onClick={() => runReimbursementAction(payment, "deny")}
+                                  disabled={Boolean(reimbursementAction)}
+                                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
+                                >
+                                  {reimbursementAction === `deny-${payment.record_id}` ? "Denying..." : "Deny"}
+                                </button>
+                              </>
                             ) : null}
                           </div>
                         </div>

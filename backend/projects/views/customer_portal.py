@@ -24,6 +24,7 @@ from projects.models import (
     AgreementFundingLink,
     DrawRequest,
     DrawRequestStatus,
+    ExpenseRequest,
     ExternalPaymentRecord,
     Homeowner,
     Invoice,
@@ -50,6 +51,7 @@ from projects.services.bid_workflow import (
     promote_public_lead_to_agreement,
 )
 from projects.services.bid_notifications import create_bid_outcome_notifications
+from projects.services.escrow_reimbursements import approve_reimbursement, deny_reimbursement, escrow_ledger, serialize_ledger
 from projects.services.smart_notifications import create_smart_notification
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
@@ -873,6 +875,16 @@ def _payments(email: str, request=None) -> list[dict]:
             Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email)
         ).order_by("-created_at", "-id")
     )
+    reimbursements = list(
+        ExpenseRequest.objects.select_related("agreement", "agreement__project", "agreement__homeowner", "agreement__contractor", "milestone")
+        .prefetch_related("attachments")
+        .filter(
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            is_archived=False,
+        )
+        .filter(Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email))
+        .order_by("-created_at", "-id")
+    )
 
     for invoice in invoices:
         agreement = getattr(invoice, "agreement", None)
@@ -951,6 +963,58 @@ def _payments(email: str, request=None) -> list[dict]:
                 "action_target": f"/draws/magic/{draw.public_token}",
                 "receipt_url": _safe_text(getattr(getattr(external_payment, "proof_file", None), "url", "")),
                 "notes": "Released draw" if getattr(draw, "released_at", None) else "",
+            }
+        )
+
+    for reimbursement in reimbursements:
+        agreement = getattr(reimbursement, "agreement", None)
+        status_value = _safe_text(getattr(reimbursement, "status", "")).lower()
+        try:
+            ledger_payload = serialize_ledger(escrow_ledger(agreement, exclude_reimbursement_id=reimbursement.id)) if agreement else None
+        except Exception:
+            ledger_payload = None
+        receipt_url = _safe_text(getattr(getattr(reimbursement, "receipt", None), "url", ""))
+        if not receipt_url:
+            first_attachment = None
+            try:
+                first_attachment = reimbursement.attachments.first()
+            except Exception:
+                first_attachment = None
+            receipt_url = _safe_text(getattr(getattr(first_attachment, "file", None), "url", ""))
+        rows.append(
+            {
+                "id": f"reimbursement-{reimbursement.id}",
+                "record_id": reimbursement.id,
+                "record_type": "reimbursement",
+                "record_type_label": "Reimbursement",
+                "project_title": _agreement_title(agreement),
+                "contractor_name": _contractor_name(getattr(agreement, "contractor", None)),
+                "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
+                "payment_mode_label": "Escrow",
+                "amount": _safe_text(getattr(reimbursement, "amount", "")),
+                "amount_label": f"${Decimal(str(getattr(reimbursement, 'amount', 0) or 0)):.2f}",
+                "status": status_value,
+                "status_label": _safe_text(getattr(reimbursement, "get_status_display", lambda: "")()) or status_value.replace("_", " ").title(),
+                "dispute_status": "No dispute",
+                "dispute_status_label": "No dispute",
+                "date": _safe_dt(
+                    getattr(reimbursement, "released_at", None)
+                    or getattr(reimbursement, "approved_at", None)
+                    or getattr(reimbursement, "submitted_at", None)
+                    or getattr(reimbursement, "created_at", None)
+                ),
+                "reference": f"Expense #{reimbursement.id}",
+                "agreement_id": getattr(agreement, "id", None),
+                "milestone_title": _safe_text(getattr(getattr(reimbursement, "milestone", None), "title", "")),
+                "action_target": "",
+                "receipt_url": receipt_url,
+                "notes": _safe_text(getattr(reimbursement, "notes_to_homeowner", "")) or _safe_text(getattr(reimbursement, "description", "")),
+                "category": _safe_text(getattr(reimbursement, "category", "")),
+                "escrow_ledger": ledger_payload,
+                "can_approve": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER},
+                "can_deny": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER, ExpenseRequest.Status.APPROVED, ExpenseRequest.Status.PENDING_RELEASE},
+                "approve_url": f"/api/projects/customer-portal/{{token}}/reimbursements/{reimbursement.id}/approve/",
+                "deny_url": f"/api/projects/customer-portal/{{token}}/reimbursements/{reimbursement.id}/deny/",
             }
         )
 
@@ -2554,6 +2618,82 @@ class CustomerPortalBidAcceptView(APIView):
                 "project_id": getattr(getattr(agreement, "project", None), "id", None),
                 "detail_url": f"/agreements/magic/{agreement.homeowner_access_token}",
                 "wizard_url": f"/app/agreements/{agreement.id}/wizard?step=1",
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalReimbursementApproveView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, reimbursement_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "Portal link expired."}, status=status.HTTP_401_UNAUTHORIZED)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        expense = get_object_or_404(
+            ExpenseRequest.objects.select_related("agreement", "agreement__homeowner", "agreement__project"),
+            pk=reimbursement_id,
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            is_archived=False,
+        )
+        if _agreement_customer_email(expense.agreement) != email:
+            return Response({"detail": "You can only approve reimbursement requests for your own project."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            expense = approve_reimbursement(expense, reviewed_by=request.user if getattr(request.user, "is_authenticated", False) else None)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "detail": "Reimbursement approved and queued for escrow release.",
+                "reimbursement_id": expense.id,
+                "status": expense.status,
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalReimbursementDenyView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, reimbursement_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "Portal link expired."}, status=status.HTTP_401_UNAUTHORIZED)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        reason = _safe_text(request.data.get("denial_reason") or request.data.get("reason"))
+        if not reason:
+            return Response({"detail": "Please provide a reason for denying this reimbursement."}, status=status.HTTP_400_BAD_REQUEST)
+        expense = get_object_or_404(
+            ExpenseRequest.objects.select_related("agreement", "agreement__homeowner", "agreement__project"),
+            pk=reimbursement_id,
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            is_archived=False,
+        )
+        if _agreement_customer_email(expense.agreement) != email:
+            return Response({"detail": "You can only deny reimbursement requests for your own project."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            expense = deny_reimbursement(
+                expense,
+                reviewed_by=request.user if getattr(request.user, "is_authenticated", False) else None,
+                reason=reason,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "detail": "Reimbursement denied.",
+                "reimbursement_id": expense.id,
+                "status": expense.status,
+                "denial_reason": expense.denial_reason,
                 "portal": _build_customer_portal_payload(email, request=request),
             },
             status=status.HTTP_200_OK,

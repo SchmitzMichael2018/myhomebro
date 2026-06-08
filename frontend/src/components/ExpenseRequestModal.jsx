@@ -92,6 +92,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
     amount: "",
     incurred_date: new Date().toISOString().slice(0, 10),
     notes_to_homeowner: "",
+    request_kind: "direct_expense",
+    category: "materials",
     files: [], // <-- MULTI
     send_now: true, // <-- toggle
   });
@@ -121,8 +123,12 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
     if (!String(form.description || "").trim()) return false;
     const amt = Number(form.amount);
     if (!form.amount || Number.isNaN(amt) || amt <= 0) return false;
+    if (form.request_kind === "escrow_reimbursement") {
+      if (!form.agreement) return false;
+      if (!(form.files || []).length) return false;
+    }
     return true;
-  }, [form.amount, form.description]);
+  }, [form.agreement, form.amount, form.description, form.files, form.request_kind]);
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -167,6 +173,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
         amount: form.amount,
         incurred_date: form.incurred_date || null,
         notes_to_homeowner: form.notes_to_homeowner || "",
+        request_kind: form.request_kind,
+        category: form.category,
         // Legacy support: createExpense probably sends this as multipart with `file`
         file: firstFile || null,
       });
@@ -180,7 +188,11 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
         }
       }
 
-      toast.success("Expense saved.");
+      toast.success(
+        form.request_kind === "escrow_reimbursement"
+          ? "Reimbursement submitted for customer approval."
+          : "Expense saved."
+      );
       onClose(true);
     } catch (e) {
       console.error(e);
@@ -209,6 +221,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
         amount: form.amount,
         incurred_date: form.incurred_date || null,
         notes_to_homeowner: form.notes_to_homeowner || "",
+        request_kind: form.request_kind,
+        category: form.category,
         file: firstFile || null,
       });
 
@@ -219,6 +233,12 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           console.warn(up.err);
           toast.error("Expense created, but some attachments failed to upload.");
         }
+      }
+
+      if (form.request_kind === "escrow_reimbursement") {
+        toast.success("Reimbursement submitted for customer approval.");
+        onClose(true);
+        return;
       }
 
       // Contractor signs
@@ -289,6 +309,35 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
               onChange={onChange}
               className="w-full border rounded-lg px-3 py-2"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-700 mb-1">Request Type</label>
+            <select
+              name="request_kind"
+              value={form.request_kind}
+              onChange={onChange}
+              className="w-full border rounded-lg px-3 py-2"
+            >
+              <option value="direct_expense">Customer Direct Pay</option>
+              <option value="escrow_reimbursement">Escrow Reimbursement</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-700 mb-1">Category</label>
+            <select
+              name="category"
+              value={form.category}
+              onChange={onChange}
+              className="w-full border rounded-lg px-3 py-2"
+            >
+              <option value="materials">Materials</option>
+              <option value="permit">Permit</option>
+              <option value="rental">Rental</option>
+              <option value="delivery">Delivery</option>
+              <option value="other">Other</option>
+            </select>
           </div>
 
           <div className="md:col-span-2">
@@ -373,6 +422,13 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           </div>
         </div>
 
+        {form.request_kind === "escrow_reimbursement" ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Escrow reimbursements require a signed, funded escrow agreement and receipt or
+            proof. The customer must approve before any escrow release is recorded.
+          </div>
+        ) : null}
+
         <div>
           <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
           <textarea
@@ -385,19 +441,26 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              name="send_now"
-              checked={!!form.send_now}
-              onChange={onChange}
-            />
-            Send email now
-          </label>
-
+          {form.request_kind === "escrow_reimbursement" ? (
+            <div className="text-sm text-gray-700">
+              This request will appear in the Customer Portal for review.
+            </div>
+          ) : (
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                name="send_now"
+                checked={!!form.send_now}
+                onChange={onChange}
+              />
+              Send email now
+            </label>
+          )}
           {!canSubmit ? (
             <div className="text-xs text-gray-500">
-              Enter a description and a positive amount to continue.
+              {form.request_kind === "escrow_reimbursement"
+                ? "Choose an agreement, attach receipt or proof, and enter a positive amount."
+                : "Enter a description and a positive amount to continue."}
             </div>
           ) : null}
         </div>
@@ -412,19 +475,21 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
             Cancel
           </button>
 
-          <button
-            type="button"
-            onClick={doCreateOnly}
-            disabled={sub || !canSubmit}
-            className={`px-4 py-2 rounded-lg font-semibold border ${
-              sub || !canSubmit
-                ? "bg-gray-100 text-gray-500 border-gray-200"
-                : "bg-white hover:bg-gray-50 text-gray-800 border-gray-300"
-            }`}
-            title="Create the expense without signing/sending"
-          >
-            {sub ? "Working…" : "Save Draft"}
-          </button>
+          {form.request_kind !== "escrow_reimbursement" ? (
+            <button
+              type="button"
+              onClick={doCreateOnly}
+              disabled={sub || !canSubmit}
+              className={`px-4 py-2 rounded-lg font-semibold border ${
+                sub || !canSubmit
+                  ? "bg-gray-100 text-gray-500 border-gray-200"
+                  : "bg-white hover:bg-gray-50 text-gray-800 border-gray-300"
+              }`}
+              title="Create the expense without signing/sending"
+            >
+              {sub ? "Working…" : "Save Draft"}
+            </button>
+          ) : null}
 
           <button
             type="submit"
@@ -433,7 +498,13 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
               sub || !canSubmit ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"
             }`}
           >
-            {sub ? "Sending…" : form.send_now ? "Sign & Send Email" : "Sign (Don’t Send)"}
+            {sub
+              ? "Sending…"
+              : form.request_kind === "escrow_reimbursement"
+                ? "Submit for Approval"
+                : form.send_now
+                  ? "Sign & Send Email"
+                  : "Sign (Don’t Send)"}
           </button>
         </div>
       </form>

@@ -6,15 +6,23 @@ from django.http import FileResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status as drf_status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from projects.models import ExpenseRequest, ExpenseRequestAttachment
+from projects.models import Agreement, ExpenseRequest, ExpenseRequestAttachment
 from projects.serializers.expense_request import (
     ExpenseRequestAttachmentSerializer,
     ExpenseRequestSerializer,
+)
+from projects.services.escrow_reimbursements import (
+    approve_reimbursement,
+    deny_reimbursement,
+    escrow_ledger,
+    mark_reimbursement_released,
+    serialize_ledger,
+    submit_reimbursement,
 )
 from projects.services.expense_pay import create_expense_checkout_session
 from projects.services.expense_public_links import make_expense_token, verify_expense_token
@@ -79,8 +87,53 @@ class ExpenseRequestViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    def _user_contractor(self):
+        return getattr(getattr(self.request, "user", None), "contractor_profile", None)
+
+    def _can_manage_agreement(self, agreement: Agreement | None) -> bool:
+        user = getattr(self.request, "user", None)
+        if not agreement or not user or not getattr(user, "is_authenticated", False):
+            return False
+        if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+            return True
+        contractor = self._user_contractor()
+        return bool(contractor and getattr(agreement, "contractor_id", None) == contractor.id)
+
+    def create(self, request: Request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        agreement = None
+        agreement_id = serializer.validated_data.get("agreement")
+        if agreement_id is not None:
+            agreement = agreement_id
+        request_kind = serializer.validated_data.get("request_kind")
+        if agreement is not None and not self._can_manage_agreement(agreement):
+            return Response({"detail": "You can only create expense requests for your own agreements."}, status=drf_status.HTTP_403_FORBIDDEN)
+        if agreement is None and request_kind == ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT:
+            return Response({"detail": "Agreement is required for escrow reimbursement requests."}, status=drf_status.HTTP_400_BAD_REQUEST)
+
+        expense = serializer.save(created_by=request.user if request.user.is_authenticated else None)
+        if expense.request_kind == ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT:
+            try:
+                expense = submit_reimbursement(expense)
+            except ValueError as exc:
+                expense.delete()
+                return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+        return Response(self.get_serializer(expense).data, status=drf_status.HTTP_201_CREATED)
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user if self.request.user.is_authenticated else None)
+
+    @action(detail=False, methods=["get"], url_path="escrow-ledger")
+    def escrow_ledger(self, request: Request):
+        agreement_id = request.query_params.get("agreement")
+        try:
+            agreement = Agreement.objects.get(pk=int(agreement_id or 0))
+        except Exception:
+            return Response({"detail": "Agreement not found."}, status=drf_status.HTTP_404_NOT_FOUND)
+        if not self._can_manage_agreement(agreement):
+            return Response({"detail": "You do not have access to this agreement."}, status=drf_status.HTTP_403_FORBIDDEN)
+        return Response(serialize_ledger(escrow_ledger(agreement)))
 
     # ---------------------------------------------------------------------
     # Helpers
@@ -270,6 +323,12 @@ class ExpenseRequestViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def homeowner_accept(self, request: Request, pk=None):
         expense = self.get_object()
+        if expense.request_kind == ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT:
+            try:
+                expense = approve_reimbursement(expense, reviewed_by=request.user if request.user.is_authenticated else None)
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+            return Response(self.get_serializer(expense).data)
         if expense.status != ExpenseRequest.Status.SENT_TO_HOMEOWNER:
             return Response({"detail": "Only sent expenses can be accepted."}, status=400)
 
@@ -281,6 +340,16 @@ class ExpenseRequestViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def homeowner_reject(self, request: Request, pk=None):
         expense = self.get_object()
+        if expense.request_kind == ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT:
+            try:
+                expense = deny_reimbursement(
+                    expense,
+                    reviewed_by=request.user if request.user.is_authenticated else None,
+                    reason=request.data.get("denial_reason") or request.data.get("reason") or "",
+                )
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+            return Response(self.get_serializer(expense).data)
         if expense.status != ExpenseRequest.Status.SENT_TO_HOMEOWNER:
             return Response({"detail": "Only sent expenses can be rejected."}, status=400)
 
@@ -292,6 +361,12 @@ class ExpenseRequestViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def mark_paid(self, request: Request, pk=None):
         expense = self.get_object()
+        if expense.request_kind == ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT:
+            try:
+                expense = mark_reimbursement_released(expense, stripe_transfer_id=request.data.get("stripe_transfer_id") or "")
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=drf_status.HTTP_400_BAD_REQUEST)
+            return Response(self.get_serializer(expense).data)
         if expense.status not in [
             ExpenseRequest.Status.HOMEOWNER_ACCEPTED,
             ExpenseRequest.Status.SENT_TO_HOMEOWNER,

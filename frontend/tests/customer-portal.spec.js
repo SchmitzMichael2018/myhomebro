@@ -452,6 +452,60 @@ const disputedPortalPayload = {
   ),
 };
 
+const reimbursementPortalPayload = {
+  ...portalPayload,
+  summary: {
+    ...portalPayload.summary,
+    payments: 5,
+  },
+  payments: [
+    {
+      id: "reimbursement-99",
+      record_id: 99,
+      project_title: "Kitchen Remodel",
+      contractor_name: "Builder Co",
+      payment_mode: "escrow",
+      payment_mode_label: "Escrow",
+      record_type_label: "Reimbursement",
+      record_type: "reimbursement",
+      date: "2026-04-17T10:00:00Z",
+      amount: "425.00",
+      amount_label: "$425.00",
+      status: "submitted",
+      status_label: "Submitted",
+      reference: "Expense #99",
+      notes: "Flooring materials with receipt attached.",
+      receipt_url: "/files/materials-receipt.pdf",
+      can_approve: true,
+      can_deny: true,
+      escrow_ledger: {
+        funded: "15000.00",
+        available: "15000.00",
+      },
+    },
+    ...portalPayload.payments,
+  ],
+};
+
+const approvedReimbursementPortalPayload = {
+  ...reimbursementPortalPayload,
+  payments: reimbursementPortalPayload.payments.map((payment) =>
+    payment.id === "reimbursement-99"
+      ? {
+          ...payment,
+          status: "pending_release",
+          status_label: "Pending Release",
+          can_approve: false,
+          can_deny: false,
+          escrow_ledger: {
+            funded: "15000.00",
+            available: "14575.00",
+          },
+        }
+      : payment
+  ),
+};
+
 const emptyPortalPayload = {
   customer: {
     name: "Empty Customer",
@@ -1038,6 +1092,58 @@ test("customer portal supports returning customer login", async ({ page }) => {
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
   await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
+});
+
+test("customer portal can approve escrow reimbursement requests from payments", async ({ page }) => {
+  let approveCalled = false;
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (method === "GET" && requestUrl.includes("/customer-portal/reimbursement-token/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(reimbursementPortalPayload),
+      });
+      return;
+    }
+
+    if (
+      method === "POST" &&
+      requestUrl.includes("/customer-portal/reimbursement-token/reimbursements/99/approve/")
+    ) {
+      approveCalled = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Reimbursement approved for escrow release.",
+          reimbursement_id: 99,
+          status: "pending_release",
+          portal: approvedReimbursementPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/portal/reimbursement-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await expect(page.getByTestId("customer-project-payment-reimbursement-99")).toContainText("Reimbursement");
+  await expect(page.getByTestId("customer-project-payment-approve-reimbursement-99")).toContainText("Approve Reimbursement");
+
+  await page.getByTestId("customer-dashboard-tab-payments").click();
+  await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("Reimbursement");
+  await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("$425.00");
+  await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("Available escrow before this request: $15000.00");
+  await expect(page.getByTestId("customer-payment-primary-reimbursement-99")).toHaveAttribute("href", "/files/materials-receipt.pdf");
+  await page.getByTestId("customer-payment-approve-reimbursement-99").click();
+  await expect.poll(() => approveCalled).toBe(true);
+  await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("Pending Release");
+  await expect(page.getByTestId("customer-payment-approve-reimbursement-99")).toHaveCount(0);
 });
 
 test("customer portal login failure and token password creation states render", async ({ page }) => {
