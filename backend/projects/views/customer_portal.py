@@ -58,6 +58,7 @@ from projects.services.escrow_reimbursements import approve_reimbursement, deny_
 from projects.services.smart_notifications import create_smart_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
+from projects.services.workflow_notifications import notify_dispute_event
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -2758,6 +2759,14 @@ class CustomerPortalDrawDisputeView(APIView):
                     "escrow_frozen",
                     "updated_at",
                 ])
+                try:
+                    notify_dispute_event(
+                        dispute=dispute,
+                        event_type=Notification.EVENT_DISPUTE_OPENED,
+                        actor_user=None,
+                    )
+                except Exception:
+                    pass
 
             draw.homeowner_acted_at = timezone.now()
             draw.homeowner_review_notes = "\n\n".join(part for part in [draw.homeowner_review_notes, f"Dispute opened: {reason}", description] if _safe_text(part))

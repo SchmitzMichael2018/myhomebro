@@ -26,6 +26,7 @@ from .views.project import ProjectViewSet
 from .views.dispute import (
     DisputeViewSet,
     public_dispute_detail,
+    public_dispute_message,
     public_dispute_accept,
     public_dispute_reject,
 )
@@ -776,6 +777,7 @@ urlpatterns = [
     # Public dispute decision
     # -------------------------------------------------
     path("disputes/public/<int:dispute_id>/", public_dispute_detail),
+    path("disputes/public/<int:dispute_id>/messages/", public_dispute_message),
     path("disputes/public/<int:dispute_id>/accept/", public_dispute_accept),
     path("disputes/public/<int:dispute_id>/reject/", public_dispute_reject),
 

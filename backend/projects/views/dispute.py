@@ -158,6 +158,44 @@ def _is_contractor_actor_for_dispute(user, dispute: Dispute) -> bool:
     return False
 
 
+def _agreement_customer_email(agreement) -> str:
+    homeowner = getattr(agreement, "homeowner", None)
+    project = getattr(agreement, "project", None)
+    project_homeowner = getattr(project, "homeowner", None) if project is not None else None
+    return (
+        str(getattr(homeowner, "email", "") or "").strip()
+        or str(getattr(project_homeowner, "email", "") or "").strip()
+        or str(getattr(agreement, "homeowner_email", "") or "").strip()
+    ).lower()
+
+
+def _user_can_create_dispute_for_agreement(user, agreement) -> bool:
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        return True
+
+    user_id = getattr(user, "id", None)
+    email = str(getattr(user, "email", "") or "").strip().lower()
+
+    contractor = getattr(agreement, "contractor", None)
+    if contractor is not None:
+        if getattr(contractor, "user_id", None) == user_id:
+            return True
+        contractor_email = str(getattr(contractor, "email", "") or "").strip().lower()
+        contractor_user_email = str(getattr(getattr(contractor, "user", None), "email", "") or "").strip().lower()
+        if email and email in {contractor_email, contractor_user_email}:
+            return True
+
+    if getattr(agreement, "contractor_user_id", None) == user_id:
+        return True
+
+    if email and _agreement_customer_email(agreement) == email:
+        return True
+
+    return False
+
+
 def _parse_rework_by_date(proposal: dict):
     """
     proposal['rework_by'] expected as YYYY-MM-DD.
@@ -290,6 +328,9 @@ class DisputeViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         ser = DisputeCreateSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
+        agreement = ser.validated_data.get("agreement")
+        if not _user_can_create_dispute_for_agreement(request.user, agreement):
+            return Response({"detail": "You cannot open a dispute for this agreement."}, status=403)
         dispute = ser.save()
 
         dispute.ensure_public_token()
@@ -500,6 +541,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
 
         dispute.last_activity_at = timezone.now()
         dispute.save(update_fields=["last_activity_at", "updated_at"])
+        try:
+            notify_dispute_event(
+                dispute=dispute,
+                event_type=Notification.EVENT_DISPUTE_UPDATED,
+                actor_user=request.user,
+            )
+        except Exception:
+            pass
 
         return Response(DisputeAttachmentSerializer(att, context={"request": request}).data, status=201)
 
@@ -580,6 +629,72 @@ def public_dispute_detail(request, dispute_id: int):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+def public_dispute_message(request, dispute_id: int):
+    token = (request.query_params.get("token") or "").strip()
+    body = (
+        request.data.get("body")
+        or request.data.get("message")
+        or request.data.get("response")
+        or ""
+    ).strip()
+
+    if not token:
+        return Response({"detail": "Missing token."}, status=400)
+
+    dispute = _get_dispute_by_public_token(dispute_id, token)
+    if not dispute:
+        return Response({"detail": "Not found."}, status=404)
+
+    if bool(getattr(dispute, "is_archived", False)):
+        return Response({"detail": "This dispute is archived and cannot be modified."}, status=400)
+
+    if is_terminal_dispute_status(dispute.status):
+        return Response({"detail": DISPUTE_TERMINAL_MESSAGE}, status=400)
+
+    files = []
+    try:
+        files.extend(request.FILES.getlist("files[]"))
+        files.extend(request.FILES.getlist("files"))
+    except Exception:
+        files = []
+
+    if not body and not files:
+        return Response({"detail": "Message or attachment is required."}, status=400)
+
+    now = timezone.now()
+    if body:
+        tag = f"PUBLIC MESSAGE: {body}".strip()
+        dispute.homeowner_response = (dispute.homeowner_response or "") + (
+            ("\n\n" if dispute.homeowner_response else "") + tag
+        )
+
+    if dispute.status in ("initiated", "open"):
+        dispute.status = "under_review"
+    dispute.last_activity_at = now
+    dispute.save(update_fields=["homeowner_response", "status", "last_activity_at", "updated_at"])
+
+    for file_obj in files:
+        DisputeAttachment.objects.create(
+            dispute=dispute,
+            kind=(request.data.get("kind") or "other").strip(),
+            file=file_obj,
+            uploaded_by=None,
+        )
+
+    try:
+        notify_dispute_event(
+            dispute=dispute,
+            event_type=Notification.EVENT_DISPUTE_UPDATED,
+            actor_user=None,
+        )
+    except Exception:
+        pass
+
+    return Response(DisputePublicSerializer(dispute, context={"request": request}).data, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
 def public_dispute_accept(request, dispute_id: int):
     token = (request.query_params.get("token") or "").strip()
     note = (request.data.get("note") or "").strip()
@@ -631,6 +746,15 @@ def public_dispute_accept(request, dispute_id: int):
             contractor_email = dispute.created_by.email
         email_contractor_status_update(dispute, contractor_email, "Homeowner accepted proposal")
 
+    try:
+        notify_dispute_event(
+            dispute=dispute,
+            event_type=Notification.EVENT_DISPUTE_RESOLVED,
+            actor_user=None,
+        )
+    except Exception:
+        pass
+
     if email_admin_dispute_update:
         from django.conf import settings as dj_settings
         email_admin_dispute_update(dispute, getattr(dj_settings, "DISPUTE_ADMIN_EMAIL", "") or "", "Homeowner accepted proposal")
@@ -677,6 +801,15 @@ def public_dispute_reject(request, dispute_id: int):
         if dispute.created_by and getattr(dispute.created_by, "email", ""):
             contractor_email = dispute.created_by.email
         email_contractor_status_update(dispute, contractor_email, "Homeowner rejected proposal")
+
+    try:
+        notify_dispute_event(
+            dispute=dispute,
+            event_type=Notification.EVENT_DISPUTE_UPDATED,
+            actor_user=None,
+        )
+    except Exception:
+        pass
 
     if email_admin_dispute_update:
         from django.conf import settings as dj_settings

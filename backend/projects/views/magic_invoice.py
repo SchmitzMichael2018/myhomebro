@@ -13,7 +13,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..models import Invoice, InvoiceStatus
+from ..models import Invoice, InvoiceStatus, Notification
+from ..models_dispute import Dispute
 from ..serializers.invoices import InvoiceSerializer
 
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
@@ -24,6 +25,7 @@ from projects.services.project_email_reports import send_project_email_report
 from projects.services.activity_feed import create_activity_event
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.notification_center import create_notification
+from projects.services.workflow_notifications import notify_dispute_event
 
 logger = logging.getLogger(__name__)
 
@@ -705,5 +707,71 @@ class MagicInvoiceDisputeView(APIView):
             invoice.dispute_by = "homeowner"
             invoice.dispute_reason = full_reason
             invoice.save(update_fields=["status", "disputed", "disputed_at", "dispute_by", "dispute_reason"])
+            milestone = None
+            milestone_id = getattr(invoice, "milestone_id_snapshot", None)
+            if milestone_id:
+                try:
+                    milestone = invoice.agreement.milestones.filter(pk=milestone_id).first()
+                except Exception:
+                    milestone = None
+            if milestone is None:
+                try:
+                    milestone = getattr(invoice, "source_milestone", None)
+                except Exception:
+                    milestone = None
 
-        return Response(InvoiceSerializer(invoice, context={"request": request}).data)
+            source_line = f"[MagicInvoice Source] invoice_id={invoice.id} invoice_number={invoice.invoice_number}"
+            dispute_description = "\n\n".join(part for part in [description, source_line] if str(part or "").strip())
+            dispute = (
+                Dispute.objects.select_for_update()
+                .filter(
+                    agreement=invoice.agreement,
+                    initiator="homeowner",
+                    status__in=["initiated", "open", "under_review"],
+                    description__icontains=f"invoice_id={invoice.id}",
+                )
+                .order_by("-created_at", "-id")
+                .first()
+            )
+            created = False
+            if dispute is None:
+                dispute = Dispute.objects.create(
+                    agreement=invoice.agreement,
+                    milestone=milestone,
+                    initiator="homeowner",
+                    reason=dispute_reason,
+                    description=dispute_description,
+                    status="open",
+                    fee_paid=True,
+                    fee_paid_at=timezone.now(),
+                    escrow_frozen=True,
+                )
+                dispute.set_response_deadline_now()
+                dispute.save(update_fields=[
+                    "public_token",
+                    "fee_paid",
+                    "fee_paid_at",
+                    "response_due_at",
+                    "deadline_hours",
+                    "deadline_tier",
+                    "last_activity_at",
+                    "status",
+                    "escrow_frozen",
+                    "updated_at",
+                ])
+                created = True
+
+        try:
+            notify_dispute_event(
+                dispute=dispute,
+                event_type=Notification.EVENT_DISPUTE_OPENED if created else Notification.EVENT_DISPUTE_UPDATED,
+                actor_user=None,
+            )
+        except Exception:
+            pass
+
+        payload = InvoiceSerializer(invoice, context={"request": request}).data
+        payload["dispute_id"] = dispute.id
+        payload["public_token"] = dispute.public_token
+        payload["dispute_url"] = f"/disputes/{dispute.id}?token={dispute.public_token}"
+        return Response(payload)

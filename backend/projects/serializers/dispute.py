@@ -218,6 +218,7 @@ class DisputePublicSerializer(serializers.ModelSerializer):
     agreement_number = serializers.SerializerMethodField()
     milestone_title = serializers.SerializerMethodField()
     attachments = DisputeAttachmentSerializer(many=True, read_only=True)
+    messages = serializers.SerializerMethodField()
 
     # ✅ Work orders (public decision page can also show the rework milestone id if needed)
     work_orders = DisputeWorkOrderSerializer(many=True, read_only=True)
@@ -238,6 +239,7 @@ class DisputePublicSerializer(serializers.ModelSerializer):
             "proposal_sent_at",
             "homeowner_response",
             "contractor_response",
+            "messages",
             "created_at",
             "attachments",
 
@@ -256,3 +258,26 @@ class DisputePublicSerializer(serializers.ModelSerializer):
     def get_milestone_title(self, obj):
         m: Milestone | None = obj.milestone
         return getattr(m, "title", "") if m else ""
+
+    def get_messages(self, obj):
+        rows = []
+
+        def add_response(role: str, text: str):
+            text = str(text or "").strip()
+            if not text:
+                return
+            parts = [part.strip() for part in text.split("\n\n") if part.strip()]
+            for idx, part in enumerate(parts or [text]):
+                rows.append(
+                    {
+                        "id": f"{role}-{idx + 1}",
+                        "author_role": role,
+                        "message_type": "comment",
+                        "body": part,
+                        "created_at": obj.updated_at or obj.created_at,
+                    }
+                )
+
+        add_response("homeowner", getattr(obj, "homeowner_response", ""))
+        add_response("contractor", getattr(obj, "contractor_response", ""))
+        return rows

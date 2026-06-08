@@ -12771,6 +12771,44 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertFalse(invoice.escrow_released)
         self.assertEqual(invoice.status, InvoiceStatus.PENDING)
 
+    def test_magic_invoice_dispute_creates_canonical_dispute_and_freezes_escrow(self):
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("250.00"),
+            status=InvoiceStatus.PENDING,
+            milestone_id_snapshot=self.milestone_one.id,
+            milestone_title_snapshot=self.milestone_one.title,
+        )
+
+        response = self.client.patch(
+            f"/api/projects/invoices/magic/{invoice.public_token}/dispute/",
+            {
+                "reason": "Work needs correction",
+                "description": "The mobilization work is incomplete.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn("dispute_id", response.data)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.DISPUTED)
+        self.assertTrue(invoice.disputed)
+        dispute = Dispute.objects.get(pk=response.data["dispute_id"])
+        self.assertEqual(dispute.agreement, self.agreement)
+        self.assertEqual(dispute.milestone, self.milestone_one)
+        self.assertEqual(dispute.status, "open")
+        self.assertTrue(dispute.escrow_frozen)
+        self.assertIn(f"invoice_id={invoice.id}", dispute.description)
+        self.assertIn(f"/disputes/{dispute.id}?token=", response.data["dispute_url"])
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                event_type=Notification.EVENT_DISPUTE_OPENED,
+            ).exists()
+        )
+
     @override_settings(STRIPE_WEBHOOK_SECRET="whsec_test")
     def test_duplicate_escrow_funding_webhook_does_not_increment_funded_amount(self):
         self.agreement.payment_mode = "escrow"
@@ -20058,6 +20096,19 @@ class CustomerPortalAccessTests(TestCase):
         payment_row = next(row for row in response.data["portal"]["payments"] if row["id"] == f"draw-{draw.id}")
         self.assertEqual(payment_row["dispute_status_label"], "Dispute opened")
         self.assertIn(f"/disputes/{dispute.id}?token=", payment_row["dispute_url"])
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                recipient_email=self.customer_email,
+                event_type=SmartNotificationEvent.DISPUTE_OPENED,
+            ).exists()
+        )
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                event_type=Notification.EVENT_DISPUTE_OPENED,
+            ).exists()
+        )
 
     def test_customer_portal_draw_dispute_rejects_other_customer_draw(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
@@ -20919,6 +20970,13 @@ class DisputeMutationSafetyTests(TestCase):
         self.admin_client = APIClient()
         self.admin_client.force_authenticate(user=self.admin_user)
 
+        self.other_user = user_model.objects.create_user(
+            email="other-dispute-user@example.com",
+            password="testpass123",
+        )
+        self.other_client = APIClient()
+        self.other_client.force_authenticate(user=self.other_user)
+
     def test_terminal_dispute_status_helper_covers_closed_aliases(self):
         from projects.services.dispute_status import is_terminal_dispute_status
 
@@ -21001,6 +21059,57 @@ class DisputeMutationSafetyTests(TestCase):
         )
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn("Only terminal disputes can be archived.", str(response.data["detail"]))
+
+    def test_unrelated_user_cannot_create_dispute_for_agreement(self):
+        response = self.other_client.post(
+            "/api/projects/disputes/",
+            {
+                "agreement": self.agreement.id,
+                "initiator": "homeowner",
+                "reason": "Not my agreement",
+                "description": "This should not be accepted.",
+                "fee_amount": "10.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertFalse(
+            Dispute.objects.filter(agreement=self.agreement, reason="Not my agreement").exists()
+        )
+
+    def test_public_dispute_message_endpoint_updates_thread_and_notifies(self):
+        active_dispute = Dispute.objects.create(
+            agreement=self.agreement,
+            initiator="homeowner",
+            reason="Evidence update",
+            description="Initial dispute.",
+            status="open",
+            fee_amount=Decimal("10.00"),
+            fee_paid=True,
+            escrow_frozen=True,
+        )
+        active_dispute.ensure_public_token()
+        active_dispute.save(update_fields=["public_token", "updated_at"])
+
+        response = self.contractor_client.post(
+            f"/api/projects/disputes/public/{active_dispute.id}/messages/?token={active_dispute.public_token}",
+            {"body": "The trim is still damaged."},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(any(row["body"].endswith("The trim is still damaged.") for row in response.data["messages"]))
+        active_dispute.refresh_from_db()
+        self.assertEqual(active_dispute.status, "under_review")
+        self.assertIn("PUBLIC MESSAGE: The trim is still damaged.", active_dispute.homeowner_response)
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                event_type=Notification.EVENT_DISPUTE_UPDATED,
+            ).exists()
+        )
 
 
 class TemplateRecommendationRelevanceTests(TestCase):
