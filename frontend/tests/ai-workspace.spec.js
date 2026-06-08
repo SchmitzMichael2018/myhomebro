@@ -280,7 +280,6 @@ test.describe('AI Workspace page', () => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('ai-workspace-hero')).toBeVisible();
-    await expect(page.getByTestId('workspace-conversation')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-quick-actions')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-capabilities')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-suggested')).not.toBeVisible();
@@ -291,7 +290,6 @@ test.describe('AI Workspace page', () => {
     await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
 
     await expect(page.getByRole('heading', { name: 'Launch Work. Continue Work. Find Work.' })).toBeVisible();
-    await expect(page.getByTestId('workspace-conversation-input')).not.toBeVisible();
     await expect(page.getByText('AI Workspace routes you to the right workflow')).toBeVisible();
     await expect(page.getByText('Choose the right next workflow.')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-quick-action-start_agreement')).toContainText('Create Agreement');
@@ -309,9 +307,8 @@ test.describe('AI Workspace page', () => {
   test('workspace no longer renders drafting intake and the global assistant dock opens', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByTestId('workspace-conversation')).not.toBeVisible();
-    await expect(page.getByTestId('workspace-conversation-input')).not.toBeVisible();
     await expect(page.getByText('Describe the work')).not.toBeVisible();
+    await expect(page.locator('textarea:visible')).toHaveCount(0);
 
     await page.getByTestId('assistant-dock-open-button').click();
     await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
