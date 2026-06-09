@@ -243,10 +243,9 @@ export default function ContractorDiscoveryStep({
   active = false,
   selectedTargets = [],
   setSelectedTargets,
-  onInvitesCreated,
+  onSkipToManual,
 }) {
   const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState(false);
   const [results, setResults] = useState([]);
   const [summary, setSummary] = useState(null);
   const [userSearchInput, setUserSearchInput] = useState("");
@@ -294,7 +293,7 @@ export default function ContractorDiscoveryStep({
   );
 
   const modeLabel = projectModeLabel(form?.project_mode);
-  const ctaLabel = normalizeProjectMode(form?.project_mode) === "consultation" ? "Request Quote" : "Request Project Review";
+  const ctaLabel = normalizeProjectMode(form?.project_mode) === "consultation" ? "Select for Quote" : "Select Contractor";
   const showDebug = Boolean(import.meta.env.DEV || (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG));
 
   const selectedKeys = useMemo(() => new Set((selectedTargets || []).map(cardSelectionKey).filter(Boolean)), [selectedTargets]);
@@ -434,69 +433,6 @@ export default function ContractorDiscoveryStep({
       }
       return [...prev, card];
     });
-  }
-
-  async function sendSelectedInvites() {
-    if (!token) {
-      toast.error("Missing intake token.");
-      return;
-    }
-    if (!selectedTargets.length) {
-      toast.error("Select at least one contractor first.");
-      return;
-    }
-
-    try {
-      setSending(true);
-      const { data } = await api.post("/projects/public-intake/select-contractor/", {
-        token,
-        selected_contractors: selectedTargets.map((card) => ({
-          id: card.id,
-          directory_entry_id: card.directory_entry_id,
-          google_place_id: card.google_place_id,
-          business_name: card.business_name,
-          website_url: card.website_url,
-          phone: card.phone,
-          public_email: card.public_email || card.email,
-          address: card.address || card.formatted_address,
-          city: card.city,
-          state: card.state,
-          zip_code: card.zip_code,
-          latitude: card.latitude,
-          longitude: card.longitude,
-          rating: card.rating,
-          review_count: card.review_count,
-          services: card.services || card.trade_categories || card.recommendation_reasons,
-          source: card.source,
-        })),
-        project_context: {
-          homeowner_name: safeText(form?.customer_name),
-          homeowner_email: safeText(form?.customer_email),
-          homeowner_phone: safeText(form?.customer_phone),
-          project_title: safeText(form?.ai_project_title),
-          project_type: safeText(form?.ai_project_type),
-          project_subtype: safeText(form?.ai_project_subtype),
-          project_description: safeText(form?.accomplishment_text),
-          refined_description: safeText(form?.refined_description || form?.ai_description || form?.project_scope_summary),
-          project_address_line1: safeText(form?.project_address_line1 || form?.customer_address_line1),
-          project_city: safeText(form?.project_city || form?.customer_city),
-          project_state: safeText(form?.project_state || form?.customer_state),
-          project_postal_code: safeText(form?.project_postal_code || form?.customer_postal_code),
-          timeline: safeText(form?.desired_timing_text || form?.timeline),
-          measurements: form?.measurements || form?.measurement_answers || [],
-        },
-      });
-      onInvitesCreated?.(data);
-      toast.success(
-        Array.isArray(data?.created) && data.created.length
-          ? `Requested ${data.created.length} contractor review${data.created.length === 1 ? "" : "s"}.`
-          : "No contractor review requests were created."
-      );
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || "Could not save contractor review requests.");
-    } finally {
-      setSending(false);
-    }
   }
 
   return (
@@ -763,16 +699,17 @@ export default function ContractorDiscoveryStep({
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <div className="text-sm text-slate-600">
-          {resultCountText}
+          {selectedTargets.length
+            ? `${selectedTargets.length} contractor${selectedTargets.length === 1 ? "" : "s"} selected. Continue when your list looks right.`
+            : "Select contractors here, or continue and add a contractor manually."}
         </div>
         <button
           type="button"
-          onClick={sendSelectedInvites}
-          disabled={sending || !selectedTargets.length}
-          data-testid="public-intake-send-contractor-invites"
-          className={intakePrimaryButtonClass}
+          onClick={onSkipToManual}
+          data-testid="public-intake-skip-to-manual-contractor"
+          className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
         >
-          {sending ? "Sending..." : ctaLabel}
+          Skip contractor selection and add a contractor manually
         </button>
       </div>
     </div>

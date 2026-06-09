@@ -376,6 +376,15 @@ class PublicIntakeView(APIView):
                     contractor_rows = json.loads(contractor_rows)
                 except Exception:
                     contractor_rows = []
+            selected_contractors = request.data.get("selected_contractors") or []
+            if isinstance(selected_contractors, str):
+                try:
+                    import json
+
+                    selected_contractors = json.loads(selected_contractors)
+                except Exception:
+                    selected_contractors = []
+            has_selected_marketplace_contractors = isinstance(selected_contractors, list) and bool(selected_contractors)
 
             if branch_flow == "single_contractor":
                 contractor_rows = [
@@ -388,7 +397,9 @@ class PublicIntakeView(APIView):
                 ]
 
             if not isinstance(contractor_rows, list) or not contractor_rows:
-                if branch_flow == "multi_contractor":
+                if has_selected_marketplace_contractors:
+                    contractor_rows = []
+                elif branch_flow == "multi_contractor":
                     branch_marketplace = marketplace_enabled_for_intake(intake)
                     create_marketplace_invites = bool(branch_marketplace.get("enabled"))
                 else:
@@ -437,7 +448,7 @@ class PublicIntakeView(APIView):
                     }
                 )
 
-            if not branch_invites and not create_marketplace_invites and not branch_marketplace:
+            if not branch_invites and not create_marketplace_invites and not branch_marketplace and not has_selected_marketplace_contractors:
                 branch_error = "Add at least one contractor contact before continuing."
 
         if branch_error:

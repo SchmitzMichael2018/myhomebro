@@ -40,6 +40,40 @@ function normalizeMilestones(rows) {
   }));
 }
 
+function cleanText(value) {
+  return String(value ?? "").trim();
+}
+
+function contractorSelectionKey(card) {
+  return cleanText(card?.id || card?.directory_entry_id || card?.google_place_id || card?.business_name);
+}
+
+function serializeSelectedContractor(card) {
+  return {
+    id: card?.id,
+    directory_entry_id: card?.directory_entry_id,
+    google_place_id: card?.google_place_id,
+    business_name: card?.business_name,
+    website_url: card?.website_url,
+    phone: card?.phone,
+    public_email: card?.public_email || card?.email,
+    address: card?.address || card?.formatted_address,
+    city: card?.city,
+    state: card?.state,
+    zip_code: card?.zip_code,
+    latitude: card?.latitude,
+    longitude: card?.longitude,
+    rating: card?.rating,
+    review_count: card?.review_count,
+    services: card?.services || card?.trade_categories || card?.recommendation_reasons,
+    source: card?.source,
+  };
+}
+
+function hasManualContractorContact(row) {
+  return Boolean(cleanText(row?.email || row?.contractor_email) || cleanText(row?.phone || row?.contractor_phone));
+}
+
 function moneyValue(value) {
   if (value === null || value === undefined || value === "") return "";
   return String(value);
@@ -788,6 +822,7 @@ export default function PublicIntakeWizard() {
     showToast = true,
     branchFlow = null,
     contractors = null,
+    selectedContractors = null,
     branchMessageOverride = null,
     allowBranch = true,
     formOverrides = null,
@@ -813,6 +848,9 @@ export default function PublicIntakeWizard() {
       if (allowBranch && branchFlow) {
         payload.branch_flow = branchFlow;
         payload.branch_message = branchMessageOverride ?? branchMessage;
+        if (Array.isArray(selectedContractors)) {
+          payload.selected_contractors = selectedContractors;
+        }
         if (branchFlow === "single_contractor") {
           payload.contractor_name = singleContractor.name || "";
           payload.contractor_email = singleContractor.email || "";
@@ -1030,26 +1068,41 @@ export default function PublicIntakeWizard() {
       return null;
     }
 
-    const contractors =
+    const selectedContractors = (Array.isArray(discoveryTargets) ? discoveryTargets : [])
+      .map(serializeSelectedContractor)
+      .filter((row) => contractorSelectionKey(row));
+    const manualSingle = { name: singleContractor.name, email: singleContractor.email, phone: singleContractor.phone };
+    const manualContractors =
       branchMode === "single_contractor"
-        ? [{ name: singleContractor.name, email: singleContractor.email, phone: singleContractor.phone }]
-        : branchContacts;
+        ? (hasManualContractorContact(manualSingle) ? [manualSingle] : [])
+        : (branchContacts || []).filter(hasManualContractorContact);
+    const effectiveBranchMode =
+      selectedContractors.length > 1 ? "multi_contractor" : selectedContractors.length === 1 ? "single_contractor" : branchMode;
 
     try {
       setBranchSubmitting(true);
       const data = await saveIntake({
         showToast: false,
-        branchFlow: branchMode,
-        contractors,
+        branchFlow: effectiveBranchMode,
+        contractors: manualContractors,
+        selectedContractors,
         branchMessageOverride: branchMessage,
       });
 
       if (data) {
-        setBranchResult(data?.post_submit_flow ? data : branchResult);
+        setBranchMode(effectiveBranchMode);
+        setBranchResult({
+          ...(data?.post_submit_flow ? data : branchResult || {}),
+          post_submit_flow: data?.post_submit_flow || effectiveBranchMode,
+          selected_contractors: selectedContractors,
+          selected_contractor_count: selectedContractors.length,
+        });
         toast.success(
-          Array.isArray(data?.branch_invites) && data.branch_invites.length
-            ? `Created ${data.branch_invites.length} contractor invite${data.branch_invites.length === 1 ? "" : "s"}.`
-            : "Saved your next-step choice."
+          selectedContractors.length
+            ? `Saved ${selectedContractors.length} selected contractor${selectedContractors.length === 1 ? "" : "s"} for review.`
+            : Array.isArray(data?.branch_invites) && data.branch_invites.length
+              ? `Created ${data.branch_invites.length} contractor invite${data.branch_invites.length === 1 ? "" : "s"}.`
+              : "Saved your next-step choice."
         );
         setCurrentStep(7);
       }
@@ -1068,6 +1121,38 @@ export default function PublicIntakeWizard() {
     toast.success("You can skip contractor entry for now and continue.");
   }
 
+  async function createSelectedContractorOpportunities() {
+    const selectedContractors = (Array.isArray(discoveryTargets) ? discoveryTargets : [])
+      .map(serializeSelectedContractor)
+      .filter((row) => contractorSelectionKey(row));
+    if (!selectedContractors.length) return null;
+
+    const effectiveForm = getEffectiveProjectForm(form);
+    const { data } = await api.post("/projects/public-intake/select-contractor/", {
+      token,
+      selected_contractors: selectedContractors,
+      project_context: {
+        homeowner_name: cleanText(effectiveForm.customer_name),
+        homeowner_email: cleanText(effectiveForm.customer_email),
+        homeowner_phone: cleanText(effectiveForm.customer_phone),
+        project_title: cleanText(generatedProjectTitle || effectiveForm.ai_project_title),
+        project_type: cleanText(effectiveForm.ai_project_type),
+        project_subtype: cleanText(effectiveForm.ai_project_subtype),
+        project_description: cleanText(effectiveForm.accomplishment_text),
+        refined_description: cleanText(
+          effectiveForm.refined_description || effectiveForm.ai_description || effectiveForm.project_scope_summary
+        ),
+        project_address_line1: cleanText(effectiveForm.project_address_line1),
+        project_city: cleanText(effectiveForm.project_city),
+        project_state: cleanText(effectiveForm.project_state),
+        project_postal_code: cleanText(effectiveForm.project_postal_code),
+        timeline: cleanText(effectiveForm.desired_timing_text || effectiveForm.timeline),
+        measurements: effectiveForm.measurements || effectiveForm.measurement_answers || [],
+      },
+    });
+    return data;
+  }
+
   async function handleConfirm() {
     if (!canFinish) {
       toast.error("Please complete the project and contact details first.");
@@ -1080,7 +1165,17 @@ export default function PublicIntakeWizard() {
     });
     if (!saved) return;
 
+    let selectionResult = null;
+    try {
+      selectionResult = await createSelectedContractorOpportunities();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not save selected contractors.");
+      return;
+    }
+
     const selectedCount =
+      Number(selectionResult?.opportunity_count || 0) ||
+      (Array.isArray(selectionResult?.created) ? selectionResult.created.length : 0) ||
       Number(saved?.opportunity_count || 0) ||
       (Array.isArray(saved?.created) ? saved.created.length : 0) ||
       (Array.isArray(discoveryTargets) ? discoveryTargets.length : 0);
@@ -2306,12 +2401,9 @@ export default function PublicIntakeWizard() {
           active
           selectedTargets={discoveryTargets}
           setSelectedTargets={setDiscoveryTargets}
-          onInvitesCreated={(data) => {
-            setBranchResult((prev) => ({
-              ...(prev || {}),
-              post_submit_flow: prev?.post_submit_flow || branchMode,
-              branch_invites: Array.isArray(data?.created) ? data.created : [],
-            }));
+          onSkipToManual={() => {
+            setDiscoveryTargets([]);
+            setBranchMode("single_contractor");
             setCurrentStep(6);
           }}
         />
@@ -2330,6 +2422,38 @@ export default function PublicIntakeWizard() {
               Choose the option that feels right for this project. Choose local contractors to review your request, or skip for now.
             </p>
           </div>
+
+          {discoveryTargets.length ? (
+            <section className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm" data-testid="public-intake-selected-contractors">
+              <div className="text-sm font-semibold text-indigo-950">Selected Contractors</div>
+              <p className="mt-1 text-sm text-indigo-900/80">
+                These contractors were selected in local contractor search and will be included with your project request.
+              </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {discoveryTargets.map((contractor) => {
+                  const key = contractorSelectionKey(contractor);
+                  const address = [contractor.address || contractor.formatted_address, contractor.city, contractor.state, contractor.zip_code]
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
+                    <article key={key} className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm" data-testid={`public-intake-selected-contractor-${key}`}>
+                      <div className="text-sm font-semibold text-slate-950">{contractor.business_name || "Selected contractor"}</div>
+                      <div className="mt-2 space-y-1 text-xs text-slate-600">
+                        <div>{contractor.phone || (contractor.phone_available ? "Phone available" : "Phone not listed")}</div>
+                        <div>{contractor.public_email || contractor.email || (contractor.email_available ? "Email available" : "Email not listed")}</div>
+                        {address ? <div>{address}</div> : null}
+                        {contractor.recommendation_tier ? (
+                          <div className="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-800">
+                            {contractor.recommendation_tier}
+                          </div>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
           {branchResult?.post_submit_flow ? (
             <div className="mt-5 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
@@ -2374,8 +2498,10 @@ export default function PublicIntakeWizard() {
             {branchMode === "single_contractor" ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <div className="text-sm font-semibold text-gray-900">Invite one contractor</div>
-                  <p className="mt-1 text-sm text-slate-600">We&apos;ll prepare the next step for a single contractor review.</p>
+                  <div className="text-sm font-semibold text-gray-900">Add a Known Contractor</div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Optional. Add someone you already know in addition to any selected local contractor.
+                  </p>
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-900">Contractor name</label>
@@ -2397,8 +2523,10 @@ export default function PublicIntakeWizard() {
             ) : (
               <div className="space-y-4">
                 <div className="md:col-span-2">
-                  <div className="text-sm font-semibold text-gray-900">Invite multiple contractors</div>
-                  <p className="mt-1 text-sm text-slate-600">Add the contractors you want to compare before choosing who to work with.</p>
+                  <div className="text-sm font-semibold text-gray-900">Add Known Contractors</div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Optional. Add contractors you already know in addition to the selected local contractors above.
+                  </p>
                 </div>
                 <div className="space-y-4">
                   {branchContacts.map((contact, index) => (
@@ -2449,6 +2577,38 @@ export default function PublicIntakeWizard() {
               You&apos;re not committing to work yet. Your contractor will create the final agreement and milestones later.
             </p>
           </div>
+
+          {discoveryTargets.length ? (
+            <section className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 shadow-sm" data-testid="public-intake-review-selected-contractors">
+              <div className="text-sm font-semibold text-indigo-950">Selected Contractors</div>
+              <p className="mt-1 text-sm text-indigo-900/80">
+                These selected marketplace contractors will receive the project context after you submit.
+              </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {discoveryTargets.map((contractor) => {
+                  const key = contractorSelectionKey(contractor);
+                  const address = [contractor.address || contractor.formatted_address, contractor.city, contractor.state, contractor.zip_code]
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
+                    <article key={key} className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+                      <div className="text-sm font-semibold text-slate-950">{contractor.business_name || "Selected contractor"}</div>
+                      <div className="mt-2 space-y-1 text-xs text-slate-600">
+                        <div>{contractor.phone || (contractor.phone_available ? "Phone available" : "Phone not listed")}</div>
+                        <div>{contractor.public_email || contractor.email || (contractor.email_available ? "Email available" : "Email not listed")}</div>
+                        {address ? <div>{address}</div> : null}
+                        {contractor.recommendation_tier ? (
+                          <div className="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-800">
+                            {contractor.recommendation_tier}
+                          </div>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
           <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
             <div className="text-sm font-semibold text-gray-900">What happens next?</div>
@@ -2561,10 +2721,17 @@ export default function PublicIntakeWizard() {
                 {branchMode === "multi_contractor" ? "Get multiple quotes" : "Work with one contractor"}
               </div>
               <div className="mt-1 text-sm text-slate-700">
-                {branchResult?.branch_invites?.length
+                {discoveryTargets.length
+                  ? `${discoveryTargets.length} selected contractor${discoveryTargets.length === 1 ? "" : "s"}`
+                  : branchResult?.branch_invites?.length
                   ? `${branchResult.branch_invites.length} invite${branchResult.branch_invites.length === 1 ? "" : "s"} prepared`
                   : "No contractor invites saved yet"}
               </div>
+              {branchResult?.branch_invites?.length ? (
+                <div className="mt-1 text-sm text-slate-700">
+                  {branchResult.branch_invites.length} known contractor invite{branchResult.branch_invites.length === 1 ? "" : "s"} prepared
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
@@ -2681,7 +2848,11 @@ export default function PublicIntakeWizard() {
             {currentStep === 5 ? (
               <button
                 type="button"
-                onClick={() => setCurrentStep(6)}
+                onClick={() => {
+                  if (discoveryTargets.length > 1) setBranchMode("multi_contractor");
+                  else if (discoveryTargets.length === 1) setBranchMode("single_contractor");
+                  setCurrentStep(6);
+                }}
                 disabled={saving || branchSubmitting}
                 data-testid="public-intake-discovery-continue"
                 className={intakePrimaryButtonClass}

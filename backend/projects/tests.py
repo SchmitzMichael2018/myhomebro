@@ -2906,6 +2906,59 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(intake.post_submit_flow, "multi_contractor")
         self.assertEqual(ContractorInvite.objects.filter(source_intake=intake).count(), 2)
 
+    def test_public_intake_branching_allows_selected_marketplace_contractors_without_manual_contact(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Marketplace Prospect",
+                "customer_email": "marketplace@example.com",
+                "customer_phone": "555-444-1212",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "project_class": "residential",
+                "customer_name": "Marketplace Prospect",
+                "customer_email": "marketplace@example.com",
+                "customer_phone": "555-444-1212",
+                "project_address_line1": "700 Marketplace Lane",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a patio contractor to review the project.",
+            },
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200)
+
+        branch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "branch_flow": "single_contractor",
+                "selected_contractors": [
+                    {
+                        "id": "listing:77",
+                        "business_name": "Austin Patio Pros",
+                        "phone": "555-707-7777",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(branch_response.status_code, 200)
+        self.assertEqual(branch_response.json()["post_submit_flow"], "single_contractor")
+        self.assertEqual(branch_response.json()["branch_invites"], [])
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertEqual(intake.post_submit_flow, "single_contractor")
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=intake).count(), 0)
+
     def test_single_contractor_branch_claims_same_intake_for_contractor_workspace(self):
         start_response = self.client.post(
             "/api/projects/public-intake/start/",
