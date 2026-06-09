@@ -11,6 +11,19 @@ test('landing page smoke renders core entry points', async ({ page }) => {
   await expect(page.getByTestId('landing-hero-heading')).toContainText(
     'Everything you need to plan, hire, and manage your project.'
   );
+  await expect(page.getByRole('button', { name: 'How It Works' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'For Homeowners' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'For Contractors' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Resources' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'About Us' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'For Homeowners' }).click();
+  await expect(page.getByTestId('landing-homeowner-card')).toBeInViewport();
+  await page.getByRole('button', { name: 'For Contractors' }).click();
+  await expect(page.getByTestId('landing-contractor-card')).toBeInViewport();
+  await page.getByRole('button', { name: 'How It Works' }).first().click();
+  await expect(page.getByRole('heading', { name: 'How It Works' })).toBeInViewport();
+
   await page.getByTestId('landing-sign-in-button').click();
   const loginMenu = page.getByRole('menu', { name: 'Log in options' });
   await expect(loginMenu).toBeVisible();
@@ -25,6 +38,16 @@ test('landing page smoke renders core entry points', async ({ page }) => {
   await expect(page.getByTestId('landing-video-preview-asset')).toBeVisible();
   await expect(page.getByTestId('landing-homeowner-visual-asset')).toBeVisible();
   await expect(page.getByTestId('landing-contractor-visual-asset')).toBeVisible();
+  const trustSection = page.getByTestId('landing-trust-section');
+  await expect(trustSection.getByText('Escrow-Based Milestone Holds')).toBeVisible();
+  await expect(trustSection.getByText('Property Records & Maintenance History')).toBeVisible();
+  await expect(trustSection.getByText('Structured Agreements & Approvals')).toBeVisible();
+  await expect(trustSection.getByText('Project Transparency & Dispute Workflow')).toBeVisible();
+  await expect(page.getByText('10K+')).toHaveCount(0);
+  await expect(page.getByText('Average homeowner rating')).toHaveCount(0);
+  await expect(page.getByText('Thousands of projects started')).toHaveCount(0);
+  await expect(trustSection.getByRole('link', { name: 'Terms of Service' })).toHaveCount(0);
+  await expect(trustSection.getByRole('link', { name: 'Privacy Policy' })).toHaveCount(0);
   const footer = page.getByRole('contentinfo');
   await expect(footer.getByRole('link', { name: 'Terms of Service' })).toBeVisible();
   await expect(footer.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
@@ -41,33 +64,15 @@ test('landing page mobile layout does not horizontally overflow', async ({ page 
   expect(hasHorizontalOverflow).toBe(false);
 });
 
-test('landing login dropdown opens homeowner modal and routes to portal after login', async ({
+test('landing homeowner login routes directly to the customer portal', async ({
   page,
 }) => {
-  await page.route('**/api/auth/login/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        access: 'homeowner-access-token',
-        refresh: 'homeowner-refresh-token',
-        user: { email: 'homeowner@example.com' },
-      }),
-    });
-  });
-
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('landing-sign-in-button').click();
   await page.getByRole('button', { name: 'Homeowner Log In' }).click();
 
-  await expect(page.getByTestId('login-modal')).toBeVisible();
-  await expect(page).toHaveURL(/\/$/);
-
-  await page.getByTestId('login-email-input').fill('homeowner@example.com');
-  await page.getByTestId('login-password-input').fill('password123');
-  await page.getByTestId('login-submit-button').click();
-
   await expect(page).toHaveURL(/\/portal$/);
+  await expect(page.getByTestId('login-modal')).toHaveCount(0);
 });
 
 test('landing login dropdown opens contractor modal and routes to contractor dashboard after login', async ({
@@ -129,7 +134,10 @@ test('landing login modal closes with close button and backdrop click', async ({
   await expect(page.getByTestId('login-modal')).toBeHidden();
 
   await page.getByTestId('landing-sign-in-button').click();
-  await page.getByRole('button', { name: 'Homeowner Log In' }).click();
+  await page
+    .getByRole('menu', { name: 'Log in options' })
+    .getByRole('button', { name: 'Contractor Log In', exact: true })
+    .click();
   await expect(page.getByTestId('login-modal')).toBeVisible();
 
   await page.mouse.click(8, 8);

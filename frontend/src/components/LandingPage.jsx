@@ -7,14 +7,12 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardList,
-  Globe2,
   Home,
   Lock,
   MessageSquareText,
   Play,
   ShieldCheck,
   Sparkles,
-  Star,
   UsersRound,
   Wrench,
   X,
@@ -132,13 +130,6 @@ export default function LandingPage() {
             </button>
             <button type="button" onClick={() => scrollTo("for-contractors")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
               For Contractors
-            </button>
-            <button type="button" onClick={() => scrollTo("resources")} className="inline-flex items-center gap-1 rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
-              Resources
-              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-            <button type="button" onClick={() => scrollTo("about")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
-              About Us
             </button>
           </div>
 
@@ -276,7 +267,10 @@ function LoginDropdown({ navigate, onLoginSelect }) {
           </p>
           <button
             type="button"
-            onClick={() => openLoginModal("homeowner")}
+            onClick={() => {
+              onLoginSelect?.();
+              navigate("/portal");
+            }}
             className="mt-3 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/22 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
           >
             Homeowner Log In
@@ -557,43 +551,63 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
 function TrustBand() {
   return (
     <section id="about" className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-      <div className="rounded-3xl border border-white/12 bg-white/[0.052] shadow-2xl shadow-slate-950/18 backdrop-blur">
-        <div className="grid gap-0 divide-y divide-white/10 p-6 md:grid-cols-4 md:divide-x md:divide-y-0">
-        <div className="pb-5 md:pb-0 md:pr-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/35 bg-amber-300/10 text-amber-200 shadow-[0_0_24px_rgba(251,191,36,0.12)]">
-              <ShieldCheck className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-white">Built on trust. Focused on results.</h2>
-              <p className="mt-2 text-sm leading-6 text-sky-50/68">We&apos;re here to help you every step of the way.</p>
-            </div>
+      <div
+        data-testid="landing-trust-section"
+        className="rounded-3xl border border-white/12 bg-white/[0.052] p-6 shadow-2xl shadow-slate-950/18 backdrop-blur"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/35 bg-amber-300/10 text-amber-200 shadow-[0_0_24px_rgba(251,191,36,0.12)]">
+            <ShieldCheck className="h-6 w-6" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-white">Built on trust. Focused on results.</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/68">
+              MyHomeBro helps customers and contractors keep project scope, payments, records, and approvals organized from start to finish.
+            </p>
           </div>
         </div>
-        <TrustMetric icon={UsersRound} value="10K+" label="Homeowners and growing" tone="blue" />
-        <TrustMetric icon={Star} value="4.9" label="Average homeowner rating" tone="amber" stars />
-        <TrustMetric icon={Globe2} value="Thousands" label="of projects started across the U.S. and Canada" tone="blue" />
-        </div>
-        <div id="resources" className="border-t border-white/10 px-6 py-4 text-sm font-semibold">
-          <a href="/legal/terms-of-service/" className="mr-4 text-sky-300 hover:text-sky-200">Terms of Service</a>
-          <a href="/legal/privacy-policy/" className="text-sky-300 hover:text-sky-200">Privacy Policy</a>
+        <div className="mt-6 grid gap-4 md:grid-cols-4">
+          <TrustValueCard
+            icon={ShieldCheck}
+            title="Escrow-Based Milestone Holds"
+            text="Milestone-based payment approval helps keep project funding organized and documented."
+            tone="amber"
+          />
+          <TrustValueCard
+            icon={Home}
+            title="Property Records & Maintenance History"
+            text="Store warranties, project records, photos, receipts, and maintenance history in one place."
+          />
+          <TrustValueCard
+            icon={ClipboardList}
+            title="Structured Agreements & Approvals"
+            text="Use documented agreements, milestone reviews, approvals, and project tracking throughout the job."
+          />
+          <TrustValueCard
+            icon={MessageSquareText}
+            title="Project Transparency & Dispute Workflow"
+            text="Track project activity, communication, evidence, and dispute resolution through one workflow."
+            tone="amber"
+          />
         </div>
       </div>
     </section>
   );
 }
 
-function TrustMetric({ icon: Icon, value, label, tone = "blue", stars = false }) {
+function TrustValueCard({ icon: Icon, value, label, title, text, tone = "blue", stars = false }) {
+  const displayTitle = title || value;
+  const displayText = text || label;
   return (
-    <div className="px-0 py-5 md:px-6 md:py-0">
+    <div className="rounded-2xl border border-white/10 bg-slate-950/24 p-4">
       <div className="flex items-center gap-4">
         <Icon className={`h-9 w-9 ${tone === "amber" ? "text-amber-300" : "text-blue-300"}`} aria-hidden="true" />
         <div>
           <div className="flex items-center gap-3">
-            <div className="text-3xl font-semibold text-white">{value}</div>
+            <div className="text-base font-semibold text-white">{displayTitle}</div>
             {stars ? <div className="text-amber-300">★★★★★</div> : null}
           </div>
-          <p className="mt-1 text-sm leading-6 text-sky-50/70">{label}</p>
+          <p className="mt-1 text-sm leading-6 text-sky-50/70">{displayText}</p>
         </div>
       </div>
     </div>
