@@ -177,6 +177,105 @@ test("public intake surfaces contractor discovery and creates pending review opp
   expect(selectedOpportunities[0].selected_contractors[0].business_name).toBe("Local Handy Team");
 });
 
+test("public intake contractor search does not blame complete saved address when geocoding is unavailable", async ({ page }) => {
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+
+    if (url.includes("/contractor-search/") && method === "GET") {
+      const requestUrl = new URL(url);
+      expect(requestUrl.searchParams.get("project_address_line1")).toBe("1515 South Ellison Drive");
+      expect(requestUrl.searchParams.get("project_city")).toBe("San Antonio");
+      expect(requestUrl.searchParams.get("project_state")).toBe("TX");
+      expect(requestUrl.searchParams.get("project_postal_code")).toBe("78245-1519");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          summary: {
+            search_query: "flooring contractor",
+            radius_miles: 25,
+            location_resolution_status: "geocode_failed",
+            location_source: "zip_only",
+            search_center_city: "San Antonio",
+            search_center_state: "TX",
+            search_center_zip: "78245",
+            search_center_zip_original: "78245-1519",
+            reason: "google_geocode_api_key_missing",
+            external_search: {
+              source: "google_places",
+              configured: false,
+              requested: false,
+              results_count: 0,
+              error: "google_geocode_api_key_missing",
+            },
+            results_count: 0,
+          },
+          results: [],
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 702,
+          token: "location-token",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "San Antonio Customer",
+          customer_email: "customer@example.com",
+          customer_phone: "555-555-0101",
+          project_class: "residential",
+          project_mode: "full_service",
+          payment_preference: "escrow",
+          customer_address_line1: "1515 South Ellison Drive",
+          customer_address_line2: "",
+          customer_city: "San Antonio",
+          customer_state: "TX",
+          customer_postal_code: "78245-1519",
+          same_as_customer_address: true,
+          project_address_line1: "1515 South Ellison Drive",
+          project_address_line2: "",
+          project_city: "San Antonio",
+          project_state: "TX",
+          project_postal_code: "78245-1519",
+          accomplishment_text: "Install new flooring in the kitchen.",
+          ai_project_title: "Flooring Installation",
+          ai_project_type: "Flooring",
+          ai_project_subtype: "Flooring Installation",
+          ai_description: "",
+          ai_project_timeline_days: null,
+          ai_project_budget: null,
+          ai_milestones: [],
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          ai_analysis_payload: {},
+          clarification_photos: [],
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          sent_at: null,
+          completed_at: null,
+        }),
+      });
+    }
+  });
+
+  await page.goto("/start-project/location-token", { waitUntil: "domcontentloaded" });
+  await page.locator('button:has-text("Choose Local Contractors")').first().click();
+
+  const discoveryStep = page.getByTestId("public-intake-contractor-discovery-step");
+  await expect(discoveryStep).toBeVisible({ timeout: 15000 });
+  await expect(discoveryStep).toContainText(
+    "We have the project address, but location services could not map it right now. Please try again shortly."
+  );
+  await expect(discoveryStep).not.toContainText("Please check the address or ZIP code");
+});
+
 test("contractor claim page lets a contractor claim a listing", async ({ page }) => {
   await page.route("**/api/projects/contractors/claim/**", async (route) => {
     const url = route.request().url();

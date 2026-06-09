@@ -196,8 +196,11 @@ def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude:
             }
 
     failed_status = _safe_text(last_diagnostic.get("status"))
+    failed_error_type = _safe_text(last_diagnostic.get("error_type"))
     failed_reason = "geocode_failed"
     if failed_status in {"ZERO_RESULTS", "INVALID_REQUEST", "REQUEST_DENIED", "OVER_QUERY_LIMIT", "OVER_DAILY_LIMIT", "UNKNOWN_ERROR"}:
+        failed_reason = failed_status
+    elif failed_error_type == "system" and failed_status:
         failed_reason = failed_status
     return {
         **_location_metadata(

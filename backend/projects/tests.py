@@ -3882,6 +3882,42 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(payload["summary"]["reason"], "geocode_failed")
 
     @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        return_value={
+            "latitude": None,
+            "longitude": None,
+            "diagnostic": {
+                "configured": False,
+                "status": "google_geocode_api_key_missing",
+                "error": "google_geocode_api_key_missing",
+                "error_type": "system",
+                "candidate": "1515 South Ellison Drive, San Antonio, TX, 78245",
+            },
+        },
+    )
+    def test_contractor_discovery_complete_address_reports_system_geocode_failure(self, _mock_geocode):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring",
+                "description": "Install new floors.",
+                "project_address_line1": "1515 South Ellison Drive",
+                "project_city": "San Antonio",
+                "project_state": "TX",
+                "project_postal_code": "78245-1519",
+            },
+            query="flooring contractor",
+            limit=5,
+        )
+
+        self.assertEqual(payload["results"], [])
+        self.assertEqual(payload["summary"]["location_resolution_status"], "geocode_failed")
+        self.assertEqual(payload["summary"]["reason"], "google_geocode_api_key_missing")
+        self.assertEqual(payload["summary"]["search_center_zip"], "78245")
+        self.assertEqual(payload["summary"]["search_center_zip_original"], "78245-1519")
+
+    @patch(
         "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
         return_value={
             "diagnostic": {

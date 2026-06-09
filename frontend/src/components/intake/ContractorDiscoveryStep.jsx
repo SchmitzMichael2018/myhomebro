@@ -70,6 +70,13 @@ function emptyStateMessage(summary, radiusMiles = 25) {
   if (reason === "INVALID_REQUEST") {
     return "We need more project location information before searching contractors.";
   }
+  if (
+    reason === "google_geocode_api_key_missing" ||
+    reason === "geocode_exception" ||
+    reason.startsWith("geocode_http_")
+  ) {
+    return "We have the project address, but location services could not map it right now. Please try again shortly.";
+  }
   if (reason === "missing_project_location") {
     return "We need a project ZIP code or address before searching local contractors.";
   }
