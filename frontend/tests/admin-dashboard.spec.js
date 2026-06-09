@@ -600,6 +600,12 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-ops-maintenance-queue')).toContainText('Quarterly filter service');
   await expect(page.getByTestId('admin-ops-dispute-queue')).toContainText('Kitchen Remodel');
   await expect(page.getByTestId('admin-ops-activation-funnel')).toContainText('Eligible');
+  await expect(page.getByTestId('admin-ops-marketplace-analytics-links')).toBeVisible();
+  await expect(page.getByTestId('admin-ops-marketplace-conversion-link')).toContainText('42.8%');
+  await expect(page.getByTestId('admin-ops-zero-bid-link')).toContainText('1');
+  await page.getByTestId('admin-ops-zero-bid-link').click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/analytics$/);
+  await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await page.goto('/app/admin?view=support', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('button', { name: 'User Tools', exact: true })).toHaveClass(/bg-white/);

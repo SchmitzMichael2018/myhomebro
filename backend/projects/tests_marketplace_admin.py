@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -7,9 +8,9 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Contractor, Notification, PublicContractorLead
+from projects.models import Agreement, Contractor, ContractorPublicProfile, Homeowner, Notification, Project, ProjectStatus, PublicContractorLead
 from projects.models_customer_portal import SmartNotification, SmartNotificationEvent
-from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
+from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, eligible_marketplace_listings
 
@@ -90,6 +91,133 @@ class AdminMarketplaceTests(TestCase):
         self.assertEqual(austin["counts"]["total_discovered"], 1)
         self.assertEqual(austin["counts"]["claimed_contractors"], 1)
         self.assertFalse(austin["enabled"])
+
+    def test_marketplace_analytics_reports_funnel_city_and_contractor_conversion(self):
+        profile = ContractorPublicProfile.objects.create(contractor=self.claimed_contractor)
+        homeowner = Homeowner.objects.create(
+            created_by=self.claimed_contractor,
+            full_name="Austin Customer",
+            email="austin-customer@example.com",
+        )
+        request = ProjectIntake.objects.create(
+            initiated_by="homeowner",
+            post_submit_flow="multi_contractor",
+            status="submitted",
+            customer_name="Austin Customer",
+            customer_email=homeowner.email,
+            project_city="Austin",
+            project_state="TX",
+            accomplishment_text="Install luxury vinyl plank flooring.",
+            ai_project_type="Flooring",
+            submitted_at=timezone.now(),
+        )
+        request.ensure_share_token()
+        zero_bid = ProjectIntake.objects.create(
+            initiated_by="homeowner",
+            post_submit_flow="multi_contractor",
+            status="submitted",
+            customer_name="Dallas Customer",
+            customer_email="dallas@example.com",
+            project_city="Dallas",
+            project_state="TX",
+            accomplishment_text="Repair porch columns.",
+            ai_project_type="Carpentry",
+            submitted_at=timezone.now(),
+        )
+        zero_bid.ensure_share_token()
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Claimed Pro LLC",
+            city="Austin",
+            state="TX",
+            primary_service="flooring",
+            claimed=True,
+            claimed_by_contractor=self.claimed_contractor,
+        )
+        ContractorDiscoveryInvite.objects.create(
+            public_intake=request,
+            contractor=self.claimed_contractor,
+            directory_listing=self.claimed_listing,
+            status=ContractorDiscoveryInvite.STATUS_SENT,
+            sent_at=timezone.now(),
+        )
+        ContractorOpportunity.objects.create(
+            directory_entry=entry,
+            intake_request=request,
+            project_city="Austin",
+            project_state="TX",
+            project_type="Flooring",
+            accepted_by_contractor=self.claimed_contractor,
+            status=ContractorOpportunity.STATUS_ACCEPTED,
+        )
+        project = Project.objects.create(
+            contractor=self.claimed_contractor,
+            homeowner=homeowner,
+            title="Awarded Flooring Project",
+            status=ProjectStatus.DRAFT,
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.claimed_contractor,
+            homeowner=homeowner,
+            description="Awarded marketplace draft",
+            project_type="Flooring",
+            status=ProjectStatus.DRAFT,
+            total_cost=Decimal("5000.00"),
+        )
+        PublicContractorLead.objects.create(
+            contractor=self.claimed_contractor,
+            public_profile=profile,
+            source=PublicContractorLead.SOURCE_QUOTE_REQUEST,
+            full_name=homeowner.full_name,
+            email=homeowner.email,
+            city="Austin",
+            state="TX",
+            project_type="Flooring",
+            project_description="Install luxury vinyl plank flooring.",
+            budget_text="$5,000",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+            ai_analysis={"source_intake_id": request.id, "suggested_total_price": "5000"},
+            converted_homeowner=homeowner,
+            converted_agreement=agreement,
+            converted_at=timezone.now(),
+        )
+        MarketplaceLocation.objects.create(city="Austin", state="TX", is_enabled=True)
+
+        response = self.client.get("/api/projects/admin/marketplace/analytics/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        self.assertEqual(payload["funnel"]["requests_submitted"], 2)
+        self.assertEqual(payload["funnel"]["requests_routed"], 1)
+        self.assertEqual(payload["funnel"]["bids_submitted"], 1)
+        self.assertEqual(payload["funnel"]["requests_with_zero_bids"], 1)
+        self.assertEqual(payload["funnel"]["awarded_requests"], 1)
+        self.assertEqual(payload["funnel"]["agreement_drafts_created"], 1)
+        self.assertEqual(payload["conversion_rates"]["request_to_routed"], 50.0)
+        austin = next(row for row in payload["city_analytics"] if row["city"] == "Austin")
+        self.assertEqual(austin["requests"], 1)
+        self.assertEqual(austin["average_bids_per_request"], 1.0)
+        contractor = payload["contractor_analytics"][0]
+        self.assertEqual(contractor["business_name"], "Claimed Pro LLC")
+        self.assertEqual(contractor["bids_submitted"], 1)
+        self.assertEqual(contractor["bids_won"], 1)
+        self.assertEqual(contractor["win_rate"], 100.0)
+        self.assertEqual(contractor["average_bid_amount"], "5000.00")
+        self.assertEqual(payload["attention_queues"]["zero_bid_requests"][0]["id"], zero_bid.id)
+        self.assertEqual(payload["location_summary"]["enabled_cities"], 1)
+
+        filtered = self.client.get("/api/projects/admin/marketplace/analytics/", {"city": "Dallas"})
+        self.assertEqual(filtered.status_code, 200, filtered.data)
+        self.assertEqual(filtered.json()["funnel"]["requests_submitted"], 1)
+        self.assertEqual(filtered.json()["funnel"]["bids_submitted"], 0)
+
+    def test_marketplace_analytics_requires_admin(self):
+        regular = get_user_model().objects.create_user(email="not-admin@example.com", password="testpass123")
+        self.client.force_authenticate(user=regular)
+
+        response = self.client.get("/api/projects/admin/marketplace/analytics/")
+
+        self.assertEqual(response.status_code, 403)
 
     def test_marketplace_contractor_filters_support_claimed_and_compatibility(self):
         ContractorDiscoveryInvite.objects.create(

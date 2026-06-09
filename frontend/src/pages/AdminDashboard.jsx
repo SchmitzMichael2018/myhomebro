@@ -917,6 +917,37 @@ export default function AdminDashboard() {
                   />
                 </div>
 
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" data-testid="admin-ops-marketplace-analytics-links">
+                  <ThinStat
+                    label="Marketplace Conversion"
+                    value={`${opsMarketplace.health?.agreement_conversion_rate || 0}%`}
+                    sub="Open analytics funnel"
+                    onClick={() => navigate("/app/admin/marketplace/analytics")}
+                    testId="admin-ops-marketplace-conversion-link"
+                  />
+                  <ThinStat
+                    label="Zero-Bid Requests"
+                    value={fmtNumber(opsMarketplace.health?.requests_with_zero_bids || 0)}
+                    sub="Review stuck requests"
+                    onClick={() => navigate("/app/admin/marketplace/analytics")}
+                    testId="admin-ops-zero-bid-link"
+                  />
+                  <ThinStat
+                    label="Requests Awaiting Award"
+                    value={fmtNumber(opsMarketplace.health?.requests_awaiting_award || 0)}
+                    sub="Bid comparison follow-up"
+                    onClick={() => navigate("/app/admin/marketplace/analytics")}
+                    testId="admin-ops-awaiting-award-link"
+                  />
+                  <ThinStat
+                    label="Awarded Not Signed/Funded"
+                    value={fmtNumber(opsMarketplace.health?.awarded_not_signed_or_funded || 0)}
+                    sub="Agreement follow-through"
+                    onClick={() => navigate("/app/admin/marketplace/analytics")}
+                    testId="admin-ops-awarded-followup-link"
+                  />
+                </div>
+
                 <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
                   <OpsQueue
                     testId="admin-ops-routing-queue"

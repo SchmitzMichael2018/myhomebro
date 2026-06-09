@@ -18,6 +18,7 @@ from .views import (
 )
 from .views_goals import AdminGoals
 from .views_marketplace import (
+    AdminMarketplaceAnalytics,
     AdminMarketplaceContractors,
     AdminMarketplaceImport,
     AdminMarketplaceListingDetail,
@@ -64,6 +65,7 @@ urlpatterns = [
     path("reimbursements/<int:reimbursement_id>/clear-hold/", AdminReimbursementClearHold.as_view(), name="admin-reimbursement-clear-hold"),
     path("reimbursements/<int:reimbursement_id>/retry-release/", AdminReimbursementRetryRelease.as_view(), name="admin-reimbursement-retry-release"),
     path("marketplace/", AdminMarketplaceOverview.as_view(), name="admin-marketplace-overview"),
+    path("marketplace/analytics/", AdminMarketplaceAnalytics.as_view(), name="admin-marketplace-analytics"),
     path("marketplace/locations/", AdminMarketplaceLocationStatus.as_view(), name="admin-marketplace-location-status"),
     path("marketplace/route-intake/", AdminMarketplaceRouteIntake.as_view(), name="admin-marketplace-route-intake"),
     path("marketplace/verification/", AdminMarketplaceVerification.as_view(), name="admin-marketplace-verification"),

@@ -262,6 +262,95 @@ async function installMarketplaceMocks(page) {
     };
   }
 
+  function analyticsPayload(url = new URL('https://example.test/')) {
+    const city = url.searchParams.get('city') || '';
+    const filteredToDallas = city.toLowerCase() === 'dallas';
+    return {
+      generated_at: '2026-06-08T12:00:00Z',
+      filters: { city },
+      funnel: filteredToDallas
+        ? {
+            requests_submitted: 1,
+            requests_routed: 0,
+            contractor_invites_created: 0,
+            contractor_opportunities_created: 0,
+            bids_submitted: 0,
+            requests_with_zero_bids: 1,
+            requests_with_at_least_one_bid: 0,
+            awarded_requests: 0,
+            agreement_drafts_created: 0,
+            signed_agreements: 0,
+            escrow_funded: 0,
+          }
+        : {
+            requests_submitted: 3,
+            requests_routed: 2,
+            contractor_invites_created: 10,
+            contractor_opportunities_created: 10,
+            bids_submitted: 7,
+            requests_with_zero_bids: 1,
+            requests_with_at_least_one_bid: 2,
+            awarded_requests: 1,
+            agreement_drafts_created: 1,
+            signed_agreements: 0,
+            escrow_funded: 0,
+          },
+      conversion_rates: filteredToDallas
+        ? {
+            request_to_routed: 0,
+            routed_to_bid_received: 0,
+            bid_received_to_awarded: 0,
+            awarded_to_agreement_draft: 0,
+            agreement_draft_to_signed: 0,
+            signed_to_escrow_funded: 0,
+          }
+        : {
+            request_to_routed: 67,
+            routed_to_bid_received: 100,
+            bid_received_to_awarded: 50,
+            awarded_to_agreement_draft: 100,
+            agreement_draft_to_signed: 0,
+            signed_to_escrow_funded: 0,
+          },
+      city_analytics: filteredToDallas
+        ? [{ city: 'Dallas', state: 'TX', requests: 1, routed: 0, bids: 0, zero_bid_requests: 1, awarded_requests: 0, agreement_drafts: 0, average_bids_per_request: 0, agreement_conversion_rate: 0 }]
+        : [
+            { city: 'Austin', state: 'TX', requests: 2, routed: 2, bids: 7, zero_bid_requests: 0, awarded_requests: 1, agreement_drafts: 1, average_bids_per_request: 3.5, agreement_conversion_rate: 50 },
+            { city: 'Dallas', state: 'TX', requests: 1, routed: 0, bids: 0, zero_bid_requests: 1, awarded_requests: 0, agreement_drafts: 0, average_bids_per_request: 0, agreement_conversion_rate: 0 },
+          ],
+      contractor_analytics: filteredToDallas
+        ? []
+        : [
+            {
+              contractor_id: 11,
+              business_name: 'Claimed Roofing Pro',
+              verification_status: 'verified',
+              preferred: true,
+              opportunities_received: 4,
+              bids_submitted: 4,
+              bids_won: 1,
+              win_rate: 25,
+              average_bid_amount: '8500.00',
+              average_rating: 4.9,
+              review_count: 12,
+              performance_score: 91,
+              confidence_label: 'High Confidence',
+            },
+          ],
+      attention_queues: {
+        zero_bid_requests: [{ id: 501, title: 'Luxury Vinyl Plank Flooring', city: 'Dallas', state: 'TX', submitted_at: '2026-05-18T14:00:00Z', routed: false }],
+        requests_awaiting_award: [{ id: 601, title: 'Roof Repair', city: 'Austin', state: 'TX', bid_count: 3, oldest_bid_at: '2026-05-19T14:00:00Z' }],
+        awarded_not_signed_or_funded: [{ lead_id: 701, agreement_id: 901, title: 'Window Replacement', contractor: 'Claimed Roofing Pro', created_at: '2026-05-20T14:00:00Z', escrow_funded: false }],
+      },
+      time_metrics: {
+        avg_request_to_first_bid_days: 1.25,
+        avg_request_to_award_days: 3,
+        avg_award_to_agreement_draft_days: 0.1,
+      },
+      location_summary: { enabled_cities: 1, ready_cities: 2 },
+    };
+  }
+
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -319,6 +408,14 @@ async function installMarketplaceMocks(page) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(verificationPayload(requestUrl)),
+      });
+      return;
+    }
+    if (method === 'GET' && requestUrl.pathname.endsWith('/api/projects/admin/marketplace/analytics/')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(analyticsPayload(requestUrl)),
       });
       return;
     }
@@ -513,6 +610,33 @@ test('admin marketplace verification queue filters and updates trust controls', 
   await page.getByTestId('admin-marketplace-suspend-11').click();
   await expect(page.getByTestId('admin-marketplace-verification-row-11')).toContainText('suspended');
   await expect(page.getByTestId('admin-marketplace-mark-preferred-11')).toBeDisabled();
+});
+
+test('admin marketplace analytics renders funnel, tables, queues, and filters', async ({ page }) => {
+  await installMarketplaceMocks(page);
+
+  await page.goto('/app/admin/marketplace/analytics', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('admin-marketplace-analytics-page')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-analytics-requests')).toContainText('3');
+  await expect(page.getByTestId('admin-marketplace-analytics-routed')).toContainText('2');
+  await expect(page.getByTestId('admin-marketplace-analytics-bids')).toContainText('7');
+  await expect(page.getByTestId('admin-marketplace-analytics-awarded')).toContainText('1');
+  await expect(page.getByTestId('admin-marketplace-analytics-funnel')).toContainText('Routed -> Bid');
+  await expect(page.getByTestId('admin-marketplace-analytics-city-Austin-TX')).toContainText('Austin, TX');
+  await expect(page.getByTestId('admin-marketplace-analytics-city-Austin-TX')).toContainText('3.5 avg/request');
+  await expect(page.getByTestId('admin-marketplace-analytics-contractor-11')).toContainText('Claimed Roofing Pro');
+  await expect(page.getByTestId('admin-marketplace-analytics-contractor-11')).toContainText('Score 91');
+  await expect(page.getByTestId('admin-marketplace-analytics-attention')).toContainText('Zero-bid requests');
+  await expect(page.getByTestId('admin-marketplace-analytics-attention')).toContainText('Luxury Vinyl Plank Flooring');
+  await expect(page.getByTestId('admin-marketplace-analytics-attention')).toContainText('Awarded not signed/funded');
+
+  await page.getByTestId('admin-marketplace-analytics-city').fill('Dallas');
+  await page.getByTestId('admin-marketplace-analytics-apply').click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/analytics\?city=Dallas/);
+  await expect(page.getByTestId('admin-marketplace-analytics-requests')).toContainText('1');
+  await expect(page.getByTestId('admin-marketplace-analytics-bids')).toContainText('0');
+  await expect(page.getByTestId('admin-marketplace-analytics-city-Dallas-TX')).toContainText('Dallas, TX');
 });
 
 test('admin marketplace routes saved requests after location enablement without duplicate UI state', async ({ page }) => {

@@ -17,6 +17,7 @@ const tableCellClass = "border-b border-white/10 px-3 py-3 align-top text-sm tex
 
 function viewKey(pathname) {
   if (pathname.includes("/marketplace/listings/")) return "listing";
+  if (pathname.includes("/marketplace/analytics")) return "analytics";
   if (pathname.includes("/marketplace/verification")) return "verification";
   if (pathname.includes("/marketplace/contractors")) return "coverage";
   if (pathname.includes("/marketplace/import")) return "directory";
@@ -54,6 +55,11 @@ function percentText(rate, percent) {
   if (typeof percent === "number" && Number.isFinite(percent)) return `${Math.round(percent)}%`;
   if (typeof rate === "number" && Number.isFinite(rate)) return `${Math.round(rate * 100)}%`;
   return "n/a";
+}
+
+function rateText(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${Math.round(number)}%` : "0%";
 }
 
 function website(row) {
@@ -235,6 +241,9 @@ export default function AdminMarketplacePage() {
   const [verificationFilters, setVerificationFilters] = useState({ status: "", preferred: "", stripe_ready: "", missing: "", q: "" });
   const [verificationNotes, setVerificationNotes] = useState({});
   const [verificationActionIds, setVerificationActionIds] = useState({});
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsFilters, setAnalyticsFilters] = useState({ date_from: "", date_to: "", city: "", state: "", trade: "", contractor_status: "" });
 
   useEffect(() => {
     if (whoLoading || !isAdmin) return undefined;
@@ -300,6 +309,38 @@ export default function AdminMarketplacePage() {
   }
 
   useEffect(() => {
+    if (whoLoading || !isAdmin || currentView !== "analytics") return undefined;
+    const params = new URLSearchParams(location.search || "");
+    const nextFilters = {
+      date_from: params.get("date_from") || "",
+      date_to: params.get("date_to") || "",
+      city: params.get("city") || "",
+      state: params.get("state") || "",
+      trade: params.get("trade") || "",
+      contractor_status: params.get("contractor_status") || "",
+    };
+    setAnalyticsFilters(nextFilters);
+    let active = true;
+    setAnalyticsLoading(true);
+    setStatus("");
+    api.get("/projects/admin/marketplace/analytics/", {
+      params: Object.fromEntries(Object.entries(nextFilters).filter(([, value]) => String(value || "").trim())),
+    }).then(({ data }) => {
+      if (active) setAnalytics(data || null);
+    }).catch((error) => {
+      if (active) {
+        setStatus(error?.response?.data?.detail || "Failed to load marketplace analytics.");
+        setAnalytics(null);
+      }
+    }).finally(() => {
+      if (active) setAnalyticsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [whoLoading, isAdmin, currentView, location.search]);
+
+  useEffect(() => {
     if (whoLoading || !isAdmin || currentView !== "listing" || !listingId) return undefined;
     let active = true;
     async function loadListing() {
@@ -346,6 +387,14 @@ export default function AdminMarketplacePage() {
 
   function go(path = "") {
     navigate(`/app/admin/marketplace${path ? `/${path}` : ""}`);
+  }
+
+  function applyAnalyticsFilters() {
+    const search = new URLSearchParams();
+    Object.entries(analyticsFilters).forEach(([key, value]) => {
+      if (String(value || "").trim()) search.set(key, String(value).trim());
+    });
+    navigate(`/app/admin/marketplace/analytics${search.toString() ? `?${search.toString()}` : ""}`);
   }
 
   function openDirectory(row) {
@@ -514,6 +563,9 @@ export default function AdminMarketplacePage() {
               <button type="button" className="rounded-xl border border-sky-200/30 bg-sky-300/10 px-4 py-2 text-sm font-extrabold text-sky-50 hover:bg-sky-300/20" onClick={() => go("contractors")}>
                 Coverage View
               </button>
+              <button type="button" className="rounded-xl border border-amber-200/30 bg-amber-300/10 px-4 py-2 text-sm font-extrabold text-amber-100 hover:bg-amber-300/20" onClick={() => go("analytics")}>
+                Analytics
+              </button>
               <button type="button" className="rounded-xl border border-emerald-200/30 bg-emerald-300/10 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-300/20" onClick={() => go("verification")}>
                 Verification Queue
               </button>
@@ -524,6 +576,7 @@ export default function AdminMarketplacePage() {
           </div>
           <div className="mt-5 flex flex-wrap gap-2" data-testid="admin-marketplace-tabs">
             <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "overview" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("")}>Overview</button>
+            <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "analytics" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("analytics")}>Analytics</button>
             <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "coverage" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("contractors")}>Marketplace Coverage</button>
             <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "verification" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("verification")}>Verification</button>
             <button type="button" className={`rounded-full border px-3 py-1.5 text-xs font-extrabold ${currentView === "directory" ? "border-white bg-white text-slate-900" : "border-white/15 bg-white/10 text-sky-50"}`} onClick={() => go("import")}>Directory Console</button>
@@ -533,6 +586,203 @@ export default function AdminMarketplacePage() {
 
         {loading && !rows.length && currentView !== "listing" ? (
           <Section title="Loading marketplace health" sub="Reading Contractor Directory records." />
+        ) : null}
+
+        {currentView === "analytics" ? (
+          <main className="space-y-6" data-testid="admin-marketplace-analytics-page">
+            <Section
+              title="Marketplace Analytics"
+              sub="Track whether cities are getting bids, bids are turning into awards, and awards are becoming signed or funded agreements."
+              testId="admin-marketplace-analytics-filters"
+            >
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+                <input
+                  type="date"
+                  className={inputClass}
+                  data-testid="admin-marketplace-analytics-date-from"
+                  value={analyticsFilters.date_from}
+                  onChange={(event) => setAnalyticsFilters((prev) => ({ ...prev, date_from: event.target.value }))}
+                />
+                <input
+                  type="date"
+                  className={inputClass}
+                  data-testid="admin-marketplace-analytics-date-to"
+                  value={analyticsFilters.date_to}
+                  onChange={(event) => setAnalyticsFilters((prev) => ({ ...prev, date_to: event.target.value }))}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="City"
+                  data-testid="admin-marketplace-analytics-city"
+                  value={analyticsFilters.city}
+                  onChange={(event) => setAnalyticsFilters((prev) => ({ ...prev, city: event.target.value }))}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="State"
+                  data-testid="admin-marketplace-analytics-state"
+                  value={analyticsFilters.state}
+                  onChange={(event) => setAnalyticsFilters((prev) => ({ ...prev, state: event.target.value }))}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="Trade/category"
+                  data-testid="admin-marketplace-analytics-trade"
+                  value={analyticsFilters.trade}
+                  onChange={(event) => setAnalyticsFilters((prev) => ({ ...prev, trade: event.target.value }))}
+                />
+                <select
+                  className={inputClass}
+                  data-testid="admin-marketplace-analytics-contractor-status"
+                  value={analyticsFilters.contractor_status}
+                  onChange={(event) => setAnalyticsFilters((prev) => ({ ...prev, contractor_status: event.target.value }))}
+                >
+                  <option value="">All contractors</option>
+                  <option value="verified">Verified</option>
+                  <option value="pending_review">Pending review</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+                <button
+                  type="button"
+                  className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-sky-50"
+                  data-testid="admin-marketplace-analytics-apply"
+                  onClick={applyAnalyticsFilters}
+                >
+                  Apply
+                </button>
+              </div>
+            </Section>
+
+            {analyticsLoading ? (
+              <Section title="Loading analytics" sub="Calculating marketplace conversion metrics." />
+            ) : null}
+
+            {analytics ? (
+              <>
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5" data-testid="admin-marketplace-analytics-kpis">
+                  <MetricCard label="Requests Submitted" value={analytics.funnel?.requests_submitted || 0} sub="Marketplace requests" testId="admin-marketplace-analytics-requests" />
+                  <MetricCard label="Requests Routed" value={analytics.funnel?.requests_routed || 0} sub={`${rateText(analytics.conversion_rates?.request_to_routed)} routed`} tone="emerald" testId="admin-marketplace-analytics-routed" />
+                  <MetricCard label="Bids Submitted" value={analytics.funnel?.bids_submitted || 0} sub={`${analytics.funnel?.requests_with_at_least_one_bid || 0} requests with bids`} testId="admin-marketplace-analytics-bids" />
+                  <MetricCard label="Awarded Requests" value={analytics.funnel?.awarded_requests || 0} sub={`${rateText(analytics.conversion_rates?.bid_received_to_awarded)} of bid requests`} tone="amber" testId="admin-marketplace-analytics-awarded" />
+                  <MetricCard label="Agreement Drafts" value={analytics.funnel?.agreement_drafts_created || 0} sub={`${analytics.funnel?.signed_agreements || 0} signed | ${analytics.funnel?.escrow_funded || 0} funded`} tone="emerald" testId="admin-marketplace-analytics-agreements" />
+                </section>
+
+                <Section title="Marketplace Funnel" sub="Where requests are moving, and where they are getting stuck." testId="admin-marketplace-analytics-funnel">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard label="Routed -> Bid" value={rateText(analytics.conversion_rates?.routed_to_bid_received)} sub="Routed requests receiving bids" />
+                    <MetricCard label="Bid -> Award" value={rateText(analytics.conversion_rates?.bid_received_to_awarded)} sub="Requests with bids awarded" />
+                    <MetricCard label="Award -> Draft" value={rateText(analytics.conversion_rates?.awarded_to_agreement_draft)} sub="Awarded bids creating drafts" />
+                    <MetricCard label="Draft -> Signed" value={rateText(analytics.conversion_rates?.agreement_draft_to_signed)} sub="Drafts fully signed" />
+                    <MetricCard label="Signed -> Funded" value={rateText(analytics.conversion_rates?.signed_to_escrow_funded)} sub="Signed agreements funded" />
+                    <MetricCard label="Zero-Bid Requests" value={analytics.funnel?.requests_with_zero_bids || 0} sub="Need supply or routing review" tone="amber" />
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className={panelClass}>
+                      <div className="text-xs font-extrabold uppercase tracking-wide text-sky-100/60">Avg request to first bid</div>
+                      <div className="mt-2 text-2xl font-black text-white">{analytics.time_metrics?.avg_request_to_first_bid_days ?? "n/a"} days</div>
+                    </div>
+                    <div className={panelClass}>
+                      <div className="text-xs font-extrabold uppercase tracking-wide text-sky-100/60">Avg request to award</div>
+                      <div className="mt-2 text-2xl font-black text-white">{analytics.time_metrics?.avg_request_to_award_days ?? "n/a"} days</div>
+                    </div>
+                    <div className={panelClass}>
+                      <div className="text-xs font-extrabold uppercase tracking-wide text-sky-100/60">Avg award to draft</div>
+                      <div className="mt-2 text-2xl font-black text-white">{analytics.time_metrics?.avg_award_to_agreement_draft_days ?? "n/a"} days</div>
+                    </div>
+                  </div>
+                </Section>
+
+                <div className="grid gap-6 xl:grid-cols-2">
+                  <Section title="City Performance" sub="City-level bid and award health." testId="admin-marketplace-analytics-city-table">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full">
+                        <thead>
+                          <tr>
+                            <th className={tableHeadClass}>City</th>
+                            <th className={tableHeadClass}>Requests</th>
+                            <th className={tableHeadClass}>Bids</th>
+                            <th className={tableHeadClass}>Awards</th>
+                            <th className={tableHeadClass}>Conversion</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(analytics.city_analytics || []).length ? analytics.city_analytics.map((row) => (
+                            <tr key={`${row.city}-${row.state}`} data-testid={`admin-marketplace-analytics-city-${row.city}-${row.state}`} className="hover:bg-white/5">
+                              <td className={tableCellClass}><div className="font-extrabold text-white">{row.city}, {row.state}</div></td>
+                              <td className={tableCellClass}>{row.requests} requests<br /><span className="text-xs text-sky-100/60">{row.routed} routed</span></td>
+                              <td className={tableCellClass}>{row.bids} bids<br /><span className="text-xs text-sky-100/60">{row.average_bids_per_request} avg/request</span></td>
+                              <td className={tableCellClass}>{row.awarded_requests} awarded<br /><span className="text-xs text-sky-100/60">{row.zero_bid_requests} zero-bid</span></td>
+                              <td className={tableCellClass}>{rateText(row.agreement_conversion_rate)} agreement conversion</td>
+                            </tr>
+                          )) : (
+                            <tr><td className={tableCellClass} colSpan={5}>No city analytics for the selected filters.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Section>
+
+                  <Section title="Contractor Conversion" sub="Contractor bid conversion with review and performance context." testId="admin-marketplace-analytics-contractor-table">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full">
+                        <thead>
+                          <tr>
+                            <th className={tableHeadClass}>Contractor</th>
+                            <th className={tableHeadClass}>Bids</th>
+                            <th className={tableHeadClass}>Win Rate</th>
+                            <th className={tableHeadClass}>Performance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(analytics.contractor_analytics || []).length ? analytics.contractor_analytics.map((row) => (
+                            <tr key={row.contractor_id} data-testid={`admin-marketplace-analytics-contractor-${row.contractor_id}`} className="hover:bg-white/5">
+                              <td className={tableCellClass}>
+                                <div className="font-extrabold text-white">{row.business_name}</div>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  <Badge tone={row.verification_status === "verified" ? "emerald" : "amber"}>{String(row.verification_status || "unverified").replace(/_/g, " ")}</Badge>
+                                  {row.preferred ? <Badge tone="emerald">Preferred</Badge> : null}
+                                </div>
+                              </td>
+                              <td className={tableCellClass}>{row.bids_submitted} submitted<br /><span className="text-xs text-sky-100/60">{row.bids_won} won</span></td>
+                              <td className={tableCellClass}>{rateText(row.win_rate)}<br /><span className="text-xs text-sky-100/60">{row.average_bid_amount ? `$${row.average_bid_amount}` : "No bid amount"} avg bid</span></td>
+                              <td className={tableCellClass}>Score {row.performance_score ?? "New"}<br /><span className="text-xs text-sky-100/60">{row.confidence_label || "Low Confidence"} | Rating {row.average_rating ?? "New"}</span></td>
+                            </tr>
+                          )) : (
+                            <tr><td className={tableCellClass} colSpan={4}>No contractor analytics for the selected filters.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Section>
+                </div>
+
+                <Section title="Attention Queues" sub="Requests and awards that need admin review." testId="admin-marketplace-analytics-attention">
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    {[
+                      ["Zero-bid requests", analytics.attention_queues?.zero_bid_requests || [], "No zero-bid requests."],
+                      ["Requests awaiting award", analytics.attention_queues?.requests_awaiting_award || [], "No requests awaiting award."],
+                      ["Awarded not signed/funded", analytics.attention_queues?.awarded_not_signed_or_funded || [], "No awarded drafts waiting on signature or funding."],
+                    ].map(([title, rows, empty]) => (
+                      <div key={title} className={panelClass}>
+                        <div className="font-extrabold text-white">{title}</div>
+                        <div className="mt-3 space-y-2">
+                          {rows.length ? rows.slice(0, 6).map((row) => (
+                            <div key={row.id || row.lead_id || row.agreement_id} className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-sky-100/75">
+                              <div className="font-bold text-white">{row.title}</div>
+                              <div className="mt-1 text-xs">{[row.city, row.state].filter(Boolean).join(", ") || row.contractor || "Marketplace item"}</div>
+                              {row.bid_count ? <div className="mt-1 text-xs">{row.bid_count} bid(s)</div> : null}
+                              {row.agreement_id ? <button type="button" className="mt-2 text-xs font-extrabold text-amber-100 underline" onClick={() => navigate(`/app/admin/agreements/${row.agreement_id}`)}>Open agreement</button> : null}
+                            </div>
+                          )) : <div className="text-sm text-sky-100/65">{empty}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              </>
+            ) : null}
+          </main>
         ) : null}
 
         {currentView === "overview" ? (

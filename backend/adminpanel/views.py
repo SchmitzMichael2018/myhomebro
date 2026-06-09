@@ -613,15 +613,33 @@ def _admin_operations_payload(today, month_start) -> dict:
         open_bid_statuses = ["new", "ready_for_review", "pending_customer_response", "follow_up", "qualified"]
         lead_qs = PublicContractorLead.objects.all()
         operations["marketplace"]["kpis"]["open_bids"] = lead_qs.filter(status__in=open_bid_statuses).count()
-        request_count = ProjectIntake.objects.count() if ProjectIntake is not None else 0
+        marketplace_intakes = ProjectIntake.objects.filter(post_submit_flow="multi_contractor") if ProjectIntake is not None else None
+        request_count = marketplace_intakes.count() if marketplace_intakes is not None else 0
         bid_count = lead_qs.count()
         operations["marketplace"]["health"]["average_bids_per_request"] = round(bid_count / request_count, 2) if request_count else 0
-        if ProjectIntake is not None:
+        if marketplace_intakes is not None:
             routed_ids = set(
                 lead_qs.exclude(ai_analysis__source_intake_id__isnull=True).values_list("ai_analysis__source_intake_id", flat=True)
             )
-            operations["marketplace"]["health"]["requests_with_zero_bids"] = ProjectIntake.objects.exclude(id__in=routed_ids).count()
+            operations["marketplace"]["health"]["requests_with_zero_bids"] = marketplace_intakes.exclude(id__in=routed_ids).count()
+            operations["marketplace"]["health"]["requests_awaiting_award"] = marketplace_intakes.filter(id__in=routed_ids).exclude(
+                id__in=set(
+                    lead_qs.filter(converted_agreement__isnull=False)
+                    .exclude(ai_analysis__source_intake_id__isnull=True)
+                    .values_list("ai_analysis__source_intake_id", flat=True)
+                )
+            ).count()
         operations["marketplace"]["health"]["awarded_requests"] = lead_qs.filter(converted_agreement__isnull=False).count()
+        awarded_agreements = Agreement.objects.filter(source_public_leads__isnull=False).distinct() if Agreement is not None else []
+        operations["marketplace"]["health"]["awarded_not_signed_or_funded"] = sum(
+            1
+            for agreement in awarded_agreements
+            if not (
+                (bool(getattr(agreement, "signed_by_contractor", False)) or not bool(getattr(agreement, "require_contractor_signature", True)))
+                and (bool(getattr(agreement, "signed_by_homeowner", False)) or not bool(getattr(agreement, "require_customer_signature", True)))
+                and bool(getattr(agreement, "escrow_funded", False))
+            )
+        )
         operations["marketplace"]["health"]["agreement_conversion_rate"] = round(
             (operations["marketplace"]["health"]["awarded_requests"] / bid_count) * 100,
             2,

@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 
 from .permissions import IsAdminUserRole
 from .utils import safe_get
+from .marketplace_analytics import build_marketplace_analytics
 from projects.models import Contractor, ContractorPublicProfile, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite, ContractorOpportunity, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
@@ -673,6 +674,13 @@ class AdminMarketplaceOverview(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class AdminMarketplaceAnalytics(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request):
+        return Response(build_marketplace_analytics(request.query_params), status=status.HTTP_200_OK)
 
 
 class AdminMarketplaceLocationStatus(APIView):
