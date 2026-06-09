@@ -357,7 +357,7 @@ test("assisted diy intake reveals the homeowner participation guidance fields", 
   await page.goto("/app/intake/new", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("project-mode-option-assisted_diy")).toBeVisible({ timeout: 15000 });
   await page.getByTestId("project-mode-option-assisted_diy").click();
-  await expect(page.getByTestId("payment-protection-preferences")).toBeVisible();
+  await expect(page.getByTestId("payment-preferences-section")).toBeVisible();
   await page.getByPlaceholder("e.g., Replace leaking roof over garage and inspect flashing.").fill("Replace electrical panel with permit coordination.");
   await expect(page.getByTestId("assisted-diy-safety-banner")).toBeVisible();
   await expect(page.getByText("Many homeowners choose Assisted DIY")).toBeVisible();

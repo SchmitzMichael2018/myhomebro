@@ -7,6 +7,10 @@ import api from "../../api";
 import IntakeAiRecommendationPanel from "./IntakeAiRecommendationPanel.jsx";
 import { buildAssistedDiySafetyWarning } from "./projectSafety.js";
 import { PROJECT_MODE_OPTIONS, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
+import PaymentPreferenceHelp, {
+  PAYMENT_PREFERENCE_OPTIONS,
+  PAYMENT_PREFERENCE_SECTION_COPY,
+} from "./PaymentPreferenceHelp.jsx";
 
 const blankForm = {
   initiated_by: "contractor",
@@ -787,17 +791,11 @@ export default function ProjectIntakeForm() {
             </div>
           ) : null}
 
-          <div className="mt-4 rounded-lg border border-blue-100 bg-white p-4 shadow-sm" data-testid="payment-protection-preferences">
-            <div className="text-sm font-semibold text-slate-900">Payment &amp; Protection Preferences</div>
-            <p className="mt-1 text-sm text-slate-600">
-              Escrow milestone payments help protect both homeowners and contractors by releasing funds as work is completed and approved.
-            </p>
+          <div className="mt-4 rounded-lg border border-blue-100 bg-white p-4 shadow-sm" data-testid="payment-preferences-section">
+            <div className="text-sm font-semibold text-slate-900">Payment Preferences</div>
+            <p className="mt-1 text-sm text-slate-600">{PAYMENT_PREFERENCE_SECTION_COPY}</p>
             <div className="mt-3 grid gap-2">
-              {[
-                { value: "escrow", label: "Escrow milestone payments", help: "Recommended for most projects." },
-                { value: "direct", label: "Direct payment to contractor", help: "Pay directly through invoice or contractor arrangements." },
-                { value: "discuss", label: "Discuss payment options with contractor", help: "Keep payment structure flexible while you compare options." },
-              ].map((opt) => (
+              {PAYMENT_PREFERENCE_OPTIONS.map((opt) => (
                 <label
                   key={opt.value}
                   className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-sm ${
@@ -812,10 +810,13 @@ export default function ProjectIntakeForm() {
                     checked={form.payment_preference === opt.value}
                     onChange={() => setField("payment_preference", opt.value)}
                     className="mt-1"
+                    data-testid={`project-intake-payment-preference-${opt.value}`}
                   />
                   <span>
-                    <span className="font-semibold">{opt.label}</span>
-                    <span className="mt-0.5 block text-xs text-slate-600">{opt.help}</span>
+                    <span className="inline-flex items-center gap-2 font-semibold">
+                      {opt.label}
+                      <PaymentPreferenceHelp label={opt.label}>{opt.help}</PaymentPreferenceHelp>
+                    </span>
                   </span>
                 </label>
               ))}
