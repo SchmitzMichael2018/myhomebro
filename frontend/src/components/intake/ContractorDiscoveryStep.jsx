@@ -237,6 +237,15 @@ function buildInferredSearchQuery(form) {
   return inferred.join(" ").trim();
 }
 
+function buildFriendlyMatchLabel(form) {
+  const title = safeText(form?.ai_project_title);
+  const subtype = safeText(form?.ai_project_subtype);
+  const type = safeText(form?.ai_project_type);
+  const parts = [title, subtype && subtype !== title ? subtype : "", type && type !== title && type !== subtype ? type : ""].filter(Boolean);
+  if (parts.length) return parts.slice(0, 2).join(" / ");
+  return "Showing contractors that match your project";
+}
+
 export default function ContractorDiscoveryStep({
   token,
   form,
@@ -260,6 +269,11 @@ export default function ContractorDiscoveryStep({
     form?.refined_description,
     form?.ai_description,
     form?.project_scope_summary,
+    form?.ai_project_subtype,
+    form?.ai_project_title,
+    form?.ai_project_type,
+  ]);
+  const friendlyMatchLabel = useMemo(() => buildFriendlyMatchLabel(form), [
     form?.ai_project_subtype,
     form?.ai_project_title,
     form?.ai_project_type,
@@ -309,7 +323,7 @@ export default function ContractorDiscoveryStep({
     if (!active || !token) return;
     if (searchInitKey === projectSearchKey) return;
 
-    setUserSearchInput(suggestedSearchQuery);
+    setUserSearchInput("");
     setSubmittedSearchQuery(suggestedSearchQuery);
     setHasUserEditedSearch(false);
     setSearchInitKey(projectSearchKey);
@@ -413,7 +427,7 @@ export default function ContractorDiscoveryStep({
 
   function handleUseSuggestedSearch() {
     if (!suggestedSearchQuery) return;
-    setUserSearchInput(suggestedSearchQuery);
+    setUserSearchInput("");
     setSubmittedSearchQuery(suggestedSearchQuery);
     setHasUserEditedSearch(false);
     setSearchInitKey(projectSearchKey);
@@ -461,16 +475,21 @@ export default function ContractorDiscoveryStep({
         Profile-reviewed contractors are active MyHomeBro members whose marketplace eligibility has been reviewed. Local business listings are nearby companies discovered from public business data.
       </div>
 
+      <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3" data-testid="public-intake-contractor-match-label">
+        <div className="text-sm font-semibold text-indigo-950">Showing contractors that match your project</div>
+        <div className="mt-1 text-sm text-indigo-900/80">{friendlyMatchLabel}</div>
+      </div>
+
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium text-slate-700">
-          Search
+          Manual search
           <input
             value={userSearchInput}
             onChange={(e) => {
               setUserSearchInput(e.target.value);
               setHasUserEditedSearch(true);
             }}
-            placeholder="We infer a specialty from your project, or you can search one"
+            placeholder="Search a contractor type manually"
             data-testid="public-intake-contractor-search-input"
             className="ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
           />
@@ -491,7 +510,7 @@ export default function ContractorDiscoveryStep({
             data-testid="public-intake-use-suggested-search"
             className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
           >
-            Use suggested search
+            Use project match
           </button>
         ) : null}
         {!safeText(userSearchInput) && hasUserEditedSearch ? (

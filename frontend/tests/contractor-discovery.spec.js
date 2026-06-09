@@ -573,6 +573,10 @@ test("public intake AI patio details search concrete and patio contractors inste
 
   const discoveryStep = page.getByTestId("public-intake-contractor-discovery-step");
   await expect(discoveryStep).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("public-intake-contractor-match-label")).toContainText("Showing contractors that match your project");
+  await expect(page.getByTestId("public-intake-contractor-match-label")).toContainText("Patio Extension");
+  await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue("");
+  await expect(discoveryStep).not.toContainText("concrete contractor patio contractor hardscape contractor");
   await expect(discoveryStep).toContainText("Alamo Concrete Patio Pros");
   await expect(discoveryStep).toContainText("Mission Hardscape Builders");
   await expect(discoveryStep).not.toContainText("Roofing");
