@@ -61,6 +61,7 @@ from projects.services.smart_notifications import create_smart_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.property_intelligence import build_property_intelligence
+from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
@@ -1360,6 +1361,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     property_profile = _property_profile_payload(email)
     property_profiles = _property_profiles_payload(email)
     property_intelligence = build_property_intelligence(email)
+    recommendations = build_customer_recommendations(email, property_intelligence=property_intelligence)
 
     summary = {
         "active_requests": sum(1 for row in request_rows if row.get("status") not in {"converted", "converted_to_project", "archived", "closed"}),
@@ -1390,6 +1392,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "property_profile": property_profile,
         "property_profiles": property_profiles,
         "property_intelligence": property_intelligence,
+        "recommendations": recommendations,
         "notifications": _smart_notification_rows(email),
     }
 

@@ -46,6 +46,7 @@ from .views.notifications import (
     NotificationMarkReadView,
     NotificationUnreadCountView,
 )
+from .views.recommendations import RecommendationMeView
 from .views.dispute_workorders import DisputeWorkOrderViewSet
 from .views.support_tickets import SupportTicketViewSet
 
@@ -360,6 +361,7 @@ agreements_router.register(
 
 urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
+    path("recommendations/me/", RecommendationMeView.as_view(), name="recommendations-me"),
     path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),
     path("customer-portal/request-link/", CustomerPortalRequestLinkView.as_view(), name="customer-portal-request-link"),

@@ -294,7 +294,75 @@ function ProjectAssistantGuide({ guide }) {
   );
 }
 
-function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
+function severityClasses(severity = "") {
+  const level = String(severity || "").toLowerCase();
+  if (level === "high") return "border-rose-200 bg-rose-50 text-rose-950";
+  if (level === "medium") return "border-amber-200 bg-amber-50 text-amber-950";
+  if (level === "low") return "border-sky-200 bg-sky-50 text-sky-950";
+  return "border-slate-200 bg-slate-50 text-slate-800";
+}
+
+function ProjectAssistantRecommendations({ recommendations = [] }) {
+  const navigate = useNavigate();
+  const rows = Array.isArray(recommendations) ? recommendations.filter(Boolean).slice(0, 5) : [];
+  if (!rows.length) return null;
+
+  const handleAction = (recommendation) => {
+    const target = String(recommendation?.action_target || recommendation?.route || "").trim();
+    if (!target) return;
+    if (target.startsWith("/")) {
+      navigate(target);
+      return;
+    }
+    if (target.startsWith("portal:")) {
+      return;
+    }
+    navigate(target);
+  };
+
+  return (
+    <div data-testid="project-assistant-recommendations">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+        Advisory Recommendations
+      </div>
+      <div className="mt-2 grid grid-cols-1 gap-2">
+        {rows.map((recommendation) => (
+          <article
+            key={recommendation.id || recommendation.key || recommendation.title}
+            className={`rounded-2xl border px-4 py-3 ${severityClasses(recommendation.severity)}`}
+            data-testid="project-assistant-recommendation-card"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold">{recommendation.title}</h3>
+                  <span className="rounded-full border border-current/20 bg-white/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em]">
+                    {recommendation.confidence || "low"} confidence
+                  </span>
+                </div>
+                <p className="mt-1 text-sm leading-5">{recommendation.summary}</p>
+                {recommendation.explanation ? (
+                  <p className="mt-1 text-xs leading-5 opacity-80">{recommendation.explanation}</p>
+                ) : null}
+              </div>
+              {recommendation.action_label && recommendation.action_target ? (
+                <button
+                  type="button"
+                  onClick={() => handleAction(recommendation)}
+                  className="shrink-0 rounded-xl border border-current/20 bg-white/70 px-3 py-2 text-xs font-semibold hover:bg-white"
+                >
+                  {recommendation.action_label}
+                </button>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProjectAssistantPanel({ summary, actions, notice = "", recommendations = [], onAction }) {
   const recommended = Array.isArray(actions?.recommended) ? actions.recommended : [];
   const additional = Array.isArray(actions?.additional) ? actions.additional : [];
   const info = Array.isArray(actions?.info) ? actions.info.filter(Boolean) : [];
@@ -358,6 +426,8 @@ function ProjectAssistantPanel({ summary, actions, notice = "", onAction }) {
           ))}
         </div>
       ) : null}
+
+      <ProjectAssistantRecommendations recommendations={recommendations} />
 
       {recommended.length ? (
         <div data-testid="project-assistant-step-actions">
@@ -1285,6 +1355,7 @@ export default function StartWithAIAssistant({
   const [milestoneDrafts, setMilestoneDrafts] = useState([]);
   const [exclusionsDraft, setExclusionsDraft] = useState({ exclusions: [], assumptions: [] });
   const [projectAssistantNotice, setProjectAssistantNotice] = useState("");
+  const [serviceRecommendations, setServiceRecommendations] = useState([]);
   const [plan, setPlan] = useState(() =>
     produceStructuredAssistantPlan({
       preferredIntent: "navigate_app",
@@ -1321,6 +1392,27 @@ export default function StartWithAIAssistant({
     }, 0);
     return () => window.clearTimeout(handle);
   }, [mode, contextSignature, isAgreementWizardAssistant]);
+
+  useEffect(() => {
+    if (!isContextualMode && !isAgreementWizardAssistant) {
+      setServiceRecommendations([]);
+      return undefined;
+    }
+    let cancelled = false;
+    api
+      .get("/projects/recommendations/me/", { params: { limit: 5 } })
+      .then(({ data }) => {
+        if (!cancelled) {
+          setServiceRecommendations(Array.isArray(data?.recommendations) ? data.recommendations : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setServiceRecommendations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isContextualMode, isAgreementWizardAssistant, workspaceRouteSignature]);
 
   useEffect(() => {
     return () => {
@@ -1367,6 +1459,20 @@ export default function StartWithAIAssistant({
     () => buildProjectAssistantActions(normalizedContext),
     [normalizedContext]
   );
+  const projectAssistantRecommendations = useMemo(() => {
+    const contextRows = Array.isArray(normalizedContext?.recommendations)
+      ? normalizedContext.recommendations
+      : Array.isArray(normalizedContext?.unified_recommendations)
+      ? normalizedContext.unified_recommendations
+      : [];
+    const seen = new Set();
+    return [...contextRows, ...serviceRecommendations].filter((row) => {
+      const key = row?.id || row?.key || row?.title;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 5);
+  }, [normalizedContext, serviceRecommendations]);
   const showDiagnostics =
     import.meta.env.DEV ||
     (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG_ASSISTANT === true);
@@ -1834,6 +1940,7 @@ export default function StartWithAIAssistant({
             summary={projectAssistantSummary}
             actions={projectAssistantActions}
             notice={projectAssistantNotice}
+            recommendations={projectAssistantRecommendations}
             onAction={useProjectAssistantAction}
           />
         ) : hideContextHeader ? null : !isFieldAwareMode ? (

@@ -25,6 +25,7 @@ from projects.api.ai_agreement_views import _persist_pricing_estimates, suggest_
 from projects.services.agreements.contractor_signing import send_signature_request_to_homeowner
 from projects.services.contractor_reviews import contractor_performance_summary, moderate_review
 from projects.services.dispute_status import is_terminal_dispute_status
+from projects.services.recommendations import build_admin_recommendations
 
 User = get_user_model()
 
@@ -499,6 +500,7 @@ def _admin_operations_payload(today, month_start) -> dict:
             },
             "contractor_activation": [],
         },
+        "recommendations": [],
     }
 
     if MarketplaceLocation is not None:
@@ -778,6 +780,7 @@ def _admin_operations_payload(today, month_start) -> dict:
             for row in review_qs.filter(moderation_status="pending").order_by("-submitted_at", "-id")[:8]
         ]
 
+    operations["recommendations"] = build_admin_recommendations(limit=8)
     return operations
 
 

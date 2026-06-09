@@ -562,6 +562,7 @@ export default function AdminDashboard() {
   const opsDisputes = operations.disputes || {};
   const opsReviews = operations.reviews || {};
   const opsUsers = operations.users || {};
+  const opsRecommendations = Array.isArray(operations.recommendations) ? operations.recommendations : [];
 
   const tracker = goals?.salary_tracker || {};
   const goal = goals?.goal || {};
@@ -947,6 +948,46 @@ export default function AdminDashboard() {
                     testId="admin-ops-awarded-followup-link"
                   />
                 </div>
+
+                {opsRecommendations.length ? (
+                  <div className="mt-4" data-testid="admin-unified-recommendations">
+                    <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-200/80">
+                          Advisory Recommendations
+                        </div>
+                        <div className="text-sm text-slate-300">
+                          Explainable next-action signals from marketplace, dispute, payment, and maintenance operations.
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      {opsRecommendations.slice(0, 4).map((recommendation) => (
+                        <button
+                          key={recommendation.id || recommendation.key || recommendation.title}
+                          type="button"
+                          onClick={() => recommendation.action_target && navigate(recommendation.action_target)}
+                          className="rounded-2xl border border-slate-700 bg-slate-950/55 p-4 text-left transition hover:border-amber-300/55"
+                          data-testid="admin-unified-recommendation-card"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-bold text-white">{recommendation.title}</div>
+                            <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-100">
+                              {recommendation.severity || "info"}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm leading-5 text-slate-300">{recommendation.summary}</p>
+                          {recommendation.explanation ? (
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{recommendation.explanation}</p>
+                          ) : null}
+                          {recommendation.action_label ? (
+                            <div className="mt-3 text-xs font-bold text-amber-100">{recommendation.action_label}</div>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="admin-ops-maintenance-links">
                   <ThinStat

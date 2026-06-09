@@ -59,6 +59,69 @@ function EmptyState({ title, children, testId }) {
   );
 }
 
+function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
+  const rows = Array.isArray(recommendations) ? recommendations.filter(Boolean).slice(0, 5) : [];
+  if (!rows.length) return null;
+  const targetTab = (target = "") => {
+    const value = String(target || "");
+    if (value.startsWith("portal:")) return value.replace("portal:", "") || "overview";
+    if (value.includes("requests")) return "requests";
+    if (value.includes("property")) return "property";
+    if (value.includes("payments")) return "payments";
+    if (value.includes("documents")) return "documents";
+    return "";
+  };
+  return (
+    <section
+      data-testid="customer-unified-recommendations"
+      className="rounded-2xl border border-amber-300/25 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.13),transparent_34%),rgba(15,23,42,0.72)] p-5"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Recommendations</div>
+          <h2 className="mt-1 text-xl font-semibold text-white">What may need attention</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+            Advisory suggestions from your property records, documents, warranties, and service history.
+          </p>
+        </div>
+        <Badge tone="gold">{rows.length} advisory</Badge>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {rows.map((recommendation) => {
+          const tab = targetTab(recommendation.action_target);
+          return (
+            <article
+              key={recommendation.id || recommendation.key || recommendation.title}
+              data-testid="customer-unified-recommendation-card"
+              className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-white">{recommendation.title}</h3>
+                <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+                  {recommendation.severity || "info"}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-5 text-slate-300">{recommendation.summary}</p>
+              {recommendation.explanation ? (
+                <p className="mt-1 text-xs leading-5 text-slate-500">{recommendation.explanation}</p>
+              ) : null}
+              {recommendation.action_label && tab ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenTab?.(tab)}
+                  className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-300/20"
+                >
+                  {recommendation.action_label}
+                </button>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function paymentActionLabel(payment) {
   const status = String(payment?.status || payment?.status_label || "").toLowerCase();
   const type = String(payment?.record_type || payment?.record_type_label || "").toLowerCase();
@@ -566,6 +629,7 @@ function OverviewPanel({ portal, onOpenTab }) {
       </section>
 
       <CustomerActivationChecklist portal={portal} onOpenTab={onOpenTab} />
+      <CustomerRecommendationsPanel recommendations={portal?.recommendations || []} onOpenTab={onOpenTab} />
 
       <div data-testid="customer-portal-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard label="Projects" value={summary.active_projects ?? 0} testId="customer-portal-summary-projects" onClick={() => onOpenTab?.("projects")} />
