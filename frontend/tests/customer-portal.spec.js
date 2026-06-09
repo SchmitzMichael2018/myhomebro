@@ -629,7 +629,10 @@ const disputedPortalPayload = {
       ? {
           ...payment,
           dispute_status: "open",
-          dispute_status_label: "Dispute opened",
+          dispute_status_label: "Escrow hold active",
+          dispute_escrow_hold_active: true,
+          dispute_financial_disposition: "manual_review_required",
+          dispute_next_action: "Track issue status",
           dispute_url: "/disputes/7702?token=draw-dispute-token",
         }
       : payment
@@ -1224,11 +1227,12 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-review-dispute-form-draw-2")).toContainText("Tell us what is wrong");
   await page.getByTestId("customer-project-review-dispute-form-draw-2").getByLabel("Homeowner note").fill("The walkthrough items are not complete yet.");
   await page.getByTestId("customer-project-review-dispute-form-draw-2").getByRole("button", { name: "Open Dispute" }).click();
-  await expect(page.getByTestId("customer-project-review-draw-2")).toContainText("Dispute opened");
+  await expect(page.getByTestId("customer-project-review-draw-2")).toContainText("Escrow hold active");
+  await expect(page.getByTestId("customer-project-review-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
   await expect(page.getByTestId("customer-project-review-dispute-draw-2")).toContainText("Track Issue Status");
   await expect(page.getByTestId("customer-project-review-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Review payments before funds are released.");
-  await expect(page.getByTestId("customer-project-payment-draw-2")).toContainText("Dispute opened");
+  await expect(page.getByTestId("customer-project-payment-draw-2")).toContainText("Escrow hold active");
   await expect(page.getByTestId("customer-project-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
   await expect(page.getByTestId("customer-project-payment-invoice-2")).toContainText("INV-20260416-0002");
   await expect(page.getByTestId("customer-project-payment-primary-invoice-2")).toContainText("Pay Invoice");
@@ -1245,7 +1249,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-payment-view-invoice-invoice-2")).toHaveAttribute("href", "/invoices/magic/portal-invoice-pay-token");
   await expect(page.getByTestId("customer-payment-open-dispute-invoice-2")).toHaveAttribute("href", "/invoices/magic/portal-invoice-pay-token?action=dispute");
   await expect(page.getByTestId("customer-payment-action-draw-2")).toContainText("Review Release");
-  await expect(page.getByTestId("customer-payment-action-draw-2")).toContainText("Dispute opened");
+  await expect(page.getByTestId("customer-payment-action-draw-2")).toContainText("Escrow hold active");
+  await expect(page.getByTestId("customer-payment-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
   await expect(page.getByTestId("customer-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
   await expect(page.getByTestId("customer-payment-action-invoice-1")).toContainText("View Record");
 

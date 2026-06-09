@@ -951,9 +951,49 @@ def _portal_dispute_status(dispute) -> tuple[str, str]:
     if not dispute:
         return "none", "No dispute"
     value = _safe_text(getattr(dispute, "status", "open")).lower()
+    resolution_type = _safe_text(getattr(dispute, "resolution_type", "")).lower()
+    if resolution_type:
+        return value or "resolved", "Resolution recorded"
+    if getattr(dispute, "escrow_frozen", False):
+        return value or "open", "Escrow hold active"
     if value in {"initiated", "open"}:
         return value or "open", "Dispute opened"
+    if value == "under_review":
+        return value, "Under review"
     return value, value.replace("_", " ").title()
+
+
+def _portal_dispute_metadata(dispute) -> dict:
+    if not dispute:
+        return {
+            "dispute_escrow_hold_active": False,
+            "dispute_resolution_type": "",
+            "dispute_financial_disposition": "",
+            "dispute_next_action": "",
+        }
+    status = _safe_text(getattr(dispute, "status", "")).lower()
+    resolution_type = _safe_text(getattr(dispute, "resolution_type", "")).lower()
+    financial_disposition = _safe_text(getattr(dispute, "financial_disposition", "")).lower()
+    homeowner_response = _safe_text(getattr(dispute, "homeowner_response", ""))
+    contractor_response = _safe_text(getattr(dispute, "contractor_response", ""))
+    if resolution_type:
+        next_action = "Resolution recorded"
+    elif getattr(dispute, "escrow_frozen", False):
+        next_action = "Track issue status"
+    elif status == "under_review":
+        next_action = "Under review"
+    elif not homeowner_response:
+        next_action = "Awaiting your response"
+    elif not contractor_response:
+        next_action = "Awaiting contractor response"
+    else:
+        next_action = "Under review"
+    return {
+        "dispute_escrow_hold_active": bool(getattr(dispute, "escrow_frozen", False)),
+        "dispute_resolution_type": resolution_type,
+        "dispute_financial_disposition": financial_disposition,
+        "dispute_next_action": next_action,
+    }
 
 
 def _draw_dispute(draw):
@@ -1036,6 +1076,7 @@ def _payments(email: str, request=None) -> list[dict]:
         agreement = getattr(draw, "agreement", None)
         dispute = _draw_dispute(draw)
         dispute_status, dispute_status_label = _portal_dispute_status(dispute)
+        dispute_metadata = _portal_dispute_metadata(dispute)
         status_text = (
             "Paid"
             if getattr(draw, "paid_at", None) or getattr(draw, "status", "") in {"paid", "released"}
@@ -1063,6 +1104,7 @@ def _payments(email: str, request=None) -> list[dict]:
                 "dispute_status": dispute_status,
                 "dispute_status_label": dispute_status_label,
                 "dispute_url": _portal_dispute_public_url(dispute),
+                **dispute_metadata,
                 "date": _safe_dt(getattr(draw, "paid_at", None) or getattr(draw, "released_at", None) or getattr(draw, "created_at", None)),
                 "reference": _safe_text(getattr(draw, "stripe_transfer_id", "")) or _safe_text(getattr(external_payment, "reference_number", "")),
                 "agreement_id": getattr(agreement, "id", None),

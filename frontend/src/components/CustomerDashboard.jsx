@@ -83,6 +83,17 @@ function hasOpenDispute(payment) {
   return value && !value.includes("no dispute") && value !== "none";
 }
 
+function customerDisputeStatus(payment) {
+  if (!hasOpenDispute(payment)) return null;
+  const resolution = String(payment?.dispute_resolution_type || "").trim();
+  if (resolution) return { label: "Resolution recorded", detail: "Review the dispute thread for the recorded outcome and next steps." };
+  if (payment?.dispute_escrow_hold_active) return { label: "Escrow hold active", detail: "Funds tied to this issue remain paused while the dispute is reviewed." };
+  const next = String(payment?.dispute_next_action || "").trim();
+  if (next) return { label: next, detail: "Track the issue status before approving any release." };
+  const label = payment.dispute_status_label || payment.dispute_status || "Dispute opened";
+  return { label, detail: "Track the issue status before approving any release." };
+}
+
 function isReimbursementPayment(payment) {
   const type = String(payment?.record_type || payment?.record_type_label || "").toLowerCase();
   return type.includes("reimbursement");
@@ -182,6 +193,7 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
   const target = payment.receipt_url || invoiceUrl || "#";
   const disputeUrl = isInvoicePayment(payment) && invoiceUrl ? `${invoiceUrl}?action=dispute` : "";
   const paid = isPaidPayment(payment);
+  const disputeStatus = customerDisputeStatus(payment);
 
   async function runReimbursementAction(action) {
     if (!token || !payment?.record_id) return;
@@ -223,8 +235,14 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
             <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Secure payment"}</span>
             {payment.due_date ? <span>Due: {new Date(payment.due_date).toLocaleDateString()}</span> : null}
             {payment.invoice_number ? <span>Invoice: {payment.invoice_number}</span> : null}
-            {hasOpenDispute(payment) ? <span className="text-rose-100">Issue: {payment.dispute_status_label || payment.dispute_status}</span> : null}
+            {disputeStatus ? <span className="text-rose-100">Issue: {disputeStatus.label}</span> : null}
           </div>
+          {disputeStatus ? (
+            <div data-testid={`customer-payment-dispute-status-${payment.id}`} className="mt-3 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-50">
+              <div className="font-semibold">{disputeStatus.label}</div>
+              <p className="mt-1 leading-6 text-rose-100/85">{disputeStatus.detail}</p>
+            </div>
+          ) : null}
           {payment.notes ? <p className="mt-2 text-sm text-slate-300">{payment.notes}</p> : null}
           {isReimbursementPayment(payment) && payment.escrow_ledger?.available ? (
             <p className="mt-2 text-xs text-amber-100">

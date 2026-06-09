@@ -96,6 +96,17 @@ function hasOpenDispute(payment) {
   return value && !value.includes("no dispute") && value !== "none";
 }
 
+function customerDisputeStatus(payment) {
+  if (!hasOpenDispute(payment)) return null;
+  const resolution = String(payment?.dispute_resolution_type || "").trim();
+  if (resolution) return { label: "Resolution recorded", detail: "Review the dispute thread for the recorded outcome and next steps." };
+  if (payment?.dispute_escrow_hold_active) return { label: "Escrow hold active", detail: "Funds tied to this issue remain paused while the dispute is reviewed." };
+  const next = String(payment?.dispute_next_action || "").trim();
+  if (next) return { label: next, detail: "Track the issue status before approving any release." };
+  const label = payment.dispute_status_label || payment.dispute_status || "Dispute opened";
+  return { label, detail: "Track the issue status before approving any release." };
+}
+
 function ReviewPromptCard({ project, token, onPortalUpdate }) {
   const review = project?.review || {};
   const [form, setForm] = useState({ rating: 5, title: "", review_text: "" });
@@ -212,6 +223,7 @@ function ProjectReviewCard({ payment, token, onPortalUpdate }) {
   const drawId = payment?.record_id || String(payment?.id || "").replace(/^draw-/, "");
   const canOpenPortalDispute = Boolean(token && drawId);
   const disputeIsOpen = hasOpenDispute(payment);
+  const disputeStatus = customerDisputeStatus(payment);
 
   const approve = async () => {
     if (!drawToken) {
@@ -297,13 +309,14 @@ function ProjectReviewCard({ payment, token, onPortalUpdate }) {
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
             <Badge tone="amber">{payment.amount_label || money(payment.amount)}</Badge>
             <Badge tone={statusTone(payment.status_label)}>{payment.status_label || "Pending review"}</Badge>
-            {disputeIsOpen ? <Badge tone="rose">{payment.dispute_status_label || payment.dispute_status}</Badge> : null}
+            {disputeStatus ? <Badge tone="rose">{disputeStatus.label}</Badge> : null}
             {payment.reference ? <Badge>{payment.reference}</Badge> : null}
           </div>
-          {disputeIsOpen ? (
-            <p className="mt-3 text-sm leading-6 text-rose-100">
-              A dispute is open for this review. Track the issue status before approving any release.
-            </p>
+          {disputeStatus ? (
+            <div data-testid={`customer-project-review-dispute-status-${payment.id}`} className="mt-3 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-50">
+              <div className="font-semibold">{disputeStatus.label}</div>
+              <p className="mt-1 leading-6 text-rose-100/85">{disputeStatus.detail}</p>
+            </div>
           ) : null}
         </div>
         <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
@@ -832,7 +845,7 @@ export default function CustomerProjectWorkspace({
                                 <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : `Contractor: ${selected.contractor_name || "Your contractor"}`}</span>
                                 <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Secure payment"}</span>
                                 {payment.due_date ? <span>Due: {formatDate(payment.due_date)}</span> : null}
-                                {hasOpenDispute(payment) ? <span className="text-rose-100">Issue: {payment.dispute_status_label || payment.dispute_status}</span> : null}
+                                {customerDisputeStatus(payment) ? <span className="text-rose-100">Issue: {customerDisputeStatus(payment).label}</span> : null}
                               </div>
                             </div>
                             <div className="text-right">

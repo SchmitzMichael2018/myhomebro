@@ -121,6 +121,8 @@ const isClosed = (d) => {
 // Stage A: compute a "Next step" label for scanning
 const nextStepLabel = (d, isAdmin) => {
   const s = String(d?.status || "").toLowerCase();
+  const resolution = String(d?.resolution_type || "").toLowerCase();
+  if (resolution === "rework_required") return "Rework required";
   if (isDisputeTerminal(s)) return "Resolved";
 
   if (!d?.fee_paid) return "Waiting on fee";
@@ -128,6 +130,7 @@ const nextStepLabel = (d, isAdmin) => {
   const hasHome = Boolean(String(d?.homeowner_response || "").trim());
   const hasCont = Boolean(String(d?.contractor_response || "").trim());
 
+  if (!hasEvidence(d)) return "Awaiting evidence";
   if (hasHome && hasCont) return isAdmin ? "Ready for decision" : "Ready for review";
   if (!hasCont) return "Waiting on contractor";
   if (!hasHome) return "Waiting on homeowner";
@@ -139,9 +142,20 @@ const nextStepLabel = (d, isAdmin) => {
 const pillToneForNext = (label) => {
   const l = String(label || "").toLowerCase();
   if (l.includes("resolved") || l === "closed") return "good";
+  if (l.includes("rework")) return "warn";
+  if (l.includes("evidence")) return "warn";
   if (l.includes("ready")) return "info";
   if (l.includes("waiting")) return "warn";
   if (l.includes("under review")) return "info";
+  return "default";
+};
+
+const financialTone = (value) => {
+  const v = String(value || "").toLowerCase();
+  if (v.includes("release")) return "good";
+  if (v.includes("refund")) return "danger";
+  if (v.includes("manual")) return "warn";
+  if (v.includes("no_financial")) return "default";
   return "default";
 };
 
@@ -187,6 +201,10 @@ function ModalShell({ title, onClose, children, width = "min(920px, 96vw)" }) {
 
 const FILTERS_BASE = [
   { key: "all", label: "All" },
+  { key: "open", label: "Open" },
+  { key: "awaiting_response", label: "Awaiting response" },
+  { key: "awaiting_evidence", label: "Awaiting evidence" },
+  { key: "rework_required", label: "Rework required" },
   { key: "waiting_fee", label: "Waiting on fee" },
   { key: "waiting_contractor", label: "Waiting on contractor" },
   { key: "waiting_homeowner", label: "Waiting on homeowner" },
@@ -194,14 +212,67 @@ const FILTERS_BASE = [
   { key: "under_review", label: "Under review" },
   { key: "resolved", label: "Resolved" },
   { key: "canceled", label: "Canceled" },
+  { key: "archived", label: "Archived" },
 ];
 
 const FILTERS_ADMIN_EXTRA = [
   { key: "overdue", label: "Overdue" },
   { key: "due_soon", label: "Due soon (24h)" },
+  { key: "awaiting_admin_review", label: "Awaiting admin review" },
 ];
 
+const RESOLUTION_LABELS = {
+  contractor_prevails: "Contractor Prevails",
+  customer_prevails: "Customer Prevails",
+  partial_resolution: "Partial Resolution",
+  rework_required: "Rework Required",
+  administrative_closure: "Administrative Closure",
+};
+
+const FINANCIAL_LABELS = {
+  eligible_for_release: "Eligible for Release",
+  eligible_for_refund: "Eligible for Refund",
+  partial_manual_review: "Partial Manual Review",
+  manual_review_required: "Manual Review Required",
+  no_financial_action: "No Financial Action",
+};
+
+const labelFor = (value, labels) => labels[String(value || "").toLowerCase()] || String(value || "").replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+
+function hasEvidence(d) {
+  return Boolean(
+    (Array.isArray(d?.attachments) && d.attachments.length) ||
+      String(d?.homeowner_response || "").trim() ||
+      String(d?.contractor_response || "").trim()
+  );
+}
+
+function disputeBoardKey(d, isAdmin = false) {
+  const status = String(d?.status || "").toLowerCase();
+  const resolution = String(d?.resolution_type || "").toLowerCase();
+  const hasHome = Boolean(String(d?.homeowner_response || "").trim());
+  const hasCont = Boolean(String(d?.contractor_response || "").trim());
+
+  if (isDisputeArchived(d)) return "archived";
+  if (resolution === "rework_required") return "rework_required";
+  if (status === "canceled") return "canceled";
+  if (isDisputeTerminal(status)) return "resolved";
+  if (!d?.fee_paid) return "waiting_fee";
+  if (!hasEvidence(d)) return "awaiting_evidence";
+  if (isAdmin && (status === "under_review" || (hasHome && hasCont))) return "awaiting_admin_review";
+  if (!hasCont) return "waiting_contractor";
+  if (!hasHome) return "waiting_homeowner";
+  if (status === "under_review") return "under_review";
+  if (status === "open" || status === "initiated") return "open";
+  if (!hasHome || !hasCont) return "awaiting_response";
+  return "ready";
+}
+
 function getFilterKeyBase(d) {
+  const boardKey = disputeBoardKey(d);
+  if (["open", "awaiting_response", "awaiting_evidence", "rework_required", "archived"].includes(boardKey)) {
+    return boardKey;
+  }
   const status = String(d?.status || "").toLowerCase();
 
   if (status === "canceled") return "canceled";
@@ -222,6 +293,18 @@ function getFilterKeyBase(d) {
 
 function filterRowsBase(rows, selectedKey) {
   if (!selectedKey || selectedKey === "all") return rows;
+  if (
+    [
+      "open",
+      "awaiting_response",
+      "awaiting_evidence",
+      "awaiting_admin_review",
+      "rework_required",
+      "archived",
+    ].includes(selectedKey)
+  ) {
+    return rows.filter((d) => disputeBoardKey(d, selectedKey === "awaiting_admin_review") === selectedKey);
+  }
   return rows.filter((d) => getFilterKeyBase(d) === selectedKey);
 }
 
@@ -376,6 +459,8 @@ function applyFilterAndSearch(rows, filterKey, searchQuery, isAdmin, now) {
     filtered = rows.filter((d) => isOverdueDispute(d, now));
   } else if (isAdmin && filterKey === "due_soon") {
     filtered = rows.filter((d) => isDueSoonDispute(d, now));
+  } else if (isAdmin && filterKey === "awaiting_admin_review") {
+    filtered = rows.filter((d) => disputeBoardKey(d, true) === "awaiting_admin_review");
   } else {
     filtered = filterRowsBase(rows, filterKey);
   }
@@ -415,6 +500,7 @@ function FilterBar({ rows, selected, onChange, filters, isAdmin, now, operationa
       if (isAdmin) {
         if (isOverdueDispute(d, now)) c.overdue = (c.overdue || 0) + 1;
         if (isDueSoonDispute(d, now)) c.due_soon = (c.due_soon || 0) + 1;
+        if (disputeBoardKey(d, true) === "awaiting_admin_review") c.awaiting_admin_review = (c.awaiting_admin_review || 0) + 1;
       }
     }
 
@@ -762,6 +848,10 @@ function DetailsModal({
             </Badge>
           ) : null}
           {hasAnyResponse(dispute) && !isClosed(dispute) ? <Badge tone="good">Response received</Badge> : null}
+          {dispute.resolution_type ? <Badge tone="info">{labelFor(dispute.resolution_type, RESOLUTION_LABELS)}</Badge> : null}
+          {dispute.financial_disposition ? (
+            <Badge tone={financialTone(dispute.financial_disposition)}>{labelFor(dispute.financial_disposition, FINANCIAL_LABELS)}</Badge>
+          ) : null}
         </div>
 
         <div className="mt-3">
@@ -786,6 +876,29 @@ function DetailsModal({
       <ReworkMilestoneCTA dispute={dispute} basePath={basePath} />
 
       {proposal ? <ProposalCard proposal={proposal} /> : null}
+
+      <div className="mhb-glass" style={{ padding: 12 }}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Resolution Type</div>
+            <div className="mt-1 font-extrabold text-slate-900">{dispute.resolution_type ? labelFor(dispute.resolution_type, RESOLUTION_LABELS) : "Not recorded"}</div>
+          </div>
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Financial Disposition</div>
+            <div className="mt-1 font-extrabold text-slate-900">{dispute.financial_disposition ? labelFor(dispute.financial_disposition, FINANCIAL_LABELS) : "Pending review"}</div>
+          </div>
+          <div>
+            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Escrow Hold</div>
+            <div className="mt-1 font-extrabold text-slate-900">{dispute.escrow_frozen ? "Escrow hold active" : "No active hold"}</div>
+          </div>
+        </div>
+        {(dispute.resolution_notes || dispute.admin_notes) ? (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="font-extrabold">Resolution notes are advisory and administrative. They do not determine legal liability or move funds automatically.</div>
+            <div className="mt-2 whitespace-pre-wrap">{dispute.resolution_notes || dispute.admin_notes}</div>
+          </div>
+        ) : null}
+      </div>
 
       <div className="mhb-glass" style={{ padding: 12 }}>
         <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Reason</div>
@@ -1456,7 +1569,9 @@ export default function DisputesPages() {
               <th className="text-left p-2">Agreement #</th>
               <th className="text-left p-2">Milestone</th>
               <th className="text-left p-2">Status</th>
-              <th className="text-left p-2">Fee</th>
+              <th className="text-left p-2">Hold</th>
+              <th className="text-left p-2">Disposition</th>
+              <th className="text-left p-2">Next Action</th>
               <th className="text-left p-2">Created</th>
               <th className="text-left p-2">Attachments</th>
               <th className="text-left p-2">Actions</th>
@@ -1475,15 +1590,34 @@ export default function DisputesPages() {
                   <Badge tone={isClosed(d) ? "danger" : toneFor(d.status)}>
                     {isClosed(d) ? "Resolved" : (d.status || "").replaceAll("_", " ")}
                   </Badge>
+                  {d.resolution_type ? (
+                    <div className="mt-1">
+                      <Badge tone="info">{labelFor(d.resolution_type, RESOLUTION_LABELS)}</Badge>
+                    </div>
+                  ) : null}
                 </td>
                 <td className="p-2">
-                  {isClosed(d) ? (
-                    <span className={operationalDisputes ? "text-sky-100/45" : "text-slate-500"}>—</span>
-                  ) : d.fee_paid ? (
-                    <span className="font-bold text-emerald-300">Paid</span>
+                  {d.escrow_frozen ? (
+                    <Badge tone="info" className="bg-slate-900 text-white">Escrow Hold Active</Badge>
                   ) : (
-                    <span className={operationalDisputes ? "text-sky-100/80" : "text-slate-700"}>{money(d.fee_amount || 0)}</span>
+                    <span className={operationalDisputes ? "text-sky-100/55" : "text-slate-500"}>No active hold</span>
                   )}
+                </td>
+                <td className="p-2">
+                  {d.financial_disposition ? (
+                    <Badge tone={financialTone(d.financial_disposition)}>{labelFor(d.financial_disposition, FINANCIAL_LABELS)}</Badge>
+                  ) : (
+                    <span className={operationalDisputes ? "text-sky-100/55" : "text-slate-500"}>Pending review</span>
+                  )}
+                  {!isClosed(d) ? (
+                    <div className={`mt-1 text-xs font-bold ${d.fee_paid ? "text-emerald-300" : operationalDisputes ? "text-sky-100/70" : "text-slate-600"}`}>
+                      {d.fee_paid ? "Fee paid" : `Fee ${money(d.fee_amount || 0)}`}
+                    </div>
+                  ) : null}
+                </td>
+                <td className="p-2">
+                  <Badge tone={pillToneForNext(nextStepLabel(d, isAdmin))}>{nextStepLabel(d, isAdmin)}</Badge>
+                  <DeadlineLine dispute={d} now={now} />
                 </td>
                 <td className="p-2">{d.created_at ? new Date(d.created_at).toLocaleDateString() : "—"}</td>
                 <td className="p-2">{(d.attachments || []).length}</td>

@@ -20184,7 +20184,10 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIn("Dispute opened", draw.homeowner_review_notes)
 
         payment_row = next(row for row in response.data["portal"]["payments"] if row["id"] == f"draw-{draw.id}")
-        self.assertEqual(payment_row["dispute_status_label"], "Dispute opened")
+        self.assertEqual(payment_row["dispute_status_label"], "Escrow hold active")
+        self.assertTrue(payment_row["dispute_escrow_hold_active"])
+        self.assertEqual(payment_row["dispute_next_action"], "Track issue status")
+        self.assertEqual(payment_row["dispute_financial_disposition"], "")
         self.assertIn(f"/disputes/{dispute.id}?token=", payment_row["dispute_url"])
         self.assertTrue(
             SmartNotification.objects.filter(
