@@ -213,6 +213,62 @@ async function mockAdminDashboard(page) {
             },
             contractor_activation: [],
           },
+          recommendations: [
+            {
+              id: 'admin-marketplace-zero-bid',
+              key: 'admin-marketplace-zero-bid',
+              type: 'marketplace_conversion',
+              category: 'zero_bid',
+              title: 'Requests have zero bids',
+              summary: '1 marketplace request needs bid coverage review.',
+              explanation: 'Use marketplace analytics to inspect location readiness and eligible contractor coverage.',
+              source: 'marketplace_analytics',
+              confidence: 'high',
+              severity: 'high',
+              audience: 'admin',
+              object_type: 'marketplace',
+              action_label: 'Open Marketplace Analytics',
+              action_target: '/app/admin/marketplace/analytics',
+              generated_at: '2026-06-09T12:00:00Z',
+              metadata: { count: 1 },
+            },
+            {
+              id: 'admin-dispute-review',
+              key: 'admin-dispute-review',
+              type: 'dispute_risk',
+              category: 'awaiting_admin_review',
+              title: 'Disputes awaiting admin review',
+              summary: '1 dispute is under review.',
+              explanation: 'Review evidence and response status. Recommendations remain advisory.',
+              source: 'dispute_framework',
+              confidence: 'high',
+              severity: 'high',
+              audience: 'admin',
+              object_type: 'dispute',
+              action_label: 'Open Disputes',
+              action_target: '/app/admin?view=disputes&status=active',
+              generated_at: '2026-06-09T12:00:00Z',
+              metadata: { under_review_count: 1 },
+            },
+            {
+              id: 'admin-reimbursement-failed-release',
+              key: 'admin-reimbursement-failed-release',
+              type: 'admin_attention',
+              category: 'payments',
+              title: 'Reimbursement release needs retry',
+              summary: '1 reimbursement release has a retryable failure.',
+              explanation: 'Use the reimbursement queue to inspect Stripe transfer state before retrying.',
+              source: 'admin_operations',
+              confidence: 'medium',
+              severity: 'medium',
+              audience: 'admin',
+              object_type: 'expense_request',
+              action_label: 'Open Reimbursements',
+              action_target: '/app/admin/reimbursements',
+              generated_at: '2026-06-09T12:00:00Z',
+              metadata: { failed_releases: 1 },
+            },
+          ],
         },
       }),
     });
@@ -596,6 +652,18 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-ops-maintenance')).toContainText('1');
   await expect(page.getByTestId('admin-ops-disputes')).toContainText('1');
   await expect(page.getByTestId('admin-ops-activation')).toContainText('6');
+  await expect(page.getByTestId('admin-unified-recommendations')).toBeVisible();
+  await expect(page.getByTestId('admin-unified-recommendations')).toContainText('Advisory Recommendations');
+  await expect(page.getByTestId('admin-unified-recommendations')).toContainText('Requests have zero bids');
+  await expect(page.getByTestId('admin-unified-recommendations')).toContainText('1 marketplace request needs bid coverage review.');
+  await expect(page.getByTestId('admin-unified-recommendations')).toContainText('Use marketplace analytics');
+  await expect(page.getByTestId('admin-unified-recommendations')).toContainText('Open Marketplace Analytics');
+  await page
+    .getByTestId('admin-unified-recommendations')
+    .getByText('Requests have zero bids')
+    .click();
+  await expect(page).toHaveURL(/\/app\/admin\/marketplace\/analytics/);
+  await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-ops-routing-queue')).toContainText('Kitchen flooring request');
   await expect(page.getByTestId('admin-ops-reimbursement-queue')).toContainText('Stripe transfer failed');
   await expect(page.getByTestId('admin-ops-maintenance-queue')).toContainText('Quarterly filter service');

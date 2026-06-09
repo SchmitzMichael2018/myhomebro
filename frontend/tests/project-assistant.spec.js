@@ -114,6 +114,36 @@ async function installAgreementWizardStep2Mocks(page) {
     });
   });
 
+  await page.route('**/api/projects/recommendations/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        recommendations: [
+          {
+            id: 'contractor-77-milestone-timing',
+            key: 'contractor-77-milestone-timing',
+            type: 'milestone_timing',
+            category: 'delivery',
+            title: 'Improve milestone timing',
+            summary: 'Milestone snapshots show some delayed completion signals.',
+            explanation: 'Use this as a planning cue before sending the agreement.',
+            source: 'contractor_performance_summary',
+            confidence: 'medium',
+            severity: 'medium',
+            audience: 'contractor',
+            object_type: 'contractor',
+            object_id: 77,
+            action_label: 'Open Milestones',
+            action_target: '/app/milestones',
+            generated_at: '2026-06-09T12:00:00Z',
+            metadata: {},
+          },
+        ],
+      }),
+    });
+  });
+
   await page.route('**/api/projects/project-types/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -199,6 +229,18 @@ test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat 
   await expect(page.getByTestId('project-assistant-guide-step-2')).toContainText(
     'Review milestones'
   );
+
+  await expect(page.getByTestId('project-assistant-recommendations')).toBeVisible();
+  const recommendation = page.getByTestId('project-assistant-recommendation-card').first();
+  await expect(recommendation).toContainText('Improve milestone timing');
+  await expect(recommendation).toContainText('Milestone snapshots show some delayed completion signals.');
+  await expect(recommendation).toContainText('Use this as a planning cue before sending the agreement.');
+  await expect(recommendation).toContainText('medium confidence');
+  await expect(recommendation.getByTestId('recommendation-action')).toContainText('Open Milestones');
+  await recommendation.getByTestId('recommendation-action').click();
+  await expect(page).toHaveURL(/\/app\/milestones/);
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').click();
 
   await expect(page.getByTestId('project-assistant-step-actions')).toContainText('Step Actions');
   await expect(page.getByTestId('project-assistant-other-actions')).toContainText(

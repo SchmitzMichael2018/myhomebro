@@ -335,7 +335,9 @@ function ProjectAssistantRecommendations({ recommendations = [] }) {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold">{recommendation.title}</h3>
+                  <h3 className="text-sm font-semibold" data-testid="recommendation-title">
+                    {recommendation.title}
+                  </h3>
                   <span className="rounded-full border border-current/20 bg-white/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em]">
                     {recommendation.confidence || "low"} confidence
                   </span>
@@ -349,6 +351,7 @@ function ProjectAssistantRecommendations({ recommendations = [] }) {
                 <button
                   type="button"
                   onClick={() => handleAction(recommendation)}
+                  data-testid="recommendation-action"
                   className="shrink-0 rounded-xl border border-current/20 bg-white/70 px-3 py-2 text-xs font-semibold hover:bg-white"
                 >
                   {recommendation.action_label}

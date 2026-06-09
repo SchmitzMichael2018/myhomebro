@@ -971,7 +971,9 @@ export default function AdminDashboard() {
                           data-testid="admin-unified-recommendation-card"
                         >
                           <div className="flex flex-wrap items-center gap-2">
-                            <div className="text-sm font-bold text-white">{recommendation.title}</div>
+                            <div className="text-sm font-bold text-white" data-testid="recommendation-title">
+                              {recommendation.title}
+                            </div>
                             <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-100">
                               {recommendation.severity || "info"}
                             </span>
@@ -981,7 +983,9 @@ export default function AdminDashboard() {
                             <p className="mt-1 text-xs leading-5 text-slate-500">{recommendation.explanation}</p>
                           ) : null}
                           {recommendation.action_label ? (
-                            <div className="mt-3 text-xs font-bold text-amber-100">{recommendation.action_label}</div>
+                            <div className="mt-3 text-xs font-bold text-amber-100" data-testid="recommendation-action">
+                              {recommendation.action_label}
+                            </div>
                           ) : null}
                         </button>
                       ))}

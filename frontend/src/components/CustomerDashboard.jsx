@@ -96,7 +96,9 @@ function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
               className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-white">{recommendation.title}</h3>
+                <h3 className="text-sm font-semibold text-white" data-testid="recommendation-title">
+                  {recommendation.title}
+                </h3>
                 <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">
                   {recommendation.severity || "info"}
                 </span>
@@ -108,6 +110,7 @@ function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
               {recommendation.action_label && tab ? (
                 <button
                   type="button"
+                  data-testid="recommendation-action"
                   onClick={() => onOpenTab?.(tab)}
                   className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-300/20"
                 >

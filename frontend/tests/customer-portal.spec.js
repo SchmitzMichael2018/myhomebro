@@ -536,6 +536,46 @@ const portalPayload = {
       },
     ],
   },
+  recommendations: [
+    {
+      id: "customer-property-hvac",
+      key: "customer-property-hvac",
+      type: "maintenance_due",
+      category: "maintenance_due",
+      title: "HVAC service may be due.",
+      summary: "No recent completed HVAC service record was found for this property in the last year.",
+      explanation: "Generated from customer-owned property records and service history.",
+      source: "property_intelligence",
+      confidence: "medium",
+      severity: "medium",
+      audience: "customer",
+      object_type: "property_profile",
+      object_id: 1,
+      action_label: "Create Request",
+      action_target: "portal:requests",
+      generated_at: "2026-06-09T12:00:00Z",
+      metadata: { property_name: "Kitchen Remodel" },
+    },
+    {
+      id: "customer-property-water-heater",
+      key: "customer-property-water-heater",
+      type: "property_intelligence",
+      category: "missing_records",
+      title: "No water heater records found.",
+      summary: "Water heater installation, warranty, and service records help track age and maintenance needs.",
+      explanation: "This customer-safe recommendation is scoped to the active portal token.",
+      source: "property_intelligence",
+      confidence: "medium",
+      severity: "low",
+      audience: "customer",
+      object_type: "property_profile",
+      object_id: 1,
+      action_label: "View Property Records",
+      action_target: "portal:property",
+      generated_at: "2026-06-09T12:00:00Z",
+      metadata: { property_name: "Kitchen Remodel" },
+    },
+  ],
   notifications: [
     {
       id: 101,
@@ -1137,6 +1177,24 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-activation-check-documents")).toContainText("Complete");
   await expect(page.getByTestId("customer-activation-check-first-request")).toContainText("Complete");
   await expect(page.getByTestId("customer-activation-check-payments")).toContainText("Fund escrow or review payments");
+  await expect(page.getByTestId("customer-unified-recommendations")).toBeVisible();
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("What may need attention");
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("HVAC service may be due.");
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("No recent completed HVAC service record was found");
+  await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("contractor_performance");
+  await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("Admin");
+  await page
+    .getByTestId("customer-unified-recommendations")
+    .getByRole("button", { name: "Create Request" })
+    .click();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
+  await page.getByTestId("customer-dashboard-tab-overview").click();
+  await page
+    .getByTestId("customer-unified-recommendations")
+    .getByRole("button", { name: "View Property Records" })
+    .click();
+  await expect(page.getByTestId("customer-dashboard-tab-property")).toHaveClass(/border-amber/);
+  await page.getByTestId("customer-dashboard-tab-overview").click();
   await page.getByTestId("customer-activation-action-payments").click();
   await expect(page.getByTestId("customer-dashboard-tab-payments")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-overview").click();
