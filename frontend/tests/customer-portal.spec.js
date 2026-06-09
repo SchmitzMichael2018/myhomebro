@@ -413,6 +413,129 @@ const portalPayload = {
       ],
     },
   ],
+  property_intelligence: {
+    property_id: 1,
+    property_name: "Kitchen Remodel",
+    health: {
+      status: "needs_attention",
+      label: "Needs Attention",
+      score: 64,
+      confidence: "medium",
+      summary: "Needs Attention: 1 item may need attention. Confidence is medium based on available records.",
+    },
+    insights: [
+      {
+        id: "maintenance-hvac-service-due",
+        category: "maintenance_due",
+        bucket: "needs_attention",
+        severity: "medium",
+        title: "HVAC service may be due.",
+        reason: "No recent completed HVAC service record was found for this property in the last year.",
+        property_id: 1,
+        property_name: "Kitchen Remodel",
+        suggested_action: { label: "Schedule Maintenance", target: "requests" },
+      },
+      {
+        id: "missing-water-heater-records",
+        category: "missing_records",
+        bucket: "recommended",
+        severity: "low",
+        title: "No water heater records found.",
+        reason: "Water heater installation, warranty, and service records help track age and maintenance needs.",
+        property_id: 1,
+        property_name: "Kitchen Remodel",
+        suggested_action: { label: "Upload Document", target: "property" },
+      },
+      {
+        id: "seasonal-summer-hvac-review",
+        category: "seasonal",
+        bucket: "recommended",
+        severity: "low",
+        title: "Summer HVAC review recommended.",
+        reason: "Cooling systems work hardest in summer. A service visit can help catch filter, airflow, and condensate issues early.",
+        property_id: 1,
+        property_name: "Kitchen Remodel",
+        suggested_action: { label: "Schedule Maintenance", target: "requests" },
+      },
+      {
+        id: "warranty-review-available",
+        category: "warranty_awareness",
+        bucket: "informational",
+        severity: "info",
+        title: "Warranty information is available.",
+        reason: "Review saved warranty details and related documents before starting overlapping work.",
+        property_id: 1,
+        property_name: "Kitchen Remodel",
+        suggested_action: { label: "Review Warranty", target: "property" },
+      },
+    ],
+    buckets: {
+      needs_attention: [
+        {
+          id: "maintenance-hvac-service-due",
+          category: "maintenance_due",
+          bucket: "needs_attention",
+          severity: "medium",
+          title: "HVAC service may be due.",
+          reason: "No recent completed HVAC service record was found for this property in the last year.",
+          property_id: 1,
+          property_name: "Kitchen Remodel",
+          suggested_action: { label: "Schedule Maintenance", target: "requests" },
+        },
+      ],
+      upcoming: [],
+      recommended: [
+        {
+          id: "missing-water-heater-records",
+          category: "missing_records",
+          bucket: "recommended",
+          severity: "low",
+          title: "No water heater records found.",
+          reason: "Water heater installation, warranty, and service records help track age and maintenance needs.",
+          property_id: 1,
+          property_name: "Kitchen Remodel",
+          suggested_action: { label: "Upload Document", target: "property" },
+        },
+        {
+          id: "seasonal-summer-hvac-review",
+          category: "seasonal",
+          bucket: "recommended",
+          severity: "low",
+          title: "Summer HVAC review recommended.",
+          reason: "Cooling systems work hardest in summer. A service visit can help catch filter, airflow, and condensate issues early.",
+          property_id: 1,
+          property_name: "Kitchen Remodel",
+          suggested_action: { label: "Schedule Maintenance", target: "requests" },
+        },
+      ],
+      informational: [
+        {
+          id: "warranty-review-available",
+          category: "warranty_awareness",
+          bucket: "informational",
+          severity: "info",
+          title: "Warranty information is available.",
+          reason: "Review saved warranty details and related documents before starting overlapping work.",
+          property_id: 1,
+          property_name: "Kitchen Remodel",
+          suggested_action: { label: "Review Warranty", target: "property" },
+        },
+      ],
+    },
+    learning_summary: {
+      record_counts: { documents: 4, photos: 1, maintenance_work_orders: 1, agreements: 1, projects: 1 },
+      categories: ["maintenance_due", "missing_records", "seasonal", "warranty_awareness"],
+      common_work_signals: ["HVAC"],
+    },
+    properties: [
+      {
+        property_id: 1,
+        property_name: "Kitchen Remodel",
+        health: { status: "needs_attention", label: "Needs Attention", score: 64, confidence: "medium" },
+        insight_count: 4,
+      },
+    ],
+  },
   notifications: [
     {
       id: 101,
@@ -1152,6 +1275,13 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-dashboard")).toContainText("Your property records, organized.");
   await expect(page.getByTestId("home-records-dashboard")).toContainText("Completed MyHomeBro projects can be saved as part of your property record.");
+  await expect(page.getByTestId("property-intelligence-panel")).toContainText("Property Intelligence");
+  await expect(page.getByTestId("property-intelligence-health")).toContainText("Needs Attention");
+  await expect(page.getByTestId("property-intelligence-needs_attention")).toContainText("HVAC service may be due.");
+  await expect(page.getByTestId("property-intelligence-recommended")).toContainText("No water heater records found.");
+  await page.getByTestId("property-intelligence-action-maintenance-hvac-service-due").click();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
+  await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("customer-property-manager")).toContainText("My Properties");
   await expect(page.getByTestId("customer-property-card-1")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-property-card-2")).toContainText("Lake House");
@@ -1397,6 +1527,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-dashboard")).toContainText("Your property records, organized.");
+  await expect(page.getByTestId("property-intelligence-empty")).toContainText("No property recommendations yet");
   await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No property timeline yet");
   await expect(page.getByTestId("home-records-warranty-empty")).toContainText("No warranty details yet");
   await expect(page.getByTestId("home-records-completed-empty")).toContainText("No completed projects yet");

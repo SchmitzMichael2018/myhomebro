@@ -78,6 +78,7 @@ from projects.models import (
     Project,
     PropertyProfile,
     PropertyDocument,
+    PropertyIntelligenceSnapshot,
     PropertyPhoto,
     SmartNotification,
     SmartNotificationEvent,
@@ -19990,6 +19991,95 @@ class CustomerPortalAccessTests(TestCase):
         other_titles = [row["title"] for row in other_response.data["documents"]]
         self.assertNotIn("Water heater warranty", other_titles)
         self.assertNotIn("Roof condition", other_titles)
+
+    def test_customer_portal_property_intelligence_generates_advisory_insights_and_snapshot(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Primary Home",
+            address_line1="123 Main St",
+            city="Austin",
+            state="TX",
+            postal_code="78701",
+            year_built=1985,
+            is_primary=True,
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        intelligence = response.data["property_intelligence"]
+        self.assertEqual(intelligence["property_id"], profile.id)
+        self.assertIn(intelligence["health"]["status"], {"good", "needs_attention"})
+        titles = [row["title"] for row in intelligence["insights"]]
+        self.assertIn("HVAC service may be due.", titles)
+        self.assertIn("No roof documentation found.", titles)
+        self.assertIn("No water heater records found.", titles)
+        self.assertIn("Roof inspection may be worth reviewing.", titles)
+        self.assertEqual(len([row["id"] for row in intelligence["insights"]]), len({row["id"] for row in intelligence["insights"]}))
+        self.assertTrue(
+            PropertyIntelligenceSnapshot.objects.filter(
+                property_profile=profile,
+                customer_email=self.customer_email,
+                health_status=intelligence["health"]["status"],
+            ).exists()
+        )
+        self.client.get(f"/api/projects/customer-portal/{token}/")
+        self.assertEqual(PropertyIntelligenceSnapshot.objects.filter(property_profile=profile).count(), 1)
+
+    def test_customer_portal_property_intelligence_recent_hvac_service_avoids_due_duplicate(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Serviced Home",
+            address_line1="123 Main St",
+            city="Austin",
+            state="TX",
+            postal_code="78701",
+            year_built=2018,
+            is_primary=True,
+        )
+        maintenance_agreement = Agreement.objects.create(
+            project=Project.objects.create(
+                contractor=self.contractor,
+                homeowner=self.customer_homeowner,
+                title="HVAC Maintenance",
+            ),
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            agreement_mode=AgreementMode.MAINTENANCE,
+            recurring_service_enabled=True,
+            description="Annual HVAC maintenance",
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+        MaintenanceWorkOrder.objects.create(
+            maintenance_agreement=maintenance_agreement,
+            property_profile=profile,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="HVAC seasonal service",
+            description="HVAC filter and airflow check",
+            status=MaintenanceWorkOrder.STATUS_COMPLETED,
+            completed_at=timezone.now() - timedelta(days=30),
+        )
+        PropertyDocument.objects.create(
+            property_profile=profile,
+            title="Roof inspection",
+            document_type="Inspection",
+            file=SimpleUploadedFile("roof.txt", b"roof record", content_type="text/plain"),
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        intelligence = response.data["property_intelligence"]
+        ids = [row["id"] for row in intelligence["insights"]]
+        self.assertNotIn("maintenance-hvac-service-due", ids)
+        self.assertNotIn("missing-roof-documentation", ids)
+        self.assertIn("recommended", intelligence["buckets"])
 
     def test_customer_portal_property_upload_rejects_invalid_token(self):
         response = self.client.post(

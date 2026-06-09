@@ -113,6 +113,34 @@ class PropertyPhoto(models.Model):
         return f"{self.property_profile_id} - {self.title or 'Photo'}"
 
 
+class PropertyIntelligenceSnapshot(models.Model):
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="intelligence_snapshots",
+    )
+    customer_email = models.EmailField(db_index=True)
+    health_status = models.CharField(max_length=32, blank=True, default="")
+    health_score = models.PositiveSmallIntegerField(default=0)
+    confidence = models.CharField(max_length=24, blank=True, default="")
+    insights = models.JSONField(default=list, blank=True)
+    learning_summary = models.JSONField(default=dict, blank=True)
+    content_hash = models.CharField(max_length=64, db_index=True)
+    snapshot_version = models.PositiveSmallIntegerField(default=1)
+    generated_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-generated_at", "-id"]
+        unique_together = [("property_profile", "content_hash")]
+        indexes = [
+            models.Index(fields=["customer_email", "generated_at"]),
+            models.Index(fields=["health_status", "generated_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.customer_email}:{self.health_status}:{self.generated_at:%Y-%m-%d}"
+
+
 class CustomerRequest(models.Model):
     TYPE_REPAIR = "repair"
     TYPE_MAINTENANCE = "maintenance"

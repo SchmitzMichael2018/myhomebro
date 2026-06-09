@@ -1043,6 +1043,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           documents={portal?.documents || []}
           payments={portal?.payments || []}
           maintenanceWorkOrders={portal?.maintenance_work_orders || []}
+          propertyIntelligence={portal?.property_intelligence || {}}
+          onOpenTab={setActiveTab}
           saving={savingProperty}
           uploading={uploadingPropertyFile}
           uploadError={uploadError}

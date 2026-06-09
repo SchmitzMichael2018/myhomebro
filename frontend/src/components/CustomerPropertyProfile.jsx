@@ -152,6 +152,95 @@ function maintenanceRows(workOrders = []) {
     .sort((a, b) => String(b.completedAt || b.scheduledDate || "").localeCompare(String(a.completedAt || a.scheduledDate || "")));
 }
 
+const bucketLabels = {
+  needs_attention: "Needs Attention",
+  upcoming: "Upcoming",
+  recommended: "Recommended",
+  informational: "Informational",
+};
+
+const severityClasses = {
+  high: "border-red-300/45 bg-red-400/10 text-red-100",
+  medium: "border-amber-300/45 bg-amber-300/10 text-amber-100",
+  low: "border-sky-300/35 bg-sky-400/10 text-sky-100",
+  info: "border-slate-500/45 bg-slate-800/80 text-slate-200",
+};
+
+function PropertyIntelligencePanel({ intelligence = {}, onAction }) {
+  const health = intelligence?.health || {};
+  const buckets = intelligence?.buckets || {};
+  const insights = Array.isArray(intelligence?.insights) ? intelligence.insights : [];
+  const healthTone =
+    health.status === "excellent"
+      ? "border-emerald-300/45 bg-emerald-400/10 text-emerald-100"
+      : health.status === "good"
+        ? "border-sky-300/45 bg-sky-400/10 text-sky-100"
+        : "border-amber-300/45 bg-amber-300/10 text-amber-100";
+
+  return (
+    <Section title="Property Intelligence" eyebrow="Advisory" testId="property-intelligence-panel">
+      <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <div className={`rounded-2xl border p-4 ${healthTone}`} data-testid="property-intelligence-health">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">Property Health</div>
+          <div className="mt-2 text-3xl font-black text-white">{health.label || "Needs Attention"}</div>
+          <div className="mt-1 text-sm font-semibold">{Number.isFinite(Number(health.score)) ? `${health.score}/100` : "Score pending"}</div>
+          <p className="mt-3 text-sm leading-6 text-slate-100">{health.summary || "Add property records to improve recommendations."}</p>
+          <div className="mt-3 inline-flex rounded-full border border-white/15 bg-slate-950/40 px-2.5 py-1 text-xs font-semibold text-white">
+            {health.confidence ? `${health.confidence} confidence` : "Low confidence"}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {insights.length ? (
+            Object.entries(bucketLabels).map(([bucketKey, label]) => {
+              const rows = Array.isArray(buckets?.[bucketKey]) ? buckets[bucketKey] : [];
+              if (!rows.length) return null;
+              return (
+                <div key={bucketKey} data-testid={`property-intelligence-${bucketKey}`}>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h4 className="text-sm font-bold text-white">{label}</h4>
+                    <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-xs font-semibold text-slate-300">
+                      {rows.length}
+                    </span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {rows.map((item) => (
+                      <article key={item.id} data-testid={`property-intelligence-card-${item.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/65 p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${severityClasses[item.severity] || severityClasses.info}`}>
+                            {item.severity || "info"}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-400">{item.property_name || "Property"}</span>
+                        </div>
+                        <h5 className="mt-3 text-sm font-bold text-white">{item.title}</h5>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">{item.reason}</p>
+                        {item.suggested_action?.label ? (
+                          <button
+                            type="button"
+                            data-testid={`property-intelligence-action-${item.id}`}
+                            onClick={() => onAction?.(item.suggested_action)}
+                            className="mt-3 inline-flex min-h-9 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/15 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/25"
+                          >
+                            {item.suggested_action.label}
+                          </button>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <EmptyState title="No property recommendations yet" testId="property-intelligence-empty">
+              Add property details, documents, warranties, service records, and completed projects so MyHomeBro can surface useful maintenance and record suggestions.
+            </EmptyState>
+          )}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 function timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders }) {
   const rows = [];
   for (const project of completedProjectRows(projects, agreements, documents)) {
@@ -226,7 +315,7 @@ function timelineRows({ profile, projects, agreements, documents, payments, main
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, agreements, documents, payments, maintenanceWorkOrders }) {
+function HomeRecordsDashboard({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onIntelligenceAction }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
@@ -285,6 +374,8 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
           </div>
         </div>
       </section>
+
+      <PropertyIntelligencePanel intelligence={propertyIntelligence} onAction={onIntelligenceAction} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Section title="Property Timeline" eyebrow="History" testId="home-records-timeline">
@@ -524,6 +615,8 @@ export default function CustomerPropertyProfile({
   documents = [],
   payments = [],
   maintenanceWorkOrders = [],
+  propertyIntelligence = {},
+  onOpenTab,
   onSave,
   onAdd,
   onUpload,
@@ -561,6 +654,11 @@ export default function CustomerPropertyProfile({
         documents={documents}
         payments={payments}
         maintenanceWorkOrders={maintenanceWorkOrders}
+        propertyIntelligence={propertyIntelligence}
+        onIntelligenceAction={(action) => {
+          const target = action?.target || "property";
+          if (["requests", "documents", "property"].includes(target)) onOpenTab?.(target);
+        }}
       />
 
       <section data-testid="customer-property-manager" className="rounded-2xl border border-amber-300/35 bg-slate-950/60 p-5">
