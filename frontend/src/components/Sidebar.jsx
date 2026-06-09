@@ -42,6 +42,7 @@ const NAV_HINTS = {
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
   "/app/templates": "Build reusable project templates and milestone structures",
   "/app/admin/marketplace": "Monitor contractor coverage, claim readiness, service gaps, and routing health",
+  "/app/admin/maintenance": "Monitor maintenance contracts, work orders, renewals, and service attention",
   "/app/admin/reimbursements": "Review and record approved escrow reimbursements before release",
   "/app/milestones": "Track active work and what's ready to invoice",
   "/app/subcontractors": "Manage your team, subcontractors, and assignments",
@@ -315,6 +316,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <SubItem to="/app/admin" label="Overview" />
               <SubItem to="/app/admin/marketplace" label="Marketplace" />
               <SubItem to="/app/admin/marketplace/analytics" label="Marketplace Analytics" />
+              <SubItem to="/app/admin/maintenance" label="Maintenance" />
               <SubItem to="/app/admin/reimbursements" label="Reimbursements" />
               <SubItem to="/app/admin/reviews" label="Review Moderation" />
               <SubItem to="/app/admin/contractor-directory" label="Directory" />

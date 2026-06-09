@@ -11,6 +11,7 @@ import ContractorDashboard from "../components/ContractorDashboard.jsx";
 import AdminDashboard from "../pages/AdminDashboard.jsx";
 import AdminContractorDirectory from "../pages/admin/AdminContractorDirectory.jsx";
 import AdminMarketplacePage from "../pages/admin/AdminMarketplacePage.jsx";
+import AdminMaintenancePage from "../pages/admin/AdminMaintenancePage.jsx";
 import AdminReimbursementsPage from "../pages/admin/AdminReimbursementsPage.jsx";
 import AdminReviewsPage from "../pages/admin/AdminReviewsPage.jsx";
 
@@ -142,6 +143,7 @@ export function protectedRoutes() {
           <Route path="admin/marketplace/contractors" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/import" element={<AdminMarketplacePage />} />
           <Route path="admin/marketplace/listings/:id" element={<AdminMarketplacePage />} />
+          <Route path="admin/maintenance" element={<AdminMaintenancePage />} />
           <Route path="admin/reimbursements" element={<AdminReimbursementsPage />} />
           <Route path="admin/reviews" element={<AdminReviewsPage />} />
           <Route path="admin/contractor-directory" element={<AdminContractorDirectory />} />

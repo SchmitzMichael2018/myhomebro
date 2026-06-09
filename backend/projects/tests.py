@@ -20994,6 +20994,90 @@ class AdminGeoTests(TestCase):
         self.assertTrue(operations["disputes"]["awaiting_admin_review"])
         self.assertIn("activation_funnel", operations["users"])
 
+    def test_admin_maintenance_operations_returns_metrics_queues_and_property_intelligence(self):
+        self.geo_agreement.agreement_mode = AgreementMode.MAINTENANCE
+        self.geo_agreement.recurring_service_enabled = True
+        self.geo_agreement.recurrence_pattern = RecurrencePattern.QUARTERLY
+        self.geo_agreement.recurrence_end_date = timezone.now().date() + timedelta(days=20)
+        self.geo_agreement.next_occurrence_date = timezone.now().date() + timedelta(days=5)
+        self.geo_agreement.maintenance_status = MaintenanceStatus.ACTIVE
+        self.geo_agreement.save(
+            update_fields=[
+                "agreement_mode",
+                "recurring_service_enabled",
+                "recurrence_pattern",
+                "recurrence_end_date",
+                "next_occurrence_date",
+                "maintenance_status",
+            ]
+        )
+        profile = PropertyProfile.objects.create(
+            customer_email=self.homeowner.email,
+            homeowner=self.homeowner,
+            display_name="Geo Primary Home",
+            address_line1="123 Main St",
+            city="Austin",
+            state="TX",
+            postal_code="78701",
+            year_built=1980,
+            is_primary=True,
+        )
+        overdue = MaintenanceWorkOrder.objects.create(
+            maintenance_agreement=self.geo_agreement,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            property_profile=profile,
+            title="Overdue HVAC service",
+            description="Quarterly HVAC maintenance.",
+            scheduled_date=timezone.now().date() - timedelta(days=3),
+            status=MaintenanceWorkOrder.STATUS_SCHEDULED,
+        )
+        upcoming = MaintenanceWorkOrder.objects.create(
+            maintenance_agreement=self.geo_agreement,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            property_profile=profile,
+            title="Upcoming filter service",
+            scheduled_date=timezone.now().date() + timedelta(days=4),
+            status=MaintenanceWorkOrder.STATUS_SCHEDULED,
+        )
+        completed = MaintenanceWorkOrder.objects.create(
+            maintenance_agreement=self.geo_agreement,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            property_profile=profile,
+            title="Completed maintenance visit",
+            scheduled_date=timezone.now().date(),
+            completed_at=timezone.now(),
+            status=MaintenanceWorkOrder.STATUS_COMPLETED,
+        )
+
+        response = self.client.get("/api/projects/admin/maintenance/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.json()
+        self.assertEqual(payload["kpis"]["active_contracts"], 1)
+        self.assertEqual(payload["kpis"]["contracts_expiring_soon"], 1)
+        self.assertGreaterEqual(payload["kpis"]["overdue_work_orders"], 1)
+        self.assertGreaterEqual(payload["kpis"]["due_this_week"], 1)
+        self.assertEqual(payload["queues"]["overdue"][0]["id"], overdue.id)
+        upcoming_ids = {row["id"] for row in payload["queues"]["upcoming"]}
+        self.assertIn(upcoming.id, upcoming_ids)
+        completed_ids = {row["id"] for row in payload["queues"]["recently_completed"]}
+        self.assertIn(completed.id, completed_ids)
+        self.assertTrue(payload["queues"]["renewals"])
+        self.assertTrue(payload["queues"]["property_attention"])
+        self.assertTrue(payload["queues"]["contractor_performance"])
+        self.assertIn("scheduled", payload["audit"]["available_statuses"])
+
+    def test_admin_maintenance_operations_requires_admin(self):
+        user = get_user_model().objects.create_user(email="maintenance-viewer@example.com", password="testpass123")
+        self.client.force_authenticate(user=user)
+
+        response = self.client.get("/api/projects/admin/maintenance/")
+
+        self.assertEqual(response.status_code, 403)
+
     def test_admin_agreements_support_escrow_in_flight_filter(self):
         self.geo_agreement.escrow_funded_amount = Decimal("400.00")
         self.geo_agreement.save(update_fields=["escrow_funded_amount"])

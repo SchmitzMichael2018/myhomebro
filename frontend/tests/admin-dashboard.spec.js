@@ -161,6 +161,7 @@ async function mockAdminDashboard(page) {
           maintenance: {
             kpis: {
               active_contracts: 4,
+              expiring_contracts: 2,
               upcoming_work_orders: 3,
               overdue_work_orders: 1,
               completed_this_month: 8,
@@ -603,6 +604,11 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-ops-marketplace-analytics-links')).toBeVisible();
   await expect(page.getByTestId('admin-ops-marketplace-conversion-link')).toContainText('42.8%');
   await expect(page.getByTestId('admin-ops-zero-bid-link')).toContainText('1');
+  await expect(page.getByTestId('admin-ops-maintenance-links')).toBeVisible();
+  await expect(page.getByTestId('admin-ops-maintenance-expiring-link')).toContainText('2');
+  await page.getByTestId('admin-ops-maintenance-overdue-link').click();
+  await expect(page).toHaveURL(/\/app\/admin\/maintenance$/);
+  await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('admin-ops-zero-bid-link').click();
   await expect(page).toHaveURL(/\/app\/admin\/marketplace\/analytics$/);
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });

@@ -889,7 +889,7 @@ export default function AdminDashboard() {
                     value={fmtNumber(opsMaintenance.kpis?.overdue_work_orders || 0)}
                     sub={`${fmtNumber(opsMaintenance.kpis?.upcoming_work_orders || 0)} upcoming`}
                     tone={Number(opsMaintenance.kpis?.overdue_work_orders || 0) > 0 ? "bad" : "good"}
-                    onClick={() => goTo("agreements")}
+                    onClick={() => navigate("/app/admin/maintenance")}
                   />
                   <StatCard
                     testId="admin-ops-disputes"
@@ -948,6 +948,30 @@ export default function AdminDashboard() {
                   />
                 </div>
 
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3" data-testid="admin-ops-maintenance-links">
+                  <ThinStat
+                    label="Upcoming Work Orders"
+                    value={fmtNumber(opsMaintenance.kpis?.upcoming_work_orders || 0)}
+                    sub="Open maintenance operations"
+                    onClick={() => navigate("/app/admin/maintenance")}
+                    testId="admin-ops-maintenance-upcoming-link"
+                  />
+                  <ThinStat
+                    label="Overdue Work Orders"
+                    value={fmtNumber(opsMaintenance.kpis?.overdue_work_orders || 0)}
+                    sub="Review overdue service"
+                    onClick={() => navigate("/app/admin/maintenance")}
+                    testId="admin-ops-maintenance-overdue-link"
+                  />
+                  <ThinStat
+                    label="Expiring Contracts"
+                    value={fmtNumber(opsMaintenance.kpis?.expiring_contracts || 0)}
+                    sub="Review renewal queue"
+                    onClick={() => navigate("/app/admin/maintenance")}
+                    testId="admin-ops-maintenance-expiring-link"
+                  />
+                </div>
+
                 <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
                   <OpsQueue
                     testId="admin-ops-routing-queue"
@@ -983,7 +1007,7 @@ export default function AdminDashboard() {
                     subtitle={`${fmtNumber(opsMaintenance.kpis?.completed_this_month || 0)} completed this month`}
                     rows={[...(opsMaintenance.overdue || []), ...(opsMaintenance.upcoming || [])]}
                     empty="No upcoming or overdue maintenance work orders."
-                    onViewAll={() => goTo("agreements")}
+                    onViewAll={() => navigate("/app/admin/maintenance")}
                     renderRow={(row) => (
                       <OpsRowTitle
                         title={row.title || `Work order #${row.id}`}

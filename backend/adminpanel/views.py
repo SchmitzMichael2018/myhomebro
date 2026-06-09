@@ -455,6 +455,7 @@ def _admin_operations_payload(today, month_start) -> dict:
         "maintenance": {
             "kpis": {
                 "active_contracts": 0,
+                "expiring_contracts": 0,
                 "upcoming_work_orders": 0,
                 "overdue_work_orders": 0,
                 "completed_this_month": 0,
@@ -655,6 +656,12 @@ def _admin_operations_payload(today, month_start) -> dict:
         operations["maintenance"]["kpis"]["active_contracts"] = Agreement.objects.filter(
             Q(agreement_mode="maintenance") | Q(recurring_service_enabled=True),
         ).exclude(maintenance_status__in=["cancelled", "completed"]).count()
+        operations["maintenance"]["kpis"]["expiring_contracts"] = Agreement.objects.filter(
+            Q(agreement_mode="maintenance") | Q(recurring_service_enabled=True),
+            recurrence_end_date__isnull=False,
+            recurrence_end_date__gte=today,
+            recurrence_end_date__lte=today + timedelta(days=45),
+        ).exclude(maintenance_status__in=["cancelled", "completed"]).count()
 
     if ExpenseRequest is not None:
         reimbursement_qs = ExpenseRequest.objects.filter(request_kind="escrow_reimbursement", is_archived=False).select_related(
@@ -713,6 +720,7 @@ def _admin_operations_payload(today, month_start) -> dict:
                 "status": getattr(work_order, "status", ""),
                 "agreement_id": getattr(agreement, "id", None),
                 "url": f"/app/admin/agreements/{getattr(agreement, 'id', '')}" if agreement else "",
+                "maintenance_url": "/app/admin/maintenance",
             }
 
         operations["maintenance"]["upcoming"] = [work_order_row(row) for row in upcoming.order_by("scheduled_date", "id")[:8]]
