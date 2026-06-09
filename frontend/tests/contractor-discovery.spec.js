@@ -276,6 +276,145 @@ test("public intake contractor search does not blame complete saved address when
   await expect(discoveryStep).not.toContainText("Please check the address or ZIP code");
 });
 
+test("public intake AI patio details search concrete and patio contractors instead of roofing", async ({ page }) => {
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const url = route.request().url();
+    const method = route.request().method();
+
+    if (url.includes("/contractor-search/") && method === "GET") {
+      const requestUrl = new URL(url);
+      const query = requestUrl.searchParams.get("query") || "";
+      expect(query).toContain("concrete contractor");
+      expect(query).toContain("patio contractor");
+      expect(query).toContain("hardscape contractor");
+      expect(query).not.toContain("roofing contractor");
+      expect(["Outdoor Living", "Concrete"]).toContain(requestUrl.searchParams.get("project_type"));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          summary: {
+            search_query: query,
+            radius_miles: 25,
+            location_resolution_status: "resolved",
+            location_source: "city_state_zip",
+            project_mode: "full_service",
+            payment_preference: "escrow",
+            results_count: 2,
+          },
+          results: [
+            {
+              id: "listing:501",
+              source: "cached_directory",
+              business_name: "Alamo Concrete Patio Pros",
+              claimed: false,
+              label: "Local Business Listing",
+              rating: 4.8,
+              review_count: 27,
+              website_url: "https://concrete.example.com",
+              city: "San Antonio",
+              state: "TX",
+              distance_miles: 4.1,
+              phone_available: true,
+              email_available: false,
+              invite_available: true,
+              recommendation_tier: "Strong Match",
+              compatibility_score: 91,
+              recommendation_reasons: ["Patio, concrete, hardscape, or outdoor-living trade aligns with the request."],
+              supported_project_modes: ["full_service"],
+              escrow_friendly: true,
+              assisted_diy_friendly: false,
+              inspection_capable: false,
+              rescue_project_friendly: false,
+            },
+            {
+              id: "listing:502",
+              source: "cached_directory",
+              business_name: "Mission Hardscape Builders",
+              claimed: false,
+              label: "Local Business Listing",
+              rating: 4.6,
+              review_count: 12,
+              website_url: "https://hardscape.example.com",
+              city: "San Antonio",
+              state: "TX",
+              distance_miles: 7.2,
+              phone_available: true,
+              email_available: true,
+              invite_available: true,
+              recommendation_tier: "Good Match",
+              compatibility_score: 78,
+              recommendation_reasons: ["Patio, concrete, hardscape, or outdoor-living trade aligns with the request."],
+              supported_project_modes: ["full_service"],
+              escrow_friendly: true,
+              assisted_diy_friendly: false,
+              inspection_capable: false,
+              rescue_project_friendly: false,
+            },
+          ],
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 703,
+          token: "patio-discovery-token",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "Patio Customer",
+          customer_email: "patio@example.com",
+          customer_phone: "555-555-0102",
+          project_class: "residential",
+          project_mode: "full_service",
+          payment_preference: "escrow",
+          customer_address_line1: "1515 South Ellison Drive",
+          customer_address_line2: "",
+          customer_city: "San Antonio",
+          customer_state: "TX",
+          customer_postal_code: "78245-1519",
+          same_as_customer_address: true,
+          project_address_line1: "1515 South Ellison Drive",
+          project_address_line2: "",
+          project_city: "San Antonio",
+          project_state: "TX",
+          project_postal_code: "78245-1519",
+          accomplishment_text: "Extend the existing patio by constructing a 10-foot by 12-foot concrete slab.",
+          ai_project_title: "Patio Extension",
+          ai_project_type: "Outdoor Living",
+          ai_project_subtype: "Patio Extension",
+          ai_description: "Extend the existing patio by constructing a 10-foot by 12-foot concrete slab.",
+          ai_project_timeline_days: null,
+          ai_project_budget: null,
+          ai_milestones: [],
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          ai_analysis_payload: {},
+          clarification_photos: [],
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          sent_at: null,
+          completed_at: null,
+        }),
+      });
+    }
+  });
+
+  await page.goto("/start-project/patio-discovery-token", { waitUntil: "domcontentloaded" });
+  await page.locator('button:has-text("Choose Local Contractors")').first().click();
+
+  const discoveryStep = page.getByTestId("public-intake-contractor-discovery-step");
+  await expect(discoveryStep).toBeVisible({ timeout: 15000 });
+  await expect(discoveryStep).toContainText("Alamo Concrete Patio Pros");
+  await expect(discoveryStep).toContainText("Mission Hardscape Builders");
+  await expect(discoveryStep).not.toContainText("Roofing");
+});
+
 test("contractor claim page lets a contractor claim a listing", async ({ page }) => {
   await page.route("**/api/projects/contractors/claim/**", async (route) => {
     const url = route.request().url();

@@ -3149,6 +3149,7 @@ class ContractorPublicPresenceApiTests(TestCase):
 
         self.assertIn("concrete contractor", query)
         self.assertIn("patio contractor", query)
+        self.assertIn("hardscape contractor", query)
         self.assertNotIn("electrician", query)
         self.assertNotIn("plumber", query)
         self.assertTrue(
@@ -3171,6 +3172,131 @@ class ContractorPublicPresenceApiTests(TestCase):
                 concrete_or_patio_context=True,
             )
         )
+
+    def test_ai_generated_patio_identity_produces_concrete_patio_discovery_query(self):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        with patch(
+            "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+            return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
+        ):
+            payload = build_contractor_recommendations(
+                payload={
+                    "project_title": "Patio Extension",
+                    "project_type": "Outdoor Living",
+                    "project_subtype": "Patio Extension",
+                    "description": "Extend the existing patio by constructing a 10-foot by 12-foot concrete slab.",
+                    "project_city": "San Antonio",
+                    "project_state": "TX",
+                    "project_postal_code": "78245",
+                },
+                query="",
+                latitude=29.4241,
+                longitude=-98.4936,
+                limit=5,
+            )
+
+        query = payload["summary"]["search_query"].lower()
+        self.assertIn("concrete contractor", query)
+        self.assertIn("patio contractor", query)
+        self.assertIn("hardscape contractor", query)
+        self.assertNotIn("roofing contractor", query)
+
+    def test_patio_concrete_discovery_ranks_relevant_trades_ahead_of_roofing(self):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        roofing_skill = Skill.objects.create(name="Roofing", slug="roofing")
+        roof_user = get_user_model().objects.create_user(
+            email="roofing-match@example.com",
+            password="testpass123",
+        )
+        roof_contractor = Contractor.objects.create(
+            user=roof_user,
+            business_name="Top Rated Roofing Company",
+            city="San Antonio",
+            state="TX",
+            service_radius_miles=25,
+            marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
+        )
+        roof_contractor.skills.add(roofing_skill)
+        ContractorPublicProfile.objects.create(
+            contractor=roof_contractor,
+            business_name_public="Top Rated Roofing Company",
+            tagline="Roofing, shingles, flashing, and roof repairs.",
+            city="San Antonio",
+            state="TX",
+            is_public=True,
+            specialties=["Roofing"],
+            work_types=["Roof replacement", "Roof repair"],
+        )
+        concrete_listing = ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_CACHED_DIRECTORY,
+            business_name="Alamo Concrete Patio Pros",
+            city="San Antonio",
+            state="TX",
+            zip_code="78245",
+            latitude=29.4241,
+            longitude=-98.4936,
+            primary_trade="concrete_contractor",
+            trade_categories=["concrete_contractor", "patio_contractor", "hardscape_contractor"],
+            google_rating=4.5,
+            google_review_count=5,
+        )
+
+        with patch(
+            "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+            return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
+        ):
+            payload = build_contractor_recommendations(
+                payload={
+                    "project_title": "Patio Concrete Extension",
+                    "project_type": "Outdoor Living",
+                    "project_subtype": "Patio Extension",
+                    "description": "Extend the existing patio with a concrete slab and cleanup.",
+                    "project_city": "San Antonio",
+                    "project_state": "TX",
+                    "project_postal_code": "78245",
+                },
+                query="",
+                latitude=29.4241,
+                longitude=-98.4936,
+                limit=10,
+            )
+
+        ids = [row["id"] for row in payload["results"]]
+        self.assertIn(f"listing:{concrete_listing.id}", ids)
+        self.assertIn(f"contractor:{roof_contractor.id}", ids)
+        concrete_row = next(row for row in payload["results"] if row["id"] == f"listing:{concrete_listing.id}")
+        roof_row = next(row for row in payload["results"] if row["id"] == f"contractor:{roof_contractor.id}")
+        self.assertLess(ids.index(f"listing:{concrete_listing.id}"), ids.index(f"contractor:{roof_contractor.id}"))
+        self.assertGreater(concrete_row["compatibility_score"], roof_row["compatibility_score"])
+        self.assertEqual(roof_row["recommendation_tier"], "Limited Match")
+        self.assertIn("Roofing trade does not match", " ".join(roof_row["recommendation_reasons"]))
+
+    def test_concrete_driveway_query_returns_concrete_contractors(self):
+        from projects.services.google_places_contractors import infer_project_places_query
+
+        query = infer_project_places_query(
+            project_title="Driveway Replacement",
+            project_type="Concrete",
+            project_subtype="Driveway",
+            description="Replace cracked concrete driveway and walkway.",
+        ).lower()
+
+        self.assertIn("concrete contractor", query)
+        self.assertNotIn("roofing contractor", query)
+
+    def test_roofing_project_query_still_returns_roofing_contractors(self):
+        from projects.services.google_places_contractors import infer_project_places_query
+
+        query = infer_project_places_query(
+            project_title="Roof Leak Repair",
+            project_type="Roofing",
+            project_subtype="Roof Repair",
+            description="Repair roof leak, shingles, and flashing.",
+        ).lower()
+
+        self.assertEqual(query, "roofing contractor")
 
     def test_contractor_directory_upsert_prevents_duplicates_and_records_discovery(self):
         from projects.models_contractor_discovery import ContractorDirectoryDiscovery, ContractorDirectoryEntry

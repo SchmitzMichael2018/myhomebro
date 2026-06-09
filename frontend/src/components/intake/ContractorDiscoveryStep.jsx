@@ -151,8 +151,13 @@ function buildInferredSearchQuery(form) {
   }
   if (matches(/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/)) {
     if (contextMatches(/masonry|brick|stone|block/)) return "masonry contractor";
-    if (contextMatches(/patio/)) return "patio contractor";
-    if (contextMatches(/hardscape|paver|pavers|retaining wall/)) return "hardscape contractor";
+    if (contextMatches(/patio/) && contextMatches(/concrete|slab|driveway|walkway|cement/)) {
+      return "concrete contractor patio contractor hardscape contractor";
+    }
+    if (contextMatches(/patio/)) return "patio contractor concrete contractor hardscape contractor";
+    if (contextMatches(/hardscape|paver|pavers|retaining wall/)) {
+      return "hardscape contractor patio contractor masonry contractor";
+    }
     return "concrete contractor";
   }
   if (matches(/kitchen|cabinet|countertop|quartz|granite/)) {
@@ -183,7 +188,16 @@ function buildInferredSearchQuery(form) {
 
   if (/patio|concrete|slab|driveway|walkway|masonry|hardscape|paver/.test(fullText)) {
     if (/masonry|brick|stone|block/.test(fullText)) push("masonry contractor");
-    else if (/patio/.test(fullText)) push("patio contractor");
+    else if (/patio/.test(fullText) && /concrete|slab|driveway|walkway|cement/.test(fullText)) {
+      push("concrete contractor");
+      push("patio contractor");
+      push("hardscape contractor");
+    }
+    else if (/patio/.test(fullText)) {
+      push("patio contractor");
+      push("concrete contractor");
+      push("hardscape contractor");
+    }
     else if (/hardscape|paver|pavers|retaining wall/.test(fullText)) push("hardscape contractor");
     else push("concrete contractor");
   }

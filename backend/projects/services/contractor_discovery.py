@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -222,11 +223,110 @@ def _broader_contractor_queries(query: str) -> list[str]:
     if "floor" in text:
         return ["flooring contractor", "floor installation contractor", "flooring company"]
     if "concrete" in text or "patio" in text:
-        return ["concrete contractor", "patio contractor", "masonry contractor"]
+        return ["concrete contractor", "patio contractor", "hardscape contractor", "masonry contractor"]
     if "cabinet" in text or "countertop" in text or "kitchen" in text:
         return ["kitchen remodeling contractor", "cabinet installer", "countertop installer"]
     first = _safe_text(query)
     return [first] if first else []
+
+
+CONCRETE_PATIO_PROJECT_TERMS = {
+    "patio",
+    "concrete",
+    "slab",
+    "driveway",
+    "walkway",
+    "hardscape",
+    "masonry",
+    "paver",
+    "pavers",
+    "cement",
+}
+
+CONCRETE_PATIO_MATCH_TERMS = {
+    "patio",
+    "concrete",
+    "cement",
+    "slab",
+    "driveway",
+    "walkway",
+    "hardscape",
+    "masonry",
+    "mason",
+    "paver",
+    "pavers",
+    "outdoor living",
+    "deck",
+    "decking",
+}
+
+ROOFING_TRADE_TERMS = {
+    "roof",
+    "roofing",
+    "roofer",
+    "shingle",
+    "shingles",
+    "flashing",
+    "underlayment",
+}
+
+
+def _contains_any(text: str, terms: set[str]) -> bool:
+    normalized = _safe_text(text).lower().replace("_", " ")
+    for term in terms:
+        cleaned = _safe_text(term).lower().replace("_", " ")
+        if not cleaned:
+            continue
+        if " " in cleaned:
+            if cleaned in normalized:
+                return True
+            continue
+        if re.search(rf"\b{re.escape(cleaned)}\b", normalized):
+            return True
+    return False
+
+
+def _project_trade_family(project: dict[str, Any]) -> str:
+    text = " ".join(
+        _safe_text(value).lower().replace("_", " ")
+        for value in [
+            project.get("project_type"),
+            project.get("project_subtype"),
+            project.get("project_title"),
+            project.get("description"),
+            project.get("project_scope_summary"),
+        ]
+        if _safe_text(value)
+    )
+    has_roof = _contains_any(text, ROOFING_TRADE_TERMS)
+    has_concrete_patio = _contains_any(text, CONCRETE_PATIO_PROJECT_TERMS)
+    # "concrete tile roof" and actual roofing scopes should stay roofing. Patio
+    # slabs, driveway/walkway, hardscape, and masonry should not drift to roofing.
+    if has_roof and not has_concrete_patio:
+        return "roofing"
+    if has_concrete_patio:
+        return "concrete_patio"
+    if has_roof:
+        return "roofing"
+    if "exterior" in text:
+        return "broad_exterior"
+    return ""
+
+
+def _score_trade_family_alignment(project: dict[str, Any], contractor_text: str) -> tuple[int, list[str]]:
+    family = _project_trade_family(project)
+    text = _safe_text(contractor_text).lower().replace("_", " ")
+    if family == "concrete_patio":
+        if _contains_any(text, CONCRETE_PATIO_MATCH_TERMS):
+            return 35, ["Patio, concrete, hardscape, or outdoor-living trade aligns with the request."]
+        if _contains_any(text, ROOFING_TRADE_TERMS):
+            return -75, ["Roofing trade does not match this patio/concrete request."]
+    if family == "roofing":
+        if _contains_any(text, ROOFING_TRADE_TERMS):
+            return 28, ["Roofing trade aligns with the request."]
+        if _contains_any(text, CONCRETE_PATIO_MATCH_TERMS):
+            return -18, ["Concrete/patio trade is adjacent but not a roofing match."]
+    return 0, []
 
 
 def _sanitize_search_query_for_project(query: str, project: dict[str, Any]) -> str:
@@ -258,10 +358,12 @@ def _sanitize_search_query_for_project(query: str, project: dict[str, Any]) -> s
     if any(term in source for term in ["patio", "concrete", "slab", "driveway", "walkway", "masonry", "hardscape", "paver"]):
         if any(term in full_text for term in ["masonry", "brick", "stone", "block"]):
             return "masonry contractor"
+        if "patio" in full_text and any(term in full_text for term in ["concrete", "slab", "driveway", "walkway", "cement"]):
+            return "concrete contractor patio contractor hardscape contractor"
         if "patio" in full_text:
-            return "patio contractor"
+            return "patio contractor concrete contractor hardscape contractor"
         if any(term in full_text for term in ["hardscape", "paver", "pavers", "retaining wall"]):
-            return "hardscape contractor"
+            return "hardscape contractor patio contractor masonry contractor"
         return "concrete contractor"
     if any(term in source for term in ["kitchen", "cabinet", "countertop", "quartz", "granite"]):
         if "cabinet" in full_text:
@@ -475,6 +577,14 @@ def upsert_directory_listing_from_google(place: dict[str, Any]) -> ContractorDir
 def _score_listing(project: dict[str, Any], listing: ContractorDirectoryListing) -> dict[str, Any]:
     score = 0
     reasons: list[str] = []
+    listing_text = " ".join(
+        [
+            _safe_text(listing.primary_trade),
+            " ".join(listing.trade_categories or []),
+            _safe_text(listing.business_name),
+            _safe_text(listing.formatted_address),
+        ]
+    )
     project_tokens = _trade_keywords(project)
     listing_tokens = _trade_keywords(
         {
@@ -526,6 +636,10 @@ def _score_listing(project: dict[str, Any], listing: ContractorDirectoryListing)
         score += 14
         reasons.append("Primary trade aligns with the request.")
 
+    family_delta, family_reasons = _score_trade_family_alignment(project, listing_text)
+    score += family_delta
+    reasons.extend(family_reasons)
+
     score = max(0, min(score, 100))
     if score >= 75:
         tier = "Strong Match"
@@ -553,6 +667,27 @@ def _score_listing(project: dict[str, Any], listing: ContractorDirectoryListing)
 def _build_card_from_contractors(contractor: Contractor, profile: ContractorPublicProfile, project: dict[str, Any]) -> dict[str, Any]:
     capability_flags = get_contractor_capability_flags(contractor)
     match = score_contractor_project_match(contractor, project, profile=profile)
+    contractor_text = " ".join(
+        [
+            _safe_text(getattr(contractor, "business_name", "")),
+            _safe_text(getattr(contractor, "name", "")),
+            _safe_text(getattr(profile, "tagline", "")),
+            _safe_text(getattr(profile, "bio", "")),
+            _safe_text(getattr(profile, "service_area_text", "")),
+            " ".join(getattr(profile, "specialties", []) or []),
+            " ".join(getattr(profile, "work_types", []) or []),
+            " ".join(getattr(skill, "name", "") for skill in getattr(contractor, "skills", []).all()),
+        ]
+    )
+    family_delta, family_reasons = _score_trade_family_alignment(project, contractor_text)
+    if family_delta:
+        adjusted_score = max(0, min(100, int(match.get("score", 0) or 0) + family_delta))
+        match = {
+            **match,
+            "score": adjusted_score,
+            "reasons": list(dict.fromkeys([*(match.get("reasons") or []), *family_reasons])),
+            "tier": "Strong Match" if adjusted_score >= 75 else "Good Match" if adjusted_score >= 45 else "Limited Match",
+        }
     claimed = True
     distance_miles = None
     try:
@@ -939,10 +1074,10 @@ def build_contractor_recommendations(
 
     results.sort(
         key=lambda row: (
+            -int(row.get("compatibility_score", 0)),
             -int(bool(row.get("claimed"))),
             -int(row.get("source_priority", 0)),
             float(row.get("distance_miles") if row.get("distance_miles") is not None else 9999),
-            -int(row.get("compatibility_score", 0)),
             -(float(row.get("rating") or 0) * 10),
             row.get("business_name", ""),
         )

@@ -101,6 +101,8 @@ def google_places_api_key() -> str:
 def project_type_to_places_query(project_type: Any, project_subtype: Any = "") -> str:
     text = _safe_text(project_type).lower()
     subtype = _safe_text(project_subtype).lower()
+    if "outdoor living" in text and any(term in subtype for term in ["patio", "hardscape", "paver"]):
+        return "patio contractor concrete contractor hardscape contractor"
     for key, query in PROJECT_TYPE_QUERY_MAP.items():
         if key in text or key in subtype:
             return query
@@ -145,10 +147,12 @@ def infer_project_places_query(
     if any(term in text for term in ["patio", "concrete", "slab", "driveway", "walkway", "masonry", "hardscape", "paver"]):
         if any(term in text for term in ["masonry", "brick", "stone", "block"]):
             return "masonry contractor"
+        if "patio" in text and any(term in text for term in ["concrete", "slab", "driveway", "walkway", "cement"]):
+            return "concrete contractor patio contractor hardscape contractor"
         if "patio" in text:
-            return "patio contractor"
+            return "patio contractor concrete contractor hardscape contractor"
         if any(term in text for term in ["hardscape", "paver", "pavers", "retaining wall"]):
-            return "hardscape contractor"
+            return "hardscape contractor patio contractor masonry contractor"
         return "concrete contractor"
     if any(term in text for term in ["kitchen", "cabinet", "countertop", "quartz", "granite"]):
         if "cabinet" in text:
