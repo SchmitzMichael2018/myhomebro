@@ -6,7 +6,7 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from projects.models import Agreement, Contractor, Homeowner, Project
+from projects.models import Agreement, Contractor, Homeowner, Notification, Project
 from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
@@ -16,7 +16,9 @@ from projects.models_contractor_discovery import (
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
+from projects.services.notification_center import create_notification
 from projects.services.project_titles import generate_project_title, normalize_project_classification
+from projects.services.sms_automation import evaluate_sms_automation
 from projects.utils import categorize_project, load_legal_text
 
 
@@ -233,12 +235,43 @@ def create_or_update_opportunity_from_selection(selection_context: dict[str, Any
             "project_title": defaults.get("project_title"),
             "status": ContractorOpportunity.STATUS_PENDING,
         }
-    opportunity, _created = ContractorOpportunity.objects.update_or_create(
+    opportunity, created = ContractorOpportunity.objects.update_or_create(
         defaults=defaults,
         **lookup,
     )
     mark_directory_discovery_selected(directory_entry, {"intake_request": intake})
+    if created:
+        _notify_selected_contractor_opportunity(opportunity)
     return opportunity
+
+
+def _notify_selected_contractor_opportunity(opportunity: ContractorOpportunity) -> None:
+    directory_entry = getattr(opportunity, "directory_entry", None)
+    contractor = getattr(directory_entry, "claimed_by_contractor", None)
+    if contractor is None:
+        return
+    project_title = _safe_text(getattr(opportunity, "project_title", "")) or "New project opportunity"
+    homeowner_name = _safe_text(getattr(opportunity, "homeowner_name", "")) or "A homeowner"
+    create_notification(
+        contractor=contractor,
+        user=getattr(contractor, "user", None),
+        category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
+        title="New marketplace opportunity",
+        body=f"{homeowner_name} selected your business to review {project_title}.",
+        link=f"/app/bids?opportunity={opportunity.id}",
+        actor_display_name=homeowner_name,
+        actor_email=_safe_text(getattr(opportunity, "homeowner_email", "")),
+    )
+    evaluate_sms_automation(
+        "contractor_opportunity_received",
+        contractor=contractor,
+        metadata={
+            "opportunity_id": opportunity.id,
+            "project_title": project_title,
+            "homeowner_name": homeowner_name,
+            "source": "public_intake_selected_contractor",
+        },
+    )
 
 
 def _find_or_create_customer(opportunity: ContractorOpportunity, contractor: Contractor) -> Homeowner:

@@ -1,14 +1,15 @@
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner
+from projects.models import Agreement, Contractor, Homeowner, Notification
 from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
     ContractorOpportunity,
 )
 from projects.models_project_intake import ProjectIntake
+from projects.models_sms import SMSAutomationDecision, SMSConsent
 from projects.services.contractor_directory import normalize_business_name
 
 
@@ -108,6 +109,61 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(Homeowner.objects.count(), 0)
         self.assertEqual(Agreement.objects.count(), 0)
 
+    def test_selecting_contractor_creates_dashboard_notification_and_sms_suppression_without_consent(self):
+        response = self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {
+                "token": self.intake.share_token,
+                "selected_contractors": [{"directory_entry_id": self.entry.id, "id": f"directory_entry:{self.entry.id}"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        opportunity = ContractorOpportunity.objects.get()
+        notification = Notification.objects.get(
+            contractor=self.contractor,
+            category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
+        )
+        self.assertIn(str(opportunity.id), notification.link)
+        self.assertIn("Concrete Patio Extension", notification.message)
+
+        decision = SMSAutomationDecision.objects.get(event_type="contractor_opportunity_received")
+        self.assertEqual(decision.contractor, self.contractor)
+        self.assertEqual(decision.phone_number_e164, "+15125551111")
+        self.assertEqual(decision.reason_code, "no_consent")
+        self.assertFalse(decision.sent)
+
+    @override_settings(
+        TWILIO_ACCOUNT_SID="",
+        TWILIO_AUTH_TOKEN="",
+        TWILIO_MESSAGING_SERVICE_SID="",
+        TWILIO_PHONE_NUMBER="",
+        TWILIO_FROM_NUMBER="",
+    )
+    def test_selecting_contractor_records_retryable_sms_failure_when_provider_missing(self):
+        SMSConsent.objects.create(
+            phone_number_e164="+15125551111",
+            contractor=self.contractor,
+            can_send_sms=True,
+            opted_out=False,
+            opted_in_source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+            consent_text_snapshot="Admin confirmed contractor SMS consent.",
+        )
+
+        response = self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        decision = SMSAutomationDecision.objects.get(event_type="contractor_opportunity_received")
+        self.assertEqual(decision.phone_number_e164, "+15125551111")
+        self.assertEqual(decision.reason_code, "send_failed")
+        self.assertFalse(decision.sent)
+        self.assertIn("twilio_config_missing", str(decision.decision_context_json))
+
     def test_selecting_contractor_generates_project_title_when_missing(self):
         self.intake.ai_project_title = ""
         self.intake.ai_project_type = "Flooring"
@@ -155,6 +211,8 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(ContractorOpportunity.objects.count(), 1)
+        self.assertEqual(Notification.objects.filter(category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED).count(), 1)
+        self.assertEqual(SMSAutomationDecision.objects.filter(event_type="contractor_opportunity_received").count(), 1)
         self.assertEqual(first.data["opportunity_id"], second.data["opportunity_id"])
 
     def test_selected_discovery_record_is_marked_selected(self):

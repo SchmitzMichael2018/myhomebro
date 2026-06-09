@@ -45,6 +45,7 @@ RULES: dict[str, SMSAutomationRule] = {
     "inactive_agreement_nudge": SMSAutomationRule("inactive_agreement_nudge", "low", "inactive_agreement_nudge_contractor", "dashboard_only", 72, "agreement", "contractor"),
     "onboarding_incomplete": SMSAutomationRule("onboarding_incomplete", "low", "onboarding_completion_nudge_contractor", "dashboard_only", 72, "contractor", "contractor"),
     "stripe_onboarding_incomplete": SMSAutomationRule("stripe_onboarding_incomplete", "medium", "stripe_onboarding_reminder_contractor", "dashboard_only", 72, "contractor", "contractor"),
+    "contractor_opportunity_received": SMSAutomationRule("contractor_opportunity_received", "medium", "contractor_opportunity_received", "sms", 12, "contractor", "contractor"),
 }
 
 RELATED_PRIORITY_SUPPRESSIONS: dict[str, set[str]] = {

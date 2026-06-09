@@ -181,6 +181,19 @@ TEMPLATES: dict[str, SMSTemplateDefinition] = {
         short_fallback_text="Connect Stripe to get paid.",
         body_builder=lambda ctx: "You are ready to get paid. Connect Stripe in MyHomeBro to continue payment workflows.",
     ),
+    "contractor_opportunity_received": SMSTemplateDefinition(
+        template_key="contractor_opportunity_received",
+        audience="contractor",
+        intent_key="contractor_opportunity_notice",
+        intent_summary="Notify the contractor that a homeowner selected them for a marketplace request.",
+        priority="medium",
+        short_fallback_text="New project opportunity in MyHomeBro.",
+        body_builder=lambda ctx: (
+            f"New MyHomeBro project opportunity: "
+            f"{str((ctx.get('metadata') or {}).get('project_title') or 'a homeowner request')[:80]}. "
+            "Review it in MyHomeBro."
+        ),
+    ),
 }
 
 
