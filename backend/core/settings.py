@@ -392,6 +392,9 @@ TWILIO_FROM_NUMBER = get_env_var(
     "TWILIO_FROM_NUMBER",
     get_env_var("TWILIO_PHONE_NUMBER", required=False),
 )
+TWILIO_INVITES_ENABLED = get_bool("TWILIO_INVITES_ENABLED", default=False)
+MARKETPLACE_JOIN_INVITE_SMS_ENABLED = get_bool("MARKETPLACE_JOIN_INVITE_SMS_ENABLED", default=False)
+MARKETPLACE_JOIN_INVITE_EXPIRY_DAYS = int(get_env_var("MARKETPLACE_JOIN_INVITE_EXPIRY_DAYS", "30"))
 
 
 # ──────────────────────────────────────────────────────────────────────────────

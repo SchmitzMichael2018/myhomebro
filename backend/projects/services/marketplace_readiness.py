@@ -400,6 +400,7 @@ def _sync_opportunity_for_invite(
             "selection": {"id": f"contractor:{contractor.id}"},
             "intake_request": intake,
             "payload": _marketplace_selection_payload(intake, listing, readiness),
+            "suppress_contractor_notification": True,
         }
     )
     entry = getattr(opportunity, "directory_entry", None)

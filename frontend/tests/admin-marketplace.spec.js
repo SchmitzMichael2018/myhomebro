@@ -492,6 +492,32 @@ async function installMarketplaceMocks(page) {
       return;
     }
 
+    if (method === 'POST' && requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/2/join-invite/')) {
+      const entry = {
+        ...directoryRows.find((item) => item.id === 2),
+        marketplace_join_invite: {
+          id: 900,
+          directory_entry_id: 2,
+          status: 'suppressed',
+          delivery_channel: 'sms',
+          sms_status: 'suppressed',
+          sms_error: 'Marketplace join invite SMS is disabled.',
+          claim_url: '/contractors/directory-claim/join-token',
+          sent_at: '2026-06-09T20:00:00Z',
+        },
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'Marketplace join invite processed.',
+          invite: entry.marketplace_join_invite,
+          entry,
+        }),
+      });
+      return;
+    }
+
     const detailMatch = requestUrl.pathname.match(/\/api\/projects\/admin\/contractor-directory\/(\d+)\/$/);
     if (method === 'GET' && detailMatch) {
       const row = directoryRows.find((item) => String(item.id) === detailMatch[1]) || directoryRows[0];
@@ -548,6 +574,11 @@ test('admin marketplace is an operations console, not a duplicate directory edit
   await expect(page.getByTestId('admin-marketplace-open-directory-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-open-listing-1')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-claim-link-2')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-join-invite-2')).toBeVisible();
+
+  await page.getByTestId('admin-marketplace-join-invite-2').click();
+  await expect(page.getByTestId('admin-marketplace-status')).toContainText('Join marketplace invite suppressed');
+  await expect(page.getByTestId('admin-marketplace-coverage-row-2')).toContainText('Invite: Suppressed');
 
   await page.getByTestId('admin-marketplace-claim-link-2').click();
   await expect(page.getByTestId('admin-marketplace-copy-claim-link-2')).toBeVisible();

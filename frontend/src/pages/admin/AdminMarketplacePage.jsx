@@ -218,6 +218,23 @@ function routeButtonCopy(row) {
   return "Not routable";
 }
 
+function joinInviteSummary(row) {
+  return row?.marketplace_join_invite || null;
+}
+
+function joinInviteLabel(invite) {
+  if (!invite) return "Not invited";
+  return clean(invite.status, "pending").replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function joinInviteTone(invite) {
+  const status = String(invite?.status || "").toLowerCase();
+  if (status === "sent" || status === "claimed") return "emerald";
+  if (status === "partial" || status === "suppressed" || status === "expired") return "amber";
+  if (status === "failed") return "rose";
+  return "slate";
+}
+
 export default function AdminMarketplacePage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -234,6 +251,7 @@ export default function AdminMarketplacePage() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [claimLinks, setClaimLinks] = useState({});
+  const [joinInviteIds, setJoinInviteIds] = useState({});
   const [savedRequests, setSavedRequests] = useState({ summary: {}, results: [] });
   const [routingIds, setRoutingIds] = useState({});
   const [verificationRows, setVerificationRows] = useState([]);
@@ -411,6 +429,12 @@ export default function AdminMarketplacePage() {
     navigate(`/app/admin/contractor-directory${search.toString() ? `?${search.toString()}` : ""}`);
   }
 
+  function mergeDirectoryEntry(nextEntry) {
+    if (!nextEntry?.id) return;
+    setRows((prev) => prev.map((row) => (String(row.id) === String(nextEntry.id) ? { ...row, ...nextEntry } : row)));
+    setListing((prev) => (prev && String(prev.id) === String(nextEntry.id) ? { ...prev, ...nextEntry } : prev));
+  }
+
   function openCoverageFilters(params = {}) {
     setFilters((prev) => ({ ...prev, ...params }));
     go("contractors");
@@ -431,6 +455,28 @@ export default function AdminMarketplacePage() {
       setStatus("Claim link generated. Open the Directory record to manage claim workflow details.");
     } catch (error) {
       setStatus(error?.response?.data?.detail || "Could not generate claim link.");
+    }
+  }
+
+  async function sendJoinInvite(row, resend = false) {
+    if (!row?.id) return;
+    setJoinInviteIds((prev) => ({ ...prev, [row.id]: true }));
+    setStatus("");
+    try {
+      const { data } = await api.post(`${DIRECTORY_BASE}/${row.id}/join-invite/`, {
+        preferred_channel: email(row) && phone(row) ? "both" : email(row) ? "email" : "sms",
+        resend,
+      });
+      if (data?.entry) mergeDirectoryEntry(data.entry);
+      if (data?.invite?.claim_url) {
+        setClaimLinks((prev) => ({ ...prev, [row.id]: data.invite.claim_url }));
+      }
+      const inviteStatus = joinInviteLabel(data?.invite);
+      setStatus(`Join marketplace invite ${inviteStatus.toLowerCase()}.`);
+    } catch (error) {
+      setStatus(error?.response?.data?.detail || "Could not send marketplace join invite.");
+    } finally {
+      setJoinInviteIds((prev) => ({ ...prev, [row.id]: false }));
     }
   }
 
@@ -1303,6 +1349,14 @@ export default function AdminMarketplacePage() {
                       <td className={tableCellClass}>
                         <div className="text-xs text-sky-100/75">Rating {rating(row) || "Not rated"} | {reviews(row)} reviews</div>
                         <div className="mt-1 text-xs text-sky-100/70">Enrichment: {clean(row.enrichment_status, "not_started")}</div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <Badge tone={joinInviteTone(joinInviteSummary(row))}>
+                            Invite: {joinInviteLabel(joinInviteSummary(row))}
+                          </Badge>
+                          {joinInviteSummary(row)?.delivery_channel ? (
+                            <Badge>{clean(joinInviteSummary(row).delivery_channel).replace(/_/g, " ")}</Badge>
+                          ) : null}
+                        </div>
                       </td>
                       <td className={tableCellClass}>
                         <div className="flex flex-wrap gap-2">
@@ -1315,6 +1369,21 @@ export default function AdminMarketplacePage() {
                           {!row.claimed ? (
                             <button type="button" data-testid={`admin-marketplace-claim-link-${row.id}`} onClick={() => generateClaimLink(row)} className="rounded-lg border border-amber-200/30 bg-amber-300/10 px-3 py-1.5 text-xs font-extrabold text-amber-100">
                               Generate Claim Link
+                            </button>
+                          ) : null}
+                          {!row.claimed && (email(row) || phone(row)) ? (
+                            <button
+                              type="button"
+                              data-testid={`admin-marketplace-join-invite-${row.id}`}
+                              onClick={() => sendJoinInvite(row, Boolean(joinInviteSummary(row)?.sent_at))}
+                              disabled={Boolean(joinInviteIds[row.id])}
+                              className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1.5 text-xs font-extrabold text-emerald-100 disabled:opacity-60"
+                            >
+                              {joinInviteIds[row.id]
+                                ? "Sending..."
+                                : joinInviteSummary(row)?.sent_at
+                                  ? "Resend Join Invite"
+                                  : "Send Join Marketplace Invite"}
                             </button>
                           ) : null}
                           {claimLinks[row.id] ? (
@@ -1373,6 +1442,14 @@ export default function AdminMarketplacePage() {
                     <div><dt className="text-sky-100/55">Location</dt><dd className="font-bold text-white">{locationText(listing)} {listing.zip_code || ""}</dd></div>
                     <div><dt className="text-sky-100/55">Service radius</dt><dd className="font-bold text-white">{hasRadius(listing) ? `${listing.service_radius_miles} miles` : "Missing"}</dd></div>
                     <div><dt className="text-sky-100/55">Rating</dt><dd className="font-bold text-white">{rating(listing) || "Not rated"} ({reviews(listing)} reviews)</dd></div>
+                    <div>
+                      <dt className="text-sky-100/55">Join invite</dt>
+                      <dd className="mt-1 flex flex-wrap gap-2 font-bold text-white">
+                        <Badge tone={joinInviteTone(joinInviteSummary(listing))}>{joinInviteLabel(joinInviteSummary(listing))}</Badge>
+                        {joinInviteSummary(listing)?.email_error ? <Badge tone="rose">Email issue</Badge> : null}
+                        {joinInviteSummary(listing)?.sms_error ? <Badge tone="amber">SMS note</Badge> : null}
+                      </dd>
+                    </div>
                   </dl>
                 </div>
                 <div className={panelClass}>
@@ -1395,6 +1472,21 @@ export default function AdminMarketplacePage() {
                     {!listing.claimed ? (
                       <button type="button" data-testid="admin-marketplace-detail-claim-link" onClick={() => generateClaimLink(listing)} className="rounded-xl border border-amber-200/30 bg-amber-300/10 px-4 py-2 text-sm font-extrabold text-amber-100">
                         Generate Claim Link
+                      </button>
+                    ) : null}
+                    {!listing.claimed && (email(listing) || phone(listing)) ? (
+                      <button
+                        type="button"
+                        data-testid="admin-marketplace-detail-join-invite"
+                        onClick={() => sendJoinInvite(listing, Boolean(joinInviteSummary(listing)?.sent_at))}
+                        disabled={Boolean(joinInviteIds[listing.id])}
+                        className="rounded-xl border border-emerald-200/30 bg-emerald-300/10 px-4 py-2 text-sm font-extrabold text-emerald-100 disabled:opacity-60"
+                      >
+                        {joinInviteIds[listing.id]
+                          ? "Sending..."
+                          : joinInviteSummary(listing)?.sent_at
+                            ? "Resend Join Invite"
+                            : "Send Join Marketplace Invite"}
                       </button>
                     ) : null}
                     <button type="button" onClick={() => go("contractors")} className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-extrabold text-sky-50">

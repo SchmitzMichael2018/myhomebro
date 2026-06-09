@@ -22,6 +22,7 @@ from .models_contractor_discovery import (  # noqa: F401
     ContractorDirectoryListing,
     ContractorOpportunity,
     ContractorDiscoveryInvite,
+    ContractorMarketplaceJoinInvite,
     MarketplaceLocation,
 )
 from .models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto

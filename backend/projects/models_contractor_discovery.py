@@ -362,6 +362,90 @@ class ContractorDirectoryClaimToken(models.Model):
         return f"/contractors/directory-claim/{self.token}"
 
 
+class ContractorMarketplaceJoinInvite(models.Model):
+    CHANNEL_EMAIL = "email"
+    CHANNEL_SMS = "sms"
+    CHANNEL_BOTH = "both"
+    CHANNEL_MANUAL = "manual"
+    CHANNEL_CHOICES = [
+        (CHANNEL_EMAIL, "Email"),
+        (CHANNEL_SMS, "SMS"),
+        (CHANNEL_BOTH, "Email + SMS"),
+        (CHANNEL_MANUAL, "Manual"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_SENT = "sent"
+    STATUS_PARTIAL = "partial"
+    STATUS_FAILED = "failed"
+    STATUS_SUPPRESSED = "suppressed"
+    STATUS_CLAIMED = "claimed"
+    STATUS_EXPIRED = "expired"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_SENT, "Sent"),
+        (STATUS_PARTIAL, "Partially Sent"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_SUPPRESSED, "Suppressed"),
+        (STATUS_CLAIMED, "Claimed"),
+        (STATUS_EXPIRED, "Expired"),
+    ]
+
+    directory_entry = models.ForeignKey(
+        "projects.ContractorDirectoryEntry",
+        on_delete=models.CASCADE,
+        related_name="marketplace_join_invites",
+    )
+    claim_token = models.ForeignKey(
+        "projects.ContractorDirectoryClaimToken",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marketplace_join_invites",
+    )
+    invite_token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
+    invited_business_name = models.CharField(max_length=255, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    delivery_channel = models.CharField(max_length=24, choices=CHANNEL_CHOICES, default=CHANNEL_EMAIL, db_index=True)
+    email_status = models.CharField(max_length=40, blank=True, default="")
+    email_error = models.TextField(blank=True, default="")
+    sms_status = models.CharField(max_length=40, blank=True, default="")
+    sms_error = models.TextField(blank=True, default="")
+    sms_opted_out = models.BooleanField(default=False)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_marketplace_join_invites_sent",
+    )
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["directory_entry", "status"], name="projects_cm_join_d_4f9f1d_idx"),
+            models.Index(fields=["status", "sent_at"], name="projects_cm_join_s_2c1844_idx"),
+            models.Index(fields=["email"], name="projects_cm_join_e_43ef21_idx"),
+            models.Index(fields=["phone"], name="projects_cm_join_p_58df0a_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Marketplace join invite {self.pk} for entry {self.directory_entry_id}"
+
+    @property
+    def claim_url_path(self) -> str:
+        if self.claim_token_id and self.claim_token:
+            return self.claim_token.claim_url_path
+        return ""
+
+
 class ContractorDirectoryDiscovery(models.Model):
     SOURCE_PUBLIC_INTAKE = "public_intake"
     SOURCE_ADMIN_SEARCH = "admin_search"

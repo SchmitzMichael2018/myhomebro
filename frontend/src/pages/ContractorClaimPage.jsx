@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 
 export default function ContractorClaimPage() {
   const { token = "" } = useParams();
+  const location = useLocation();
+  const isDirectoryClaim = location.pathname.includes("/contractors/directory-claim/");
+  const apiPath = isDirectoryClaim
+    ? `/projects/contractors/directory-claim/${token}/`
+    : `/projects/contractors/claim/${token}/`;
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [invite, setInvite] = useState(null);
@@ -16,7 +21,7 @@ export default function ContractorClaimPage() {
       try {
         setLoading(true);
         setError("");
-        const { data } = await api.get(`/projects/contractors/claim/${token}/`);
+        const { data } = await api.get(apiPath);
         if (!active) return;
         setInvite(data);
       } catch (err) {
@@ -34,12 +39,12 @@ export default function ContractorClaimPage() {
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [apiPath, token]);
 
   async function handleClaim() {
     try {
       setSubmitting(true);
-      const { data } = await api.post(`/projects/contractors/claim/${token}/`);
+      const { data } = await api.post(apiPath);
       setInvite((prev) => ({ ...(prev || {}), claimed: true, status: "claimed", ...data }));
       toast.success("Your listing has been claimed.");
     } catch (err) {
@@ -48,6 +53,8 @@ export default function ContractorClaimPage() {
       setSubmitting(false);
     }
   }
+
+  const hasProjectContext = Boolean(invite?.project_summary || invite?.project_mode || invite?.public_intake_id);
 
   if (loading) {
     return (
@@ -83,12 +90,18 @@ export default function ContractorClaimPage() {
           {invite.business_name || "Local Business Listing"}
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          A homeowner selected this listing to review a {invite.project_mode ? `${invite.project_mode.replace(/_/g, " ")} ` : ""}project.
+          {hasProjectContext
+            ? `A homeowner selected this listing to review a ${invite.project_mode ? `${invite.project_mode.replace(/_/g, " ")} ` : ""}project.`
+            : "Claim this marketplace profile to manage your MyHomeBro presence and begin contractor activation."}
         </p>
         <div className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
           <div><span className="font-semibold text-slate-900">City:</span> {invite.city || "Not listed"}</div>
           <div><span className="font-semibold text-slate-900">State:</span> {invite.state || "Not listed"}</div>
-          <div><span className="font-semibold text-slate-900">Project summary:</span> {invite.project_summary || "No summary available."}</div>
+          {hasProjectContext ? (
+            <div><span className="font-semibold text-slate-900">Project summary:</span> {invite.project_summary || "No summary available."}</div>
+          ) : (
+            <div><span className="font-semibold text-slate-900">Next step:</span> Confirm your business details, accept terms, and continue to activation.</div>
+          )}
           <div><span className="font-semibold text-slate-900">Status:</span> {String(invite.status || "pending")}</div>
         </div>
 

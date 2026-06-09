@@ -65,6 +65,7 @@ from .views.public_intake import (
 from .views.contractor_discovery import (
     AdminContractorDirectoryView,
     AdminContractorDirectoryClaimLinkView,
+    AdminContractorDirectoryJoinInviteView,
     AdminContractorDirectoryArchiveView,
     AdminContractorDirectoryImportApplyView,
     AdminContractorDirectoryImportPreviewView,
@@ -636,6 +637,7 @@ urlpatterns = [
     path("admin/contractor-directory/<int:entry_id>/restore/", AdminContractorDirectoryRestoreView.as_view()),
     path("admin/contractor-directory/<int:entry_id>/outreach-log/", AdminContractorDirectoryOutreachLogView.as_view()),
     path("admin/contractor-directory/<int:entry_id>/claim-link/", AdminContractorDirectoryClaimLinkView.as_view()),
+    path("admin/contractor-directory/<int:entry_id>/join-invite/", AdminContractorDirectoryJoinInviteView.as_view()),
     path("admin/contractor-directory/<int:entry_id>/mark-claimed/", AdminContractorDirectoryManualClaimView.as_view()),
     path("admin/contractor-directory/<int:entry_id>/", AdminContractorDirectoryView.as_view()),
     path("admin/contractor-opportunities/", AdminContractorOpportunityListView.as_view()),

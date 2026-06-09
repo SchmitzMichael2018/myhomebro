@@ -285,6 +285,7 @@ export default function AdminContractorDirectory() {
   const [importMessage, setImportMessage] = useState("");
   const [importError, setImportError] = useState("");
   const [claimLinks, setClaimLinks] = useState({});
+  const [joinInviteIds, setJoinInviteIds] = useState({});
 
   const exportRows = useMemo(
     () => directoryRows.filter((row) => !row.public_email && row.website),
@@ -483,6 +484,29 @@ export default function AdminContractorDirectory() {
       setSuccessMessage("Claim link generated.");
     } catch (error) {
       setDirectoryError(error?.response?.data?.detail || "Could not generate a claim link.");
+    }
+  }
+
+  async function sendJoinInvite(row, resend = false) {
+    setSuccessMessage("");
+    setDirectoryError("");
+    setJoinInviteIds((prev) => ({ ...prev, [row.id]: true }));
+    try {
+      const hasEmail = Boolean(safeText(row.public_email));
+      const hasPhone = Boolean(safeText(row.phone));
+      const { data } = await api.post(`/projects/admin/contractor-directory/${row.id}/join-invite/`, {
+        preferred_channel: hasEmail && hasPhone ? "both" : hasEmail ? "email" : "sms",
+        resend,
+      });
+      if (data?.entry) updateDirectoryRow(data.entry);
+      if (data?.invite?.claim_url) {
+        setClaimLinks((prev) => ({ ...prev, [row.id]: data.invite.claim_url }));
+      }
+      setSuccessMessage(`Join marketplace invite ${titleize(data?.invite?.status || "processed")}.`);
+    } catch (error) {
+      setDirectoryError(error?.response?.data?.detail || "Could not send marketplace join invite.");
+    } finally {
+      setJoinInviteIds((prev) => ({ ...prev, [row.id]: false }));
     }
   }
 
@@ -860,6 +884,17 @@ export default function AdminContractorDirectory() {
                     <div className="flex min-w-44 flex-wrap gap-2">
                       <button type="button" data-testid={`admin-contractor-edit-${row.id}`} onClick={() => openEdit(row)} className="rounded-lg border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold text-white">Edit</button>
                       <button type="button" data-testid={`admin-contractor-claim-link-${row.id}`} onClick={() => generateClaimLink(row)} className="rounded-lg border border-sky-200/30 bg-sky-300/10 px-3 py-1 text-xs font-bold text-sky-50">Generate Claim Link</button>
+                      {!row.claimed && (safeText(row.public_email) || safeText(row.phone)) ? (
+                        <button
+                          type="button"
+                          data-testid={`admin-contractor-join-invite-${row.id}`}
+                          onClick={() => sendJoinInvite(row, Boolean(row.marketplace_join_invite?.sent_at))}
+                          disabled={Boolean(joinInviteIds[row.id])}
+                          className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50 disabled:opacity-60"
+                        >
+                          {joinInviteIds[row.id] ? "Sending..." : row.marketplace_join_invite?.sent_at ? "Resend Join Invite" : "Send Join Marketplace Invite"}
+                        </button>
+                      ) : null}
                       {claimLinks[row.id] ? (
                         <button type="button" data-testid={`admin-contractor-copy-claim-link-${row.id}`} onClick={() => copyClaimLink(row)} className="rounded-lg border border-emerald-200/30 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-50">Copy Claim Link</button>
                       ) : null}

@@ -145,6 +145,36 @@ async function mockAdminDirectory(page) {
       return;
     }
 
+    if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/join-invite/')) {
+      directoryRows = directoryRows.map((row) => (
+        row.id === 42
+          ? {
+              ...row,
+              marketplace_join_invite: {
+                id: 901,
+                directory_entry_id: 42,
+                status: 'suppressed',
+                delivery_channel: 'sms',
+                sms_status: 'suppressed',
+                sms_error: 'Marketplace join invite SMS is disabled.',
+                claim_url: '/contractors/directory-claim/join-token',
+                sent_at: '2026-06-09T20:00:00Z',
+              },
+            }
+          : row
+      ));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'Marketplace join invite processed.',
+          invite: directoryRows[0].marketplace_join_invite,
+          entry: directoryRows[0],
+        }),
+      });
+      return;
+    }
+
     if (requestUrl.pathname.endsWith('/api/projects/admin/contractor-directory/42/outreach-log/')) {
       const payload = JSON.parse(route.request().postData() || '{}');
       const statusByType = {
@@ -507,6 +537,9 @@ test('admin contractor directory supports search, filters, table, and export aff
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Admin Concrete Search Result');
   await expect(page.getByText('Mark Claimed')).toHaveCount(0);
   await expect(page.getByTestId('admin-contractor-claim-link-42')).toBeVisible();
+  await expect(page.getByTestId('admin-contractor-join-invite-42')).toBeVisible();
+  await page.getByTestId('admin-contractor-join-invite-42').click();
+  await expect(page.getByTestId('admin-contractor-toast')).toContainText('Join marketplace invite Suppressed.');
   await page.getByTestId('admin-contractor-claim-link-42').click();
   await expect(page.getByTestId('admin-contractor-toast')).toContainText('Claim link generated.');
   await expect(page.getByTestId('admin-contractor-directory-table')).toContainText('Claim Link Generated');

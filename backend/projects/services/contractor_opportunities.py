@@ -240,7 +240,7 @@ def create_or_update_opportunity_from_selection(selection_context: dict[str, Any
         **lookup,
     )
     mark_directory_discovery_selected(directory_entry, {"intake_request": intake})
-    if created:
+    if created and not selection_context.get("suppress_contractor_notification"):
         _notify_selected_contractor_opportunity(opportunity)
     return opportunity
 

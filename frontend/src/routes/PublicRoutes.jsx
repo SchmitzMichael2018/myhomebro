@@ -88,6 +88,7 @@ export default function PublicRoutes() {
       <Route path="/disputes/:id/decision" element={<PublicDisputeDecision />} />
 
       {/* Public contractor profile */}
+      <Route path="/contractors/directory-claim/:token" element={<ContractorClaimPage />} />
       <Route path="/contractors/claim/:token" element={<ContractorClaimPage />} />
       <Route path="/contractors/:slug" element={<PublicProfile />} />
 

@@ -37,6 +37,12 @@ from projects.services.contractor_directory_claims import (
     generate_directory_claim_token,
     manually_mark_directory_entry_claimed,
 )
+from projects.services.contractor_marketplace_join_invites import (
+    join_invite_for_claim_token,
+    join_invite_payload,
+    mark_join_invites_claimed_for_token,
+    send_marketplace_join_invite,
+)
 from projects.services.contractor_contactability import refresh_contactability
 from projects.services.contractor_service_taxonomy import clean_raw_services
 from projects.services.contractor_opportunities import (
@@ -315,6 +321,7 @@ class PublicIntakeSelectContractorView(APIView):
 
 def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
     latest_outreach = entry.outreach_logs.order_by("-created_at", "-id").first()
+    latest_join_invite = entry.marketplace_join_invites.select_related("claim_token").order_by("-created_at", "-id").first()
     outreach_attempt_count = entry.outreach_logs.count()
     outreach_status = "no_outreach"
     if entry.claimed:
@@ -351,6 +358,7 @@ def _directory_entry_payload(entry: ContractorDirectoryEntry) -> dict:
         "latest_outreach_status": latest_outreach.status if latest_outreach else None,
         "latest_outreach_at": latest_outreach.created_at if latest_outreach else None,
         "latest_outreach_notes": latest_outreach.notes if latest_outreach else None,
+        "marketplace_join_invite": join_invite_payload(latest_join_invite) if latest_join_invite else None,
         "claim_readiness_status": entry.claim_readiness_status,
         "claim_readiness_notes": entry.claim_readiness_notes,
         "address_line1": entry.address_line1,
@@ -1106,6 +1114,33 @@ class AdminContractorDirectoryClaimLinkView(APIView):
         )
 
 
+class AdminContractorDirectoryJoinInviteView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, entry_id: int, *args, **kwargs):
+        entry = ContractorDirectoryEntry.objects.filter(pk=entry_id).first()
+        if entry is None:
+            return Response({"detail": "Directory entry not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            invite = send_marketplace_join_invite(
+                entry=entry,
+                sent_by=request.user,
+                request=request,
+                preferred_channel=request.data.get("preferred_channel") or "",
+                resend=bool(request.data.get("resend")),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "detail": "Marketplace join invite processed.",
+                "invite": join_invite_payload(invite, request=request),
+                "entry": _directory_entry_payload(entry),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class AdminContractorDirectoryManualClaimView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -1124,13 +1159,27 @@ class ContractorDirectoryClaimView(APIView):
         claim_token = ContractorDirectoryClaimToken.objects.select_related("directory_entry", "claimed_by_contractor").filter(token=token).first()
         if claim_token is None:
             return Response({"detail": "Claim link not found."}, status=status.HTTP_404_NOT_FOUND)
+        join_invite = join_invite_for_claim_token(claim_token)
+        if join_invite and join_invite.expires_at and join_invite.expires_at < timezone.now():
+            if join_invite.status != join_invite.STATUS_CLAIMED:
+                join_invite.status = join_invite.STATUS_EXPIRED
+                join_invite.save(update_fields=["status", "updated_at"])
+            return Response({"detail": "This marketplace join invite has expired."}, status=status.HTTP_410_GONE)
         entry = claim_token.directory_entry
         return Response(
             {
                 "claim_token": str(claim_token.token),
                 "status": claim_token.status,
+                "invite_status": getattr(join_invite, "status", ""),
+                "expires_at": getattr(join_invite, "expires_at", None),
                 "claimed": entry.claimed,
                 "directory_entry_id": entry.id,
+                "business_name": entry.business_name,
+                "city": entry.city or entry.service_city or "",
+                "state": entry.state or entry.service_state or "",
+                "project_summary": "",
+                "project_mode": "",
+                "claim_url": claim_token.claim_url_path,
                 "prefill": directory_entry_prefill_payload(entry),
                 "claimed_contractor_id": entry.claimed_by_contractor_id,
             },
@@ -1143,10 +1192,17 @@ class ContractorDirectoryClaimView(APIView):
         claim_token = ContractorDirectoryClaimToken.objects.select_related("directory_entry", "directory_entry__claimed_by_contractor").filter(token=token).first()
         if claim_token is None:
             return Response({"detail": "Claim link not found."}, status=status.HTTP_404_NOT_FOUND)
+        join_invite = join_invite_for_claim_token(claim_token)
+        if join_invite and join_invite.expires_at and join_invite.expires_at < timezone.now():
+            if join_invite.status != join_invite.STATUS_CLAIMED:
+                join_invite.status = join_invite.STATUS_EXPIRED
+                join_invite.save(update_fields=["status", "updated_at"])
+            return Response({"detail": "This marketplace join invite has expired."}, status=status.HTTP_410_GONE)
         try:
             result = claim_directory_entry_with_token(claim_token, user=request.user, payload=request.data)
         except PermissionError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        mark_join_invites_claimed_for_token(claim_token)
         return Response(result, status=status.HTTP_200_OK)
 
 
