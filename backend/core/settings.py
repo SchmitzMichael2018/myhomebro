@@ -106,6 +106,16 @@ ALLOWED_HOSTS = [
 FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 SITE_URL = get_env_var("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 
+# Google Maps / Places keys are used by both frontend address autocomplete and
+# backend contractor discovery geocoding. Keep values out of logs and expose only
+# through settings so services do not need to read os.environ directly.
+GOOGLE_MAPS_API_KEY = get_env_var("GOOGLE_MAPS_API_KEY", "").strip()
+GOOGLE_PLACES_API_KEY = get_env_var("GOOGLE_PLACES_API_KEY", GOOGLE_MAPS_API_KEY).strip()
+VITE_GOOGLE_MAPS_API_KEY = get_env_var(
+    "VITE_GOOGLE_MAPS_API_KEY",
+    GOOGLE_MAPS_API_KEY or GOOGLE_PLACES_API_KEY,
+).strip()
+
 CSRF_TRUSTED_ORIGINS = [
     u.strip()
     for u in (

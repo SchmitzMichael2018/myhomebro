@@ -1,6 +1,9 @@
 from __future__ import annotations
 import base64
 import json
+import os
+import subprocess
+import sys
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -3701,6 +3704,106 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertNotEqual(mock_geocode.call_args.kwargs["city"], "")
         self.assertTrue(payload["summary"]["external_search"]["requested"])
         self.assertTrue(mock_places.called)
+
+    def test_django_settings_exposes_google_places_key_from_environment(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env.update(
+            {
+                "SECRET_KEY": "settings-test-secret",
+                "DEBUG": "true",
+                "GOOGLE_PLACES_API_KEY": "unit-google-places-key",
+            }
+        )
+        env.pop("GOOGLE_MAPS_API_KEY", None)
+        env.pop("VITE_GOOGLE_MAPS_API_KEY", None)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import json; "
+                    "from core import settings; "
+                    "print(json.dumps({"
+                    "'places_configured': bool(settings.GOOGLE_PLACES_API_KEY), "
+                    "'places_matches_env': settings.GOOGLE_PLACES_API_KEY == 'unit-google-places-key', "
+                    "'maps_empty': settings.GOOGLE_MAPS_API_KEY == '', "
+                    "'vite_configured': bool(settings.VITE_GOOGLE_MAPS_API_KEY)"
+                    "}))"
+                ),
+            ],
+            cwd=backend_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["places_configured"])
+        self.assertTrue(payload["places_matches_env"])
+        self.assertTrue(payload["maps_empty"])
+        self.assertTrue(payload["vite_configured"])
+
+    @override_settings(GOOGLE_PLACES_API_KEY="test-google-key", GOOGLE_MAPS_API_KEY="")
+    @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        return_value={
+            "latitude": None,
+            "longitude": None,
+            "diagnostic": {"configured": True, "status": "ZERO_RESULTS"},
+        },
+    )
+    def test_contractor_discovery_configured_when_only_google_places_key_exists(self, _mock_geocode):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring",
+                "description": "Install new floors.",
+                "project_city": "San Antonio",
+                "project_state": "TX",
+                "project_postal_code": "78245-1519",
+            },
+            query="flooring contractor",
+            limit=5,
+        )
+
+        self.assertTrue(payload["summary"]["external_search"]["configured"])
+        self.assertEqual(payload["summary"]["location_resolution_status"], "geocode_failed")
+
+    @override_settings(GOOGLE_PLACES_API_KEY="", GOOGLE_MAPS_API_KEY="")
+    @patch(
+        "projects.services.contractor_discovery.geocode_project_location",
+        return_value={
+            "latitude": None,
+            "longitude": None,
+            "diagnostic": {
+                "configured": False,
+                "status": "google_geocode_api_key_missing",
+                "error": "google_geocode_api_key_missing",
+                "error_type": "system",
+            },
+        },
+    )
+    def test_contractor_discovery_reports_unconfigured_when_backend_google_keys_missing(self, _mock_geocode):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Flooring",
+                "description": "Install new floors.",
+                "project_city": "San Antonio",
+                "project_state": "TX",
+                "project_postal_code": "78245-1519",
+            },
+            query="flooring contractor",
+            limit=5,
+        )
+
+        self.assertFalse(payload["summary"]["external_search"]["configured"])
+        self.assertEqual(payload["summary"]["external_search"]["error"], "google_geocode_api_key_missing")
+        self.assertEqual(payload["summary"]["reason"], "google_geocode_api_key_missing")
 
     @override_settings(GOOGLE_PLACES_API_KEY="test-google-key")
     @patch("projects.services.google_places_contractors.requests.get")
