@@ -468,40 +468,167 @@ export default function CustomerProjectWorkspace({
   onRefresh,
 }) {
   const [selectedId, setSelectedId] = useState(projects[0]?.id || null);
-  const [expandedGroups, setExpandedGroups] = useState({
-    needs_attention: true,
-    active: true,
-    draft: false,
-    completed: false,
+  const [projectFilter, setProjectFilter] = useState("open");
+  const [expandedDetails, setExpandedDetails] = useState({
+    needs: true,
+    payments: false,
+    documents: false,
+    activity: false,
   });
-  const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
   const [reimbursementAction, setReimbursementAction] = useState("");
   const selected = projects.find((project) => String(project.id) === String(selectedId)) || projects[0] || null;
 
-  const selectedAgreement = useMemo(() => {
-    if (!selected) return null;
+  const findAgreementForProject = (project) => {
+    if (!project) return null;
     return (
-      agreements.find((agreement) => String(agreement.id) === String(selected.agreement_id)) ||
-      agreements.find((agreement) => String(agreement.agreement_token || "") === String(selected.agreement_token || "")) ||
-      agreements.find((agreement) => agreement.project_title === selected.title) ||
+      agreements.find((agreement) => String(agreement.id) === String(project.agreement_id)) ||
+      agreements.find((agreement) => String(agreement.agreement_token || "") === String(project.agreement_token || "")) ||
+      agreements.find((agreement) => agreement.project_title === project.title) ||
       null
     );
+  };
+
+  const paymentsForProject = (project) =>
+    payments.filter((payment) => {
+      if (project?.agreement_id && String(payment.agreement_id || "") === String(project.agreement_id)) return true;
+      return payment.project_title === project?.title;
+    });
+
+  const documentsForProject = (project) =>
+    documents.filter((document) => {
+      if (project?.agreement_id && String(document.agreement_id || "") === String(project.agreement_id)) return true;
+      return document.project_title === project?.title;
+    });
+
+  const buildNextAction = (project, relatedPayments, agreement) => {
+    if (relatedPayments.some(isReviewablePayment)) return "Review payment";
+    if (relatedPayments.some((payment) => hasOpenDispute(payment))) return "Track issue";
+    if (relatedPayments.some(isActionablePayment)) return "Pay invoice";
+    const status = `${project?.status || ""} ${project?.status_label || ""} ${agreement?.status || ""} ${agreement?.status_label || ""}`.toLowerCase();
+    if (status.includes("signature") || status.includes("sent") || status.includes("unsigned")) return "Review agreement";
+    if (status.includes("complete") || status.includes("closed") || status.includes("archived")) return "View project record";
+    return "View details";
+  };
+
+  const agreementRows = useMemo(() => {
+    const rows = projects.map((project) => {
+      const agreement = findAgreementForProject(project);
+      const relatedPayments = paymentsForProject(project);
+      const relatedDocuments = documentsForProject(project);
+      const paid = relatedPayments
+        .filter(isPaidPayment)
+        .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
+      const statusHaystack = `${project.status || ""} ${project.status_label || ""} ${agreement?.status || ""} ${agreement?.status_label || ""}`.toLowerCase();
+      const hasAction =
+        relatedPayments.some((payment) => isReviewablePayment(payment) || isActionablePayment(payment) || hasOpenDispute(payment)) ||
+        statusHaystack.includes("signature") ||
+        statusHaystack.includes("review") ||
+        statusHaystack.includes("dispute") ||
+        statusHaystack.includes("sent");
+      const closedByStatus =
+        statusHaystack.includes("complete") ||
+        statusHaystack.includes("cancel") ||
+        statusHaystack.includes("archiv") ||
+        statusHaystack.includes("closed") ||
+        statusHaystack.includes("expired warranty") ||
+        statusHaystack.includes("fully released");
+      const agreementUrl = project.agreement_url || agreement?.action_target || (agreement?.agreement_token ? `/agreements/magic/${agreement.agreement_token}` : "");
+      return {
+        project,
+        agreement,
+        relatedPayments,
+        relatedDocuments,
+        paid,
+        isOpen: hasAction || !closedByStatus,
+        nextAction: buildNextAction(project, relatedPayments, agreement),
+        agreementUrl,
+        pdfUrl: agreement?.pdf_url || project.pdf_url || "",
+        updatedAt: project.updated_at || agreement?.updated_at || project.created_at || agreement?.created_at,
+      };
+    });
+
+    const projectAgreementIds = new Set(projects.map((project) => String(project.agreement_id || "")));
+    const projectTitles = new Set(projects.map((project) => String(project.title || "")));
+    for (const agreement of agreements) {
+      if (
+        (agreement.id && projectAgreementIds.has(String(agreement.id))) ||
+        (agreement.project_title && projectTitles.has(String(agreement.project_title)))
+      ) {
+        continue;
+      }
+      const project = {
+        id: `agreement-${agreement.id || agreement.agreement_token}`,
+        agreement_id: agreement.id,
+        agreement_token: agreement.agreement_token,
+        title: agreement.project_title || agreement.title || "Agreement",
+        description: agreement.description,
+        contractor_name: agreement.contractor_name,
+        status: agreement.status,
+        status_label: agreement.status_label,
+        total_cost: agreement.total_cost,
+        milestones: agreement.milestones || [],
+        created_at: agreement.created_at,
+        updated_at: agreement.updated_at,
+      };
+      const relatedPayments = paymentsForProject(project);
+      const relatedDocuments = documentsForProject(project);
+      const statusHaystack = `${project.status || ""} ${project.status_label || ""} ${agreement.status || ""} ${agreement.status_label || ""}`.toLowerCase();
+      const hasAction =
+        relatedPayments.some((payment) => isReviewablePayment(payment) || isActionablePayment(payment) || hasOpenDispute(payment)) ||
+        statusHaystack.includes("signature") ||
+        statusHaystack.includes("review") ||
+        statusHaystack.includes("dispute") ||
+        statusHaystack.includes("sent");
+      const closedByStatus =
+        statusHaystack.includes("complete") ||
+        statusHaystack.includes("cancel") ||
+        statusHaystack.includes("archiv") ||
+        statusHaystack.includes("closed") ||
+        statusHaystack.includes("expired warranty") ||
+        statusHaystack.includes("fully released");
+      rows.push({
+        project,
+        agreement,
+        relatedPayments,
+        relatedDocuments,
+        paid: relatedPayments
+          .filter(isPaidPayment)
+          .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0),
+        isOpen: hasAction || !closedByStatus,
+        nextAction: buildNextAction(project, relatedPayments, agreement),
+        agreementUrl: agreement.action_target || (agreement.agreement_token ? `/agreements/magic/${agreement.agreement_token}` : ""),
+        pdfUrl: agreement.pdf_url || "",
+        updatedAt: agreement.updated_at || agreement.created_at,
+      });
+    }
+    return rows;
+  }, [agreements, documents, payments, projects]);
+
+  const filteredRows = agreementRows.filter((row) => {
+    if (projectFilter === "all") return true;
+    if (projectFilter === "closed") return !row.isOpen;
+    return row.isOpen;
+  });
+
+  const selectedRow =
+    agreementRows.find((row) => String(row.project.id) === String(selected?.id)) ||
+    filteredRows[0] ||
+    agreementRows[0] ||
+    null;
+
+  const selectedAgreement = useMemo(() => {
+    if (!selected) return null;
+    return selectedRow?.agreement || findAgreementForProject(selected);
   }, [agreements, selected]);
 
   const projectPayments = useMemo(() => {
     if (!selected) return [];
-    return payments.filter((payment) => {
-      if (selected.agreement_id && String(payment.agreement_id || "") === String(selected.agreement_id)) return true;
-      return payment.project_title === selected.title;
-    });
+    return selectedRow?.relatedPayments || paymentsForProject(selected);
   }, [payments, selected]);
 
   const projectDocuments = useMemo(() => {
     if (!selected) return [];
-    return documents.filter((document) => {
-      if (selected.agreement_id && String(document.agreement_id || "") === String(selected.agreement_id)) return true;
-      return document.project_title === selected.title;
-    });
+    return selectedRow?.relatedDocuments || documentsForProject(selected);
   }, [documents, selected]);
 
   const projectNotifications = useMemo(() => {
@@ -539,6 +666,13 @@ export default function CustomerProjectWorkspace({
   const paidTotal = projectPayments
     .filter(isPaidPayment)
     .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
+  const pendingTotal = projectPayments
+    .filter((payment) => !isPaidPayment(payment))
+    .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
+  const completedMilestones = (selected?.milestones || []).filter((milestone) =>
+    String(milestone.status || "").toLowerCase().includes("complete")
+  ).length;
+  const milestoneCount = (selected?.milestones || []).length;
 
   const runReimbursementAction = async (payment, action) => {
     if (!token || !payment?.record_id) return;
@@ -568,56 +702,8 @@ export default function CustomerProjectWorkspace({
     }
   };
 
-  const groupedProjects = useMemo(() => {
-    const groups = {
-      needs_attention: [],
-      active: [],
-      draft: [],
-      completed: [],
-    };
-    const projectPaymentsFor = (project) =>
-      payments.filter((payment) => {
-        if (project.agreement_id && String(payment.agreement_id || "") === String(project.agreement_id)) return true;
-        return payment.project_title === project.title;
-      });
-    for (const project of projects) {
-      const status = `${project.status || ""} ${project.status_label || ""}`.toLowerCase();
-      const relatedPayments = projectPaymentsFor(project);
-      const needsAttention =
-        relatedPayments.some((payment) => !isPaidPayment(payment) || hasOpenDispute(payment)) ||
-        status.includes("signature") ||
-        status.includes("review") ||
-        status.includes("dispute") ||
-        status.includes("needs");
-      if (needsAttention) {
-        groups.needs_attention.push(project);
-      } else if (status.includes("complete") || status.includes("closed") || status.includes("archived")) {
-        groups.completed.push(project);
-      } else if (
-        status.includes("draft") ||
-        status.includes("pending") ||
-        status.includes("unsigned") ||
-        status.includes("proposal") ||
-        status.includes("inactive")
-      ) {
-        groups.draft.push(project);
-      } else {
-        groups.active.push(project);
-      }
-    }
-    return groups;
-  }, [payments, projects]);
-
-  const groupConfig = [
-    ["needs_attention", "Needs Attention", "Signatures, reviews, payments, or disputes waiting on you."],
-    ["active", "Active Projects", "Work that is underway or ready to follow."],
-    ["draft", "Draft / Pending", "Drafts, unsigned projects, inactive proposals, and pending starts."],
-    ["completed", "Completed / Archived", "Finished project records and archived work."],
-  ];
-
   const openProject = (project) => {
     setSelectedId(project.id);
-    setMobileWorkspaceOpen(true);
   };
 
   if (!projects.length && !agreements.length) {
@@ -633,101 +719,139 @@ export default function CustomerProjectWorkspace({
 
   return (
     <div data-testid="customer-project-workspace" className="space-y-5">
-      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside data-testid="customer-projects-navigation" className={`${mobileWorkspaceOpen ? "hidden xl:block" : "block"} space-y-4 rounded-2xl border border-slate-700 bg-slate-950/60 p-4`}>
+      <section className="rounded-3xl border border-slate-700 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200/80">Projects</div>
-            <h3 className="mt-1 text-lg font-semibold text-white">Project Navigation</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Select a project to review milestones, payments, documents, warranties, and updates.
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200/80">Projects</div>
+            <h2 className="mt-1 text-2xl font-bold text-white">Agreements & Projects</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              Review open agreements, completed project records, payment status, documents, warranties, and the next action for each project.
             </p>
           </div>
+          <div data-testid="customer-project-filters" className="flex rounded-2xl border border-slate-700 bg-slate-900/80 p-1">
+            {[
+              ["open", "Open", "No open projects right now."],
+              ["closed", "Closed", "No completed projects yet."],
+              ["all", "All", "No projects connected yet."],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                data-testid={`customer-project-filter-${key}`}
+                onClick={() => setProjectFilter(key)}
+                className={`min-h-10 rounded-xl px-4 text-sm font-semibold transition ${
+                  projectFilter === key
+                    ? "bg-amber-300 text-slate-950"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
 
-          {groupConfig.map(([key, title, description]) => {
-            const rows = groupedProjects[key] || [];
-            const expanded = expandedGroups[key];
-            return (
-              <section key={key} data-testid={`customer-project-group-${key}`} className="rounded-2xl border border-slate-700 bg-slate-900/45 p-3">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+        <section data-testid="customer-agreement-list" className="space-y-3">
+          {filteredRows.length ? (
+            filteredRows.map((row) => {
+              const project = row.project;
+              const selectedCard = String(selected?.id) === String(project.id);
+              return (
                 <button
+                  key={project.id}
                   type="button"
-                  data-testid={`customer-project-group-toggle-${key}`}
-                  onClick={() => setExpandedGroups((current) => ({ ...current, [key]: !current[key] }))}
-                  className="flex w-full items-start justify-between gap-3 text-left"
+                  data-testid={`customer-project-card-${project.id}`}
+                  onClick={() => openProject(project)}
+                  className={`w-full rounded-2xl border p-4 text-left transition ${
+                    selectedCard
+                      ? "border-amber-300/70 bg-amber-300/10 shadow-[inset_4px_0_0_rgba(251,191,36,0.72)]"
+                      : "border-slate-700 bg-slate-950/55 hover:border-slate-500 hover:bg-slate-900"
+                  }`}
                 >
-                  <span>
-                    <span className="block text-sm font-semibold text-white">{title} ({rows.length})</span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-400">{description}</span>
-                  </span>
-                  <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-xs font-semibold text-slate-200">
-                    {expanded ? "Collapse" : "Expand"}
-                  </span>
-                </button>
-                {expanded ? (
-                  <div className="mt-3 space-y-2">
-                    {rows.length ? rows.map((project) => (
-                      <button
-                        key={project.id}
-                        type="button"
-                        data-testid={`customer-project-card-${project.id}`}
-                        onClick={() => openProject(project)}
-                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                          String(selected?.id) === String(project.id)
-                            ? "border-amber-300/60 bg-amber-300/10 shadow-[inset_4px_0_0_rgba(251,191,36,0.65)]"
-                            : "border-slate-700 bg-slate-950/50 hover:border-slate-500 hover:bg-slate-900"
-                        }`}
-                      >
-                        <div className="text-sm font-semibold text-white">{project.title || "Project"}</div>
-                        <div className="mt-1 text-xs leading-5 text-slate-400">{project.project_number || project.address || "Project workspace"}</div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Badge tone={statusTone(project.status_label)}>{project.status_label || "Project"}</Badge>
-                          {(project.milestones || []).length ? <Badge>{project.milestones.length} milestones</Badge> : null}
-                        </div>
-                      </button>
-                    )) : (
-                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">
-                        No projects in this group right now.
-                      </div>
-                    )}
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-base font-semibold text-white">{project.title || "Project"}</div>
+                      <div className="mt-1 text-sm text-slate-400">{project.contractor_name || row.agreement?.contractor_name || "Contractor pending"}</div>
+                    </div>
+                    <Badge tone={statusTone(project.status_label || row.agreement?.status_label)}>{project.status_label || row.agreement?.status_label || "Project"}</Badge>
                   </div>
-                ) : null}
-              </section>
-            );
-          })}
-        </aside>
+                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Project value</div>
+                      <div className="mt-1 font-semibold text-slate-100">{project.total_cost || row.agreement?.total_cost ? money(project.total_cost || row.agreement?.total_cost) : "Pending"}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Released / Paid</div>
+                      <div className="mt-1 font-semibold text-slate-100">{money(row.paid)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Next action</div>
+                      <div className="mt-1 font-semibold text-amber-100">{row.nextAction}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Last updated</div>
+                      <div className="mt-1 font-semibold text-slate-100">{row.updatedAt ? formatDate(row.updatedAt) : "No date"}</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Badge>{(project.milestones || []).length || 0} milestones</Badge>
+                    <Badge>{row.relatedDocuments.length} documents</Badge>
+                    {row.relatedPayments.some(hasOpenDispute) ? <Badge tone="rose">Issue open</Badge> : null}
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            <div data-testid={`customer-project-${projectFilter}-empty`} className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-6 text-sm leading-6 text-slate-300">
+              {projectFilter === "closed"
+                ? "No completed projects yet."
+                : projectFilter === "all"
+                  ? "No projects connected yet."
+                  : "No open projects right now."}
+            </div>
+          )}
+        </section>
 
-      <div data-testid="customer-rich-project-workspace" className={`${mobileWorkspaceOpen ? "block" : "hidden xl:block"} space-y-4`}>
-        <button
-          type="button"
-          data-testid="customer-projects-back-button"
-          onClick={() => setMobileWorkspaceOpen(false)}
-          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white xl:hidden"
-        >
-          Back to Projects
-        </button>
+      <div data-testid="customer-rich-project-workspace" className="space-y-4">
         {selected ? (
           <>
-            <section className="overflow-hidden rounded-3xl border border-slate-700 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.45))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
+            <section data-testid="customer-selected-agreement-summary" className="overflow-hidden rounded-3xl border border-slate-700 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_30%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.42))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Project workspace</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Selected agreement</div>
                   <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">{selected.title}</h2>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
-                    {selected.description || selectedAgreement?.description || "Track your project from agreement to completion."}
+                    {selected.description || selectedAgreement?.description || "Compact project summary with payments, documents, warranty, and activity available below."}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Badge tone="gold">Track your project from agreement to completion.</Badge>
                     <Badge tone={statusTone(selected.status_label)}>{selected.status_label || "Active"}</Badge>
+                    <Badge tone="gold">{selectedRow?.nextAction || "View details"}</Badge>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {selected.agreement_url ? (
+                  {selectedRow?.agreementUrl ? (
                     <a
-                      href={selected.agreement_url}
+                      data-testid="customer-agreement-view-action"
+                      href={selectedRow.agreementUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
                     >
-                      Open Agreement
+                      View Agreement
+                      <ExternalLink size={14} />
+                    </a>
+                  ) : null}
+                  {selectedRow?.pdfUrl ? (
+                    <a
+                      data-testid="customer-agreement-pdf-action"
+                      href={selectedRow.pdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-300/40 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
+                    >
+                      View Agreement PDF
                       <ExternalLink size={14} />
                     </a>
                   ) : null}
@@ -748,9 +872,65 @@ export default function CustomerProjectWorkspace({
                   <div className="mt-1 text-sm font-semibold text-white">{money(paidTotal)}</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-                  <div className="text-xs uppercase tracking-wide text-slate-400">Address</div>
-                  <div className="mt-1 text-sm font-semibold text-white">{selected.address || "Not set"}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Next Action</div>
+                  <div className="mt-1 text-sm font-semibold text-white">{selectedRow?.nextAction || "View details"}</div>
                 </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Milestone Progress</div>
+                  <div className="mt-1 text-sm font-semibold text-white">
+                    {milestoneCount ? `${completedMilestones} of ${milestoneCount} complete` : "Milestones pending"}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Payment Summary</div>
+                  <div className="mt-1 text-sm font-semibold text-white">{money(paidTotal)} paid / {money(pendingTotal)} pending</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Documents</div>
+                  <div className="mt-1 text-sm font-semibold text-white">{projectDocuments.length} files</div>
+                  {projectDocuments[0]?.title ? <div className="mt-1 truncate text-xs text-slate-400">Latest: {projectDocuments[0].title}</div> : null}
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Warranty</div>
+                  <div className="mt-1 line-clamp-2 text-sm font-semibold text-white">
+                    {selectedAgreement?.warranty_text || "Warranty details pending"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExpandedDetails((current) => ({ ...current, payments: true }))}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-amber-300/50"
+                >
+                  View Payments
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedDetails((current) => ({ ...current, documents: true }))}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-amber-300/50"
+                >
+                  View Documents
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedDetails((current) => ({ ...current, activity: true }))}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-amber-300/50"
+                >
+                  View Activity
+                </button>
+                <button
+                  type="button"
+                  data-testid="customer-agreement-amendment-action"
+                  disabled
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-400"
+                >
+                  Request amendment - coming soon
+                </button>
               </div>
             </section>
 
@@ -775,31 +955,23 @@ export default function CustomerProjectWorkspace({
 
             <ReviewPromptCard project={selected} token={token} onPortalUpdate={onRefresh} />
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.85fr)]">
+            <div className="grid gap-4">
               <div className="space-y-4">
-                <Section title="Milestones" eyebrow="Project plan" testId="customer-project-milestones">
-                  <div className="space-y-2">
-                    {(selected.milestones || []).length ? (
-                      selected.milestones.map((milestone, index) => (
-                        <div key={milestone.id || index} className="flex flex-col gap-3 rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-100">{milestone.title}</div>
-                            <div className="mt-1 text-xs text-slate-500">{milestone.due_date ? `Due ${formatDate(milestone.due_date)}` : "Date pending"}</div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {milestone.amount ? <Badge>{money(milestone.amount)}</Badge> : null}
-                            <Badge tone={statusTone(milestone.status)}>{milestone.status || "active"}</Badge>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                        Milestones will appear once project planning is ready.
-                      </div>
-                    )}
-                  </div>
-                </Section>
+                <button
+                  type="button"
+                  data-testid="customer-project-toggle-details"
+                  onClick={() => setExpandedDetails((current) => ({
+                    needs: true,
+                    payments: !current.payments,
+                    documents: !current.documents,
+                    activity: !current.activity,
+                  }))}
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-amber-300/50"
+                >
+                  Show project details
+                </button>
 
+                {expandedDetails.activity ? (
                 <Section title="Project Updates" eyebrow="Recent activity" testId="customer-project-updates">
                   {projectUpdates.length ? (
                     <div className="space-y-3">
@@ -833,9 +1005,12 @@ export default function CustomerProjectWorkspace({
                     </div>
                   )}
                 </Section>
+                ) : null}
               </div>
 
+              {expandedDetails.payments || expandedDetails.documents ? (
               <div className="space-y-4">
+                {expandedDetails.payments ? (
                 <Section title="Payments" eyebrow="Escrow and releases" testId="customer-project-payments">
                   <p className="text-sm leading-6 text-slate-300">Review payments before funds are released.</p>
                   <div className="mt-3 space-y-2">
@@ -947,7 +1122,9 @@ export default function CustomerProjectWorkspace({
                     )}
                   </div>
                 </Section>
+                ) : null}
 
+                {expandedDetails.documents ? (
                 <Section title="Documents" eyebrow="Project files" testId="customer-project-documents">
                   <p className="text-sm leading-6 text-slate-300">Keep your project documents and home records in one place.</p>
                   <div className="mt-3 space-y-2">
@@ -968,7 +1145,9 @@ export default function CustomerProjectWorkspace({
                     )}
                   </div>
                 </Section>
+                ) : null}
 
+                {expandedDetails.documents ? (
                 <Section title="Agreement Summary" eyebrow="Scope and warranty" testId="customer-project-agreement-summary">
                   <div className="space-y-3 text-sm leading-6 text-slate-300">
                     <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
@@ -987,12 +1166,14 @@ export default function CustomerProjectWorkspace({
                     </div>
                   </div>
                 </Section>
+                ) : null}
               </div>
+              ) : null}
             </div>
           </>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-300">
-            Select a project to review milestones, payments, documents, and updates.
+            Select a project to view details.
           </div>
         )}
       </div>

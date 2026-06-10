@@ -1399,8 +1399,15 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-projects").click();
   await expect(page.getByTestId("customer-project-workspace")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("customer-project-filter-open")).toBeVisible();
+  await expect(page.getByTestId("customer-project-filter-closed")).toBeVisible();
+  await expect(page.getByTestId("customer-project-filter-all")).toBeVisible();
   await page.getByTestId("customer-project-card-1").click();
-  await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Track your project from agreement to completion.");
+  await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Selected agreement");
+  await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("customer-agreement-view-action")).toHaveAttribute("href", "/agreements/magic/portal-token");
+  await expect(page.getByTestId("customer-agreement-pdf-action")).toHaveAttribute("href", "/files/agreement.pdf");
+  await expect(page.getByTestId("customer-agreement-amendment-action")).toContainText("Request amendment");
   await expect(page.getByTestId("customer-project-review-prompt")).toContainText("Share feedback about your project experience.");
   await page.getByTestId("customer-project-review-prompt").getByLabel("Rating").selectOption("5");
   await page.getByTestId("customer-project-review-prompt").getByLabel("Review title").fill("Professional project experience");
@@ -1420,6 +1427,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-review-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
   await expect(page.getByTestId("customer-project-review-dispute-draw-2")).toContainText("Track Issue Status");
   await expect(page.getByTestId("customer-project-review-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
+  await page.getByRole("button", { name: "View Payments" }).click();
+  await page.getByRole("button", { name: "View Documents" }).click();
+  await page.getByRole("button", { name: "View Activity" }).click();
   await expect(page.getByTestId("customer-project-payments")).toContainText("Review payments before funds are released.");
   await expect(page.getByTestId("customer-project-payment-draw-2")).toContainText("Escrow hold active");
   await expect(page.getByTestId("customer-project-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
@@ -1608,6 +1618,7 @@ test("customer portal can approve escrow reimbursement requests from payments", 
 
   await page.goto("/portal/reimbursement-token", { waitUntil: "domcontentloaded" });
   await page.getByTestId("customer-dashboard-tab-projects").click();
+  await page.getByRole("button", { name: "View Payments" }).click();
   await expect(page.getByTestId("customer-project-payment-reimbursement-99")).toContainText("Reimbursement");
   await expect(page.getByTestId("customer-project-payment-approve-reimbursement-99")).toContainText("Approve Reimbursement");
 
@@ -1771,33 +1782,30 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-notifications-panel").getByRole("heading", { name: "Recent Updates" })).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-projects").click();
   await expect(page.getByTestId("customer-projects-section-header")).toHaveCount(0);
-  await expect(page.getByTestId("customer-projects-navigation")).toContainText("Project Navigation");
-  await expect(page.getByTestId("customer-project-group-needs_attention")).toContainText("Needs Attention (1)");
-  await expect(page.getByTestId("customer-project-group-active")).toContainText("Active Projects (1)");
-  await expect(page.getByTestId("customer-project-group-draft")).toContainText("Draft / Pending (1)");
-  await expect(page.getByTestId("customer-project-group-completed")).toContainText("Completed / Archived (1)");
+  await expect(page.getByTestId("customer-project-workspace")).toContainText("Agreements & Projects");
+  await expect(page.getByTestId("customer-project-filter-open")).toBeVisible();
+  await expect(page.getByTestId("customer-project-filter-closed")).toBeVisible();
+  await expect(page.getByTestId("customer-project-filter-all")).toBeVisible();
   await expect(page.getByTestId("customer-project-card-1")).toBeVisible();
   await expect(page.getByTestId("customer-project-card-1")).toHaveClass(/border-amber-300/);
-  await expect(page.getByTestId("customer-project-card-active-project")).toBeVisible();
   await expect(page.getByTestId("customer-project-workspace")).not.toContainText("Internal Contractor Draft");
-  await expect(page.getByTestId("customer-project-card-draft-project")).not.toBeVisible();
+  await expect(page.getByTestId("customer-project-workspace")).not.toContainText("Draft Patio Repair");
   await expect(page.getByTestId("customer-project-card-static-history-project")).not.toBeVisible();
-  await page.getByTestId("customer-project-group-toggle-draft").click();
-  await expect(page.getByTestId("customer-project-card-draft-project")).toBeVisible();
-  await page.getByTestId("customer-project-card-draft-project").click();
-  await expect(page.getByTestId("customer-project-card-draft-project")).toHaveClass(/border-amber-300/);
-  await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Draft Patio Repair");
+  await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
+  await page.getByTestId("customer-project-filter-closed").click();
+  await expect(page.getByTestId("customer-project-workspace")).toContainText("Warranty Project 1");
+  await expect(page.getByTestId("customer-project-card-1")).not.toBeVisible();
+  await page.getByTestId("customer-project-filter-all").click();
+  await expect(page.getByTestId("customer-project-card-1")).toBeVisible();
+  await expect(page.getByTestId("customer-project-workspace")).toContainText("Warranty Project 1");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByTestId("customer-dashboard-tab-projects").click();
-  await expect(page.getByTestId("customer-projects-navigation")).toBeVisible();
-  await expect(page.getByTestId("customer-rich-project-workspace")).not.toBeVisible();
+  await expect(page.getByTestId("customer-agreement-list")).toBeVisible();
+  await expect(page.getByTestId("customer-selected-agreement-summary")).toBeVisible();
   await page.getByTestId("customer-project-card-1").click();
-  await expect(page.getByTestId("customer-rich-project-workspace")).toBeVisible();
-  await expect(page.getByTestId("customer-projects-back-button")).toBeVisible();
-  await page.getByTestId("customer-projects-back-button").click();
-  await expect(page.getByTestId("customer-projects-navigation")).toBeVisible();
+  await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-timeline")).toBeVisible();
