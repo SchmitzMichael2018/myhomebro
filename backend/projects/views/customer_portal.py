@@ -446,6 +446,271 @@ def _customer_request_status_label(value: str) -> str:
     return _safe_text(value).replace("_", " ").title() or "Submitted"
 
 
+def _compact_address(*parts) -> str:
+    return ", ".join(_safe_text(part) for part in parts if _safe_text(part))
+
+
+def _request_detail_field(label: str, value) -> dict | None:
+    text = _safe_text(value)
+    if not text:
+        return None
+    return {"label": label, "value": text}
+
+
+def _request_activity_item(title: str, when, description: str = "", *, status: str = "") -> dict | None:
+    if not when:
+        return None
+    return {
+        "title": title,
+        "description": _safe_text(description),
+        "status": _safe_text(status),
+        "occurred_at": _safe_dt(when),
+    }
+
+
+def _lead_homeowner_status_label(lead) -> str:
+    if not lead:
+        return "Not sent"
+    if getattr(lead, "converted_agreement_id", None):
+        return "Agreement created"
+    status_value = _safe_text(getattr(lead, "status", "")).lower()
+    labels = {
+        PublicContractorLead.STATUS_NEW: "Sent to contractor",
+        PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE: "Awaiting customer response",
+        PublicContractorLead.STATUS_READY_FOR_REVIEW: "Ready for review",
+        PublicContractorLead.STATUS_FOLLOW_UP: "Follow-up needed",
+        PublicContractorLead.STATUS_ACCEPTED: "Accepted by contractor",
+        PublicContractorLead.STATUS_REJECTED: "Declined by contractor",
+        PublicContractorLead.STATUS_CONTACTED: "Contractor contacted",
+        PublicContractorLead.STATUS_QUALIFIED: "Qualified",
+        PublicContractorLead.STATUS_CLOSED: "Closed",
+        PublicContractorLead.STATUS_ARCHIVED: "Archived",
+    }
+    return labels.get(status_value, _customer_request_status_label(status_value))
+
+
+def _contractor_profile_url(public_profile) -> str:
+    if not public_profile:
+        return ""
+    try:
+        return _safe_text(public_profile.public_url_path)
+    except Exception:
+        return ""
+
+
+def _selected_contractor_from_lead(lead) -> dict | None:
+    if not lead:
+        return None
+    contractor = getattr(lead, "contractor", None)
+    public_profile = getattr(lead, "public_profile", None)
+    service_area = _compact_address(
+        getattr(public_profile, "service_area_text", ""),
+        _compact_address(getattr(public_profile, "city", ""), getattr(public_profile, "state", "")),
+    )
+    if not service_area:
+        service_area = _compact_address(getattr(contractor, "city", ""), getattr(contractor, "state", ""))
+    trade_values = []
+    for value in [
+        getattr(lead, "project_type", ""),
+        ", ".join(getattr(public_profile, "specialties", []) or []),
+        ", ".join(getattr(public_profile, "work_types", []) or []),
+    ]:
+        text = _safe_text(value)
+        if text and text not in trade_values:
+            trade_values.append(text)
+    return {
+        "source": "public_lead",
+        "business_name": _safe_text(getattr(public_profile, "business_name_public", ""))
+        or _safe_text(getattr(contractor, "business_name", ""))
+        or "Selected contractor",
+        "contact_name": _safe_text(getattr(contractor, "contact_name", ""))
+        or _safe_text(getattr(lead, "full_name", "")),
+        "phone": _safe_text(getattr(public_profile, "phone_public", "")) or _safe_text(getattr(contractor, "phone", "")),
+        "email": _safe_text(getattr(public_profile, "email_public", "")) or _safe_text(getattr(getattr(contractor, "user", None), "email", "")),
+        "location": _compact_address(getattr(public_profile, "city", ""), getattr(public_profile, "state", "")),
+        "service_area": service_area,
+        "trade": ", ".join(trade_values),
+        "profile_url": _contractor_profile_url(public_profile),
+        "rating": "",
+        "review_count": 0,
+        "status": _safe_text(getattr(lead, "status", "")),
+        "status_label": _lead_homeowner_status_label(lead),
+        "selection_method": "Selected during intake",
+        "selected_at": _safe_dt(getattr(lead, "created_at", None)),
+        "invited_at": _safe_dt(getattr(lead, "created_at", None)),
+        "viewed_at": "",
+        "accepted_at": _safe_dt(getattr(lead, "accepted_at", None)),
+        "converted_at": _safe_dt(getattr(lead, "converted_at", None)),
+    }
+
+
+def _selected_contractor_from_opportunity(opportunity) -> dict | None:
+    if not opportunity:
+        return None
+    directory_entry = getattr(opportunity, "directory_entry", None)
+    contractor = getattr(directory_entry, "claimed_by_contractor", None)
+    status_value = _safe_text(getattr(opportunity, "status", ""))
+    status_label = _customer_request_status_label(status_value)
+    if getattr(opportunity, "converted_agreement_id", None):
+        status_label = "Agreement created"
+    return {
+        "source": "contractor_opportunity",
+        "business_name": _safe_text(getattr(directory_entry, "business_name", "")) or "Selected contractor",
+        "contact_name": _safe_text(getattr(contractor, "contact_name", "")),
+        "phone": _safe_text(getattr(directory_entry, "phone_number", "")) or _safe_text(getattr(contractor, "phone", "")),
+        "email": _safe_text(getattr(directory_entry, "email", "")) or _safe_text(getattr(getattr(contractor, "user", None), "email", "")),
+        "location": _safe_text(getattr(directory_entry, "formatted_address", ""))
+        or _compact_address(getattr(directory_entry, "city", ""), getattr(directory_entry, "state", "")),
+        "service_area": _compact_address(getattr(directory_entry, "city", ""), getattr(directory_entry, "state", "")),
+        "trade": _safe_text(getattr(directory_entry, "primary_trade", "")),
+        "profile_url": _safe_text(getattr(directory_entry, "website_url", "")),
+        "rating": getattr(directory_entry, "google_rating", None),
+        "review_count": getattr(directory_entry, "google_review_count", 0),
+        "status": status_value,
+        "status_label": status_label,
+        "selection_method": "Selected during intake",
+        "selected_at": _safe_dt(getattr(opportunity, "selected_at", None)),
+        "invited_at": _safe_dt(getattr(opportunity, "created_at", None)),
+        "viewed_at": "",
+        "accepted_at": _safe_dt(getattr(opportunity, "accepted_at", None)),
+        "converted_at": "",
+    }
+
+
+def _selected_contractor_for_intake(intake, leads: list | None = None) -> dict | None:
+    lead = getattr(intake, "public_lead", None)
+    if not lead and leads:
+        lead = next(
+            (row for row in leads if getattr(getattr(row, "source_intake", None), "id", None) == getattr(intake, "id", None)),
+            None,
+        )
+    if lead:
+        return _selected_contractor_from_lead(lead)
+    opportunity = (
+        ContractorOpportunity.objects.select_related("directory_entry", "directory_entry__claimed_by_contractor")
+        .filter(intake_request=intake)
+        .order_by("-selected_at", "-id")
+        .first()
+    )
+    if opportunity:
+        return _selected_contractor_from_opportunity(opportunity)
+    contractor = getattr(intake, "contractor", None)
+    if contractor:
+        return {
+            "source": "contractor",
+            "business_name": _safe_text(getattr(contractor, "business_name", "")) or "Selected contractor",
+            "contact_name": _safe_text(getattr(contractor, "contact_name", "")),
+            "phone": _safe_text(getattr(contractor, "phone", "")),
+            "email": _safe_text(getattr(getattr(contractor, "user", None), "email", "")),
+            "location": _compact_address(getattr(contractor, "city", ""), getattr(contractor, "state", "")),
+            "service_area": _compact_address(getattr(contractor, "city", ""), getattr(contractor, "state", "")),
+            "trade": "",
+            "profile_url": "",
+            "rating": "",
+            "review_count": 0,
+            "status": "selected",
+            "status_label": "Selected",
+            "selection_method": "Selected during intake",
+            "selected_at": _safe_dt(getattr(intake, "created_at", None)),
+            "invited_at": "",
+            "viewed_at": "",
+            "accepted_at": "",
+            "converted_at": "",
+        }
+    return None
+
+
+def _request_linked_work_payload(agreement=None, project=None) -> dict | None:
+    agreement = agreement or None
+    project = project or getattr(agreement, "project", None)
+    if not agreement and not project:
+        return None
+    return {
+        "agreement_id": getattr(agreement, "id", None),
+        "agreement_token": _safe_text(getattr(agreement, "homeowner_access_token", "")),
+        "agreement_url": f"/agreements/magic/{getattr(agreement, 'homeowner_access_token', '')}"
+        if getattr(agreement, "homeowner_access_token", None)
+        else "",
+        "project_id": getattr(project, "id", None),
+        "project_title": _safe_text(getattr(project, "title", "")),
+        "status": _safe_text(getattr(agreement, "status", "")) or _safe_text(getattr(project, "status", "")),
+        "status_label": _customer_request_status_label(
+            _safe_text(getattr(agreement, "status", "")) or _safe_text(getattr(project, "status", ""))
+        ),
+    }
+
+
+def _customer_request_activity(request_row) -> list[dict]:
+    items = [
+        _request_activity_item("Request saved", getattr(request_row, "created_at", None), "Saved in your Customer Portal."),
+        _request_activity_item("Request updated", getattr(request_row, "updated_at", None), "Request details were updated."),
+    ]
+    if getattr(request_row, "converted_project_id", None):
+        items.append(
+            _request_activity_item(
+                "Linked project created",
+                getattr(request_row, "updated_at", None),
+                "This request is linked to a project record.",
+                status="converted",
+            )
+        )
+    seen = set()
+    timeline = []
+    for item in items:
+        if not item:
+            continue
+        key = (item["title"], item["occurred_at"])
+        if key in seen:
+            continue
+        seen.add(key)
+        timeline.append(item)
+    return timeline
+
+
+def _intake_activity(intake, selected_contractor: dict | None = None, agreement=None) -> list[dict]:
+    items = [
+        _request_activity_item("Request started", getattr(intake, "created_at", None), "The project request was started."),
+        _request_activity_item("Request submitted", getattr(intake, "submitted_at", None), "The request was submitted."),
+        _request_activity_item("AI project details prepared", getattr(intake, "analyzed_at", None), "Project title, type, and scope were prepared for review."),
+    ]
+    if selected_contractor:
+        items.append(
+            _request_activity_item(
+                "Contractor selected",
+                selected_contractor.get("selected_at"),
+                selected_contractor.get("business_name", "A contractor was selected."),
+                status=selected_contractor.get("status_label", ""),
+            )
+        )
+        items.append(
+            _request_activity_item(
+                "Contractor accepted",
+                selected_contractor.get("accepted_at"),
+                selected_contractor.get("business_name", "The contractor accepted the request."),
+                status="accepted",
+            )
+        )
+    items.append(
+        _request_activity_item(
+            "Agreement draft created",
+            getattr(intake, "converted_at", None) or getattr(agreement, "created_at", None),
+            "This request was converted into an agreement draft.",
+            status="converted",
+        )
+    )
+    seen = set()
+    timeline = []
+    for item in items:
+        if not item:
+            continue
+        key = (item["title"], item["occurred_at"])
+        if key in seen:
+            continue
+        seen.add(key)
+        timeline.append(item)
+    return timeline
+
+
 def _customer_request_refine_fallback(description: str) -> str:
     text = re.sub(r"\s+", " ", _safe_text(description))
     if not text:
@@ -479,26 +744,33 @@ def _customer_request_rows(email: str) -> list[dict]:
         project_type = _safe_text(getattr(request_row, "project_type", "")) or _safe_text(getattr(request_row, "project_category", ""))
         project_subtype = _safe_text(getattr(request_row, "project_subtype", ""))
         project_scope = _safe_text(request_row.description)
+        property_profile = getattr(request_row, "property_profile", None)
+        project_address = _compact_address(
+            getattr(request_row, "address_line1", ""),
+            getattr(request_row, "address_line2", ""),
+            getattr(request_row, "city", ""),
+            getattr(request_row, "state", ""),
+            getattr(request_row, "postal_code", ""),
+        )
+        linked_project = getattr(request_row, "converted_project", None)
         rows.append(
             {
                 "id": f"customer-request-{request_row.id}",
                 "request_id": request_row.id,
                 "source_kind": "customer_request",
+                "source_kind_label": "Customer Portal Request",
+                "request_source": "Customer Portal",
+                "request_source_label": "Customer Portal",
                 "project_title": _safe_text(request_row.title),
                 "project_scope": project_scope,
+                "original_description": project_scope,
+                "ai_enhanced_description": "",
+                "ai_generated_title": "",
+                "ai_generated_type": "",
+                "ai_generated_subtype": "",
                 "project_type": project_type,
                 "project_subtype": project_subtype,
-                "project_address": ", ".join(
-                    part
-                    for part in [
-                        _safe_text(request_row.address_line1),
-                        _safe_text(request_row.address_line2),
-                        _safe_text(request_row.city),
-                        _safe_text(request_row.state),
-                        _safe_text(request_row.postal_code),
-                    ]
-                    if part
-                ),
+                "project_address": project_address,
                 "request_type": _safe_text(request_row.request_type),
                 "request_type_label": request_row.get_request_type_display(),
                 "project_mode": _safe_text(getattr(request_row, "project_mode", "")),
@@ -519,12 +791,46 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "agreement_token": "",
                 "action_label": "View Request",
                 "action_target": "",
+                "current_next_action": "Review request details",
+                "conversion_status": "Converted" if getattr(request_row, "converted_project_id", None) else _customer_request_status_label(request_row.status),
                 "notes": project_scope,
                 "urgency": _safe_text(request_row.urgency),
                 "preferred_timeline": _safe_text(request_row.preferred_timeline),
+                "timeline_label": _safe_text(request_row.preferred_timeline),
+                "budget_preference": "",
+                "materials_preferences": "",
+                "scheduling_access_notes": "",
+                "special_instructions": _safe_text(getattr(request_row, "internal_notes", "")),
+                "homeowner_name": "",
+                "homeowner_email": _safe_text(getattr(request_row, "customer_email", "")),
+                "homeowner_phone": "",
                 "converted_project_id": getattr(request_row.converted_project, "id", None),
-                "property_id": getattr(getattr(request_row, "property_profile", None), "id", None),
-                "property_name": _safe_text(getattr(getattr(request_row, "property_profile", None), "display_name", "")),
+                "property_id": getattr(property_profile, "id", None),
+                "property_name": _safe_text(getattr(property_profile, "display_name", "")),
+                "property_profile": {
+                    "id": getattr(property_profile, "id", None),
+                    "display_name": _safe_text(getattr(property_profile, "display_name", "")),
+                    "property_type_label": getattr(property_profile, "get_property_type_display", lambda: "")(),
+                    "address": _safe_text(getattr(property_profile, "address", "")) or project_address,
+                }
+                if property_profile
+                else {},
+                "detail_fields": [
+                    field
+                    for field in [
+                        _request_detail_field("Project Type", project_type),
+                        _request_detail_field("Project Subtype", project_subtype),
+                        _request_detail_field("Timeline", getattr(request_row, "preferred_timeline", "")),
+                        _request_detail_field("Urgency", getattr(request_row, "urgency", "")),
+                        _request_detail_field("Payment Preference", request_row.get_payment_preference_display() if getattr(request_row, "payment_preference", "") else ""),
+                    ]
+                    if field
+                ],
+                "selected_contractor": None,
+                "photos": [],
+                "documents": [],
+                "activity_timeline": _customer_request_activity(request_row),
+                "linked_work": _request_linked_work_payload(project=linked_project),
             }
         )
     return rows
@@ -568,6 +874,16 @@ def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dic
         project_title, request_address, project_class = _request_identity_from_intake(intake)
         comparison_key = _comparison_key(email, request_address, project_class)
         comparison_agreement = agreement_by_key.get(comparison_key, {})
+        selected_contractor = _selected_contractor_for_intake(intake, leads)
+        analysis = getattr(intake, "ai_analysis_payload", None) or {}
+        ai_timeline = (
+            f"{intake.ai_project_timeline_days} days"
+            if getattr(intake, "ai_project_timeline_days", None)
+            else ""
+        )
+        ai_budget = format_money(getattr(intake, "ai_project_budget", None)) if getattr(intake, "ai_project_budget", None) else ""
+        project_type = _safe_text(getattr(intake, "ai_project_type", "")) or _safe_text(getattr(intake, "property_type", "")) or project_class_label(project_class)
+        project_subtype = _safe_text(getattr(intake, "ai_project_subtype", ""))
         latest_activity = (
             getattr(intake, "converted_at", None)
             or getattr(intake, "analyzed_at", None)
@@ -580,10 +896,29 @@ def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dic
             {
                 "id": f"intake-{intake.id}",
                 "request_id": intake.id,
+                "source_kind": "project_intake",
+                "source_kind_label": "Public Intake Request",
+                "request_source": _safe_text(intake.get_lead_source_display()),
+                "request_source_label": _safe_text(intake.get_lead_source_display()),
                 "project_title": project_title,
+                "project_scope": _safe_text(getattr(intake, "accomplishment_text", "")),
+                "original_description": _safe_text(getattr(intake, "accomplishment_text", "")),
+                "ai_enhanced_description": _safe_text(getattr(intake, "ai_description", "")),
+                "ai_generated_title": _safe_text(getattr(intake, "ai_project_title", "")),
+                "ai_generated_type": _safe_text(getattr(intake, "ai_project_type", "")),
+                "ai_generated_subtype": _safe_text(getattr(intake, "ai_project_subtype", "")),
+                "project_type": project_type,
+                "project_subtype": project_subtype,
                 "project_address": request_address,
                 "project_class": project_class,
                 "project_class_label": project_class_label(project_class),
+                "project_mode": _safe_text(getattr(intake, "project_mode", "")),
+                "project_mode_label": intake.get_project_mode_display() if getattr(intake, "project_mode", "") else "",
+                "request_type": _safe_text(getattr(intake, "post_submit_flow", "")),
+                "request_type_label": intake.get_post_submit_flow_display() if getattr(intake, "post_submit_flow", "") else "",
+                "project_category": _safe_text(getattr(intake, "property_type", "")),
+                "payment_preference": _safe_text(getattr(intake, "payment_preference", "")),
+                "payment_preference_label": intake.get_payment_preference_display() if getattr(intake, "payment_preference", "") else "",
                 "comparison_key": comparison_key,
                 "status": request_status,
                 "status_label": (
@@ -623,7 +958,57 @@ def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dic
                     if linked_agreement or comparison_agreement.get("agreement_token")
                     else ""
                 ),
+                "current_next_action": (
+                    "Open linked agreement"
+                    if linked_agreement or comparison_agreement.get("agreement_token")
+                    else "Compare contractor responses"
+                    if bid_counts.get(comparison_key, related_bids) > 1
+                    else "Review request details"
+                ),
+                "conversion_status": "Agreement draft created" if linked_agreement or comparison_agreement.get("agreement_token") else "Not converted yet",
                 "notes": _safe_text(getattr(intake, "accomplishment_text", "")),
+                "urgency": _safe_text(analysis.get("urgency") or analysis.get("priority")),
+                "preferred_timeline": _safe_text(getattr(intake, "desired_timing_text", "")) or ai_timeline,
+                "timeline_label": _safe_text(getattr(intake, "desired_timing_text", "")) or ai_timeline,
+                "budget_preference": _safe_text(getattr(intake, "budget_range_text", "")) or ai_budget,
+                "materials_preferences": _safe_text(analysis.get("materials_preferences") or analysis.get("materials") or analysis.get("material_preferences")),
+                "scheduling_access_notes": _safe_text(analysis.get("scheduling_access_notes") or analysis.get("access_notes") or getattr(intake, "desired_timing_text", "")),
+                "special_instructions": _safe_text(getattr(intake, "homeowner_participation_notes", ""))
+                or _safe_text(getattr(intake, "homeowner_task_summary", ""))
+                or _safe_text(getattr(intake, "homeowner_assistance_summary", "")),
+                "homeowner_name": _safe_text(getattr(intake, "customer_name", "")),
+                "homeowner_email": _safe_text(getattr(intake, "customer_email", "")),
+                "homeowner_phone": _safe_text(getattr(intake, "customer_phone", "")),
+                "property_profile": {},
+                "property_name": "",
+                "detail_fields": [
+                    field
+                    for field in [
+                        _request_detail_field("Project Type", project_type),
+                        _request_detail_field("Project Subtype", project_subtype),
+                        _request_detail_field("Project Mode", intake.get_project_mode_display() if getattr(intake, "project_mode", "") else ""),
+                        _request_detail_field("Timeline", _safe_text(getattr(intake, "desired_timing_text", "")) or ai_timeline),
+                        _request_detail_field("Budget", _safe_text(getattr(intake, "budget_range_text", "")) or ai_budget),
+                        _request_detail_field("Payment Preference", intake.get_payment_preference_display() if getattr(intake, "payment_preference", "") else ""),
+                    ]
+                    if field
+                ],
+                "selected_contractor": selected_contractor,
+                "photos": [
+                    {
+                        "id": f"intake-photo-{photo.id}",
+                        "title": _safe_text(getattr(photo, "caption", "")) or _safe_text(getattr(photo, "original_name", "")) or "Project photo",
+                        "filename": _safe_text(getattr(photo, "original_name", "")) or _safe_text(getattr(getattr(photo, "image", None), "name", "")).rsplit("/", 1)[-1],
+                        "url": _safe_text(getattr(getattr(photo, "image", None), "url", "")),
+                        "uploaded_at": _safe_dt(getattr(photo, "uploaded_at", None)),
+                    }
+                    for photo in getattr(intake, "clarification_photos", []).all()
+                ]
+                if hasattr(getattr(intake, "clarification_photos", None), "all")
+                else [],
+                "documents": [],
+                "activity_timeline": _intake_activity(intake, selected_contractor, linked_agreement),
+                "linked_work": _request_linked_work_payload(linked_agreement or None),
             }
         )
 

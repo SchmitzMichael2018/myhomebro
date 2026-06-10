@@ -19630,12 +19630,28 @@ class CustomerPortalAccessTests(TestCase):
             customer_email=self.customer_email,
             customer_phone="555-111-2222",
             project_class="commercial",
+            project_mode="full_service",
+            payment_preference="escrow",
+            property_type="Office",
+            budget_range_text="$15,000-$20,000",
+            desired_timing_text="Within the next month",
+            homeowner_participation_notes="Access through the side entrance after 9 AM.",
             project_address_line1="123 Main St",
             project_city="Austin",
             project_state="TX",
             project_postal_code="78701",
             accomplishment_text="Need a commercial remodel.",
+            ai_project_title="Commercial Remodel",
+            ai_project_type="Commercial Remodeling",
+            ai_project_subtype="Tenant Improvement",
+            ai_description="Included Work\n- Prepare the commercial remodel scope for contractor review.",
+            ai_analysis_payload={
+                "urgency": "normal",
+                "materials_preferences": "Durable commercial-grade finishes.",
+                "scheduling_access_notes": "Coordinate access with the office manager.",
+            },
             submitted_at=timezone.now(),
+            analyzed_at=timezone.now(),
             completed_at=timezone.now(),
             share_token="portal-test-token-1",
         )
@@ -19897,6 +19913,25 @@ class CustomerPortalAccessTests(TestCase):
         self.assertFalse(partner_bid["contractor_preferred"])
         self.assertIn("milestone_count", comparison_payload["bids"][0])
         self.assertIn("warranty_summary", comparison_payload["bids"][0])
+
+        intake_row = next(row for row in response.data["requests"] if row["project_title"] == "Commercial Remodel")
+        self.assertEqual(intake_row["source_kind"], "project_intake")
+        self.assertEqual(intake_row["request_source_label"], "Landing Page")
+        self.assertEqual(intake_row["homeowner_name"], "Pat Customer")
+        self.assertEqual(intake_row["homeowner_phone"], "555-111-2222")
+        self.assertEqual(intake_row["original_description"], "Need a commercial remodel.")
+        self.assertIn("commercial remodel scope", intake_row["ai_enhanced_description"])
+        self.assertEqual(intake_row["project_type"], "Commercial Remodeling")
+        self.assertEqual(intake_row["project_subtype"], "Tenant Improvement")
+        self.assertEqual(intake_row["preferred_timeline"], "Within the next month")
+        self.assertEqual(intake_row["payment_preference_label"], "Escrow milestone payments")
+        self.assertEqual(intake_row["materials_preferences"], "Durable commercial-grade finishes.")
+        self.assertEqual(intake_row["scheduling_access_notes"], "Coordinate access with the office manager.")
+        self.assertEqual(intake_row["selected_contractor"]["business_name"], "Builder Co")
+        self.assertEqual(intake_row["selected_contractor"]["status_label"], "Agreement created")
+        self.assertTrue(any(item["title"] == "Contractor selected" for item in intake_row["activity_timeline"]))
+        self.assertTrue(any(item["title"] == "Agreement draft created" for item in intake_row["activity_timeline"]))
+        self.assertEqual(intake_row["linked_work"]["agreement_id"], self.agreement.id)
 
         agreement_row = response.data["agreements"][0]
         self.assertNotIn("detail", agreement_row)
@@ -20723,6 +20758,12 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(request_row["payment_preference_label"], "Escrow Milestone Holds")
         self.assertEqual(request_row["urgency"], "soon")
         self.assertEqual(request_row["preferred_timeline"], "As soon as possible")
+        self.assertEqual(request_row["request_source_label"], "Customer Portal")
+        self.assertEqual(request_row["original_description"], "Kitchen sink is leaking under the cabinet.")
+        self.assertEqual(request_row["homeowner_email"], self.customer_email)
+        self.assertEqual(request_row["conversion_status"], "Submitted")
+        self.assertEqual(request_row["current_next_action"], "Review request details")
+        self.assertEqual(request_row["activity_timeline"][0]["title"], "Request saved")
         self.assertTrue(request_row["created_at"])
         notification = SmartNotification.objects.get(customer_request=saved)
         self.assertEqual(notification.event_type, SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED)

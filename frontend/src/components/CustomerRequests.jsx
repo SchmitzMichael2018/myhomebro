@@ -106,6 +106,63 @@ function joinPresent(parts, separator = " · ") {
   return parts.map(displayValue).filter(Boolean).join(separator);
 }
 
+function DetailSection({ title, eyebrow, children, testId, className = "" }) {
+  return (
+    <section data-testid={testId} className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${className}`}>
+      {eyebrow ? <div className="text-xs font-bold uppercase tracking-[0.18em] text-amber-200">{eyebrow}</div> : null}
+      <h4 className="text-base font-extrabold text-white">{title}</h4>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function DetailField({ label, value }) {
+  const text = displayValue(value);
+  if (!text) return null;
+  return (
+    <div>
+      <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dd className="mt-1 text-sm font-semibold text-white">{text}</dd>
+    </div>
+  );
+}
+
+function TextBlock({ label, value, empty }) {
+  const text = displayValue(value);
+  return (
+    <div>
+      <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <p className={`mt-1 whitespace-pre-wrap text-sm leading-6 ${text ? "text-slate-100" : "text-slate-400"}`}>
+        {text || empty}
+      </p>
+    </div>
+  );
+}
+
+function RequestTimeline({ items = [] }) {
+  const visible = items.filter((item) => displayValue(item?.title) || displayValue(item?.description));
+  if (!visible.length) {
+    return <p className="text-sm text-slate-400">No activity has been recorded for this request yet.</p>;
+  }
+  return (
+    <ol className="space-y-3">
+      {visible.map((item, index) => (
+        <li key={`${item.title}-${item.occurred_at || index}`} className="flex gap-3">
+          <span className="mt-1 h-2.5 w-2.5 flex-none rounded-full bg-amber-300" />
+          <div>
+            <div className="text-sm font-bold text-white">{item.title}</div>
+            {item.description ? <p className="mt-0.5 text-sm text-slate-300">{item.description}</p> : null}
+            <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+              {item.occurred_at ? <span>{formatDateTime(item.occurred_at)}</span> : null}
+              {item.status ? <span>{item.status}</span> : null}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function comparisonHighlights(bids) {
   const prices = bids
     .map((bid) => ({ id: bid.id, value: parseMoney(bid.bid_amount ?? bid.bid_amount_label) }))
@@ -633,48 +690,144 @@ export default function CustomerRequests({
                 </button>
               </div>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:col-span-2">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Project Scope</div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-100">
-                    {selectedRequest.project_scope || selectedRequest.notes || "No project scope was submitted."}
-                  </p>
-                </div>
-                <MetadataCard label="Project Type" value={selectedRequest.project_type || selectedRequest.project_category} />
-                <MetadataCard label="Project Subtype" value={selectedRequest.project_subtype} />
-                <MetadataCard label="Project Mode" value={selectedRequest.project_mode_label} />
-                <MetadataCard label="Request Type" value={selectedRequest.request_type_label || selectedRequest.project_class_label} />
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Timeline</div>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {joinPresent([selectedRequest.preferred_timeline, selectedRequest.urgency]) || "Timeline pending"}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Payment Preference</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.payment_preference_label || "Not selected yet"}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.status_label || "Submitted"}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:col-span-2">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Property / Address</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.property_name || "Property"}</p>
-                  {selectedRequest.project_address ? (
-                    <p className="mt-1 text-sm text-slate-300">{selectedRequest.project_address}</p>
-                  ) : null}
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Submitted</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{formatDateTime(selectedRequest.created_at) || "Date unavailable"}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Contractor responses</div>
-                  <p className="mt-1 text-sm font-semibold text-white">
-                    {requestBids(selectedRequest).length} response{requestBids(selectedRequest).length === 1 ? "" : "s"}
-                  </p>
-                </div>
+              <div className="mt-5 space-y-4">
+                <DetailSection title="Request Summary" eyebrow="Submitted Request" testId="customer-request-detail-summary">
+                  <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <DetailField label="Status" value={selectedRequest.status_label || "Submitted"} />
+                    <DetailField label="Source" value={selectedRequest.request_source_label || selectedRequest.source_kind_label} />
+                    <DetailField label="Next Action" value={selectedRequest.current_next_action || selectedRequest.action_label} />
+                    <DetailField label="Conversion Status" value={selectedRequest.conversion_status} />
+                    <DetailField label="Submitted" value={formatDateTime(selectedRequest.created_at)} />
+                    <DetailField label="Last Updated" value={formatDateTime(selectedRequest.updated_at || selectedRequest.latest_activity)} />
+                    <DetailField label="Contractor Responses" value={`${requestBids(selectedRequest).length} response${requestBids(selectedRequest).length === 1 ? "" : "s"}`} />
+                  </dl>
+                </DetailSection>
+
+                <DetailSection title="Homeowner & Property" testId="customer-request-detail-homeowner-property">
+                  <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <DetailField label="Homeowner" value={selectedRequest.homeowner_name} />
+                    <DetailField label="Email" value={selectedRequest.homeowner_email} />
+                    <DetailField label="Phone" value={selectedRequest.homeowner_phone} />
+                    <DetailField label="Property" value={selectedRequest.property_name || selectedRequest.property_profile?.display_name} />
+                    <DetailField label="Property Type" value={selectedRequest.property_profile?.property_type_label} />
+                    <DetailField label="Property / Address" value={selectedRequest.project_address || selectedRequest.property_profile?.address} />
+                  </dl>
+                </DetailSection>
+
+                <DetailSection title="Project Details" testId="customer-request-detail-project-details">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <TextBlock
+                      label="Original Homeowner Description"
+                      value={selectedRequest.original_description || selectedRequest.project_scope || selectedRequest.notes}
+                      empty="No original description was submitted."
+                    />
+                    <TextBlock
+                      label="AI-Enhanced Scope"
+                      value={selectedRequest.ai_enhanced_description}
+                      empty="No AI-enhanced description is saved for this request yet."
+                    />
+                  </div>
+                  <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <DetailField label="AI Suggested Title" value={selectedRequest.ai_generated_title} />
+                    <DetailField label="Project Type" value={selectedRequest.ai_generated_type || selectedRequest.project_type || selectedRequest.project_category} />
+                    <DetailField label="Project Subtype" value={selectedRequest.ai_generated_subtype || selectedRequest.project_subtype} />
+                    <DetailField label="Project Mode" value={selectedRequest.project_mode_label} />
+                    <DetailField label="Request Type" value={selectedRequest.request_type_label || selectedRequest.project_class_label} />
+                    <DetailField label="Timeline" value={joinPresent([selectedRequest.timeline_label || selectedRequest.preferred_timeline, selectedRequest.urgency])} />
+                    <DetailField label="Budget" value={selectedRequest.budget_preference} />
+                    <DetailField label="Payment Preference" value={selectedRequest.payment_preference_label} />
+                    <DetailField label="Materials Preferences" value={selectedRequest.materials_preferences} />
+                    <DetailField label="Scheduling / Access Notes" value={selectedRequest.scheduling_access_notes} />
+                    <DetailField label="Special Instructions" value={selectedRequest.special_instructions} />
+                  </dl>
+                </DetailSection>
+
+                <DetailSection title="Selected Contractor" testId="customer-request-detail-selected-contractor">
+                  {selectedRequest.selected_contractor ? (
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-lg font-extrabold text-white">{selectedRequest.selected_contractor.business_name || "Selected contractor"}</h5>
+                        <Badge>{selectedRequest.selected_contractor.status_label || "Selected"}</Badge>
+                      </div>
+                      <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <DetailField label="Contact" value={selectedRequest.selected_contractor.contact_name} />
+                        <DetailField label="Phone" value={selectedRequest.selected_contractor.phone} />
+                        <DetailField label="Email" value={selectedRequest.selected_contractor.email} />
+                        <DetailField label="Service Area" value={selectedRequest.selected_contractor.service_area || selectedRequest.selected_contractor.location} />
+                        <DetailField label="Trade / Match" value={selectedRequest.selected_contractor.trade} />
+                        <DetailField label="How Selected" value={selectedRequest.selected_contractor.selection_method} />
+                        <DetailField label="Selected" value={formatDateTime(selectedRequest.selected_contractor.selected_at)} />
+                        <DetailField label="Accepted" value={formatDateTime(selectedRequest.selected_contractor.accepted_at)} />
+                        <DetailField
+                          label="Rating"
+                          value={
+                            selectedRequest.selected_contractor.rating
+                              ? `${selectedRequest.selected_contractor.rating} (${selectedRequest.selected_contractor.review_count || 0} reviews)`
+                              : ""
+                          }
+                        />
+                      </dl>
+                      {selectedRequest.selected_contractor.profile_url ? (
+                        <a
+                          href={selectedRequest.selected_contractor.profile_url}
+                          className="mt-4 inline-flex rounded-xl border border-sky-300/40 px-4 py-2 text-sm font-bold text-sky-100 hover:bg-sky-400/10"
+                        >
+                          View contractor profile
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm leading-6 text-slate-400">No contractor has been selected for this request yet.</p>
+                  )}
+                </DetailSection>
+
+                <DetailSection title="Photos & Documents" testId="customer-request-detail-files">
+                  {selectedRequest.photos?.length || selectedRequest.documents?.length ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {[...(selectedRequest.photos || []), ...(selectedRequest.documents || [])].map((file) => (
+                        <a
+                          key={file.id || file.url || file.filename}
+                          href={file.url || "#"}
+                          className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm font-semibold text-sky-100 hover:bg-sky-400/10"
+                        >
+                          {file.title || file.filename || "Attached file"}
+                          {file.filename ? <span className="mt-1 block text-xs font-normal text-slate-400">{file.filename}</span> : null}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm leading-6 text-slate-400">No photos or documents are attached to this request yet.</p>
+                  )}
+                </DetailSection>
+
+                <DetailSection title="Activity Timeline" testId="customer-request-detail-activity">
+                  <RequestTimeline items={selectedRequest.activity_timeline || []} />
+                </DetailSection>
+
+                <DetailSection title="Linked Work" testId="customer-request-detail-linked-work">
+                  {selectedRequest.linked_work || selectedRequest.agreement_token ? (
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-sm font-bold text-white">
+                          {selectedRequest.linked_work?.project_title || selectedRequest.project_title || "Linked agreement"}
+                        </div>
+                        <p className="mt-1 text-sm text-slate-400">
+                          {selectedRequest.linked_work?.status_label || selectedRequest.status_label || "Agreement record available"}
+                        </p>
+                      </div>
+                      {(selectedRequest.linked_work?.agreement_url || selectedRequest.agreement_token) ? (
+                        <a
+                          href={selectedRequest.linked_work?.agreement_url || `/agreements/magic/${selectedRequest.agreement_token}`}
+                          className="rounded-xl border border-sky-300/40 px-4 py-2 text-sm font-bold text-sky-100 hover:bg-sky-400/10"
+                        >
+                          View linked agreement
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm leading-6 text-slate-400">This request has not been converted into an agreement yet.</p>
+                  )}
+                </DetailSection>
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">

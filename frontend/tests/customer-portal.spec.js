@@ -155,10 +155,69 @@ const portalPayload = {
       action_target: "",
       notes: "Need a commercial remodel.",
       project_scope: "Need a commercial remodel.",
+      original_description: "Need a commercial remodel.",
+      ai_enhanced_description: "Included Work\n- Prepare the commercial remodel scope for contractor review.",
+      ai_generated_title: "Commercial Remodel",
+      ai_generated_type: "Commercial Remodeling",
+      ai_generated_subtype: "Tenant Improvement",
+      source_kind: "project_intake",
+      source_kind_label: "Public Intake Request",
+      request_source_label: "Landing Page",
       project_address: "123 Main St, Austin, TX, 78701",
       property_name: "Kitchen Remodel",
+      homeowner_name: "Pat Customer",
+      homeowner_email: "customer@example.com",
+      homeowner_phone: "555-111-2222",
       urgency: "normal",
       preferred_timeline: "Within the next month",
+      timeline_label: "Within the next month",
+      current_next_action: "Open linked agreement",
+      conversion_status: "Agreement draft created",
+      materials_preferences: "Durable commercial-grade finishes.",
+      scheduling_access_notes: "Coordinate access with the office manager.",
+      special_instructions: "Access through the side entrance after 9 AM.",
+      selected_contractor: {
+        business_name: "Builder Co",
+        contact_name: "Jordan Builder",
+        phone: "512-555-0100",
+        email: "builder@example.com",
+        service_area: "Austin, TX",
+        trade: "Commercial Remodeling",
+        status_label: "Agreement created",
+        selection_method: "Selected during intake",
+        selected_at: "2026-04-15T14:10:00Z",
+        accepted_at: "2026-04-15T15:00:00Z",
+        profile_url: "/contractors/builder-co",
+      },
+      photos: [{ id: "intake-photo-1", title: "Existing office", filename: "office-before.jpg", url: "/files/office-before.jpg" }],
+      documents: [],
+      activity_timeline: [
+        {
+          title: "Request submitted",
+          description: "The request was submitted.",
+          occurred_at: "2026-04-15T14:00:00Z",
+        },
+        {
+          title: "Contractor selected",
+          description: "Builder Co",
+          status: "Agreement created",
+          occurred_at: "2026-04-15T14:10:00Z",
+        },
+        {
+          title: "Agreement draft created",
+          description: "This request was converted into an agreement draft.",
+          status: "converted",
+          occurred_at: "2026-04-15T15:00:00Z",
+        },
+      ],
+      linked_work: {
+        agreement_id: 1,
+        agreement_token: "portal-token",
+        agreement_url: "/agreements/magic/portal-token",
+        project_id: 1,
+        project_title: "Kitchen Remodel",
+        status_label: "Signed",
+      },
     },
     {
       id: "request-2",
@@ -1344,10 +1403,16 @@ test("customer portal is reachable from the landing page and loads secure record
             {
               id: "customer-request-9",
               source_kind: "customer_request",
+              source_kind_label: "Customer Portal Request",
+              request_source_label: "Customer Portal",
               project_title: submittedRequestPayload.project_title || submittedRequestPayload.title,
               project_scope: submittedRequestPayload.project_scope || submittedRequestPayload.description,
+              original_description: submittedRequestPayload.project_scope || submittedRequestPayload.description,
+              ai_enhanced_description: "",
               status: "submitted",
               status_label: "Submitted",
+              current_next_action: "Review request details",
+              conversion_status: "Submitted",
               request_type_label: "Maintenance",
               project_mode_label: "Full service",
               project_category: submittedRequestPayload.project_category || submittedRequestPayload.project_type,
@@ -1356,11 +1421,30 @@ test("customer portal is reachable from the landing page and loads secure record
               payment_preference_label: "Escrow milestone holds",
               property_id: submittedRequestPayload.property_id,
               property_name: "Lake House",
+              property_profile: {
+                id: submittedRequestPayload.property_id,
+                display_name: "Lake House",
+                property_type_label: "Single Family",
+                address: "44 Lake Dr, Austin, TX, 78703",
+              },
+              homeowner_email: "customer@example.com",
               notes: submittedRequestPayload.project_scope || submittedRequestPayload.description,
               project_address: "44 Lake Dr, Austin, TX, 78703",
               urgency: submittedRequestPayload.urgency,
               preferred_timeline: submittedRequestPayload.preferred_timeline,
               created_at: "2026-06-09T12:00:00Z",
+              updated_at: "2026-06-09T12:00:00Z",
+              activity_timeline: [
+                {
+                  title: "Request saved",
+                  description: "Saved in your Customer Portal.",
+                  occurred_at: "2026-06-09T12:00:00Z",
+                },
+              ],
+              selected_contractor: null,
+              photos: [],
+              documents: [],
+              linked_work: null,
             },
             ...portalPayload.requests,
           ],
@@ -1607,6 +1691,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Seasonal HVAC maintenance");
   await page.getByTestId("customer-request-view-customer-request-9").click();
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Request Details");
+  await expect(page.getByTestId("customer-request-detail-summary")).toContainText("Request Summary");
+  await expect(page.getByTestId("customer-request-detail-summary")).toContainText("Customer Portal");
+  await expect(page.getByTestId("customer-request-detail-homeowner-property")).toContainText("Homeowner & Property");
+  await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("Original Homeowner Description");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Seasonal HVAC maintenance");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Document any recommended follow-up service");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("HVAC");
@@ -1614,13 +1702,24 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("As soon as possible");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Escrow milestone holds");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("44 Lake Dr, Austin, TX, 78703");
+  await expect(page.getByTestId("customer-request-detail-activity")).toContainText("Request saved");
   await page.getByRole("button", { name: "Close request details" }).click();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
   await page.getByTestId("customer-request-view-request-1").click();
-  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Project Scope");
-  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Project Type");
-  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Project Subtype");
+  await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("Project Details");
+  await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("Original Homeowner Description");
+  await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("AI-Enhanced Scope");
+  await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("Commercial Remodeling");
+  await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("Tenant Improvement");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Need a commercial remodel.");
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Prepare the commercial remodel scope for contractor review.");
+  await expect(page.getByTestId("customer-request-detail-selected-contractor")).toContainText("Builder Co");
+  await expect(page.getByTestId("customer-request-detail-selected-contractor")).toContainText("Agreement created");
+  await expect(page.getByTestId("customer-request-detail-selected-contractor")).toContainText("Commercial Remodeling");
+  await expect(page.getByTestId("customer-request-detail-files")).toContainText("Existing office");
+  await expect(page.getByTestId("customer-request-detail-activity")).toContainText("Contractor selected");
+  await expect(page.getByTestId("customer-request-detail-activity")).toContainText("Agreement draft created");
+  await expect(page.getByTestId("customer-request-detail-linked-work")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Within the next month");
   await page.getByRole("button", { name: "Close request details" }).click();
   await expect(page.getByTestId("customer-portal-request-compare-request-2")).toContainText("Compare Bids");
