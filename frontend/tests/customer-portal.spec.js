@@ -980,6 +980,25 @@ const longPortalPayload = {
       contractor_name: "Builder Co",
       agreement_id: 105,
       total_cost: "20000.00",
+      customer_status_key: "payment_pending",
+      customer_status_label: "Payment Pending",
+      customer_status_group: "open",
+      homeowner_actions: {
+        amendment: { available: true, active: false, label: "Request Amendment" },
+        refund: { available: true, active: false, label: "Request Refund" },
+        dispute: { available: true, active: false, label: "Open Dispute" },
+      },
+      active_cases: [],
+      payment_summary: {
+        project_value: "20000.00",
+        escrow_funded: "20000.00",
+        released_to_contractor: "0.00",
+        remaining_in_escrow: "20000.00",
+        pending_review: "0.00",
+        contractor_invoices: "7000.00",
+        customer_payments: "0.00",
+        refunds_adjustments: "0.00",
+      },
       milestones: [],
     },
     {
@@ -1055,6 +1074,25 @@ const longPortalPayload = {
       payment_mode: "escrow",
       agreement_token: "escrow-funded-invoice-token",
       action_target: "/agreements/magic/escrow-funded-invoice-token",
+      customer_status_key: "payment_pending",
+      customer_status_label: "Payment Pending",
+      customer_status_group: "open",
+      homeowner_actions: {
+        amendment: { available: true, active: false, label: "Request Amendment" },
+        refund: { available: true, active: false, label: "Request Refund" },
+        dispute: { available: true, active: false, label: "Open Dispute" },
+      },
+      active_cases: [],
+      payment_summary: {
+        project_value: "20000.00",
+        escrow_funded: "20000.00",
+        released_to_contractor: "0.00",
+        remaining_in_escrow: "20000.00",
+        pending_review: "0.00",
+        contractor_invoices: "7000.00",
+        customer_payments: "0.00",
+        refunds_adjustments: "0.00",
+      },
     },
     {
       id: 104,
@@ -1962,6 +2000,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 });
 
 test("customer portal limits long home records, payments, and documents without dead timeline links", async ({ page }) => {
+  let amendmentPayload = null;
   await page.route("**/api/projects/customer-portal/**", async (route) => {
     const requestUrl = route.request().url();
     if (route.request().method() === "GET" && requestUrl.includes("/customer-portal/long-token/")) {
@@ -1969,6 +2008,19 @@ test("customer portal limits long home records, payments, and documents without 
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(longPortalPayload),
+      });
+      return;
+    }
+    if (route.request().method() === "POST" && requestUrl.includes("/agreements/105/amendments/")) {
+      amendmentPayload = JSON.parse(route.request().postData() || "{}");
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          amendment_request: { id: 9001, status: "open", status_label: "Open" },
+          portal: longPortalPayload,
+        }),
       });
       return;
     }
@@ -2009,6 +2061,27 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-payment-summary-contractor-invoices")).toContainText("$7,000.00 contractor invoices");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("$27,000.00");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("Released / Paid");
+  await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Need to Change Something?");
+  await page.getByTestId("customer-action-amendment").click();
+  await expect(page.getByTestId("customer-action-modal")).toContainText("Request Amendment");
+  await page.getByTestId("customer-action-change-type").selectOption("descope_remove_work");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("De-scope / Remove Work");
+  await page.getByTestId("customer-action-revised-project-value").fill("15000");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("Original project value");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("$20,000.00");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("Revised project value");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("$15,000.00");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("Escrow currently funded");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("Estimated refundable escrow surplus");
+  await expect(page.getByTestId("customer-action-descope-summary")).toContainText("$5,000.00");
+  await page.getByTestId("customer-action-requested-change").fill("Please remove the remaining cabinet installation milestone.");
+  await page.getByTestId("customer-action-reason").fill("We are cancelling the remaining work and reducing the project value.");
+  await page.getByTestId("customer-action-submit").click();
+  await expect(page.getByTestId("customer-action-modal")).toHaveCount(0);
+  expect(amendmentPayload).toMatchObject({
+    change_type: "descope_remove_work",
+    revised_project_value: "15000",
+  });
   await page.getByTestId("customer-project-filter-all").click();
   await page.getByTestId("customer-project-search").fill("True Draft Agreement");
   await expect(page.getByTestId("customer-project-status-true-draft-project")).toContainText("Draft");

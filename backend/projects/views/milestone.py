@@ -57,7 +57,7 @@ from projects.serializers.invoices import InvoiceSerializer
 from projects.permissions_subaccounts import IsContractorOrSubAccount, CanEditMilestones
 from projects.utils.accounts import get_contractor_for_user
 
-from projects.models_amendment_request import AmendmentRequest
+from projects.models_amendment_request import AmendmentRequest, apply_descoped_milestone_hold, open_descoped_amendment_for_milestone
 from projects.serializers_amendment_request import AmendmentRequestSerializer
 from projects.services.agreement_locking import (
     can_edit_milestones_under_agreement,
@@ -987,6 +987,16 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         # If they are setting completed=true and it's currently false:
         if wants_complete and not getattr(instance, "completed", False):
+            blocked_request = open_descoped_amendment_for_milestone(instance)
+            if blocked_request is not None:
+                return Response(
+                    {
+                        "detail": "This milestone is blocked by a pending de-scope amendment review.",
+                        "code": "MILESTONE_AMENDMENT_REVIEW_PENDING",
+                        "amendment_request_id": blocked_request.id,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             # ✅ Gate completion based on agreement rules
             gate = _can_complete_milestone(instance.agreement)
             if gate is not None:
@@ -1089,6 +1099,16 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             justification=ser.validated_data["justification"],
             status=AmendmentRequest.Status.OPEN,
         )
+        if obj.change_type == AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK:
+            ids = set()
+            for value in payload.get("affected_milestone_ids") or [milestone.id]:
+                try:
+                    ids.add(int(value))
+                except Exception:
+                    pass
+            affected = Milestone.objects.filter(agreement=agreement, id__in=ids)
+            obj.affected_milestones.set(affected)
+            apply_descoped_milestone_hold(obj)
 
         try:
             MilestoneComment.objects.create(
@@ -1736,6 +1756,17 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Milestone must be completed before invoicing."}, status=status.HTTP_400_BAD_REQUEST)
 
         # ✅ Escrow mode requires funded; Direct mode does not
+        blocked_request = open_descoped_amendment_for_milestone(milestone)
+        if blocked_request is not None:
+            return Response(
+                {
+                    "detail": "This milestone is blocked by a pending de-scope amendment review.",
+                    "code": "MILESTONE_AMENDMENT_REVIEW_PENDING",
+                    "amendment_request_id": blocked_request.id,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         gate = _can_invoice_milestone(agreement)
         if gate is not None:
             return gate

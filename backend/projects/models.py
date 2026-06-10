@@ -1855,6 +1855,21 @@ class Milestone(models.Model):
         on_delete=models.SET_NULL,
         related_name="inspection_reviewed_milestones",
     )
+    amendment_review_status = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="When set to pending, milestone completion/invoicing is blocked by an open amendment review.",
+    )
+    amendment_review_request = models.ForeignKey(
+        "projects.AmendmentRequest",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="blocked_milestones",
+        help_text="Open amendment request currently blocking this milestone.",
+    )
 
     is_invoiced = models.BooleanField(default=False)
     completed = models.BooleanField(default=False)
@@ -2719,6 +2734,8 @@ from .models_customer_portal import (  # noqa: E402,F401
     SmartNotificationEvent,
 )
 from .models_amendment_request import AmendmentRequest  # noqa: E402,F401
+from .models_customer_refund_request import CustomerRefundRequest  # noqa: E402,F401
+from .models_project_activity import ProjectActivityEvent  # noqa: E402,F401
 from .models_learning import (
     AgreementDraftIntelligenceSnapshot,
     ContractorEditEvent,

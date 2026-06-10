@@ -91,6 +91,7 @@ from projects.models import (
     ProjectSubtype,
     ProjectType,
     ProjectStatus,
+    ProjectActivityEvent,
     PublicContractorLead,
     RecurrencePattern,
     Skill,
@@ -116,6 +117,8 @@ from projects.models_subcontractor import (
     SubcontractorQuoteRequestStatus,
 )
 from projects.models_dispute import Dispute, DisputeWorkOrder
+from projects.models_amendment_request import AmendmentRequest
+from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.project_learning import (
     capture_agreement_outcome_snapshot,
@@ -19953,6 +19956,250 @@ class CustomerPortalAccessTests(TestCase):
                 and row["message"].startswith("No payment is required")
                 for row in response.data["notifications"]
             )
+        )
+
+    def test_customer_portal_uses_canonical_customer_status_and_payment_model(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.agreement.status = "draft"
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("50000.00")
+        self.agreement.save(update_fields=["status", "escrow_funded", "escrow_funded_amount", "updated_at"])
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        agreement_row = next(row for row in response.data["agreements"] if row["id"] == self.agreement.id)
+        project_row = next(row for row in response.data["projects"] if row["agreement_id"] == self.agreement.id)
+        self.assertNotEqual(agreement_row["customer_status_label"], "Draft")
+        self.assertEqual(agreement_row["customer_status_label"], project_row["customer_status_label"])
+        payment_summary = agreement_row["payment_summary"]
+        self.assertEqual(payment_summary["project_value"], "15000.00")
+        self.assertEqual(payment_summary["escrow_funded"], "50000.00")
+        self.assertEqual(payment_summary["released_to_contractor"], "26400.00")
+        self.assertEqual(payment_summary["remaining_in_escrow"], "23600.00")
+        self.assertEqual(payment_summary["contractor_invoices"], "15000.00")
+        self.assertEqual(payment_summary["customer_payments"], "0.00")
+
+    def test_customer_portal_homeowner_agreement_actions_create_review_records(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("50000.00")
+        self.agreement.save(update_fields=["escrow_funded", "escrow_funded_amount", "updated_at"])
+
+        amendment = self.client.post(
+            f"/api/projects/customer-portal/{token}/agreements/{self.agreement.id}/amendments/",
+            {
+                "change_type": "scope_change",
+                "requested_change": "Please add matching trim.",
+                "reason": "The existing scope does not include trim.",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(amendment.status_code, 201, amendment.data)
+        amendment_request = AmendmentRequest.objects.get(agreement=self.agreement)
+        self.assertEqual(amendment_request.status, AmendmentRequest.Status.OPEN)
+        self.assertIn("matching trim", amendment_request.requested_changes["requested_change"])
+
+        refund = self.client.post(
+            f"/api/projects/customer-portal/{token}/agreements/{self.agreement.id}/refunds/",
+            {
+                "reason": "Some funded work may no longer be needed.",
+                "requested_amount": "500.00",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(refund.status_code, 201, refund.data)
+        refund_request = CustomerRefundRequest.objects.get(agreement=self.agreement)
+        self.assertEqual(refund_request.status, CustomerRefundRequest.Status.REFUND_REQUESTED)
+
+        dispute = self.client.post(
+            f"/api/projects/customer-portal/{token}/agreements/{self.agreement.id}/disputes/",
+            {
+                "reason": "Work quality concern",
+                "description": "The completed finish does not match the agreement.",
+                "desired_resolution": "Repair the finish.",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(dispute.status_code, 201, dispute.data)
+        dispute_row = Dispute.objects.get(agreement=self.agreement, reason="Work quality concern")
+        self.assertEqual(dispute_row.initiator, "homeowner")
+        self.assertTrue(dispute_row.escrow_frozen)
+
+    def test_customer_portal_descope_amendment_estimates_surplus_without_refund(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Cabinet installation",
+            description="Install remaining cabinets.",
+            amount=Decimal("5000.00"),
+            completion_date=timezone.localdate() + timedelta(days=7),
+        )
+        self.agreement.total_cost = Decimal("20000.00")
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("20000.00")
+        self.agreement.save(update_fields=["total_cost", "escrow_funded", "escrow_funded_amount", "updated_at"])
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/agreements/{self.agreement.id}/amendments/",
+            {
+                "change_type": "descope_remove_work",
+                "requested_change": "Remove the remaining cabinet installation milestone.",
+                "reason": "We are cancelling the remaining work and reducing the project scope.",
+                "revised_project_value": "15000.00",
+                "affected_milestone_ids": [milestone.id],
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        amendment_request = AmendmentRequest.objects.get(agreement=self.agreement)
+        self.assertEqual(amendment_request.change_type, AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK)
+        self.assertEqual(amendment_request.original_project_value, Decimal("20000.00"))
+        self.assertEqual(amendment_request.revised_project_value, Decimal("15000.00"))
+        self.assertEqual(amendment_request.escrow_funded_amount, Decimal("20000.00"))
+        self.assertEqual(amendment_request.estimated_refundable_escrow_surplus, Decimal("5000.00"))
+        self.assertEqual(
+            amendment_request.refund_eligibility_status,
+            AmendmentRequest.RefundEligibilityStatus.ELIGIBLE_AFTER_SIGNED,
+        )
+        self.assertEqual(CustomerRefundRequest.objects.filter(agreement=self.agreement).count(), 0)
+        self.assertEqual(list(amendment_request.affected_milestones.values_list("id", flat=True)), [milestone.id])
+        milestone.refresh_from_db()
+        self.assertEqual(milestone.amendment_review_status, "pending")
+        self.assertEqual(milestone.amendment_review_request_id, amendment_request.id)
+        self.assertTrue(
+            ProjectActivityEvent.objects.filter(
+                agreement=self.agreement,
+                object_type="amendment_request",
+                object_id=str(amendment_request.id),
+                event_type=ProjectActivityEvent.EventType.AMENDMENT_CREATED,
+                delivered_at__isnull=False,
+            ).exists()
+        )
+        self.assertTrue(
+            ProjectActivityEvent.objects.filter(
+                agreement=self.agreement,
+                object_type="amendment_request",
+                object_id=str(amendment_request.id),
+                event_type=ProjectActivityEvent.EventType.MILESTONE_BLOCKED,
+                milestone=milestone,
+            ).exists()
+        )
+
+        contractor_client = APIClient()
+        contractor_client.force_authenticate(user=self.contractor_user)
+        complete_response = contractor_client.patch(
+            f"/api/projects/milestones/{milestone.id}/",
+            {"completed": True, "completion_notes": "Work completed anyway."},
+            content_type="application/json",
+        )
+        self.assertEqual(complete_response.status_code, 409)
+        milestone.completed = True
+        milestone.completed_at = timezone.now()
+        milestone.save(update_fields=["completed", "completed_at"])
+        invoice_response = contractor_client.post(f"/api/projects/milestones/{milestone.id}/create-invoice/")
+        self.assertEqual(invoice_response.status_code, 409)
+
+        self.agreement.save(update_fields=["updated_at"])
+        amendment_request.refresh_from_db()
+        self.assertEqual(
+            amendment_request.refund_eligibility_status,
+            AmendmentRequest.RefundEligibilityStatus.ELIGIBLE_AFTER_SIGNED,
+        )
+
+        self.agreement.amendment_number = int(getattr(self.agreement, "amendment_number", 0) or 0) + 1
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["amendment_number", "signed_by_contractor", "signed_by_homeowner", "updated_at"])
+        amendment_request.refresh_from_db()
+        self.assertEqual(amendment_request.refund_eligibility_status, AmendmentRequest.RefundEligibilityStatus.ELIGIBLE)
+        self.assertIsNotNone(amendment_request.refund_eligible_at)
+        self.assertEqual(CustomerRefundRequest.objects.filter(agreement=self.agreement).count(), 0)
+
+        agreement_payload = next(row for row in response.data["portal"]["agreements"] if row["id"] == self.agreement.id)
+        active_case = next(
+            row
+            for row in agreement_payload["active_cases"]
+            if row["type"] == "amendment"
+        )
+        self.assertEqual(active_case["change_type"], AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK)
+        self.assertEqual(active_case["estimated_refundable_escrow_surplus"], "5000.00")
+
+    def test_customer_portal_homeowner_actions_reject_other_customer_agreement(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/agreements/{self.other_agreement.id}/amendments/",
+            {
+                "change_type": "scope_change",
+                "requested_change": "Should not work.",
+                "reason": "Wrong customer.",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_contractor_can_create_and_homeowner_can_respond_to_amendment_request(self):
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Electrical trim",
+            description="Trim out devices.",
+            amount=Decimal("1200.00"),
+            completion_date=timezone.localdate() + timedelta(days=5),
+        )
+        contractor_client = APIClient()
+        contractor_client.force_authenticate(user=self.contractor_user)
+        create_response = contractor_client.post(
+            f"/api/projects/agreements/{self.agreement.id}/amendment-requests/",
+            {
+                "change_type": AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+                "requested_change": "Add one extra outlet.",
+                "reason": "Customer requested outlet near the desk.",
+                "affected_milestone_ids": [milestone.id],
+                "proposed_value_change": "250.00",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        amendment_request = AmendmentRequest.objects.get(id=create_response.data["amendment_request"]["id"])
+        self.assertEqual(amendment_request.initiated_by_role, "contractor")
+        self.assertEqual(amendment_request.response_state, AmendmentRequest.ResponseState.PENDING)
+        self.assertTrue(
+            ProjectActivityEvent.objects.filter(
+                agreement=self.agreement,
+                object_type="amendment_request",
+                object_id=str(amendment_request.id),
+                event_type=ProjectActivityEvent.EventType.AMENDMENT_CREATED,
+                recipient_role="homeowner",
+            ).exists()
+        )
+
+        homeowner_user = get_user_model().objects.create_user(email=self.customer_email, password="password123")
+        homeowner_client = APIClient()
+        homeowner_client.force_authenticate(user=homeowner_user)
+        response = homeowner_client.post(
+            f"/api/projects/amendment-requests/{amendment_request.id}/respond/",
+            {
+                "response_state": AmendmentRequest.ResponseState.COUNTERED,
+                "response_note": "Approve only if the added outlet stays under $200.",
+                "counter_proposal": {"maximum_value_change": "200.00"},
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        amendment_request.refresh_from_db()
+        self.assertEqual(amendment_request.response_state, AmendmentRequest.ResponseState.COUNTERED)
+        self.assertIsNotNone(amendment_request.responded_at)
+        self.assertTrue(
+            ProjectActivityEvent.objects.filter(
+                agreement=self.agreement,
+                object_type="amendment_request",
+                object_id=str(amendment_request.id),
+                event_type=ProjectActivityEvent.EventType.AMENDMENT_RESPONDED,
+                responded_at__isnull=False,
+            ).exists()
         )
 
     def test_customer_portal_hides_contractor_only_internal_drafts(self):

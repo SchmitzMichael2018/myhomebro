@@ -38,6 +38,7 @@ from projects.services.next_billable_stage import build_next_billable_stage
 from projects.services.recurring_maintenance import build_recurring_preview, ensure_recurring_milestones
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
+from projects.services.customer_portal_status import derive_contractor_status
 
 
 def _to_decimal(val) -> Optional[Decimal]:
@@ -631,6 +632,8 @@ class AgreementSerializer(serializers.ModelSerializer):
     last_sms_event = serializers.SerializerMethodField()
     last_sms_automation_decision = serializers.SerializerMethodField()
     recent_sms_automation_decisions = serializers.SerializerMethodField()
+    contractor_status_key = serializers.SerializerMethodField()
+    contractor_status_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Agreement
@@ -744,6 +747,40 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def get_recent_sms_automation_decisions(self, obj):
         return build_sms_automation_summary(agreement=obj).get("recent_sms_automation_decisions", [])
+
+    def _contractor_status_payload(self, obj):
+        try:
+            milestones = []
+            if hasattr(getattr(obj, "milestones", None), "all"):
+                milestones = [
+                    {
+                        "status": getattr(milestone, "status", ""),
+                        "completed": bool(getattr(milestone, "completed", False)),
+                    }
+                    for milestone in obj.milestones.all()
+                ]
+            record = {
+                "status": getattr(obj, "status", ""),
+                "status_label": getattr(obj, "status", ""),
+                "is_fully_signed": self.get_is_fully_signed(obj),
+                "signed_by_contractor": bool(getattr(obj, "signed_by_contractor", False)),
+                "signed_by_homeowner": bool(getattr(obj, "signed_by_homeowner", False)),
+                "payment_mode": getattr(obj, "payment_mode", ""),
+                "escrow_funded": bool(getattr(obj, "escrow_funded", False)),
+                "escrow_funded_amount": getattr(obj, "escrow_funded_amount", "0.00"),
+                "total_cost": getattr(obj, "total_cost", "0.00"),
+                "milestones": milestones,
+            }
+            return derive_contractor_status(record, record, [])
+        except Exception:
+            raw = getattr(obj, "status", "") or ""
+            return {"contractor_status_key": raw, "contractor_status_label": str(raw).replace("_", " ").title()}
+
+    def get_contractor_status_key(self, obj):
+        return self._contractor_status_payload(obj).get("contractor_status_key", "")
+
+    def get_contractor_status_label(self, obj):
+        return self._contractor_status_payload(obj).get("contractor_status_label", "")
 
     def _req_flags(self, obj) -> tuple[bool, bool]:
         req_contr = _boolish(getattr(obj, "require_contractor_signature", None), True)

@@ -37,7 +37,6 @@ function StatCard({ label, value, testId, onClick }) {
     </Component>
   );
 }
-
 function InfoCard({ eyebrow, title, body, actionLabel, onClick, testId, children }) {
   const Component = onClick ? "button" : "article";
   return (
@@ -870,8 +869,8 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
             <InfoCard
               key={project.id}
               title={project.title}
-              eyebrow={project.status_label || "Project"}
-              body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` · ${moneyLabel(project.total_cost)}` : ""}`}
+              eyebrow={project.customer_status_label || project.status_label || "Project"}
+              body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` Â· ${moneyLabel(project.total_cost)}` : ""}`}
               actionLabel="View project workspace"
               onClick={() => onOpenTab?.("projects")}
             />

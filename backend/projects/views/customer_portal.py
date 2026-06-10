@@ -41,6 +41,8 @@ from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import CustomerRequest, NotificationRule, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
+from projects.models_amendment_request import AmendmentRequest, apply_descoped_milestone_hold
+from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
 from projects.ai.agreement_description_writer import generate_or_improve_description
@@ -65,6 +67,8 @@ from projects.services.marketplace_permissions import contractor_marketplace_act
 from projects.services.property_intelligence import build_property_intelligence
 from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
+from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
+from projects.services.project_activity import create_project_activity_event, serialize_project_activity_events
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -833,6 +837,8 @@ def _agreements(email: str, request=None) -> list[dict]:
                 "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
                 "payment_mode_label": _safe_text(getattr(agreement, "payment_mode", "")).replace("_", " ").title(),
                 "total_cost": _safe_text(getattr(agreement, "total_cost", "")),
+                "escrow_funded": bool(getattr(agreement, "escrow_funded", False)),
+                "escrow_funded_amount": _safe_text(getattr(agreement, "escrow_funded_amount", "")),
                 "description": _safe_text(getattr(agreement, "description", "")),
                 "warranty_type": _safe_text(getattr(agreement, "warranty_type", "")),
                 "warranty_text": _safe_text(getattr(agreement, "warranty_text_snapshot", "")),
@@ -927,6 +933,8 @@ def _projects(email: str) -> list[dict]:
                     "status": "completed" if getattr(milestone, "completed", False) else "active",
                     "amount": _safe_text(getattr(milestone, "amount", "")),
                     "due_date": _safe_dt(getattr(milestone, "due_date", None) or getattr(milestone, "completion_date", None)),
+                    "amendment_review_status": _safe_text(getattr(milestone, "amendment_review_status", "")),
+                    "amendment_review_request_id": getattr(milestone, "amendment_review_request_id", None),
                 }
                 for milestone in Milestone.objects.filter(agreement=agreement).order_by("order", "id")[:8]
             ]
@@ -954,6 +962,8 @@ def _projects(email: str) -> list[dict]:
                 "agreement_token": _safe_text(getattr(agreement, "homeowner_access_token", "")) if agreement else "",
                 "agreement_url": f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
                 "total_cost": _safe_text(getattr(agreement, "total_cost", "")) if agreement else "",
+                "escrow_funded": bool(getattr(agreement, "escrow_funded", False)) if agreement else False,
+                "escrow_funded_amount": _safe_text(getattr(agreement, "escrow_funded_amount", "")) if agreement else "",
                 "milestones": milestone_rows,
                 "updates": _project_messages(agreement) if agreement else [],
                 "updated_at": _safe_dt(getattr(project, "updated_at", None) or getattr(project, "created_at", None)),
@@ -1406,6 +1416,8 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     project_rows = _projects(email)
     agreement_rows = _agreements(email, request=request)
     payment_rows = _payments(email, request=request)
+    enrich_customer_portal_rows(project_rows, agreement_rows, payment_rows)
+    _attach_homeowner_action_metadata(project_rows, agreement_rows)
     maintenance_work_order_rows = _maintenance_work_order_rows(email, request=request)
     document_rows = _documents(email, request=request)
     property_profile = _property_profile_payload(email)
@@ -1445,6 +1457,153 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "recommendations": recommendations,
         "notifications": _smart_notification_rows(email),
     }
+
+
+def _active_amendment_request(agreement):
+    if not agreement:
+        return None
+    return (
+        AmendmentRequest.objects.filter(agreement=agreement)
+        .exclude(status=AmendmentRequest.Status.CLOSED)
+        .order_by("-created_at", "-id")
+        .first()
+    )
+
+
+def _active_refund_request(agreement):
+    if not agreement:
+        return None
+    return (
+        CustomerRefundRequest.objects.filter(agreement=agreement)
+        .exclude(status__in=[CustomerRefundRequest.Status.DENIED, CustomerRefundRequest.Status.REFUNDED])
+        .order_by("-created_at", "-id")
+        .first()
+    )
+
+
+def _active_dispute(agreement):
+    if not agreement:
+        return None
+    return (
+        Dispute.objects.filter(agreement=agreement, is_archived=False)
+        .exclude(status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "canceled", "cancelled", "closed"])
+        .order_by("-created_at", "-id")
+        .first()
+    )
+
+
+def _serialize_case(kind: str, obj) -> dict | None:
+    if not obj:
+        return None
+    if kind == "amendment":
+        requested_changes = obj.requested_changes or {}
+        return {
+            "id": obj.id,
+            "type": kind,
+            "label": "De-scope Review Pending" if obj.change_type == AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK else "Amendment Pending",
+            "status": obj.status,
+            "status_label": obj.get_status_display(),
+            "change_type": obj.change_type,
+            "change_type_label": obj.get_change_type_display(),
+            "created_at": _safe_dt(obj.created_at),
+            "summary": _safe_text(obj.justification) or _safe_text(requested_changes.get("requested_change")),
+            "original_project_value": str(obj.original_project_value) if obj.original_project_value is not None else "",
+            "revised_project_value": str(obj.revised_project_value) if obj.revised_project_value is not None else "",
+            "escrow_funded_amount": str(obj.escrow_funded_amount) if obj.escrow_funded_amount is not None else "",
+            "estimated_refundable_escrow_surplus": str(obj.estimated_refundable_escrow_surplus or Decimal("0.00")),
+            "refund_eligibility_status": obj.refund_eligibility_status,
+            "refund_eligibility_label": obj.get_refund_eligibility_status_display(),
+            "response_state": obj.response_state,
+            "response_label": obj.get_response_state_display(),
+            "response_due_at": _safe_dt(obj.response_due_at),
+            "affected_milestone_ids": list(obj.affected_milestones.values_list("id", flat=True)),
+            "activity_events": serialize_project_activity_events(obj.agreement, object_type="amendment_request", object_id=obj.id, limit=12),
+        }
+    if kind == "refund":
+        return {
+            "id": obj.id,
+            "type": kind,
+            "label": "Refund Pending",
+            "status": obj.status,
+            "status_label": obj.get_status_display(),
+            "created_at": _safe_dt(obj.created_at),
+            "summary": _safe_text(obj.reason),
+        }
+    if kind == "dispute":
+        return {
+            "id": obj.id,
+            "type": kind,
+            "label": "Dispute Open",
+            "status": obj.status,
+            "status_label": _safe_text(obj.status).replace("_", " ").title(),
+            "created_at": _safe_dt(obj.created_at),
+            "summary": _safe_text(obj.reason),
+            "url": _portal_dispute_public_url(obj),
+        }
+    return None
+
+
+def _homeowner_action_metadata(agreement_id, status_key: str, payment_summary: dict) -> dict:
+    if not agreement_id:
+        return {"actions": {}, "active_cases": []}
+    agreement = Agreement.objects.filter(id=agreement_id).first()
+    amendment = _active_amendment_request(agreement)
+    refund = _active_refund_request(agreement)
+    dispute = _active_dispute(agreement)
+    amendment_allowed = status_key in {
+        "signed",
+        "escrow_needed",
+        "funded",
+        "in_progress",
+        "awaiting_review",
+        "payment_pending",
+    }
+    refund_allowed = Decimal(str((payment_summary or {}).get("remaining_in_escrow") or "0")) > Decimal("0.00")
+    dispute_allowed = status_key in {"funded", "in_progress", "awaiting_review", "payment_pending", "completed", "disputed"}
+    actions = {
+        "amendment": {
+            "available": bool(amendment_allowed and not amendment),
+            "active": bool(amendment),
+            "label": "View Amendment Request" if amendment else "Request Amendment",
+        },
+        "refund": {
+            "available": bool(refund_allowed and not refund),
+            "active": bool(refund),
+            "label": "View Refund Request" if refund else "Request Refund",
+        },
+        "dispute": {
+            "available": bool(dispute_allowed and not dispute),
+            "active": bool(dispute),
+            "label": "View Dispute" if dispute else "Open Dispute",
+        },
+    }
+    return {
+        "actions": actions,
+        "active_cases": [
+            row
+            for row in [
+                _serialize_case("amendment", amendment),
+                _serialize_case("refund", refund),
+                _serialize_case("dispute", dispute),
+            ]
+            if row
+        ],
+    }
+
+
+def _attach_homeowner_action_metadata(project_rows: list[dict], agreement_rows: list[dict]) -> None:
+    metadata_by_agreement_id = {}
+    for row in agreement_rows:
+        metadata = _homeowner_action_metadata(row.get("id"), row.get("customer_status_key", ""), row.get("payment_summary") or {})
+        row["homeowner_actions"] = metadata["actions"]
+        row["active_cases"] = metadata["active_cases"]
+        metadata_by_agreement_id[str(row.get("id"))] = metadata
+    for row in project_rows:
+        metadata = metadata_by_agreement_id.get(str(row.get("agreement_id") or ""))
+        if not metadata:
+            metadata = _homeowner_action_metadata(row.get("agreement_id"), row.get("customer_status_key", ""), row.get("payment_summary") or {})
+        row["homeowner_actions"] = metadata["actions"]
+        row["active_cases"] = metadata["active_cases"]
 
 
 def _customer_profile_payload(email: str) -> dict:
@@ -3019,6 +3178,349 @@ class CustomerProjectDashboardView(APIView):
 class CustomerPortalDrawDisputeSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True)
+
+
+def _portal_agreement_for_email(email: str, agreement_id: int):
+    agreement = get_object_or_404(
+        Agreement.objects.select_related("homeowner", "project", "project__homeowner", "contractor"),
+        pk=agreement_id,
+    )
+    if _agreement_customer_email(agreement) != email.lower().strip():
+        return None
+    if not _agreement_customer_visible_reason(agreement, email):
+        return None
+    return agreement
+
+
+class CustomerPortalAgreementAmendmentSerializer(serializers.Serializer):
+    change_type = serializers.ChoiceField(
+        choices=[
+            "scope_change",
+            "timeline_change",
+            "price_change",
+            "milestone_change",
+            "descope_remove_work",
+            "materials_change",
+            "warranty_change",
+            "other",
+        ]
+    )
+    requested_change = serializers.CharField()
+    reason = serializers.CharField()
+    attachment_note = serializers.CharField(required=False, allow_blank=True)
+    revised_project_value = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    affected_milestone_ids = serializers.ListField(child=serializers.IntegerField(), required=False, allow_empty=True)
+
+
+class CustomerPortalAgreementRefundSerializer(serializers.Serializer):
+    reason = serializers.CharField()
+    requested_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
+    evidence_note = serializers.CharField(required=False, allow_blank=True)
+
+
+class CustomerPortalAgreementDisputeSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=255)
+    description = serializers.CharField()
+    desired_resolution = serializers.CharField(required=False, allow_blank=True)
+    milestone_id = serializers.IntegerField(required=False)
+    evidence_note = serializers.CharField(required=False, allow_blank=True)
+
+
+class CustomerPortalAgreementAmendmentRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, agreement_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        agreement = _portal_agreement_for_email(email, agreement_id)
+        if not agreement:
+            return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CustomerPortalAgreementAmendmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        portal_payload = _build_customer_portal_payload(email, request=request)
+        agreement_row = next((row for row in portal_payload["agreements"] if row["id"] == agreement.id), {})
+        status_key = agreement_row.get("customer_status_key", "")
+        if status_key not in {"signed", "escrow_needed", "funded", "in_progress", "awaiting_review", "payment_pending"}:
+            return Response({"detail": "This agreement is not eligible for amendment requests from the portal."}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = _active_amendment_request(agreement)
+        if existing:
+            return Response({"detail": "An amendment request is already open.", "amendment_request_id": existing.id, "portal": portal_payload}, status=status.HTTP_200_OK)
+
+        change_type_map = {
+            "scope_change": AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+            "timeline_change": AmendmentRequest.ChangeType.DATE_CHANGE,
+            "price_change": AmendmentRequest.ChangeType.AMOUNT_CHANGE,
+            "milestone_change": AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+            "descope_remove_work": AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK,
+            "materials_change": AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+            "warranty_change": AmendmentRequest.ChangeType.OTHER,
+            "other": AmendmentRequest.ChangeType.OTHER,
+        }
+        portal_change_type = serializer.validated_data["change_type"]
+        original_project_value = Decimal(str(getattr(agreement, "total_cost", 0) or 0)).quantize(Decimal("0.01"))
+        escrow_funded_amount = Decimal(str(getattr(agreement, "escrow_funded_amount", 0) or 0)).quantize(Decimal("0.01"))
+        revised_project_value = serializer.validated_data.get("revised_project_value")
+        estimated_surplus = Decimal("0.00")
+        refund_eligibility_status = AmendmentRequest.RefundEligibilityStatus.NOT_APPLICABLE
+        if portal_change_type == "descope_remove_work":
+            refund_eligibility_status = AmendmentRequest.RefundEligibilityStatus.ELIGIBLE_AFTER_SIGNED
+            if revised_project_value is not None:
+                revised_project_value = Decimal(str(revised_project_value)).quantize(Decimal("0.01"))
+                estimated_surplus = max(escrow_funded_amount - revised_project_value, Decimal("0.00"))
+            else:
+                refund_eligibility_status = AmendmentRequest.RefundEligibilityStatus.ESTIMATE_ONLY
+        requested_changes = {
+            "portal_change_type": portal_change_type,
+            "requested_change": serializer.validated_data["requested_change"],
+            "attachment_note": serializer.validated_data.get("attachment_note", ""),
+            "requested_on_amendment_number": int(getattr(agreement, "amendment_number", 0) or 0),
+        }
+        if portal_change_type == "descope_remove_work":
+            requested_changes.update(
+                {
+                    "original_project_value": str(original_project_value),
+                    "revised_project_value": str(revised_project_value) if revised_project_value is not None else "",
+                    "escrow_funded_amount": str(escrow_funded_amount),
+                    "estimated_refundable_escrow_surplus": str(estimated_surplus),
+                    "refund_eligibility_note": "Estimated only. Refund eligibility is created after both parties approve/sign the amendment or addendum.",
+                }
+            )
+        user = User.objects.filter(email__iexact=email).first()
+        amendment = AmendmentRequest.objects.create(
+            agreement=agreement,
+            requested_by=user,
+            initiated_by_role="homeowner",
+            change_type=change_type_map[portal_change_type],
+            requested_changes=requested_changes,
+            justification=serializer.validated_data["reason"],
+            original_project_value=original_project_value if portal_change_type == "descope_remove_work" else None,
+            revised_project_value=revised_project_value if portal_change_type == "descope_remove_work" else None,
+            escrow_funded_amount=escrow_funded_amount if portal_change_type == "descope_remove_work" else None,
+            estimated_refundable_escrow_surplus=estimated_surplus,
+            refund_eligibility_status=refund_eligibility_status,
+            status=AmendmentRequest.Status.OPEN,
+        )
+        if portal_change_type == "descope_remove_work":
+            ids = set()
+            for value in serializer.validated_data.get("affected_milestone_ids") or []:
+                try:
+                    ids.add(int(value))
+                except Exception:
+                    pass
+            affected = agreement.milestones.filter(id__in=ids) if ids else agreement.milestones.none()
+            amendment.affected_milestones.set(affected)
+            apply_descoped_milestone_hold(amendment)
+            for milestone in affected:
+                create_project_activity_event(
+                    agreement=agreement,
+                    milestone=milestone,
+                    event_type="milestone_blocked",
+                    object_type="amendment_request",
+                    object_id=amendment.id,
+                    title="Milestone blocked by de-scope review",
+                    body=f"{milestone.title} is paused while the de-scope amendment is reviewed.",
+                    actor=user,
+                    actor_role="homeowner",
+                    recipient_role="contractor",
+                    delivered=True,
+                    metadata={"milestone_id": milestone.id},
+                )
+        create_project_activity_event(
+            agreement=agreement,
+            event_type="amendment_created",
+            object_type="amendment_request",
+            object_id=amendment.id,
+            title="Homeowner submitted amendment request",
+            body=serializer.validated_data["reason"],
+            actor=user,
+            actor_role="homeowner",
+            recipient_role="contractor",
+            delivered=True,
+            metadata={
+                "change_type": amendment.change_type,
+                "portal_change_type": portal_change_type,
+                "estimated_refundable_escrow_surplus": str(estimated_surplus),
+            },
+        )
+        return Response(
+            {
+                "ok": True,
+                "amendment_request": {"id": amendment.id, "status": amendment.status, "status_label": amendment.get_status_display()},
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CustomerPortalAgreementRefundRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, agreement_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        agreement = _portal_agreement_for_email(email, agreement_id)
+        if not agreement:
+            return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CustomerPortalAgreementRefundSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        ledger = serialize_ledger(escrow_ledger(agreement)) if agreement else {}
+        remaining = Decimal(str(ledger.get("available") or "0"))
+        if remaining <= Decimal("0.00"):
+            return Response({"detail": "No escrow balance is available for a refund request."}, status=status.HTTP_400_BAD_REQUEST)
+        requested_amount = serializer.validated_data.get("requested_amount")
+        if requested_amount and requested_amount > remaining:
+            return Response({"detail": "Requested refund exceeds the remaining escrow balance."}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = _active_refund_request(agreement)
+        if existing:
+            return Response(
+                {
+                    "detail": "A refund request is already open.",
+                    "refund_request_id": existing.id,
+                    "portal": _build_customer_portal_payload(email, request=request),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        user = User.objects.filter(email__iexact=email).first()
+        refund = CustomerRefundRequest.objects.create(
+            agreement=agreement,
+            requested_by=user,
+            reason=serializer.validated_data["reason"],
+            evidence_note=serializer.validated_data.get("evidence_note", ""),
+            requested_amount=requested_amount,
+            status=CustomerRefundRequest.Status.REFUND_REQUESTED,
+        )
+        return Response(
+            {
+                "ok": True,
+                "refund_request": {"id": refund.id, "status": refund.status, "status_label": refund.get_status_display()},
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CustomerPortalAgreementDisputeView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, agreement_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        agreement = _portal_agreement_for_email(email, agreement_id)
+        if not agreement:
+            return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CustomerPortalAgreementDisputeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        portal_payload = _build_customer_portal_payload(email, request=request)
+        agreement_row = next((row for row in portal_payload["agreements"] if row["id"] == agreement.id), {})
+        if agreement_row.get("customer_status_key") in {"closed"}:
+            return Response({"detail": "Closed agreements cannot open a new dispute from the portal."}, status=status.HTTP_400_BAD_REQUEST)
+
+        milestone = None
+        milestone_id = serializer.validated_data.get("milestone_id")
+        if milestone_id:
+            milestone = Milestone.objects.filter(id=milestone_id, agreement=agreement).first()
+            if not milestone:
+                return Response({"detail": "Milestone not found for this agreement."}, status=status.HTTP_404_NOT_FOUND)
+
+        existing = _active_dispute(agreement)
+        if existing:
+            return Response(
+                {
+                    "detail": "A dispute is already open.",
+                    "dispute_id": existing.id,
+                    "dispute_url": _portal_dispute_public_url(existing),
+                    "portal": portal_payload,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        reason = serializer.validated_data["reason"].strip()
+        desired_resolution = serializer.validated_data.get("desired_resolution", "").strip()
+        evidence_note = serializer.validated_data.get("evidence_note", "").strip()
+        description = "\n\n".join(
+            part
+            for part in [
+                serializer.validated_data["description"].strip(),
+                f"Desired resolution: {desired_resolution}" if desired_resolution else "",
+                f"Evidence note: {evidence_note}" if evidence_note else "",
+                "[Portal Source] agreement_level_dispute",
+            ]
+            if part
+        )
+        dispute = Dispute.objects.create(
+            agreement=agreement,
+            milestone=milestone,
+            initiator="homeowner",
+            reason=reason,
+            description=description,
+            status="open",
+            escrow_frozen=True,
+        )
+        dispute.set_response_deadline_now()
+        dispute.save(update_fields=[
+            "public_token",
+            "response_due_at",
+            "deadline_hours",
+            "deadline_tier",
+            "last_activity_at",
+            "status",
+            "escrow_frozen",
+            "updated_at",
+        ])
+        try:
+            notify_dispute_event(dispute=dispute, event_type=Notification.EVENT_DISPUTE_OPENED, actor_user=None)
+        except Exception:
+            pass
+        user = User.objects.filter(email__iexact=email).first()
+        create_project_activity_event(
+            agreement=agreement,
+            milestone=milestone,
+            event_type="dispute_created",
+            object_type="dispute",
+            object_id=dispute.id,
+            title="Homeowner opened dispute",
+            body=reason,
+            actor=user,
+            actor_role="homeowner",
+            recipient_role="contractor",
+            delivered=True,
+            metadata={"desired_resolution": desired_resolution},
+        )
+        return Response(
+            {
+                "ok": True,
+                "dispute": {
+                    "id": dispute.id,
+                    "status": dispute.status,
+                    "status_label": _safe_text(dispute.status).replace("_", " ").title(),
+                    "public_url": _portal_dispute_public_url(dispute),
+                    "reason": dispute.reason,
+                },
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CustomerPortalDrawDisputeView(APIView):

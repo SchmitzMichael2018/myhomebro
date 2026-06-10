@@ -104,6 +104,25 @@ def on_agreement_signed_capture_snapshot(sender, instance: Agreement, created: b
         )
 
 
+@receiver(post_save, sender=Agreement)
+def on_signed_descoped_amendment_refund_eligibility(sender, instance: Agreement, created: bool, **kwargs):
+    """
+    De-scope amendment requests may estimate escrow surplus at request time, but
+    refund eligibility is only created after the amendment/addendum signature
+    requirements are satisfied. This never creates or pays a refund.
+    """
+    try:
+        from projects.models_amendment_request import mark_signed_descoped_amendment_refund_eligibility
+
+        mark_signed_descoped_amendment_refund_eligibility(instance)
+    except Exception as exc:
+        logger.warning(
+            "De-scope refund eligibility update skipped for agreement %s: %s",
+            getattr(instance, "id", None),
+            exc,
+        )
+
+
 # --------------------------------------------------------------------
 # Invoice post-save: send notification when invoice is created
 # --------------------------------------------------------------------

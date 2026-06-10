@@ -142,6 +142,7 @@ from .views.template_views import (
 )
 
 from .views.agreements_amend import create_amendment
+from .views.amendment_requests import ContractorAgreementAmendmentRequestView, AmendmentRequestResponseView
 from .views.refund import AgreementRefundCompatView
 
 from .views.employee_assignments import (
@@ -262,6 +263,9 @@ from .views.customer_portal import (
     AgreementMagicPdfView,
     CustomerPortalBidAcceptView,
     CustomerPortalAccountView,
+    CustomerPortalAgreementAmendmentRequestView,
+    CustomerPortalAgreementDisputeView,
+    CustomerPortalAgreementRefundRequestView,
     CustomerPortalCreatePasswordView,
     CustomerPortalDrawDisputeView,
     CustomerPortalNotificationMarkReadView,
@@ -386,7 +390,12 @@ urlpatterns = [
     ),
     path("customer-portal/<str:token>/bids/<str:bid_key>/accept/", CustomerPortalBidAcceptView.as_view(), name="customer-portal-bid-accept"),
     path("customer-portal/<str:token>/draws/<int:draw_id>/dispute/", CustomerPortalDrawDisputeView.as_view(), name="customer-portal-draw-dispute"),
+    path("customer-portal/<str:token>/agreements/<int:agreement_id>/amendments/", CustomerPortalAgreementAmendmentRequestView.as_view(), name="customer-portal-agreement-amendment-request"),
+    path("customer-portal/<str:token>/agreements/<int:agreement_id>/refunds/", CustomerPortalAgreementRefundRequestView.as_view(), name="customer-portal-agreement-refund-request"),
+    path("customer-portal/<str:token>/agreements/<int:agreement_id>/disputes/", CustomerPortalAgreementDisputeView.as_view(), name="customer-portal-agreement-dispute"),
     path("customer-portal/<str:token>/agreements/<int:agreement_id>/review/", CustomerPortalReviewSubmitView.as_view(), name="customer-portal-review-submit"),
+    path("agreements/<int:agreement_id>/amendment-requests/", ContractorAgreementAmendmentRequestView.as_view(), name="contractor-agreement-amendment-request"),
+    path("amendment-requests/<int:request_id>/respond/", AmendmentRequestResponseView.as_view(), name="amendment-request-respond"),
     path("customer-portal/<str:token>/reimbursements/<int:reimbursement_id>/approve/", CustomerPortalReimbursementApproveView.as_view(), name="customer-portal-reimbursement-approve"),
     path("customer-portal/<str:token>/reimbursements/<int:reimbursement_id>/deny/", CustomerPortalReimbursementDenyView.as_view(), name="customer-portal-reimbursement-deny"),
     path("customer-portal/project/<int:project_id>/", CustomerProjectDashboardView.as_view(), name="customer-project-dashboard"),
