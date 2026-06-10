@@ -9,6 +9,44 @@ function money(value) {
   return Number.isFinite(number) ? number.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "$0.00";
 }
 
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AttachmentLinks({ attachments = [], testId = "" }) {
+  const rows = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
+  if (!rows.length) return null;
+  return (
+    <div data-testid={testId || undefined} className="mt-3 rounded-xl border border-slate-700 bg-slate-950/65 p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        Attachments ({rows.length})
+      </div>
+      <div className="mt-2 space-y-1">
+        {rows.map((attachment, index) => {
+          const label = attachment.filename || attachment.original_filename || attachment.name || `Attachment ${index + 1}`;
+          const size = formatBytes(attachment.size);
+          return (
+            <a
+              key={attachment.id || `${label}-${index}`}
+              href={attachment.url || attachment.file_url || "#"}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-xs font-semibold text-sky-100 hover:text-white"
+            >
+              {label}
+              {size ? <span className="ml-2 font-normal text-slate-400">{size}</span> : null}
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function formatDate(value) {
   if (!value) return "Date pending";
   try {
@@ -1431,6 +1469,22 @@ export default function CustomerProjectWorkspace({
                       {caseRow.response_label ? (
                         <div className="mt-2 text-xs font-semibold text-amber-50">Response: {caseRow.response_label}</div>
                       ) : null}
+                      {caseRow.response_note ? (
+                        <p className="mt-2 text-sm leading-5 text-slate-300">{caseRow.response_note}</p>
+                      ) : null}
+                      {caseRow.counter_proposal && Object.keys(caseRow.counter_proposal || {}).length ? (
+                        <div data-testid={`customer-counter-proposal-summary-${caseRow.id}`} className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-300">
+                          <div className="font-semibold text-white">Counter proposal</div>
+                          {caseRow.counter_proposal.revised_scope ? <div className="mt-1">Scope: {caseRow.counter_proposal.revised_scope}</div> : null}
+                          {caseRow.counter_proposal.revised_value_change ? <div className="mt-1">Value: {caseRow.counter_proposal.revised_value_change}</div> : null}
+                          {caseRow.counter_proposal.revised_timeline ? <div className="mt-1">Timeline: {caseRow.counter_proposal.revised_timeline}</div> : null}
+                          {caseRow.counter_proposal.revised_milestone_changes ? <div className="mt-1">Milestones: {caseRow.counter_proposal.revised_milestone_changes}</div> : null}
+                        </div>
+                      ) : null}
+                      <AttachmentLinks
+                        attachments={caseRow.counter_attachments || []}
+                        testId={`customer-counter-attachments-${caseRow.id}`}
+                      />
                       {caseRow.summary ? <p className="mt-2 line-clamp-3 text-sm leading-5 text-slate-300">{caseRow.summary}</p> : null}
                       {caseRow.estimated_refundable_escrow_surplus && Number(caseRow.estimated_refundable_escrow_surplus) > 0 ? (
                         <div className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-200">
@@ -1441,7 +1495,18 @@ export default function CustomerProjectWorkspace({
                       {caseRow.activity_events?.length ? (
                         <div className="mt-3 space-y-1 border-t border-amber-100/15 pt-3 text-xs text-slate-300">
                           {caseRow.activity_events.slice(0, 3).map((event) => (
-                            <div key={event.id}>{event.title || event.event_label}</div>
+                            <div key={event.id}>
+                              <div>{event.title || event.event_label}</div>
+                              {event.metadata?.attachment_count ? (
+                                <div className="text-slate-400">
+                                  {event.metadata.attachment_count} attachment{event.metadata.attachment_count === 1 ? "" : "s"} included
+                                </div>
+                              ) : null}
+                              <AttachmentLinks
+                                attachments={event.metadata?.attachments || []}
+                                testId={`customer-counter-activity-attachments-${caseRow.id}-${event.id}`}
+                              />
+                            </div>
                           ))}
                         </div>
                       ) : null}

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
+from pathlib import Path
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -9,10 +12,35 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import Agreement, Milestone
-from projects.models_amendment_request import AmendmentRequest, apply_descoped_milestone_hold
+from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.models_project_activity import ProjectActivityEvent
 from projects.services.project_activity import create_project_activity_event, mark_activity_viewed
 from projects.utils.accounts import get_contractor_for_user
+
+
+COUNTER_ATTACHMENT_ALLOWED_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "text/plain",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+COUNTER_ATTACHMENT_ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".txt",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+}
 
 
 class ContractorAgreementAmendmentRequestSerializer(serializers.Serializer):
@@ -35,6 +63,56 @@ class AmendmentRequestResponseSerializer(serializers.Serializer):
     )
     response_note = serializers.CharField(required=False, allow_blank=True)
     counter_proposal = serializers.JSONField(required=False)
+
+
+def serialize_amendment_attachment(attachment: AmendmentRequestAttachment, request=None) -> dict:
+    file_obj = getattr(attachment, "file", None)
+    url = ""
+    try:
+        if file_obj and getattr(file_obj, "url", ""):
+            url = request.build_absolute_uri(file_obj.url) if request is not None else file_obj.url
+    except Exception:
+        url = ""
+    return {
+        "id": attachment.id,
+        "filename": attachment.original_filename or Path(getattr(file_obj, "name", "") or "attachment").name,
+        "content_type": attachment.content_type or "",
+        "size": attachment.size or 0,
+        "uploaded_at": attachment.uploaded_at.isoformat() if attachment.uploaded_at else "",
+        "url": url,
+        "uploaded_by": attachment.uploaded_by_id,
+    }
+
+
+def validate_counter_attachment(uploaded) -> str | None:
+    name = getattr(uploaded, "name", "") or ""
+    size = int(getattr(uploaded, "size", 0) or 0)
+    content_type = str(getattr(uploaded, "content_type", "") or "").lower()
+    ext = Path(name).suffix.lower()
+    max_bytes = int(getattr(settings, "AMENDMENT_COUNTER_ATTACHMENT_MAX_BYTES", 10 * 1024 * 1024))
+    if size <= 0:
+        return "Attachment is empty."
+    if size > max_bytes:
+        return f"{name or 'Attachment'} is too large."
+    if ext and ext not in COUNTER_ATTACHMENT_ALLOWED_EXTENSIONS:
+        return f"{name or 'Attachment'} has an unsupported file type."
+    if content_type and content_type not in COUNTER_ATTACHMENT_ALLOWED_TYPES:
+        return f"{name or 'Attachment'} has an unsupported file type."
+    return None
+
+
+def response_payload_from_request(request) -> dict:
+    if hasattr(request.data, "get"):
+        data = {key: request.data.get(key) for key in request.data.keys()}
+    else:
+        data = dict(request.data)
+    proposal = data.get("counter_proposal")
+    if isinstance(proposal, str):
+        try:
+            data["counter_proposal"] = json.loads(proposal) if proposal.strip() else {}
+        except json.JSONDecodeError:
+            data["counter_proposal"] = None
+    return data
 
 
 def _contractor_agreement_for_user(user, agreement_id: int) -> Agreement | None:
@@ -149,10 +227,22 @@ class AmendmentRequestResponseView(APIView):
         if not (is_contractor or is_homeowner or request.user.is_staff):
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = AmendmentRequestResponseSerializer(data=request.data)
+        files = (
+            request.FILES.getlist("attachments")
+            or request.FILES.getlist("files")
+            or request.FILES.getlist("file")
+        )
+        serializer = AmendmentRequestResponseSerializer(data=response_payload_from_request(request))
         serializer.is_valid(raise_exception=True)
         response_state = serializer.validated_data["response_state"]
         response_note = serializer.validated_data.get("response_note", "")
+        if files and not is_contractor:
+            return Response({"detail": "Only the agreement contractor can upload counter-proposal attachments."}, status=status.HTTP_403_FORBIDDEN)
+        if files and response_state != AmendmentRequest.ResponseState.COUNTERED:
+            return Response({"attachments": "Attachments are only supported for contractor counter-proposals."}, status=status.HTTP_400_BAD_REQUEST)
+        attachment_errors = [error for uploaded in files if (error := validate_counter_attachment(uploaded))]
+        if attachment_errors:
+            return Response({"attachments": attachment_errors}, status=status.HTTP_400_BAD_REQUEST)
         if response_state == AmendmentRequest.ResponseState.REJECTED and not response_note.strip():
             return Response({"response_note": "Provide a reason before rejecting this amendment request."}, status=status.HTTP_400_BAD_REQUEST)
         amendment.mark_responded(
@@ -161,6 +251,23 @@ class AmendmentRequestResponseView(APIView):
             note=response_note,
             counter_proposal=serializer.validated_data.get("counter_proposal"),
         )
+        created_attachments = [
+            AmendmentRequestAttachment.objects.create(
+                amendment_request=amendment,
+                agreement=agreement,
+                file=uploaded,
+                original_filename=getattr(uploaded, "name", "") or "",
+                content_type=getattr(uploaded, "content_type", "") or "",
+                size=int(getattr(uploaded, "size", 0) or 0),
+                uploaded_by=request.user,
+                response_state=response_state,
+            )
+            for uploaded in files
+        ]
+        attachment_metadata = [
+            serialize_amendment_attachment(attachment, request=request)
+            for attachment in created_attachments
+        ]
         create_project_activity_event(
             agreement=agreement,
             event_type="amendment_responded",
@@ -174,7 +281,11 @@ class AmendmentRequestResponseView(APIView):
             delivered=True,
             responded=True,
             resolved=amendment.response_state in {AmendmentRequest.ResponseState.ACCEPTED, AmendmentRequest.ResponseState.REJECTED},
-            metadata={"response_state": amendment.response_state},
+            metadata={
+                "response_state": amendment.response_state,
+                "attachment_count": len(attachment_metadata),
+                "attachments": attachment_metadata,
+            },
         )
         return Response(
             {

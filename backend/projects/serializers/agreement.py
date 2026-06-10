@@ -39,7 +39,7 @@ from projects.services.recurring_maintenance import build_recurring_preview, ens
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
 from projects.services.customer_portal_status import derive_contractor_status
-from projects.models_amendment_request import AmendmentRequest
+from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment
 from projects.services.project_activity import serialize_project_activity_events
 
 
@@ -181,6 +181,19 @@ def _safe_file_url(f) -> Optional[str]:
     except Exception:
         return None
     return None
+
+
+def _serialize_amendment_attachment(attachment: AmendmentRequestAttachment) -> dict:
+    file_obj = getattr(attachment, "file", None)
+    return {
+        "id": attachment.id,
+        "filename": attachment.original_filename or getattr(file_obj, "name", "") or "attachment",
+        "content_type": attachment.content_type or "",
+        "size": attachment.size or 0,
+        "uploaded_at": attachment.uploaded_at.isoformat() if attachment.uploaded_at else "",
+        "url": _safe_file_url(file_obj) or "",
+        "uploaded_by": attachment.uploaded_by_id,
+    }
 
 
 def _norm_keyish(value: Any) -> str:
@@ -829,6 +842,10 @@ class AgreementSerializer(serializers.ModelSerializer):
             "response_label": amendment.get_response_state_display(),
             "response_note": amendment.response_note,
             "counter_proposal": amendment.counter_proposal or {},
+            "counter_attachments": [
+                _serialize_amendment_attachment(attachment)
+                for attachment in amendment.attachments.all()
+            ],
             "responded_at": amendment.responded_at.isoformat() if amendment.responded_at else "",
             "response_due_at": amendment.response_due_at.isoformat() if amendment.response_due_at else "",
             "original_project_value": str(amendment.original_project_value) if amendment.original_project_value is not None else "",
@@ -851,7 +868,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         try:
             qs = (
                 obj.amendment_requests.select_related("requested_by")
-                .prefetch_related("affected_milestones")
+                .prefetch_related("affected_milestones", "attachments")
                 .order_by("-created_at", "-id")
             )
             return [self._serialize_amendment_request(row) for row in qs[:10]]

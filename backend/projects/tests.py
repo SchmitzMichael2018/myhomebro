@@ -117,7 +117,7 @@ from projects.models_subcontractor import (
     SubcontractorQuoteRequestStatus,
 )
 from projects.models_dispute import Dispute, DisputeWorkOrder
-from projects.models_amendment_request import AmendmentRequest, apply_descoped_milestone_hold
+from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.services.project_activity import create_project_activity_event
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
@@ -19792,6 +19792,26 @@ class CustomerPortalAccessTests(TestCase):
             visible_to_homeowner=True,
         )
 
+    def _create_counterable_amendment(self):
+        return AmendmentRequest.objects.create(
+            agreement=self.agreement,
+            requested_by=None,
+            initiated_by_role="homeowner",
+            change_type=AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK,
+            requested_changes={"requested_change": "Remove remaining trim work."},
+            justification="We want to remove the remaining trim phase.",
+            original_project_value=Decimal("15000.00"),
+            revised_project_value=Decimal("12000.00"),
+            escrow_funded_amount=Decimal("15000.00"),
+            estimated_refundable_escrow_surplus=Decimal("3000.00"),
+            refund_eligibility_status=AmendmentRequest.RefundEligibilityStatus.ELIGIBLE_AFTER_SIGNED,
+        )
+
+    def _contractor_api(self, user=None):
+        client = APIClient()
+        client.force_authenticate(user=user or self.contractor_user)
+        return client
+
     def test_customer_portal_request_link_is_generic_and_sends_email_for_known_customer(self):
         response = self.client.post(
             "/api/projects/customer-portal/request-link/",
@@ -20127,6 +20147,139 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.assertEqual(active_case["change_type"], AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK)
         self.assertEqual(active_case["estimated_refundable_escrow_surplus"], "5000.00")
+
+    def test_contractor_can_attach_files_to_counter_amendment_response(self):
+        amendment = self._create_counterable_amendment()
+        client = self._contractor_api()
+
+        response = client.post(
+            f"/api/projects/amendment-requests/{amendment.id}/respond/",
+            {
+                "response_state": AmendmentRequest.ResponseState.COUNTERED,
+                "response_note": "Countering with a supplier quote.",
+                "counter_proposal": json.dumps(
+                    {
+                        "revised_scope": "Keep matching trim but use alternate material.",
+                        "revised_value_change": "-1200.00",
+                    }
+                ),
+                "attachments": [
+                    SimpleUploadedFile("supplier-quote.pdf", b"%PDF-1.4 quote", content_type="application/pdf"),
+                    SimpleUploadedFile("trim-photo.jpg", b"fake-image", content_type="image/jpeg"),
+                ],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        amendment.refresh_from_db()
+        self.assertEqual(amendment.response_state, AmendmentRequest.ResponseState.COUNTERED)
+        self.assertEqual(amendment.attachments.count(), 2)
+        quote = amendment.attachments.get(original_filename="supplier-quote.pdf")
+        self.assertEqual(quote.content_type, "application/pdf")
+        self.assertEqual(quote.uploaded_by_id, self.contractor_user.id)
+        self.assertEqual(quote.agreement_id, self.agreement.id)
+
+        event = ProjectActivityEvent.objects.filter(
+            agreement=self.agreement,
+            object_type="amendment_request",
+            object_id=str(amendment.id),
+            event_type=ProjectActivityEvent.EventType.AMENDMENT_RESPONDED,
+        ).latest("id")
+        self.assertEqual(event.metadata["attachment_count"], 2)
+        self.assertEqual(event.metadata["attachments"][0]["filename"], "supplier-quote.pdf")
+
+        agreement_response = client.get(f"/api/projects/agreements/{self.agreement.id}/")
+        self.assertEqual(agreement_response.status_code, 200, agreement_response.data)
+        amendment_payload = agreement_response.data["amendment_requests"][0]
+        self.assertEqual(len(amendment_payload["counter_attachments"]), 2)
+        self.assertEqual(amendment_payload["activity_events"][0]["metadata"]["attachment_count"], 2)
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        portal_response = self.client.get(f"/api/projects/customer-portal/{token}/")
+        self.assertEqual(portal_response.status_code, 200, portal_response.data)
+        agreement_payload = next(row for row in portal_response.data["agreements"] if row["id"] == self.agreement.id)
+        active_case = next(row for row in agreement_payload["active_cases"] if row["type"] == "amendment")
+        self.assertEqual(active_case["response_state"], AmendmentRequest.ResponseState.COUNTERED)
+        self.assertEqual(len(active_case["counter_attachments"]), 2)
+        self.assertEqual(active_case["activity_events"][0]["metadata"]["attachment_count"], 2)
+
+    def test_unauthorized_contractor_cannot_upload_counter_amendment_attachments(self):
+        amendment = self._create_counterable_amendment()
+        client = self._contractor_api(user=self.other_contractor_user)
+
+        response = client.post(
+            f"/api/projects/amendment-requests/{amendment.id}/respond/",
+            {
+                "response_state": AmendmentRequest.ResponseState.COUNTERED,
+                "response_note": "Wrong contractor.",
+                "counter_proposal": json.dumps({"revised_scope": "No access"}),
+                "attachments": [SimpleUploadedFile("quote.pdf", b"%PDF-1.4", content_type="application/pdf")],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(AmendmentRequestAttachment.objects.filter(amendment_request=amendment).exists())
+
+    def test_counter_amendment_attachment_rejects_unsupported_file_type(self):
+        amendment = self._create_counterable_amendment()
+        client = self._contractor_api()
+
+        response = client.post(
+            f"/api/projects/amendment-requests/{amendment.id}/respond/",
+            {
+                "response_state": AmendmentRequest.ResponseState.COUNTERED,
+                "response_note": "Includes unsupported file.",
+                "counter_proposal": json.dumps({"revised_scope": "Alternate scope"}),
+                "attachments": [SimpleUploadedFile("script.exe", b"bad", content_type="application/x-msdownload")],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("unsupported file type", str(response.data["attachments"][0]).lower())
+        self.assertFalse(AmendmentRequestAttachment.objects.filter(amendment_request=amendment).exists())
+
+    @override_settings(AMENDMENT_COUNTER_ATTACHMENT_MAX_BYTES=4)
+    def test_counter_amendment_attachment_rejects_oversized_file(self):
+        amendment = self._create_counterable_amendment()
+        client = self._contractor_api()
+
+        response = client.post(
+            f"/api/projects/amendment-requests/{amendment.id}/respond/",
+            {
+                "response_state": AmendmentRequest.ResponseState.COUNTERED,
+                "response_note": "Includes oversized file.",
+                "counter_proposal": json.dumps({"revised_scope": "Alternate scope"}),
+                "attachments": [SimpleUploadedFile("quote.pdf", b"12345", content_type="application/pdf")],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("too large", str(response.data["attachments"][0]).lower())
+        self.assertFalse(AmendmentRequestAttachment.objects.filter(amendment_request=amendment).exists())
+
+    def test_counter_amendment_without_attachments_still_works(self):
+        amendment = self._create_counterable_amendment()
+        client = self._contractor_api()
+
+        response = client.post(
+            f"/api/projects/amendment-requests/{amendment.id}/respond/",
+            {
+                "response_state": AmendmentRequest.ResponseState.COUNTERED,
+                "response_note": "Counter without supporting files.",
+                "counter_proposal": {"revised_scope": "Use a smaller trim allowance."},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        amendment.refresh_from_db()
+        self.assertEqual(amendment.response_state, AmendmentRequest.ResponseState.COUNTERED)
+        self.assertEqual(amendment.counter_proposal["revised_scope"], "Use a smaller trim allowance.")
+        self.assertFalse(amendment.attachments.exists())
 
     def test_customer_portal_homeowner_actions_reject_other_customer_agreement(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

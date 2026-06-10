@@ -41,7 +41,7 @@ from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import CustomerRequest, NotificationRule, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
-from projects.models_amendment_request import AmendmentRequest, apply_descoped_milestone_hold
+from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
@@ -1502,6 +1502,22 @@ def _active_dispute(agreement):
     )
 
 
+def _serialize_amendment_attachment(attachment: AmendmentRequestAttachment) -> dict:
+    file_obj = getattr(attachment, "file", None)
+    try:
+        file_url = getattr(file_obj, "url", "") or ""
+    except Exception:
+        file_url = ""
+    return {
+        "id": attachment.id,
+        "filename": _safe_text(attachment.original_filename) or _safe_text(getattr(file_obj, "name", "")) or "attachment",
+        "content_type": _safe_text(attachment.content_type),
+        "size": int(getattr(attachment, "size", 0) or 0),
+        "uploaded_at": _safe_dt(getattr(attachment, "uploaded_at", None)),
+        "url": file_url,
+    }
+
+
 def _serialize_case(kind: str, obj) -> dict | None:
     if not obj:
         return None
@@ -1525,6 +1541,12 @@ def _serialize_case(kind: str, obj) -> dict | None:
             "refund_eligibility_label": obj.get_refund_eligibility_status_display(),
             "response_state": obj.response_state,
             "response_label": obj.get_response_state_display(),
+            "response_note": _safe_text(obj.response_note),
+            "counter_proposal": obj.counter_proposal or {},
+            "counter_attachments": [
+                _serialize_amendment_attachment(attachment)
+                for attachment in obj.attachments.all()
+            ],
             "response_due_at": _safe_dt(obj.response_due_at),
             "affected_milestone_ids": list(obj.affected_milestones.values_list("id", flat=True)),
             "activity_events": serialize_project_activity_events(obj.agreement, object_type="amendment_request", object_id=obj.id, limit=12),

@@ -1,7 +1,17 @@
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from django.utils.text import slugify
 from decimal import Decimal
+
+
+def amendment_request_attachment_upload_path(instance, filename):
+    base, _dot, ext = filename.rpartition(".")
+    ext = (ext or "").lower()
+    safe = slugify(base or "file") or "file"
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
+    suffix = f".{ext}" if ext else ""
+    return f"agreements/{instance.agreement_id}/amendments/{instance.amendment_request_id}/{ts}_{safe}{suffix}"
 
 
 class AmendmentRequest(models.Model):
@@ -211,6 +221,46 @@ def mark_signed_descoped_amendment_refund_eligibility(agreement) -> list[int]:
         if amendment_request.mark_refund_eligible_after_signed_amendment(amendment_agreement=agreement):
             updated_ids.append(amendment_request.id)
     return updated_ids
+
+
+class AmendmentRequestAttachment(models.Model):
+    amendment_request = models.ForeignKey(
+        "projects.AmendmentRequest",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="amendment_request_attachments",
+    )
+    file = models.FileField(upload_to=amendment_request_attachment_upload_path)
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    content_type = models.CharField(max_length=120, blank=True, default="")
+    size = models.PositiveIntegerField(default=0)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="uploaded_amendment_request_attachments",
+    )
+    uploaded_at = models.DateTimeField(default=timezone.now, db_index=True)
+    response_state = models.CharField(
+        max_length=32,
+        choices=AmendmentRequest.ResponseState.choices,
+        default=AmendmentRequest.ResponseState.COUNTERED,
+    )
+
+    class Meta:
+        ordering = ["-uploaded_at", "-id"]
+        indexes = [
+            models.Index(fields=["agreement", "uploaded_at"]),
+            models.Index(fields=["amendment_request", "uploaded_at"]),
+        ]
+
+    def __str__(self):
+        return f"AmendmentRequest #{self.amendment_request_id} attachment: {self.original_filename or 'file'}"
 
 
 def open_descoped_amendment_for_milestone(milestone) -> AmendmentRequest | None:

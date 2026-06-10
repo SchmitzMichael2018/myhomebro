@@ -63,6 +63,44 @@ const formatMoney = (v) =>
     maximumFractionDigits: 2,
   })}`;
 
+const formatBytes = (value) => {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+function AttachmentLinks({ attachments = [], testId = "" }) {
+  const rows = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
+  if (!rows.length) return null;
+  return (
+    <div data-testid={testId || undefined} className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+        Attachments ({rows.length})
+      </div>
+      <div className="mt-2 space-y-1">
+        {rows.map((attachment, index) => {
+          const label = attachment.filename || attachment.original_filename || attachment.name || `Attachment ${index + 1}`;
+          const size = formatBytes(attachment.size);
+          return (
+            <a
+              key={attachment.id || `${label}-${index}`}
+              href={attachment.url || attachment.file_url || "#"}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-xs font-semibold text-sky-700 hover:text-sky-900"
+            >
+              {label}
+              {size ? <span className="ml-2 font-normal text-slate-500">{size}</span> : null}
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const RefundedBadge = () => (
   <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-800">
     ✅ Refunded
@@ -838,6 +876,7 @@ function AmendmentReviewPanel({ amendments = [], onRespond, onMarkViewed, busyId
         counter_value_change: "",
         counter_timeline: "",
         counter_milestone_changes: "",
+        counter_attachments: [],
         ...prev[id],
         ...patch,
       },
@@ -872,6 +911,7 @@ function AmendmentReviewPanel({ amendments = [], onRespond, onMarkViewed, busyId
             counter_value_change: "",
             counter_timeline: "",
             counter_milestone_changes: "",
+            counter_attachments: [],
           };
           const activity = Array.isArray(amendment.activity_events) ? amendment.activity_events : [];
           const affectedMilestones = Array.isArray(amendment.affected_milestones) ? amendment.affected_milestones : [];
@@ -964,6 +1004,15 @@ function AmendmentReviewPanel({ amendments = [], onRespond, onMarkViewed, busyId
                           <span className="font-semibold text-slate-950">{event.event_label || titleCase(event.event_type)}</span>
                           {event.created_at ? ` - ${fmtDateTime(event.created_at)}` : ""}
                           {event.title ? <span className="block text-slate-600">{event.title}</span> : null}
+                          {event.metadata?.attachment_count ? (
+                            <span className="block text-slate-600">
+                              {event.metadata.attachment_count} attachment{event.metadata.attachment_count === 1 ? "" : "s"} included
+                            </span>
+                          ) : null}
+                          <AttachmentLinks
+                            attachments={event.metadata?.attachments || []}
+                            testId={`contractor-amendment-activity-attachments-${amendment.id}-${event.id}`}
+                          />
                         </div>
                       )) : (
                         <div className="text-xs text-slate-500">No activity events yet.</div>
@@ -1028,6 +1077,50 @@ function AmendmentReviewPanel({ amendments = [], onRespond, onMarkViewed, busyId
                             className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
                             placeholder="Revised milestone changes"
                           />
+                          <div className="md:col-span-2 rounded-lg border border-dashed border-slate-300 bg-white p-3">
+                            <label className="text-sm font-semibold text-slate-900">
+                              Supporting files
+                              <span className="mt-1 block text-xs font-normal leading-5 text-slate-600">
+                                Attach estimates, photos, receipts, supplier quotes, or revised scope documents that support your counter-proposal.
+                              </span>
+                              <input
+                                data-testid={`contractor-amendment-counter-attachments-${amendment.id}`}
+                                type="file"
+                                multiple
+                                onChange={(e) => {
+                                  const incoming = Array.from(e.target.files || []);
+                                  setDraft(amendment.id, {
+                                    counter_attachments: [...(draft.counter_attachments || []), ...incoming],
+                                  });
+                                  e.target.value = "";
+                                }}
+                                className="mt-2 block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-amber-900"
+                              />
+                            </label>
+                            {draft.counter_attachments?.length ? (
+                              <div data-testid={`contractor-amendment-counter-selected-files-${amendment.id}`} className="mt-3 space-y-2">
+                                {draft.counter_attachments.map((file, index) => (
+                                  <div key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                    <span className="min-w-0 truncate">
+                                      <span className="font-semibold text-slate-950">{file.name}</span>
+                                      {formatBytes(file.size) ? <span className="ml-2 text-slate-500">{formatBytes(file.size)}</span> : null}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      data-testid={`contractor-amendment-remove-attachment-${amendment.id}-${index}`}
+                                      onClick={() => {
+                                        const next = (draft.counter_attachments || []).filter((_file, fileIndex) => fileIndex !== index);
+                                        setDraft(amendment.id, { counter_attachments: next });
+                                      }}
+                                      className="shrink-0 rounded-md border border-slate-300 px-2 py-1 font-semibold text-slate-700 hover:bg-slate-100"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
 
@@ -1045,6 +1138,10 @@ function AmendmentReviewPanel({ amendments = [], onRespond, onMarkViewed, busyId
                     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                       <span className="font-semibold text-slate-950">Contractor response:</span>{" "}
                       {amendment.response_note || amendment.response_label || "Response recorded."}
+                      <AttachmentLinks
+                        attachments={amendment.counter_attachments || []}
+                        testId={`contractor-amendment-counter-attachments-summary-${amendment.id}`}
+                      />
                     </div>
                   )}
                 </div>
@@ -1230,12 +1327,24 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
     }
     try {
       setAmendmentResponseBusy(amendment.id);
-      await api.post(`/projects/amendment-requests/${amendment.id}/respond/`, payload);
+      const files = responseState === "countered" && Array.isArray(draft?.counter_attachments)
+        ? draft.counter_attachments.filter(Boolean)
+        : [];
+      if (files.length) {
+        const form = new FormData();
+        form.append("response_state", payload.response_state);
+        form.append("response_note", payload.response_note);
+        form.append("counter_proposal", JSON.stringify(payload.counter_proposal || {}));
+        files.forEach((file) => form.append("attachments", file));
+        await api.post(`/projects/amendment-requests/${amendment.id}/respond/`, form);
+      } else {
+        await api.post(`/projects/amendment-requests/${amendment.id}/respond/`, payload);
+      }
       toast.success("Amendment response recorded.");
       await fetchAgreement();
     } catch (err) {
       console.error(err);
-      toast.error(formatApiError(err, "Could not submit amendment response."));
+      toast.error(formatApiError(err, "Could not upload one or more attachments. Please remove unsupported files and try again."));
     } finally {
       setAmendmentResponseBusy("");
     }
