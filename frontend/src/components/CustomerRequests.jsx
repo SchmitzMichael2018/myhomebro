@@ -13,8 +13,17 @@ const REQUEST_TYPES = [
 const PROJECT_MODES = [
   ["full_service", "Full service"],
   ["diy_assist", "DIY assist"],
-  ["inspection_only", "Inspection only"],
+  ["inspection_only", "Consultation / advice"],
   ["not_sure", "Not sure yet"],
+];
+
+const TIMELINE_OPTIONS = [
+  ["", "Not provided"],
+  ["As soon as possible", "As soon as possible"],
+  ["Within the next month", "Within the next month"],
+  ["1-3 months", "1-3 months"],
+  ["Just planning right now", "Just planning right now"],
+  ["Specific date", "Specific date"],
 ];
 
 const PAYMENT_PREFERENCES = [
@@ -78,6 +87,25 @@ function formatDateTime(value) {
   }
 }
 
+function displayValue(value) {
+  return String(value || "").trim();
+}
+
+function MetadataCard({ label, value, className = "" }) {
+  const text = displayValue(value);
+  if (!text) return null;
+  return (
+    <div className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${className}`}>
+      <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <p className="mt-1 text-sm font-semibold text-white">{text}</p>
+    </div>
+  );
+}
+
+function joinPresent(parts, separator = " · ") {
+  return parts.map(displayValue).filter(Boolean).join(separator);
+}
+
 function comparisonHighlights(bids) {
   const prices = bids
     .map((bid) => ({ id: bid.id, value: parseMoney(bid.bid_amount ?? bid.bid_amount_label) }))
@@ -131,6 +159,8 @@ export default function CustomerRequests({
     request_type: "repair",
     project_mode: "full_service",
     project_category: "",
+    project_type: "",
+    project_subtype: "",
     payment_preference: "",
     title: "",
     description: "",
@@ -191,13 +221,21 @@ export default function CustomerRequests({
   const submit = async (event) => {
     event.preventDefault();
     if (!form.title.trim() || !form.description.trim()) return;
-    await onCreateRequest?.(form);
+    const payload = {
+      ...form,
+      project_title: form.title,
+      project_scope: form.description,
+      project_category: form.project_category || form.project_type,
+    };
+    await onCreateRequest?.(payload);
     setRequestSuggestion(null);
     setImproveError("");
     setForm((prev) => ({
       ...prev,
       project_mode: "full_service",
       project_category: "",
+      project_type: "",
+      project_subtype: "",
       payment_preference: "",
       title: "",
       description: "",
@@ -213,10 +251,15 @@ export default function CustomerRequests({
     setImproveError("");
     setRequestSuggestion(null);
     try {
-      const data = await onImproveRequest?.(form);
+      const data = await onImproveRequest?.({
+        ...form,
+        project_title: form.title,
+        project_scope: form.description,
+        project_category: form.project_category || form.project_type,
+      });
       setRequestSuggestion({
-        title: data?.title || form.title,
-        description: data?.description || form.description,
+        title: data?.project_title || data?.title || form.title,
+        description: data?.project_scope || data?.description || form.description,
         source: data?.source || "fallback",
       });
     } catch (error) {
@@ -291,7 +334,7 @@ export default function CustomerRequests({
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-200">
-                Project mode
+                Project Mode
                 <select
                   value={form.project_mode}
                   onChange={(event) => update("project_mode", event.target.value)}
@@ -303,25 +346,25 @@ export default function CustomerRequests({
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-200">
-                Project category
+                Project Type
                 <input
-                  value={form.project_category}
-                  onChange={(event) => update("project_category", event.target.value)}
+                  value={form.project_type}
+                  onChange={(event) => update("project_type", event.target.value)}
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                  placeholder="Flooring, plumbing, patio, inspection..."
+                  placeholder="Flooring, plumbing, patio, HVAC..."
                 />
               </label>
               <label className="block text-sm font-medium text-slate-200">
-                Timeline
+                Project Subtype
                 <input
-                  value={form.preferred_timeline}
-                  onChange={(event) => update("preferred_timeline", event.target.value)}
+                  value={form.project_subtype}
+                  onChange={(event) => update("project_subtype", event.target.value)}
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                  placeholder="This week, next month..."
+                  placeholder="Luxury vinyl plank, leak repair, patio slab..."
                 />
               </label>
               <label className="block text-sm font-medium text-slate-200">
-                Payment preference
+                Payment Preference
                 <select
                   value={form.payment_preference}
                   onChange={(event) => update("payment_preference", event.target.value)}
@@ -332,9 +375,21 @@ export default function CustomerRequests({
                   ))}
                 </select>
               </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Timeline
+                <select
+                  value={form.preferred_timeline}
+                  onChange={(event) => update("preferred_timeline", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                >
+                  {TIMELINE_OPTIONS.map(([value, label]) => (
+                    <option key={value || "blank"} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
             </div>
             <label className="block text-sm font-medium text-slate-200">
-              Title
+              Project Title
               <input
                 value={form.title}
                 onChange={(event) => update("title", event.target.value)}
@@ -343,7 +398,7 @@ export default function CustomerRequests({
               />
             </label>
             <label className="block text-sm font-medium text-slate-200">
-              Details
+              Project Scope
               <textarea
                 value={form.description}
                 onChange={(event) => update("description", event.target.value)}
@@ -510,10 +565,10 @@ export default function CustomerRequests({
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <div className="text-sm font-semibold text-white">{request.project_title}</div>
-                    <div className="mt-1 text-sm text-slate-400">{request.notes || request.project_address || "Request details pending."}</div>
+                    <div className="mt-1 text-sm text-slate-400">{request.project_scope || request.notes || request.project_address || "Request details pending."}</div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge>{request.request_type_label || request.project_class_label || "Request"}</Badge>
+                    <Badge>{request.project_type || request.project_category || request.request_type_label || request.project_class_label || "Request"}</Badge>
                     <Badge>{request.status_label || "Submitted"}</Badge>
                     <button
                       type="button"
@@ -573,41 +628,35 @@ export default function CustomerRequests({
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:col-span-2">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Details / Scope</div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Project Scope</div>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-100">
-                    {selectedRequest.notes || "No request details were submitted."}
+                    {selectedRequest.project_scope || selectedRequest.notes || "No project scope was submitted."}
                   </p>
                 </div>
+                <MetadataCard label="Project Type" value={selectedRequest.project_type || selectedRequest.project_category} />
+                <MetadataCard label="Project Subtype" value={selectedRequest.project_subtype} />
+                <MetadataCard label="Project Mode" value={selectedRequest.project_mode_label} />
+                <MetadataCard label="Request Type" value={selectedRequest.request_type_label || selectedRequest.project_class_label} />
                 <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Type</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.request_type_label || selectedRequest.project_class_label || "Request"}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Project mode</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.project_mode_label || "Not specified"}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Category</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.project_category || "Not specified"}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Timeline / urgency</div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Timeline</div>
                   <p className="mt-1 text-sm font-semibold text-white">
-                    {selectedRequest.preferred_timeline || "Timeline not specified"} · {selectedRequest.urgency || "normal"}
+                    {joinPresent([selectedRequest.preferred_timeline, selectedRequest.urgency]) || "Timeline pending"}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Payment preference</div>
-                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.payment_preference_label || "Not specified"}</p>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Payment Preference</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.payment_preference_label || "Not selected yet"}</p>
                 </div>
                 <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
                   <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status</div>
                   <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.status_label || "Submitted"}</p>
                 </div>
                 <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:col-span-2">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Property / address</div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Property / Address</div>
                   <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.property_name || "Property"}</p>
-                  <p className="mt-1 text-sm text-slate-300">{selectedRequest.project_address || "Address not specified"}</p>
+                  {selectedRequest.project_address ? (
+                    <p className="mt-1 text-sm text-slate-300">{selectedRequest.project_address}</p>
+                  ) : null}
                 </div>
                 <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
                   <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Submitted</div>

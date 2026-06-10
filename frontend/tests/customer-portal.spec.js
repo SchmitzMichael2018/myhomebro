@@ -144,6 +144,8 @@ const portalPayload = {
       request_type_label: "New Project",
       project_mode_label: "Full service",
       project_category: "Kitchen",
+      project_type: "Kitchen",
+      project_subtype: "Remodel",
       payment_preference_label: "Escrow milestone holds",
       latest_activity: "2026-04-15T14:00:00Z",
       created_at: "2026-04-15T14:00:00Z",
@@ -152,10 +154,11 @@ const portalPayload = {
       status_label: "Submitted",
       action_target: "",
       notes: "Need a commercial remodel.",
+      project_scope: "Need a commercial remodel.",
       project_address: "123 Main St, Austin, TX, 78701",
       property_name: "Kitchen Remodel",
       urgency: "normal",
-      preferred_timeline: "Next month",
+      preferred_timeline: "Within the next month",
     },
     {
       id: "request-2",
@@ -1081,7 +1084,9 @@ test("customer portal is reachable from the landing page and loads secure record
         body: JSON.stringify({
           detail: "Request details improved.",
           title: "Seasonal HVAC maintenance",
+          project_title: "Seasonal HVAC maintenance",
           description: "Included Work\n- Inspect the HVAC system before summer.\n- Replace accessible filters if needed.\n- Document any recommended follow-up service.",
+          project_scope: "Included Work\n- Inspect the HVAC system before summer.\n- Replace accessible filters if needed.\n- Document any recommended follow-up service.",
           source: "ai",
         }),
       });
@@ -1099,16 +1104,19 @@ test("customer portal is reachable from the landing page and loads secure record
             {
               id: "customer-request-9",
               source_kind: "customer_request",
-              project_title: submittedRequestPayload.title,
+              project_title: submittedRequestPayload.project_title || submittedRequestPayload.title,
+              project_scope: submittedRequestPayload.project_scope || submittedRequestPayload.description,
               status: "submitted",
               status_label: "Submitted",
               request_type_label: "Maintenance",
               project_mode_label: "Full service",
-              project_category: submittedRequestPayload.project_category,
+              project_category: submittedRequestPayload.project_category || submittedRequestPayload.project_type,
+              project_type: submittedRequestPayload.project_type || submittedRequestPayload.project_category,
+              project_subtype: submittedRequestPayload.project_subtype,
               payment_preference_label: "Escrow milestone holds",
               property_id: submittedRequestPayload.property_id,
               property_name: "Lake House",
-              notes: submittedRequestPayload.description,
+              notes: submittedRequestPayload.project_scope || submittedRequestPayload.description,
               project_address: "44 Lake Dr, Austin, TX, 78703",
               urgency: submittedRequestPayload.urgency,
               preferred_timeline: submittedRequestPayload.preferred_timeline,
@@ -1318,22 +1326,29 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-property-selector")).toBeVisible();
   await page.getByTestId("customer-request-property-selector").selectOption("2");
   await expect(page.getByLabel("Street").last()).toHaveValue("44 Lake Dr");
-  await expect(page.getByLabel("Project mode")).toBeVisible();
-  await expect(page.getByLabel("Project category")).toBeVisible();
-  await expect(page.getByLabel("Payment preference")).toBeVisible();
+  await expect(page.getByLabel("Project Mode")).toBeVisible();
+  await expect(page.getByLabel("Project Type")).toBeVisible();
+  await expect(page.getByLabel("Project Subtype")).toBeVisible();
+  await expect(page.getByLabel("Payment Preference")).toBeVisible();
   await expect(page.getByTestId("customer-request-address-autocomplete").locator("input")).toHaveClass(/text-white/);
-  await page.getByLabel("Title").last().fill("Seasonal HVAC service");
-  await page.getByLabel("Project category").fill("HVAC");
-  await page.getByLabel("Payment preference").selectOption("escrow_milestones");
-  await page.getByLabel("Details").fill("Please inspect the system before summer.");
+  await page.getByLabel("Project Title").last().fill("Seasonal HVAC service");
+  await page.getByLabel("Project Type").fill("HVAC");
+  await page.getByLabel("Project Subtype").fill("Seasonal Service");
+  await page.getByLabel("Payment Preference").selectOption("escrow_milestones");
+  await page.getByLabel("Timeline").selectOption("As soon as possible");
+  await page.getByLabel("Project Scope").fill("Please inspect the system before summer.");
   await page.getByTestId("customer-request-improve-button").click();
   await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Suggested version");
   await expect(page.getByTestId("customer-request-ai-suggestion-text")).toHaveValue(/Inspect the HVAC system/);
   await page.getByTestId("customer-request-use-ai-suggestion").click();
-  await expect(page.getByLabel("Details")).toHaveValue(/Document any recommended follow-up service/);
+  await expect(page.getByLabel("Project Scope")).toHaveValue(/Document any recommended follow-up service/);
   await page.getByRole("button", { name: "Create Request" }).click();
   await expect.poll(() => String(submittedRequestPayload?.property_id || "")).toBe("2");
-  await expect(submittedRequestPayload?.project_category).toBe("HVAC");
+  await expect(submittedRequestPayload?.project_title).toBe("Seasonal HVAC maintenance");
+  await expect(submittedRequestPayload?.project_scope).toMatch(/Document any recommended follow-up service/);
+  await expect(submittedRequestPayload?.project_type).toBe("HVAC");
+  await expect(submittedRequestPayload?.project_subtype).toBe("Seasonal Service");
+  await expect(submittedRequestPayload?.preferred_timeline).toBe("As soon as possible");
   await expect(submittedRequestPayload?.payment_preference).toBe("escrow_milestones");
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Seasonal HVAC maintenance");
   await page.getByTestId("customer-request-view-customer-request-9").click();
@@ -1341,13 +1356,18 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Seasonal HVAC maintenance");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Document any recommended follow-up service");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("HVAC");
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Seasonal Service");
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("As soon as possible");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Escrow milestone holds");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("44 Lake Dr, Austin, TX, 78703");
   await page.getByRole("button", { name: "Close request details" }).click();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
   await page.getByTestId("customer-request-view-request-1").click();
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Project Scope");
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Project Type");
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Project Subtype");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Need a commercial remodel.");
-  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Next month");
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Within the next month");
   await page.getByRole("button", { name: "Close request details" }).click();
   await expect(page.getByTestId("customer-portal-request-compare-request-2")).toContainText("Compare Bids");
   await page.getByTestId("customer-portal-request-compare-request-2").click();

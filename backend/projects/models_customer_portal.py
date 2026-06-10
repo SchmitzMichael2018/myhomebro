@@ -219,6 +219,8 @@ class CustomerRequest(models.Model):
         default="",
     )
     project_category = models.CharField(max_length=80, blank=True, default="")
+    project_type = models.CharField(max_length=120, blank=True, default="")
+    project_subtype = models.CharField(max_length=120, blank=True, default="")
     payment_preference = models.CharField(
         max_length=32,
         choices=PAYMENT_PREFERENCE_CHOICES,

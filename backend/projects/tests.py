@@ -20140,12 +20140,13 @@ class CustomerPortalAccessTests(TestCase):
             {
                 "request_type": "repair",
                 "project_mode": "full_service",
-                "project_category": "Plumbing",
+                "project_type": "Plumbing",
+                "project_subtype": "Sink Leak",
                 "payment_preference": "escrow_milestones",
-                "title": "Leaking sink",
-                "description": "Kitchen sink is leaking under the cabinet.",
+                "project_title": "Leaking sink",
+                "project_scope": "Kitchen sink is leaking under the cabinet.",
                 "urgency": "soon",
-                "preferred_timeline": "This week",
+                "preferred_timeline": "As soon as possible",
             },
             content_type="application/json",
         )
@@ -20156,6 +20157,8 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(saved.status, "submitted")
         self.assertEqual(saved.request_type, "repair")
         self.assertEqual(saved.project_mode, "full_service")
+        self.assertEqual(saved.project_type, "Plumbing")
+        self.assertEqual(saved.project_subtype, "Sink Leak")
         self.assertEqual(saved.project_category, "Plumbing")
         self.assertEqual(saved.payment_preference, "escrow_milestones")
         self.assertEqual(saved.address_line1, "123 Main St")
@@ -20165,13 +20168,16 @@ class CustomerPortalAccessTests(TestCase):
             if row["source_kind"] == "customer_request" and row["project_title"] == "Leaking sink"
         )
         self.assertEqual(request_row["notes"], "Kitchen sink is leaking under the cabinet.")
+        self.assertEqual(request_row["project_scope"], "Kitchen sink is leaking under the cabinet.")
         self.assertEqual(request_row["project_mode"], "full_service")
         self.assertEqual(request_row["project_mode_label"], "Full Service")
+        self.assertEqual(request_row["project_type"], "Plumbing")
+        self.assertEqual(request_row["project_subtype"], "Sink Leak")
         self.assertEqual(request_row["project_category"], "Plumbing")
         self.assertEqual(request_row["payment_preference"], "escrow_milestones")
         self.assertEqual(request_row["payment_preference_label"], "Escrow Milestone Holds")
         self.assertEqual(request_row["urgency"], "soon")
-        self.assertEqual(request_row["preferred_timeline"], "This week")
+        self.assertEqual(request_row["preferred_timeline"], "As soon as possible")
         self.assertTrue(request_row["created_at"])
         notification = SmartNotification.objects.get(customer_request=saved)
         self.assertEqual(notification.event_type, SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED)
@@ -20288,18 +20294,21 @@ class CustomerPortalAccessTests(TestCase):
                 {
                     "request_type": "repair",
                     "project_mode": "full_service",
-                    "project_category": "Plumbing",
-                    "title": "sink",
-                    "description": "sink leaks",
+                    "project_type": "Plumbing",
+                    "project_subtype": "Sink Leak",
+                    "project_title": "sink",
+                    "project_scope": "sink leaks",
                     "urgency": "soon",
-                    "preferred_timeline": "This week",
+                    "preferred_timeline": "As soon as possible",
                 },
                 content_type="application/json",
             )
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["title"], "sink")
+        self.assertEqual(response.data["project_title"], "sink")
         self.assertIn("Repair the leaking kitchen sink", response.data["description"])
+        self.assertIn("Repair the leaking kitchen sink", response.data["project_scope"])
         self.assertEqual(response.data["source"], "ai")
         self.assertFalse(CustomerRequest.objects.filter(title="sink").exists())
 

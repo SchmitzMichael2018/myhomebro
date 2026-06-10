@@ -471,12 +471,18 @@ def _customer_request_rows(email: str) -> list[dict]:
     for request_row in CustomerRequest.objects.select_related("converted_project", "property_profile").filter(
         customer_email__iexact=email
     ).order_by("-created_at", "-id"):
+        project_type = _safe_text(getattr(request_row, "project_type", "")) or _safe_text(getattr(request_row, "project_category", ""))
+        project_subtype = _safe_text(getattr(request_row, "project_subtype", ""))
+        project_scope = _safe_text(request_row.description)
         rows.append(
             {
                 "id": f"customer-request-{request_row.id}",
                 "request_id": request_row.id,
                 "source_kind": "customer_request",
                 "project_title": _safe_text(request_row.title),
+                "project_scope": project_scope,
+                "project_type": project_type,
+                "project_subtype": project_subtype,
                 "project_address": ", ".join(
                     part
                     for part in [
@@ -508,7 +514,7 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "agreement_token": "",
                 "action_label": "View Request",
                 "action_target": "",
-                "notes": _safe_text(request_row.description),
+                "notes": project_scope,
                 "urgency": _safe_text(request_row.urgency),
                 "preferred_timeline": _safe_text(request_row.preferred_timeline),
                 "converted_project_id": getattr(request_row.converted_project, "id", None),
@@ -2570,6 +2576,16 @@ class CustomerPortalNotificationMarkReadView(APIView):
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 
+CUSTOMER_PORTAL_TIMELINE_CHOICES = [
+    "",
+    "As soon as possible",
+    "Within the next month",
+    "1-3 months",
+    "Just planning right now",
+    "Specific date",
+]
+
+
 class CustomerPortalRequestSerializer(serializers.Serializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     request_type = serializers.ChoiceField(choices=[choice[0] for choice in CustomerRequest.REQUEST_TYPE_CHOICES])
@@ -2579,15 +2595,23 @@ class CustomerPortalRequestSerializer(serializers.Serializer):
         allow_blank=True,
     )
     project_category = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    project_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    project_subtype = serializers.CharField(max_length=120, required=False, allow_blank=True)
     payment_preference = serializers.ChoiceField(
         choices=[choice[0] for choice in CustomerRequest.PAYMENT_PREFERENCE_CHOICES],
         required=False,
         allow_blank=True,
     )
-    title = serializers.CharField(max_length=200)
-    description = serializers.CharField()
+    title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    project_title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    project_scope = serializers.CharField(required=False, allow_blank=True)
     urgency = serializers.CharField(max_length=32, required=False, allow_blank=True)
-    preferred_timeline = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    preferred_timeline = serializers.ChoiceField(
+        choices=CUSTOMER_PORTAL_TIMELINE_CHOICES,
+        required=False,
+        allow_blank=True,
+    )
     address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
     address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
     city = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -2597,6 +2621,20 @@ class CustomerPortalRequestSerializer(serializers.Serializer):
         choices=[CustomerRequest.STATUS_DRAFT, CustomerRequest.STATUS_SUBMITTED],
         required=False,
     )
+
+    def validate(self, attrs):
+        title = _safe_text(attrs.get("project_title") or attrs.get("title"))
+        scope = _safe_text(attrs.get("project_scope") or attrs.get("description"))
+        if not title:
+            raise serializers.ValidationError({"project_title": "Project Title is required."})
+        if not scope:
+            raise serializers.ValidationError({"project_scope": "Project Scope is required."})
+        attrs["title"] = title
+        attrs["description"] = scope
+        attrs["project_type"] = _safe_text(attrs.get("project_type") or attrs.get("project_category"))
+        attrs["project_subtype"] = _safe_text(attrs.get("project_subtype"))
+        attrs["project_category"] = _safe_text(attrs.get("project_category") or attrs.get("project_type"))
+        return attrs
 
 
 class CustomerPortalRequestCreateView(APIView):
@@ -2629,6 +2667,8 @@ class CustomerPortalRequestCreateView(APIView):
             request_type=data["request_type"],
             project_mode=data.get("project_mode", ""),
             project_category=data.get("project_category", ""),
+            project_type=data.get("project_type", ""),
+            project_subtype=data.get("project_subtype", ""),
             payment_preference=data.get("payment_preference", ""),
             status=data.get("status") or CustomerRequest.STATUS_SUBMITTED,
             title=data["title"],
@@ -2659,8 +2699,12 @@ class CustomerPortalRequestImproveView(APIView):
         request_type = serializers.CharField(max_length=64, required=False, allow_blank=True)
         project_mode = serializers.CharField(max_length=64, required=False, allow_blank=True)
         project_category = serializers.CharField(max_length=80, required=False, allow_blank=True)
+        project_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
+        project_subtype = serializers.CharField(max_length=120, required=False, allow_blank=True)
         title = serializers.CharField(max_length=200, required=False, allow_blank=True)
-        description = serializers.CharField()
+        project_title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+        description = serializers.CharField(required=False, allow_blank=True)
+        project_scope = serializers.CharField(required=False, allow_blank=True)
         urgency = serializers.CharField(max_length=32, required=False, allow_blank=True)
         preferred_timeline = serializers.CharField(max_length=120, required=False, allow_blank=True)
 
@@ -2675,16 +2719,16 @@ class CustomerPortalRequestImproveView(APIView):
         serializer = self.InputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        current_description = _safe_text(data.get("description"))
+        current_description = _safe_text(data.get("project_scope") or data.get("description"))
         if not current_description:
             return Response({"detail": "Add request details first."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             out = generate_or_improve_description(
                 mode="improve",
-                project_title=_safe_text(data.get("title")),
-                project_type=_safe_text(data.get("project_category") or data.get("request_type")),
-                project_subtype=_safe_text(data.get("project_mode")),
+                project_title=_safe_text(data.get("project_title") or data.get("title")),
+                project_type=_safe_text(data.get("project_type") or data.get("project_category") or data.get("request_type")),
+                project_subtype=_safe_text(data.get("project_subtype") or data.get("project_mode")),
                 current_description=current_description,
             )
             description = _safe_text(out.get("description"))
@@ -2697,7 +2741,7 @@ class CustomerPortalRequestImproveView(APIView):
             description = _customer_request_refine_fallback(current_description)
             source = "fallback"
 
-        title = _safe_text(data.get("title"))
+        title = _safe_text(data.get("project_title") or data.get("title"))
         if not title:
             title = description.split(".")[0][:80].strip() or "Project request"
 
@@ -2705,7 +2749,9 @@ class CustomerPortalRequestImproveView(APIView):
             {
                 "detail": "Request details improved.",
                 "title": title,
+                "project_title": title,
                 "description": description,
+                "project_scope": description,
                 "source": source,
             },
             status=status.HTTP_200_OK,
