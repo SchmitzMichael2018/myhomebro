@@ -992,8 +992,8 @@ const longPortalPayload = {
       payment_summary: {
         project_value: "20000.00",
         escrow_funded: "20000.00",
-        released_to_contractor: "0.00",
-        remaining_in_escrow: "20000.00",
+        released_to_contractor: "7000.00",
+        remaining_in_escrow: "13000.00",
         pending_review: "0.00",
         contractor_invoices: "7000.00",
         customer_payments: "0.00",
@@ -1086,8 +1086,8 @@ const longPortalPayload = {
       payment_summary: {
         project_value: "20000.00",
         escrow_funded: "20000.00",
-        released_to_contractor: "0.00",
-        remaining_in_escrow: "20000.00",
+        released_to_contractor: "7000.00",
+        remaining_in_escrow: "13000.00",
         pending_review: "0.00",
         contractor_invoices: "7000.00",
         customer_payments: "0.00",
@@ -1175,14 +1175,15 @@ const longPortalPayload = {
       record_type: "invoice",
       date: "2026-04-18T12:00:00Z",
       amount_label: "$7,000.00",
-      status_label: "Approved",
-      status: "approved",
+      status_label: "Released",
+      status: "paid",
       action_target: "/invoice/escrow-invoice-7000",
       reference: "Invoice 7000",
       invoice_number: "Invoice 7000",
       dispute_status: "none",
       dispute_status_label: "No dispute",
-      is_actionable: true,
+      released_to_contractor: true,
+      is_actionable: false,
     },
     ...Array.from({ length: 6 }, (_, index) => ({
       id: `paid-extra-${index + 1}`,
@@ -1671,20 +1672,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByRole("button", { name: "View Payments" }).click();
   await page.getByRole("button", { name: "View Documents" }).click();
   await page.getByRole("button", { name: "View Activity" }).click();
-  await expect(page.getByTestId("customer-project-payments")).toContainText("Review payments before funds are released.");
-  await expect(page.getByTestId("customer-project-payment-draw-2")).toContainText("Escrow hold active");
-  await expect(page.getByTestId("customer-project-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
-  await expect(page.getByTestId("customer-project-payment-invoice-2")).toContainText("INV-20260416-0002");
-  await expect(page.getByTestId("customer-project-payment-primary-invoice-2")).toContainText("Pay Invoice");
-  await expect(page.getByTestId("customer-project-payment-view-invoice-invoice-2")).toHaveAttribute("href", "/invoices/magic/portal-invoice-pay-token");
-  await expect(page.getByTestId("customer-project-payment-dispute-invoice-2")).toHaveAttribute("href", "/invoices/magic/portal-invoice-pay-token?action=dispute");
+  await expect(page.getByTestId("customer-project-payments")).toContainText("Payment History");
+  await expect(page.getByTestId("customer-project-payments")).toContainText("Release Paid");
+  await expect(page.getByTestId("customer-project-payments")).not.toContainText("Escrow Funding");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow History");
   await expect(page.getByTestId("customer-project-documents")).toContainText("Scope Addendum");
   await expect(page.getByTestId("customer-project-agreement-summary")).toContainText("One-year workmanship warranty");
   await expect(page.getByTestId("customer-project-updates")).toContainText("Demo is complete and final walkthrough is ready for review.");
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-portal-payments")).toContainText("Project Payment Center");
-  await expect(page.getByTestId("customer-payments-summary")).toContainText("Total Paid");
+  await expect(page.getByTestId("customer-payments-summary")).toContainText("Direct Payments");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Pending Review");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Released to Contractor");
   await expect(page.getByTestId("customer-payments-agreement-list")).toContainText("Payments by project");
@@ -1693,16 +1691,15 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-payment-primary-invoice-2")).toContainText("Pay Invoice");
   await expect(page.getByTestId("customer-payment-view-invoice-invoice-2")).toHaveAttribute("href", "/invoices/magic/portal-invoice-pay-token");
   await expect(page.getByTestId("customer-payment-open-dispute-invoice-2")).toHaveAttribute("href", "/invoices/magic/portal-invoice-pay-token?action=dispute");
-  await expect(page.getByTestId("customer-payment-action-draw-2")).toContainText("Review Release");
-  await expect(page.getByTestId("customer-payment-action-draw-2")).toContainText("Escrow hold active");
-  await expect(page.getByTestId("customer-payment-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
-  await expect(page.getByTestId("customer-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
+  const drawPaymentCard = page.getByTestId("customer-payment-action-draw-2");
+  await expect(drawPaymentCard).toContainText("Review Release");
+  await expect(drawPaymentCard).toContainText("Escrow hold active");
+  await expect(drawPaymentCard.getByTestId("customer-payment-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
+  await expect(drawPaymentCard.getByTestId("customer-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
   await expect(page.getByTestId("customer-payment-action-invoice-1")).toContainText("View Record");
-  await expect(page.getByTestId("customer-payment-action-invoice-zero")).toContainText("$0.00");
-  await expect(page.getByTestId("customer-payment-action-invoice-zero")).toContainText("No payment required");
-  await expect(page.getByTestId("customer-payment-primary-invoice-zero")).toContainText("View Record");
-  await expect(page.getByTestId("customer-payment-action-invoice-zero")).not.toContainText("Pay Invoice");
-  await expect(page.getByTestId("customer-payment-action-invoice-zero")).not.toContainText("Open Dispute");
+  await expect(page.getByTestId("customer-payment-action-invoice-zero")).toHaveCount(0);
+  await expect(page.getByTestId("customer-portal-payments")).not.toContainText("$0.00");
+  await expect(page.getByTestId("customer-portal-payments")).not.toContainText("No payment required");
 
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-dashboard-overview")).toContainText("Open issue for Kitchen Remodel");
@@ -1859,11 +1856,6 @@ test("customer portal can approve escrow reimbursement requests from payments", 
   });
 
   await page.goto("/portal/reimbursement-token", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("customer-dashboard-tab-projects").click();
-  await page.getByRole("button", { name: "View Payments" }).click();
-  await expect(page.getByTestId("customer-project-payment-reimbursement-99")).toContainText("Reimbursement");
-  await expect(page.getByTestId("customer-project-payment-approve-reimbursement-99")).toContainText("Approve Reimbursement");
-
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("Reimbursement");
   await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("$425.00");
@@ -2061,9 +2053,15 @@ test("customer portal limits long home records, payments, and documents without 
   await page.getByTestId("customer-project-card-escrow-funded-invoice-project").click();
   await expect(page.getByTestId("customer-payment-summary-project-value")).toContainText("$20,000.00");
   await expect(page.getByTestId("customer-payment-summary-escrow-funded")).toContainText("$20,000.00");
-  await expect(page.getByTestId("customer-payment-summary-released")).toContainText("$0.00 released to contractor");
-  await expect(page.getByTestId("customer-payment-summary-remaining-escrow")).toContainText("$20,000.00 remaining in escrow");
-  await expect(page.getByTestId("customer-payment-summary-contractor-invoices")).toContainText("$7,000.00 contractor invoices");
+  await expect(page.getByTestId("customer-payment-summary-released")).toContainText("$7,000.00 released to contractor");
+  await expect(page.getByTestId("customer-payment-summary-remaining-escrow")).toContainText("$13,000.00 remaining in escrow");
+  await expect(page.getByTestId("customer-payment-summary-paid-progress")).toContainText("35% released");
+  await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("contractor invoices");
+  await page.getByTestId("customer-project-toggle-details").click();
+  await expect(page.getByTestId("customer-project-payments")).toContainText("Release Paid");
+  await expect(page.getByTestId("customer-project-payments")).not.toContainText("Escrow Funded");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow Funded");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow Released");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("$27,000.00");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("Released / Paid");
   await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Need to Change Something?");

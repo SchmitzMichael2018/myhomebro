@@ -322,6 +322,40 @@ function isActionablePayment(payment) {
   return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
 }
 
+function isPaymentHistoryRecord(payment) {
+  const status = paymentStatusText(payment);
+  return (
+    isEscrowReleasePayment(payment) ||
+    isCustomerPaidPayment(payment) ||
+    isRefundPayment(payment) ||
+    status.includes("failed") ||
+    status.includes("reversed")
+  );
+}
+
+function isEscrowHistoryRecord(payment) {
+  return isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment) || Boolean(payment?.dispute_escrow_hold_active);
+}
+
+function paymentHistoryLabel(payment) {
+  const status = paymentStatusText(payment);
+  if (isRefundPayment(payment)) return "Refund";
+  if (status.includes("failed")) return "Failed Payment";
+  if (status.includes("reversed")) return "Reversed Payment";
+  if (isEscrowReleasePayment(payment)) return "Release Paid";
+  if (isCustomerPaidPayment(payment)) return "Direct Payment";
+  if (isActionablePayment(payment)) return "Pending Payment";
+  return "Adjustment";
+}
+
+function escrowHistoryLabel(payment) {
+  if (isEscrowFundingPayment(payment)) return "Escrow Funded";
+  if (isEscrowReleasePayment(payment)) return "Escrow Released";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
+  if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
+  return "Escrow Remaining";
+}
+
 function moneyLabel(value) {
   const amount = Number(value || 0);
   return new Intl.NumberFormat("en-US", {
@@ -345,6 +379,13 @@ function paymentSummary(payments = []) {
     },
     { paid: 0, pending: 0, released: 0, adjustments: 0 }
   );
+}
+
+function paidProgress(summary = {}, agreement = {}) {
+  const released = Number(summary.released_to_contractor || summary.released || 0);
+  const value = Number(summary.project_value || agreement.total_cost || 0);
+  if (!Number.isFinite(released) || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((released / value) * 100)));
 }
 
 function isRecentNotification(notification, now = Date.now()) {
@@ -402,23 +443,29 @@ function normalizeInvoiceMagicUrl(actionTarget = "") {
 
 function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpdate }) {
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [escrowHistoryExpanded, setEscrowHistoryExpanded] = useState(false);
   const [selectedAgreementId, setSelectedAgreementId] = useState("");
   const attention = payments.filter((payment) => {
     return isActionablePayment(payment);
   });
-  const paid = payments.filter((payment) => !attention.includes(payment));
+  const paymentHistory = payments.filter(isPaymentHistoryRecord);
+  const escrowHistory = payments.filter(isEscrowHistoryRecord);
   const totals = paymentSummary(payments);
   const historyDefaultCount = 5;
-  const visiblePaid = historyExpanded ? paid : paid.slice(0, historyDefaultCount);
+  const visiblePaymentHistory = historyExpanded ? paymentHistory : paymentHistory.slice(0, historyDefaultCount);
+  const visibleEscrowHistory = escrowHistoryExpanded ? escrowHistory : escrowHistory.slice(0, historyDefaultCount);
   const agreementRows = (agreements || []).map((agreement) => {
     const related = payments.filter((payment) => String(payment.agreement_id || "") === String(agreement.id || ""));
     const summary = agreement.payment_summary || paymentSummary(related);
     const milestones = agreement.milestones || [];
     const completed = milestones.filter((milestone) => String(milestone.status || "").toLowerCase().includes("complete") || milestone.completed).length;
-    const percent = milestones.length ? Math.round((completed / milestones.length) * 100) : 0;
-    return { agreement, related, summary, percent };
+    const milestoneLabel = milestones.length ? `${completed} of ${milestones.length} complete` : "Milestones pending";
+    const paidPercent = paidProgress(summary, agreement);
+    return { agreement, related, summary, milestoneLabel, paidPercent };
   });
   const selectedAgreement = agreementRows.find((row) => String(row.agreement.id) === String(selectedAgreementId)) || agreementRows[0] || null;
+  const selectedPaymentHistory = selectedAgreement?.related?.filter(isPaymentHistoryRecord) || [];
+  const selectedEscrowHistory = selectedAgreement?.related?.filter(isEscrowHistoryRecord) || [];
 
   return (
     <div data-testid="customer-portal-payments" className="space-y-5">
@@ -430,7 +477,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
       </section>
 
       <section data-testid="customer-payments-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Paid" value={moneyLabel(totals.paid)} testId="customer-payments-summary-paid" />
+        <StatCard label="Direct Payments" value={moneyLabel(totals.paid)} testId="customer-payments-summary-paid" />
         <StatCard label="Pending Review" value={moneyLabel(totals.pending)} testId="customer-payments-summary-pending" />
         <StatCard label="Released to Contractor" value={moneyLabel(totals.released)} testId="customer-payments-summary-released" />
         <StatCard label="Refunds / Adjustments" value={moneyLabel(totals.adjustments)} testId="customer-payments-summary-adjustments" />
@@ -443,7 +490,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
           <div className="space-y-3">
-            {agreementRows.length ? agreementRows.map(({ agreement, summary, percent }) => (
+            {agreementRows.length ? agreementRows.map(({ agreement, summary, milestoneLabel, paidPercent }) => (
               <button
                 key={agreement.id}
                 type="button"
@@ -460,7 +507,10 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                     <div className="text-sm font-semibold text-white">{agreement.project_title || agreement.title || "Project"}</div>
                     <div className="mt-1 text-xs text-slate-400">{agreement.contractor_name || "Contractor"} - {agreement.customer_status_label || agreement.status_label || "Project"}</div>
                   </div>
-                  <Badge>{percent}% milestones</Badge>
+                  <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <Badge>{milestoneLabel}</Badge>
+                    <Badge tone={paidPercent > 0 ? "gold" : "slate"}>{paidPercent}% released</Badge>
+                  </div>
                 </div>
                 <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
                   <span>Project value: <strong className="text-white">{moneyLabel(Number(summary.project_value || agreement.total_cost || 0))}</strong></span>
@@ -485,14 +535,30 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                   <div>Escrow funded: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.escrow_funded || 0))}</strong></div>
                   <div>Released to contractor: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.released_to_contractor || 0))}</strong></div>
                   <div>Remaining in escrow: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.remaining_in_escrow || 0))}</strong></div>
-                  <div>Milestone completion: <strong className="text-white">{selectedAgreement.percent}%</strong></div>
+                  <div>Milestone Progress: <strong className="text-white">{selectedAgreement.milestoneLabel}</strong></div>
+                  <div>Paid Progress: <strong className="text-white">{selectedAgreement.paidPercent}% released</strong></div>
                 </div>
-                <div className="mt-4 space-y-2">
-                  {selectedAgreement.related.length ? selectedAgreement.related.slice(0, 4).map((payment) => (
-                    <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} />
-                  )) : (
-                    <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No payment records are connected to this project yet.</div>
-                  )}
+                <div className="mt-4 space-y-4">
+                  <div data-testid="customer-selected-payment-history">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment History</div>
+                    <div className="mt-2 space-y-2">
+                      {selectedPaymentHistory.length ? selectedPaymentHistory.slice(0, 4).map((payment) => (
+                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} />
+                      )) : (
+                        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No contractor releases, direct payments, refunds, or adjustments are connected yet.</div>
+                      )}
+                    </div>
+                  </div>
+                  <div data-testid="customer-selected-escrow-history">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Escrow History</div>
+                    <div className="mt-2 space-y-2">
+                      {selectedEscrowHistory.length ? selectedEscrowHistory.slice(0, 4).map((payment) => (
+                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
+                      )) : (
+                        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No escrow funding, release, hold, or refund events are connected yet.</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </>
             ) : (
@@ -527,23 +593,23 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
       <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-lg font-semibold text-white">Payment history</h3>
-          <Badge>{paid.length} records</Badge>
+          <Badge>{paymentHistory.length} records</Badge>
         </div>
-        <div className="mt-4 space-y-3">
-          {paid.length ? (
-            visiblePaid.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} />
+        <div data-testid="customer-payment-history" className="mt-4 space-y-3">
+          {paymentHistory.length ? (
+            visiblePaymentHistory.map((payment) => (
+              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} />
             ))
           ) : payments.length ? null : (
             <EmptyState title="No payment records yet" testId="customer-payments-empty">
-              Invoices, escrow funding, draw releases, and receipts will appear here when they are connected to this secure customer record.
+              Contractor releases, direct payments, refunds, and adjustments will appear here when they are connected to this secure customer record.
             </EmptyState>
           )}
         </div>
-        {paid.length > historyDefaultCount ? (
+        {paymentHistory.length > historyDefaultCount ? (
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs font-semibold text-slate-400">
-              Showing {historyExpanded ? paid.length : historyDefaultCount} of {paid.length} payment records
+              Showing {historyExpanded ? paymentHistory.length : historyDefaultCount} of {paymentHistory.length} payment records
             </div>
             <button
               type="button"
@@ -556,16 +622,51 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           </div>
         ) : null}
       </section>
+
+      <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-lg font-semibold text-white">Escrow history</h3>
+          <Badge>{escrowHistory.length} records</Badge>
+        </div>
+        <p className="mt-1 text-sm leading-6 text-slate-400">
+          Escrow funding, releases, holds, refund eligibility, and escrow balance events are tracked separately from contractor payment history.
+        </p>
+        <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
+          {escrowHistory.length ? (
+            visibleEscrowHistory.map((payment) => (
+              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} cardTestId={`customer-escrow-action-${payment.id}`} />
+            ))
+          ) : (
+            <EmptyState title="No escrow records yet" testId="customer-escrow-history-empty">
+              Escrow funding and release activity will appear here when this project uses milestone holds.
+            </EmptyState>
+          )}
+        </div>
+        {escrowHistory.length > historyDefaultCount ? (
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs font-semibold text-slate-400">
+              Showing {escrowHistoryExpanded ? escrowHistory.length : historyDefaultCount} of {escrowHistory.length} escrow records
+            </div>
+            <button
+              type="button"
+              data-testid="customer-escrow-history-show-more"
+              onClick={() => setEscrowHistoryExpanded((value) => !value)}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+            >
+              {escrowHistoryExpanded ? "Show less" : "Show more"}
+            </button>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
 
-function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdate }) {
+function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdate, displayLabel = "", cardTestId = "" }) {
   const [busyAction, setBusyAction] = useState("");
   const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
   const target = payment.receipt_url || invoiceUrl || "#";
   const disputeUrl = isInvoicePayment(payment) && invoiceUrl ? `${invoiceUrl}?action=dispute` : "";
-  const paid = isPaidPayment(payment);
   const actionable = isActionablePayment(payment);
   const disputeStatus = customerDisputeStatus(payment);
 
@@ -592,11 +693,11 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
   }
 
   return (
-    <article data-testid={`customer-payment-action-${payment.id}`} className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${compact ? "" : "shadow-xl shadow-slate-950/20"}`}>
+    <article data-testid={cardTestId || `customer-payment-action-${payment.id}`} className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${compact ? "" : "shadow-xl shadow-slate-950/20"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
-            <Badge>{payment.record_type_label || "Payment"}</Badge>
+            <Badge>{displayLabel || payment.record_type_label || "Payment"}</Badge>
             <Badge>{payment.status_label || "Pending"}</Badge>
           </div>
           <div className="mt-3 text-sm font-semibold text-white">{payment.project_title}</div>

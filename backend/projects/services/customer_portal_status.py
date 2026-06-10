@@ -114,7 +114,10 @@ def is_actionable_payment(payment: dict) -> bool:
 
 def build_customer_payment_model(payment_rows: Iterable[dict]) -> dict:
     rows = list(payment_rows or [])
-    contractor_invoices = sum((_money(row.get("amount") or row.get("amount_label")) for row in rows if is_invoice(row)), Decimal("0.00"))
+    contractor_invoices = sum(
+        (_money(row.get("amount") or row.get("amount_label")) for row in rows if is_invoice(row) and not is_escrow_funding(row)),
+        Decimal("0.00"),
+    )
     escrow_funding_rows_total = sum((_money(row.get("amount") or row.get("amount_label")) for row in rows if is_escrow_funding(row)), Decimal("0.00"))
     escrow_ledger_funded = max([Decimal("0.00")] + [_ledger_value(row, "funded") for row in rows])
     escrow_ledger_available = max([Decimal("0.00")] + [_ledger_value(row, "available") for row in rows])
@@ -127,7 +130,8 @@ def build_customer_payment_model(payment_rows: Iterable[dict]) -> dict:
         (_money(row.get("amount") or row.get("amount_label")) for row in rows if is_actionable_payment(row) and not is_reviewable(row)),
         Decimal("0.00"),
     )
-    remaining_in_escrow = escrow_ledger_available or max(Decimal("0.00"), escrow_funded - released_to_contractor - refunds)
+    calculated_remaining = max(Decimal("0.00"), escrow_funded - released_to_contractor - refunds)
+    remaining_in_escrow = min(escrow_ledger_available, calculated_remaining) if escrow_ledger_available else calculated_remaining
 
     return {
         "project_value": "0.00",

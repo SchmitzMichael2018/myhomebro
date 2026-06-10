@@ -173,6 +173,47 @@ function isActionablePayment(payment) {
   return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
 }
 
+function isPaymentHistoryRecord(payment) {
+  const status = paymentStatusText(payment);
+  return (
+    isEscrowReleasePayment(payment) ||
+    isCustomerPaidPayment(payment) ||
+    isRefundPayment(payment) ||
+    status.includes("failed") ||
+    status.includes("reversed")
+  );
+}
+
+function isEscrowHistoryRecord(payment) {
+  return isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment) || Boolean(payment?.dispute_escrow_hold_active);
+}
+
+function paymentHistoryLabel(payment) {
+  const status = paymentStatusText(payment);
+  if (isRefundPayment(payment)) return "Refund";
+  if (status.includes("failed")) return "Failed Payment";
+  if (status.includes("reversed")) return "Reversed Payment";
+  if (isEscrowReleasePayment(payment)) return "Release Paid";
+  if (isCustomerPaidPayment(payment)) return "Direct Payment";
+  if (isActionablePayment(payment)) return "Pending Payment";
+  return "Adjustment";
+}
+
+function escrowHistoryLabel(payment) {
+  if (isEscrowFundingPayment(payment)) return "Escrow Funded";
+  if (isEscrowReleasePayment(payment)) return "Escrow Released";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
+  if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
+  return "Escrow Remaining";
+}
+
+function paidProgressPercent(released = 0, projectValue = 0) {
+  const releasedValue = Number(released || 0);
+  const totalValue = Number(projectValue || 0);
+  if (!Number.isFinite(releasedValue) || !Number.isFinite(totalValue) || totalValue <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((releasedValue / totalValue) * 100)));
+}
+
 function normalizeInvoiceMagicUrl(actionTarget = "") {
   const value = String(actionTarget || "");
   const invoiceMatch = value.match(/\/invoice\/([^/?#]+)/);
@@ -718,7 +759,7 @@ export default function CustomerProjectWorkspace({
   };
   const buildPaymentModel = (paymentRows = []) => {
     const contractorInvoices = paymentRows
-      .filter(isInvoicePayment)
+      .filter((payment) => isInvoicePayment(payment) && !isEscrowFundingPayment(payment))
       .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
     const escrowFundingRowsTotal = paymentRows
       .filter(isEscrowFundingPayment)
@@ -743,7 +784,8 @@ export default function CustomerProjectWorkspace({
     const pendingPayment = paymentRows
       .filter((payment) => isActionablePayment(payment) && !isReviewablePayment(payment))
       .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
-    const remainingInEscrow = escrowLedgerAvailable || Math.max(0, escrowFunded - releasedToContractor - refunds);
+    const calculatedRemainingInEscrow = Math.max(0, escrowFunded - releasedToContractor - refunds);
+    const remainingInEscrow = escrowLedgerAvailable ? Math.min(escrowLedgerAvailable, calculatedRemainingInEscrow) : calculatedRemainingInEscrow;
 
     return {
       contractorInvoices,
@@ -1000,8 +1042,11 @@ export default function CustomerProjectWorkspace({
   }, [projectNotifications, selected]);
 
   const reviewPayments = projectPayments.filter(isReviewablePayment);
+  const projectPaymentHistory = projectPayments.filter(isPaymentHistoryRecord);
+  const projectEscrowHistory = projectPayments.filter(isEscrowHistoryRecord);
   const selectedPaymentModel = selectedRow?.paymentModel || buildPaymentModel(projectPayments);
   const selectedProjectValue = numericValue(selected?.total_cost || selectedAgreement?.total_cost);
+  const selectedPaidProgress = paidProgressPercent(selectedPaymentModel.releasedToContractor, selectedProjectValue);
   const revisedProjectValue = numericValue(actionForm.revised_project_value);
   const estimatedDescopeSurplus =
     actionForm.change_type === "descope_remove_work" && actionForm.revised_project_value
@@ -1406,11 +1451,11 @@ export default function CustomerProjectWorkspace({
                   <div data-testid="customer-payment-summary-pending-review" className="mt-1 text-xs text-slate-300">
                     {money(selectedPaymentModel.pendingReview)} pending review
                   </div>
-                  <div data-testid="customer-payment-summary-contractor-invoices" className="mt-1 text-xs text-slate-300">
-                    {money(selectedPaymentModel.contractorInvoices)} contractor invoices
+                  <div data-testid="customer-payment-summary-paid-progress" className="mt-1 text-xs text-slate-300">
+                    {selectedPaidProgress}% released
                   </div>
                   <div data-testid="customer-payment-summary-customer-payments" className="mt-1 text-xs text-slate-300">
-                    {money(selectedPaymentModel.customerPayments)} customer payments
+                    {money(selectedPaymentModel.customerPayments)} direct payments
                   </div>
                   {selectedPaymentModel.refunds > 0 ? (
                     <div data-testid="customer-payment-summary-refunds" className="mt-1 text-xs text-slate-300">
@@ -1631,11 +1676,11 @@ export default function CustomerProjectWorkspace({
               {expandedDetails.payments || expandedDetails.documents ? (
               <div className="space-y-4">
                 {expandedDetails.payments ? (
-                <Section title="Payments" eyebrow="Escrow and releases" testId="customer-project-payments">
-                  <p className="text-sm leading-6 text-slate-300">Review payments before funds are released.</p>
+                <Section title="Payment History" eyebrow="Contractor releases and payments" testId="customer-project-payments">
+                  <p className="text-sm leading-6 text-slate-300">Review contractor releases, direct payments, refunds, and adjustments separately from escrow funding activity.</p>
                   <div className="mt-3 space-y-2">
-                    {projectPayments.length ? (
-                      projectPayments.slice(0, 5).map((payment) => {
+                    {projectPaymentHistory.length ? (
+                      projectPaymentHistory.slice(0, 5).map((payment) => {
                         const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
                         const primaryUrl = payment.receipt_url || invoiceUrl || "#";
                         const paid = isPaidPayment(payment);
@@ -1645,7 +1690,7 @@ export default function CustomerProjectWorkspace({
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="text-sm font-semibold text-white">
-                                {payment.record_type_label || "Payment"} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
+                                {paymentHistoryLabel(payment)} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
                               </div>
                               <div className="mt-1 text-xs text-slate-500">{formatDate(payment.date)}</div>
                               <div className="mt-2 grid gap-1 text-xs text-slate-400">
@@ -1737,7 +1782,73 @@ export default function CustomerProjectWorkspace({
                       })
                     ) : (
                       <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                        Payment records will appear when invoices, draws, or receipts are connected.
+                        Contractor releases, direct payments, refunds, and adjustments will appear here when connected.
+                      </div>
+                    )}
+                  </div>
+                </Section>
+                ) : null}
+
+                {expandedDetails.payments ? (
+                <Section title="Escrow History" eyebrow="Funding, holds, releases, and refunds" testId="customer-project-escrow-history">
+                  <p className="text-sm leading-6 text-slate-300">Escrow funding is tracked here so it is not confused with money released to your contractor.</p>
+                  <div className="mt-3 space-y-2">
+                    {projectEscrowHistory.length ? (
+                      projectEscrowHistory.slice(0, 5).map((payment) => {
+                        const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
+                        const primaryUrl = payment.receipt_url || invoiceUrl || "#";
+                        return (
+                          <div key={payment.id} data-testid={`customer-project-escrow-${payment.id}`} className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-white">
+                                  {escrowHistoryLabel(payment)} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">{formatDate(payment.date)}</div>
+                                <div className="mt-2 grid gap-1 text-xs text-slate-400">
+                                  <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : `Contractor: ${selected.contractor_name || "Your contractor"}`}</span>
+                                  <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Escrow (Milestone Hold)"}</span>
+                                  {payment.due_date ? <span>Due: {formatDate(payment.due_date)}</span> : null}
+                                  {customerDisputeStatus(payment) ? <span className="text-rose-100">Issue: {customerDisputeStatus(payment).label}</span> : null}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm font-bold text-white">{payment.amount_label || money(payment.amount)}</div>
+                                <Badge tone={statusTone(payment.status_label)}>{payment.status_label || "Recorded"}</Badge>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {primaryUrl && primaryUrl !== "#" ? (
+                                <a
+                                  data-testid={`customer-project-escrow-primary-${payment.id}`}
+                                  href={primaryUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+                                >
+                                  View Record
+                                  <ExternalLink size={14} />
+                                </a>
+                              ) : null}
+                              {hasOpenDispute(payment) && payment.dispute_url ? (
+                                <a
+                                  data-testid={`customer-project-escrow-track-dispute-${payment.id}`}
+                                  href={payment.dispute_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
+                                >
+                                  Track Issue Status
+                                  <ExternalLink size={14} />
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+                        Escrow funding, holds, releases, and refund eligibility will appear here when connected.
                       </div>
                     )}
                   </div>

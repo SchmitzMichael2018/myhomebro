@@ -30,6 +30,7 @@ from projects.ai.agreement_milestone_writer import (
 )
 from projects.services.ai.project_classifier import build_project_taxonomy_snapshot, classify_project_from_scope
 from projects.services.ai.project_drafter import classify_project_classification, classify_type_subtype
+from projects.services.customer_portal_status import build_customer_payment_model
 from projects.admin import ProjectTemplateAdmin
 from projects.models import (
     Agreement,
@@ -19999,6 +20000,39 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(payment_summary["released_to_contractor"], "26400.00")
         self.assertEqual(payment_summary["remaining_in_escrow"], "23600.00")
         self.assertEqual(payment_summary["contractor_invoices"], "15000.00")
+        self.assertEqual(payment_summary["customer_payments"], "0.00")
+
+    def test_customer_payment_model_separates_escrow_funding_from_releases(self):
+        payment_summary = build_customer_payment_model(
+            [
+                {
+                    "record_type": "escrow",
+                    "record_type_label": "Escrow Funding",
+                    "payment_mode": "escrow",
+                    "payment_mode_label": "Escrow (Milestone Hold)",
+                    "amount_label": "$20,000.00",
+                    "status": "funded",
+                    "status_label": "Funded",
+                    "reference": "escrow_funded",
+                    "escrow_ledger": {"funded": "20000.00", "available": "20000.00"},
+                },
+                {
+                    "record_type": "invoice",
+                    "record_type_label": "Invoice",
+                    "payment_mode": "escrow",
+                    "payment_mode_label": "Escrow (Milestone Hold)",
+                    "amount_label": "$7,000.00",
+                    "status": "paid",
+                    "status_label": "Released",
+                    "released_to_contractor": True,
+                },
+            ]
+        )
+
+        self.assertEqual(payment_summary["escrow_funded"], "20000.00")
+        self.assertEqual(payment_summary["released_to_contractor"], "7000.00")
+        self.assertEqual(payment_summary["remaining_in_escrow"], "13000.00")
+        self.assertEqual(payment_summary["contractor_invoices"], "7000.00")
         self.assertEqual(payment_summary["customer_payments"], "0.00")
 
     def test_customer_portal_homeowner_agreement_actions_create_review_records(self):
