@@ -26,7 +26,7 @@ function statusTone(status = "") {
   return "slate";
 }
 
-function Badge({ children, tone = "slate" }) {
+function Badge({ children, tone = "slate", ...props }) {
   const tones = {
     emerald: "border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
     amber: "border-amber-300/40 bg-amber-400/10 text-amber-100",
@@ -35,7 +35,7 @@ function Badge({ children, tone = "slate" }) {
     slate: "border-slate-500/40 bg-slate-800/80 text-slate-200",
   };
   return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone] || tones.slate}`}>
+    <span {...props} className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone] || tones.slate}`}>
       {children}
     </span>
   );
@@ -61,9 +61,16 @@ function isInvoicePayment(payment) {
   return type.includes("invoice");
 }
 
-function isPaidPayment(payment) {
-  const status = String(payment?.status || payment?.status_label || "").toLowerCase();
-  return status.includes("paid") || status.includes("released");
+function paymentStatusText(payment) {
+  return String(`${payment?.status || ""} ${payment?.status_label || ""}`).toLowerCase();
+}
+
+function paymentTypeText(payment) {
+  return String(`${payment?.record_type || ""} ${payment?.record_type_label || ""} ${payment?.reference || ""}`).toLowerCase();
+}
+
+function paymentModeText(payment) {
+  return String(`${payment?.payment_mode || ""} ${payment?.payment_mode_label || ""}`).toLowerCase();
 }
 
 function paymentAmountValue(payment) {
@@ -72,8 +79,55 @@ function paymentAmountValue(payment) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function escrowLedgerValue(payment, key) {
+  const ledger = payment?.escrow_ledger || {};
+  const value = Number(String(ledger[key] || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isEscrowFundingPayment(payment) {
+  const status = paymentStatusText(payment);
+  const type = paymentTypeText(payment);
+  return (
+    type === "escrow" ||
+    type.includes("escrow funding") ||
+    type.includes("funding") ||
+    payment?.reference === "escrow_funded" ||
+    (status.includes("funded") && escrowLedgerValue(payment, "funded") > 0)
+  );
+}
+
+function isRefundPayment(payment) {
+  const status = paymentStatusText(payment);
+  const type = paymentTypeText(payment);
+  return type.includes("refund") || status.includes("refund") || paymentAmountValue(payment) < 0;
+}
+
+function isEscrowReleasePayment(payment) {
+  const status = String(payment?.status || payment?.status_label || "").toLowerCase();
+  const type = paymentTypeText(payment);
+  const mode = paymentModeText(payment);
+  if (isEscrowFundingPayment(payment) || isRefundPayment(payment)) return false;
+  if (type.includes("draw") || type.includes("reimbursement")) {
+    return status.includes("paid") || status.includes("released");
+  }
+  return isInvoicePayment(payment) && mode.includes("escrow") && (status.includes("paid") || status.includes("released"));
+}
+
+function isCustomerPaidPayment(payment) {
+  const status = paymentStatusText(payment);
+  const mode = paymentModeText(payment);
+  if (isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment)) return false;
+  return isInvoicePayment(payment) && !mode.includes("escrow") && status.includes("paid");
+}
+
+function isPaidPayment(payment) {
+  return isEscrowReleasePayment(payment) || isCustomerPaidPayment(payment);
+}
+
 function isActionablePayment(payment) {
   if (payment?.is_actionable === false) return false;
+  if (isEscrowFundingPayment(payment) || isRefundPayment(payment)) return false;
   return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
 }
 
@@ -464,11 +518,17 @@ export default function CustomerProjectWorkspace({
   payments = [],
   documents = [],
   notifications = [],
+  propertyProfiles = [],
   token = "",
   onRefresh,
 }) {
   const [selectedId, setSelectedId] = useState(projects[0]?.id || null);
   const [projectFilter, setProjectFilter] = useState("open");
+  const [workFilter, setWorkFilter] = useState("all");
+  const [propertyFilter, setPropertyFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("recently_updated");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [visibleCount, setVisibleCount] = useState(10);
   const [expandedDetails, setExpandedDetails] = useState({
     needs: true,
     payments: false,
@@ -476,7 +536,6 @@ export default function CustomerProjectWorkspace({
     activity: false,
   });
   const [reimbursementAction, setReimbursementAction] = useState("");
-  const selected = projects.find((project) => String(project.id) === String(selectedId)) || projects[0] || null;
 
   const findAgreementForProject = (project) => {
     if (!project) return null;
@@ -510,14 +569,145 @@ export default function CustomerProjectWorkspace({
     return "View details";
   };
 
+  const deriveHomeownerStatus = ({ project = {}, agreement = {}, relatedPayments = [] }) => {
+    const rawStatus = String(agreement?.status || project?.status || "").toLowerCase();
+    const rawLabel = String(agreement?.status_label || project?.status_label || "").toLowerCase();
+    const haystack = `${rawStatus} ${rawLabel} ${project?.customer_visible_reason || ""} ${agreement?.customer_visible_reason || ""}`.toLowerCase();
+    const fullySigned = Boolean(
+      agreement?.is_fully_signed ||
+      (agreement?.signed_by_contractor && agreement?.signed_by_homeowner) ||
+      project?.is_fully_signed
+    );
+    const homeownerSigned = Boolean(agreement?.signed_by_homeowner || project?.signed_by_homeowner);
+    const contractorSigned = Boolean(agreement?.signed_by_contractor || project?.signed_by_contractor);
+    const hasDispute = relatedPayments.some(hasOpenDispute) || haystack.includes("dispute");
+    const hasReview = relatedPayments.some(isReviewablePayment) || haystack.includes("review");
+    const hasPendingPayment = relatedPayments.some(isActionablePayment);
+    const paidOrReleased = relatedPayments.some(isPaidPayment);
+    const escrowFunded = relatedPayments.some((payment) => {
+      const ledger = payment?.escrow_ledger || {};
+      return numericValue(ledger.funded || ledger.available) > 0;
+    });
+    const completedMilestoneCount = (project?.milestones || []).filter((milestone) =>
+      String(milestone.status || "").toLowerCase().includes("complete")
+    ).length;
+    const hasActiveMilestones = (project?.milestones || []).some((milestone) => {
+      const value = String(milestone.status || "").toLowerCase();
+      return value && !value.includes("complete") && !value.includes("cancel") && !value.includes("closed");
+    });
+    const paymentMode = String(agreement?.payment_mode || agreement?.payment_mode_label || project?.payment_mode || "").toLowerCase();
+
+    if (hasDispute) return { label: "Disputed", group: "open" };
+    if (hasReview) return { label: "Awaiting Review", group: "open" };
+    if (hasPendingPayment) return { label: "Payment Pending", group: "open" };
+    if (haystack.includes("cancel") || haystack.includes("archiv") || haystack.includes("closed")) return { label: "Closed", group: "closed" };
+    if (haystack.includes("complete") || project?.completed_at || agreement?.completed_at) return { label: "Completed", group: "closed" };
+    if (rawStatus.includes("funded") || rawLabel.includes("funded") || escrowFunded) {
+      return hasActiveMilestones || completedMilestoneCount ? { label: "In Progress", group: "open" } : { label: "Funded", group: "open" };
+    }
+    if (fullySigned || rawStatus.includes("signed") || rawLabel.includes("signed")) {
+      if (paymentMode.includes("escrow") && !paidOrReleased && !escrowFunded) return { label: "Escrow Needed", group: "open" };
+      if (paidOrReleased || hasActiveMilestones || completedMilestoneCount) return { label: "In Progress", group: "open" };
+      return { label: "Signed", group: "open" };
+    }
+    if (contractorSigned || homeownerSigned || haystack.includes("sent") || haystack.includes("signature")) {
+      return { label: "Sent for Signature", group: "open" };
+    }
+    if (rawStatus.includes("draft") || rawLabel.includes("draft")) return { label: "Draft", group: "open" };
+    return { label: "In Progress", group: "open" };
+  };
+
+  const workTypeForRow = (project = {}, agreement = {}) => {
+    const haystack = [
+      project.project_mode,
+      project.mode,
+      project.project_type,
+      project.project_subtype,
+      project.type,
+      project.subtype,
+      project.title,
+      project.description,
+      agreement.project_mode,
+      agreement.project_type,
+      agreement.project_subtype,
+      agreement.description,
+    ].join(" ").toLowerCase();
+    if (haystack.includes("diy") || haystack.includes("assistance")) return "diy_assistance";
+    if (haystack.includes("maintenance") || haystack.includes("service visit") || haystack.includes("recurring")) return "maintenance";
+    if (haystack.includes("repair") || haystack.includes("fix")) return "repair";
+    if (haystack.includes("inspection") || haystack.includes("inspect")) return "inspection";
+    return "full_service";
+  };
+
+  const propertyKeyForRow = (project = {}) => {
+    const explicit = project.property_id || project.property_profile_id || project.property?.id;
+    if (explicit) return String(explicit);
+    const address = String(project.address || project.property_address || "").toLowerCase();
+    const match = propertyProfiles.find((property) => {
+      const values = [
+        property.id,
+        property.display_name,
+        property.address,
+        property.address_line1,
+        property.formatted_address,
+      ].map((value) => String(value || "").toLowerCase()).filter(Boolean);
+      return values.some((value) => address && (address.includes(value) || value.includes(address)));
+    });
+    return match?.id ? String(match.id) : "";
+  };
+
+  const numericValue = (value) => Number(String(value || "").replace(/[^0-9.-]/g, "") || 0);
+  const dateValue = (value) => {
+    const time = new Date(value || 0).getTime();
+    return Number.isFinite(time) ? time : 0;
+  };
+  const buildPaymentModel = (paymentRows = []) => {
+    const contractorInvoices = paymentRows
+      .filter(isInvoicePayment)
+      .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
+    const escrowFundingRowsTotal = paymentRows
+      .filter(isEscrowFundingPayment)
+      .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
+    const escrowLedgerFunded = Math.max(0, ...paymentRows.map((payment) => escrowLedgerValue(payment, "funded")));
+    const escrowLedgerAvailable = Math.max(0, ...paymentRows.map((payment) => escrowLedgerValue(payment, "available")));
+    const escrowFunded = Math.max(escrowFundingRowsTotal, escrowLedgerFunded);
+    const releasedToContractor = paymentRows
+      .filter(isEscrowReleasePayment)
+      .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
+    const customerPayments = paymentRows
+      .filter(isCustomerPaidPayment)
+      .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
+    const refunds = Math.abs(
+      paymentRows
+        .filter(isRefundPayment)
+        .reduce((sum, payment) => sum + paymentAmountValue(payment), 0)
+    );
+    const pendingReview = paymentRows
+      .filter(isReviewablePayment)
+      .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
+    const pendingPayment = paymentRows
+      .filter((payment) => isActionablePayment(payment) && !isReviewablePayment(payment))
+      .reduce((sum, payment) => sum + paymentAmountValue(payment), 0);
+    const remainingInEscrow = escrowLedgerAvailable || Math.max(0, escrowFunded - releasedToContractor - refunds);
+
+    return {
+      contractorInvoices,
+      customerPayments,
+      escrowFunded,
+      pendingPayment,
+      pendingReview,
+      refunds,
+      releasedToContractor,
+      remainingInEscrow,
+    };
+  };
+
   const agreementRows = useMemo(() => {
     const rows = projects.map((project) => {
       const agreement = findAgreementForProject(project);
       const relatedPayments = paymentsForProject(project);
       const relatedDocuments = documentsForProject(project);
-      const paid = relatedPayments
-        .filter(isPaidPayment)
-        .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
+      const paymentModel = buildPaymentModel(relatedPayments);
       const statusHaystack = `${project.status || ""} ${project.status_label || ""} ${agreement?.status || ""} ${agreement?.status_label || ""}`.toLowerCase();
       const hasAction =
         relatedPayments.some((payment) => isReviewablePayment(payment) || isActionablePayment(payment) || hasOpenDispute(payment)) ||
@@ -533,17 +723,41 @@ export default function CustomerProjectWorkspace({
         statusHaystack.includes("expired warranty") ||
         statusHaystack.includes("fully released");
       const agreementUrl = project.agreement_url || agreement?.action_target || (agreement?.agreement_token ? `/agreements/magic/${agreement.agreement_token}` : "");
+      const workType = workTypeForRow(project, agreement);
+      const propertyKey = propertyKeyForRow(project);
+      const value = numericValue(project.total_cost || agreement?.total_cost);
+      const derivedStatus = deriveHomeownerStatus({ project, agreement, relatedPayments });
       return {
         project,
         agreement,
         relatedPayments,
         relatedDocuments,
-        paid,
-        isOpen: hasAction || !closedByStatus,
+        paymentModel,
+        value,
+        workType,
+        propertyKey,
+        statusLabel: derivedStatus.label,
+        statusGroup: derivedStatus.group,
+        isOpen: hasAction || derivedStatus.group !== "closed",
         nextAction: buildNextAction(project, relatedPayments, agreement),
         agreementUrl,
         pdfUrl: agreement?.pdf_url || project.pdf_url || "",
         updatedAt: project.updated_at || agreement?.updated_at || project.created_at || agreement?.created_at,
+        createdAt: project.created_at || agreement?.created_at,
+        searchText: [
+          project.title,
+          project.project_number,
+          project.agreement_number,
+          project.address,
+          project.project_type,
+          project.project_subtype,
+          project.contractor_name,
+          agreement?.agreement_number,
+          agreement?.project_title,
+          agreement?.project_type,
+          agreement?.project_subtype,
+          agreement?.contractor_name,
+        ].join(" ").toLowerCase(),
       };
     });
 
@@ -586,50 +800,91 @@ export default function CustomerProjectWorkspace({
         statusHaystack.includes("closed") ||
         statusHaystack.includes("expired warranty") ||
         statusHaystack.includes("fully released");
+      const workType = workTypeForRow(project, agreement);
+      const propertyKey = propertyKeyForRow(project);
+      const value = numericValue(project.total_cost || agreement.total_cost);
+      const derivedStatus = deriveHomeownerStatus({ project, agreement, relatedPayments });
       rows.push({
         project,
         agreement,
         relatedPayments,
         relatedDocuments,
-        paid: relatedPayments
-          .filter(isPaidPayment)
-          .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0),
-        isOpen: hasAction || !closedByStatus,
+        value,
+        workType,
+        propertyKey,
+        paymentModel: buildPaymentModel(relatedPayments),
+        statusLabel: derivedStatus.label,
+        statusGroup: derivedStatus.group,
+        isOpen: hasAction || derivedStatus.group !== "closed",
         nextAction: buildNextAction(project, relatedPayments, agreement),
         agreementUrl: agreement.action_target || (agreement.agreement_token ? `/agreements/magic/${agreement.agreement_token}` : ""),
         pdfUrl: agreement.pdf_url || "",
         updatedAt: agreement.updated_at || agreement.created_at,
+        createdAt: agreement.created_at,
+        searchText: [
+          project.title,
+          project.project_number,
+          project.agreement_number,
+          project.address,
+          project.project_type,
+          project.project_subtype,
+          project.contractor_name,
+          agreement.agreement_number,
+          agreement.project_title,
+          agreement.project_type,
+          agreement.project_subtype,
+          agreement.contractor_name,
+        ].join(" ").toLowerCase(),
       });
     }
     return rows;
-  }, [agreements, documents, payments, projects]);
+  }, [agreements, documents, payments, projects, propertyProfiles]);
 
-  const filteredRows = agreementRows.filter((row) => {
+  const searchedRows = agreementRows.filter((row) => {
     if (projectFilter === "all") return true;
     if (projectFilter === "closed") return !row.isOpen;
     return row.isOpen;
   });
+  const filteredRows = searchedRows
+    .filter((row) => {
+      if (workFilter !== "all" && row.workType !== workFilter) return false;
+      if (propertyFilter !== "all" && String(row.propertyKey || "") !== String(propertyFilter)) return false;
+      const query = searchTerm.trim().toLowerCase();
+      if (!query) return true;
+      return row.searchText.includes(query);
+    })
+    .sort((a, b) => {
+      if (sortBy === "newest") return dateValue(b.createdAt) - dateValue(a.createdAt);
+      if (sortBy === "oldest") return dateValue(a.createdAt) - dateValue(b.createdAt);
+      if (sortBy === "value_high") return b.value - a.value;
+      if (sortBy === "value_low") return a.value - b.value;
+      return dateValue(b.updatedAt || b.createdAt) - dateValue(a.updatedAt || a.createdAt);
+    });
+
+  const visibleRows = filteredRows.slice(0, visibleCount);
+  const rangeStart = filteredRows.length ? 1 : 0;
+  const rangeEnd = Math.min(visibleCount, filteredRows.length);
 
   const selectedRow =
-    agreementRows.find((row) => String(row.project.id) === String(selected?.id)) ||
+    filteredRows.find((row) => String(row.project.id) === String(selectedId)) ||
     filteredRows[0] ||
-    agreementRows[0] ||
     null;
+  const selected = selectedRow?.project || null;
 
   const selectedAgreement = useMemo(() => {
     if (!selected) return null;
     return selectedRow?.agreement || findAgreementForProject(selected);
-  }, [agreements, selected]);
+  }, [agreements, selected, selectedRow]);
 
   const projectPayments = useMemo(() => {
     if (!selected) return [];
     return selectedRow?.relatedPayments || paymentsForProject(selected);
-  }, [payments, selected]);
+  }, [payments, selected, selectedRow]);
 
   const projectDocuments = useMemo(() => {
     if (!selected) return [];
     return selectedRow?.relatedDocuments || documentsForProject(selected);
-  }, [documents, selected]);
+  }, [documents, selected, selectedRow]);
 
   const projectNotifications = useMemo(() => {
     if (!selected) return [];
@@ -663,12 +918,8 @@ export default function CustomerProjectWorkspace({
   }, [projectNotifications, selected]);
 
   const reviewPayments = projectPayments.filter(isReviewablePayment);
-  const paidTotal = projectPayments
-    .filter(isPaidPayment)
-    .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
-  const pendingTotal = projectPayments
-    .filter((payment) => !isPaidPayment(payment))
-    .reduce((sum, payment) => sum + Number(payment.amount || String(payment.amount_label || "").replace(/[^0-9.-]/g, "") || 0), 0);
+  const selectedPaymentModel = buildPaymentModel(projectPayments);
+  const selectedProjectValue = numericValue(selected?.total_cost || selectedAgreement?.total_cost);
   const completedMilestones = (selected?.milestones || []).filter((milestone) =>
     String(milestone.status || "").toLowerCase().includes("complete")
   ).length;
@@ -706,6 +957,8 @@ export default function CustomerProjectWorkspace({
     setSelectedId(project.id);
   };
 
+  const resetListWindow = () => setVisibleCount(10);
+
   if (!projects.length && !agreements.length) {
     return (
       <div data-testid="customer-project-workspace-empty" className="rounded-2xl border border-dashed border-slate-600 bg-slate-900/60 p-6 text-sm text-slate-300">
@@ -738,7 +991,10 @@ export default function CustomerProjectWorkspace({
                 key={key}
                 type="button"
                 data-testid={`customer-project-filter-${key}`}
-                onClick={() => setProjectFilter(key)}
+                onClick={() => {
+                  setProjectFilter(key);
+                  resetListWindow();
+                }}
                 className={`min-h-10 rounded-xl px-4 text-sm font-semibold transition ${
                   projectFilter === key
                     ? "bg-amber-300 text-slate-950"
@@ -750,12 +1006,90 @@ export default function CustomerProjectWorkspace({
             ))}
           </div>
         </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(240px,1.3fr)_repeat(3,minmax(160px,0.7fr))]">
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Search projects</span>
+            <input
+              data-testid="customer-project-search"
+              value={searchTerm}
+              onChange={(event) => {
+                setSearchTerm(event.target.value);
+                resetListWindow();
+              }}
+              placeholder="Search title, contractor, agreement, address, type..."
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-amber-300 focus:outline-none"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Work type</span>
+            <select
+              data-testid="customer-project-work-filter"
+              value={workFilter}
+              onChange={(event) => {
+                setWorkFilter(event.target.value);
+                resetListWindow();
+              }}
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-amber-300 focus:outline-none"
+            >
+              <option value="all">All work types</option>
+              <option value="full_service">Full Service</option>
+              <option value="diy_assistance">DIY Assistance</option>
+              <option value="maintenance">Maintenance</option>
+              <option value="repair">Repair</option>
+              <option value="inspection">Inspection</option>
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Property</span>
+            <select
+              data-testid="customer-project-property-filter"
+              value={propertyFilter}
+              onChange={(event) => {
+                setPropertyFilter(event.target.value);
+                resetListWindow();
+              }}
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-amber-300 focus:outline-none"
+            >
+              <option value="all">All properties</option>
+              {propertyProfiles.map((property) => (
+                <option key={property.id || property.address || property.display_name} value={String(property.id || "")}>
+                  {property.display_name || property.address || property.address_line1 || "Property"}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Sort by</span>
+            <select
+              data-testid="customer-project-sort"
+              value={sortBy}
+              onChange={(event) => {
+                setSortBy(event.target.value);
+                resetListWindow();
+              }}
+              className="mt-1 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:border-amber-300 focus:outline-none"
+            >
+              <option value="recently_updated">Recently updated</option>
+              <option value="newest">Newest created</option>
+              <option value="oldest">Oldest</option>
+              <option value="value_high">Project value high to low</option>
+              <option value="value_low">Project value low to high</option>
+            </select>
+          </label>
+        </div>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
         <section data-testid="customer-agreement-list" className="space-y-3">
-          {filteredRows.length ? (
-            filteredRows.map((row) => {
+          <div data-testid="customer-project-result-count" className="rounded-2xl border border-slate-700 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
+            Showing {rangeStart}-{rangeEnd} of {filteredRows.length} projects
+          </div>
+          {visibleRows.length ? (
+            visibleRows.map((row) => {
               const project = row.project;
               const selectedCard = String(selected?.id) === String(project.id);
               return (
@@ -775,7 +1109,7 @@ export default function CustomerProjectWorkspace({
                       <div className="text-base font-semibold text-white">{project.title || "Project"}</div>
                       <div className="mt-1 text-sm text-slate-400">{project.contractor_name || row.agreement?.contractor_name || "Contractor pending"}</div>
                     </div>
-                    <Badge tone={statusTone(project.status_label || row.agreement?.status_label)}>{project.status_label || row.agreement?.status_label || "Project"}</Badge>
+                    <Badge data-testid={`customer-project-status-${project.id}`} tone={statusTone(row.statusLabel)}>{row.statusLabel}</Badge>
                   </div>
                   <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                     <div>
@@ -783,8 +1117,11 @@ export default function CustomerProjectWorkspace({
                       <div className="mt-1 font-semibold text-slate-100">{project.total_cost || row.agreement?.total_cost ? money(project.total_cost || row.agreement?.total_cost) : "Pending"}</div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Released / Paid</div>
-                      <div className="mt-1 font-semibold text-slate-100">{money(row.paid)}</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Released to contractor</div>
+                      <div className="mt-1 font-semibold text-slate-100">{money(row.paymentModel?.releasedToContractor)}</div>
+                      {row.paymentModel?.escrowFunded > 0 ? (
+                        <div className="mt-1 text-xs text-slate-400">Escrow funded: {money(row.paymentModel.escrowFunded)}</div>
+                      ) : null}
                     </div>
                     <div>
                       <div className="text-xs uppercase tracking-wide text-slate-500">Next action</div>
@@ -805,13 +1142,25 @@ export default function CustomerProjectWorkspace({
             })
           ) : (
             <div data-testid={`customer-project-${projectFilter}-empty`} className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 p-6 text-sm leading-6 text-slate-300">
-              {projectFilter === "closed"
-                ? "No completed projects yet."
-                : projectFilter === "all"
-                  ? "No projects connected yet."
-                  : "No open projects right now."}
+              {searchTerm || workFilter !== "all" || propertyFilter !== "all"
+                ? "No projects match those filters."
+                : projectFilter === "closed"
+                  ? "No completed projects yet."
+                  : projectFilter === "all"
+                    ? "No projects connected yet."
+                    : "No open projects right now."}
             </div>
           )}
+          {filteredRows.length > visibleRows.length ? (
+            <button
+              type="button"
+              data-testid="customer-project-load-more"
+              onClick={() => setVisibleCount((current) => current + 10)}
+              className="w-full rounded-2xl border border-amber-200/40 bg-amber-300/10 px-4 py-3 text-sm font-semibold text-amber-100 hover:bg-amber-300/20"
+            >
+              Load more projects
+            </button>
+          ) : null}
         </section>
 
       <div data-testid="customer-rich-project-workspace" className="space-y-4">
@@ -826,7 +1175,7 @@ export default function CustomerProjectWorkspace({
                     {selected.description || selectedAgreement?.description || "Compact project summary with payments, documents, warranty, and activity available below."}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <Badge tone={statusTone(selected.status_label)}>{selected.status_label || "Active"}</Badge>
+                    <Badge data-testid="customer-selected-agreement-status" tone={statusTone(selectedRow?.statusLabel)}>{selectedRow?.statusLabel || "Active"}</Badge>
                     <Badge tone="gold">{selectedRow?.nextAction || "View details"}</Badge>
                   </div>
                 </div>
@@ -865,11 +1214,15 @@ export default function CustomerProjectWorkspace({
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-400">Project Value</div>
-                  <div className="mt-1 text-sm font-semibold text-white">{selected.total_cost ? money(selected.total_cost) : "Pending"}</div>
+                  <div data-testid="customer-payment-summary-project-value" className="mt-1 text-sm font-semibold text-white">
+                    {selectedProjectValue ? money(selectedProjectValue) : "Pending"}
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-                  <div className="text-xs uppercase tracking-wide text-slate-400">Released / Paid</div>
-                  <div className="mt-1 text-sm font-semibold text-white">{money(paidTotal)}</div>
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Escrow Funded</div>
+                  <div data-testid="customer-payment-summary-escrow-funded" className="mt-1 text-sm font-semibold text-white">
+                    {money(selectedPaymentModel.escrowFunded)}
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-400">Next Action</div>
@@ -886,7 +1239,26 @@ export default function CustomerProjectWorkspace({
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-400">Payment Summary</div>
-                  <div className="mt-1 text-sm font-semibold text-white">{money(paidTotal)} paid / {money(pendingTotal)} pending</div>
+                  <div data-testid="customer-payment-summary-released" className="mt-1 text-sm font-semibold text-white">
+                    {money(selectedPaymentModel.releasedToContractor)} released to contractor
+                  </div>
+                  <div data-testid="customer-payment-summary-remaining-escrow" className="mt-1 text-xs text-slate-300">
+                    {money(selectedPaymentModel.remainingInEscrow)} remaining in escrow
+                  </div>
+                  <div data-testid="customer-payment-summary-pending-review" className="mt-1 text-xs text-slate-300">
+                    {money(selectedPaymentModel.pendingReview)} pending review
+                  </div>
+                  <div data-testid="customer-payment-summary-contractor-invoices" className="mt-1 text-xs text-slate-300">
+                    {money(selectedPaymentModel.contractorInvoices)} contractor invoices
+                  </div>
+                  <div data-testid="customer-payment-summary-customer-payments" className="mt-1 text-xs text-slate-300">
+                    {money(selectedPaymentModel.customerPayments)} customer payments
+                  </div>
+                  {selectedPaymentModel.refunds > 0 ? (
+                    <div data-testid="customer-payment-summary-refunds" className="mt-1 text-xs text-slate-300">
+                      {money(selectedPaymentModel.refunds)} refunds or adjustments
+                    </div>
+                  ) : null}
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-400">Documents</div>
@@ -1152,7 +1524,7 @@ export default function CustomerProjectWorkspace({
                   <div className="space-y-3 text-sm leading-6 text-slate-300">
                     <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
-                      <div className="mt-1 font-semibold text-white">{selectedAgreement?.status_label || selected.status_label || "Project"}</div>
+                      <div className="mt-1 font-semibold text-white">{selectedRow?.statusLabel || "Project"}</div>
                     </div>
                     <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Payment Mode</div>

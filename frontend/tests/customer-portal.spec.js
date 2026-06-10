@@ -900,6 +900,10 @@ const longPortalPayload = {
       description: "Active roof replacement project.",
       status: "active",
       status_label: "Active",
+      project_type: "Roofing",
+      project_subtype: "Replacement",
+      project_mode: "full_service",
+      property_id: 1,
       address: "123 Main St, Austin, TX 78701",
       contractor_name: "Builder Co",
       agreement_id: 44,
@@ -914,6 +918,10 @@ const longPortalPayload = {
       description: "Draft patio repair project.",
       status: "draft",
       status_label: "Draft",
+      project_type: "Patio",
+      project_subtype: "Repair",
+      project_mode: "full_service",
+      property_id: 1,
       address: "123 Main St, Austin, TX 78701",
       contractor_name: "Builder Co",
       total_cost: "0.00",
@@ -924,20 +932,149 @@ const longPortalPayload = {
       title: "Older Deck Repair",
       status: "completed",
       status_label: "Completed",
+      project_type: "Deck",
+      project_subtype: "Repair",
+      project_mode: "full_service",
+      property_id: 2,
       contractor_name: "Builder Co",
       completed_at: "2026-03-01T12:00:00Z",
       total_cost: "2800.00",
       milestones: [],
     },
+    {
+      id: "signed-stale-draft-project",
+      title: "Signed Stale Draft",
+      status: "draft",
+      status_label: "Draft",
+      contractor_name: "Builder Co",
+      agreement_id: 101,
+      total_cost: "5000.00",
+      milestones: [],
+    },
+    {
+      id: "funded-stale-draft-project",
+      title: "Funded Stale Draft",
+      status: "draft",
+      status_label: "Draft",
+      contractor_name: "Builder Co",
+      agreement_id: 102,
+      total_cost: "8000.00",
+      milestones: [],
+    },
+    {
+      id: "completed-stale-draft-project",
+      title: "Completed Stale Draft",
+      status: "draft",
+      status_label: "Draft",
+      contractor_name: "Builder Co",
+      agreement_id: 103,
+      completed_at: "2026-03-05T12:00:00Z",
+      total_cost: "6200.00",
+      milestones: [],
+    },
+    {
+      id: "escrow-funded-invoice-project",
+      title: "Escrow Funded Invoice",
+      status: "funded",
+      status_label: "Funded",
+      contractor_name: "Builder Co",
+      agreement_id: 105,
+      total_cost: "20000.00",
+      milestones: [],
+    },
+    {
+      id: "true-draft-project",
+      title: "True Draft Agreement",
+      status: "draft",
+      status_label: "Draft",
+      contractor_name: "Builder Co",
+      agreement_id: 104,
+      total_cost: "0.00",
+      milestones: [],
+    },
   ],
   agreements: [
     ...portalPayload.agreements,
-    ...Array.from({ length: 5 }, (_, index) => ({
+    {
+      id: 101,
+      project_title: "Signed Stale Draft",
+      contractor_name: "Builder Co",
+      status: "draft",
+      status_label: "Draft",
+      is_fully_signed: true,
+      signed_by_contractor: true,
+      signed_by_homeowner: true,
+      updated_at: "2026-04-20T12:00:00Z",
+      total_cost: "5000.00",
+      payment_mode: "direct",
+      agreement_token: "signed-stale-draft-token",
+      action_target: "/agreements/magic/signed-stale-draft-token",
+    },
+    {
+      id: 102,
+      project_title: "Funded Stale Draft",
+      contractor_name: "Builder Co",
+      status: "draft",
+      status_label: "Draft",
+      is_fully_signed: true,
+      signed_by_contractor: true,
+      signed_by_homeowner: true,
+      updated_at: "2026-04-19T12:00:00Z",
+      total_cost: "8000.00",
+      payment_mode: "escrow",
+      agreement_token: "funded-stale-draft-token",
+      action_target: "/agreements/magic/funded-stale-draft-token",
+    },
+    {
+      id: 103,
+      project_title: "Completed Stale Draft",
+      contractor_name: "Builder Co",
+      status: "draft",
+      status_label: "Draft",
+      is_fully_signed: true,
+      signed_by_contractor: true,
+      signed_by_homeowner: true,
+      updated_at: "2026-03-05T12:00:00Z",
+      completed_at: "2026-03-05T12:00:00Z",
+      total_cost: "6200.00",
+      payment_mode: "direct",
+      agreement_token: "completed-stale-draft-token",
+      action_target: "/agreements/magic/completed-stale-draft-token",
+    },
+    {
+      id: 105,
+      project_title: "Escrow Funded Invoice",
+      contractor_name: "Builder Co",
+      status: "funded",
+      status_label: "Funded",
+      is_fully_signed: true,
+      signed_by_contractor: true,
+      signed_by_homeowner: true,
+      updated_at: "2026-04-17T12:00:00Z",
+      total_cost: "20000.00",
+      payment_mode: "escrow",
+      agreement_token: "escrow-funded-invoice-token",
+      action_target: "/agreements/magic/escrow-funded-invoice-token",
+    },
+    {
+      id: 104,
+      project_title: "True Draft Agreement",
+      contractor_name: "Builder Co",
+      status: "draft",
+      status_label: "Draft",
+      updated_at: "2026-04-18T12:00:00Z",
+      total_cost: "0.00",
+      agreement_token: "true-draft-token",
+      action_target: "/agreements/magic/true-draft-token",
+    },
+    ...Array.from({ length: 12 }, (_, index) => ({
       id: `warranty-agreement-${index + 1}`,
       project_title: `Warranty Project ${index + 1}`,
       contractor_name: "Builder Co",
       status: "completed",
       status_label: "Completed",
+      project_type: index % 2 === 0 ? "Maintenance" : "Inspection",
+      project_subtype: index % 2 === 0 ? "Seasonal Service" : "Home Inspection",
       completed_at: `2026-04-${String(10 - index).padStart(2, "0")}T12:00:00Z`,
       updated_at: `2026-04-${String(10 - index).padStart(2, "0")}T12:00:00Z`,
       total_cost: "1000.00",
@@ -947,6 +1084,68 @@ const longPortalPayload = {
   ],
   payments: [
     ...portalPayload.payments,
+    {
+      id: "funded-stale-draft-payment",
+      project_title: "Funded Stale Draft",
+      agreement_id: 102,
+      contractor_name: "Builder Co",
+      payment_mode: "escrow",
+      payment_mode_label: "Escrow (Milestone Hold)",
+      record_type_label: "Escrow Funding",
+      record_type: "escrow",
+      date: "2026-04-19T12:00:00Z",
+      amount_label: "$8,000.00",
+      status_label: "Funded",
+      status: "funded",
+      reference: "escrow_funded",
+      dispute_status: "none",
+      dispute_status_label: "No dispute",
+      escrow_ledger: {
+        funded: "8000.00",
+        available: "8000.00",
+      },
+    },
+    {
+      id: "escrow-funded-20000",
+      project_title: "Escrow Funded Invoice",
+      agreement_id: 105,
+      contractor_name: "Builder Co",
+      payment_mode: "escrow",
+      payment_mode_label: "Escrow (Milestone Hold)",
+      record_type_label: "Escrow Funding",
+      record_type: "escrow",
+      date: "2026-04-17T12:00:00Z",
+      amount_label: "$20,000.00",
+      status_label: "Funded",
+      status: "funded",
+      reference: "escrow_funded",
+      dispute_status: "none",
+      dispute_status_label: "No dispute",
+      escrow_ledger: {
+        funded: "20000.00",
+        available: "20000.00",
+      },
+    },
+    {
+      id: "escrow-invoice-7000",
+      project_title: "Escrow Funded Invoice",
+      agreement_id: 105,
+      contractor_name: "Builder Co",
+      payment_mode: "escrow",
+      payment_mode_label: "Escrow (Milestone Hold)",
+      record_type_label: "Invoice",
+      record_type: "invoice",
+      date: "2026-04-18T12:00:00Z",
+      amount_label: "$7,000.00",
+      status_label: "Approved",
+      status: "approved",
+      action_target: "/invoice/escrow-invoice-7000",
+      reference: "Invoice 7000",
+      invoice_number: "Invoice 7000",
+      dispute_status: "none",
+      dispute_status_label: "No dispute",
+      is_actionable: true,
+    },
     ...Array.from({ length: 6 }, (_, index) => ({
       id: `paid-extra-${index + 1}`,
       project_title: "Kitchen Remodel",
@@ -1792,12 +1991,60 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-project-workspace")).not.toContainText("Draft Patio Repair");
   await expect(page.getByTestId("customer-project-card-static-history-project")).not.toBeVisible();
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
+  await page.getByTestId("customer-project-search").fill("Signed Stale Draft");
+  await expect(page.getByTestId("customer-project-status-signed-stale-draft-project")).toContainText("Signed");
+  await expect(page.getByTestId("customer-project-status-signed-stale-draft-project")).not.toContainText("Draft");
+  await page.getByTestId("customer-project-card-signed-stale-draft-project").click();
+  await expect(page.getByTestId("customer-selected-agreement-status")).toContainText("Signed");
+  await page.getByTestId("customer-project-search").fill("Funded Stale Draft");
+  await expect(page.getByTestId("customer-project-status-funded-stale-draft-project")).toContainText(/Funded|In Progress/);
+  await expect(page.getByTestId("customer-project-status-funded-stale-draft-project")).not.toContainText("Draft");
+  await page.getByTestId("customer-project-search").fill("Escrow Funded Invoice");
+  await expect(page.getByTestId("customer-project-status-escrow-funded-invoice-project")).not.toContainText("Draft");
+  await page.getByTestId("customer-project-card-escrow-funded-invoice-project").click();
+  await expect(page.getByTestId("customer-payment-summary-project-value")).toContainText("$20,000.00");
+  await expect(page.getByTestId("customer-payment-summary-escrow-funded")).toContainText("$20,000.00");
+  await expect(page.getByTestId("customer-payment-summary-released")).toContainText("$0.00 released to contractor");
+  await expect(page.getByTestId("customer-payment-summary-remaining-escrow")).toContainText("$20,000.00 remaining in escrow");
+  await expect(page.getByTestId("customer-payment-summary-contractor-invoices")).toContainText("$7,000.00 contractor invoices");
+  await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("$27,000.00");
+  await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("Released / Paid");
+  await page.getByTestId("customer-project-filter-all").click();
+  await page.getByTestId("customer-project-search").fill("True Draft Agreement");
+  await expect(page.getByTestId("customer-project-status-true-draft-project")).toContainText("Draft");
+  await page.getByTestId("customer-project-search").fill("");
   await page.getByTestId("customer-project-filter-closed").click();
+  await page.getByTestId("customer-project-search").fill("Completed Stale Draft");
+  await expect(page.getByTestId("customer-project-status-completed-stale-draft-project")).toContainText("Completed");
+  await expect(page.getByTestId("customer-project-status-completed-stale-draft-project")).not.toContainText("Draft");
+  await page.getByTestId("customer-project-search").fill("");
   await expect(page.getByTestId("customer-project-workspace")).toContainText("Warranty Project 1");
   await expect(page.getByTestId("customer-project-card-1")).not.toBeVisible();
   await page.getByTestId("customer-project-filter-all").click();
   await expect(page.getByTestId("customer-project-card-1")).toBeVisible();
   await expect(page.getByTestId("customer-project-workspace")).toContainText("Warranty Project 1");
+  await expect(page.getByTestId("customer-project-result-count")).toContainText("Showing 1-10 of");
+  await page.getByTestId("customer-project-search").fill("Roof");
+  await expect(page.getByTestId("customer-agreement-list")).toContainText("Roof Replacement");
+  await expect(page.getByTestId("customer-agreement-list")).not.toContainText("Warranty Project 1");
+  await page.getByTestId("customer-project-search").fill("");
+  await page.getByTestId("customer-project-filter-all").click();
+  await page.getByTestId("customer-project-work-filter").selectOption("maintenance");
+  await expect(page.getByTestId("customer-agreement-list")).toContainText("Warranty Project 1");
+  await expect(page.getByTestId("customer-agreement-list")).not.toContainText("Warranty Project 2");
+  await page.getByTestId("customer-project-work-filter").selectOption("all");
+  await page.getByTestId("customer-project-property-filter").selectOption("1");
+  await expect(page.getByTestId("customer-agreement-list")).toContainText("Roof Replacement");
+  await expect(page.getByTestId("customer-agreement-list")).not.toContainText("Older Deck Repair");
+  await page.getByTestId("customer-project-property-filter").selectOption("all");
+  await page.getByTestId("customer-project-sort").selectOption("value_low");
+  await expect(page.getByTestId("customer-agreement-list").locator("button").first()).toContainText("Draft Patio Repair");
+  await page.getByTestId("customer-project-sort").selectOption("value_high");
+  await expect(page.getByTestId("customer-agreement-list").locator("button").first()).toContainText("Escrow Funded Invoice");
+  await page.getByTestId("customer-project-filter-closed").click();
+  await expect(page.getByTestId("customer-project-load-more")).toBeVisible();
+  await page.getByTestId("customer-project-load-more").click();
+  await expect(page.getByTestId("customer-agreement-list")).toContainText("Warranty Project 12");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "domcontentloaded" });

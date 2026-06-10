@@ -1438,6 +1438,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           payments={portal?.payments || []}
           documents={portal?.documents || []}
           notifications={portal?.notifications || []}
+          propertyProfiles={portal?.property_profiles || []}
           token={token}
           onRefresh={(nextPortal) => {
             if (nextPortal) {
