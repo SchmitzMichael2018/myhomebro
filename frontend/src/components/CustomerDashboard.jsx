@@ -38,6 +38,26 @@ function StatCard({ label, value, testId, onClick }) {
   );
 }
 
+function InfoCard({ eyebrow, title, body, actionLabel, onClick, testId, children }) {
+  const Component = onClick ? "button" : "article";
+  return (
+    <Component
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      data-testid={testId}
+      className={`rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-left ${
+        onClick ? "transition hover:border-amber-300/55 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/45" : ""
+      }`}
+    >
+      {eyebrow ? <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{eyebrow}</div> : null}
+      {title ? <div className="mt-1 text-sm font-semibold text-white">{title}</div> : null}
+      {body ? <p className="mt-1 text-sm leading-5 text-slate-300">{body}</p> : null}
+      {children}
+      {actionLabel ? <div className="mt-3 text-xs font-semibold text-amber-100">{actionLabel}</div> : null}
+    </Component>
+  );
+}
+
 function Badge({ children, tone = "slate" }) {
   const tones = {
     gold: "border-amber-300/50 bg-amber-300/15 text-amber-100",
@@ -156,6 +176,31 @@ function isActionablePayment(payment) {
   return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
 }
 
+function moneyLabel(value) {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function paymentSummary(payments = []) {
+  return payments.reduce(
+    (acc, payment) => {
+      const amount = paymentAmountValue(payment);
+      const notes = String(payment?.notes || "").toLowerCase();
+      const status = String(payment?.status || payment?.status_label || "").toLowerCase();
+      if (isPaidPayment(payment)) acc.paid += amount;
+      if (isActionablePayment(payment)) acc.pending += amount;
+      if (status.includes("released") || notes.includes("escrow release")) acc.released += amount;
+      if (amount <= 0 || notes.includes("correction") || notes.includes("adjustment") || notes.includes("refund")) acc.adjustments += Math.abs(amount);
+      return acc;
+    },
+    { paid: 0, pending: 0, released: 0, adjustments: 0 }
+  );
+}
+
 const ACTIONABLE_NOTIFICATION_EVENTS = new Set([
   "agreement_needs_signature",
   "escrow_needs_funding",
@@ -206,6 +251,7 @@ function PaymentsPanel({ payments = [], token = "", onPortalUpdate }) {
     return isActionablePayment(payment);
   });
   const paid = payments.filter((payment) => !attention.includes(payment));
+  const totals = paymentSummary(payments);
   const historyDefaultCount = 5;
   const visiblePaid = historyExpanded ? paid : paid.slice(0, historyDefaultCount);
 
@@ -216,6 +262,13 @@ function PaymentsPanel({ payments = [], token = "", onPortalUpdate }) {
         <p className="mt-1 max-w-3xl text-sm leading-6 text-amber-100">
           Review payments before funds are released. Invoices, draw reviews, escrow releases, direct pay items, and receipts stay connected here.
         </p>
+      </section>
+
+      <section data-testid="customer-payments-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total Paid" value={moneyLabel(totals.paid)} testId="customer-payments-summary-paid" />
+        <StatCard label="Pending Review" value={moneyLabel(totals.pending)} testId="customer-payments-summary-pending" />
+        <StatCard label="Escrow / Released" value={moneyLabel(totals.released)} testId="customer-payments-summary-released" />
+        <StatCard label="Refunds / Adjustments" value={moneyLabel(totals.adjustments)} testId="customer-payments-summary-adjustments" />
       </section>
 
       <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -590,11 +643,17 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
   );
 }
 
-function OverviewPanel({ portal, onOpenTab }) {
+function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
   const summary = portal?.summary || {};
   const latestRequests = (portal?.requests || []).slice(0, 3);
   const latestProjects = (portal?.projects || []).slice(0, 3);
   const notifications = portal?.notifications || [];
+  const property = portal?.property_profile || {};
+  const documents = Array.isArray(portal?.documents) ? portal.documents : [];
+  const propertyDocs = [
+    ...(Array.isArray(property?.documents) ? property.documents : []),
+    ...(Array.isArray(property?.photos) ? property.photos : []),
+  ];
   const openPayments = (portal?.payments || []).filter((payment) => {
     return isActionablePayment(payment);
   });
@@ -628,25 +687,60 @@ function OverviewPanel({ portal, onOpenTab }) {
 
   return (
     <div data-testid="customer-dashboard-overview" className="space-y-5">
-      <section className="rounded-2xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_34%),rgba(15,23,42,0.76)] p-5">
-        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Needs Attention</div>
-        <h2 className="mt-1 text-xl font-semibold text-white">What needs my attention?</h2>
-        <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-          Track your project from agreement to completion, review payments before funds are released, and keep documents in one place.
-        </p>
+      <section data-testid="customer-overview-active-projects" className="rounded-2xl border border-amber-300/30 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.14),transparent_34%),rgba(15,23,42,0.78)] p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Projects</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">Active Projects</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+              Review milestones, payments, documents, warranties, and updates for work connected to this customer portal.
+            </p>
+          </div>
+          <button type="button" onClick={() => onOpenTab?.("projects")} className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
+            Open Projects
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {latestProjects.length ? latestProjects.map((project) => (
+            <InfoCard
+              key={project.id}
+              title={project.title}
+              eyebrow={project.status_label || "Project"}
+              body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` · ${moneyLabel(project.total_cost)}` : ""}`}
+              actionLabel="View project workspace"
+              onClick={() => onOpenTab?.("projects")}
+            />
+          )) : (
+            <div className="lg:col-span-3">
+              <EmptyState title="No active projects yet" testId="customer-overview-projects-empty">
+                Projects will appear here after a request becomes an agreement or a contractor connects project records to your email.
+              </EmptyState>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section data-testid="customer-overview-needs-attention" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Needs Attention</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">What needs my attention?</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+              Clear next actions only: signatures, payment reviews, disputes, and contractor responses that you can resolve.
+            </p>
+          </div>
+          <Badge tone={needsAttention.length ? "gold" : "slate"}>{needsAttention.length || "No"} open</Badge>
+        </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {needsAttention.length ? (
             needsAttention.slice(0, 4).map((item) => (
-              <button
+              <InfoCard
                 key={item.id}
-                type="button"
+                title={item.title}
+                body={item.body}
+                actionLabel={item.action}
                 onClick={() => onOpenTab?.(item.tab)}
-                className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-left hover:border-amber-300/50"
-              >
-                <div className="text-sm font-semibold text-white">{item.title}</div>
-                <p className="mt-1 text-sm leading-5 text-slate-300">{item.body}</p>
-                <div className="mt-3 text-xs font-semibold text-amber-100">{item.action}</div>
-              </button>
+              />
             ))
           ) : (
             <div className="lg:col-span-2 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
@@ -656,46 +750,66 @@ function OverviewPanel({ portal, onOpenTab }) {
         </div>
       </section>
 
-      <CustomerActivationChecklist portal={portal} onOpenTab={onOpenTab} />
+      <NotificationPanel
+        notifications={notifications}
+        unreadCount={notifications.filter((notification) => notification.status !== "read").length}
+        markingId={markingId}
+        onMarkRead={onMarkRead}
+      />
+
+      <section data-testid="customer-overview-property-records" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Property Records</div>
+            <h2 className="mt-1 text-xl font-semibold text-white">Your home history, organized</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+              Keep documents, photos, warranties, project records, and maintenance history connected to the right property.
+            </p>
+          </div>
+          <button type="button" onClick={() => onOpenTab?.("property")} className="rounded-xl border border-sky-300/40 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
+            Open Property Records
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Properties" value={(portal?.property_profiles || []).length || (property?.id ? 1 : 0)} onClick={() => onOpenTab?.("property")} />
+          <StatCard label="Documents" value={(summary.documents ?? documents.length) || 0} testId="customer-portal-summary-documents" onClick={() => onOpenTab?.("documents")} />
+          <StatCard label="Property Files" value={propertyDocs.length} onClick={() => onOpenTab?.("property")} />
+          <StatCard label="Requests" value={summary.active_requests ?? latestRequests.length} testId="customer-portal-summary-active-requests" onClick={() => onOpenTab?.("requests")} />
+        </div>
+        {!latestRequests.length ? (
+          <div className="mt-4">
+            <EmptyState title="No requests yet" testId="customer-overview-requests-empty">
+              Save repair, maintenance, inspection, DIY help, emergency, or new project needs here when you are ready.
+            </EmptyState>
+          </div>
+        ) : null}
+      </section>
+
       <CustomerRecommendationsPanel recommendations={portal?.recommendations || []} onOpenTab={onOpenTab} />
 
-      <div data-testid="customer-portal-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="Projects" value={summary.active_projects ?? 0} testId="customer-portal-summary-projects" onClick={() => onOpenTab?.("projects")} />
-        <StatCard label="Requests" value={summary.active_requests ?? 0} testId="customer-portal-summary-active-requests" onClick={() => onOpenTab?.("requests")} />
-        <StatCard label="Agreements" value={summary.active_agreements ?? 0} testId="customer-portal-summary-agreements" onClick={() => onOpenTab?.("projects")} />
-        <StatCard label="Payments" value={summary.payments ?? 0} testId="customer-portal-summary-payments" onClick={() => onOpenTab?.("payments")} />
-        <StatCard label="Documents" value={summary.documents ?? 0} testId="customer-portal-summary-documents" onClick={() => onOpenTab?.("documents")} />
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-1">
-        <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
-          <h2 className="text-lg font-semibold text-white">Active Projects</h2>
-          <div className="mt-3 space-y-3">
-            {latestProjects.length ? latestProjects.map((project) => (
-              <button key={project.id} type="button" onClick={() => onOpenTab?.("projects")} className="w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3 text-left hover:border-amber-300/45">
-                <div className="text-sm font-semibold text-white">{project.title}</div>
-                <div className="mt-1 text-xs text-slate-500">{project.status_label || "Project"} - {project.contractor_name || "Contractor"}</div>
-              </button>
-            )) : (
-              <EmptyState title="No active projects yet" testId="customer-overview-projects-empty">
-                Projects will appear here after a request becomes an agreement or a contractor connects project records to your email.
-              </EmptyState>
-            )}
+      <section className="rounded-2xl border border-slate-700 bg-slate-950/45 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-white">Workspace setup</div>
+            <p className="mt-1 text-sm text-slate-400">Your setup checklist is tucked here so projects and actions stay first.</p>
           </div>
-        </section>
-
-        {latestRequests.length ? null : (
-          <EmptyState title="No requests yet" testId="customer-overview-requests-empty">
-            You can save repair, maintenance, DIY, inspection, emergency, or new project requests here. They stay internal until they are ready to route.
-          </EmptyState>
-        )}
-      </div>
+          <div data-testid="customer-portal-summary" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <StatCard label="Projects" value={summary.active_projects ?? 0} testId="customer-portal-summary-projects" onClick={() => onOpenTab?.("projects")} />
+            <StatCard label="Agreements" value={summary.active_agreements ?? 0} testId="customer-portal-summary-agreements" onClick={() => onOpenTab?.("projects")} />
+            <StatCard label="Payments" value={summary.payments ?? 0} testId="customer-portal-summary-payments" onClick={() => onOpenTab?.("payments")} />
+            <StatCard label="Requests" value={summary.active_requests ?? 0} onClick={() => onOpenTab?.("requests")} />
+          </div>
+        </div>
+        <div className="mt-4">
+          <CustomerActivationChecklist portal={portal} onOpenTab={onOpenTab} />
+        </div>
+      </section>
     </div>
   );
 }
 
 function NotificationsCenter({ notifications = [], unreadCount = 0, markingId = "", onMarkRead }) {
-  const [filter, setFilter] = useState("unread");
+  const [filter, setFilter] = useState("all");
   const filtered = filter === "unread" ? notifications.filter((notification) => notification.status !== "read") : notifications;
 
   return (
@@ -703,7 +817,7 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, markingId = 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-white">Notifications Center</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-300">Action-oriented history for project, payment, document, request, and signing updates.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-300">Your full project activity feed, with unread updates available as a quick filter.</p>
         </div>
         <Badge>{unreadCount} unread</Badge>
       </div>
@@ -878,6 +992,11 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
 function AccountPanel({ portal, saving = false, onSave }) {
   const customer = portal?.customer || {};
   const account = portal?.account || {};
+  const linkedProperties = Array.isArray(portal?.property_profiles)
+    ? portal.property_profiles
+    : portal?.property_profile?.id
+      ? [portal.property_profile]
+      : [];
   const [form, setForm] = useState({
     full_name: customer.full_name || customer.name || "",
     phone_number: customer.phone_number || "",
@@ -1009,6 +1128,25 @@ function AccountPanel({ portal, saving = false, onSave }) {
 
       <aside className="space-y-4">
         <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+          <h3 className="text-lg font-semibold text-white">Linked Properties</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            These properties are connected to this Customer Portal and can be used for requests, records, and project history.
+          </p>
+          <div className="mt-4 space-y-2" data-testid="customer-account-linked-properties">
+            {linkedProperties.length ? linkedProperties.slice(0, 4).map((property) => (
+              <div key={property.id || property.address || property.display_name} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                <div className="text-sm font-semibold text-white">{property.display_name || property.address || "Property"}</div>
+                {property.address ? <div className="mt-1 text-xs text-slate-400">{property.address}</div> : null}
+                {property.is_primary ? <div className="mt-2 text-xs font-semibold text-amber-100">Primary Property</div> : null}
+              </div>
+            )) : (
+              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
+                Add property details in the Property tab to connect records and future requests.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
           <h3 className="text-lg font-semibold text-white">Password</h3>
           <p className="mt-2 text-sm leading-6 text-slate-300">
             {account.has_usable_password
@@ -1106,7 +1244,16 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
   };
   const tabContent = useMemo(() => {
-    if (activeTab === "overview") return <OverviewPanel portal={{ ...portal, notifications }} onOpenTab={setActiveTab} />;
+    if (activeTab === "overview") {
+      return (
+        <OverviewPanel
+          portal={{ ...portal, notifications }}
+          onOpenTab={setActiveTab}
+          markingId={markingNotificationId}
+          onMarkRead={markNotificationRead}
+        />
+      );
+    }
     if (activeTab === "projects") {
       return (
         <CustomerProjectWorkspace
@@ -1313,15 +1460,6 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             ))}
           </nav>
         </header>
-
-        {activeTab === "overview" ? (
-          <NotificationPanel
-            notifications={notifications}
-            unreadCount={unreadCount}
-            markingId={markingNotificationId}
-            onMarkRead={markNotificationRead}
-          />
-        ) : null}
 
         <main className="mt-5">
           {tabContent}

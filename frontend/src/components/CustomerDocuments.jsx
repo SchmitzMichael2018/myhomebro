@@ -1,6 +1,17 @@
 import React, { useState } from "react";
 import { ExternalLink, FileText } from "lucide-react";
 
+function documentGroupLabel(document) {
+  const type = String(document?.type_label || document?.document_type || document?.kind || "").toLowerCase();
+  if (type.includes("agreement")) return "Agreements";
+  if (type.includes("invoice") || type.includes("receipt") || type.includes("payment")) return "Invoices & Receipts";
+  if (type.includes("warranty")) return "Warranties";
+  if (type.includes("photo") || type.includes("image")) return "Photos";
+  if (type.includes("permit")) return "Permits";
+  if (type.includes("insurance")) return "Insurance Documents";
+  return "Other Property Documents";
+}
+
 export default function CustomerDocuments({ documents = [], propertyProfile = {}, onUpload, uploading = false, uploadError = "" }) {
   const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
   const [expanded, setExpanded] = useState(false);
@@ -11,13 +22,19 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
   const allDocuments = [...documents, ...propertyDocuments.filter((item) => !documents.some((doc) => doc.id === item.id))];
   const defaultCount = 9;
   const visibleDocuments = expanded ? allDocuments : allDocuments.slice(0, defaultCount);
+  const groupedDocuments = visibleDocuments.reduce((groups, document) => {
+    const label = documentGroupLabel(document);
+    groups[label] = groups[label] || [];
+    groups[label].push(document);
+    return groups;
+  }, {});
 
   return (
     <div data-testid="customer-portal-documents" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-white">Documents</h2>
-          <p className="mt-1 text-sm text-slate-300">Agreement PDFs, receipts, shared attachments, and property records.</p>
+          <p className="mt-1 text-sm text-slate-300">Upload, review, and open agreement PDFs, receipts, shared attachments, photos, and property records.</p>
         </div>
         <span className="rounded-full border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-200">
           {allDocuments.length} files
@@ -88,36 +105,48 @@ export default function CustomerDocuments({ documents = [], propertyProfile = {}
         ) : null}
       </form>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-5 space-y-4">
         {allDocuments.length ? (
-          visibleDocuments.map((document) => (
-            <div key={document.id} className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
-              <div className="flex items-start gap-3">
-                <div className="rounded-xl border border-slate-600 bg-slate-950 p-2 text-sky-200">
-                  <FileText size={18} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-white">{document.title}</div>
-                  <div className="mt-1 text-xs text-slate-500">{document.type_label || "Document"} - {document.project_title || "Property"}</div>
-                  <div className="mt-1 text-xs text-slate-500">{document.date ? new Date(document.date).toLocaleDateString() : "No date"}</div>
-                  <div className="mt-1 truncate text-xs text-slate-400">{document.filename || "Filename pending"}</div>
-                </div>
+          Object.entries(groupedDocuments).map(([group, rows]) => (
+            <section key={group} className="rounded-2xl border border-slate-700 bg-slate-900/50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-white">{group}</h3>
+                <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-slate-200">
+                  {rows.length}
+                </span>
               </div>
-              {document.url ? (
-                <a
-                  href={document.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl border border-sky-300/40 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
-                >
-                  Open file
-                  <ExternalLink size={14} />
-                </a>
-              ) : null}
-            </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {rows.map((document) => (
+                  <div key={document.id} className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-xl border border-slate-600 bg-slate-950 p-2 text-sky-200">
+                        <FileText size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-white">{document.title}</div>
+                        <div className="mt-1 text-xs text-slate-500">{document.type_label || "Document"} - {document.project_title || "Property"}</div>
+                        <div className="mt-1 text-xs text-slate-500">{document.date ? new Date(document.date).toLocaleDateString() : "No date"}</div>
+                        <div className="mt-1 truncate text-xs text-slate-400">{document.filename || "Filename pending"}</div>
+                      </div>
+                    </div>
+                    {document.url ? (
+                      <a
+                        href={document.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-4 inline-flex items-center gap-2 rounded-xl border border-sky-300/40 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
+                      >
+                        Open file
+                        <ExternalLink size={14} />
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
           ))
         ) : (
-          <div data-testid="customer-documents-empty" className="md:col-span-2 xl:col-span-3 rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-300">
+          <div data-testid="customer-documents-empty" className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-300">
             <div className="font-semibold text-white">No documents yet</div>
             <p className="mt-1 leading-6 text-slate-400">
               Upload property files here, or return later to find agreement PDFs, receipts, shared attachments, and photos.

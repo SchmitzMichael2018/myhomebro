@@ -554,6 +554,9 @@ export default function CustomerRequests({
             <p className="mt-1 text-sm text-slate-300">
               Use Requests to tell us what you need help with next. Saved requests stay private until you choose to send them to a contractor or, where available, up to 5 marketplace contractors.
             </p>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Contractor responses and bids appear here after a request is routed or a contractor replies.
+            </p>
           </div>
           <Badge>{requests.length} total</Badge>
         </div>
@@ -819,7 +822,12 @@ export default function CustomerRequests({
 
         <div data-testid="customer-portal-bids" className="mt-6 border-t border-slate-700 pt-5">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-white">Contractor Responses</h3>
+            <div>
+              <h3 className="text-lg font-semibold text-white">Contractor Responses</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                Bids appear after a request is routed or a contractor submits a response.
+              </p>
+            </div>
             <Badge>{bids.length} bids</Badge>
           </div>
           <div className="mt-3 space-y-3">

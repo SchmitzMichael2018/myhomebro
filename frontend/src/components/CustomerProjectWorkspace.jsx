@@ -66,6 +66,17 @@ function isPaidPayment(payment) {
   return status.includes("paid") || status.includes("released");
 }
 
+function paymentAmountValue(payment) {
+  const raw = payment?.amount ?? payment?.amount_label ?? "";
+  const value = Number(String(raw || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isActionablePayment(payment) {
+  if (payment?.is_actionable === false) return false;
+  return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
+}
+
 function normalizeInvoiceMagicUrl(actionTarget = "") {
   const value = String(actionTarget || "");
   const invoiceMatch = value.match(/\/invoice\/([^/?#]+)/);
@@ -833,6 +844,7 @@ export default function CustomerProjectWorkspace({
                         const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
                         const primaryUrl = payment.receipt_url || invoiceUrl || "#";
                         const paid = isPaidPayment(payment);
+                        const actionable = isActionablePayment(payment);
                         return (
                         <div key={payment.id} data-testid={`customer-project-payment-${payment.id}`} className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
                           <div className="flex items-start justify-between gap-3">
@@ -862,7 +874,7 @@ export default function CustomerProjectWorkspace({
                                 rel="noreferrer"
                                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
                               >
-                                {isInvoicePayment(payment) ? (paid ? "View Receipt" : "Pay Invoice") : isReviewablePayment(payment) ? "Review Release" : "View Record"}
+                                {isInvoicePayment(payment) ? (paid ? "View Receipt" : actionable ? "Pay Invoice" : "View Record") : isReviewablePayment(payment) ? "Review Release" : "View Record"}
                                 <ExternalLink size={14} />
                               </a>
                             ) : null}
@@ -878,7 +890,7 @@ export default function CustomerProjectWorkspace({
                                 <ExternalLink size={14} />
                               </a>
                             ) : null}
-                            {isInvoicePayment(payment) && invoiceUrl && !paid ? (
+                            {isInvoicePayment(payment) && invoiceUrl && actionable ? (
                               <a
                                 data-testid={`customer-project-payment-dispute-${payment.id}`}
                                 href={`${invoiceUrl}?action=dispute`}

@@ -178,7 +178,7 @@ function PropertyIntelligencePanel({ intelligence = {}, onAction }) {
         : "border-amber-300/45 bg-amber-300/10 text-amber-100";
 
   return (
-    <Section title="Property Intelligence" eyebrow="Advisory" testId="property-intelligence-panel">
+    <Section title="Advisory / Maintenance Intelligence" eyebrow="Property health" testId="property-intelligence-panel">
       <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className={`rounded-2xl border p-4 ${healthTone}`} data-testid="property-intelligence-health">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">Property Health</div>
@@ -378,7 +378,7 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
       <PropertyIntelligencePanel intelligence={propertyIntelligence} onAction={onIntelligenceAction} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <Section title="Property Timeline" eyebrow="History" testId="home-records-timeline">
+        <Section title="Timeline / History" eyebrow="Property records" testId="home-records-timeline">
           {timeline.length ? (
             <div className="space-y-3">
               {visibleTimeline.map((item) => {
@@ -529,7 +529,7 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
         )}
       </Section>
 
-      <Section title="Organized Records" eyebrow="Documents and photos" testId="home-records-document-groups">
+      <Section title="Document Groups" eyebrow="Documents and photos" testId="home-records-document-groups">
         <div className="grid gap-3 lg:grid-cols-2">
           {Object.entries(grouped).map(([category, rows]) => (
             <div key={category} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">

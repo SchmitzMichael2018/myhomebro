@@ -1251,6 +1251,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("5");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("4");
+  await expect(page.getByTestId("customer-overview-active-projects")).toContainText("Active Projects");
+  await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("What needs my attention?");
+  await expect(page.getByTestId("customer-overview-property-records")).toContainText("Your home history, organized");
   await expect(page.getByTestId("customer-activation-checklist")).toContainText("Get your customer workspace ready");
   await expect(page.getByTestId("customer-activation-check-property-profile")).toContainText("Complete");
   await expect(page.getByTestId("customer-activation-check-documents")).toContainText("Complete");
@@ -1306,6 +1309,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-account-panel")).toContainText("My Profile");
   await expect(page.getByTestId("customer-profile-email")).toHaveValue("customer@example.com");
   await expect(page.getByTestId("customer-profile-phone")).toBeVisible();
+  await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Primary Property");
+  await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Lake House");
   await expect(page.getByTestId("customer-account-logout")).toContainText("Log out");
   await page.getByTestId("customer-profile-name").fill("Pat Updated");
   await page.getByTestId("customer-profile-phone").fill("512-555-1212");
@@ -1321,6 +1326,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByText("Use Requests to tell us what you need help with next.")).toBeVisible();
   await expect(page.getByText("up to 5 marketplace contractors")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Contractor Responses" })).toBeVisible();
+  await expect(page.getByText("Bids appear after a request is routed or a contractor submits a response.")).toBeVisible();
   await expect(page.getByText("Create a Request")).toBeVisible();
   await expect(page.getByText("Choose the property this request is for.")).toBeVisible();
   await expect(page.getByTestId("customer-request-property-selector")).toBeVisible();
@@ -1420,6 +1426,10 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-portal-payments")).toContainText("Payments Action Center");
+  await expect(page.getByTestId("customer-payments-summary")).toContainText("Total Paid");
+  await expect(page.getByTestId("customer-payments-summary")).toContainText("Pending Review");
+  await expect(page.getByTestId("customer-payments-summary")).toContainText("Escrow / Released");
+  await expect(page.getByTestId("customer-payments-summary")).toContainText("Refunds / Adjustments");
   await expect(page.getByTestId("customer-payment-action-invoice-2")).toContainText("Direct Pay");
   await expect(page.getByTestId("customer-payment-primary-invoice-2")).toContainText("Pay Invoice");
   await expect(page.getByTestId("customer-payment-view-invoice-invoice-2")).toHaveAttribute("href", "/invoices/magic/portal-invoice-pay-token");
@@ -1448,6 +1458,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Internal payment email row");
 
   await page.getByTestId("customer-dashboard-tab-documents").click();
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Invoices & Receipts");
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Other Property Documents");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Scope Addendum");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("scope-addendum.txt");
   await page.getByLabel("Title").fill("Water heater warranty");
@@ -1464,7 +1476,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-dashboard")).toContainText("Your property records, organized.");
   await expect(page.getByTestId("home-records-dashboard")).toContainText("Completed MyHomeBro projects can be saved as part of your property record.");
-  await expect(page.getByTestId("property-intelligence-panel")).toContainText("Property Intelligence");
+  await expect(page.getByTestId("property-intelligence-panel")).toContainText("Advisory / Maintenance Intelligence");
   await expect(page.getByTestId("property-intelligence-health")).toContainText("Needs Attention");
   await expect(page.getByTestId("property-intelligence-needs_attention")).toContainText("HVAC service may be due.");
   await expect(page.getByTestId("property-intelligence-recommended")).toContainText("No water heater records found.");
@@ -1723,7 +1735,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-property-files-empty")).toContainText("No property files yet");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
-  await expect(page.getByTestId("customer-notifications-center-empty")).toContainText("No unread notifications");
+  await expect(page.getByTestId("customer-notifications-center-empty")).toContainText("No notifications yet");
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-payments-empty")).toContainText("No payment records yet");
