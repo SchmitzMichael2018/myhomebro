@@ -69,6 +69,7 @@ from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
 from projects.services.project_activity import create_project_activity_event, serialize_project_activity_events
+from projects.services.ai.project_classifier import classify_project_from_scope
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -1114,6 +1115,9 @@ def _payments(email: str, request=None) -> list[dict]:
                 "amount_label": f"${invoice_amount:.2f}",
                 "status": invoice_status,
                 "status_label": status_text,
+                "released_to_contractor": bool(getattr(invoice, "escrow_released", False)),
+                "customer_payment_recorded": bool(getattr(invoice, "direct_pay_paid_at", None)),
+                "escrow_funding_record": False,
                 "is_actionable": bool(invoice_amount > Decimal("0.00") and not invoice_paid),
                 "dispute_status": "Dispute opened" if getattr(invoice, "disputed", False) or _safe_text(getattr(invoice, "status", "")).lower() == "disputed" else "No dispute",
                 "dispute_url": "",
@@ -1162,6 +1166,9 @@ def _payments(email: str, request=None) -> list[dict]:
                 "amount_label": f"${Decimal(str(getattr(draw, 'net_amount', 0) or 0)):.2f}",
                 "status": _safe_text(getattr(draw, "status", "")).lower(),
                 "status_label": status_text,
+                "released_to_contractor": bool(getattr(draw, "paid_at", None) or getattr(draw, "released_at", None) or getattr(draw, "status", "") in {"paid", "released"}),
+                "customer_payment_recorded": False,
+                "escrow_funding_record": False,
                 "dispute_status": dispute_status,
                 "dispute_status_label": dispute_status_label,
                 "dispute_url": _portal_dispute_public_url(dispute),
@@ -1204,6 +1211,9 @@ def _payments(email: str, request=None) -> list[dict]:
                 "amount_label": f"${Decimal(str(getattr(reimbursement, 'amount', 0) or 0)):.2f}",
                 "status": status_value,
                 "status_label": _safe_text(getattr(reimbursement, "get_status_display", lambda: "")()) or status_value.replace("_", " ").title(),
+                "released_to_contractor": bool(getattr(reimbursement, "released_at", None) or status_value == ExpenseRequest.Status.RELEASED),
+                "customer_payment_recorded": False,
+                "escrow_funding_record": False,
                 "dispute_status": "No dispute",
                 "dispute_status_label": "No dispute",
                 "date": _safe_dt(
@@ -2883,16 +2893,26 @@ class CustomerPortalRequestImproveView(APIView):
             return Response({"detail": "Add request details first."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            classification = classify_project_from_scope(
+                description=current_description,
+                scope=current_description,
+                current_values={
+                    "project_title": _safe_text(data.get("project_title") or data.get("title")),
+                    "project_type": _safe_text(data.get("project_type") or data.get("project_category") or data.get("request_type")),
+                    "project_subtype": _safe_text(data.get("project_subtype")),
+                },
+            )
             out = generate_or_improve_description(
                 mode="improve",
-                project_title=_safe_text(data.get("project_title") or data.get("title")),
-                project_type=_safe_text(data.get("project_type") or data.get("project_category") or data.get("request_type")),
-                project_subtype=_safe_text(data.get("project_subtype") or data.get("project_mode")),
+                project_title=_safe_text(classification.get("project_title") or data.get("project_title") or data.get("title")),
+                project_type=_safe_text(classification.get("project_type") or data.get("project_type") or data.get("project_category") or data.get("request_type")),
+                project_subtype=_safe_text(classification.get("project_subtype") or data.get("project_subtype") or data.get("project_mode")),
                 current_description=current_description,
             )
             description = _safe_text(out.get("description"))
             source = "ai"
         except Exception:
+            classification = {}
             description = _customer_request_refine_fallback(current_description)
             source = "fallback"
 
@@ -2900,15 +2920,17 @@ class CustomerPortalRequestImproveView(APIView):
             description = _customer_request_refine_fallback(current_description)
             source = "fallback"
 
-        title = _safe_text(data.get("project_title") or data.get("title"))
+        title = _safe_text(classification.get("project_title") or data.get("project_title") or data.get("title"))
         if not title:
-            title = description.split(".")[0][:80].strip() or "Project request"
+            title = _safe_text(data.get("project_type") or data.get("project_category") or data.get("request_type")) or "Project request"
 
         return Response(
             {
                 "detail": "Request details improved.",
                 "title": title,
                 "project_title": title,
+                "project_type": _safe_text(classification.get("project_type") or data.get("project_type") or data.get("project_category")),
+                "project_subtype": _safe_text(classification.get("project_subtype") or data.get("project_subtype")),
                 "description": description,
                 "project_scope": description,
                 "source": source,

@@ -54,6 +54,8 @@ def is_invoice(payment: dict) -> bool:
 
 
 def is_escrow_funding(payment: dict) -> bool:
+    if payment.get("escrow_funding_record") is True:
+        return True
     status = _status(payment)
     kind = _kind(payment)
     return (
@@ -72,6 +74,10 @@ def is_refund(payment: dict) -> bool:
 
 
 def is_escrow_release(payment: dict) -> bool:
+    if payment.get("released_to_contractor") is True:
+        return not (is_escrow_funding(payment) or is_refund(payment))
+    if payment.get("released_to_contractor") is False:
+        return False
     status = _status(payment)
     kind = _kind(payment)
     mode = _mode(payment)
@@ -83,6 +89,8 @@ def is_escrow_release(payment: dict) -> bool:
 
 
 def is_customer_payment(payment: dict) -> bool:
+    if payment.get("customer_payment_recorded") is True:
+        return not (is_escrow_funding(payment) or is_escrow_release(payment) or is_refund(payment))
     status = _status(payment)
     mode = _mode(payment)
     if is_escrow_funding(payment) or is_escrow_release(payment) or is_refund(payment):

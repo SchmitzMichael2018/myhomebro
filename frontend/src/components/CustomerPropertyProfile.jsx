@@ -315,7 +315,7 @@ function timelineRows({ profile, projects, agreements, documents, payments, main
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onIntelligenceAction }) {
+function HomeRecordsDashboard({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onIntelligenceAction, onOpenTab }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
@@ -529,27 +529,28 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
         )}
       </Section>
 
-      <Section title="Document Groups" eyebrow="Documents and photos" testId="home-records-document-groups">
-        <div className="grid gap-3 lg:grid-cols-2">
+      <Section title="Key Records Summary" eyebrow="Documents and photos" testId="home-records-document-groups">
+        <p className="mb-4 text-sm leading-6 text-slate-300">
+          This is a compact property-record summary. Use the Documents tab for the full searchable document library and uploads.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {Object.entries(grouped).map(([category, rows]) => (
             <div key={category} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
               <div className="flex items-center justify-between gap-3">
                 <h4 className="text-sm font-semibold text-white">{category}</h4>
                 <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-slate-200">{rows.length}</span>
               </div>
-              <div className="mt-3 space-y-2">
-                {rows.length ? rows.slice(0, 4).map((row) => (
-                  <a key={`${category}-${row.id}-${row.url}`} href={row.url || "#"} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 bg-slate-950/55 p-3 hover:border-sky-300/40">
-                    <div className="text-sm font-semibold text-slate-100">{row.title || "Home record"}</div>
-                    <div className="mt-1 text-xs text-slate-500">{formatDate(row.date)} - {row.filename || row.type_label || "File"}</div>
-                  </a>
-                )) : (
-                  <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No records in this category yet.</div>
-                )}
-              </div>
             </div>
           ))}
         </div>
+        <button
+          type="button"
+          data-testid="home-records-open-documents"
+          onClick={() => onOpenTab?.("documents")}
+          className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
+        >
+          Open full document library
+        </button>
       </Section>
 
       <Section title="Maintenance & Service History" eyebrow="Recurring care" testId="home-records-maintenance-history">
@@ -655,6 +656,7 @@ export default function CustomerPropertyProfile({
         payments={payments}
         maintenanceWorkOrders={maintenanceWorkOrders}
         propertyIntelligence={propertyIntelligence}
+        onOpenTab={onOpenTab}
         onIntelligenceAction={(action) => {
           const target = action?.target || "property";
           if (["requests", "documents", "property"].includes(target)) onOpenTab?.(target);

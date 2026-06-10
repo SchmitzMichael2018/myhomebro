@@ -260,6 +260,8 @@ export default function CustomerRequests({
       setRequestSuggestion({
         title: data?.project_title || data?.title || form.title,
         description: data?.project_scope || data?.description || form.description,
+        project_type: data?.project_type || form.project_type,
+        project_subtype: data?.project_subtype || form.project_subtype,
         source: data?.source || "fallback",
       });
     } catch (error) {
@@ -275,6 +277,8 @@ export default function CustomerRequests({
       ...prev,
       title: requestSuggestion.title || prev.title,
       description: requestSuggestion.description || prev.description,
+      project_type: requestSuggestion.project_type || prev.project_type,
+      project_subtype: requestSuggestion.project_subtype || prev.project_subtype,
     }));
     setRequestSuggestion(null);
   };

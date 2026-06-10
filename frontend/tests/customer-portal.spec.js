@@ -1322,6 +1322,8 @@ test("customer portal is reachable from the landing page and loads secure record
           detail: "Request details improved.",
           title: "Seasonal HVAC maintenance",
           project_title: "Seasonal HVAC maintenance",
+          project_type: "HVAC",
+          project_subtype: "Seasonal Service",
           description: "Included Work\n- Inspect the HVAC system before summer.\n- Replace accessible filters if needed.\n- Document any recommended follow-up service.",
           project_scope: "Included Work\n- Inspect the HVAC system before summer.\n- Replace accessible filters if needed.\n- Document any recommended follow-up service.",
           source: "ai",
@@ -1645,7 +1647,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-agreement-view-action")).toHaveAttribute("href", "/agreements/magic/portal-token");
   await expect(page.getByTestId("customer-agreement-pdf-action")).toHaveAttribute("href", "/files/agreement.pdf");
-  await expect(page.getByTestId("customer-agreement-amendment-action")).toContainText("Request amendment");
+  await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("coming soon");
+  await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Request Amendment");
   await expect(page.getByTestId("customer-project-review-prompt")).toContainText("Share feedback about your project experience.");
   await page.getByTestId("customer-project-review-prompt").getByLabel("Rating").selectOption("5");
   await page.getByTestId("customer-project-review-prompt").getByLabel("Review title").fill("Professional project experience");
@@ -1680,10 +1683,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-updates")).toContainText("Demo is complete and final walkthrough is ready for review.");
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
-  await expect(page.getByTestId("customer-portal-payments")).toContainText("Payments Action Center");
+  await expect(page.getByTestId("customer-portal-payments")).toContainText("Project Payment Center");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Total Paid");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Pending Review");
-  await expect(page.getByTestId("customer-payments-summary")).toContainText("Escrow / Released");
+  await expect(page.getByTestId("customer-payments-summary")).toContainText("Released to Contractor");
+  await expect(page.getByTestId("customer-payments-agreement-list")).toContainText("Payments by project");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Refunds / Adjustments");
   await expect(page.getByTestId("customer-payment-action-invoice-2")).toContainText("Direct Pay");
   await expect(page.getByTestId("customer-payment-primary-invoice-2")).toContainText("Pay Invoice");

@@ -20532,7 +20532,12 @@ class CustomerPortalAccessTests(TestCase):
 
     def test_customer_portal_request_improve_returns_reviewable_suggestion(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
-        with patch("projects.views.customer_portal.generate_or_improve_description") as improve:
+        with patch("projects.views.customer_portal.classify_project_from_scope") as classify, patch("projects.views.customer_portal.generate_or_improve_description") as improve:
+            classify.return_value = {
+                "project_title": "Kitchen Sink Repair",
+                "project_type": "Plumbing",
+                "project_subtype": "Sink Leak",
+            }
             improve.return_value = {
                 "description": "Included Work\n- Repair the leaking kitchen sink.\n- Check visible supply and drain connections.",
             }
@@ -20552,8 +20557,10 @@ class CustomerPortalAccessTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data["title"], "sink")
-        self.assertEqual(response.data["project_title"], "sink")
+        self.assertEqual(response.data["title"], "Kitchen Sink Repair")
+        self.assertEqual(response.data["project_title"], "Kitchen Sink Repair")
+        self.assertEqual(response.data["project_type"], "Plumbing")
+        self.assertEqual(response.data["project_subtype"], "Sink Leak")
         self.assertIn("Repair the leaking kitchen sink", response.data["description"])
         self.assertIn("Repair the leaking kitchen sink", response.data["project_scope"])
         self.assertEqual(response.data["source"], "ai")

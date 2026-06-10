@@ -251,8 +251,7 @@ function isInvoicePayment(payment) {
 }
 
 function isPaidPayment(payment) {
-  const status = String(payment?.status || payment?.status_label || "").toLowerCase();
-  return status.includes("paid") || status.includes("released");
+  return isEscrowReleasePayment(payment) || isCustomerPaidPayment(payment);
 }
 
 function paymentAmountValue(payment) {
@@ -261,8 +260,65 @@ function paymentAmountValue(payment) {
   return Number.isFinite(value) ? value : 0;
 }
 
+function paymentStatusText(payment) {
+  return String(`${payment?.status || ""} ${payment?.status_label || ""}`).toLowerCase();
+}
+
+function paymentTypeText(payment) {
+  return String(`${payment?.record_type || ""} ${payment?.record_type_label || ""} ${payment?.reference || ""}`).toLowerCase();
+}
+
+function paymentModeText(payment) {
+  return String(`${payment?.payment_mode || ""} ${payment?.payment_mode_label || ""}`).toLowerCase();
+}
+
+function escrowLedgerValue(payment, key) {
+  const ledger = payment?.escrow_ledger || {};
+  const value = Number(String(ledger[key] || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isEscrowFundingPayment(payment) {
+  if (payment?.escrow_funding_record === true) return true;
+  const status = paymentStatusText(payment);
+  const type = paymentTypeText(payment);
+  return (
+    type === "escrow" ||
+    type.includes("escrow funding") ||
+    type.includes("funding") ||
+    payment?.reference === "escrow_funded" ||
+    (status.includes("funded") && escrowLedgerValue(payment, "funded") > 0)
+  );
+}
+
+function isRefundPayment(payment) {
+  const status = paymentStatusText(payment);
+  const type = paymentTypeText(payment);
+  return type.includes("refund") || status.includes("refund") || paymentAmountValue(payment) < 0;
+}
+
+function isEscrowReleasePayment(payment) {
+  if (payment?.released_to_contractor === true) return !isEscrowFundingPayment(payment) && !isRefundPayment(payment);
+  if (payment?.released_to_contractor === false) return false;
+  const status = paymentStatusText(payment);
+  const type = paymentTypeText(payment);
+  const mode = paymentModeText(payment);
+  if (isEscrowFundingPayment(payment) || isRefundPayment(payment)) return false;
+  if (type.includes("draw") || type.includes("reimbursement")) return status.includes("paid") || status.includes("released");
+  return isInvoicePayment(payment) && mode.includes("escrow") && (status.includes("paid") || status.includes("released"));
+}
+
+function isCustomerPaidPayment(payment) {
+  if (payment?.customer_payment_recorded === true) return !isEscrowFundingPayment(payment) && !isEscrowReleasePayment(payment) && !isRefundPayment(payment);
+  const status = paymentStatusText(payment);
+  const mode = paymentModeText(payment);
+  if (isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment)) return false;
+  return isInvoicePayment(payment) && !mode.includes("escrow") && status.includes("paid");
+}
+
 function isActionablePayment(payment) {
   if (payment?.is_actionable === false) return false;
+  if (isEscrowFundingPayment(payment) || isRefundPayment(payment)) return false;
   return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
 }
 
@@ -281,10 +337,10 @@ function paymentSummary(payments = []) {
       const amount = paymentAmountValue(payment);
       const notes = String(payment?.notes || "").toLowerCase();
       const status = String(payment?.status || payment?.status_label || "").toLowerCase();
-      if (isPaidPayment(payment)) acc.paid += amount;
+      if (isCustomerPaidPayment(payment)) acc.paid += amount;
       if (isActionablePayment(payment)) acc.pending += amount;
-      if (status.includes("released") || notes.includes("escrow release")) acc.released += amount;
-      if (amount <= 0 || notes.includes("correction") || notes.includes("adjustment") || notes.includes("refund")) acc.adjustments += Math.abs(amount);
+      if (isEscrowReleasePayment(payment)) acc.released += amount;
+      if (isRefundPayment(payment) || amount <= 0 || notes.includes("correction") || notes.includes("adjustment")) acc.adjustments += Math.abs(amount);
       return acc;
     },
     { paid: 0, pending: 0, released: 0, adjustments: 0 }
@@ -296,8 +352,8 @@ function isRecentNotification(notification, now = Date.now()) {
   if (!notification?.created_at) return false;
   const createdAt = new Date(notification.created_at).getTime();
   if (!Number.isFinite(createdAt)) return false;
-  const fourteenDays = 14 * 24 * 60 * 60 * 1000;
-  return now - createdAt <= fourteenDays;
+  const threeDays = 3 * 24 * 60 * 60 * 1000;
+  return now - createdAt <= threeDays;
 }
 
 const ACTIONABLE_NOTIFICATION_EVENTS = new Set([
@@ -344,8 +400,9 @@ function normalizeInvoiceMagicUrl(actionTarget = "") {
   return value;
 }
 
-function PaymentsPanel({ payments = [], token = "", onPortalUpdate }) {
+function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpdate }) {
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [selectedAgreementId, setSelectedAgreementId] = useState("");
   const attention = payments.filter((payment) => {
     return isActionablePayment(payment);
   });
@@ -353,21 +410,98 @@ function PaymentsPanel({ payments = [], token = "", onPortalUpdate }) {
   const totals = paymentSummary(payments);
   const historyDefaultCount = 5;
   const visiblePaid = historyExpanded ? paid : paid.slice(0, historyDefaultCount);
+  const agreementRows = (agreements || []).map((agreement) => {
+    const related = payments.filter((payment) => String(payment.agreement_id || "") === String(agreement.id || ""));
+    const summary = agreement.payment_summary || paymentSummary(related);
+    const milestones = agreement.milestones || [];
+    const completed = milestones.filter((milestone) => String(milestone.status || "").toLowerCase().includes("complete") || milestone.completed).length;
+    const percent = milestones.length ? Math.round((completed / milestones.length) * 100) : 0;
+    return { agreement, related, summary, percent };
+  });
+  const selectedAgreement = agreementRows.find((row) => String(row.agreement.id) === String(selectedAgreementId)) || agreementRows[0] || null;
 
   return (
     <div data-testid="customer-portal-payments" className="space-y-5">
       <section className="rounded-2xl border border-amber-300/35 bg-amber-300/10 p-5">
-        <h2 className="text-xl font-semibold text-white">Payments Action Center</h2>
+        <h2 className="text-xl font-semibold text-white">Project Payment Center</h2>
         <p className="mt-1 max-w-3xl text-sm leading-6 text-amber-100">
-          Review payments before funds are released. Invoices, draw reviews, escrow releases, direct pay items, and receipts stay connected here.
+          Start with the project, then review escrow funded, releases, invoices, refunds, and the milestone progress behind each payment.
         </p>
       </section>
 
       <section data-testid="customer-payments-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Paid" value={moneyLabel(totals.paid)} testId="customer-payments-summary-paid" />
         <StatCard label="Pending Review" value={moneyLabel(totals.pending)} testId="customer-payments-summary-pending" />
-        <StatCard label="Escrow / Released" value={moneyLabel(totals.released)} testId="customer-payments-summary-released" />
+        <StatCard label="Released to Contractor" value={moneyLabel(totals.released)} testId="customer-payments-summary-released" />
         <StatCard label="Refunds / Adjustments" value={moneyLabel(totals.adjustments)} testId="customer-payments-summary-adjustments" />
+      </section>
+
+      <section data-testid="customer-payments-agreement-list" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-lg font-semibold text-white">Payments by project</h3>
+          <Badge>{agreementRows.length} projects</Badge>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
+          <div className="space-y-3">
+            {agreementRows.length ? agreementRows.map(({ agreement, summary, percent }) => (
+              <button
+                key={agreement.id}
+                type="button"
+                data-testid={`customer-payment-agreement-${agreement.id}`}
+                onClick={() => setSelectedAgreementId(agreement.id)}
+                className={`w-full rounded-2xl border p-4 text-left transition ${
+                  String(selectedAgreement?.agreement?.id) === String(agreement.id)
+                    ? "border-amber-300/55 bg-amber-300/10"
+                    : "border-slate-700 bg-slate-900/60 hover:border-slate-500"
+                }`}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{agreement.project_title || agreement.title || "Project"}</div>
+                    <div className="mt-1 text-xs text-slate-400">{agreement.contractor_name || "Contractor"} - {agreement.customer_status_label || agreement.status_label || "Project"}</div>
+                  </div>
+                  <Badge>{percent}% milestones</Badge>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                  <span>Project value: <strong className="text-white">{moneyLabel(Number(summary.project_value || agreement.total_cost || 0))}</strong></span>
+                  <span>Escrow funded: <strong className="text-white">{moneyLabel(Number(summary.escrow_funded || 0))}</strong></span>
+                  <span>Released: <strong className="text-white">{moneyLabel(Number(summary.released_to_contractor || 0))}</strong></span>
+                  <span>Remaining: <strong className="text-white">{moneyLabel(Number(summary.remaining_in_escrow || 0))}</strong></span>
+                </div>
+              </button>
+            )) : (
+              <EmptyState title="No project payments yet" testId="customer-payments-agreement-empty">
+                Project-level payment summaries appear here once agreements or payments are connected.
+              </EmptyState>
+            )}
+          </div>
+          <div data-testid="customer-payment-agreement-detail" className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+            {selectedAgreement ? (
+              <>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected project</div>
+                <h4 className="mt-1 text-lg font-semibold text-white">{selectedAgreement.agreement.project_title || selectedAgreement.agreement.title || "Project"}</h4>
+                <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                  <div>Project value: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.project_value || selectedAgreement.agreement.total_cost || 0))}</strong></div>
+                  <div>Escrow funded: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.escrow_funded || 0))}</strong></div>
+                  <div>Released to contractor: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.released_to_contractor || 0))}</strong></div>
+                  <div>Remaining in escrow: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.remaining_in_escrow || 0))}</strong></div>
+                  <div>Milestone completion: <strong className="text-white">{selectedAgreement.percent}%</strong></div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {selectedAgreement.related.length ? selectedAgreement.related.slice(0, 4).map((payment) => (
+                    <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} />
+                  )) : (
+                    <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No payment records are connected to this project yet.</div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <EmptyState title="Select a project" testId="customer-payments-select-empty">
+                Choose a project to see escrow, releases, invoices, refunds, and milestone support.
+              </EmptyState>
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -870,7 +1004,7 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
               key={project.id}
               title={project.title}
               eyebrow={project.customer_status_label || project.status_label || "Project"}
-              body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` Â· ${moneyLabel(project.total_cost)}` : ""}`}
+              body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` - ${moneyLabel(project.total_cost)}` : ""}`}
               actionLabel="View project workspace"
               onClick={() => onOpenTab?.("projects")}
             />
@@ -1078,7 +1212,15 @@ function normalizePortalNotifications(rows = []) {
 }
 
 function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", onMarkRead, onOpenHistory }) {
-  const recent = notifications.slice(0, 4);
+  const recent = notifications
+    .filter((notification) => isRecentNotification(notification))
+    .sort((a, b) => {
+      const unreadDelta = (a.status !== "read" ? 0 : 1) - (b.status !== "read" ? 0 : 1);
+      if (unreadDelta) return unreadDelta;
+      return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+    })
+    .slice(0, 4);
+  const unreadRecent = recent.filter((notification) => notification.status !== "read");
 
   return (
     <section data-testid="customer-notifications-panel" className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 sm:p-5">
@@ -1092,8 +1234,18 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-[0_0_16px_rgba(56,189,248,0.12)]">
-            {unreadCount > 0 ? `${unreadCount} unread` : recent.length ? `${recent.length} recent` : "No new updates"}
+            {unreadCount > 0 ? `${unreadCount} unread` : "No new updates"}
           </span>
+          {unreadRecent.length ? (
+            <button
+              type="button"
+              data-testid="customer-notifications-mark-all-read"
+              onClick={() => unreadRecent.forEach((notification) => onMarkRead?.(notification))}
+              className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
+            >
+              Mark all as read
+            </button>
+          ) : null}
           <button
             type="button"
             data-testid="customer-notifications-open-history"
@@ -1116,7 +1268,7 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
                 className={`rounded-xl border p-4 ${
                   isUnread
                     ? "border-sky-300/45 bg-sky-400/10 shadow-[inset_3px_0_0_rgba(56,189,248,0.55)]"
-                    : "border-slate-700 bg-slate-900/60"
+                    : "border-slate-800 bg-slate-950/35 opacity-75"
                 }`}
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1539,7 +1691,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         />
       );
     }
-    if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} token={token} onPortalUpdate={onPortalUpdate} />;
+    if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} agreements={portal?.agreements || []} token={token} onPortalUpdate={onPortalUpdate} />;
     if (activeTab === "notifications") {
       return (
         <NotificationsCenter

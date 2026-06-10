@@ -86,6 +86,7 @@ function escrowLedgerValue(payment, key) {
 }
 
 function isEscrowFundingPayment(payment) {
+  if (payment?.escrow_funding_record === true) return true;
   const status = paymentStatusText(payment);
   const type = paymentTypeText(payment);
   return (
@@ -104,6 +105,8 @@ function isRefundPayment(payment) {
 }
 
 function isEscrowReleasePayment(payment) {
+  if (payment?.released_to_contractor === true) return !isEscrowFundingPayment(payment) && !isRefundPayment(payment);
+  if (payment?.released_to_contractor === false) return false;
   const status = String(payment?.status || payment?.status_label || "").toLowerCase();
   const type = paymentTypeText(payment);
   const mode = paymentModeText(payment);
@@ -115,6 +118,7 @@ function isEscrowReleasePayment(payment) {
 }
 
 function isCustomerPaidPayment(payment) {
+  if (payment?.customer_payment_recorded === true) return !isEscrowFundingPayment(payment) && !isEscrowReleasePayment(payment) && !isRefundPayment(payment);
   const status = paymentStatusText(payment);
   const mode = paymentModeText(payment);
   if (isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment)) return false;
@@ -1410,14 +1414,6 @@ export default function CustomerProjectWorkspace({
                   className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-amber-300/50"
                 >
                   View Activity
-                </button>
-                <button
-                  type="button"
-                  data-testid="customer-agreement-amendment-action"
-                  disabled
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-400"
-                >
-                  Request amendment - coming soon
                 </button>
               </div>
             </section>
