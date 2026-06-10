@@ -991,7 +991,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             if blocked_request is not None:
                 return Response(
                     {
-                        "detail": "This milestone is blocked by a pending de-scope amendment review.",
+                        "detail": "This milestone is affected by a pending de-scope amendment. Respond to the amendment before submitting completion or requesting payment.",
                         "code": "MILESTONE_AMENDMENT_REVIEW_PENDING",
                         "amendment_request_id": blocked_request.id,
                     },
@@ -1400,6 +1400,17 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         agreement = milestone.agreement
 
         # ✅ Gate completion (signature + escrow if needed)
+        blocked_request = open_descoped_amendment_for_milestone(milestone)
+        if blocked_request is not None:
+            return Response(
+                {
+                    "detail": "This milestone is affected by a pending de-scope amendment. Respond to the amendment before submitting completion or requesting payment.",
+                    "code": "MILESTONE_AMENDMENT_REVIEW_PENDING",
+                    "amendment_request_id": blocked_request.id,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         gate = _can_complete_milestone(agreement)
         if gate is not None:
             return gate
@@ -1760,7 +1771,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if blocked_request is not None:
             return Response(
                 {
-                    "detail": "This milestone is blocked by a pending de-scope amendment review.",
+                    "detail": "This milestone is affected by a pending de-scope amendment. Respond to the amendment before submitting completion or requesting payment.",
                     "code": "MILESTONE_AMENDMENT_REVIEW_PENDING",
                     "amendment_request_id": blocked_request.id,
                 },

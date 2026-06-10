@@ -39,6 +39,8 @@ from projects.services.recurring_maintenance import build_recurring_preview, ens
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
 from projects.services.customer_portal_status import derive_contractor_status
+from projects.models_amendment_request import AmendmentRequest
+from projects.services.project_activity import serialize_project_activity_events
 
 
 def _to_decimal(val) -> Optional[Decimal]:
@@ -634,6 +636,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     recent_sms_automation_decisions = serializers.SerializerMethodField()
     contractor_status_key = serializers.SerializerMethodField()
     contractor_status_label = serializers.SerializerMethodField()
+    amendment_requests = serializers.SerializerMethodField()
 
     class Meta:
         model = Agreement
@@ -781,6 +784,79 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def get_contractor_status_label(self, obj):
         return self._contractor_status_payload(obj).get("contractor_status_label", "")
+
+    def _serialize_amendment_request(self, amendment: AmendmentRequest) -> dict:
+        requested_changes = amendment.requested_changes or {}
+        affected = []
+        try:
+            affected = [
+                {
+                    "id": milestone.id,
+                    "title": getattr(milestone, "title", "") or f"Milestone #{milestone.id}",
+                    "amount": str(getattr(milestone, "amount", "") or ""),
+                    "status": getattr(milestone, "status", "") or "",
+                    "completed": bool(getattr(milestone, "completed", False)),
+                    "amendment_review_status": getattr(milestone, "amendment_review_status", "") or "",
+                }
+                for milestone in amendment.affected_milestones.all()
+            ]
+        except Exception:
+            affected = []
+
+        return {
+            "id": amendment.id,
+            "created_at": amendment.created_at.isoformat() if amendment.created_at else "",
+            "updated_at": amendment.updated_at.isoformat() if amendment.updated_at else "",
+            "agreement": amendment.agreement_id,
+            "milestone": amendment.milestone_id,
+            "requested_by": amendment.requested_by_id,
+            "requested_by_name": (
+                getattr(amendment.requested_by, "get_full_name", lambda: "")()
+                or getattr(amendment.requested_by, "email", "")
+                or ""
+            )
+            if getattr(amendment, "requested_by", None)
+            else "",
+            "initiated_by_role": amendment.initiated_by_role,
+            "change_type": amendment.change_type,
+            "change_type_label": amendment.get_change_type_display(),
+            "requested_changes": requested_changes,
+            "requested_change": requested_changes.get("requested_change") or requested_changes.get("scope") or "",
+            "justification": amendment.justification,
+            "status": amendment.status,
+            "status_label": amendment.get_status_display(),
+            "response_state": amendment.response_state,
+            "response_label": amendment.get_response_state_display(),
+            "response_note": amendment.response_note,
+            "counter_proposal": amendment.counter_proposal or {},
+            "responded_at": amendment.responded_at.isoformat() if amendment.responded_at else "",
+            "response_due_at": amendment.response_due_at.isoformat() if amendment.response_due_at else "",
+            "original_project_value": str(amendment.original_project_value) if amendment.original_project_value is not None else "",
+            "revised_project_value": str(amendment.revised_project_value) if amendment.revised_project_value is not None else "",
+            "escrow_funded_amount": str(amendment.escrow_funded_amount) if amendment.escrow_funded_amount is not None else "",
+            "estimated_refundable_escrow_surplus": str(amendment.estimated_refundable_escrow_surplus or Decimal("0.00")),
+            "refund_eligibility_status": amendment.refund_eligibility_status,
+            "refund_eligibility_label": amendment.get_refund_eligibility_status_display(),
+            "affected_milestone_ids": [row["id"] for row in affected],
+            "affected_milestones": affected,
+            "activity_events": serialize_project_activity_events(
+                amendment.agreement,
+                object_type="amendment_request",
+                object_id=amendment.id,
+                limit=12,
+            ),
+        }
+
+    def get_amendment_requests(self, obj):
+        try:
+            qs = (
+                obj.amendment_requests.select_related("requested_by")
+                .prefetch_related("affected_milestones")
+                .order_by("-created_at", "-id")
+            )
+            return [self._serialize_amendment_request(row) for row in qs[:10]]
+        except Exception:
+            return []
 
     def _req_flags(self, obj) -> tuple[bool, bool]:
         req_contr = _boolish(getattr(obj, "require_contractor_signature", None), True)

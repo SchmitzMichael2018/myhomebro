@@ -10,7 +10,8 @@ from rest_framework.views import APIView
 
 from projects.models import Agreement, Milestone
 from projects.models_amendment_request import AmendmentRequest, apply_descoped_milestone_hold
-from projects.services.project_activity import create_project_activity_event
+from projects.models_project_activity import ProjectActivityEvent
+from projects.services.project_activity import create_project_activity_event, mark_activity_viewed
 from projects.utils.accounts import get_contractor_for_user
 
 
@@ -150,10 +151,14 @@ class AmendmentRequestResponseView(APIView):
 
         serializer = AmendmentRequestResponseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        response_state = serializer.validated_data["response_state"]
+        response_note = serializer.validated_data.get("response_note", "")
+        if response_state == AmendmentRequest.ResponseState.REJECTED and not response_note.strip():
+            return Response({"response_note": "Provide a reason before rejecting this amendment request."}, status=status.HTTP_400_BAD_REQUEST)
         amendment.mark_responded(
-            response_state=serializer.validated_data["response_state"],
+            response_state=response_state,
             actor=request.user,
-            note=serializer.validated_data.get("response_note", ""),
+            note=response_note,
             counter_proposal=serializer.validated_data.get("counter_proposal"),
         )
         create_project_activity_event(
@@ -184,3 +189,49 @@ class AmendmentRequestResponseView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class AmendmentRequestViewedView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, request_id: int):
+        amendment = get_object_or_404(
+            AmendmentRequest.objects.select_related("agreement", "agreement__contractor"),
+            id=request_id,
+        )
+        agreement = amendment.agreement
+        contractor = get_contractor_for_user(request.user)
+        is_contractor = bool(contractor and getattr(agreement, "contractor_id", None) == contractor.id)
+        homeowner_email = (getattr(getattr(agreement, "homeowner", None), "email", "") or "").lower()
+        is_homeowner = bool(getattr(request.user, "email", "").lower() == homeowner_email)
+        if not (is_contractor or is_homeowner or request.user.is_staff):
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        viewer_role = "contractor" if is_contractor else "homeowner"
+        marked = mark_activity_viewed(
+            object_type="amendment_request",
+            object_id=amendment.id,
+            viewer=request.user,
+            viewer_role=viewer_role,
+        )
+        exists = ProjectActivityEvent.objects.filter(
+            object_type="amendment_request",
+            object_id=str(amendment.id),
+            event_type=ProjectActivityEvent.EventType.AMENDMENT_VIEWED,
+            actor_role=viewer_role,
+        ).exists()
+        if not exists:
+            create_project_activity_event(
+                agreement=agreement,
+                event_type=ProjectActivityEvent.EventType.AMENDMENT_VIEWED,
+                object_type="amendment_request",
+                object_id=amendment.id,
+                title="Amendment viewed",
+                body="The amendment request was opened for review.",
+                actor=request.user,
+                actor_role=viewer_role,
+                recipient_role="homeowner" if is_contractor else "contractor",
+                delivered=True,
+                metadata={"change_type": amendment.change_type, "marked_existing_events": marked},
+            )
+        return Response({"ok": True, "viewed": True, "marked": marked}, status=status.HTTP_200_OK)

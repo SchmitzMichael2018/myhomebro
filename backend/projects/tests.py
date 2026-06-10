@@ -117,7 +117,8 @@ from projects.models_subcontractor import (
     SubcontractorQuoteRequestStatus,
 )
 from projects.models_dispute import Dispute, DisputeWorkOrder
-from projects.models_amendment_request import AmendmentRequest
+from projects.models_amendment_request import AmendmentRequest, apply_descoped_milestone_hold
+from projects.services.project_activity import create_project_activity_event
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.project_learning import (
@@ -20201,6 +20202,116 @@ class CustomerPortalAccessTests(TestCase):
                 responded_at__isnull=False,
             ).exists()
         )
+
+    def test_contractor_agreement_payload_includes_incoming_descope_amendment(self):
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Finish trim",
+            description="Install trim.",
+            amount=Decimal("5000.00"),
+            completion_date=timezone.localdate() + timedelta(days=5),
+        )
+        amendment_request = AmendmentRequest.objects.create(
+            agreement=self.agreement,
+            requested_by=self.customer_homeowner.user if hasattr(self.customer_homeowner, "user") else None,
+            initiated_by_role="homeowner",
+            change_type=AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK,
+            requested_changes={"requested_change": "Remove the trim phase from the project."},
+            justification="We decided to keep the existing trim.",
+            original_project_value=Decimal("20000.00"),
+            revised_project_value=Decimal("15000.00"),
+            escrow_funded_amount=Decimal("20000.00"),
+            estimated_refundable_escrow_surplus=Decimal("5000.00"),
+            refund_eligibility_status=AmendmentRequest.RefundEligibilityStatus.ELIGIBLE_AFTER_SIGNED,
+        )
+        amendment_request.affected_milestones.set([milestone])
+        apply_descoped_milestone_hold(amendment_request)
+
+        contractor_client = APIClient()
+        contractor_client.force_authenticate(user=self.contractor_user)
+        response = contractor_client.get(f"/api/projects/agreements/{self.agreement.id}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        amendments = response.data["amendment_requests"]
+        self.assertEqual(len(amendments), 1)
+        self.assertEqual(amendments[0]["change_type"], AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK)
+        self.assertEqual(amendments[0]["response_state"], AmendmentRequest.ResponseState.PENDING)
+        self.assertEqual(amendments[0]["estimated_refundable_escrow_surplus"], "5000.00")
+        self.assertEqual(amendments[0]["affected_milestones"][0]["id"], milestone.id)
+
+    def test_contractor_response_reject_requires_reason_and_viewed_is_idempotent(self):
+        amendment_request = AmendmentRequest.objects.create(
+            agreement=self.agreement,
+            initiated_by_role="homeowner",
+            change_type=AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+            requested_changes={"requested_change": "Remove one fixture."},
+            justification="Scope changed.",
+        )
+        create_project_activity_event(
+            agreement=self.agreement,
+            event_type=ProjectActivityEvent.EventType.AMENDMENT_DELIVERED,
+            object_type="amendment_request",
+            object_id=amendment_request.id,
+            title="Amendment delivered",
+            actor_role="homeowner",
+            recipient_role="contractor",
+            delivered=True,
+        )
+        contractor_client = APIClient()
+        contractor_client.force_authenticate(user=self.contractor_user)
+
+        reject_response = contractor_client.post(
+            f"/api/projects/amendment-requests/{amendment_request.id}/respond/",
+            {"response_state": AmendmentRequest.ResponseState.REJECTED, "response_note": ""},
+            content_type="application/json",
+        )
+        self.assertEqual(reject_response.status_code, 400)
+
+        first_view = contractor_client.post(f"/api/projects/amendment-requests/{amendment_request.id}/viewed/")
+        second_view = contractor_client.post(f"/api/projects/amendment-requests/{amendment_request.id}/viewed/")
+        self.assertEqual(first_view.status_code, 200, first_view.data)
+        self.assertEqual(second_view.status_code, 200, second_view.data)
+        self.assertEqual(
+            ProjectActivityEvent.objects.filter(
+                object_type="amendment_request",
+                object_id=str(amendment_request.id),
+                event_type=ProjectActivityEvent.EventType.AMENDMENT_VIEWED,
+                actor_role="contractor",
+            ).count(),
+            1,
+        )
+
+    def test_descoped_milestone_blocks_explicit_completion_action(self):
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.escrow_funded = True
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner", "escrow_funded"])
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Remove phase",
+            description="Potentially removed work.",
+            amount=Decimal("5000.00"),
+            completion_date=timezone.localdate() + timedelta(days=5),
+        )
+        amendment_request = AmendmentRequest.objects.create(
+            agreement=self.agreement,
+            initiated_by_role="homeowner",
+            change_type=AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK,
+            requested_changes={"requested_change": "Remove this phase."},
+            justification="No longer needed.",
+        )
+        amendment_request.affected_milestones.set([milestone])
+        apply_descoped_milestone_hold(amendment_request)
+
+        contractor_client = APIClient()
+        contractor_client.force_authenticate(user=self.contractor_user)
+        response = contractor_client.post(f"/api/projects/milestones/{milestone.id}/complete/")
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data["code"], "MILESTONE_AMENDMENT_REVIEW_PENDING")
+        self.assertIn("pending de-scope amendment", response.data["detail"])
 
     def test_customer_portal_hides_contractor_only_internal_drafts(self):
         internal_project = Project.objects.create(

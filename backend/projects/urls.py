@@ -142,7 +142,7 @@ from .views.template_views import (
 )
 
 from .views.agreements_amend import create_amendment
-from .views.amendment_requests import ContractorAgreementAmendmentRequestView, AmendmentRequestResponseView
+from .views.amendment_requests import ContractorAgreementAmendmentRequestView, AmendmentRequestResponseView, AmendmentRequestViewedView
 from .views.refund import AgreementRefundCompatView
 
 from .views.employee_assignments import (
@@ -396,6 +396,7 @@ urlpatterns = [
     path("customer-portal/<str:token>/agreements/<int:agreement_id>/review/", CustomerPortalReviewSubmitView.as_view(), name="customer-portal-review-submit"),
     path("agreements/<int:agreement_id>/amendment-requests/", ContractorAgreementAmendmentRequestView.as_view(), name="contractor-agreement-amendment-request"),
     path("amendment-requests/<int:request_id>/respond/", AmendmentRequestResponseView.as_view(), name="amendment-request-respond"),
+    path("amendment-requests/<int:request_id>/viewed/", AmendmentRequestViewedView.as_view(), name="amendment-request-viewed"),
     path("customer-portal/<str:token>/reimbursements/<int:reimbursement_id>/approve/", CustomerPortalReimbursementApproveView.as_view(), name="customer-portal-reimbursement-approve"),
     path("customer-portal/<str:token>/reimbursements/<int:reimbursement_id>/deny/", CustomerPortalReimbursementDenyView.as_view(), name="customer-portal-reimbursement-deny"),
     path("customer-portal/project/<int:project_id>/", CustomerProjectDashboardView.as_view(), name="customer-project-dashboard"),

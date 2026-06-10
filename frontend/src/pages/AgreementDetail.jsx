@@ -329,6 +329,7 @@ function normalizeAgreement(raw) {
 
     invoices: raw.invoices || raw.invoice_set || [],
     milestones: raw.milestones || raw.milestone_set || [],
+    amendmentRequests: raw.amendment_requests || raw.amendmentRequests || [],
 
     // ✅ PDF versioning
     currentPdfUrl: pick(raw.current_pdf_url, raw.pdf_file_url, raw.pdf_url, ""),
@@ -798,6 +799,264 @@ function AdminAgreementCommandCenter({
   );
 }
 
+function amendmentResponseState(value) {
+  return String(value || "pending").trim().toLowerCase();
+}
+
+function isOpenContractorAmendment(amendment) {
+  const state = amendmentResponseState(amendment?.response_state);
+  const status = String(amendment?.status || "").trim().toLowerCase();
+  return state === "pending" && !["closed", "cancelled", "canceled"].includes(status);
+}
+
+function isMilestoneAmendmentBlocked(milestone) {
+  return (
+    String(milestone?.amendment_review_status || "").toLowerCase() === "pending" ||
+    Boolean(milestone?.amendment_review_request || milestone?.amendment_review_request_id)
+  );
+}
+
+function amendmentLabel(amendment) {
+  return amendment?.change_type_label || titleCase(amendment?.change_type || "Amendment");
+}
+
+function AmendmentReviewPanel({ amendments = [], onRespond, onMarkViewed, busyId = "" }) {
+  const [expandedId, setExpandedId] = useState(amendments[0]?.id || "");
+  const [responseDrafts, setResponseDrafts] = useState({});
+
+  useEffect(() => {
+    if (!expandedId && amendments[0]?.id) setExpandedId(amendments[0].id);
+  }, [amendments, expandedId]);
+
+  const setDraft = (id, patch) => {
+    setResponseDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        response_state: "accepted",
+        response_note: "",
+        counter_scope: "",
+        counter_value_change: "",
+        counter_timeline: "",
+        counter_milestone_changes: "",
+        ...prev[id],
+        ...patch,
+      },
+    }));
+  };
+
+  if (!amendments.length) return null;
+
+  return (
+    <section id="contractor-amendments" data-testid="contractor-amendment-review-panel" className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-amber-950">Amendment Review</h3>
+          <p className="mt-1 text-sm text-amber-900">
+            Review homeowner change requests before completing affected milestones or requesting payment.
+          </p>
+        </div>
+        <span className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900">
+          {amendments.filter(isOpenContractorAmendment).length} need response
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {amendments.map((amendment) => {
+          const isExpanded = String(expandedId) === String(amendment.id);
+          const isPending = isOpenContractorAmendment(amendment);
+          const isDescope = amendment.change_type === "descope_remove_work";
+          const draft = responseDrafts[amendment.id] || {
+            response_state: "accepted",
+            response_note: "",
+            counter_scope: "",
+            counter_value_change: "",
+            counter_timeline: "",
+            counter_milestone_changes: "",
+          };
+          const activity = Array.isArray(amendment.activity_events) ? amendment.activity_events : [];
+          const affectedMilestones = Array.isArray(amendment.affected_milestones) ? amendment.affected_milestones : [];
+
+          return (
+            <div key={amendment.id} data-testid={`contractor-amendment-card-${amendment.id}`} className="rounded-xl border border-amber-200 bg-white p-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setExpandedId(isExpanded ? "" : amendment.id);
+                  if (!isExpanded) onMarkViewed?.(amendment);
+                }}
+                className="flex w-full flex-col gap-2 text-left sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-slate-950">{amendmentLabel(amendment)}</div>
+                  <div className="mt-1 text-xs text-slate-600">
+                    Requested by {amendment.requested_by_name || amendment.initiated_by_role || "homeowner"} on {fmtDateTime(amendment.created_at) || "recently"}
+                  </div>
+                  {amendment.response_due_at ? (
+                    <div className="mt-1 text-xs font-semibold text-amber-800">Response due {fmtDateTime(amendment.response_due_at)}</div>
+                  ) : null}
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isPending ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700"}`}>
+                  {amendment.response_label || amendment.status_label || "Pending"}
+                </span>
+              </button>
+
+              {isExpanded ? (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                    <div className="font-semibold text-slate-950">Homeowner reason</div>
+                    <div className="mt-1 whitespace-pre-wrap">{amendment.justification || amendment.requested_change || "No reason provided."}</div>
+                    {amendment.requested_change ? (
+                      <div className="mt-3">
+                        <div className="font-semibold text-slate-950">Requested change</div>
+                        <div className="mt-1 whitespace-pre-wrap">{amendment.requested_change}</div>
+                      </div>
+                    ) : null}
+                    {amendment.requested_changes?.attachment_note ? (
+                      <div className="mt-3 text-xs text-slate-600">Attachment note: {amendment.requested_changes.attachment_note}</div>
+                    ) : null}
+                  </div>
+
+                  {isDescope ? (
+                    <div data-testid={`contractor-amendment-descope-summary-${amendment.id}`} className="grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">Original project value</div>
+                        <div className="font-semibold text-slate-950">{formatMoney(amendment.original_project_value || 0)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">Revised project value</div>
+                        <div className="font-semibold text-slate-950">{formatMoney(amendment.revised_project_value || 0)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">Escrow funded</div>
+                        <div className="font-semibold text-slate-950">{formatMoney(amendment.escrow_funded_amount || 0)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">Estimated refundable surplus</div>
+                        <div className="font-semibold text-slate-950">{formatMoney(amendment.estimated_refundable_escrow_surplus || 0)}</div>
+                      </div>
+                      <div className="sm:col-span-2 lg:col-span-4 text-xs text-amber-900">
+                        Refund eligibility is created only after both parties approve and required amendment/addendum signatures are complete.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {affectedMilestones.length ? (
+                    <div>
+                      <div className="text-sm font-semibold text-slate-950">Affected milestones</div>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {affectedMilestones.map((milestone) => (
+                          <div key={milestone.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                            <div className="font-semibold text-slate-950">{milestone.title || `Milestone #${milestone.id}`}</div>
+                            <div className="mt-1 text-xs text-slate-600">
+                              {milestone.amount ? formatMoney(milestone.amount) : "Amount not set"} - {milestone.status || "pending"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div data-testid={`contractor-amendment-activity-${amendment.id}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-sm font-semibold text-slate-950">Activity timeline</div>
+                    <div className="mt-2 space-y-2">
+                      {activity.length ? activity.map((event) => (
+                        <div key={event.id || `${event.event_type}-${event.created_at}`} className="text-xs text-slate-700">
+                          <span className="font-semibold text-slate-950">{event.event_label || titleCase(event.event_type)}</span>
+                          {event.created_at ? ` - ${fmtDateTime(event.created_at)}` : ""}
+                          {event.title ? <span className="block text-slate-600">{event.title}</span> : null}
+                        </div>
+                      )) : (
+                        <div className="text-xs text-slate-500">No activity events yet.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {isPending ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                        <label className="text-sm font-semibold text-slate-900">
+                          Response
+                          <select
+                            data-testid={`contractor-amendment-response-state-${amendment.id}`}
+                            value={draft.response_state}
+                            onChange={(e) => setDraft(amendment.id, { response_state: e.target.value })}
+                            className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                          >
+                            <option value="accepted">Accept</option>
+                            <option value="rejected">Reject</option>
+                            <option value="countered">Counter</option>
+                          </select>
+                        </label>
+                        <label className="text-sm font-semibold text-slate-900">
+                          Notes / reason
+                          <textarea
+                            data-testid={`contractor-amendment-response-note-${amendment.id}`}
+                            value={draft.response_note}
+                            onChange={(e) => setDraft(amendment.id, { response_note: e.target.value })}
+                            rows={3}
+                            className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                            placeholder={draft.response_state === "rejected" ? "Explain why this request cannot be accepted." : "Add a note for the homeowner."}
+                          />
+                        </label>
+                      </div>
+
+                      {draft.response_state === "countered" ? (
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <input
+                            data-testid={`contractor-amendment-counter-scope-${amendment.id}`}
+                            value={draft.counter_scope}
+                            onChange={(e) => setDraft(amendment.id, { counter_scope: e.target.value })}
+                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            placeholder="Revised scope"
+                          />
+                          <input
+                            data-testid={`contractor-amendment-counter-value-${amendment.id}`}
+                            value={draft.counter_value_change}
+                            onChange={(e) => setDraft(amendment.id, { counter_value_change: e.target.value })}
+                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            placeholder="Revised value change"
+                          />
+                          <input
+                            value={draft.counter_timeline}
+                            onChange={(e) => setDraft(amendment.id, { counter_timeline: e.target.value })}
+                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            placeholder="Revised timeline"
+                          />
+                          <input
+                            value={draft.counter_milestone_changes}
+                            onChange={(e) => setDraft(amendment.id, { counter_milestone_changes: e.target.value })}
+                            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            placeholder="Revised milestone changes"
+                          />
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        data-testid={`contractor-amendment-submit-response-${amendment.id}`}
+                        disabled={busyId === amendment.id}
+                        onClick={() => onRespond(amendment, draft)}
+                        className="mt-3 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                      >
+                        {busyId === amendment.id ? "Saving..." : "Submit Response"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                      <span className="font-semibold text-slate-950">Contractor response:</span>{" "}
+                      {amendment.response_note || amendment.response_label || "Response recorded."}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default function AgreementDetail({ adminMode = false, initialAgreement = null, isMagicLink = false }) {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -872,6 +1131,8 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
   const [completionDecisionBusy, setCompletionDecisionBusy] = useState({});
   const [payoutDecisionBusy, setPayoutDecisionBusy] = useState({});
   const [payoutReleaseTarget, setPayoutReleaseTarget] = useState(null);
+  const [amendmentResponseBusy, setAmendmentResponseBusy] = useState("");
+  const [viewedAmendmentIds, setViewedAmendmentIds] = useState(new Set());
   const [warrantyForm, setWarrantyForm] = useState({
     title: "",
     coverage_details: "",
@@ -898,6 +1159,8 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       user?.is_contractor ||
       !!getAccessToken());
   const signingRole = isContractor ? "contractor" : "homeowner";
+  const amendmentRequests = Array.isArray(norm?.amendmentRequests) ? norm.amendmentRequests : [];
+  const pendingContractorAmendments = amendmentRequests.filter(isOpenContractorAmendment);
 
   const ratePercent =
     fundingPreview?.rate != null
@@ -931,6 +1194,50 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       toast.error("Failed to load agreement.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const markAmendmentViewed = async (amendment) => {
+    if (!amendment?.id || viewedAmendmentIds.has(amendment.id)) return;
+    setViewedAmendmentIds((prev) => new Set([...prev, amendment.id]));
+    try {
+      await api.post(`/projects/amendment-requests/${amendment.id}/viewed/`);
+    } catch (err) {
+      console.warn("Unable to mark amendment viewed", err);
+    }
+  };
+
+  const submitAmendmentResponse = async (amendment, draft) => {
+    if (!amendment?.id) return;
+    const responseState = draft?.response_state || "accepted";
+    const note = String(draft?.response_note || "").trim();
+    if (responseState === "rejected" && !note) {
+      toast.error("Add a reason before rejecting the amendment request.");
+      return;
+    }
+    const payload = {
+      response_state: responseState,
+      response_note: note,
+    };
+    if (responseState === "countered") {
+      payload.counter_proposal = {
+        revised_scope: draft?.counter_scope || "",
+        revised_value_change: draft?.counter_value_change || "",
+        revised_timeline: draft?.counter_timeline || "",
+        revised_milestone_changes: draft?.counter_milestone_changes || "",
+        note,
+      };
+    }
+    try {
+      setAmendmentResponseBusy(amendment.id);
+      await api.post(`/projects/amendment-requests/${amendment.id}/respond/`, payload);
+      toast.success("Amendment response recorded.");
+      await fetchAgreement();
+    } catch (err) {
+      console.error(err);
+      toast.error(formatApiError(err, "Could not submit amendment response."));
+    } finally {
+      setAmendmentResponseBusy("");
     }
   };
 
@@ -1301,10 +1608,20 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
 
   const openCreateDrawModal = async () => {
     const rows = await fetchDrawMilestones();
+    const blockedRows = rows.filter(isMilestoneAmendmentBlocked);
+    const billableRows = rows.filter((row) => !isMilestoneAmendmentBlocked(row));
+    if (blockedRows.length) {
+      toast.error("Some milestones are affected by pending amendments and cannot be included in a draw yet.");
+    }
+    if (!billableRows.length && rows.length) {
+      toast.error("All milestones are blocked by amendment review. Respond to the amendment before requesting payment.");
+      return;
+    }
     const nextPercents = {};
-    rows.forEach((row) => {
+    billableRows.forEach((row) => {
       nextPercents[String(row.id)] = "0";
     });
+    setDrawMilestones(billableRows);
     setDrawForm({
       title: `Draw ${drawRows.length + 1}`,
       notes: "",
@@ -1317,6 +1634,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
     try {
       setDrawSaving(true);
       const lineItems = (drawMilestones || [])
+        .filter((milestone) => !isMilestoneAmendmentBlocked(milestone))
         .map((milestone) => ({
           milestone_id: milestone.id,
           description: milestone.title || `Milestone ${milestone.id}`,
@@ -1464,6 +1782,14 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       cancelled = true;
     };
   }, [adminTab, id, isAdminMode]);
+
+  useEffect(() => {
+    if (!isContractor || !pendingContractorAmendments.length) return;
+    pendingContractorAmendments.forEach((amendment) => {
+      markAmendmentViewed(amendment);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isContractor, pendingContractorAmendments.map((row) => row.id).join(",")]);
 
   if (loading) return <div className="p-6">Loading…</div>;
   if (!norm.id) return <div className="p-6">Agreement not found.</div>;
@@ -1978,6 +2304,22 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
           </div>
         </div>
       </section>
+
+      {isContractor && pendingContractorAmendments.length ? (
+        <section data-testid="contractor-amendment-next-action" className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-rose-950">Amendment response needed</h3>
+              <p className="mt-1 text-sm text-rose-800">
+                A homeowner amendment request is waiting for your response. Affected milestone completion and payment requests may be blocked until this is handled.
+              </p>
+            </div>
+            <a href="#contractor-amendments" className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">
+              Review amendment
+            </a>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3041,6 +3383,15 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       <AttachmentManager agreementId={id} canEdit={isContractor} />
       </section>
 
+      {isContractor && amendmentRequests.length ? (
+        <AmendmentReviewPanel
+          amendments={amendmentRequests}
+          onRespond={submitAmendmentResponse}
+          onMarkViewed={markAmendmentViewed}
+          busyId={amendmentResponseBusy}
+        />
+      ) : null}
+
       {/* Milestones */}
       <section className="space-y-4">
         <div>
@@ -3064,6 +3415,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
           <div className="space-y-3">
             {norm.milestones.map((m) => {
               const refunded = isRefundedMilestone(m);
+              const amendmentBlocked = isMilestoneAmendmentBlocked(m);
               const label = milestoneStatusLabel(m);
               const lifecycleState = String(
                 m.milestone_lifecycle_state || m.lifecycle_state || "planned"
@@ -3130,7 +3482,24 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
                       className="ml-2"
                       dataTestId={`agreement-milestone-inspection-${m.id}`}
                     />
+                    {amendmentBlocked ? (
+                      <span
+                        data-testid={`milestone-amendment-review-pending-${m.id}`}
+                        className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-extrabold text-amber-900"
+                      >
+                        Amendment Review Pending
+                      </span>
+                    ) : null}
                   </div>
+
+                  {amendmentBlocked ? (
+                    <div
+                      data-testid={`milestone-amendment-block-message-${m.id}`}
+                      className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                    >
+                      This milestone is affected by a pending de-scope amendment. Completion submission and invoice/payment release are blocked until the amendment is reviewed.
+                    </div>
+                  ) : null}
 
                   <div className="mt-2 text-sm text-gray-600">
                     <span className="font-semibold text-gray-900">
