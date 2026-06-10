@@ -1479,6 +1479,7 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-header-logout")).toBeVisible();
   await expect(page.getByTestId("customer-portal-create-password-prompt")).not.toBeVisible();
   await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();

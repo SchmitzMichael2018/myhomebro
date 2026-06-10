@@ -1610,9 +1610,23 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             </div>
             <div className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300 lg:w-auto">
               <div>Secure access verified for <span className="font-semibold text-white">{portal?.customer?.email}</span></div>
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
-                <Bell size={13} />
-                {unreadCount} unread updates
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
+                  <Bell size={13} />
+                  {unreadCount} unread updates
+                </div>
+                <button
+                  type="button"
+                  data-testid="customer-dashboard-header-logout"
+                  onClick={() => {
+                    clearAuth(false);
+                    window.location.assign("/portal");
+                  }}
+                  className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full border border-rose-300/35 bg-rose-400/10 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400/20"
+                >
+                  <LogOut size={13} />
+                  Log out
+                </button>
               </div>
             </div>
           </div>
