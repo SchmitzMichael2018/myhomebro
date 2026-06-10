@@ -38,7 +38,7 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
-from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
+from projects.models_customer_portal import CustomerRequest, NotificationRule, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
 from projects.models_maintenance import MaintenanceWorkOrder
@@ -1071,9 +1071,16 @@ def _payments(email: str, request=None) -> list[dict]:
 
     for invoice in invoices:
         agreement = getattr(invoice, "agreement", None)
+        invoice_amount = _invoice_amount(invoice)
+        invoice_status = _safe_text(getattr(invoice, "status", "")).lower()
+        invoice_paid = bool(
+            getattr(invoice, "escrow_released", False)
+            or getattr(invoice, "direct_pay_paid_at", None)
+            or invoice_status == "paid"
+        )
         status_text = (
             "Paid"
-            if getattr(invoice, "escrow_released", False) or getattr(invoice, "direct_pay_paid_at", None) or str(getattr(invoice, "status", "")).lower() == "paid"
+            if invoice_paid
             else _safe_text(getattr(invoice, "status", "")).replace("_", " ").title() or "Pending"
         )
         receipt = getattr(invoice, "receipt", None)
@@ -1087,10 +1094,11 @@ def _payments(email: str, request=None) -> list[dict]:
                 "contractor_name": _contractor_name(getattr(agreement, "contractor", None)),
                 "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
                 "payment_mode_label": _safe_text(getattr(agreement, "payment_mode", "")).replace("_", " ").title(),
-                "amount": _safe_text(getattr(invoice, "amount", "")),
-                "amount_label": f"${Decimal(str(getattr(invoice, 'amount', 0) or 0)):.2f}",
-                "status": _safe_text(getattr(invoice, "status", "")).lower(),
+                "amount": str(invoice_amount),
+                "amount_label": f"${invoice_amount:.2f}",
+                "status": invoice_status,
                 "status_label": status_text,
+                "is_actionable": bool(invoice_amount > Decimal("0.00") and not invoice_paid),
                 "dispute_status": "Dispute opened" if getattr(invoice, "disputed", False) or _safe_text(getattr(invoice, "status", "")).lower() == "disputed" else "No dispute",
                 "dispute_url": "",
                 "date": _safe_dt(
@@ -1105,7 +1113,7 @@ def _payments(email: str, request=None) -> list[dict]:
                 "agreement_id": getattr(agreement, "id", None),
                 "action_target": f"/invoice/{invoice.public_token}",
                 "receipt_url": _safe_text(getattr(getattr(receipt, "pdf_file", None), "url", "")),
-                "notes": "Escrow release" if getattr(invoice, "escrow_released", False) else "Direct pay" if getattr(invoice, "direct_pay_paid_at", None) else "",
+                "notes": "No payment required" if invoice_amount <= Decimal("0.00") else "Escrow release" if getattr(invoice, "escrow_released", False) else "Direct pay" if getattr(invoice, "direct_pay_paid_at", None) else "",
             }
         )
 
@@ -1457,20 +1465,116 @@ def _customer_account_payload(email: str) -> dict:
     }
 
 
+HOMEOWNER_VISIBLE_NOTIFICATION_EVENTS = {
+    SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+    SmartNotificationEvent.PROPERTY_PROFILE_UPDATED,
+    SmartNotificationEvent.MARKETPLACE_REQUEST_ROUTED,
+    SmartNotificationEvent.CUSTOMER_BID_RECEIVED,
+    SmartNotificationEvent.BID_AWARDED,
+    SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE,
+    SmartNotificationEvent.AGREEMENT_SIGNED,
+    SmartNotificationEvent.ESCROW_NEEDS_FUNDING,
+    SmartNotificationEvent.ESCROW_FUNDED,
+    SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL,
+    SmartNotificationEvent.PAYMENT_RECEIVED,
+    SmartNotificationEvent.REIMBURSEMENT_SUBMITTED,
+    SmartNotificationEvent.REIMBURSEMENT_APPROVED,
+    SmartNotificationEvent.REIMBURSEMENT_DENIED,
+    SmartNotificationEvent.REIMBURSEMENT_RELEASED,
+    SmartNotificationEvent.REIMBURSEMENT_HELD,
+    SmartNotificationEvent.DISPUTE_OPENED,
+    SmartNotificationEvent.DISPUTE_UPDATED,
+    SmartNotificationEvent.DISPUTE_RESOLVED,
+    SmartNotificationEvent.REQUEST_MARKETPLACE_READY,
+    SmartNotificationEvent.MAINTENANCE_WORK_ORDER_SCHEDULED,
+    SmartNotificationEvent.MAINTENANCE_WORK_ORDER_COMPLETED,
+    SmartNotificationEvent.MAINTENANCE_CONTRACT_CANCELLED,
+}
+
+
+def _notification_identity(row: SmartNotification) -> tuple:
+    created_at = getattr(row, "created_at", None)
+    bucket = 0
+    if created_at:
+        try:
+            bucket = int(created_at.timestamp() // 600)
+        except Exception:
+            bucket = 0
+    object_key = (
+        getattr(row, "invoice_id", None)
+        or getattr(row, "draw_request_id", None)
+        or getattr(row, "milestone_id", None)
+        or getattr(row, "agreement_id", None)
+        or getattr(row, "project_id", None)
+        or getattr(row, "customer_request_id", None)
+        or getattr(row, "property_profile_id", None)
+        or f"{_safe_text(row.title).lower()}:{_safe_text(row.message).lower()}"
+    )
+    return (_safe_text(row.event_type), object_key, bucket)
+
+
+def _serialize_smart_notification(row: SmartNotification) -> dict:
+    title = _safe_text(row.title)
+    message = _safe_text(row.message)
+    linked_invoice = getattr(row, "invoice", None)
+    if (
+        linked_invoice is not None
+        and _safe_text(row.event_type) == SmartNotificationEvent.PAYMENT_RECEIVED
+        and Decimal(str(getattr(linked_invoice, "amount", 0) or 0)) <= Decimal("0.00")
+    ):
+        project_title = _agreement_title(getattr(linked_invoice, "agreement", None))
+        title = "Dispute correction recorded"
+        message = f"No payment is required for {project_title or 'this correction'}."
+    return {
+        "id": row.id,
+        "event_type": _safe_text(row.event_type),
+        "channel": _safe_text(row.channel),
+        "status": _safe_text(row.status),
+        "title": title,
+        "message": message,
+        "action_url": _safe_text(row.action_url),
+        "created_at": _safe_dt(row.created_at),
+    }
+
+
 def _smart_notification_rows(email: str) -> list[dict]:
-    return [
-        {
-            "id": row.id,
-            "event_type": _safe_text(row.event_type),
-            "channel": _safe_text(row.channel),
-            "status": _safe_text(row.status),
-            "title": _safe_text(row.title),
-            "message": _safe_text(row.message),
-            "action_url": _safe_text(row.action_url),
-            "created_at": _safe_dt(row.created_at),
-        }
-        for row in SmartNotification.objects.filter(recipient_email__iexact=email).order_by("-created_at", "-id")[:20]
-    ]
+    seen = set()
+    rows = []
+    qs = (
+        SmartNotification.objects.select_related(
+            "agreement",
+            "invoice",
+            "invoice__agreement",
+            "project",
+            "milestone",
+            "draw_request",
+            "customer_request",
+            "property_profile",
+        )
+        .filter(recipient_email__iexact=email, channel=NotificationRule.CHANNEL_IN_APP)
+        .exclude(status=SmartNotification.STATUS_DISMISSED)
+        .order_by("-created_at", "-id")[:100]
+    )
+    for row in qs:
+        if _safe_text(row.event_type) not in HOMEOWNER_VISIBLE_NOTIFICATION_EVENTS:
+            continue
+        if not _smart_notification_belongs_to_email(row, email):
+            continue
+        key = _notification_identity(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(_serialize_smart_notification(row))
+        if len(rows) >= 20:
+            break
+    return rows
+
+
+def _invoice_amount(invoice) -> Decimal:
+    try:
+        return Decimal(str(getattr(invoice, "amount", 0) or 0))
+    except Exception:
+        return Decimal("0.00")
 
 
 def _smart_notification_belongs_to_email(notification: SmartNotification, email: str) -> bool:
@@ -1577,7 +1681,10 @@ def _ensure_portal_workflow_notifications(email: str) -> None:
     )
     for invoice in invoices:
         paid_at = getattr(invoice, "direct_pay_paid_at", None) or getattr(invoice, "escrow_released_at", None) or getattr(invoice, "approved_at", None)
-        if _safe_text(getattr(invoice, "status", "")).lower() != "paid" and not paid_at:
+        invoice_status = _safe_text(getattr(invoice, "status", "")).lower()
+        invoice_amount = _invoice_amount(invoice)
+        is_zero_correction = invoice_amount <= Decimal("0.00") and invoice_status in {"approved", "paid"}
+        if invoice_status != "paid" and not paid_at and not is_zero_correction:
             continue
         agreement = getattr(invoice, "agreement", None)
         create_smart_notification(
@@ -1592,7 +1699,7 @@ def _ensure_portal_workflow_notifications(email: str) -> None:
             action_url=f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
             context={
                 "project_title": _agreement_title(agreement) if agreement else "",
-                "dedupe_key": f"payment_received:invoice:{invoice.id}",
+                "dedupe_key": f"{'zero_correction' if is_zero_correction else 'payment_received'}:invoice:{invoice.id}",
             },
         )
 
@@ -1725,21 +1832,23 @@ def _project_payment_rows(agreement) -> tuple[dict, list[dict], list[dict]]:
     for invoice in invoices:
         status = _safe_text(getattr(invoice, "status", "")).lower()
         paid = bool(getattr(invoice, "escrow_released", False) or getattr(invoice, "direct_pay_paid_at", None) or status == "paid")
+        amount = _invoice_amount(invoice)
         approved = status == "approved"
-        if approved and not paid and approved_unpaid is None:
+        if approved and not paid and amount > Decimal("0.00") and approved_unpaid is None:
             approved_unpaid = invoice
         invoice_rows.append(
             {
                 "id": invoice.id,
                 "type": "invoice",
                 "label": f"Invoice {getattr(invoice, 'invoice_number', invoice.id)}",
-                "amount": str(getattr(invoice, "amount", "") or "0.00"),
-                "amount_label": f"${Decimal(str(getattr(invoice, 'amount', 0) or 0)):.2f}",
+                "amount": str(amount),
+                "amount_label": f"${amount:.2f}",
                 "status": "paid" if paid else status or "pending",
                 "status_label": "Paid" if paid else _safe_text(getattr(invoice, "status", "")).replace("_", " ").title() or "Pending",
+                "is_actionable": bool(amount > Decimal("0.00") and not paid),
                 "date": _safe_dt(getattr(invoice, "escrow_released_at", None) or getattr(invoice, "direct_pay_paid_at", None) or getattr(invoice, "approved_at", None) or getattr(invoice, "created_at", None)),
                 "link": f"/invoice/{invoice.public_token}",
-                "notes": "Escrow release" if getattr(invoice, "escrow_released", False) else "Direct pay" if getattr(invoice, "direct_pay_paid_at", None) else "",
+                "notes": "No payment required" if amount <= Decimal("0.00") else "Escrow release" if getattr(invoice, "escrow_released", False) else "Direct pay" if getattr(invoice, "direct_pay_paid_at", None) else "",
             }
         )
 
@@ -1869,7 +1978,7 @@ def _project_activity(agreement, milestone_rows, payment_summary, invoice_rows, 
                 }
             )
     for row in invoice_rows:
-        if row.get("status") == "approved":
+        if row.get("status") == "approved" and row.get("is_actionable"):
             activity.append(
                 {
                     "id": f"invoice-approved-{row['id']}",
@@ -1877,6 +1986,18 @@ def _project_activity(agreement, milestone_rows, payment_summary, invoice_rows, 
                     "title": f"{row['label']} approved",
                     "body": f"{row.get('amount_label')} is ready for payment.",
                     "tone": "blue",
+                    "created_at": row.get("date"),
+                    "link": row.get("link", ""),
+                }
+            )
+        elif row.get("status") == "approved" and not row.get("is_actionable"):
+            activity.append(
+                {
+                    "id": f"invoice-correction-{row['id']}",
+                    "category": "payment_info",
+                    "title": "Dispute correction recorded",
+                    "body": "No payment is required for this correction.",
+                    "tone": "slate",
                     "created_at": row.get("date"),
                     "link": row.get("link", ""),
                 }
@@ -1994,7 +2115,7 @@ def _project_next_action(agreement, milestone_rows, payment_summary, invoice_row
             "url": "",
         }
 
-    approved_invoice = next((row for row in invoice_rows if row.get("status") == "approved"), None)
+    approved_invoice = next((row for row in invoice_rows if row.get("status") == "approved" and row.get("is_actionable")), None)
     if approved_invoice:
         return {
             "title": f"Pay {approved_invoice['label']}",

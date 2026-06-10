@@ -19880,6 +19880,81 @@ class CustomerPortalAccessTests(TestCase):
         self.assertFalse(response.data["account"]["has_usable_password"])
         self.assertTrue(response.data["account"]["portal_token"])
 
+    def test_customer_portal_notifications_are_canonical_deduped_and_filtered(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        now = timezone.now()
+        SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.PAYMENT_RECEIVED,
+            channel=NotificationRule.CHANNEL_IN_APP,
+            recipient_email=self.customer_email,
+            invoice=self.invoice,
+            agreement=self.agreement,
+            project=self.project,
+            title="Payment received",
+            message="A payment was received for Kitchen Remodel.",
+            created_at=now,
+        )
+        SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.PAYMENT_RECEIVED,
+            channel=NotificationRule.CHANNEL_IN_APP,
+            recipient_email=self.customer_email,
+            invoice=self.invoice,
+            agreement=self.agreement,
+            project=self.project,
+            title="Payment received duplicate",
+            message="A payment was received for Kitchen Remodel.",
+            created_at=now + timedelta(minutes=2),
+        )
+        SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.PAYMENT_RECEIVED,
+            channel=NotificationRule.CHANNEL_EMAIL_STUB,
+            recipient_email=self.customer_email,
+            invoice=self.invoice,
+            agreement=self.agreement,
+            project=self.project,
+            title="Internal email dispatch row",
+            message="This channel should not appear in the portal feed.",
+            created_at=now + timedelta(minutes=3),
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        payment_rows = [
+            row
+            for row in response.data["notifications"]
+            if row["event_type"] == SmartNotificationEvent.PAYMENT_RECEIVED
+            and row["action_url"] == f"/agreements/magic/{self.agreement.homeowner_access_token}"
+        ]
+        self.assertEqual(len(payment_rows), 1)
+        self.assertNotIn("Internal email dispatch row", {row["title"] for row in response.data["notifications"]})
+
+    def test_customer_portal_zero_dollar_correction_invoice_is_informational_not_actionable(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        correction = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("0.00"),
+            status=InvoiceStatus.APPROVED,
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        payment = next(row for row in response.data["payments"] if row["id"] == f"invoice-{correction.id}")
+        self.assertEqual(payment["amount_label"], "$0.00")
+        self.assertFalse(payment["is_actionable"])
+        self.assertEqual(payment["notes"], "No payment required")
+        detail = self.client.get(f"/api/projects/customer-portal/project/{self.project.id}/?token={token}")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertNotEqual(detail.data["next_action"]["title"], f"Pay Invoice {correction.invoice_number}")
+        self.assertTrue(
+            any(
+                row["title"] == "Dispute correction recorded"
+                and row["message"].startswith("No payment is required")
+                for row in response.data["notifications"]
+            )
+        )
+
     def test_customer_portal_hides_contractor_only_internal_drafts(self):
         internal_project = Project.objects.create(
             contractor=self.contractor,

@@ -126,6 +126,7 @@ function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
 }
 
 function paymentActionLabel(payment) {
+  if (payment?.is_actionable === false || paymentAmountValue(payment) <= 0) return "View Record";
   const status = String(payment?.status || payment?.status_label || "").toLowerCase();
   const type = String(payment?.record_type || payment?.record_type_label || "").toLowerCase();
   if (status.includes("paid") || status.includes("released")) return payment?.receipt_url ? "View Receipt" : "View Record";
@@ -143,6 +144,26 @@ function isPaidPayment(payment) {
   const status = String(payment?.status || payment?.status_label || "").toLowerCase();
   return status.includes("paid") || status.includes("released");
 }
+
+function paymentAmountValue(payment) {
+  const raw = payment?.amount ?? payment?.amount_label ?? "";
+  const value = Number(String(raw || "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isActionablePayment(payment) {
+  if (payment?.is_actionable === false) return false;
+  return !isPaidPayment(payment) && paymentAmountValue(payment) > 0;
+}
+
+const ACTIONABLE_NOTIFICATION_EVENTS = new Set([
+  "agreement_needs_signature",
+  "escrow_needs_funding",
+  "milestone_needs_approval",
+  "reimbursement_submitted",
+  "customer_bid_received",
+  "request_marketplace_ready",
+]);
 
 function hasOpenDispute(payment) {
   const value = String(payment?.dispute_status || payment?.dispute_status_label || "").toLowerCase();
@@ -182,7 +203,7 @@ function normalizeInvoiceMagicUrl(actionTarget = "") {
 function PaymentsPanel({ payments = [], token = "", onPortalUpdate }) {
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const attention = payments.filter((payment) => {
-    return !isPaidPayment(payment);
+    return isActionablePayment(payment);
   });
   const paid = payments.filter((payment) => !attention.includes(payment));
   const historyDefaultCount = 5;
@@ -259,6 +280,7 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
   const target = payment.receipt_url || invoiceUrl || "#";
   const disputeUrl = isInvoicePayment(payment) && invoiceUrl ? `${invoiceUrl}?action=dispute` : "";
   const paid = isPaidPayment(payment);
+  const actionable = isActionablePayment(payment);
   const disputeStatus = customerDisputeStatus(payment);
 
   async function runReimbursementAction(action) {
@@ -331,7 +353,7 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
                 <ExternalLink size={14} />
               </a>
             ) : null}
-            {isInvoicePayment(payment) && invoiceUrl && !paid ? (
+            {isInvoicePayment(payment) && invoiceUrl && actionable ? (
               <>
                 <a
                   data-testid={`customer-payment-view-invoice-${payment.id}`}
@@ -574,9 +596,12 @@ function OverviewPanel({ portal, onOpenTab }) {
   const latestProjects = (portal?.projects || []).slice(0, 3);
   const notifications = portal?.notifications || [];
   const openPayments = (portal?.payments || []).filter((payment) => {
-    return !isPaidPayment(payment);
+    return isActionablePayment(payment);
   });
   const openDisputes = (portal?.payments || []).filter(hasOpenDispute);
+  const actionableNotifications = notifications.filter((notification) => (
+    notification.status !== "read" && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || ""))
+  ));
   const needsAttention = [
     ...openDisputes.slice(0, 2).map((payment) => ({
       id: `dispute-${payment.id}`,
@@ -585,7 +610,7 @@ function OverviewPanel({ portal, onOpenTab }) {
       action: "Track Issue Status",
       tab: "payments",
     })),
-    ...notifications.filter((notification) => notification.status !== "read").slice(0, 3).map((notification) => ({
+    ...actionableNotifications.slice(0, 3).map((notification) => ({
       id: `notification-${notification.id}`,
       title: notification.title || "Workspace update",
       body: notification.message || "A project update is available.",
@@ -748,6 +773,29 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, markingId = 
 
 function eventLabel(eventType = "") {
   return String(eventType || "notification").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function notificationDedupeKey(notification) {
+  const createdAt = notification?.created_at ? new Date(notification.created_at).getTime() : 0;
+  const bucket = Number.isFinite(createdAt) ? Math.floor(createdAt / (10 * 60 * 1000)) : 0;
+  return [
+    notification?.event_type || "",
+    notification?.action_url || "",
+    String(notification?.title || "").toLowerCase(),
+    String(notification?.message || "").toLowerCase(),
+    bucket,
+  ].join("|");
+}
+
+function normalizePortalNotifications(rows = []) {
+  const seen = new Set();
+  return (Array.isArray(rows) ? rows : []).filter((notification) => {
+    if (notification?.channel && notification.channel !== "in_app") return false;
+    const key = notificationDedupeKey(notification);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", onMarkRead }) {
@@ -1002,7 +1050,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [savingProfile, setSavingProfile] = useState(false);
 
   const customerName = portal?.customer?.name || "Customer";
-  const notifications = portal?.notifications || [];
+  const notifications = normalizePortalNotifications(portal?.notifications || []);
   const unreadCount = notifications.filter((notification) => notification.status !== "read").length;
 
   const refreshPortal = async () => {
@@ -1058,7 +1106,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
   };
   const tabContent = useMemo(() => {
-    if (activeTab === "overview") return <OverviewPanel portal={portal} onOpenTab={setActiveTab} />;
+    if (activeTab === "overview") return <OverviewPanel portal={{ ...portal, notifications }} onOpenTab={setActiveTab} />;
     if (activeTab === "projects") {
       return (
         <CustomerProjectWorkspace

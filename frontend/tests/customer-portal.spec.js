@@ -16,7 +16,7 @@ const portalPayload = {
     active_projects: 1,
     bids_received: 3,
     active_agreements: 1,
-    payments: 4,
+    payments: 5,
     documents: 4,
     maintenance_work_orders: 1,
   },
@@ -321,6 +321,27 @@ const portalPayload = {
       notes: "Direct pay invoice awaiting payment.",
     },
     {
+      id: "invoice-zero",
+      project_title: "Kitchen Remodel",
+      contractor_name: "Builder Co",
+      payment_mode: "direct",
+      payment_mode_label: "Direct Pay",
+      record_type_label: "Invoice",
+      record_type: "invoice",
+      date: "2026-04-16T09:30:00Z",
+      amount: "0.00",
+      amount_label: "$0.00",
+      status: "approved",
+      status_label: "Approved",
+      is_actionable: false,
+      action_target: "/invoice/portal-zero-correction-token",
+      reference: "INV-20260416-0000",
+      invoice_number: "INV-20260416-0000",
+      dispute_status: "none",
+      dispute_status_label: "No dispute",
+      notes: "No payment required",
+    },
+    {
       id: "draw-1",
       project_title: "Kitchen Remodel",
       record_type_label: "Draw",
@@ -605,6 +626,26 @@ const portalPayload = {
       message: "A payment was received for Kitchen Remodel.",
       action_url: "/agreements/magic/portal-token",
       created_at: "2026-04-15T17:00:00Z",
+    },
+    {
+      id: 103,
+      event_type: "payment_received",
+      channel: "in_app",
+      status: "read",
+      title: "Payment received",
+      message: "A payment was received for Kitchen Remodel.",
+      action_url: "/agreements/magic/portal-token",
+      created_at: "2026-04-15T17:02:00Z",
+    },
+    {
+      id: 104,
+      event_type: "payment_received",
+      channel: "email_stub",
+      status: "unread",
+      title: "Internal payment email row",
+      message: "This delivery row should not render in the customer portal.",
+      action_url: "/agreements/magic/portal-token",
+      created_at: "2026-04-15T17:03:00Z",
     },
   ],
 };
@@ -1200,7 +1241,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
-  await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("4");
+  await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("5");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("4");
   await expect(page.getByTestId("customer-activation-checklist")).toContainText("Get your customer workspace ready");
   await expect(page.getByTestId("customer-activation-check-property-profile")).toContainText("Complete");
@@ -1241,6 +1282,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent project, payment, request, and property updates.");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Payment received");
+  await expect(page.getByTestId("customer-notifications-panel").getByRole("heading", { name: "Payment received" })).toHaveCount(1);
+  await expect(page.getByTestId("customer-notifications-panel")).not.toContainText("Internal payment email row");
   await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("1 unread");
   await expect(page.getByTestId("customer-notification-101")).toContainText("Unread");
   await expect(page.getByTestId("customer-notification-101")).toHaveClass(/border-sky-300/);
@@ -1366,15 +1409,23 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-payment-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
   await expect(page.getByTestId("customer-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
   await expect(page.getByTestId("customer-payment-action-invoice-1")).toContainText("View Record");
+  await expect(page.getByTestId("customer-payment-action-invoice-zero")).toContainText("$0.00");
+  await expect(page.getByTestId("customer-payment-action-invoice-zero")).toContainText("No payment required");
+  await expect(page.getByTestId("customer-payment-primary-invoice-zero")).toContainText("View Record");
+  await expect(page.getByTestId("customer-payment-action-invoice-zero")).not.toContainText("Pay Invoice");
+  await expect(page.getByTestId("customer-payment-action-invoice-zero")).not.toContainText("Open Dispute");
 
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-dashboard-overview")).toContainText("Open issue for Kitchen Remodel");
+  await expect(page.getByTestId("customer-dashboard-overview")).not.toContainText("$0.00 - Approved");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Notifications Center");
   await page.getByTestId("customer-notifications-filter-all").click();
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
+  await expect(page.getByTestId("customer-notifications-center").getByRole("heading", { name: "Payment received" })).toHaveCount(1);
+  await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Internal payment email row");
 
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Scope Addendum");
