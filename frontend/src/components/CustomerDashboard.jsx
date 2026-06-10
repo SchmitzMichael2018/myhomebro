@@ -339,21 +339,35 @@ function isEscrowHistoryRecord(payment) {
 
 function paymentHistoryLabel(payment) {
   const status = paymentStatusText(payment);
-  if (isRefundPayment(payment)) return "Refund";
-  if (status.includes("failed")) return "Failed Payment";
-  if (status.includes("reversed")) return "Reversed Payment";
+  if (isRefundPayment(payment)) return "Refund Issued";
+  if (status.includes("failed")) return "Payment Failed";
+  if (status.includes("reversed")) return "Payment Reversed";
   if (isEscrowReleasePayment(payment)) return "Release Paid";
   if (isCustomerPaidPayment(payment)) return "Direct Payment";
-  if (isActionablePayment(payment)) return "Pending Payment";
   return "Adjustment";
 }
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
-  if (isEscrowReleasePayment(payment)) return "Escrow Released";
+  if (isEscrowReleasePayment(payment)) return "Escrow Release to Contractor";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
-  return "Escrow Remaining";
+  return "Adjustment";
+}
+
+function paymentHistoryDescription(payment) {
+  if (isEscrowReleasePayment(payment)) return "Paid to contractor from escrow";
+  if (isCustomerPaidPayment(payment)) return "Paid directly outside escrow";
+  if (isRefundPayment(payment)) return "Returned or credited to the customer";
+  return "";
+}
+
+function escrowHistoryDescription(payment) {
+  if (isEscrowFundingPayment(payment)) return "Funds added to escrow";
+  if (isEscrowReleasePayment(payment)) return "Reduced escrow balance and paid contractor. Linked payment: Release Paid";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
+  if (payment?.dispute_escrow_hold_active) return "Escrow balance is paused while this issue is reviewed";
+  return "";
 }
 
 function moneyLabel(value) {
@@ -543,7 +557,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment History</div>
                     <div className="mt-2 space-y-2">
                       {selectedPaymentHistory.length ? selectedPaymentHistory.slice(0, 4).map((payment) => (
-                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} />
+                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
                       )) : (
                         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No contractor releases, direct payments, refunds, or adjustments are connected yet.</div>
                       )}
@@ -553,7 +567,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Escrow History</div>
                     <div className="mt-2 space-y-2">
                       {selectedEscrowHistory.length ? selectedEscrowHistory.slice(0, 4).map((payment) => (
-                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
+                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
                       )) : (
                         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No escrow funding, release, hold, or refund events are connected yet.</div>
                       )}
@@ -598,7 +612,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         <div data-testid="customer-payment-history" className="mt-4 space-y-3">
           {paymentHistory.length ? (
             visiblePaymentHistory.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} />
+              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
             ))
           ) : payments.length ? null : (
             <EmptyState title="No payment records yet" testId="customer-payments-empty">
@@ -634,7 +648,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
           {escrowHistory.length ? (
             visibleEscrowHistory.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} cardTestId={`customer-escrow-action-${payment.id}`} />
+              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-escrow-action-${payment.id}`} />
             ))
           ) : (
             <EmptyState title="No escrow records yet" testId="customer-escrow-history-empty">
@@ -662,7 +676,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
   );
 }
 
-function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdate, displayLabel = "", cardTestId = "" }) {
+function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdate, displayLabel = "", displayDescription = "", cardTestId = "" }) {
   const [busyAction, setBusyAction] = useState("");
   const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
   const target = payment.receipt_url || invoiceUrl || "#";
@@ -701,6 +715,7 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
             <Badge>{payment.status_label || "Pending"}</Badge>
           </div>
           <div className="mt-3 text-sm font-semibold text-white">{payment.project_title}</div>
+          {displayDescription ? <p className="mt-1 text-xs font-medium text-slate-300">{displayDescription}</p> : null}
           <div className="mt-1 text-xs text-slate-500">
             {payment.date ? new Date(payment.date).toLocaleDateString() : "No date"}
             {payment.reference ? ` - ${payment.reference}` : ""}

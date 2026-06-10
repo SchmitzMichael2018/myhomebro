@@ -190,21 +190,35 @@ function isEscrowHistoryRecord(payment) {
 
 function paymentHistoryLabel(payment) {
   const status = paymentStatusText(payment);
-  if (isRefundPayment(payment)) return "Refund";
-  if (status.includes("failed")) return "Failed Payment";
-  if (status.includes("reversed")) return "Reversed Payment";
+  if (isRefundPayment(payment)) return "Refund Issued";
+  if (status.includes("failed")) return "Payment Failed";
+  if (status.includes("reversed")) return "Payment Reversed";
   if (isEscrowReleasePayment(payment)) return "Release Paid";
   if (isCustomerPaidPayment(payment)) return "Direct Payment";
-  if (isActionablePayment(payment)) return "Pending Payment";
   return "Adjustment";
 }
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
-  if (isEscrowReleasePayment(payment)) return "Escrow Released";
+  if (isEscrowReleasePayment(payment)) return "Escrow Release to Contractor";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
-  return "Escrow Remaining";
+  return "Adjustment";
+}
+
+function paymentHistoryDescription(payment) {
+  if (isEscrowReleasePayment(payment)) return "Paid to contractor from escrow";
+  if (isCustomerPaidPayment(payment)) return "Paid directly outside escrow";
+  if (isRefundPayment(payment)) return "Returned or credited to the customer";
+  return "";
+}
+
+function escrowHistoryDescription(payment) {
+  if (isEscrowFundingPayment(payment)) return "Funds added to escrow";
+  if (isEscrowReleasePayment(payment)) return "Reduced escrow balance and paid contractor. Linked payment: Release Paid";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
+  if (payment?.dispute_escrow_hold_active) return "Escrow balance is paused while this issue is reviewed";
+  return "";
 }
 
 function paidProgressPercent(released = 0, projectValue = 0) {
@@ -1692,6 +1706,9 @@ export default function CustomerProjectWorkspace({
                               <div className="text-sm font-semibold text-white">
                                 {paymentHistoryLabel(payment)} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
                               </div>
+                              {paymentHistoryDescription(payment) ? (
+                                <p className="mt-1 text-xs font-medium text-slate-300">{paymentHistoryDescription(payment)}</p>
+                              ) : null}
                               <div className="mt-1 text-xs text-slate-500">{formatDate(payment.date)}</div>
                               <div className="mt-2 grid gap-1 text-xs text-slate-400">
                                 <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : `Contractor: ${selected.contractor_name || "Your contractor"}`}</span>
@@ -1804,6 +1821,9 @@ export default function CustomerProjectWorkspace({
                                 <div className="text-sm font-semibold text-white">
                                   {escrowHistoryLabel(payment)} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
                                 </div>
+                                {escrowHistoryDescription(payment) ? (
+                                  <p className="mt-1 text-xs font-medium text-slate-300">{escrowHistoryDescription(payment)}</p>
+                                ) : null}
                                 <div className="mt-1 text-xs text-slate-500">{formatDate(payment.date)}</div>
                                 <div className="mt-2 grid gap-1 text-xs text-slate-400">
                                   <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : `Contractor: ${selected.contractor_name || "Your contractor"}`}</span>

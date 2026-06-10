@@ -2059,9 +2059,13 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("contractor invoices");
   await page.getByTestId("customer-project-toggle-details").click();
   await expect(page.getByTestId("customer-project-payments")).toContainText("Release Paid");
+  await expect(page.getByTestId("customer-project-payments")).toContainText("Paid to contractor from escrow");
   await expect(page.getByTestId("customer-project-payments")).not.toContainText("Escrow Funded");
   await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow Funded");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow Released");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow Release to Contractor");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Reduced escrow balance and paid contractor");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Linked payment: Release Paid");
+  await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Escrow Released");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("$27,000.00");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("Released / Paid");
   await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Need to Change Something?");
