@@ -1254,15 +1254,21 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-overview-active-projects")).toContainText("Active Projects");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("What needs my attention?");
   await expect(page.getByTestId("customer-overview-property-records")).toContainText("Your home history, organized");
-  await expect(page.getByTestId("customer-activation-checklist")).toContainText("Get your customer workspace ready");
-  await expect(page.getByTestId("customer-activation-check-property-profile")).toContainText("Complete");
-  await expect(page.getByTestId("customer-activation-check-documents")).toContainText("Complete");
-  await expect(page.getByTestId("customer-activation-check-first-request")).toContainText("Complete");
-  await expect(page.getByTestId("customer-activation-check-payments")).toContainText("Fund escrow or review payments");
+  await expect(page.getByTestId("customer-activation-checklist")).toContainText("Workspace setup: 5 of 6 complete");
+  await expect(page.getByTestId("customer-activation-checklist")).toContainText("active task moved to Needs Attention");
+  await expect(page.getByTestId("customer-activation-checklist")).not.toContainText("Fund escrow or review payments");
+  await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Invoice for Kitchen Remodel");
+  await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Draw for Kitchen Remodel");
   await expect(page.getByTestId("customer-unified-recommendations")).toBeVisible();
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("What may need attention");
-  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("HVAC service may be due.");
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("HVAC Maintenance");
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("No recent completed HVAC service record was found");
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("Cooling systems work hardest in summer");
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("Water Heater Records");
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("Water heater installation, warranty, and service records");
+  await expect(page.getByTestId("customer-unified-recommendations").getByRole("heading", { name: "HVAC Maintenance" })).toHaveCount(1);
+  await expect(page.getByTestId("customer-unified-recommendations").getByRole("heading", { name: "Water Heater Records" })).toHaveCount(1);
+  await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("Summer HVAC review recommended.");
   await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("contractor_performance");
   await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("Admin");
   await page
@@ -1277,9 +1283,8 @@ test("customer portal is reachable from the landing page and loads secure record
     .click();
   await expect(page.getByTestId("customer-dashboard-tab-property")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-overview").click();
-  await page.getByTestId("customer-activation-action-payments").click();
-  await expect(page.getByTestId("customer-dashboard-tab-payments")).toHaveClass(/border-amber/);
-  await page.getByTestId("customer-dashboard-tab-overview").click();
+  await expect(page.getByTestId("customer-activation-action-payments")).toHaveCount(0);
+  await page.getByTestId("customer-activation-expand").click();
   await page.getByTestId("customer-activation-action-property-details").click();
   await expect(page.getByTestId("customer-dashboard-tab-property")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-overview").click();
@@ -1288,22 +1293,24 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await page.getByTestId("customer-dashboard-tab-overview").click();
-  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent Activity");
-  await expect(page.getByRole("heading", { name: "Recent Activity" })).toHaveCount(1);
-  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent project, payment, request, and property updates.");
+  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent Updates");
+  await expect(page.getByRole("heading", { name: "Recent Updates" })).toHaveCount(1);
+  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Unread and recent project, payment, request, and property updates.");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Agreement needs signature");
-  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Payment received");
-  await expect(page.getByTestId("customer-notifications-panel").getByRole("heading", { name: "Payment received" })).toHaveCount(1);
+  await expect(page.getByTestId("customer-notifications-panel")).not.toContainText("Payment received");
   await expect(page.getByTestId("customer-notifications-panel")).not.toContainText("Internal payment email row");
   await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("1 unread");
   await expect(page.getByTestId("customer-notification-101")).toContainText("Unread");
   await expect(page.getByTestId("customer-notification-101")).toHaveClass(/border-sky-300/);
-  await expect(page.getByTestId("customer-notification-102")).not.toContainText("Unread");
-  await expect(page.getByTestId("customer-notification-102")).not.toHaveClass(/border-sky-300/);
+  await expect(page.getByTestId("customer-notification-102")).toHaveCount(0);
   await page.getByTestId("customer-notification-mark-read-101").click();
-  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("2 recent");
-  await expect(page.getByTestId("customer-notification-101")).not.toContainText("Unread");
-  await expect(page.getByTestId("customer-notification-101")).not.toHaveClass(/border-sky-300/);
+  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new updates");
+  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("No new updates");
+  await page.getByTestId("customer-notifications-open-history").click();
+  await expect(page.getByTestId("customer-dashboard-tab-notifications")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
+  await page.getByTestId("customer-dashboard-tab-overview").click();
 
   await page.getByTestId("customer-dashboard-tab-account").click();
   await expect(page.getByTestId("customer-account-panel")).toContainText("My Profile");
@@ -1714,7 +1721,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.goto("/portal/empty-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
-  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No updates yet");
+  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new updates");
   await expect(page.getByTestId("customer-overview-projects-empty")).toContainText("No active projects yet");
   await expect(page.getByTestId("customer-overview-requests-empty")).toContainText("No requests yet");
 
@@ -1761,7 +1768,7 @@ test("customer portal limits long home records, payments, and documents without 
   await page.goto("/portal/long-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
 
-  await expect(page.getByTestId("customer-notifications-panel").getByRole("heading", { name: "Recent Activity" })).toBeVisible();
+  await expect(page.getByTestId("customer-notifications-panel").getByRole("heading", { name: "Recent Updates" })).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-projects").click();
   await expect(page.getByTestId("customer-projects-section-header")).toHaveCount(0);
   await expect(page.getByTestId("customer-projects-navigation")).toContainText("Project Navigation");

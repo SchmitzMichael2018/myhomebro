@@ -79,9 +79,92 @@ function EmptyState({ title, children, testId }) {
   );
 }
 
+function recommendationTheme(recommendation = {}) {
+  const text = [
+    recommendation.title,
+    recommendation.summary,
+    recommendation.reason,
+    recommendation.category,
+    recommendation.type,
+    recommendation.id,
+  ].join(" ").toLowerCase();
+  if (text.includes("hvac") || text.includes("cooling") || text.includes("filter")) return "hvac";
+  if (text.includes("water heater")) return "water_heater";
+  if (text.includes("roof")) return "roof";
+  if (text.includes("warranty")) return "warranty";
+  return String(recommendation.category || recommendation.type || recommendation.key || recommendation.id || recommendation.title || "recommendation")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_");
+}
+
+function themeTitle(theme, fallback = "Property recommendation") {
+  const titles = {
+    hvac: "HVAC Maintenance",
+    water_heater: "Water Heater Records",
+    roof: "Roof Records",
+    warranty: "Warranty Review",
+  };
+  return titles[theme] || fallback;
+}
+
+function severityRank(value = "") {
+  const ranks = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
+  return ranks[String(value || "").toLowerCase()] || 0;
+}
+
+function normalizeInsightRecommendation(insight = {}) {
+  return {
+    id: insight.id,
+    key: insight.id,
+    title: insight.title,
+    summary: insight.reason,
+    explanation: insight.reason,
+    category: insight.category,
+    severity: insight.severity,
+    confidence: insight.confidence,
+    action_label: insight.suggested_action?.label,
+    action_target: insight.suggested_action?.target ? `portal:${insight.suggested_action.target}` : "",
+  };
+}
+
+function mergeRecommendations(recommendations = []) {
+  const grouped = new Map();
+  recommendations.filter(Boolean).forEach((recommendation) => {
+    const theme = recommendationTheme(recommendation);
+    const current = grouped.get(theme);
+    const normalized = {
+      ...recommendation,
+      title: recommendation.title || "Property recommendation",
+      summary: recommendation.summary || recommendation.reason || "",
+      explanation: recommendation.explanation || recommendation.reason || "",
+    };
+    if (!current) {
+      grouped.set(theme, {
+        ...normalized,
+        id: `merged-${theme}`,
+        theme,
+        title: themeTitle(theme, normalized.title),
+        reasons: [normalized.summary, normalized.explanation].filter(Boolean),
+      });
+      return;
+    }
+    current.reasons.push(...[normalized.summary, normalized.explanation].filter(Boolean));
+    if (severityRank(normalized.severity) > severityRank(current.severity)) current.severity = normalized.severity;
+    if (!current.action_label && normalized.action_label) current.action_label = normalized.action_label;
+    if (!current.action_target && normalized.action_target) current.action_target = normalized.action_target;
+  });
+  return Array.from(grouped.values()).map((recommendation) => {
+    const reasons = Array.from(new Set(recommendation.reasons.filter(Boolean)));
+    return {
+      ...recommendation,
+      summary: reasons[0] || recommendation.summary,
+      explanation: reasons.slice(1, 3).join(" "),
+    };
+  });
+}
+
 function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
-  const rows = Array.isArray(recommendations) ? recommendations.filter(Boolean).slice(0, 5) : [];
-  if (!rows.length) return null;
+  const rows = mergeRecommendations(Array.isArray(recommendations) ? recommendations : []).slice(0, 5);
   const targetTab = (target = "") => {
     const value = String(target || "");
     if (value.startsWith("portal:")) return value.replace("portal:", "") || "overview";
@@ -104,10 +187,11 @@ function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
             Advisory suggestions from your property records, documents, warranties, and service history.
           </p>
         </div>
-        <Badge tone="gold">{rows.length} advisory</Badge>
+        <Badge tone={rows.length ? "gold" : "slate"}>{rows.length || "No"} advisory</Badge>
       </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {rows.map((recommendation) => {
+      {rows.length ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {rows.map((recommendation) => {
           const tab = targetTab(recommendation.action_target);
           return (
             <article
@@ -139,8 +223,15 @@ function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
               ) : null}
             </article>
           );
-        })}
-      </div>
+          })}
+        </div>
+      ) : (
+        <div className="mt-4">
+          <EmptyState title="No property recommendations right now" testId="customer-recommendations-empty">
+            As projects, service visits, warranties, and documents are added, helpful property suggestions will appear here.
+          </EmptyState>
+        </div>
+      )}
     </section>
   );
 }
@@ -199,6 +290,15 @@ function paymentSummary(payments = []) {
     },
     { paid: 0, pending: 0, released: 0, adjustments: 0 }
   );
+}
+
+function isRecentNotification(notification, now = Date.now()) {
+  if (notification?.status !== "read") return true;
+  if (!notification?.created_at) return false;
+  const createdAt = new Date(notification.created_at).getTime();
+  if (!Number.isFinite(createdAt)) return false;
+  const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+  return now - createdAt <= fourteenDays;
 }
 
 const ACTIONABLE_NOTIFICATION_EVENTS = new Set([
@@ -516,12 +616,13 @@ function agreementNeedsCustomerAction(agreement = {}) {
 }
 
 function CustomerActivationChecklist({ portal, onOpenTab }) {
+  const [expanded, setExpanded] = useState(false);
   const property = portal?.property_profile || {};
   const properties = Array.isArray(portal?.property_profiles) ? portal.property_profiles : [];
   const requests = Array.isArray(portal?.requests) ? portal.requests : [];
   const payments = Array.isArray(portal?.payments) ? portal.payments : [];
   const agreements = Array.isArray(portal?.agreements) ? portal.agreements : [];
-  const openPayments = payments.filter((payment) => !isPaidPayment(payment));
+  const openPayments = payments.filter(isActionablePayment);
   const hasProperty = propertyHasAddress(property) || properties.some(propertyHasAddress);
   const hasDetails = propertyHasDetails(property) || properties.some(propertyHasDetails);
   const hasDocs = customerHasDocuments(portal);
@@ -587,6 +688,63 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
     },
   ];
 
+  const completeCount = items.filter((item) => item.complete).length;
+  const activeTasks = items.filter((item) => item.actionActive);
+  const setupItems = items.filter((item) => !item.actionActive);
+  const remainingSetupItems = setupItems.filter((item) => !item.complete);
+  const mostlyComplete = completeCount >= items.length - 1;
+  const allSetupDone = remainingSetupItems.length === 0;
+
+  if (completeCount === items.length) {
+    return (
+      <section
+        data-testid="customer-activation-checklist"
+        className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4"
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-white">Workspace setup complete</div>
+            <p className="mt-1 text-sm text-emerald-100">Your basic Customer Portal setup is ready.</p>
+          </div>
+          <Badge tone="gold">{completeCount} of {items.length} complete</Badge>
+        </div>
+      </section>
+    );
+  }
+
+  if (mostlyComplete && !expanded) {
+    return (
+      <section
+        data-testid="customer-activation-checklist"
+        className="rounded-2xl border border-sky-300/25 bg-slate-950/60 p-4"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-white">Workspace setup: {completeCount} of {items.length} complete</div>
+            <p className="mt-1 text-sm text-slate-300">
+              {allSetupDone
+                ? "Any remaining active tasks are shown above in Needs Attention."
+                : `${remainingSetupItems[0]?.title || "One setup item"} is the only setup item left.`}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="customer-activation-expand"
+            onClick={() => setExpanded(true)}
+            className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
+          >
+            Expand setup
+          </button>
+        </div>
+        {activeTasks.length ? (
+          <p className="mt-3 text-xs leading-5 text-amber-100">
+            {activeTasks.length} active task{activeTasks.length === 1 ? "" : "s"} moved to Needs Attention.
+          </p>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <section
       data-testid="customer-activation-checklist"
@@ -600,10 +758,10 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
             Confirm your property record, upload important documents, and create a request when you are ready for the next project.
           </p>
         </div>
-        <Badge tone="gold">{items.filter((item) => item.complete).length} of {items.length} complete</Badge>
+        <Badge tone="gold">{completeCount} of {items.length} complete</Badge>
       </div>
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {items.map((item) => {
+        {setupItems.map((item) => {
           const complete = Boolean(item.complete);
           return (
             <article
@@ -648,6 +806,13 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
   const latestRequests = (portal?.requests || []).slice(0, 3);
   const latestProjects = (portal?.projects || []).slice(0, 3);
   const notifications = portal?.notifications || [];
+  const recentNotifications = notifications.filter((notification) => isRecentNotification(notification));
+  const overviewRecommendations = [
+    ...(Array.isArray(portal?.recommendations) ? portal.recommendations : []),
+    ...(Array.isArray(portal?.property_intelligence?.insights)
+      ? portal.property_intelligence.insights.map(normalizeInsightRecommendation)
+      : []),
+  ];
   const property = portal?.property_profile || {};
   const documents = Array.isArray(portal?.documents) ? portal.documents : [];
   const propertyDocs = [
@@ -751,11 +916,14 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
       </section>
 
       <NotificationPanel
-        notifications={notifications}
-        unreadCount={notifications.filter((notification) => notification.status !== "read").length}
+        notifications={recentNotifications}
+        unreadCount={recentNotifications.filter((notification) => notification.status !== "read").length}
         markingId={markingId}
         onMarkRead={onMarkRead}
+        onOpenHistory={() => onOpenTab?.("notifications")}
       />
+
+      <CustomerRecommendationsPanel recommendations={overviewRecommendations} onOpenTab={onOpenTab} />
 
       <section data-testid="customer-overview-property-records" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -784,8 +952,6 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
           </div>
         ) : null}
       </section>
-
-      <CustomerRecommendationsPanel recommendations={portal?.recommendations || []} onOpenTab={onOpenTab} />
 
       <section className="rounded-2xl border border-slate-700 bg-slate-950/45 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -912,7 +1078,7 @@ function normalizePortalNotifications(rows = []) {
   });
 }
 
-function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", onMarkRead }) {
+function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", onMarkRead, onOpenHistory }) {
   const recent = notifications.slice(0, 4);
 
   return (
@@ -921,13 +1087,23 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
         <div>
           <div className="flex items-center gap-2">
             <Bell size={18} className="text-sky-200" />
-            <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
+            <h2 className="text-lg font-semibold text-white">Recent Updates</h2>
           </div>
-          <p className="mt-1 text-sm text-slate-300">Recent project, payment, request, and property updates.</p>
+          <p className="mt-1 text-sm text-slate-300">Unread and recent project, payment, request, and property updates.</p>
         </div>
-        <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-[0_0_16px_rgba(56,189,248,0.12)]">
-          {unreadCount > 0 ? `${unreadCount} unread` : recent.length ? `${recent.length} recent` : "All caught up"}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-[0_0_16px_rgba(56,189,248,0.12)]">
+            {unreadCount > 0 ? `${unreadCount} unread` : recent.length ? `${recent.length} recent` : "No new updates"}
+          </span>
+          <button
+            type="button"
+            data-testid="customer-notifications-open-history"
+            onClick={() => onOpenHistory?.()}
+            className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
+          >
+            View full history
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -979,8 +1155,8 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
           })
         ) : (
           <div className="lg:col-span-2">
-            <EmptyState title="No updates yet" testId="customer-notifications-empty">
-              Project, request, payment, document, and signing updates will appear here when there is something useful to review.
+            <EmptyState title="No new updates" testId="customer-notifications-empty">
+              Open Notifications for the full activity history whenever you need it.
             </EmptyState>
           </div>
         )}
