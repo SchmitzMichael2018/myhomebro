@@ -10,6 +10,20 @@ const REQUEST_TYPES = [
   ["emergency", "Emergency"],
 ];
 
+const PROJECT_MODES = [
+  ["full_service", "Full service"],
+  ["diy_assist", "DIY assist"],
+  ["inspection_only", "Inspection only"],
+  ["not_sure", "Not sure yet"],
+];
+
+const PAYMENT_PREFERENCES = [
+  ["", "Not sure yet"],
+  ["escrow_milestones", "Escrow milestone holds"],
+  ["direct_pay", "Direct payment"],
+  ["discuss", "Discuss with contractor"],
+];
+
 function Badge({ children }) {
   return (
     <span className="inline-flex rounded-full border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-200">
@@ -52,6 +66,18 @@ function timelineScore(value) {
   return number;
 }
 
+function formatDateTime(value) {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
+  } catch (_error) {
+    return "";
+  }
+}
+
 function comparisonHighlights(bids) {
   const prices = bids
     .map((bid) => ({ id: bid.id, value: parseMoney(bid.bid_amount ?? bid.bid_amount_label) }))
@@ -88,16 +114,24 @@ export default function CustomerRequests({
   propertyProfile = {},
   propertyProfiles = [],
   onCreateRequest,
+  onImproveRequest,
   onAcceptBid,
   acceptingBidId = "",
   creating = false,
 }) {
   const [pendingAwardBid, setPendingAwardBid] = useState(null);
   const [activeComparisonKey, setActiveComparisonKey] = useState("");
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [improvingRequest, setImprovingRequest] = useState(false);
+  const [improveError, setImproveError] = useState("");
+  const [requestSuggestion, setRequestSuggestion] = useState(null);
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const [form, setForm] = useState({
     property_id: propertyProfile?.id || "",
     request_type: "repair",
+    project_mode: "full_service",
+    project_category: "",
+    payment_preference: "",
     title: "",
     description: "",
     urgency: "normal",
@@ -158,14 +192,53 @@ export default function CustomerRequests({
     event.preventDefault();
     if (!form.title.trim() || !form.description.trim()) return;
     await onCreateRequest?.(form);
+    setRequestSuggestion(null);
+    setImproveError("");
     setForm((prev) => ({
       ...prev,
+      project_mode: "full_service",
+      project_category: "",
+      payment_preference: "",
       title: "",
       description: "",
       preferred_timeline: "",
       urgency: "normal",
       property_id: form.property_id,
     }));
+  };
+
+  const improveRequestDetails = async () => {
+    if (!String(form.description || "").trim()) return;
+    setImprovingRequest(true);
+    setImproveError("");
+    setRequestSuggestion(null);
+    try {
+      const data = await onImproveRequest?.(form);
+      setRequestSuggestion({
+        title: data?.title || form.title,
+        description: data?.description || form.description,
+        source: data?.source || "fallback",
+      });
+    } catch (error) {
+      setImproveError(error?.response?.data?.detail || "Could not improve these request details.");
+    } finally {
+      setImprovingRequest(false);
+    }
+  };
+
+  const applyRequestSuggestion = () => {
+    if (!requestSuggestion) return;
+    setForm((prev) => ({
+      ...prev,
+      title: requestSuggestion.title || prev.title,
+      description: requestSuggestion.description || prev.description,
+    }));
+    setRequestSuggestion(null);
+  };
+
+  const requestBids = (request) => {
+    const key = request?.comparison_key || "";
+    return key ? bidsByComparisonKey[key] || [] : [];
   };
 
   return (
@@ -206,7 +279,7 @@ export default function CustomerRequests({
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-200">
-                Type
+                Request type
                 <select
                   value={form.request_type}
                   onChange={(event) => update("request_type", event.target.value)}
@@ -218,6 +291,27 @@ export default function CustomerRequests({
                 </select>
               </label>
               <label className="block text-sm font-medium text-slate-200">
+                Project mode
+                <select
+                  value={form.project_mode}
+                  onChange={(event) => update("project_mode", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                >
+                  {PROJECT_MODES.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Project category
+                <input
+                  value={form.project_category}
+                  onChange={(event) => update("project_category", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                  placeholder="Flooring, plumbing, patio, inspection..."
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
                 Timeline
                 <input
                   value={form.preferred_timeline}
@@ -225,6 +319,18 @@ export default function CustomerRequests({
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                   placeholder="This week, next month..."
                 />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Payment preference
+                <select
+                  value={form.payment_preference}
+                  onChange={(event) => update("payment_preference", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                >
+                  {PAYMENT_PREFERENCES.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
               </label>
             </div>
             <label className="block text-sm font-medium text-slate-200">
@@ -246,6 +352,61 @@ export default function CustomerRequests({
                 placeholder="Describe what is happening, where it is located, and what help you need."
               />
             </label>
+            <div className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-4" data-testid="customer-request-ai-helper">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-sky-100">Want help clarifying this request?</div>
+                  <p className="mt-1 text-sm leading-6 text-sky-100/80">
+                    AI can suggest a cleaner title and structured details. You review the suggestion before saving.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid="customer-request-improve-button"
+                  onClick={improveRequestDetails}
+                  disabled={improvingRequest || !String(form.description || "").trim()}
+                  className="rounded-xl border border-sky-200/40 bg-sky-300/15 px-4 py-2 text-sm font-bold text-sky-50 hover:bg-sky-300/25 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {improvingRequest ? "Improving..." : "Improve request details"}
+                </button>
+              </div>
+              {improveError ? <div className="mt-3 text-sm text-red-200">{improveError}</div> : null}
+              {requestSuggestion ? (
+                <div className="mt-4 rounded-xl border border-sky-200/35 bg-slate-950/70 p-3" data-testid="customer-request-ai-suggestion">
+                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200">Suggested version</div>
+                  <input
+                    className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-300"
+                    value={requestSuggestion.title}
+                    onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, title: event.target.value }))}
+                    aria-label="Suggested request title"
+                  />
+                  <textarea
+                    data-testid="customer-request-ai-suggestion-text"
+                    className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-300"
+                    rows={5}
+                    value={requestSuggestion.description}
+                    onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, description: event.target.value }))}
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      data-testid="customer-request-use-ai-suggestion"
+                      onClick={applyRequestSuggestion}
+                      className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-extrabold text-slate-950 hover:bg-sky-200"
+                    >
+                      Use this version
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRequestSuggestion(null)}
+                      className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+                    >
+                      Keep current wording
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <label className="block text-sm font-medium text-slate-200">
               Urgency
               <select
@@ -279,6 +440,10 @@ export default function CustomerRequests({
                   }}
                   placeholder="Search the request property address..."
                   testId="customer-request-address-autocomplete"
+                  inputClassName="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 pr-10 text-sm text-white placeholder:text-slate-400 outline-none focus:border-sky-400"
+                  suggestionsClassName="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-600 bg-slate-950 text-sm text-slate-100 shadow-xl"
+                  suggestionButtonClassName="block w-full px-3 py-2 text-left text-slate-100 hover:bg-slate-800 focus:bg-slate-800"
+                  helperClassName="mt-1 text-xs text-slate-300"
                 />
               </div>
             </label>
@@ -350,6 +515,14 @@ export default function CustomerRequests({
                   <div className="flex flex-wrap gap-2">
                     <Badge>{request.request_type_label || request.project_class_label || "Request"}</Badge>
                     <Badge>{request.status_label || "Submitted"}</Badge>
+                    <button
+                      type="button"
+                      data-testid={`customer-request-view-${request.id}`}
+                      onClick={() => setSelectedRequest(request)}
+                      className="rounded-lg border border-sky-300/40 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/10"
+                    >
+                      View Request
+                    </button>
                     {(bidsByComparisonKey[request.comparison_key] || []).length > 1 ? (
                       <button
                         type="button"
@@ -370,6 +543,109 @@ export default function CustomerRequests({
             </EmptyState>
           )}
         </div>
+
+        {selectedRequest ? (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center"
+            data-testid="customer-request-detail-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Request details"
+          >
+            <div className="max-h-[88vh] w-full max-w-3xl overflow-auto rounded-3xl border border-slate-700 bg-slate-950 p-5 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-[0.2em] text-amber-200">Request Details</div>
+                  <h3 className="mt-1 text-2xl font-extrabold text-white">{selectedRequest.project_title || "Customer request"}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Review what was submitted before routing, comparing bids, or opening linked project records.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRequest(null)}
+                  className="rounded-full border border-slate-700 px-3 py-1 text-sm font-bold text-slate-200 hover:bg-slate-800"
+                  aria-label="Close request details"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:col-span-2">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Details / Scope</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-100">
+                    {selectedRequest.notes || "No request details were submitted."}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Type</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.request_type_label || selectedRequest.project_class_label || "Request"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Project mode</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.project_mode_label || "Not specified"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Category</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.project_category || "Not specified"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Timeline / urgency</div>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {selectedRequest.preferred_timeline || "Timeline not specified"} · {selectedRequest.urgency || "normal"}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Payment preference</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.payment_preference_label || "Not specified"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.status_label || "Submitted"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 md:col-span-2">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Property / address</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{selectedRequest.property_name || "Property"}</p>
+                  <p className="mt-1 text-sm text-slate-300">{selectedRequest.project_address || "Address not specified"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Submitted</div>
+                  <p className="mt-1 text-sm font-semibold text-white">{formatDateTime(selectedRequest.created_at) || "Date unavailable"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Contractor responses</div>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {requestBids(selectedRequest).length} response{requestBids(selectedRequest).length === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {requestBids(selectedRequest).length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveComparisonKey(selectedRequest.comparison_key);
+                      setSelectedRequest(null);
+                    }}
+                    className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200"
+                  >
+                    View bid comparison
+                  </button>
+                ) : null}
+                {selectedRequest.agreement_token ? (
+                  <a
+                    href={`/agreements/magic/${selectedRequest.agreement_token}`}
+                    className="rounded-xl border border-sky-300/40 px-4 py-2 text-sm font-bold text-sky-100 hover:bg-sky-400/10"
+                  >
+                    View linked agreement
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
           {internalRequests.length

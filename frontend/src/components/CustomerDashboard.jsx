@@ -1115,6 +1115,13 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               setCreatingRequest(false);
             }
           }}
+          onImproveRequest={async (payload) => {
+            const { data } = await api.post(
+              `/projects/customer-portal/${encodeURIComponent(token)}/requests/improve/`,
+              payload
+            );
+            return data;
+          }}
         />
       );
     }

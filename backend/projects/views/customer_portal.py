@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from decimal import Decimal
 
 from django.conf import settings
@@ -42,6 +43,7 @@ from projects.models_contractor_discovery import ContractorDiscoveryInvite, Cont
 from projects.models_dispute import Dispute
 from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
+from projects.ai.agreement_description_writer import generate_or_improve_description
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
     bid_next_action,
@@ -439,6 +441,31 @@ def _customer_request_status_label(value: str) -> str:
     return _safe_text(value).replace("_", " ").title() or "Submitted"
 
 
+def _customer_request_refine_fallback(description: str) -> str:
+    text = re.sub(r"\s+", " ", _safe_text(description))
+    if not text:
+        return ""
+    for pattern in [
+        r"^(?:i\s+)?(?:am\s+)?looking to\s+",
+        r"^(?:i\s+)?(?:am\s+)?wanting to\s+",
+        r"^(?:we\s+)?need to\s+",
+        r"^(?:i\s+)?need to\s+",
+        r"^(?:i\s+)?want to\s+",
+        r"^(?:we\s+)?want to\s+",
+        r"^(?:would\s+like\s+to)\s+",
+        r"^(?:hoping to)\s+",
+        r"^(?:looking for)\s+",
+        r"^(?:help with)\s+",
+    ]:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    text = text.strip(" -:;,.") or _safe_text(description)
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+    if text and text[-1] not in ".!?":
+        text += "."
+    return text
+
+
 def _customer_request_rows(email: str) -> list[dict]:
     rows = []
     for request_row in CustomerRequest.objects.select_related("converted_project", "property_profile").filter(
@@ -463,9 +490,18 @@ def _customer_request_rows(email: str) -> list[dict]:
                 ),
                 "request_type": _safe_text(request_row.request_type),
                 "request_type_label": request_row.get_request_type_display(),
+                "project_mode": _safe_text(getattr(request_row, "project_mode", "")),
+                "project_mode_label": request_row.get_project_mode_display() if getattr(request_row, "project_mode", "") else "",
+                "project_category": _safe_text(getattr(request_row, "project_category", "")),
+                "payment_preference": _safe_text(getattr(request_row, "payment_preference", "")),
+                "payment_preference_label": request_row.get_payment_preference_display()
+                if getattr(request_row, "payment_preference", "")
+                else "",
                 "status": _safe_text(request_row.status),
                 "status_label": _customer_request_status_label(request_row.status),
                 "latest_activity": _safe_dt(request_row.updated_at or request_row.created_at),
+                "created_at": _safe_dt(request_row.created_at),
+                "updated_at": _safe_dt(request_row.updated_at),
                 "latest_activity_label": "Updated",
                 "bids_count": 0,
                 "agreement_id": None,
@@ -2416,6 +2452,17 @@ class CustomerPortalNotificationMarkReadView(APIView):
 class CustomerPortalRequestSerializer(serializers.Serializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     request_type = serializers.ChoiceField(choices=[choice[0] for choice in CustomerRequest.REQUEST_TYPE_CHOICES])
+    project_mode = serializers.ChoiceField(
+        choices=[choice[0] for choice in CustomerRequest.PROJECT_MODE_CHOICES],
+        required=False,
+        allow_blank=True,
+    )
+    project_category = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    payment_preference = serializers.ChoiceField(
+        choices=[choice[0] for choice in CustomerRequest.PAYMENT_PREFERENCE_CHOICES],
+        required=False,
+        allow_blank=True,
+    )
     title = serializers.CharField(max_length=200)
     description = serializers.CharField()
     urgency = serializers.CharField(max_length=32, required=False, allow_blank=True)
@@ -2459,6 +2506,9 @@ class CustomerPortalRequestCreateView(APIView):
             property_profile=profile,
             customer_email=email.lower().strip(),
             request_type=data["request_type"],
+            project_mode=data.get("project_mode", ""),
+            project_category=data.get("project_category", ""),
+            payment_preference=data.get("payment_preference", ""),
             status=data.get("status") or CustomerRequest.STATUS_SUBMITTED,
             title=data["title"],
             description=data["description"],
@@ -2479,6 +2529,66 @@ class CustomerPortalRequestCreateView(APIView):
             },
         )
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalRequestImproveView(APIView):
+    permission_classes = [AllowAny]
+
+    class InputSerializer(serializers.Serializer):
+        request_type = serializers.CharField(max_length=64, required=False, allow_blank=True)
+        project_mode = serializers.CharField(max_length=64, required=False, allow_blank=True)
+        project_category = serializers.CharField(max_length=80, required=False, allow_blank=True)
+        title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+        description = serializers.CharField()
+        urgency = serializers.CharField(max_length=32, required=False, allow_blank=True)
+        preferred_timeline = serializers.CharField(max_length=120, required=False, allow_blank=True)
+
+    def post(self, request, token: str):
+        try:
+            _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        current_description = _safe_text(data.get("description"))
+        if not current_description:
+            return Response({"detail": "Add request details first."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            out = generate_or_improve_description(
+                mode="improve",
+                project_title=_safe_text(data.get("title")),
+                project_type=_safe_text(data.get("project_category") or data.get("request_type")),
+                project_subtype=_safe_text(data.get("project_mode")),
+                current_description=current_description,
+            )
+            description = _safe_text(out.get("description"))
+            source = "ai"
+        except Exception:
+            description = _customer_request_refine_fallback(current_description)
+            source = "fallback"
+
+        if not description:
+            description = _customer_request_refine_fallback(current_description)
+            source = "fallback"
+
+        title = _safe_text(data.get("title"))
+        if not title:
+            title = description.split(".")[0][:80].strip() or "Project request"
+
+        return Response(
+            {
+                "detail": "Request details improved.",
+                "title": title,
+                "description": description,
+                "source": source,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalPropertyProfileSerializer(serializers.Serializer):

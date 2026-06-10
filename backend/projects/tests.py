@@ -20064,6 +20064,9 @@ class CustomerPortalAccessTests(TestCase):
             f"/api/projects/customer-portal/{token}/requests/",
             {
                 "request_type": "repair",
+                "project_mode": "full_service",
+                "project_category": "Plumbing",
+                "payment_preference": "escrow_milestones",
                 "title": "Leaking sink",
                 "description": "Kitchen sink is leaking under the cabinet.",
                 "urgency": "soon",
@@ -20077,10 +20080,24 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(saved.customer_email, self.customer_email)
         self.assertEqual(saved.status, "submitted")
         self.assertEqual(saved.request_type, "repair")
+        self.assertEqual(saved.project_mode, "full_service")
+        self.assertEqual(saved.project_category, "Plumbing")
+        self.assertEqual(saved.payment_preference, "escrow_milestones")
         self.assertEqual(saved.address_line1, "123 Main St")
-        self.assertTrue(
-            any(row["source_kind"] == "customer_request" and row["project_title"] == "Leaking sink" for row in response.data["requests"])
+        request_row = next(
+            row
+            for row in response.data["requests"]
+            if row["source_kind"] == "customer_request" and row["project_title"] == "Leaking sink"
         )
+        self.assertEqual(request_row["notes"], "Kitchen sink is leaking under the cabinet.")
+        self.assertEqual(request_row["project_mode"], "full_service")
+        self.assertEqual(request_row["project_mode_label"], "Full Service")
+        self.assertEqual(request_row["project_category"], "Plumbing")
+        self.assertEqual(request_row["payment_preference"], "escrow_milestones")
+        self.assertEqual(request_row["payment_preference_label"], "Escrow Milestone Holds")
+        self.assertEqual(request_row["urgency"], "soon")
+        self.assertEqual(request_row["preferred_timeline"], "This week")
+        self.assertTrue(request_row["created_at"])
         notification = SmartNotification.objects.get(customer_request=saved)
         self.assertEqual(notification.event_type, SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED)
         self.assertEqual(notification.recipient_email, self.customer_email)
@@ -20160,6 +20177,65 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.assertEqual(rejected.status_code, 404)
         self.assertEqual(primary.customer_email, self.customer_email)
+
+    def test_customer_portal_requests_are_scoped_to_verified_email(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        CustomerRequest.objects.create(
+            customer_email=self.other_homeowner.email,
+            homeowner=self.other_homeowner,
+            request_type="repair",
+            title="Other customer request",
+            description="This should stay private.",
+        )
+        CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="maintenance",
+            title="My maintenance request",
+            description="Annual service request.",
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        titles = {row["project_title"] for row in response.data["requests"]}
+        self.assertIn("My maintenance request", titles)
+        self.assertNotIn("Other customer request", titles)
+
+    def test_customer_portal_request_improve_returns_reviewable_suggestion(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        with patch("projects.views.customer_portal.generate_or_improve_description") as improve:
+            improve.return_value = {
+                "description": "Included Work\n- Repair the leaking kitchen sink.\n- Check visible supply and drain connections.",
+            }
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/requests/improve/",
+                {
+                    "request_type": "repair",
+                    "project_mode": "full_service",
+                    "project_category": "Plumbing",
+                    "title": "sink",
+                    "description": "sink leaks",
+                    "urgency": "soon",
+                    "preferred_timeline": "This week",
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["title"], "sink")
+        self.assertIn("Repair the leaking kitchen sink", response.data["description"])
+        self.assertEqual(response.data["source"], "ai")
+        self.assertFalse(CustomerRequest.objects.filter(title="sink").exists())
+
+    def test_customer_portal_request_improve_rejects_invalid_token(self):
+        response = self.client.post(
+            "/api/projects/customer-portal/not-valid/requests/improve/",
+            {"description": "Please make this clearer."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_customer_portal_property_profile_is_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

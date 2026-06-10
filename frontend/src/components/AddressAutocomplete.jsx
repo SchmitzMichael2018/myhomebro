@@ -244,6 +244,10 @@ export default function AddressAutocomplete({
   placeholder = "Start typing an address...",
   disabled = false,
   testId = "",
+  inputClassName = "",
+  suggestionsClassName = "",
+  suggestionButtonClassName = "",
+  helperClassName = "",
 }) {
   const apiKey =
     import.meta.env.VITE_GOOGLE_MAPS_API_KEY || getRuntimeGoogleMapsApiKey();
@@ -442,7 +446,10 @@ export default function AddressAutocomplete({
         <input
           aria-label="Google address search"
           autoComplete="off"
-          className="w-full rounded border px-3 py-2 pr-10 text-sm"
+          className={
+            inputClassName ||
+            "w-full rounded border px-3 py-2 pr-10 text-sm"
+          }
           disabled={disabled}
           onChange={handleInputChange}
           placeholder={placeholder}
@@ -462,7 +469,10 @@ export default function AddressAutocomplete({
       </div>
       {predictions.length ? (
         <div
-          className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-xl"
+          className={
+            suggestionsClassName ||
+            "absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-xl"
+          }
           data-testid="address-autocomplete-suggestions"
         >
           {predictions.map((prediction, index) => {
@@ -470,7 +480,10 @@ export default function AddressAutocomplete({
             const key = getPredictionPlaceId(prediction) || `${label}-${index}`;
             return (
               <button
-                className="block w-full px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50"
+                className={
+                  suggestionButtonClassName ||
+                  "block w-full px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50"
+                }
                 key={key}
                 onClick={() => handleSelectPrediction(prediction)}
                 type="button"
@@ -482,10 +495,10 @@ export default function AddressAutocomplete({
         </div>
       ) : null}
       {!ready && !err ? (
-        <div className="mt-1 text-xs text-slate-500">Loading address suggestions...</div>
+        <div className={helperClassName || "mt-1 text-xs text-slate-500"}>Loading address suggestions...</div>
       ) : null}
       {ready && loadingPredictions ? (
-        <div className="mt-1 text-xs text-slate-500">Finding address suggestions...</div>
+        <div className={helperClassName || "mt-1 text-xs text-slate-500"}>Finding address suggestions...</div>
       ) : null}
       {err ? <div className="mt-1 text-sm text-red-600">{err}</div> : null}
       <div ref={detailsHostRef} className="hidden" aria-hidden="true" />

@@ -142,6 +142,28 @@ class PropertyIntelligenceSnapshot(models.Model):
 
 
 class CustomerRequest(models.Model):
+    PROJECT_MODE_FULL_SERVICE = "full_service"
+    PROJECT_MODE_DIY_ASSIST = "diy_assist"
+    PROJECT_MODE_INSPECTION_ONLY = "inspection_only"
+    PROJECT_MODE_NOT_SURE = "not_sure"
+    PROJECT_MODE_CHOICES = [
+        (PROJECT_MODE_FULL_SERVICE, "Full Service"),
+        (PROJECT_MODE_DIY_ASSIST, "DIY Assist"),
+        (PROJECT_MODE_INSPECTION_ONLY, "Inspection Only"),
+        (PROJECT_MODE_NOT_SURE, "Not Sure Yet"),
+    ]
+
+    PAYMENT_PREFERENCE_ESCROW = "escrow_milestones"
+    PAYMENT_PREFERENCE_DIRECT = "direct_pay"
+    PAYMENT_PREFERENCE_DISCUSS = "discuss"
+    PAYMENT_PREFERENCE_UNSURE = "unsure"
+    PAYMENT_PREFERENCE_CHOICES = [
+        (PAYMENT_PREFERENCE_ESCROW, "Escrow Milestone Holds"),
+        (PAYMENT_PREFERENCE_DIRECT, "Direct Payment"),
+        (PAYMENT_PREFERENCE_DISCUSS, "Discuss With Contractor"),
+        (PAYMENT_PREFERENCE_UNSURE, "Not Sure Yet"),
+    ]
+
     TYPE_REPAIR = "repair"
     TYPE_MAINTENANCE = "maintenance"
     TYPE_NEW_PROJECT = "new_project"
@@ -190,6 +212,19 @@ class CustomerRequest(models.Model):
     )
     customer_email = models.EmailField(db_index=True)
     request_type = models.CharField(max_length=32, choices=REQUEST_TYPE_CHOICES)
+    project_mode = models.CharField(
+        max_length=32,
+        choices=PROJECT_MODE_CHOICES,
+        blank=True,
+        default="",
+    )
+    project_category = models.CharField(max_length=80, blank=True, default="")
+    payment_preference = models.CharField(
+        max_length=32,
+        choices=PAYMENT_PREFERENCE_CHOICES,
+        blank=True,
+        default="",
+    )
     status = models.CharField(
         max_length=32,
         choices=STATUS_CHOICES,
