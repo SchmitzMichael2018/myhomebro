@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
+import ContractorDiscoveryStep from "./intake/ContractorDiscoveryStep.jsx";
 
 const REQUEST_TYPES = [
   ["repair", "Repair"],
@@ -167,6 +168,7 @@ function TextBlock({ label, value, empty }) {
 }
 
 function homeownerRequestStatus(request = {}, bids = []) {
+  if (displayValue(request.workflow_status_label)) return request.workflow_status_label;
   const status = String(request.status || "").toLowerCase();
   const label = String(request.status_label || "").trim();
   const conversion = String(request.conversion_status || "").toLowerCase();
@@ -186,8 +188,11 @@ function homeownerRequestStatus(request = {}, bids = []) {
 
 function requestMatchingText(request = {}, bids = []) {
   const bidCount = Number(request.bids_count ?? bids.length ?? 0);
+  const routedCount = Number(request.routed_contractor_count || 0);
   if (request.linked_work || request.agreement_token) return "Converted to project agreement";
   if (bidCount > 0) return `${bidCount} contractor response${bidCount === 1 ? "" : "s"} received`;
+  if (routedCount > 0) return `Sent to ${routedCount} contractor${routedCount === 1 ? "" : "s"}`;
+  if (request.contractor_matching_started) return "Contractor search started";
   if (request.selected_contractor) return "Contractor selected";
   const status = homeownerRequestStatus(request, bids).toLowerCase();
   if (status.includes("sent")) return "Contractor matching has started";
@@ -208,11 +213,19 @@ function requestNextStep(request = {}, bids = []) {
 }
 
 function requestCanEditText(request = {}) {
+  if (request.can_edit === true) return "Editable";
+  if (request.can_edit === false) return request.edit_lock_reason || "Editing locked after routing";
   if (request.linked_work || request.agreement_token) return "Linked agreement available";
   const status = homeownerRequestStatus(request).toLowerCase();
-  if (status.includes("draft") || status.includes("reviewing")) return "Editable before routing";
+  if (status.includes("draft") || status.includes("reviewing")) return "Editable";
   if (status.includes("closed")) return "Closed";
   return "Changes may need follow-up";
+}
+
+function requestContractorRoutes(request = {}) {
+  const routed = request.routed_contractors || [];
+  if (routed.length) return routed;
+  return request.selected_contractor ? [request.selected_contractor] : [];
 }
 
 function RequestTimeline({ items = [] }) {
@@ -275,7 +288,10 @@ export default function CustomerRequests({
   propertyProfile = {},
   propertyProfiles = [],
   onCreateRequest,
+  onUpdateRequest,
   onImproveRequest,
+  onStartContractorSearch,
+  onRouteRequestContractors,
   onAcceptBid,
   acceptingBidId = "",
   creating = false,
@@ -283,6 +299,10 @@ export default function CustomerRequests({
   const [pendingAwardBid, setPendingAwardBid] = useState(null);
   const [activeComparisonKey, setActiveComparisonKey] = useState("");
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [editingRequest, setEditingRequest] = useState(null);
+  const [contractorSearchRequest, setContractorSearchRequest] = useState(null);
+  const [selectedContractors, setSelectedContractors] = useState([]);
+  const [routingContractors, setRoutingContractors] = useState(false);
   const [improvingRequest, setImprovingRequest] = useState(false);
   const [improveError, setImproveError] = useState("");
   const [requestSuggestion, setRequestSuggestion] = useState(null);
@@ -338,6 +358,25 @@ export default function CustomerRequests({
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
+  const formFromRequest = (request = {}) => ({
+    property_id: request.property_id || request.property_profile?.id || propertyProfile?.id || "",
+    request_type: request.request_type || "repair",
+    project_mode: request.project_mode || "full_service",
+    project_category: request.project_category || request.project_type || "",
+    project_type: request.project_type || request.project_category || "",
+    project_subtype: request.project_subtype || "",
+    payment_preference: request.payment_preference || "",
+    title: request.project_title || "",
+    description: request.project_scope || request.notes || request.original_description || "",
+    urgency: request.urgency || "normal",
+    preferred_timeline: request.preferred_timeline || request.timeline_label || "",
+    address_line1: request.address_line1 || request.project_address_line1 || propertyProfile?.address_line1 || "",
+    address_line2: request.address_line2 || propertyProfile?.address_line2 || "",
+    city: request.city || request.project_city || propertyProfile?.city || "",
+    state: request.state || request.project_state || propertyProfile?.state || "",
+    postal_code: request.postal_code || request.project_postal_code || propertyProfile?.postal_code || "",
+  });
+
   const applyProperty = (propertyId) => {
     const selected = propertyOptions.find((property) => String(property.id) === String(propertyId));
     setForm((prev) => ({
@@ -360,9 +399,18 @@ export default function CustomerRequests({
       project_scope: form.description,
       project_category: form.project_category || form.project_type,
     };
-    await onCreateRequest?.(payload);
+    try {
+      if (editingRequest?.request_id) {
+        await onUpdateRequest?.(editingRequest.request_id, payload);
+      } else {
+        await onCreateRequest?.(payload);
+      }
+    } catch (_error) {
+      return;
+    }
     setRequestSuggestion(null);
     setImproveError("");
+    setEditingRequest(null);
     setForm((prev) => ({
       ...prev,
       project_mode: "full_service",
@@ -425,6 +473,73 @@ export default function CustomerRequests({
     const key = request?.comparison_key || "";
     return key ? bidsByComparisonKey[key] || [] : [];
   };
+
+  const beginEditRequest = (request) => {
+    if (!request?.can_edit) return;
+    setEditingRequest(request);
+    setSelectedRequest(null);
+    setContractorSearchRequest(null);
+    setRequestSuggestion(null);
+    setImproveError("");
+    setForm(formFromRequest(request));
+  };
+
+  const beginContractorSearch = async (request) => {
+    setSelectedRequest(null);
+    setEditingRequest(null);
+    setSelectedContractors([]);
+    try {
+      const response = await onStartContractorSearch?.(request.request_id);
+      const updatedRequest =
+        response?.portal?.requests?.find((row) => String(row.request_id) === String(request.request_id) && row.source_kind === "customer_request") ||
+        {
+          ...request,
+          source_intake_token: response?.source_intake_token || request.source_intake_token,
+          contractor_matching_started: true,
+          workflow_status_label: "Contractor Matching",
+        };
+      setContractorSearchRequest(updatedRequest);
+    } catch (_error) {
+      // Parent owns toast/error copy.
+    }
+  };
+
+  const routeSelectedContractors = async () => {
+    if (!contractorSearchRequest?.request_id || !selectedContractors.length) return;
+    setRoutingContractors(true);
+    try {
+      const response = await onRouteRequestContractors?.(contractorSearchRequest.request_id, selectedContractors);
+      const updatedRequest =
+        response?.portal?.requests?.find((row) => String(row.request_id) === String(contractorSearchRequest.request_id) && row.source_kind === "customer_request") ||
+        null;
+      setContractorSearchRequest(updatedRequest);
+      setSelectedContractors([]);
+    } finally {
+      setRoutingContractors(false);
+    }
+  };
+
+  const discoveryFormForRequest = (request = {}) => ({
+    ai_project_title: request.project_title,
+    ai_project_type: request.project_type || request.project_category,
+    ai_project_subtype: request.project_subtype,
+    accomplishment_text: request.project_scope || request.notes || request.original_description,
+    original_description: request.original_description || request.project_scope,
+    refined_description: request.ai_enhanced_description || request.project_scope,
+    ai_description: request.ai_enhanced_description || request.project_scope,
+    project_scope_summary: request.project_scope || request.notes,
+    project_address_line1: request.address_line1 || request.project_address,
+    project_city: request.city,
+    project_state: request.state,
+    project_postal_code: request.postal_code,
+    customer_address_line1: request.address_line1 || request.project_address,
+    customer_city: request.city,
+    customer_state: request.state,
+    customer_postal_code: request.postal_code,
+    project_class: request.project_class || "residential",
+    project_mode: request.project_mode,
+    payment_preference: request.payment_preference,
+  });
 
   return (
     <div data-testid="customer-requests" className="space-y-5">
@@ -755,8 +870,32 @@ I need help installing shelves and patching drywall.`}
           disabled={creating || !form.title.trim() || !form.description.trim()}
           className="mt-5 w-full rounded-xl bg-amber-300 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:min-w-44"
         >
-          {creating ? "Saving..." : "Create Request"}
+          {creating ? "Saving..." : editingRequest ? "Save Request Updates" : "Create Request"}
         </button>
+        {editingRequest ? (
+          <button
+            type="button"
+            onClick={() => {
+              setEditingRequest(null);
+              setRequestSuggestion(null);
+              setImproveError("");
+              setForm((prev) => ({
+                ...prev,
+                title: "",
+                description: "",
+                project_category: "",
+                project_type: "",
+                project_subtype: "",
+                payment_preference: "",
+                preferred_timeline: "",
+                urgency: "normal",
+              }));
+            }}
+            className="ml-0 mt-3 rounded-xl border border-slate-600 px-4 py-3 text-sm font-bold text-slate-200 hover:bg-slate-800 sm:ml-3"
+          >
+            Cancel Edit
+          </button>
+        ) : null}
       </form>
 
       <section data-testid="customer-portal-requests" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -799,6 +938,26 @@ I need help installing shelves and patching drywall.`}
                     >
                       View Request
                     </button>
+                    {request.can_edit ? (
+                      <button
+                        type="button"
+                        data-testid={`customer-request-edit-${request.id}`}
+                        onClick={() => beginEditRequest(request)}
+                        className="rounded-lg border border-amber-300/50 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-300/10"
+                      >
+                        Edit Request
+                      </button>
+                    ) : null}
+                    {request.can_edit || request.contractor_matching_started ? (
+                      <button
+                        type="button"
+                        data-testid={`customer-request-find-contractor-${request.id}`}
+                        onClick={() => beginContractorSearch(request)}
+                        className="rounded-lg bg-sky-300 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-sky-200"
+                      >
+                        Find Contractor
+                      </button>
+                    ) : null}
                     {(bidsByComparisonKey[request.comparison_key] || []).length > 1 ? (
                       <button
                         type="button"
@@ -819,6 +978,60 @@ I need help installing shelves and patching drywall.`}
             </EmptyState>
           )}
         </div>
+
+        {contractorSearchRequest ? (
+          <div data-testid="customer-request-contractor-search-panel" className="mt-5 space-y-4 rounded-3xl border border-sky-300/30 bg-slate-950/80 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.2em] text-sky-200">Find Contractor</div>
+                <h3 className="mt-1 text-xl font-extrabold text-white">{contractorSearchRequest.project_title || "Request contractor review"}</h3>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+                  Select up to 5 contractors to review this request. The request stays in your portal, and contractor responses will appear here.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setContractorSearchRequest(null);
+                  setSelectedContractors([]);
+                }}
+                className="rounded-full border border-slate-600 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+            {contractorSearchRequest.source_intake_token ? (
+              <ContractorDiscoveryStep
+                token={contractorSearchRequest.source_intake_token}
+                form={discoveryFormForRequest(contractorSearchRequest)}
+                active
+                selectedTargets={selectedContractors}
+                setSelectedTargets={setSelectedContractors}
+                onSkipToManual={() => setSelectedContractors([])}
+              />
+            ) : (
+              <EmptyState title="Contractor search is not ready yet">
+                Save this request and try again. We need a request record before showing contractor matches.
+              </EmptyState>
+            )}
+            <div className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm text-slate-300">
+                {selectedContractors.length
+                  ? `${selectedContractors.length} contractor${selectedContractors.length === 1 ? "" : "s"} selected for review.`
+                  : "Choose contractor cards above before sending this request."}
+              </div>
+              <button
+                type="button"
+                data-testid="customer-request-route-contractors"
+                onClick={routeSelectedContractors}
+                disabled={routingContractors || !selectedContractors.length}
+                className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {routingContractors ? "Sending..." : "Send Request to Selected Contractors"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {selectedRequest ? (
           <div
@@ -848,6 +1061,28 @@ I need help installing shelves and patching drywall.`}
               </div>
 
               <div className="mt-5 space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  {selectedRequest.can_edit ? (
+                    <button
+                      type="button"
+                      data-testid="customer-request-detail-edit"
+                      onClick={() => beginEditRequest(selectedRequest)}
+                      className="rounded-xl border border-amber-300/50 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/10"
+                    >
+                      Edit Request
+                    </button>
+                  ) : null}
+                  {selectedRequest.can_edit || selectedRequest.contractor_matching_started ? (
+                    <button
+                      type="button"
+                      data-testid="customer-request-detail-find-contractor"
+                      onClick={() => beginContractorSearch(selectedRequest)}
+                      className="rounded-xl bg-sky-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-sky-200"
+                    >
+                      Find Contractor
+                    </button>
+                  ) : null}
+                </div>
                 <DetailSection title="Request Summary" eyebrow="Submitted Request" testId="customer-request-detail-summary">
                   <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <DetailField label="Current Status" value={homeownerRequestStatus(selectedRequest, requestBids(selectedRequest))} />
@@ -901,42 +1136,38 @@ I need help installing shelves and patching drywall.`}
                   </dl>
                 </DetailSection>
 
-                <DetailSection title="Selected Contractor" testId="customer-request-detail-selected-contractor">
-                  {selectedRequest.selected_contractor ? (
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-lg font-extrabold text-white">{selectedRequest.selected_contractor.business_name || "Selected contractor"}</h5>
-                        <Badge>{selectedRequest.selected_contractor.status_label || "Selected"}</Badge>
-                      </div>
-                      <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <DetailField label="Contact" value={selectedRequest.selected_contractor.contact_name} />
-                        <DetailField label="Phone" value={selectedRequest.selected_contractor.phone} />
-                        <DetailField label="Email" value={selectedRequest.selected_contractor.email} />
-                        <DetailField label="Service Area" value={selectedRequest.selected_contractor.service_area || selectedRequest.selected_contractor.location} />
-                        <DetailField label="Trade / Match" value={selectedRequest.selected_contractor.trade} />
-                        <DetailField label="How Selected" value={selectedRequest.selected_contractor.selection_method} />
-                        <DetailField label="Selected" value={formatDateTime(selectedRequest.selected_contractor.selected_at)} />
-                        <DetailField label="Accepted" value={formatDateTime(selectedRequest.selected_contractor.accepted_at)} />
-                        <DetailField
-                          label="Rating"
-                          value={
-                            selectedRequest.selected_contractor.rating
-                              ? `${selectedRequest.selected_contractor.rating} (${selectedRequest.selected_contractor.review_count || 0} reviews)`
-                              : ""
-                          }
-                        />
-                      </dl>
-                      {selectedRequest.selected_contractor.profile_url ? (
-                        <a
-                          href={selectedRequest.selected_contractor.profile_url}
-                          className="mt-4 inline-flex rounded-xl border border-sky-300/40 px-4 py-2 text-sm font-bold text-sky-100 hover:bg-sky-400/10"
-                        >
-                          View contractor profile
-                        </a>
-                      ) : null}
+                <DetailSection title="Contractor Routing" testId="customer-request-detail-selected-contractor">
+                  {requestContractorRoutes(selectedRequest).length ? (
+                    <div className="space-y-3">
+                      {requestContractorRoutes(selectedRequest).map((contractor) => (
+                        <div key={contractor.id || contractor.business_name} className="rounded-2xl border border-emerald-300/30 bg-emerald-300/10 p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h5 className="text-lg font-extrabold text-white">{contractor.business_name || "Selected contractor"}</h5>
+                            <Badge>{contractor.status_label || "Sent"}</Badge>
+                          </div>
+                          <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <DetailField label="Contact" value={contractor.contact_name} />
+                            <DetailField label="Phone" value={contractor.phone} />
+                            <DetailField label="Email" value={contractor.email} />
+                            <DetailField label="Service Area" value={contractor.service_area || contractor.location} />
+                            <DetailField label="Trade / Match" value={contractor.trade} />
+                            <DetailField label="How Selected" value={contractor.selection_method} />
+                            <DetailField label="Sent" value={formatDateTime(contractor.invited_at || contractor.selected_at)} />
+                            <DetailField label="Accepted" value={formatDateTime(contractor.accepted_at)} />
+                          </dl>
+                          {contractor.profile_url ? (
+                            <a
+                              href={contractor.profile_url}
+                              className="mt-4 inline-flex rounded-xl border border-sky-300/40 px-4 py-2 text-sm font-bold text-sky-100 hover:bg-sky-400/10"
+                            >
+                              View contractor profile
+                            </a>
+                          ) : null}
+                        </div>
+                      ))}
                     </div>
                   ) : (
-                    <p className="text-sm leading-6 text-slate-400">No contractor has been selected for this request yet.</p>
+                    <p className="text-sm leading-6 text-slate-400">No contractor has been sent this request yet. Use Find Contractor when you are ready.</p>
                   )}
                 </DetailSection>
 

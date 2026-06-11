@@ -63,6 +63,7 @@ from projects.services.contractor_reviews import review_eligibility, serialize_r
 from projects.services.smart_notifications import create_smart_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
+from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.property_intelligence import build_property_intelligence
 from projects.services.home_system_reminders import build_home_system_reminder
 from projects.services.recommendations import build_customer_recommendations
@@ -545,6 +546,114 @@ def _customer_request_status_label(value: str) -> str:
     return _safe_text(value).replace("_", " ").title() or "Submitted"
 
 
+def _customer_request_payment_preference_to_intake(value: str) -> str:
+    mapping = {
+        CustomerRequest.PAYMENT_PREFERENCE_ESCROW: "escrow",
+        CustomerRequest.PAYMENT_PREFERENCE_DIRECT: "direct",
+        CustomerRequest.PAYMENT_PREFERENCE_DISCUSS: "discuss",
+        CustomerRequest.PAYMENT_PREFERENCE_UNSURE: "discuss",
+    }
+    return mapping.get(_safe_text(value), "discuss")
+
+
+def _customer_request_project_mode_to_intake(value: str) -> str:
+    mapping = {
+        CustomerRequest.PROJECT_MODE_FULL_SERVICE: "full_service",
+        CustomerRequest.PROJECT_MODE_DIY_ASSIST: "assisted_diy",
+        CustomerRequest.PROJECT_MODE_INSPECTION_ONLY: "inspection_only",
+        CustomerRequest.PROJECT_MODE_NOT_SURE: "full_service",
+    }
+    return mapping.get(_safe_text(value), "full_service")
+
+
+def _customer_request_matching_counts(request_row) -> dict:
+    source_intake = getattr(request_row, "source_intake", None)
+    if not source_intake:
+        return {"opportunities": 0, "invites": 0, "leads": 0, "total": 0}
+    opportunities = ContractorOpportunity.objects.filter(intake_request=source_intake).count()
+    invites = ContractorDiscoveryInvite.objects.filter(public_intake=source_intake).count()
+    leads = PublicContractorLead.objects.filter(source_intake=source_intake).count()
+    return {"opportunities": opportunities, "invites": invites, "leads": leads, "total": opportunities + invites + leads}
+
+
+def _customer_request_can_edit(request_row) -> bool:
+    if getattr(request_row, "converted_project_id", None):
+        return False
+    if _safe_text(getattr(request_row, "status", "")) in {CustomerRequest.STATUS_CLOSED, CustomerRequest.STATUS_CONVERTED_TO_PROJECT}:
+        return False
+    return _customer_request_matching_counts(request_row)["total"] == 0
+
+
+def _customer_request_workflow_status(request_row, *, bids_count: int = 0) -> tuple[str, str, str]:
+    if getattr(request_row, "converted_project_id", None):
+        return "agreement_created", "Agreement Created", "Open the linked agreement when you are ready."
+    status_value = _safe_text(getattr(request_row, "status", "")).lower()
+    if status_value == CustomerRequest.STATUS_CLOSED:
+        return "closed", "Closed", "This request is closed."
+    if bids_count > 0:
+        return "contractor_response_received", "Contractor Response Received", "Review contractor responses and choose how to proceed."
+    matching_counts = _customer_request_matching_counts(request_row)
+    if matching_counts["total"] > 0 or status_value == CustomerRequest.STATUS_ROUTED:
+        count = matching_counts["total"]
+        label = f"Sent to {count} Contractor{'s' if count != 1 else ''}" if count else "Sent to Contractors"
+        return "sent_to_contractors", label, "Wait for contractor responses or continue reviewing this request."
+    if getattr(request_row, "source_intake_id", None) or status_value == CustomerRequest.STATUS_MARKETPLACE_READY:
+        return "contractor_matching", "Contractor Matching", "Review local contractor matches and select who should receive this request."
+    if status_value == CustomerRequest.STATUS_DRAFT:
+        return "private_draft", "Private Draft", "Edit the request, then save it when you are ready."
+    return "reviewing_request", "Reviewing Request", "Edit the request or find contractors when you are ready."
+
+
+def _customer_request_source_intake_payload(request_row) -> dict:
+    source_intake = getattr(request_row, "source_intake", None)
+    if not source_intake:
+        return {}
+    return {
+        "id": source_intake.id,
+        "token": _safe_text(getattr(source_intake, "share_token", "")),
+        "status": _safe_text(getattr(source_intake, "status", "")),
+        "post_submit_flow": _safe_text(getattr(source_intake, "post_submit_flow", "")),
+    }
+
+
+def _customer_request_routed_contractors(source_intake) -> list[dict]:
+    if not source_intake:
+        return []
+    rows = []
+    for opportunity in (
+        ContractorOpportunity.objects.select_related("directory_entry", "directory_entry__claimed_by_contractor")
+        .filter(intake_request=source_intake)
+        .order_by("-selected_at", "-id")
+    ):
+        payload = _selected_contractor_from_opportunity(opportunity)
+        if payload:
+            payload["id"] = f"opportunity-{opportunity.id}"
+            rows.append(payload)
+    for invite in (
+        ContractorDiscoveryInvite.objects.select_related("directory_listing", "contractor")
+        .filter(public_intake=source_intake)
+        .order_by("-created_at", "-id")
+    ):
+        listing = getattr(invite, "directory_listing", None)
+        contractor = getattr(invite, "contractor", None)
+        rows.append(
+            {
+                "id": f"invite-{invite.id}",
+                "source": "contractor_discovery_invite",
+                "business_name": _safe_text(getattr(contractor, "business_name", "")) or _safe_text(getattr(listing, "business_name", "")) or "Selected contractor",
+                "phone": _safe_text(getattr(invite, "destination_phone", "")) or _safe_text(getattr(listing, "phone_number", "")),
+                "email": _safe_text(getattr(invite, "destination_email", "")) or _safe_text(getattr(listing, "email", "")),
+                "location": _safe_text(getattr(listing, "formatted_address", "")) or _compact_address(getattr(listing, "city", ""), getattr(listing, "state", "")),
+                "status": _safe_text(getattr(invite, "status", "")),
+                "status_label": _customer_request_status_label(getattr(invite, "status", "")),
+                "selection_method": "Sent from Customer Portal",
+                "selected_at": _safe_dt(getattr(invite, "created_at", None)),
+                "invited_at": _safe_dt(getattr(invite, "sent_at", None) or getattr(invite, "created_at", None)),
+            }
+        )
+    return rows
+
+
 def _compact_address(*parts) -> str:
     return ", ".join(_safe_text(part) for part in parts if _safe_text(part))
 
@@ -740,10 +849,30 @@ def _request_linked_work_payload(agreement=None, project=None) -> dict | None:
 
 
 def _customer_request_activity(request_row) -> list[dict]:
+    source_intake = getattr(request_row, "source_intake", None)
+    matching_counts = _customer_request_matching_counts(request_row)
     items = [
         _request_activity_item("Request saved", getattr(request_row, "created_at", None), "Saved in your Customer Portal."),
         _request_activity_item("Request updated", getattr(request_row, "updated_at", None), "Request details were updated."),
     ]
+    if source_intake:
+        items.append(
+            _request_activity_item(
+                "Contractor matching started",
+                getattr(source_intake, "created_at", None),
+                "Local contractor matching was opened for this request.",
+                status="matching",
+            )
+        )
+    if matching_counts["total"]:
+        items.append(
+            _request_activity_item(
+                "Request sent to contractors",
+                getattr(source_intake, "updated_at", None) if source_intake else getattr(request_row, "updated_at", None),
+                f"Sent to {matching_counts['total']} contractor{'s' if matching_counts['total'] != 1 else ''}.",
+                status="routed",
+            )
+        )
     if getattr(request_row, "converted_project_id", None):
         items.append(
             _request_activity_item(
@@ -764,6 +893,70 @@ def _customer_request_activity(request_row) -> list[dict]:
         seen.add(key)
         timeline.append(item)
     return timeline
+
+
+def _sync_customer_request_source_intake(customer_request: CustomerRequest) -> ProjectIntake:
+    source_intake = getattr(customer_request, "source_intake", None)
+    profile = getattr(customer_request, "property_profile", None)
+    homeowner = getattr(customer_request, "homeowner", None) or _primary_homeowner_for_email(customer_request.customer_email)
+    address_line1 = _safe_text(getattr(customer_request, "address_line1", "")) or _safe_text(getattr(profile, "address_line1", ""))
+    address_line2 = _safe_text(getattr(customer_request, "address_line2", "")) or _safe_text(getattr(profile, "address_line2", ""))
+    city = _safe_text(getattr(customer_request, "city", "")) or _safe_text(getattr(profile, "city", ""))
+    state_value = _safe_text(getattr(customer_request, "state", "")) or _safe_text(getattr(profile, "state", ""))
+    postal_code = _safe_text(getattr(customer_request, "postal_code", "")) or _safe_text(getattr(profile, "postal_code", ""))
+    defaults = {
+        "homeowner": homeowner,
+        "initiated_by": "homeowner",
+        "status": "analyzed",
+        "lead_source": "landing_page",
+        "customer_name": _safe_text(getattr(homeowner, "full_name", "")) or _safe_text(getattr(homeowner, "name", "")),
+        "customer_email": _safe_text(customer_request.customer_email).lower(),
+        "customer_phone": _safe_text(getattr(homeowner, "phone_number", "")),
+        "customer_address_line1": address_line1,
+        "customer_address_line2": address_line2,
+        "customer_city": city,
+        "customer_state": state_value,
+        "customer_postal_code": postal_code,
+        "project_class": "residential",
+        "project_mode": _customer_request_project_mode_to_intake(customer_request.project_mode),
+        "property_type": _safe_text(getattr(profile, "property_type", "")),
+        "desired_timing_text": _safe_text(customer_request.preferred_timeline),
+        "payment_preference": _customer_request_payment_preference_to_intake(customer_request.payment_preference),
+        "project_address_line1": address_line1,
+        "project_address_line2": address_line2,
+        "project_city": city,
+        "project_state": state_value,
+        "project_postal_code": postal_code,
+        "accomplishment_text": _safe_text(customer_request.description),
+        "ai_project_title": _safe_text(customer_request.title),
+        "ai_project_type": _safe_text(customer_request.project_type or customer_request.project_category),
+        "ai_project_subtype": _safe_text(customer_request.project_subtype),
+        "ai_description": _safe_text(customer_request.description),
+        "ai_analysis_payload": {
+            "source_customer_request_id": customer_request.id,
+            "project_title": _safe_text(customer_request.title),
+            "project_type": _safe_text(customer_request.project_type or customer_request.project_category),
+            "project_subtype": _safe_text(customer_request.project_subtype),
+            "description": _safe_text(customer_request.description),
+            "urgency": _safe_text(customer_request.urgency),
+            "payment_preference": _safe_text(customer_request.payment_preference),
+        },
+        "analyzed_at": timezone.now(),
+    }
+    if source_intake is None:
+        source_intake = ProjectIntake.objects.create(**defaults)
+        source_intake.ensure_share_token(save=True)
+        customer_request.source_intake = source_intake
+        if customer_request.status == CustomerRequest.STATUS_SUBMITTED:
+            customer_request.status = CustomerRequest.STATUS_MARKETPLACE_READY
+        customer_request.save(update_fields=["source_intake", "status", "updated_at"])
+        return source_intake
+
+    for field, value in defaults.items():
+        setattr(source_intake, field, value)
+    source_intake.ensure_share_token(save=False)
+    source_intake.save()
+    return source_intake
 
 
 def _intake_activity(intake, selected_contractor: dict | None = None, agreement=None) -> list[dict]:
@@ -837,7 +1030,7 @@ def _customer_request_refine_fallback(description: str) -> str:
 
 def _customer_request_rows(email: str) -> list[dict]:
     rows = []
-    for request_row in CustomerRequest.objects.select_related("converted_project", "property_profile").filter(
+    for request_row in CustomerRequest.objects.select_related("converted_project", "property_profile", "source_intake").filter(
         customer_email__iexact=email
     ).order_by("-created_at", "-id"):
         project_type = _safe_text(getattr(request_row, "project_type", "")) or _safe_text(getattr(request_row, "project_category", ""))
@@ -852,6 +1045,16 @@ def _customer_request_rows(email: str) -> list[dict]:
             getattr(request_row, "postal_code", ""),
         )
         linked_project = getattr(request_row, "converted_project", None)
+        project_class = infer_project_class(project_type, project_scope, getattr(request_row, "preferred_timeline", ""), "")
+        comparison_key = _comparison_key(email, project_address, project_class)
+        source_intake = getattr(request_row, "source_intake", None)
+        routed_contractors = _customer_request_routed_contractors(source_intake)
+        workflow_key, workflow_label, next_action = _customer_request_workflow_status(
+            request_row,
+            bids_count=0,
+        )
+        can_edit = _customer_request_can_edit(request_row)
+        matching_counts = _customer_request_matching_counts(request_row)
         rows.append(
             {
                 "id": f"customer-request-{request_row.id}",
@@ -870,6 +1073,9 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "project_type": project_type,
                 "project_subtype": project_subtype,
                 "project_address": project_address,
+                "project_class": project_class,
+                "project_class_label": project_class_label(project_class),
+                "comparison_key": comparison_key,
                 "request_type": _safe_text(request_row.request_type),
                 "request_type_label": request_row.get_request_type_display(),
                 "project_mode": _safe_text(getattr(request_row, "project_mode", "")),
@@ -880,7 +1086,18 @@ def _customer_request_rows(email: str) -> list[dict]:
                 if getattr(request_row, "payment_preference", "")
                 else "",
                 "status": _safe_text(request_row.status),
-                "status_label": _customer_request_status_label(request_row.status),
+                "status_label": workflow_label,
+                "workflow_status": workflow_key,
+                "workflow_status_label": workflow_label,
+                "can_edit": can_edit,
+                "edit_lock_reason": "" if can_edit else "Editing is locked after a request is sent to contractors or converted to an agreement.",
+                "contractor_matching_started": bool(source_intake),
+                "source_intake_id": getattr(source_intake, "id", None),
+                "source_intake_token": _safe_text(getattr(source_intake, "share_token", "")),
+                "source_intake": _customer_request_source_intake_payload(request_row),
+                "routed_contractor_count": matching_counts["total"],
+                "routed_contractors": routed_contractors,
+                "routed_at": _safe_dt(getattr(source_intake, "post_submit_flow_selected_at", None) or getattr(source_intake, "updated_at", None)) if matching_counts["total"] else "",
                 "latest_activity": _safe_dt(request_row.updated_at or request_row.created_at),
                 "created_at": _safe_dt(request_row.created_at),
                 "updated_at": _safe_dt(request_row.updated_at),
@@ -890,8 +1107,8 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "agreement_token": "",
                 "action_label": "View Request",
                 "action_target": "",
-                "current_next_action": "Review request details",
-                "conversion_status": "Converted" if getattr(request_row, "converted_project_id", None) else _customer_request_status_label(request_row.status),
+                "current_next_action": next_action,
+                "conversion_status": "Converted" if getattr(request_row, "converted_project_id", None) else workflow_label,
                 "notes": project_scope,
                 "urgency": _safe_text(request_row.urgency),
                 "preferred_timeline": _safe_text(request_row.preferred_timeline),
@@ -925,7 +1142,7 @@ def _customer_request_rows(email: str) -> list[dict]:
                     ]
                     if field
                 ],
-                "selected_contractor": None,
+                "selected_contractor": routed_contractors[0] if routed_contractors else None,
                 "photos": [],
                 "documents": [],
                 "activity_timeline": _customer_request_activity(request_row),
@@ -950,6 +1167,26 @@ def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dic
                     "agreement_id": row.get("linked_agreement_id"),
                     "agreement_token": _safe_text(row.get("linked_agreement_token", "")),
                 }
+        for row in rows:
+            if row.get("source_kind") != "customer_request":
+                continue
+            key = _safe_text(row.get("comparison_key", ""))
+            if not key:
+                continue
+            count = bid_counts.get(key, 0)
+            if count:
+                row["bids_count"] = count
+                if not row.get("linked_work"):
+                    customer_request = CustomerRequest.objects.filter(pk=row.get("request_id")).select_related("source_intake", "converted_project").first()
+                    if customer_request is not None:
+                        workflow_key, workflow_label, next_action = _customer_request_workflow_status(
+                            customer_request,
+                            bids_count=count,
+                        )
+                        row["workflow_status"] = workflow_key
+                        row["workflow_status_label"] = workflow_label
+                        row["status_label"] = workflow_label
+                        row["current_next_action"] = next_action
 
     leads = list(
         PublicContractorLead.objects.select_related(
@@ -964,7 +1201,7 @@ def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dic
     intakes = list(
         ProjectIntake.objects.select_related("agreement", "public_lead", "contractor").filter(
             customer_email__iexact=email
-        ).order_by("-created_at", "-id")
+        ).filter(source_customer_requests__isnull=True).order_by("-created_at", "-id")
     )
 
     for intake in intakes:
@@ -3365,6 +3602,193 @@ class CustomerPortalRequestCreateView(APIView):
             },
         )
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalRequestDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def patch(self, request, token: str, request_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        customer_request = get_object_or_404(
+            CustomerRequest.objects.select_related("property_profile", "source_intake", "converted_project"),
+            pk=request_id,
+            customer_email__iexact=email.lower().strip(),
+        )
+        if not _customer_request_can_edit(customer_request):
+            return Response(
+                {"detail": "This request has already been sent to contractors. Use follow-up messaging or an amendment request for changes."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        merged = {
+            "property_id": getattr(customer_request.property_profile, "id", None),
+            "request_type": customer_request.request_type,
+            "project_mode": customer_request.project_mode,
+            "project_category": customer_request.project_category,
+            "project_type": customer_request.project_type,
+            "project_subtype": customer_request.project_subtype,
+            "payment_preference": customer_request.payment_preference,
+            "project_title": customer_request.title,
+            "project_scope": customer_request.description,
+            "urgency": customer_request.urgency,
+            "preferred_timeline": customer_request.preferred_timeline,
+            "address_line1": customer_request.address_line1,
+            "address_line2": customer_request.address_line2,
+            "city": customer_request.city,
+            "state": customer_request.state,
+            "postal_code": customer_request.postal_code,
+            "status": customer_request.status,
+        }
+        merged.update(request.data)
+        serializer = CustomerPortalRequestSerializer(data=merged)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        profile = _property_profile_for_email_or_404(email, data.get("property_id"))
+        for field in [
+            "request_type",
+            "project_mode",
+            "project_category",
+            "project_type",
+            "project_subtype",
+            "payment_preference",
+            "status",
+            "urgency",
+            "preferred_timeline",
+            "address_line1",
+            "address_line2",
+            "city",
+            "state",
+            "postal_code",
+        ]:
+            setattr(customer_request, field, data.get(field, ""))
+        customer_request.property_profile = profile
+        customer_request.title = data["title"]
+        customer_request.description = data["description"]
+        customer_request.save()
+        if getattr(customer_request, "source_intake_id", None):
+            _sync_customer_request_source_intake(customer_request)
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalRequestMatchingView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, request_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        customer_request = get_object_or_404(
+            CustomerRequest.objects.select_related("property_profile", "source_intake", "converted_project"),
+            pk=request_id,
+            customer_email__iexact=email.lower().strip(),
+        )
+        source_intake = _sync_customer_request_source_intake(customer_request)
+        if customer_request.status == CustomerRequest.STATUS_SUBMITTED:
+            customer_request.status = CustomerRequest.STATUS_MARKETPLACE_READY
+            customer_request.save(update_fields=["status", "updated_at"])
+        return Response(
+            {
+                "detail": "Contractor matching is ready.",
+                "request_id": customer_request.id,
+                "source_intake_id": source_intake.id,
+                "source_intake_token": source_intake.share_token,
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalRequestContractorSelectView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, request_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        customer_request = get_object_or_404(
+            CustomerRequest.objects.select_related("property_profile", "source_intake", "converted_project"),
+            pk=request_id,
+            customer_email__iexact=email.lower().strip(),
+        )
+        selected = request.data.get("selected_contractors") or request.data.get("selected") or []
+        if isinstance(selected, str):
+            try:
+                import json
+
+                selected = json.loads(selected)
+            except Exception:
+                selected = []
+        if not isinstance(selected, list) or not selected:
+            return Response({"detail": "Select at least one contractor."}, status=status.HTTP_400_BAD_REQUEST)
+        source_intake = _sync_customer_request_source_intake(customer_request)
+        created = []
+        payload = {
+            "project_title": customer_request.title,
+            "project_type": customer_request.project_type or customer_request.project_category,
+            "project_subtype": customer_request.project_subtype,
+            "description": customer_request.description,
+            "refined_description": customer_request.description,
+            "homeowner_email": customer_request.customer_email,
+            "timeline": customer_request.preferred_timeline,
+            "project_address_line1": customer_request.address_line1,
+            "project_city": customer_request.city,
+            "project_state": customer_request.state,
+            "project_postal_code": customer_request.postal_code,
+            "payment_preference": customer_request.payment_preference,
+            "project_mode": customer_request.project_mode,
+        }
+        for selection in selected[:5]:
+            if not isinstance(selection, dict):
+                continue
+            try:
+                opportunity = create_or_update_opportunity_from_selection(
+                    {
+                        "intake_request": source_intake,
+                        "selection": selection,
+                        "payload": payload,
+                    }
+                )
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            created.append({"opportunity_id": opportunity.id, "status": opportunity.status})
+        source_intake.post_submit_flow = "multi_contractor" if len(created) > 1 else "single_contractor"
+        source_intake.post_submit_flow_selected_at = source_intake.post_submit_flow_selected_at or timezone.now()
+        source_intake.save(update_fields=["post_submit_flow", "post_submit_flow_selected_at", "updated_at"])
+        customer_request.status = CustomerRequest.STATUS_ROUTED
+        customer_request.save(update_fields=["status", "updated_at"])
+        create_smart_notification(
+            event_type=SmartNotificationEvent.MARKETPLACE_REQUEST_ROUTED,
+            recipient_email=email,
+            homeowner=customer_request.homeowner,
+            customer_request=customer_request,
+            property_profile=customer_request.property_profile,
+            context={
+                "request_title": customer_request.title,
+                "contractor_count": len(created),
+            },
+        )
+        return Response(
+            {
+                "detail": f"Request sent to {len(created)} contractor{'s' if len(created) != 1 else ''}.",
+                "created": created,
+                "opportunity_count": len(created),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalRequestImproveView(APIView):

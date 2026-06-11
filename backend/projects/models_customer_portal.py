@@ -399,6 +399,13 @@ class CustomerRequest(models.Model):
         blank=True,
         related_name="source_customer_requests",
     )
+    source_intake = models.ForeignKey(
+        "projects.ProjectIntake",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_customer_requests",
+    )
     internal_notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)

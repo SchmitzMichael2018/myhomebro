@@ -20823,8 +20823,10 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(request_row["request_source_label"], "Customer Portal")
         self.assertEqual(request_row["original_description"], "Kitchen sink is leaking under the cabinet.")
         self.assertEqual(request_row["homeowner_email"], self.customer_email)
-        self.assertEqual(request_row["conversion_status"], "Submitted")
-        self.assertEqual(request_row["current_next_action"], "Review request details")
+        self.assertEqual(request_row["conversion_status"], "Reviewing Request")
+        self.assertEqual(request_row["workflow_status"], "reviewing_request")
+        self.assertTrue(request_row["can_edit"])
+        self.assertEqual(request_row["current_next_action"], "Edit the request or find contractors when you are ready.")
         self.assertEqual(request_row["activity_timeline"][0]["title"], "Request saved")
         self.assertTrue(request_row["created_at"])
         notification = SmartNotification.objects.get(customer_request=saved)
@@ -20906,6 +20908,107 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.assertEqual(rejected.status_code, 404)
         self.assertEqual(primary.customer_email, self.customer_email)
+
+    def test_customer_portal_request_edit_matching_and_routing_flow(self):
+        from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/",
+            {
+                "request_type": "repair",
+                "project_mode": "full_service",
+                "project_type": "Appliance Repair",
+                "project_subtype": "Dryer Repair",
+                "payment_preference": "discuss",
+                "project_title": "Dryer noise",
+                "project_scope": "Dryer is making loud noises.",
+                "urgency": "soon",
+                "preferred_timeline": "As soon as possible",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        saved = CustomerRequest.objects.get(title="Dryer noise")
+        row = next(row for row in create_response.data["requests"] if row["request_id"] == saved.id)
+        self.assertEqual(row["workflow_status"], "reviewing_request")
+        self.assertTrue(row["can_edit"])
+
+        edit_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/",
+            {
+                "project_title": "Dryer diagnostic visit",
+                "project_scope": "Dryer is making a loud scraping noise and needs inspection.",
+                "project_type": "Appliance Repair",
+                "project_subtype": "Dryer Repair",
+                "request_type": "repair",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(edit_response.status_code, 200, edit_response.data)
+        saved.refresh_from_db()
+        self.assertEqual(saved.title, "Dryer diagnostic visit")
+        self.assertEqual(saved.description, "Dryer is making a loud scraping noise and needs inspection.")
+
+        matching_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/contractor-search/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(matching_response.status_code, 200, matching_response.data)
+        saved.refresh_from_db()
+        self.assertIsNotNone(saved.source_intake_id)
+        self.assertTrue(saved.source_intake.share_token)
+        matching_row = next(row for row in matching_response.data["portal"]["requests"] if row["request_id"] == saved.id)
+        self.assertEqual(matching_row["workflow_status"], "contractor_matching")
+        self.assertTrue(matching_row["can_edit"])
+        self.assertTrue(matching_row["contractor_matching_started"])
+
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Appliance Pros",
+            normalized_name="appliance pros",
+            phone="555-222-1010",
+            public_email="hello@appliancepros.test",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            primary_service="Appliance Repair",
+            services=["Appliance Repair", "Dryer Repair"],
+            source="manual",
+        )
+        route_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/contractors/select/",
+            {
+                "selected_contractors": [
+                    {
+                        "directory_entry_id": entry.id,
+                        "business_name": "Appliance Pros",
+                    }
+                ]
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(route_response.status_code, 200, route_response.data)
+        saved.refresh_from_db()
+        self.assertEqual(saved.status, CustomerRequest.STATUS_ROUTED)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=saved.source_intake).count(), 1)
+        routed_row = next(row for row in route_response.data["portal"]["requests"] if row["request_id"] == saved.id)
+        self.assertEqual(routed_row["workflow_status"], "sent_to_contractors")
+        self.assertEqual(routed_row["workflow_status_label"], "Sent to 1 Contractor")
+        self.assertFalse(routed_row["can_edit"])
+        self.assertEqual(routed_row["routed_contractor_count"], 1)
+        self.assertEqual(routed_row["routed_contractors"][0]["business_name"], "Appliance Pros")
+
+        locked_edit = self.client.patch(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/",
+            {
+                "project_title": "Should not edit",
+                "project_scope": "This should be locked.",
+                "request_type": "repair",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(locked_edit.status_code, 400)
 
     def test_customer_portal_requests_are_scoped_to_verified_email(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

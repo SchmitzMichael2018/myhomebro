@@ -1954,12 +1954,49 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               setCreatingRequest(false);
             }
           }}
+          onUpdateRequest={async (requestId, payload) => {
+            setCreatingRequest(true);
+            try {
+              const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/`, payload);
+              onPortalUpdate?.(data);
+              toast.success("Request updated.");
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not update that request.");
+              throw error;
+            } finally {
+              setCreatingRequest(false);
+            }
+          }}
           onImproveRequest={async (payload) => {
             const { data } = await api.post(
               `/projects/customer-portal/${encodeURIComponent(token)}/requests/improve/`,
               payload
             );
             return data;
+          }}
+          onStartContractorSearch={async (requestId) => {
+            try {
+              const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/contractor-search/`);
+              if (data?.portal) onPortalUpdate?.(data.portal);
+              return data;
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not start contractor matching.");
+              throw error;
+            }
+          }}
+          onRouteRequestContractors={async (requestId, selectedContractors) => {
+            try {
+              const { data } = await api.post(
+                `/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/contractors/select/`,
+                { selected_contractors: selectedContractors }
+              );
+              if (data?.portal) onPortalUpdate?.(data.portal);
+              toast.success(data?.detail || "Request sent to selected contractors.");
+              return data;
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not send this request to contractors.");
+              throw error;
+            }
           }}
         />
       );
