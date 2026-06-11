@@ -91,6 +91,33 @@ function displayValue(value) {
   return String(value || "").trim();
 }
 
+function requestClarifyingQuestions(description = "", suggestion = {}) {
+  const questions = Array.isArray(suggestion.clarification_questions)
+    ? suggestion.clarification_questions.filter(Boolean)
+    : [];
+  if (questions.length) return questions;
+  const text = String(description || "").trim();
+  if (text.length < 50) {
+    return ["What room, area, or system needs attention?", "What outcome would you like the contractor to review?"];
+  }
+  return [];
+}
+
+function requestEvidenceSuggestion(projectType = "", description = "", suggestion = {}) {
+  if (suggestion.evidence_note || suggestion.attachment_suggestion) return suggestion.evidence_note || suggestion.attachment_suggestion;
+  const text = `${projectType} ${description}`.toLowerCase();
+  if (text.includes("leak") || text.includes("damage") || text.includes("repair")) {
+    return "Photos of the affected area and any related receipts or inspection notes may help.";
+  }
+  if (text.includes("hvac") || text.includes("water heater") || text.includes("appliance")) {
+    return "Photos of the equipment label, model number, and recent service records may help.";
+  }
+  if (text.includes("remodel") || text.includes("install")) {
+    return "Inspiration photos, sketches, measurements, or product links may help.";
+  }
+  return "Photos, documents, receipts, manuals, or inspection notes can help contractors understand the request.";
+}
+
 function MetadataCard({ label, value, className = "" }) {
   const text = displayValue(value);
   if (!text) return null;
@@ -364,10 +391,14 @@ export default function CustomerRequests({
         project_category: form.project_category || form.project_type,
       });
       setRequestSuggestion({
+        original_description: form.description,
         title: data?.project_title || data?.title || form.title,
         description: data?.project_scope || data?.description || form.description,
         project_type: data?.project_type || form.project_type,
         project_subtype: data?.project_subtype || form.project_subtype,
+        urgency: data?.urgency || form.urgency,
+        clarification_questions: requestClarifyingQuestions(form.description, data || {}),
+        evidence_note: requestEvidenceSuggestion(data?.project_type || form.project_type, data?.project_scope || data?.description || form.description, data || {}),
         source: data?.source || "fallback",
       });
     } catch (error) {
@@ -385,6 +416,7 @@ export default function CustomerRequests({
       description: requestSuggestion.description || prev.description,
       project_type: requestSuggestion.project_type || prev.project_type,
       project_subtype: requestSuggestion.project_subtype || prev.project_subtype,
+      urgency: requestSuggestion.urgency || prev.urgency,
     }));
     setRequestSuggestion(null);
   };
@@ -409,6 +441,141 @@ export default function CustomerRequests({
         </div>
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-3">
+            <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4">
+              <label className="block text-sm font-semibold text-amber-50">
+                Describe what you need help with
+                <textarea
+                  value={form.description}
+                  onChange={(event) => {
+                    update("description", event.target.value);
+                    setImproveError("");
+                  }}
+                  rows={6}
+                  className="mt-2 w-full rounded-xl border border-amber-200/40 bg-slate-950 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-amber-200"
+                  placeholder={`The ceiling has water damage from a leak and needs repair.
+I want to remodel the upstairs bathroom.
+The HVAC is making noise and needs inspection.
+I need help installing shelves and patching drywall.`}
+                />
+              </label>
+              <p className="mt-3 text-sm leading-6 text-amber-50/85">
+                Tell us what's going on in your own words. MyHomeBro can help organize it before you submit.
+              </p>
+              <div className="mt-4 rounded-2xl border border-sky-300/25 bg-sky-400/10 p-4" data-testid="customer-request-ai-helper">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-sky-100">Organize this request before saving</div>
+                    <p className="mt-1 text-sm leading-6 text-sky-100/80">
+                      AI can suggest a title, type, subtype, urgency, and clearer scope. You review everything before it changes the form.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="customer-request-improve-button"
+                    onClick={improveRequestDetails}
+                    disabled={improvingRequest || !String(form.description || "").trim()}
+                    className="rounded-xl border border-sky-200/40 bg-sky-300/15 px-4 py-2 text-sm font-bold text-sky-50 hover:bg-sky-300/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {improvingRequest ? "Organizing..." : "Improve & Organize with AI"}
+                  </button>
+                </div>
+                {improveError ? <div className="mt-3 text-sm text-red-200">{improveError}</div> : null}
+                {requestSuggestion ? (
+                  <div className="mt-4 rounded-xl border border-sky-200/35 bg-slate-950/70 p-3" data-testid="customer-request-ai-suggestion">
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200">Review AI suggestion before submitting</div>
+                    <div className="mt-3 grid gap-3">
+                      <TextBlock label="Original homeowner description" value={requestSuggestion.original_description} empty="" />
+                      <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                        Suggested request title
+                        <input
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-sky-300"
+                          value={requestSuggestion.title}
+                          onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, title: event.target.value }))}
+                          aria-label="Suggested request title"
+                        />
+                      </label>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                          Project Type
+                          <input
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-sky-300"
+                            value={requestSuggestion.project_type}
+                            onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, project_type: event.target.value }))}
+                            aria-label="Suggested project type"
+                          />
+                        </label>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                          Project Subtype
+                          <input
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-sky-300"
+                            value={requestSuggestion.project_subtype}
+                            onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, project_subtype: event.target.value }))}
+                            aria-label="Suggested project subtype"
+                          />
+                        </label>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                          Urgency
+                          <select
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-sky-300"
+                            value={requestSuggestion.urgency || "normal"}
+                            onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, urgency: event.target.value }))}
+                            aria-label="Suggested urgency"
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="soon">Soon</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="emergency">Emergency</option>
+                          </select>
+                        </label>
+                      </div>
+                      <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+                        Improved description
+                        <textarea
+                          data-testid="customer-request-ai-suggestion-text"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm normal-case tracking-normal text-white outline-none focus:border-sky-300"
+                          rows={5}
+                          value={requestSuggestion.description}
+                          onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, description: event.target.value }))}
+                        />
+                      </label>
+                      {requestSuggestion.clarification_questions?.length ? (
+                        <div>
+                          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Clarifying questions</div>
+                          <ul className="mt-1 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-300">
+                            {requestSuggestion.clarification_questions.map((question) => (
+                              <li key={question}>{question}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {requestSuggestion.evidence_note ? (
+                        <div>
+                          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Suggested documents or photos</div>
+                          <p className="mt-1 text-sm leading-6 text-slate-300">{requestSuggestion.evidence_note}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        data-testid="customer-request-use-ai-suggestion"
+                        onClick={applyRequestSuggestion}
+                        className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-extrabold text-slate-950 hover:bg-sky-200"
+                      >
+                        Apply AI suggestions
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRequestSuggestion(null)}
+                        className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+                      >
+                        Edit manually
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
             <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3">
               <label className="block text-sm font-medium text-amber-100">
                 Choose the property this request is for.
@@ -507,71 +674,6 @@ export default function CustomerRequests({
                 placeholder="Leaking sink, spring maintenance, deck inspection..."
               />
             </label>
-            <label className="block text-sm font-medium text-slate-200">
-              Project Scope
-              <textarea
-                value={form.description}
-                onChange={(event) => update("description", event.target.value)}
-                rows={4}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                placeholder="Describe what is happening, where it is located, and what help you need."
-              />
-            </label>
-            <div className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-4" data-testid="customer-request-ai-helper">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-sky-100">Want help clarifying this request?</div>
-                  <p className="mt-1 text-sm leading-6 text-sky-100/80">
-                    AI can suggest a cleaner title and structured details. You review the suggestion before saving.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  data-testid="customer-request-improve-button"
-                  onClick={improveRequestDetails}
-                  disabled={improvingRequest || !String(form.description || "").trim()}
-                  className="rounded-xl border border-sky-200/40 bg-sky-300/15 px-4 py-2 text-sm font-bold text-sky-50 hover:bg-sky-300/25 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {improvingRequest ? "Improving..." : "Improve request details"}
-                </button>
-              </div>
-              {improveError ? <div className="mt-3 text-sm text-red-200">{improveError}</div> : null}
-              {requestSuggestion ? (
-                <div className="mt-4 rounded-xl border border-sky-200/35 bg-slate-950/70 p-3" data-testid="customer-request-ai-suggestion">
-                  <div className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200">Suggested version</div>
-                  <input
-                    className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-300"
-                    value={requestSuggestion.title}
-                    onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, title: event.target.value }))}
-                    aria-label="Suggested request title"
-                  />
-                  <textarea
-                    data-testid="customer-request-ai-suggestion-text"
-                    className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-300"
-                    rows={5}
-                    value={requestSuggestion.description}
-                    onChange={(event) => setRequestSuggestion((prev) => ({ ...prev, description: event.target.value }))}
-                  />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      data-testid="customer-request-use-ai-suggestion"
-                      onClick={applyRequestSuggestion}
-                      className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-extrabold text-slate-950 hover:bg-sky-200"
-                    >
-                      Use this version
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRequestSuggestion(null)}
-                      className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800"
-                    >
-                      Keep current wording
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
             <label className="block text-sm font-medium text-slate-200">
               Urgency
               <select

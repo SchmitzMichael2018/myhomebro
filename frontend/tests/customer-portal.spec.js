@@ -1914,6 +1914,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByRole("heading", { name: "Contractor Responses" })).toBeVisible();
   await expect(page.getByText("Bids appear after a request is routed or a contractor submits a response.")).toBeVisible();
   await expect(page.getByText("Create a Request")).toBeVisible();
+  await expect(page.getByLabel("Describe what you need help with")).toBeVisible();
+  await expect(page.getByText("Tell us what's going on in your own words. MyHomeBro can help organize it before you submit.")).toBeVisible();
   await expect(page.getByText("Choose the property this request is for.")).toBeVisible();
   await expect(page.getByTestId("customer-request-property-selector")).toBeVisible();
   await page.getByTestId("customer-request-property-selector").selectOption("2");
@@ -1928,12 +1930,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByLabel("Project Subtype").fill("Seasonal Service");
   await page.getByLabel("Payment Preference").selectOption("escrow_milestones");
   await page.getByLabel("Timeline").selectOption("As soon as possible");
-  await page.getByLabel("Project Scope").fill("Please inspect the system before summer.");
+  await page.getByLabel("Describe what you need help with").fill("Please inspect the system before summer.");
   await page.getByTestId("customer-request-improve-button").click();
-  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Suggested version");
+  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Review AI suggestion before submitting");
+  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Original homeowner description");
+  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Project Type");
+  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Project Subtype");
+  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Suggested documents or photos");
   await expect(page.getByTestId("customer-request-ai-suggestion-text")).toHaveValue(/Inspect the HVAC system/);
   await page.getByTestId("customer-request-use-ai-suggestion").click();
-  await expect(page.getByLabel("Project Scope")).toHaveValue(/Document any recommended follow-up service/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Document any recommended follow-up service/);
   await page.getByRole("button", { name: "Create Request" }).click();
   await expect.poll(() => String(submittedRequestPayload?.property_id || "")).toBe("2");
   await expect(submittedRequestPayload?.project_title).toBe("Seasonal HVAC maintenance");
