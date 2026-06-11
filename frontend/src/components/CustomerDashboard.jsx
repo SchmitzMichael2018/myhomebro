@@ -1772,6 +1772,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           projects={portal?.projects || []}
           agreements={portal?.agreements || []}
           documents={portal?.documents || []}
+          requests={portal?.requests || []}
           payments={portal?.payments || []}
           maintenanceWorkOrders={portal?.maintenance_work_orders || []}
           propertyIntelligence={portal?.property_intelligence || {}}

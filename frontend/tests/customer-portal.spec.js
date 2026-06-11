@@ -31,6 +31,8 @@ const portalPayload = {
     state: "TX",
     postal_code: "78701",
     address: "123 Main St, Austin, TX, 78701",
+    year_built: 1998,
+    square_feet: 2400,
     documents: [
       {
         id: "property-document-1",
@@ -1829,37 +1831,40 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-documents")).toContainText("water-heater-warranty.pdf");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
-  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your property records, organized.");
-  await expect(page.getByTestId("home-records-dashboard")).toContainText("Completed MyHomeBro projects can be saved as part of your property record.");
-  await expect(page.getByTestId("property-intelligence-panel")).toContainText("Advisory / Maintenance Intelligence");
-  await expect(page.getByTestId("property-intelligence-health")).toContainText("Needs Attention");
-  await expect(page.getByTestId("property-intelligence-needs_attention")).toContainText("HVAC service may be due.");
-  await expect(page.getByTestId("property-intelligence-recommended")).toContainText("No water heater records found.");
-  await page.getByTestId("property-intelligence-action-maintenance-hvac-service-due").click();
-  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
-  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
+  await expect(page.getByTestId("property-command-summary")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("property-command-summary")).toContainText("123 Main St, Austin, TX, 78701");
+  await expect(page.getByTestId("property-command-summary")).toContainText("1998");
+  await expect(page.getByTestId("property-command-summary")).toContainText("2,400");
+  await expect(page.getByTestId("property-summary-selector")).toBeVisible();
+  await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
+  await expect(page.getByTestId("property-home-systems")).toContainText("HVAC");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Water Heater");
+  await expect(page.getByTestId("property-active-work")).toContainText("Active Projects");
+  await expect(page.getByTestId("property-active-work")).toContainText("Open Requests");
+  await expect(page.getByTestId("property-active-work")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("HVAC service may be due.");
   await expect(page.getByTestId("customer-property-manager")).toContainText("My Properties");
   await expect(page.getByTestId("customer-property-card-1")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-property-card-2")).toContainText("Lake House");
-  await page.getByTestId("customer-property-card-2").click();
+  await page.getByTestId("property-summary-selector").selectOption("2");
   await expect(page.getByLabel("Property name")).toHaveValue("Lake House");
   await page.getByTestId("customer-property-add-button").click();
   await expect(page.getByRole("button", { name: "Add property", exact: true })).toBeVisible();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("home-records-timeline")).toContainText("Water heater warranty");
   await expect(page.getByTestId("home-records-warranty-center")).toContainText("One-year workmanship warranty");
-  await expect(page.getByTestId("home-records-completed-projects")).toContainText("Kitchen Remodel");
-  await expect(page.getByTestId("home-records-completed-projects")).toContainText("Warranty on file");
+  await expect(page.getByTestId("property-photo-gallery")).toContainText("Before kitchen photo");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Agreements");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Invoices & Receipts");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Warranties");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Permits");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Photos");
+  await page.getByTestId("home-records-open-documents").click();
+  await expect(page.getByTestId("customer-dashboard-tab-documents")).toHaveClass(/border-amber/);
+  await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
-  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Quarterly service visit");
-  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Completed");
-  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Service completed and records updated.");
-  await expect(page.getByTestId("home-records-request-guidance")).toContainText("Use these records when starting a new project");
   await page.getByLabel("File type").selectOption("photo");
   await page.getByLabel("Title").fill("Kitchen after photo");
   await page.getByTestId("customer-property-upload-file").setInputFiles({
@@ -2078,11 +2083,13 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-bids-empty")).toContainText("No bids yet");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
-  await expect(page.getByTestId("home-records-dashboard")).toContainText("Your property records, organized.");
-  await expect(page.getByTestId("property-intelligence-empty")).toContainText("No property recommendations yet");
+  await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
+  await expect(page.getByTestId("property-active-work")).toContainText("Active Projects");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
   await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No property timeline yet");
   await expect(page.getByTestId("home-records-warranty-empty")).toContainText("No warranty details yet");
-  await expect(page.getByTestId("home-records-completed-empty")).toContainText("No completed projects yet");
+  await expect(page.getByTestId("property-photo-gallery-empty")).toContainText("No property photos yet");
   await expect(page.getByTestId("customer-property-files-empty")).toContainText("No property files yet");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
@@ -2238,7 +2245,7 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId(/home-records-timeline-(action|static)-/)).toHaveCount(5);
   await expect(page.getByTestId("home-records-timeline")).not.toContainText("Older Deck Repair");
   await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
-  await expect(page.getByTestId("home-records-maintenance-history")).toContainText("Quarterly service visit");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Completed maintenance");
   await page.getByTestId("home-records-timeline-show-more").click();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Older Deck Repair");
   await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toHaveAttribute("href", "/files/scope-addendum.txt");

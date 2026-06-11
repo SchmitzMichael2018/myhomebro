@@ -152,94 +152,209 @@ function maintenanceRows(workOrders = []) {
     .sort((a, b) => String(b.completedAt || b.scheduledDate || "").localeCompare(String(a.completedAt || a.scheduledDate || "")));
 }
 
-const bucketLabels = {
-  needs_attention: "Needs Attention",
-  upcoming: "Upcoming",
-  recommended: "Recommended",
-  informational: "Informational",
-};
+function statusText(row) {
+  return String(`${row?.status || ""} ${row?.status_label || ""}`).toLowerCase();
+}
 
-const severityClasses = {
-  high: "border-red-300/45 bg-red-400/10 text-red-100",
-  medium: "border-amber-300/45 bg-amber-300/10 text-amber-100",
-  low: "border-sky-300/35 bg-sky-400/10 text-sky-100",
-  info: "border-slate-500/45 bg-slate-800/80 text-slate-200",
-};
+function isOpenStatus(row) {
+  const text = statusText(row);
+  return !text.includes("complete") && !text.includes("closed") && !text.includes("archived") && !text.includes("cancel");
+}
 
-function PropertyIntelligencePanel({ intelligence = {}, onAction }) {
-  const health = intelligence?.health || {};
-  const buckets = intelligence?.buckets || {};
-  const insights = Array.isArray(intelligence?.insights) ? intelligence.insights : [];
-  const healthTone =
-    health.status === "excellent"
-      ? "border-emerald-300/45 bg-emerald-400/10 text-emerald-100"
-      : health.status === "good"
-        ? "border-sky-300/45 bg-sky-400/10 text-sky-100"
-        : "border-amber-300/45 bg-amber-300/10 text-amber-100";
+function activeProjectRows(projects = []) {
+  return (projects || []).filter(isOpenStatus).slice(0, 5);
+}
 
+function openRequestRows(requests = []) {
+  return (requests || []).filter(isOpenStatus).slice(0, 5);
+}
+
+const SYSTEM_KEYWORDS = [
+  ["HVAC", ["hvac", "air conditioner", "furnace", "filter", "cooling", "heating"]],
+  ["Roof", ["roof", "shingle", "gutter"]],
+  ["Water Heater", ["water heater", "tankless", "hot water"]],
+  ["Electrical Panel", ["electrical", "panel", "breaker"]],
+  ["Plumbing", ["plumbing", "pipe", "sink", "drain", "water line"]],
+  ["Appliances", ["appliance", "dishwasher", "range", "oven", "washer", "dryer", "refrigerator"]],
+  ["Windows/Doors", ["window", "door", "glazing"]],
+  ["Foundation/Basement", ["foundation", "basement", "crawlspace"]],
+  ["Exterior/Siding", ["siding", "exterior", "stucco", "paint"]],
+];
+
+function systemRows({ projects = [], agreements = [], documents = [], requests = [], maintenanceWorkOrders = [], propertyIntelligence = {} }) {
+  const haystackItems = [
+    ...projects.map((row) => ({ source: row, text: `${row.title || ""} ${row.description || ""} ${row.project_type || ""}` })),
+    ...agreements.map((row) => ({ source: row, text: `${row.project_title || ""} ${row.description || ""} ${row.warranty_text || ""}` })),
+    ...documents.map((row) => ({ source: row, text: `${row.title || ""} ${row.type_label || ""} ${row.filename || ""}` })),
+    ...requests.map((row) => ({ source: row, text: `${row.project_title || ""} ${row.project_type || ""} ${row.project_subtype || ""} ${row.project_scope || ""}` })),
+    ...maintenanceWorkOrders.map((row) => ({ source: row, text: `${row.title || ""} ${row.description || ""} ${row.project_title || ""}` })),
+    ...((propertyIntelligence?.insights || []).map((row) => ({ source: row, text: `${row.title || ""} ${row.reason || ""} ${row.category || ""}` }))),
+  ];
+  return SYSTEM_KEYWORDS.map(([name, keywords]) => {
+    const matches = haystackItems.filter((item) => keywords.some((keyword) => item.text.toLowerCase().includes(keyword)));
+    const latestMaintenance = matches
+      .map((item) => item.source)
+      .find((row) => row.completed_at || row.completedAt || row.scheduled_date || row.scheduledDate);
+    const linkedDocuments = documents.filter((document) => keywords.some((keyword) => `${document.title || ""} ${document.type_label || ""} ${document.filename || ""}`.toLowerCase().includes(keyword)));
+    const linkedProjects = projects.filter((project) => keywords.some((keyword) => `${project.title || ""} ${project.description || ""}`.toLowerCase().includes(keyword)));
+    return {
+      name,
+      manufacturer: "",
+      model: "",
+      installDate: "",
+      lastServiceDate: latestMaintenance?.completed_at || latestMaintenance?.completedAt || latestMaintenance?.scheduled_date || latestMaintenance?.scheduledDate || "",
+      warrantyExpiration: "",
+      notes: matches.length ? `${matches.length} linked record${matches.length === 1 ? "" : "s"} found.` : "No records saved yet.",
+      linkedDocuments,
+      linkedProjects,
+    };
+  });
+}
+
+function PropertySummarySection({ profile, profileOptions, onSelectProperty, onEdit, onAdd }) {
+  const details = [
+    ["Property Type", profile?.property_type_label],
+    ["Year Built", profile?.year_built],
+    ["Square Feet", profile?.square_feet ? Number(profile.square_feet).toLocaleString() : ""],
+    ["Bedrooms", profile?.bedrooms],
+    ["Bathrooms", profile?.bathrooms],
+    ["Lot Size", profile?.lot_size],
+    ["Occupancy", profile?.occupancy_type],
+  ];
   return (
-    <Section title="Advisory / Maintenance Intelligence" eyebrow="Property health" testId="property-intelligence-panel">
-      <div className="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <div className={`rounded-2xl border p-4 ${healthTone}`} data-testid="property-intelligence-health">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">Property Health</div>
-          <div className="mt-2 text-3xl font-black text-white">{health.label || "Needs Attention"}</div>
-          <div className="mt-1 text-sm font-semibold">{Number.isFinite(Number(health.score)) ? `${health.score}/100` : "Score pending"}</div>
-          <p className="mt-3 text-sm leading-6 text-slate-100">{health.summary || "Add property records to improve recommendations."}</p>
-          <div className="mt-3 inline-flex rounded-full border border-white/15 bg-slate-950/40 px-2.5 py-1 text-xs font-semibold text-white">
-            {health.confidence ? `${health.confidence} confidence` : "Low confidence"}
+    <section data-testid="property-command-summary" className="rounded-3xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.5))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Property Summary</div>
+          <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">{profile?.display_name || "Primary Property"}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">{profile?.address || "Address not set"}</p>
+          {profile?.is_primary ? (
+            <span className="mt-3 inline-flex rounded-full border border-amber-300/45 bg-amber-300/15 px-2.5 py-1 text-xs font-semibold text-amber-100">
+              Primary Property
+            </span>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" data-testid="property-summary-edit" onClick={onEdit} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
+            Edit Property
+          </button>
+          <button type="button" data-testid="property-summary-add" onClick={onAdd} className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
+            Add Property
+          </button>
+        </div>
+      </div>
+      {profileOptions.length > 1 ? (
+        <label className="mt-5 block text-sm font-semibold text-slate-200">
+          Switch property
+          <select
+            data-testid="property-summary-selector"
+            value={profile?.id || ""}
+            onChange={(event) => onSelectProperty?.(event.target.value)}
+            className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400 sm:max-w-md"
+          >
+            {profileOptions.map((property) => (
+              <option key={property.id} value={property.id}>{property.display_name || property.address || "Property"}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {details.map(([label, value]) => (
+          <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+            <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
+            <dd className="mt-1 text-sm font-semibold text-white">{value || "Not recorded yet"}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function HomeSystemsSection({ systems = [] }) {
+  return (
+    <Section title="Home Systems" eyebrow="Systems and components" testId="property-home-systems">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {systems.map((system) => (
+          <article key={system.name} data-testid={`property-home-system-${system.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <h4 className="text-sm font-bold text-white">{system.name}</h4>
+              <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+                {system.linkedDocuments.length + system.linkedProjects.length} links
+              </span>
+            </div>
+            <dl className="mt-3 grid gap-2 text-xs text-slate-300">
+              <div><dt className="text-slate-500">Manufacturer</dt><dd className="font-semibold text-slate-100">{system.manufacturer || "Not recorded yet"}</dd></div>
+              <div><dt className="text-slate-500">Model</dt><dd className="font-semibold text-slate-100">{system.model || "Not recorded yet"}</dd></div>
+              <div><dt className="text-slate-500">Install date</dt><dd className="font-semibold text-slate-100">{system.installDate ? formatDate(system.installDate) : "Not recorded yet"}</dd></div>
+              <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-100">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "No service record yet"}</dd></div>
+              <div><dt className="text-slate-500">Warranty expiration</dt><dd className="font-semibold text-slate-100">{system.warrantyExpiration ? formatDate(system.warrantyExpiration) : "Not recorded yet"}</dd></div>
+            </dl>
+            <p className="mt-3 text-sm leading-6 text-slate-400">{system.notes}</p>
+          </article>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function ActiveWorkSection({ projects = [], requests = [] }) {
+  return (
+    <Section title="Active Projects & Requests" eyebrow="Current work" testId="property-active-work">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div>
+          <h4 className="text-sm font-bold text-white">Active Projects</h4>
+          <div className="mt-3 space-y-3">
+            {projects.length ? projects.map((project) => (
+              <article key={project.id} data-testid="property-active-project" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+                <div className="text-sm font-semibold text-white">{project.title || project.project_title || "Project"}</div>
+                <div className="mt-1 text-xs text-slate-400">{project.contractor_name || "Contractor pending"} - {project.status_label || project.status || "Status pending"}</div>
+                <p className="mt-2 text-sm text-slate-300">{project.next_action || project.next_action_label || "Open the project for milestones, payments, documents, and updates."}</p>
+                {project.agreement_url ? <a href={project.agreement_url} className="mt-3 inline-flex text-sm font-semibold text-sky-100">Open Project</a> : null}
+              </article>
+            )) : <EmptyState title="No active projects" testId="property-active-projects-empty">Open projects connected to this property will appear here.</EmptyState>}
           </div>
         </div>
-
-        <div className="space-y-4">
-          {insights.length ? (
-            Object.entries(bucketLabels).map(([bucketKey, label]) => {
-              const rows = Array.isArray(buckets?.[bucketKey]) ? buckets[bucketKey] : [];
-              if (!rows.length) return null;
-              return (
-                <div key={bucketKey} data-testid={`property-intelligence-${bucketKey}`}>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-bold text-white">{label}</h4>
-                    <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-xs font-semibold text-slate-300">
-                      {rows.length}
-                    </span>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {rows.map((item) => (
-                      <article key={item.id} data-testid={`property-intelligence-card-${item.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/65 p-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${severityClasses[item.severity] || severityClasses.info}`}>
-                            {item.severity || "info"}
-                          </span>
-                          <span className="text-xs font-semibold text-slate-400">{item.property_name || "Property"}</span>
-                        </div>
-                        <h5 className="mt-3 text-sm font-bold text-white">{item.title}</h5>
-                        <p className="mt-2 text-sm leading-6 text-slate-300">{item.reason}</p>
-                        {item.suggested_action?.label ? (
-                          <button
-                            type="button"
-                            data-testid={`property-intelligence-action-${item.id}`}
-                            onClick={() => onAction?.(item.suggested_action)}
-                            className="mt-3 inline-flex min-h-9 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/15 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/25"
-                          >
-                            {item.suggested_action.label}
-                          </button>
-                        ) : null}
-                      </article>
-                    ))}
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <EmptyState title="No property recommendations yet" testId="property-intelligence-empty">
-              Add property details, documents, warranties, service records, and completed projects so MyHomeBro can surface useful maintenance and record suggestions.
-            </EmptyState>
-          )}
+        <div>
+          <h4 className="text-sm font-bold text-white">Open Requests</h4>
+          <div className="mt-3 space-y-3">
+            {requests.length ? requests.map((request) => (
+              <article key={request.id} data-testid="property-open-request" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+                <div className="text-sm font-semibold text-white">{request.project_title || "Request"}</div>
+                <div className="mt-1 text-xs text-slate-400">{request.status_label || "Submitted"} - {request.project_type || request.request_type_label || "Request"}</div>
+                <p className="mt-2 text-sm text-slate-300">{request.project_subtype || request.current_next_action || "Review the request details in the Requests tab."}</p>
+              </article>
+            )) : <EmptyState title="No open requests" testId="property-open-requests-empty">Saved and routed requests for this property will appear here.</EmptyState>}
+          </div>
         </div>
       </div>
     </Section>
   );
 }
+
+function MaintenanceCenter({ intelligence = {}, maintenance = [] }) {
+  const health = intelligence?.health || {};
+  const buckets = intelligence?.buckets || {};
+  const cards = [
+    ["Maintenance status", health.label || "Needs Attention", health.summary || "Add service records to improve recommendations."],
+    ["Upcoming suggested maintenance", `${(buckets.upcoming || []).length}`, (buckets.upcoming || [])[0]?.title || "No upcoming suggestions right now."],
+    ["Completed maintenance", `${maintenance.filter((row) => String(row.status).toLowerCase().includes("complete")).length}`, "Completed service visits linked to this property."],
+    ["Overdue items", `${(buckets.needs_attention || []).length}`, (buckets.needs_attention || [])[0]?.title || "No overdue items detected."],
+  ];
+  return (
+    <Section title="Maintenance Center" eyebrow="Compact property health" testId="property-maintenance-center">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map(([label, value, body]) => (
+          <div key={label} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+            <div className="mt-2 text-2xl font-black text-white">{value}</div>
+            <p className="mt-2 text-sm leading-5 text-slate-400">{body}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 
 function timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders }) {
   const rows = [];
@@ -315,7 +430,7 @@ function timelineRows({ profile, projects, agreements, documents, payments, main
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onIntelligenceAction, onOpenTab }) {
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
@@ -323,6 +438,9 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
   const warranties = warrantyRows(agreements, documents);
   const completedProjects = completedProjectRows(projects, agreements, documents);
   const maintenance = maintenanceRows(maintenanceWorkOrders);
+  const systems = systemRows({ projects, agreements, documents, requests, maintenanceWorkOrders, propertyIntelligence });
+  const activeProjects = activeProjectRows(projects);
+  const openRequests = openRequestRows(requests);
   const timeline = timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders });
   const importantDocuments = [
     ...grouped.Warranties,
@@ -336,46 +454,14 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
   const visibleTimeline = timelineExpanded ? timeline : timeline.slice(0, timelineDefaultCount);
   const visibleImportantDocuments = documentsExpanded ? importantDocuments : importantDocuments.slice(0, documentsDefaultCount);
   const visibleWarranties = warrantiesExpanded ? warranties : warranties.slice(0, warrantiesDefaultCount);
-  const photoCount = (profile?.photos || []).length;
-  const documentCount = Object.values(grouped).reduce((sum, rows) => sum + rows.length, 0);
 
   return (
     <div className="space-y-5">
-      <section
-        data-testid="home-records-dashboard"
-        className="overflow-hidden rounded-3xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.5))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6"
-      >
-        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Home Records</div>
-        <h2 className="mt-2 text-2xl font-bold tracking-tight text-white">Your property records, organized.</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-200">
-          Keep project documents, warranties, photos, and service records in one place. Completed MyHomeBro projects can be saved as part of your property record.
-        </p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Property</div>
-            <div className="mt-1 text-sm font-semibold text-white">{profile?.display_name || "Primary Property"}</div>
-            <div className="mt-1 text-xs text-slate-400">{profile?.address || "Address not set"}</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Documents</div>
-            <div className="mt-1 text-sm font-semibold text-white">{documentCount}</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Photos</div>
-            <div className="mt-1 text-sm font-semibold text-white">{photoCount}</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Completed Projects</div>
-            <div className="mt-1 text-sm font-semibold text-white">{completedProjects.length}</div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Maintenance Visits</div>
-            <div className="mt-1 text-sm font-semibold text-white">{maintenance.length}</div>
-          </div>
-        </div>
-      </section>
+      <HomeSystemsSection systems={systems} />
 
-      <PropertyIntelligencePanel intelligence={propertyIntelligence} onAction={onIntelligenceAction} />
+      <ActiveWorkSection projects={activeProjects} requests={openRequests} />
+
+      <MaintenanceCenter intelligence={propertyIntelligence} maintenance={maintenance} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Section title="Timeline / History" eyebrow="Property records" testId="home-records-timeline">
@@ -501,30 +587,22 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
         )}
       </Section>
 
-      <Section title="Completed Project History" eyebrow="MyHomeBro records" testId="home-records-completed-projects">
-        {completedProjects.length ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {completedProjects.map((project) => (
-              <article key={project.id} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-                <div className="text-sm font-semibold text-white">{project.title}</div>
-                <div className="mt-1 text-xs text-slate-500">{project.contractor} - {formatDate(project.completedAt)}</div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {money(project.amount) ? <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-slate-200">{money(project.amount)}</span> : null}
-                  {project.warranty ? <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100">Warranty on file</span> : null}
-                  {project.documents.length ? <span className="rounded-full border border-sky-300/35 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">{project.documents.length} documents</span> : null}
+      <Section title="Property Photos" eyebrow="Visual record" testId="property-photo-gallery">
+        {(profile?.photos || []).length ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {(profile?.photos || []).slice(0, 8).map((photo) => (
+              <a key={photo.id} href={photo.url || "#"} target="_blank" rel="noreferrer" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/45">
+                <div className="aspect-video rounded-xl bg-slate-800">
+                  {photo.url ? <img src={photo.url} alt={photo.title || "Property photo"} className="h-full w-full rounded-xl object-cover" /> : null}
                 </div>
-                {project.warranty ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-300">{project.warranty}</p> : null}
-                {project.action ? (
-                  <a href={project.action} target="_blank" rel="noreferrer" className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
-                    View project record
-                  </a>
-                ) : null}
-              </article>
+                <div className="mt-2 text-sm font-semibold text-white">{photo.title || "Property photo"}</div>
+                <div className="mt-1 text-xs text-slate-500">{formatDate(photo.date)}</div>
+              </a>
             ))}
           </div>
         ) : (
-          <EmptyState title="No completed projects yet" testId="home-records-completed-empty">
-            Completed MyHomeBro projects will appear here with contractor, warranty, payment, and document details when available.
+          <EmptyState title="No property photos yet" testId="property-photo-gallery-empty">
+            Add exterior, roof, system, and before/after photos to build a visual property history.
           </EmptyState>
         )}
       </Section>
@@ -549,61 +627,9 @@ function HomeRecordsDashboard({ profile, projects, agreements, documents, paymen
           onClick={() => onOpenTab?.("documents")}
           className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
         >
-          Open full document library
+          View All Documents
         </button>
       </Section>
-
-      <Section title="Maintenance & Service History" eyebrow="Recurring care" testId="home-records-maintenance-history">
-        {maintenance.length ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {maintenance.map((workOrder) => (
-              <article key={workOrder.id} data-testid="home-records-maintenance-work-order" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-white">{workOrder.title}</div>
-                    <div className="mt-1 text-xs text-slate-400">{workOrder.projectTitle} - {workOrder.contractor}</div>
-                  </div>
-                  <span className="rounded-full border border-amber-300/35 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
-                    {workOrder.statusLabel}
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
-                  <div>
-                    <span className="text-slate-500">Scheduled</span>
-                    <div className="font-semibold text-slate-100">{formatDate(workOrder.scheduledDate)}</div>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Completed</span>
-                    <div className="font-semibold text-slate-100">{workOrder.completedAt ? formatDate(workOrder.completedAt) : "Not completed yet"}</div>
-                  </div>
-                </div>
-                {workOrder.description ? <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{workOrder.description}</p> : null}
-                {workOrder.notes ? <p className="mt-3 rounded-xl border border-slate-700 bg-slate-950/55 p-3 text-sm leading-6 text-slate-300">{workOrder.notes}</p> : null}
-                {workOrder.attachments?.length ? (
-                  <div className="mt-3 space-y-2">
-                    {workOrder.attachments.map((attachment) => (
-                      <a key={attachment.id} href={attachment.url || "#"} target="_blank" rel="noreferrer" className="block text-sm font-semibold text-sky-100 hover:text-sky-50">
-                        {attachment.title || attachment.filename || "Service record"}
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="No service history yet" testId="home-records-maintenance-empty">
-            Scheduled maintenance visits, completed service records, and recurring care history will appear here when a maintenance agreement starts.
-          </EmptyState>
-        )}
-      </Section>
-
-      <section data-testid="home-records-request-guidance" className="rounded-2xl border border-amber-300/35 bg-amber-300/10 p-5">
-        <h3 className="text-lg font-semibold text-white">Use these records when starting a new project</h3>
-        <p className="mt-2 text-sm leading-6 text-amber-100">
-          Your saved records can help contractors understand past work, warranties, photos, and documents. Full attachment-to-request routing is coming later; for now, keep the record organized here so it is ready when needed.
-        </p>
-      </section>
     </div>
   );
 }
@@ -614,6 +640,7 @@ export default function CustomerPropertyProfile({
   projects = [],
   agreements = [],
   documents = [],
+  requests = [],
   payments = [],
   maintenanceWorkOrders = [],
   propertyIntelligence = {},
@@ -634,6 +661,24 @@ export default function CustomerPropertyProfile({
   const [form, setForm] = useState(selectedProfile || {});
   const [addingProperty, setAddingProperty] = useState(false);
   const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
+  const startAddProperty = () => {
+    setAddingProperty(true);
+    const next = {
+      display_name: "New Property",
+      property_type: "single_family",
+      address_line1: "",
+      address_line2: "",
+      city: "",
+      state: "",
+      postal_code: "",
+      year_built: "",
+      square_feet: "",
+      notes: "",
+      is_primary: !profileOptions.length,
+    };
+    setSelectedProfileId("");
+    setForm(next);
+  };
 
   useEffect(() => {
     const nextId = profile?.id || profileOptions[0]?.id || "";
@@ -648,19 +693,30 @@ export default function CustomerPropertyProfile({
 
   return (
     <div data-testid="customer-property-profile" className="space-y-5">
+      <PropertySummarySection
+        profile={selectedProfile}
+        profileOptions={profileOptions}
+        onSelectProperty={(id) => {
+          setAddingProperty(false);
+          setSelectedProfileId(id);
+        }}
+        onEdit={() => {
+          setAddingProperty(false);
+          document?.querySelector?.("[data-testid='customer-property-manager']")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+        }}
+        onAdd={startAddProperty}
+      />
+
       <HomeRecordsDashboard
         profile={selectedProfile}
         projects={projects}
+        requests={requests}
         agreements={agreements}
         documents={documents}
         payments={payments}
         maintenanceWorkOrders={maintenanceWorkOrders}
         propertyIntelligence={propertyIntelligence}
         onOpenTab={onOpenTab}
-        onIntelligenceAction={(action) => {
-          const target = action?.target || "property";
-          if (["requests", "documents", "property"].includes(target)) onOpenTab?.(target);
-        }}
       />
 
       <section data-testid="customer-property-manager" className="rounded-2xl border border-amber-300/35 bg-slate-950/60 p-5">
@@ -675,24 +731,7 @@ export default function CustomerPropertyProfile({
           <button
             type="button"
             data-testid="customer-property-add-button"
-            onClick={() => {
-              setAddingProperty(true);
-              const next = {
-                display_name: "New Property",
-                property_type: "single_family",
-                address_line1: "",
-                address_line2: "",
-                city: "",
-                state: "",
-                postal_code: "",
-                year_built: "",
-                square_feet: "",
-                notes: "",
-                is_primary: !profileOptions.length,
-              };
-              setSelectedProfileId("");
-              setForm(next);
-            }}
+            onClick={startAddProperty}
             className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
           >
             Add Property
