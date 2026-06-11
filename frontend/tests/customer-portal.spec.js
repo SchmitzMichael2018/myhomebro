@@ -1448,6 +1448,9 @@ const longPortalPayload = {
       dispute_status_label: "No dispute",
       released_to_contractor: true,
       is_actionable: false,
+      escrow_ledger: {
+        available: "13000.00",
+      },
     },
     ...Array.from({ length: 6 }, (_, index) => ({
       id: `paid-extra-${index + 1}`,
@@ -2026,9 +2029,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByRole("button", { name: "View Activity" }).click();
   await expect(page.getByTestId("customer-project-payments")).toContainText("Payment History");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Release Paid");
+  await expect(page.getByTestId("customer-project-payments")).toContainText("Paid to contractor from escrow");
   await expect(page.getByTestId("customer-project-payments")).not.toContainText("Escrow Funding");
   await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow History");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Normal contractor payouts appear once in Payment History");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("This ledger shows how escrow balance changed");
   await expect(page.getByTestId("customer-project-documents")).toContainText("Scope Addendum");
   await expect(page.getByTestId("customer-project-agreement-summary")).toContainText("One-year workmanship warranty");
   await expect(page.getByTestId("customer-project-updates")).toContainText("Demo is complete and final walkthrough is ready for review.");
@@ -2036,7 +2040,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-portal-payments")).toContainText("Project Payment Center");
   await expect(page.getByTestId("customer-payments-escrow-summary")).toContainText("Escrow Summary");
-  await expect(page.getByTestId("customer-payments-escrow-summary")).toContainText("Contractor payouts appear in Payment History");
+  await expect(page.getByTestId("customer-payments-escrow-summary")).toContainText("Escrow History shows how the escrow balance changed");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Direct Payments");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Pending Review");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Released to Contractor");
@@ -2469,7 +2473,9 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-project-payments")).toContainText("Paid to contractor from escrow");
   await expect(page.getByTestId("customer-project-payments")).not.toContainText("Escrow Funded");
   await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow Funded");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Normal contractor payouts appear once in Payment History");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow balance reduced");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Released from escrow for paid invoice Invoice 7000");
+  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Remaining escrow after release: $13,000.00");
   await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Escrow Release to Contractor");
   await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Reduced escrow balance and paid contractor");
   await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Linked payment: Release Paid");

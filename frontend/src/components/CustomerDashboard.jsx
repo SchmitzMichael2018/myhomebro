@@ -353,6 +353,7 @@ function isEscrowAdjustmentRecord(payment) {
 function isEscrowHistoryRecord(payment) {
   return (
     isEscrowFundingPayment(payment) ||
+    isEscrowReleasePayment(payment) ||
     isRefundPayment(payment) ||
     Boolean(payment?.dispute_escrow_hold_active) ||
     isEscrowAdjustmentRecord(payment)
@@ -371,6 +372,7 @@ function paymentHistoryLabel(payment) {
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
+  if (isEscrowReleasePayment(payment)) return "Escrow balance reduced";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (isEscrowAdjustmentRecord(payment)) return "Escrow Adjustment";
@@ -386,6 +388,14 @@ function paymentHistoryDescription(payment) {
 
 function escrowHistoryDescription(payment) {
   if (isEscrowFundingPayment(payment)) return "Funds added to escrow";
+  if (isEscrowReleasePayment(payment)) {
+    const reference = payment.invoice_number || payment.reference || "this paid invoice";
+    const remaining = escrowLedgerValue(payment, "available") || escrowLedgerValue(payment, "remaining") || escrowLedgerValue(payment, "balance_after");
+    return [
+      `Released from escrow for paid invoice ${reference}.`,
+      remaining ? `Remaining escrow after release: ${moneyLabel(remaining)}.` : "",
+    ].filter(Boolean).join(" ");
+  }
   if (payment?.dispute_escrow_hold_active) return "Escrow balance is paused while this issue is reviewed";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
   if (isEscrowAdjustmentRecord(payment)) return "Escrow balance adjustment recorded";
@@ -555,7 +565,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200">Escrow Summary</div>
           <h3 className="mt-1 text-lg font-semibold text-white">Money held and released through MyHomeBro</h3>
           <p className="mt-1 text-sm leading-6 text-sky-100/85">
-            Contractor payouts appear in Payment History. Escrow History is reserved for deposits, holds, refunds, and unusual balance changes.
+            Payment History answers which invoice was paid. Escrow History shows how the escrow balance changed after deposits, releases, holds, refunds, and adjustments.
           </p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -634,7 +644,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                   <div data-testid="customer-selected-escrow-history">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Escrow History</div>
                     <p className="mt-1 text-xs leading-5 text-slate-400">
-                      Deposits, holds, refunds, and unusual escrow balance changes. Contractor releases stay in Payment History.
+                      Balance ledger for escrow deposits, contractor-release reductions, holds, refunds, and adjustments.
                     </p>
                     <div className="mt-2 space-y-2">
                       {selectedEscrowHistory.length ? selectedEscrowHistory.slice(0, 4).map((payment) => (
@@ -714,7 +724,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           <Badge>{escrowHistory.length} records</Badge>
         </div>
         <p className="mt-1 text-sm leading-6 text-slate-400">
-          Escrow deposits, holds, refunds, reversals, and balance adjustments are tracked separately from contractor payment history.
+          This ledger shows escrow balance movement. Payment History shows which invoice or contractor payout was paid.
         </p>
         <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
           {escrowHistory.length ? (

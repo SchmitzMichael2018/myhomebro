@@ -204,6 +204,7 @@ function isEscrowAdjustmentRecord(payment) {
 function isEscrowHistoryRecord(payment) {
   return (
     isEscrowFundingPayment(payment) ||
+    isEscrowReleasePayment(payment) ||
     isRefundPayment(payment) ||
     Boolean(payment?.dispute_escrow_hold_active) ||
     isEscrowAdjustmentRecord(payment)
@@ -222,6 +223,7 @@ function paymentHistoryLabel(payment) {
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
+  if (isEscrowReleasePayment(payment)) return "Escrow balance reduced";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (isEscrowAdjustmentRecord(payment)) return "Escrow Adjustment";
@@ -237,6 +239,14 @@ function paymentHistoryDescription(payment) {
 
 function escrowHistoryDescription(payment) {
   if (isEscrowFundingPayment(payment)) return "Funds added to escrow";
+  if (isEscrowReleasePayment(payment)) {
+    const reference = payment.invoice_number || payment.reference || "this paid invoice";
+    const remaining = escrowLedgerValue(payment, "available") || escrowLedgerValue(payment, "remaining") || escrowLedgerValue(payment, "balance_after");
+    return [
+      `Released from escrow for paid invoice ${reference}.`,
+      remaining ? `Remaining escrow after release: ${money(remaining)}.` : "",
+    ].filter(Boolean).join(" ");
+  }
   if (payment?.dispute_escrow_hold_active) return "Escrow balance is paused while this issue is reviewed";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
   if (isEscrowAdjustmentRecord(payment)) return "Escrow balance adjustment recorded";
@@ -1829,9 +1839,9 @@ export default function CustomerProjectWorkspace({
                 ) : null}
 
                 {expandedDetails.payments ? (
-                <Section title="Escrow History" eyebrow="Deposits, holds, refunds, and adjustments" testId="customer-project-escrow-history">
+                <Section title="Escrow History" eyebrow="Balance ledger" testId="customer-project-escrow-history">
                   <p className="text-sm leading-6 text-slate-300">
-                    Escrow deposits and unusual balance changes are tracked here. Normal contractor payouts appear once in Payment History and in the escrow summary totals above.
+                    This ledger shows how escrow balance changed. Payment History shows which invoice or contractor payout was paid.
                   </p>
                   <div className="mt-3 space-y-2">
                     {projectEscrowHistory.length ? (
