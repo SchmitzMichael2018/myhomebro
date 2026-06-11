@@ -21178,6 +21178,145 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.assertEqual(wrong_owner_update.status_code, 404)
 
+    def test_customer_portal_home_system_reminder_status_and_preferences(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload_system = next(row for row in response.data["property_profile"]["home_systems"] if row["id"] == system.id)
+        self.assertEqual(payload_system["maintenance_status"], "overdue")
+        self.assertEqual(payload_system["priority"], "high")
+        self.assertIn("6-month", payload_system["reminder_reason"])
+        self.assertEqual(payload_system["reminder_lead_days"], 30)
+
+        update_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/property/systems/{system.id}/",
+            {
+                "reminders_enabled": True,
+                "email_reminders_enabled": True,
+                "sms_reminders_enabled": False,
+                "reminder_lead_days": 14,
+                "reminder_frequency": "weekly",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(update_response.status_code, 200, update_response.data)
+        system.refresh_from_db()
+        self.assertTrue(system.reminders_enabled)
+        self.assertTrue(system.email_reminders_enabled)
+        self.assertFalse(system.sms_reminders_enabled)
+        self.assertEqual(system.reminder_lead_days, 14)
+        self.assertEqual(system.reminder_frequency, "weekly")
+
+    def test_customer_portal_home_system_warranty_and_lifespan_attention(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        warranty_system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_WATER_HEATER,
+            warranty_expiration_date=timezone.localdate() + timezone.timedelta(days=45),
+        )
+        lifespan_system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_ROOF,
+            install_date=timezone.localdate() - timezone.timedelta(days=365 * 25),
+            expected_lifespan_years=25,
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = {row["id"]: row for row in response.data["property_profile"]["home_systems"]}
+        self.assertEqual(rows[warranty_system.id]["maintenance_status"], "warranty_expiring")
+        self.assertEqual(rows[lifespan_system.id]["maintenance_status"], "lifespan_attention")
+
+    def test_customer_portal_home_system_mark_serviced_and_create_request(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_WATER_HEATER,
+            custom_name="Tank Water Heater",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=500),
+        )
+
+        service_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/systems/{system.id}/mark-serviced/",
+            {
+                "last_service_date": timezone.localdate().isoformat(),
+                "service_provider": "Austin Plumbing",
+                "notes": "Annual flush completed.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(service_response.status_code, 200, service_response.data)
+        system.refresh_from_db()
+        self.assertEqual(system.last_service_date, timezone.localdate())
+        self.assertEqual(system.service_provider, "Austin Plumbing")
+        self.assertEqual(system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_RESOLVED)
+        self.assertIn("Annual flush completed.", system.notes)
+
+        request_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/systems/{system.id}/service-request/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(request_response.status_code, 201, request_response.data)
+        created = CustomerRequest.objects.get(title="Tank Water Heater service request")
+        self.assertEqual(created.request_type, CustomerRequest.TYPE_MAINTENANCE)
+        self.assertEqual(created.project_type, "Water Heater")
+        self.assertEqual(created.project_subtype, "Maintenance Service")
+        system.refresh_from_db()
+        self.assertEqual(system.linked_customer_request, created)
+
+    def test_home_system_reminder_notification_is_deduplicated_and_tracked(self):
+        from projects.services.home_system_reminders import create_home_system_reminder_notification
+
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+        )
+
+        first = create_home_system_reminder_notification(system)
+        system.refresh_from_db()
+        second = create_home_system_reminder_notification(system)
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(
+            SmartNotification.objects.filter(event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER).count(),
+            1,
+        )
+        self.assertEqual(system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_SENT)
+        self.assertEqual(system.reminder_channel, "in_app")
+        self.assertIsNotNone(system.last_notified_at)
+
     def test_customer_portal_property_intelligence_generates_advisory_insights_and_snapshot(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         profile = PropertyProfile.objects.create(

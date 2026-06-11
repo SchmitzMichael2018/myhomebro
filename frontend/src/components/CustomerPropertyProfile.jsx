@@ -266,6 +266,19 @@ function normalizeHomeSystem(system) {
     linkedProjects: system.linked_projects || system.linkedProjects || [],
     linkedRequests: system.linked_requests || system.linkedRequests || [],
     linkedRecordsCount: Number(system.linked_records_count ?? 0),
+    maintenanceStatus: system.maintenance_status || "unknown",
+    priority: system.priority || "low",
+    nextRecommendedServiceDate: system.next_recommended_service_date || "",
+    daysUntilDue: system.days_until_due,
+    reminderReason: system.reminder_reason || "",
+    recommendedAction: system.recommended_action || "",
+    serviceIntervalMonths: system.service_interval_months || "",
+    remindersEnabled: system.reminders_enabled !== false,
+    emailRemindersEnabled: system.email_reminders_enabled !== false,
+    smsRemindersEnabled: Boolean(system.sms_reminders_enabled),
+    reminderLeadDays: Number(system.reminder_lead_days ?? 30),
+    reminderFrequency: system.reminder_frequency || "once",
+    reminderDeliveryStatus: system.reminder_delivery_status || "",
     isStructured: true,
   };
 }
@@ -423,15 +436,68 @@ function ActiveWorkSection({ projects = [], requests = [] }) {
   );
 }
 
-function MaintenanceCenter({ intelligence = {}, maintenance = [] }) {
+const MAINTENANCE_STATUS_LABELS = {
+  overdue: "Overdue",
+  due_soon: "Due Soon",
+  warranty_expiring: "Warranty Expiring",
+  warranty_expired: "Warranty Attention",
+  lifespan_attention: "Lifespan Attention",
+  current: "Current",
+  unknown: "Unknown",
+};
+
+function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], onMarkServiced, onEditSystem, onCreateServiceRequest }) {
   const health = intelligence?.health || {};
   const buckets = intelligence?.buckets || {};
+  const groupedSystems = {
+    overdue: systems.filter((system) => ["overdue", "warranty_expired"].includes(system.maintenanceStatus)),
+    due_soon: systems.filter((system) => system.maintenanceStatus === "due_soon"),
+    warranty_expiring: systems.filter((system) => system.maintenanceStatus === "warranty_expiring"),
+    lifespan_attention: systems.filter((system) => system.maintenanceStatus === "lifespan_attention"),
+    current: systems.filter((system) => system.maintenanceStatus === "current"),
+    unknown: systems.filter((system) => system.maintenanceStatus === "unknown"),
+  };
   const cards = [
     ["Maintenance status", health.label || "Needs Attention", health.summary || "Add service records to improve recommendations."],
-    ["Upcoming suggested maintenance", `${(buckets.upcoming || []).length}`, (buckets.upcoming || [])[0]?.title || "No upcoming suggestions right now."],
+    ["Upcoming suggested maintenance", `${groupedSystems.due_soon.length + groupedSystems.warranty_expiring.length || (buckets.upcoming || []).length}`, groupedSystems.due_soon[0]?.name || groupedSystems.warranty_expiring[0]?.name || (buckets.upcoming || [])[0]?.title || "No upcoming suggestions right now."],
     ["Completed maintenance", `${maintenance.filter((row) => String(row.status).toLowerCase().includes("complete")).length}`, "Completed service visits linked to this property."],
-    ["Overdue items", `${(buckets.needs_attention || []).length}`, (buckets.needs_attention || [])[0]?.title || "No overdue items detected."],
+    ["Overdue items", `${groupedSystems.overdue.length || (buckets.needs_attention || []).length}`, groupedSystems.overdue[0]?.name || (buckets.needs_attention || [])[0]?.title || "No overdue items detected."],
   ];
+  const renderSystemCard = (system) => (
+    <article key={system.id} data-testid="property-maintenance-reminder-card" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-bold text-white">{system.name}</div>
+          <div className="mt-1 text-xs text-slate-400">{system.system_type_label || "Home system"} - {MAINTENANCE_STATUS_LABELS[system.maintenanceStatus] || "Unknown"}</div>
+        </div>
+        <span className={`rounded-full border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${system.priority === "high" ? "border-rose-300/50 bg-rose-400/15 text-rose-100" : system.priority === "medium" ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-slate-600 bg-slate-900 text-slate-300"}`}>
+          {system.priority || "low"}
+        </span>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-slate-300">{system.reminderReason || "Add service and warranty records to improve this recommendation."}</p>
+      <dl className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+        <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-200">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "Not recorded"}</dd></div>
+        <div><dt className="text-slate-500">Next suggested</dt><dd className="font-semibold text-slate-200">{system.nextRecommendedServiceDate ? formatDate(system.nextRecommendedServiceDate) : "Needs details"}</dd></div>
+        <div><dt className="text-slate-500">Warranty</dt><dd className="font-semibold text-slate-200">{system.warrantyExpiration ? formatDate(system.warrantyExpiration) : "Not recorded"}</dd></div>
+        <div><dt className="text-slate-500">Reminders</dt><dd className="font-semibold text-slate-200">{system.remindersEnabled ? `${system.reminderLeadDays} day ${system.reminderFrequency}` : "Off"}</dd></div>
+      </dl>
+      <p className="mt-3 text-sm font-semibold text-sky-100">{system.recommendedAction || "Keep this system record up to date."}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" data-testid={`property-maintenance-mark-serviced-${system.id}`} onClick={() => onMarkServiced?.(system)} className="rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20">
+          Mark Serviced
+        </button>
+        <button type="button" data-testid={`property-maintenance-edit-reminder-${system.id}`} onClick={() => onEditSystem?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
+          Edit Reminder Details
+        </button>
+        <button type="button" data-testid={`property-maintenance-manage-notifications-${system.id}`} onClick={() => onEditSystem?.(system)} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20">
+          Manage Notifications
+        </button>
+        <button type="button" data-testid={`property-maintenance-create-request-${system.id}`} onClick={() => onCreateServiceRequest?.(system)} className="rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400">
+          Create Service Request
+        </button>
+      </div>
+    </article>
+  );
   return (
     <Section title="Maintenance Center" eyebrow="Compact property health" testId="property-maintenance-center">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -443,6 +509,32 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [] }) {
           </div>
         ))}
       </div>
+      {systems.length ? (
+        <div className="mt-5 space-y-5">
+          {[
+            ["overdue", "Overdue"],
+            ["due_soon", "Due Soon"],
+            ["warranty_expiring", "Warranty Expiring"],
+            ["lifespan_attention", "Lifespan Attention"],
+            ["current", "Current"],
+            ["unknown", "Unknown"],
+          ].map(([key, label]) => (
+            groupedSystems[key].length ? (
+              <div key={key} data-testid={`property-maintenance-group-${key}`}>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h4 className="text-sm font-bold text-white">{label}</h4>
+                  <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-semibold text-slate-300">{groupedSystems[key].length}</span>
+                </div>
+                <div className="grid gap-3 xl:grid-cols-2">{groupedSystems[key].map(renderSystemCard)}</div>
+              </div>
+            ) : null
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No maintenance reminders yet" testId="property-maintenance-reminders-empty">
+          Add systems like HVAC, roof, water heater, or appliances to see reminders here.
+        </EmptyState>
+      )}
     </Section>
   );
 }
@@ -462,6 +554,11 @@ function emptySystemForm(propertyId) {
     expected_lifespan_years: "",
     condition: "unknown",
     service_provider: "",
+    reminders_enabled: true,
+    email_reminders_enabled: true,
+    sms_reminders_enabled: false,
+    reminder_lead_days: 30,
+    reminder_frequency: "once",
     notes: "",
     linked_document_ids: [],
   };
@@ -482,6 +579,11 @@ function systemToForm(system, propertyId) {
     expected_lifespan_years: system.expected_lifespan_years || system.expectedLifespanYears || "",
     condition: system.condition || "unknown",
     service_provider: system.service_provider || system.serviceProvider || "",
+    reminders_enabled: system.reminders_enabled ?? system.remindersEnabled ?? true,
+    email_reminders_enabled: system.email_reminders_enabled ?? system.emailRemindersEnabled ?? true,
+    sms_reminders_enabled: system.sms_reminders_enabled ?? system.smsRemindersEnabled ?? false,
+    reminder_lead_days: system.reminder_lead_days ?? system.reminderLeadDays ?? 30,
+    reminder_frequency: system.reminder_frequency || system.reminderFrequency || "once",
     notes: system.notes || "",
     linked_document_ids: (system.linked_documents || system.linkedDocuments || []).map((document) => Number(document.record_id || String(document.id || "").replace("property-document-", ""))).filter(Boolean),
   };
@@ -565,6 +667,38 @@ function HomeSystemModal({ mode, form, documents = [], saving, onChange, onClose
             Service provider
             <input value={form?.service_provider || ""} onChange={(event) => update("service_provider", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 sm:col-span-2">
+            <div className="text-sm font-bold text-amber-100">Reminder notifications</div>
+            <p className="mt-1 text-xs leading-5 text-slate-300">
+              Reminders are advisory. Email reminders use your portal email; SMS reminders stay off unless you opt in.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                <input type="checkbox" checked={form?.reminders_enabled !== false} onChange={(event) => update("reminders_enabled", event.target.checked)} className="h-4 w-4 rounded border-slate-600 bg-slate-900" />
+                Enable reminders
+              </label>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                <input type="checkbox" checked={form?.email_reminders_enabled !== false} onChange={(event) => update("email_reminders_enabled", event.target.checked)} className="h-4 w-4 rounded border-slate-600 bg-slate-900" />
+                Email reminders
+              </label>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                <input type="checkbox" checked={Boolean(form?.sms_reminders_enabled)} onChange={(event) => update("sms_reminders_enabled", event.target.checked)} className="h-4 w-4 rounded border-slate-600 bg-slate-900" />
+                SMS reminders
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Lead time
+                <input type="number" min="0" max="365" value={form?.reminder_lead_days ?? 30} onChange={(event) => update("reminder_lead_days", event.target.value ? Number(event.target.value) : 0)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+              </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Reminder frequency
+                <select value={form?.reminder_frequency || "once"} onChange={(event) => update("reminder_frequency", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                  <option value="once">Once per reminder</option>
+                  <option value="weekly">Weekly until resolved</option>
+                  <option value="monthly">Monthly until resolved</option>
+                </select>
+              </label>
+            </div>
+          </div>
           <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Linked documents
             <select
@@ -592,6 +726,61 @@ function HomeSystemModal({ mode, form, documents = [], saving, onChange, onClose
           </button>
           <button type="submit" disabled={saving} className="rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
             {saving ? "Saving..." : mode === "edit" ? "Save system" : "Add system"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function HomeSystemServiceModal({ system, saving, onClose, onSubmit }) {
+  const [form, setForm] = useState({
+    last_service_date: new Date().toISOString().slice(0, 10),
+    service_provider: system?.serviceProvider || "",
+    notes: "",
+  });
+  if (!system) return null;
+  return (
+    <div data-testid="property-home-system-service-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit?.(form);
+        }}
+        className="w-full max-w-xl rounded-3xl border border-emerald-300/35 bg-slate-950 p-5 shadow-2xl shadow-black/50"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-200">Maintenance</div>
+            <h3 className="mt-1 text-xl font-bold text-white">Mark {system.name} serviced</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              Update the service date and keep this property record current.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">
+            Close
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3">
+          <label className="block text-sm font-medium text-slate-200">
+            Service date
+            <input type="date" value={form.last_service_date} onChange={(event) => setForm((value) => ({ ...value, last_service_date: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Service provider
+            <input value={form.service_provider} onChange={(event) => setForm((value) => ({ ...value, service_provider: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Notes
+            <textarea rows={4} value={form.notes} onChange={(event) => setForm((value) => ({ ...value, notes: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-slate-400">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving} className="rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-300 disabled:opacity-50">
+            {saving ? "Saving..." : "Mark serviced"}
           </button>
         </div>
       </form>
@@ -706,7 +895,7 @@ function timelineRows({ profile, projects, agreements, documents, payments, main
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem }) {
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
@@ -740,7 +929,14 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
 
       <ActiveWorkSection projects={activeProjects} requests={openRequests} />
 
-      <MaintenanceCenter intelligence={propertyIntelligence} maintenance={maintenance} />
+      <MaintenanceCenter
+        intelligence={propertyIntelligence}
+        maintenance={maintenance}
+        systems={systems.filter((system) => system.isStructured)}
+        onMarkServiced={onMarkServiced}
+        onEditSystem={onEditSystem}
+        onCreateServiceRequest={onCreateServiceRequest}
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <Section title="Timeline / History" eyebrow="Property records" testId="home-records-timeline">
@@ -930,6 +1126,8 @@ export default function CustomerPropertyProfile({
   onCreateSystem,
   onUpdateSystem,
   onArchiveSystem,
+  onMarkSystemServiced,
+  onCreateSystemServiceRequest,
   saving = false,
   uploading = false,
   systemSaving = false,
@@ -947,6 +1145,7 @@ export default function CustomerPropertyProfile({
   const [systemModalMode, setSystemModalMode] = useState("");
   const [editingSystemId, setEditingSystemId] = useState(null);
   const [systemForm, setSystemForm] = useState(emptySystemForm(selectedProfile?.id));
+  const [serviceSystem, setServiceSystem] = useState(null);
   const startAddProperty = () => {
     setAddingProperty(true);
     const next = {
@@ -1039,6 +1238,10 @@ export default function CustomerPropertyProfile({
         onArchiveSystem={async (system) => {
           await onArchiveSystem?.(system.id);
         }}
+        onMarkServiced={(system) => setServiceSystem(system)}
+        onCreateServiceRequest={async (system) => {
+          await onCreateSystemServiceRequest?.(system.id);
+        }}
       />
 
       <HomeSystemModal
@@ -1049,6 +1252,16 @@ export default function CustomerPropertyProfile({
         onChange={setSystemForm}
         onClose={closeSystemModal}
         onSubmit={submitSystem}
+      />
+
+      <HomeSystemServiceModal
+        system={serviceSystem}
+        saving={systemSaving}
+        onClose={() => setServiceSystem(null)}
+        onSubmit={async (payload) => {
+          const ok = await onMarkSystemServiced?.(serviceSystem?.id, payload);
+          if (ok !== false) setServiceSystem(null);
+        }}
       />
 
       <section data-testid="customer-property-manager" className="rounded-2xl border border-amber-300/35 bg-slate-950/60 p-5">

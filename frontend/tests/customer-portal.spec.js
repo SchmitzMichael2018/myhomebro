@@ -52,6 +52,19 @@ const portalPayload = {
         condition_label: "Good",
         service_provider: "Builder Co",
         notes: "Filter size documented.",
+        maintenance_status: "overdue",
+        priority: "high",
+        next_recommended_service_date: "2025-11-15",
+        days_until_due: -208,
+        reminder_reason: "Main HVAC service is overdue based on a 6-month maintenance interval.",
+        recommended_action: "Mark it serviced if completed, or create a service request.",
+        service_interval_months: 6,
+        reminders_enabled: true,
+        email_reminders_enabled: true,
+        sms_reminders_enabled: false,
+        reminder_lead_days: 30,
+        reminder_frequency: "once",
+        reminder_delivery_status: "",
         linked_records_count: 2,
         linked_documents: [
           {
@@ -126,6 +139,19 @@ const portalPayload = {
           condition_label: "Good",
           service_provider: "Builder Co",
           notes: "Filter size documented.",
+          maintenance_status: "overdue",
+          priority: "high",
+          next_recommended_service_date: "2025-11-15",
+          days_until_due: -208,
+          reminder_reason: "Main HVAC service is overdue based on a 6-month maintenance interval.",
+          recommended_action: "Mark it serviced if completed, or create a service request.",
+          service_interval_months: 6,
+          reminders_enabled: true,
+          email_reminders_enabled: true,
+          sms_reminders_enabled: false,
+          reminder_lead_days: 30,
+          reminder_frequency: "once",
+          reminder_delivery_status: "",
           linked_records_count: 2,
           linked_documents: [],
           linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
@@ -851,6 +877,19 @@ const systemCreatedPortalPayload = {
         condition_label: "Good",
         service_provider: "Austin Plumbing",
         notes: "Located in garage.",
+        maintenance_status: "warranty_expiring",
+        priority: "medium",
+        next_recommended_service_date: "",
+        days_until_due: null,
+        reminder_reason: "Water Heater warranty expires in 45 days.",
+        recommended_action: "Review coverage and upload any missing warranty documents.",
+        service_interval_months: 12,
+        reminders_enabled: true,
+        email_reminders_enabled: true,
+        sms_reminders_enabled: false,
+        reminder_lead_days: 30,
+        reminder_frequency: "once",
+        reminder_delivery_status: "",
         linked_records_count: 0,
         linked_documents: [],
         linked_projects: [],
@@ -878,6 +917,58 @@ const systemArchivedPortalPayload = {
     ...portalPayload.property_profile,
     home_systems: [],
   },
+};
+
+const systemServicedPortalPayload = {
+  ...portalPayload,
+  property_profile: {
+    ...portalPayload.property_profile,
+    home_systems: portalPayload.property_profile.home_systems.map((system) =>
+      system.id === 11
+        ? {
+            ...system,
+            last_service_date: "2026-06-10",
+            service_provider: "Austin HVAC",
+            notes: "Filter size documented.\n\nService note 2026-06-10: Filter replaced.",
+            maintenance_status: "current",
+            priority: "low",
+            next_recommended_service_date: "2026-12-10",
+            days_until_due: 183,
+            reminder_reason: "Main HVAC maintenance appears current from the last recorded service date.",
+            recommended_action: "Keep records updated after the next service.",
+            reminder_delivery_status: "resolved",
+          }
+        : system
+    ),
+  },
+};
+
+const systemServiceRequestPortalPayload = {
+  ...portalPayload,
+  summary: {
+    ...portalPayload.summary,
+    active_requests: portalPayload.summary.active_requests + 1,
+  },
+  requests: [
+    {
+      id: "request-system-11",
+      project_title: "Main HVAC service request",
+      request_type_label: "Maintenance",
+      project_mode_label: "Full service",
+      project_type: "HVAC",
+      project_subtype: "Maintenance Service",
+      payment_preference_label: "Discuss With Contractor",
+      status: "submitted",
+      status_label: "Submitted",
+      project_scope: "Request service for Main HVAC.",
+      project_address: "123 Main St, Austin, TX, 78701",
+      urgency: "high",
+      timeline_label: "ASAP",
+      created_at: "2026-06-10T12:00:00Z",
+      current_next_action: "Saved in your requests.",
+    },
+    ...portalPayload.requests,
+  ],
 };
 
 const notificationReadPortalPayload = {
@@ -1612,6 +1703,24 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/mark-serviced/") && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(systemServicedPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/service-request/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(systemServiceRequestPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/") && method === "POST") {
       await route.fulfill({
         status: 201,
@@ -1980,6 +2089,25 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
   await expect(page.getByTestId("property-home-systems")).toContainText("Carrier");
   await expect(page.getByTestId("property-home-systems")).toContainText("2032");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Overdue");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Main HVAC service is overdue");
+  await expect(page.getByTestId("property-maintenance-group-overdue")).toBeVisible();
+  await page.getByTestId("property-maintenance-edit-reminder-11").click();
+  await expect(page.getByTestId("property-home-system-modal")).toContainText("Reminder notifications");
+  await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Close" }).click();
+  await page.getByTestId("property-maintenance-mark-serviced-11").click();
+  await expect(page.getByTestId("property-home-system-service-modal")).toContainText("Mark Main HVAC serviced");
+  await page.getByTestId("property-home-system-service-modal").getByLabel("Service provider").fill("Austin HVAC");
+  await page.getByTestId("property-home-system-service-modal").getByLabel("Notes").fill("Filter replaced.");
+  await page.getByTestId("property-home-system-service-modal").getByRole("button", { name: "Mark serviced" }).click();
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Current");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("maintenance appears current");
+
+  await page.getByTestId("property-maintenance-create-request-11").click();
+  await expect(page.getByTestId("customer-portal-requests")).toContainText("Main HVAC service request");
+  await expect(page.getByTestId("customer-portal-requests")).toContainText("HVAC");
+  await page.getByTestId("customer-dashboard-tab-property").click();
   await page.getByTestId("property-home-system-add").click();
   await expect(page.getByTestId("property-home-system-modal")).toContainText("Add Home System");
   await page.getByLabel("System type").selectOption("water_heater");
@@ -2003,8 +2131,6 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-active-work")).toContainText("Active Projects");
   await expect(page.getByTestId("property-active-work")).toContainText("Open Requests");
   await expect(page.getByTestId("property-active-work")).toContainText("Kitchen Remodel");
-  await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
-  await expect(page.getByTestId("property-maintenance-center")).toContainText("HVAC service may be due.");
   await expect(page.getByTestId("customer-property-manager")).toContainText("My Properties");
   await expect(page.getByTestId("customer-property-card-1")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-property-card-2")).toContainText("Lake House");

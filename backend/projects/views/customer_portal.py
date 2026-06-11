@@ -65,6 +65,7 @@ from projects.services.smart_notifications import create_smart_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.property_intelligence import build_property_intelligence
+from projects.services.home_system_reminders import build_home_system_reminder
 from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
@@ -435,6 +436,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
 
 
 def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
+    reminder = build_home_system_reminder(system)
     linked_documents = [
         {
             "id": f"property-document-{document.id}",
@@ -488,6 +490,27 @@ def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
         "condition_label": system.get_condition_display(),
         "notes": _safe_text(system.notes),
         "service_provider": _safe_text(system.service_provider),
+        "maintenance_status": reminder.maintenance_status,
+        "priority": reminder.priority,
+        "next_recommended_service_date": _safe_dt(reminder.next_recommended_service_date),
+        "days_until_due": reminder.days_until_due,
+        "reminder_reason": reminder.reminder_reason,
+        "recommended_action": reminder.recommended_action,
+        "service_interval_months": reminder.service_interval_months,
+        "reminder_source": reminder.reminder_source,
+        "reminders_enabled": bool(system.reminders_enabled),
+        "email_reminders_enabled": bool(system.email_reminders_enabled),
+        "sms_reminders_enabled": bool(system.sms_reminders_enabled),
+        "reminder_lead_days": system.reminder_lead_days,
+        "reminder_frequency": _safe_text(system.reminder_frequency),
+        "reminder_generated_at": _safe_dt(system.reminder_generated_at),
+        "last_notified_at": _safe_dt(system.last_notified_at),
+        "next_notification_at": _safe_dt(system.next_notification_at),
+        "reminder_delivery_status": _safe_text(system.reminder_delivery_status),
+        "reminder_channel": _safe_text(system.reminder_channel),
+        "reminder_sent_at": _safe_dt(system.reminder_sent_at),
+        "resolved_at": _safe_dt(system.resolved_at),
+        "dismissed_until": _safe_dt(system.dismissed_until),
         "linked_documents": linked_documents,
         "linked_projects": linked_projects,
         "linked_requests": linked_requests,
@@ -3462,6 +3485,15 @@ class CustomerPortalHomeSystemSerializer(serializers.Serializer):
     )
     notes = serializers.CharField(required=False, allow_blank=True)
     service_provider = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    reminders_enabled = serializers.BooleanField(required=False)
+    email_reminders_enabled = serializers.BooleanField(required=False)
+    sms_reminders_enabled = serializers.BooleanField(required=False)
+    reminder_lead_days = serializers.IntegerField(required=False, min_value=0, max_value=365)
+    reminder_frequency = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyHomeSystem.REMINDER_FREQUENCY_CHOICES],
+        required=False,
+    )
+    dismissed_until = serializers.DateTimeField(required=False, allow_null=True)
     linked_agreement_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     linked_customer_request_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     linked_document_ids = serializers.ListField(
@@ -3469,6 +3501,12 @@ class CustomerPortalHomeSystemSerializer(serializers.Serializer):
         required=False,
         allow_empty=True,
     )
+
+
+class CustomerPortalHomeSystemServiceSerializer(serializers.Serializer):
+    last_service_date = serializers.DateField(required=False, allow_null=True)
+    service_provider = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
 
 
 class CustomerPortalProfileSerializer(serializers.Serializer):
@@ -3704,6 +3742,104 @@ class CustomerPortalHomeSystemView(APIView):
         system = _home_system_for_email_or_404(email, system_id)
         system.archive()
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalHomeSystemServiceView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, system_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        system = _home_system_for_email_or_404(email, system_id)
+        serializer = CustomerPortalHomeSystemServiceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        system.last_service_date = data.get("last_service_date") or timezone.localdate()
+        if "service_provider" in data:
+            system.service_provider = data.get("service_provider", "")
+        note = _safe_text(data.get("notes"))
+        if note:
+            prefix = f"Service note {timezone.localdate().isoformat()}: "
+            system.notes = f"{system.notes.strip()}\n\n{prefix}{note}".strip()
+        system.resolved_at = timezone.now()
+        system.reminder_delivery_status = PropertyHomeSystem.DELIVERY_STATUS_RESOLVED
+        system.next_notification_at = None
+        system.save(
+            update_fields=[
+                "last_service_date",
+                "service_provider",
+                "notes",
+                "resolved_at",
+                "reminder_delivery_status",
+                "next_notification_at",
+                "updated_at",
+            ]
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalHomeSystemServiceRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, system_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        system = _home_system_for_email_or_404(email, system_id)
+        profile = system.property_profile
+        homeowner = _primary_homeowner_for_email(email)
+        reminder = build_home_system_reminder(system)
+        title = f"{system.display_name} service request"
+        customer_request = CustomerRequest.objects.create(
+            homeowner=homeowner,
+            property_profile=profile,
+            customer_email=email.lower().strip(),
+            request_type=CustomerRequest.TYPE_MAINTENANCE,
+            project_mode=CustomerRequest.PROJECT_MODE_FULL_SERVICE,
+            project_category=system.get_system_type_display(),
+            project_type=system.get_system_type_display(),
+            project_subtype="Maintenance Service",
+            payment_preference=CustomerRequest.PAYMENT_PREFERENCE_DISCUSS,
+            status=CustomerRequest.STATUS_SUBMITTED,
+            title=title,
+            description=(
+                f"Request service for {system.display_name}.\n\n"
+                f"Reason: {reminder.reminder_reason}\n\n"
+                f"Recommended action: {reminder.recommended_action}"
+            ),
+            urgency="high" if reminder.priority == "high" else "normal",
+            preferred_timeline="asap" if reminder.priority == "high" else "flexible",
+            address_line1=profile.address_line1,
+            address_line2=profile.address_line2,
+            city=profile.city,
+            state=profile.state,
+            postal_code=profile.postal_code,
+        )
+        system.linked_customer_request = customer_request
+        system.save(update_fields=["linked_customer_request", "updated_at"])
+        create_smart_notification(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=email,
+            homeowner=homeowner,
+            customer_request=customer_request,
+            property_profile=profile,
+            context={
+                "request_title": customer_request.title,
+                "request_type": customer_request.get_request_type_display(),
+                "status": customer_request.status,
+                "dedupe_key": f"home-system-service-request:{system.id}:{customer_request.id}",
+            },
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
 
 
 class CustomerPortalPropertyUploadView(APIView):

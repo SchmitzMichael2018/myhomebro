@@ -1731,6 +1731,42 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       setSavingHomeSystem(false);
     }
   };
+  const markHomeSystemServiced = async (systemId, payload) => {
+    if (!systemId) return false;
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/mark-serviced/`,
+        payload
+      );
+      onPortalUpdate?.(data);
+      toast.success("Service record updated.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that service record.");
+      return false;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
+  const createHomeSystemServiceRequest = async (systemId) => {
+    if (!systemId) return false;
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/service-request/`
+      );
+      onPortalUpdate?.(data);
+      toast.success("Service request created.");
+      setActiveTab("requests");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not create that service request.");
+      return false;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") {
       return (
@@ -1854,6 +1890,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onCreateSystem={createHomeSystem}
           onUpdateSystem={updateHomeSystem}
           onArchiveSystem={archiveHomeSystem}
+          onMarkSystemServiced={markHomeSystemServiced}
+          onCreateSystemServiceRequest={createHomeSystemServiceRequest}
         />
       );
     }

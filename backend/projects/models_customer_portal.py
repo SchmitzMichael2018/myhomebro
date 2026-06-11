@@ -157,6 +157,26 @@ class PropertyHomeSystem(models.Model):
         (CONDITION_NEEDS_SERVICE, "Needs Service"),
         (CONDITION_REPLACE_SOON, "Replace Soon"),
     ]
+    REMINDER_FREQUENCY_ONCE = "once"
+    REMINDER_FREQUENCY_WEEKLY = "weekly"
+    REMINDER_FREQUENCY_MONTHLY = "monthly"
+    REMINDER_FREQUENCY_CHOICES = [
+        (REMINDER_FREQUENCY_ONCE, "Once"),
+        (REMINDER_FREQUENCY_WEEKLY, "Weekly"),
+        (REMINDER_FREQUENCY_MONTHLY, "Monthly"),
+    ]
+    DELIVERY_STATUS_NONE = ""
+    DELIVERY_STATUS_PENDING = "pending"
+    DELIVERY_STATUS_SENT = "sent"
+    DELIVERY_STATUS_SKIPPED = "skipped"
+    DELIVERY_STATUS_RESOLVED = "resolved"
+    DELIVERY_STATUS_CHOICES = [
+        (DELIVERY_STATUS_NONE, "Not sent"),
+        (DELIVERY_STATUS_PENDING, "Pending"),
+        (DELIVERY_STATUS_SENT, "Sent"),
+        (DELIVERY_STATUS_SKIPPED, "Skipped"),
+        (DELIVERY_STATUS_RESOLVED, "Resolved"),
+    ]
 
     property_profile = models.ForeignKey(
         PropertyProfile,
@@ -195,6 +215,28 @@ class PropertyHomeSystem(models.Model):
         blank=True,
         related_name="home_systems",
     )
+    reminders_enabled = models.BooleanField(default=True)
+    email_reminders_enabled = models.BooleanField(default=True)
+    sms_reminders_enabled = models.BooleanField(default=False)
+    reminder_lead_days = models.PositiveSmallIntegerField(default=30)
+    reminder_frequency = models.CharField(
+        max_length=16,
+        choices=REMINDER_FREQUENCY_CHOICES,
+        default=REMINDER_FREQUENCY_ONCE,
+    )
+    reminder_generated_at = models.DateTimeField(null=True, blank=True)
+    last_notified_at = models.DateTimeField(null=True, blank=True)
+    next_notification_at = models.DateTimeField(null=True, blank=True)
+    reminder_delivery_status = models.CharField(
+        max_length=24,
+        choices=DELIVERY_STATUS_CHOICES,
+        blank=True,
+        default=DELIVERY_STATUS_NONE,
+    )
+    reminder_channel = models.CharField(max_length=24, blank=True, default="")
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    dismissed_until = models.DateTimeField(null=True, blank=True)
     is_archived = models.BooleanField(default=False, db_index=True)
     archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -395,6 +437,7 @@ class SmartNotificationEvent(models.TextChoices):
     MAINTENANCE_WORK_ORDER_SCHEDULED = "maintenance_work_order_scheduled", "Maintenance Work Order Scheduled"
     MAINTENANCE_WORK_ORDER_COMPLETED = "maintenance_work_order_completed", "Maintenance Work Order Completed"
     MAINTENANCE_CONTRACT_CANCELLED = "maintenance_contract_cancelled", "Maintenance Contract Cancelled"
+    HOME_SYSTEM_MAINTENANCE_REMINDER = "home_system_maintenance_reminder", "Home System Maintenance Reminder"
     REQUEST_MARKETPLACE_READY = "request_marketplace_ready", "Request Marketplace Ready"
 
 

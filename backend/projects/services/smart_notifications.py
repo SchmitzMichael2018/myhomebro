@@ -104,6 +104,10 @@ DEFAULT_TEMPLATES = {
         title="Maintenance contract cancelled",
         message="{project_title} maintenance service was cancelled.",
     ),
+    SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER: SmartNotificationTemplate(
+        title="{system_name} needs attention",
+        message="{reminder_reason} {recommended_action}",
+    ),
 }
 
 
