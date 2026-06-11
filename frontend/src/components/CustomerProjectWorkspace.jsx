@@ -184,8 +184,30 @@ function isPaymentHistoryRecord(payment) {
   );
 }
 
+function isEscrowAdjustmentRecord(payment) {
+  const status = paymentStatusText(payment);
+  const type = paymentTypeText(payment);
+  const notes = String(payment?.notes || "").toLowerCase();
+  return (
+    type.includes("adjustment") ||
+    type.includes("chargeback") ||
+    type.includes("reversal") ||
+    status.includes("chargeback") ||
+    status.includes("reversed") ||
+    status.includes("reversal") ||
+    notes.includes("adjustment") ||
+    notes.includes("chargeback") ||
+    notes.includes("reversal")
+  );
+}
+
 function isEscrowHistoryRecord(payment) {
-  return isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment) || Boolean(payment?.dispute_escrow_hold_active);
+  return (
+    isEscrowFundingPayment(payment) ||
+    isRefundPayment(payment) ||
+    Boolean(payment?.dispute_escrow_hold_active) ||
+    isEscrowAdjustmentRecord(payment)
+  );
 }
 
 function paymentHistoryLabel(payment) {
@@ -200,9 +222,9 @@ function paymentHistoryLabel(payment) {
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
-  if (isEscrowReleasePayment(payment)) return "Escrow Release to Contractor";
-  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
+  if (isEscrowAdjustmentRecord(payment)) return "Escrow Adjustment";
   return "Adjustment";
 }
 
@@ -215,9 +237,9 @@ function paymentHistoryDescription(payment) {
 
 function escrowHistoryDescription(payment) {
   if (isEscrowFundingPayment(payment)) return "Funds added to escrow";
-  if (isEscrowReleasePayment(payment)) return "Reduced escrow balance and paid contractor. Linked payment: Release Paid";
-  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
   if (payment?.dispute_escrow_hold_active) return "Escrow balance is paused while this issue is reviewed";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
+  if (isEscrowAdjustmentRecord(payment)) return "Escrow balance adjustment recorded";
   return "";
 }
 
@@ -1807,8 +1829,10 @@ export default function CustomerProjectWorkspace({
                 ) : null}
 
                 {expandedDetails.payments ? (
-                <Section title="Escrow History" eyebrow="Funding, holds, releases, and refunds" testId="customer-project-escrow-history">
-                  <p className="text-sm leading-6 text-slate-300">Escrow funding is tracked here so it is not confused with money released to your contractor.</p>
+                <Section title="Escrow History" eyebrow="Deposits, holds, refunds, and adjustments" testId="customer-project-escrow-history">
+                  <p className="text-sm leading-6 text-slate-300">
+                    Escrow deposits and unusual balance changes are tracked here. Normal contractor payouts appear once in Payment History and in the escrow summary totals above.
+                  </p>
                   <div className="mt-3 space-y-2">
                     {projectEscrowHistory.length ? (
                       projectEscrowHistory.slice(0, 5).map((payment) => {
@@ -1868,7 +1892,7 @@ export default function CustomerProjectWorkspace({
                       })
                     ) : (
                       <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                        Escrow funding, holds, releases, and refund eligibility will appear here when connected.
+                        Escrow deposits, holds, refunds, reversals, and adjustments will appear here when connected.
                       </div>
                     )}
                   </div>

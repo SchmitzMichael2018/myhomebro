@@ -333,8 +333,30 @@ function isPaymentHistoryRecord(payment) {
   );
 }
 
+function isEscrowAdjustmentRecord(payment) {
+  const status = paymentStatusText(payment);
+  const type = paymentTypeText(payment);
+  const notes = String(payment?.notes || "").toLowerCase();
+  return (
+    type.includes("adjustment") ||
+    type.includes("chargeback") ||
+    type.includes("reversal") ||
+    status.includes("chargeback") ||
+    status.includes("reversed") ||
+    status.includes("reversal") ||
+    notes.includes("adjustment") ||
+    notes.includes("chargeback") ||
+    notes.includes("reversal")
+  );
+}
+
 function isEscrowHistoryRecord(payment) {
-  return isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment) || Boolean(payment?.dispute_escrow_hold_active);
+  return (
+    isEscrowFundingPayment(payment) ||
+    isRefundPayment(payment) ||
+    Boolean(payment?.dispute_escrow_hold_active) ||
+    isEscrowAdjustmentRecord(payment)
+  );
 }
 
 function paymentHistoryLabel(payment) {
@@ -349,9 +371,9 @@ function paymentHistoryLabel(payment) {
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
-  if (isEscrowReleasePayment(payment)) return "Escrow Release to Contractor";
-  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
+  if (isEscrowAdjustmentRecord(payment)) return "Escrow Adjustment";
   return "Adjustment";
 }
 
@@ -364,9 +386,9 @@ function paymentHistoryDescription(payment) {
 
 function escrowHistoryDescription(payment) {
   if (isEscrowFundingPayment(payment)) return "Funds added to escrow";
-  if (isEscrowReleasePayment(payment)) return "Reduced escrow balance and paid contractor. Linked payment: Release Paid";
-  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
   if (payment?.dispute_escrow_hold_active) return "Escrow balance is paused while this issue is reviewed";
+  if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
+  if (isEscrowAdjustmentRecord(payment)) return "Escrow balance adjustment recorded";
   return "";
 }
 
@@ -392,6 +414,33 @@ function paymentSummary(payments = []) {
       return acc;
     },
     { paid: 0, pending: 0, released: 0, adjustments: 0 }
+  );
+}
+
+function escrowSummaryFromAgreements(agreements = [], payments = []) {
+  const agreementRows = Array.isArray(agreements) ? agreements : [];
+  if (agreementRows.length) {
+    return agreementRows.reduce(
+      (acc, agreement) => {
+        const summary = agreement.payment_summary || {};
+        acc.funded += Number(summary.escrow_funded || 0);
+        acc.released += Number(summary.released_to_contractor || 0);
+        acc.remaining += Number(summary.remaining_in_escrow || 0);
+        acc.refunds += Number(summary.refunds || summary.refund_eligible || 0);
+        return acc;
+      },
+      { funded: 0, released: 0, remaining: 0, refunds: 0 }
+    );
+  }
+  return (Array.isArray(payments) ? payments : []).reduce(
+    (acc, payment) => {
+      const ledger = payment?.escrow_ledger || {};
+      acc.funded += Number(ledger.funded || 0);
+      if (isEscrowReleasePayment(payment)) acc.released += paymentAmountValue(payment);
+      if (isRefundPayment(payment)) acc.refunds += Math.abs(paymentAmountValue(payment));
+      return acc;
+    },
+    { funded: 0, released: 0, remaining: 0, refunds: 0 }
   );
 }
 
@@ -465,6 +514,10 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
   const paymentHistory = payments.filter(isPaymentHistoryRecord);
   const escrowHistory = payments.filter(isEscrowHistoryRecord);
   const totals = paymentSummary(payments);
+  const escrowTotals = escrowSummaryFromAgreements(agreements, payments);
+  if (!escrowTotals.remaining && escrowTotals.funded) {
+    escrowTotals.remaining = Math.max(0, escrowTotals.funded - escrowTotals.released - escrowTotals.refunds);
+  }
   const historyDefaultCount = 5;
   const visiblePaymentHistory = historyExpanded ? paymentHistory : paymentHistory.slice(0, historyDefaultCount);
   const visibleEscrowHistory = escrowHistoryExpanded ? escrowHistory : escrowHistory.slice(0, historyDefaultCount);
@@ -495,6 +548,21 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         <StatCard label="Pending Review" value={moneyLabel(totals.pending)} testId="customer-payments-summary-pending" />
         <StatCard label="Released to Contractor" value={moneyLabel(totals.released)} testId="customer-payments-summary-released" />
         <StatCard label="Refunds / Adjustments" value={moneyLabel(totals.adjustments)} testId="customer-payments-summary-adjustments" />
+      </section>
+
+      <section data-testid="customer-payments-escrow-summary" className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-5">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200">Escrow Summary</div>
+          <h3 className="mt-1 text-lg font-semibold text-white">Money held and released through MyHomeBro</h3>
+          <p className="mt-1 text-sm leading-6 text-sky-100/85">
+            Contractor payouts appear in Payment History. Escrow History is reserved for deposits, holds, refunds, and unusual balance changes.
+          </p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <StatCard label="Escrow Funded" value={moneyLabel(escrowTotals.funded)} testId="customer-payments-escrow-funded" />
+          <StatCard label="Released to Contractor" value={moneyLabel(escrowTotals.released)} testId="customer-payments-escrow-released" />
+          <StatCard label="Remaining in Escrow" value={moneyLabel(escrowTotals.remaining)} testId="customer-payments-escrow-remaining" />
+        </div>
       </section>
 
       <section data-testid="customer-payments-agreement-list" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -565,11 +633,14 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                   </div>
                   <div data-testid="customer-selected-escrow-history">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Escrow History</div>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      Deposits, holds, refunds, and unusual escrow balance changes. Contractor releases stay in Payment History.
+                    </p>
                     <div className="mt-2 space-y-2">
                       {selectedEscrowHistory.length ? selectedEscrowHistory.slice(0, 4).map((payment) => (
                         <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
                       )) : (
-                        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No escrow funding, release, hold, or refund events are connected yet.</div>
+                        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No escrow deposits, holds, refunds, or balance adjustments are connected yet.</div>
                       )}
                     </div>
                   </div>
@@ -643,7 +714,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           <Badge>{escrowHistory.length} records</Badge>
         </div>
         <p className="mt-1 text-sm leading-6 text-slate-400">
-          Escrow funding, releases, holds, refund eligibility, and escrow balance events are tracked separately from contractor payment history.
+          Escrow deposits, holds, refunds, reversals, and balance adjustments are tracked separately from contractor payment history.
         </p>
         <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
           {escrowHistory.length ? (
@@ -652,7 +723,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
             ))
           ) : (
             <EmptyState title="No escrow records yet" testId="customer-escrow-history-empty">
-              Escrow funding and release activity will appear here when this project uses milestone holds.
+              Escrow deposits, holds, refunds, reversals, and adjustments will appear here when this project uses milestone holds.
             </EmptyState>
           )}
         </div>
