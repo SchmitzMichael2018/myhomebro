@@ -82,6 +82,7 @@ from projects.models import (
     Project,
     PropertyProfile,
     PropertyDocument,
+    PropertyHomeSystem,
     PropertyIntelligenceSnapshot,
     PropertyPhoto,
     SmartNotification,
@@ -21062,6 +21063,120 @@ class CustomerPortalAccessTests(TestCase):
         other_titles = [row["title"] for row in other_response.data["documents"]]
         self.assertNotIn("Water heater warranty", other_titles)
         self.assertNotIn("Roof condition", other_titles)
+
+    def test_customer_portal_home_systems_payload_and_crud_are_token_scoped(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        document = PropertyDocument.objects.create(
+            property_profile=profile,
+            title="HVAC warranty",
+            document_type="Warranty",
+            file=SimpleUploadedFile("hvac-warranty.txt", b"warranty"),
+        )
+
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/systems/",
+            {
+                "property_id": profile.id,
+                "system_type": "hvac",
+                "custom_name": "Main HVAC",
+                "manufacturer": "Carrier",
+                "model_number": "XR-500",
+                "serial_number": "SN-123",
+                "install_date": "2022-05-01",
+                "last_service_date": "2026-05-15",
+                "warranty_start_date": "2022-05-01",
+                "warranty_expiration_date": "2032-05-01",
+                "expected_lifespan_years": 15,
+                "condition": "good",
+                "service_provider": "Builder Co",
+                "notes": "Filter size documented.",
+                "linked_document_ids": [document.id],
+                "linked_agreement_id": self.agreement.id,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        system = PropertyHomeSystem.objects.get(property_profile=profile, system_type="hvac")
+        self.assertEqual(system.display_name, "Main HVAC")
+        self.assertEqual(system.manufacturer, "Carrier")
+        self.assertEqual(system.linked_documents.count(), 1)
+        payload_system = create_response.data["property_profile"]["home_systems"][0]
+        self.assertEqual(payload_system["display_name"], "Main HVAC")
+        self.assertEqual(payload_system["system_type_label"], "HVAC")
+        self.assertEqual(payload_system["manufacturer"], "Carrier")
+        self.assertEqual(payload_system["model_number"], "XR-500")
+        self.assertEqual(payload_system["warranty_expiration_date"], "2032-05-01")
+        self.assertEqual(payload_system["condition_label"], "Good")
+        self.assertEqual(payload_system["linked_documents"][0]["title"], "HVAC warranty")
+        self.assertEqual(payload_system["linked_projects"][0]["agreement_id"], self.agreement.id)
+
+        update_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/property/systems/{system.id}/",
+            {"condition": "needs_service", "notes": "Schedule annual service."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(update_response.status_code, 200, update_response.data)
+        system.refresh_from_db()
+        self.assertEqual(system.condition, "needs_service")
+        updated_system = update_response.data["property_profile"]["home_systems"][0]
+        self.assertEqual(updated_system["condition_label"], "Needs Service")
+        self.assertEqual(updated_system["notes"], "Schedule annual service.")
+
+        archive_response = self.client.delete(f"/api/projects/customer-portal/{token}/property/systems/{system.id}/")
+        self.assertEqual(archive_response.status_code, 200, archive_response.data)
+        system.refresh_from_db()
+        self.assertTrue(system.is_archived)
+        self.assertEqual(archive_response.data["property_profile"]["home_systems"], [])
+
+    def test_customer_portal_home_system_rejects_other_customer_property_and_documents(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)
+        own_profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner},
+        )[0]
+        other_profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.other_homeowner.email,
+            defaults={"homeowner": self.other_homeowner},
+        )[0]
+        other_document = PropertyDocument.objects.create(
+            property_profile=other_profile,
+            title="Other warranty",
+            document_type="Warranty",
+            file=SimpleUploadedFile("other-warranty.txt", b"other"),
+        )
+        system = PropertyHomeSystem.objects.create(
+            property_profile=own_profile,
+            system_type="roof",
+            custom_name="Main Roof",
+        )
+
+        wrong_property = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/systems/",
+            {"property_id": other_profile.id, "system_type": "roof"},
+            content_type="application/json",
+        )
+        self.assertEqual(wrong_property.status_code, 404)
+
+        wrong_document = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/systems/",
+            {"property_id": own_profile.id, "system_type": "hvac", "linked_document_ids": [other_document.id]},
+            content_type="application/json",
+        )
+        self.assertEqual(wrong_document.status_code, 403)
+
+        wrong_owner_update = self.client.patch(
+            f"/api/projects/customer-portal/{other_token}/property/systems/{system.id}/",
+            {"condition": "good"},
+            content_type="application/json",
+        )
+        self.assertEqual(wrong_owner_update.status_code, 404)
 
     def test_customer_portal_property_intelligence_generates_advisory_insights_and_snapshot(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

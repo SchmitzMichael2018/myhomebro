@@ -91,8 +91,8 @@ function documentGroups(profile, documents) {
   return grouped;
 }
 
-function warrantyRows(agreements, documents) {
-  return (agreements || [])
+function warrantyRows(agreements, documents, homeSystems = []) {
+  const agreementRows = (agreements || [])
     .filter((agreement) => String(agreement.warranty_text || "").trim())
     .map((agreement) => ({
       id: `warranty-${agreement.id}`,
@@ -106,6 +106,18 @@ function warrantyRows(agreements, documents) {
         return haystack.includes("warranty") && (!document.project_title || document.project_title === agreement.project_title);
       }),
     }));
+  const systemRows = (homeSystems || [])
+    .filter((system) => system.warrantyExpiration)
+    .map((system) => ({
+      id: `system-warranty-${system.id}`,
+      project: system.name,
+      contractor: system.serviceProvider || "Service provider not recorded",
+      warrantyType: `${system.system_type_label || "System"} warranty`,
+      text: `${system.name} warranty coverage expires ${formatDate(system.warrantyExpiration)}.`,
+      date: system.warrantyStartDate || system.installDate || system.updated_at,
+      documents: system.linkedDocuments || [],
+    }));
+  return [...agreementRows, ...systemRows];
 }
 
 function completedProjectRows(projects, agreements, documents) {
@@ -181,6 +193,31 @@ const SYSTEM_KEYWORDS = [
   ["Exterior/Siding", ["siding", "exterior", "stucco", "paint"]],
 ];
 
+const HOME_SYSTEM_TYPE_OPTIONS = [
+  ["hvac", "HVAC"],
+  ["roof", "Roof"],
+  ["water_heater", "Water Heater"],
+  ["electrical", "Electrical Panel"],
+  ["plumbing", "Plumbing"],
+  ["appliance", "Appliances"],
+  ["windows_doors", "Windows/Doors"],
+  ["foundation", "Foundation/Basement"],
+  ["exterior_siding", "Exterior/Siding"],
+  ["septic_sewer", "Septic/Sewer"],
+  ["solar", "Solar"],
+  ["pool_spa", "Pool/Spa"],
+  ["other", "Other"],
+];
+
+const HOME_SYSTEM_CONDITION_OPTIONS = [
+  ["unknown", "Unknown"],
+  ["excellent", "Excellent"],
+  ["good", "Good"],
+  ["fair", "Fair"],
+  ["needs_service", "Needs Service"],
+  ["replace_soon", "Replace Soon"],
+];
+
 function systemRows({ projects = [], agreements = [], documents = [], requests = [], maintenanceWorkOrders = [], propertyIntelligence = {} }) {
   const haystackItems = [
     ...projects.map((row) => ({ source: row, text: `${row.title || ""} ${row.description || ""} ${row.project_type || ""}` })),
@@ -209,6 +246,28 @@ function systemRows({ projects = [], agreements = [], documents = [], requests =
       linkedProjects,
     };
   });
+}
+
+function normalizeHomeSystem(system) {
+  return {
+    ...system,
+    name: system.display_name || system.custom_name || system.system_type_label || "Home system",
+    manufacturer: system.manufacturer || "",
+    model: system.model_number || system.model || "",
+    serialNumber: system.serial_number || "",
+    installDate: system.install_date || system.installDate || "",
+    lastServiceDate: system.last_service_date || system.lastServiceDate || "",
+    warrantyStartDate: system.warranty_start_date || "",
+    warrantyExpiration: system.warranty_expiration_date || system.warrantyExpiration || "",
+    expectedLifespanYears: system.expected_lifespan_years || "",
+    conditionLabel: system.condition_label || HOME_SYSTEM_CONDITION_OPTIONS.find(([value]) => value === system.condition)?.[1] || "Unknown",
+    serviceProvider: system.service_provider || "",
+    linkedDocuments: system.linked_documents || system.linkedDocuments || [],
+    linkedProjects: system.linked_projects || system.linkedProjects || [],
+    linkedRequests: system.linked_requests || system.linkedRequests || [],
+    linkedRecordsCount: Number(system.linked_records_count ?? 0),
+    isStructured: true,
+  };
 }
 
 function PropertySummarySection({ profile, profileOptions, onSelectProperty, onEdit, onAdd }) {
@@ -270,29 +329,62 @@ function PropertySummarySection({ profile, profileOptions, onSelectProperty, onE
   );
 }
 
-function HomeSystemsSection({ systems = [] }) {
+function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive }) {
   return (
     <Section title="Home Systems" eyebrow="Systems and components" testId="property-home-systems">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {systems.map((system) => (
-          <article key={system.name} data-testid={`property-home-system-${system.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <h4 className="text-sm font-bold text-white">{system.name}</h4>
-              <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
-                {system.linkedDocuments.length + system.linkedProjects.length} links
-              </span>
-            </div>
-            <dl className="mt-3 grid gap-2 text-xs text-slate-300">
-              <div><dt className="text-slate-500">Manufacturer</dt><dd className="font-semibold text-slate-100">{system.manufacturer || "Not recorded yet"}</dd></div>
-              <div><dt className="text-slate-500">Model</dt><dd className="font-semibold text-slate-100">{system.model || "Not recorded yet"}</dd></div>
-              <div><dt className="text-slate-500">Install date</dt><dd className="font-semibold text-slate-100">{system.installDate ? formatDate(system.installDate) : "Not recorded yet"}</dd></div>
-              <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-100">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "No service record yet"}</dd></div>
-              <div><dt className="text-slate-500">Warranty expiration</dt><dd className="font-semibold text-slate-100">{system.warrantyExpiration ? formatDate(system.warrantyExpiration) : "Not recorded yet"}</dd></div>
-            </dl>
-            <p className="mt-3 text-sm leading-6 text-slate-400">{system.notes}</p>
-          </article>
-        ))}
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm leading-6 text-slate-300">
+          Track HVAC, roof, water heater, electrical, plumbing, appliances, warranties, service dates, and linked records.
+        </p>
+        <button
+          type="button"
+          data-testid="property-home-system-add"
+          onClick={onAdd}
+          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+        >
+          Add System
+        </button>
       </div>
+      {systems.length ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {systems.map((system) => (
+            <article key={system.id || system.name} data-testid={`property-home-system-${String(system.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-bold text-white">{system.name}</h4>
+                  <div className="mt-1 text-xs font-semibold text-slate-400">{system.system_type_label || system.conditionLabel || "Home system"}</div>
+                </div>
+                <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+                  {system.linkedRecordsCount || system.linkedDocuments.length + system.linkedProjects.length + system.linkedRequests.length} linked
+                </span>
+              </div>
+              <dl className="mt-3 grid gap-2 text-xs text-slate-300">
+                <div><dt className="text-slate-500">Manufacturer</dt><dd className="font-semibold text-slate-100">{system.manufacturer || "Not recorded yet"}</dd></div>
+                <div><dt className="text-slate-500">Model</dt><dd className="font-semibold text-slate-100">{system.model || "Not recorded yet"}</dd></div>
+                <div><dt className="text-slate-500">Install date</dt><dd className="font-semibold text-slate-100">{system.installDate ? formatDate(system.installDate) : "Not recorded yet"}</dd></div>
+                <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-100">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "No service record yet"}</dd></div>
+                <div><dt className="text-slate-500">Warranty expiration</dt><dd className="font-semibold text-slate-100">{system.warrantyExpiration ? formatDate(system.warrantyExpiration) : "Not recorded yet"}</dd></div>
+                <div><dt className="text-slate-500">Condition</dt><dd className="font-semibold text-slate-100">{system.conditionLabel || "Unknown"}</dd></div>
+              </dl>
+              {system.notes ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">{system.notes}</p> : null}
+              {system.isStructured ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
+                    Edit System
+                  </button>
+                  <button type="button" data-testid={`property-home-system-archive-${system.id}`} onClick={() => onArchive?.(system)} className="rounded-xl border border-red-300/35 bg-red-400/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-400/20">
+                    Archive
+                  </button>
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No systems recorded yet" testId="property-home-systems-empty">
+          Add major systems like HVAC, roof, water heater, electrical panel, plumbing, appliances, solar, pool, or septic records.
+        </EmptyState>
+      )}
     </Section>
   );
 }
@@ -355,9 +447,193 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [] }) {
   );
 }
 
+function emptySystemForm(propertyId) {
+  return {
+    property_id: propertyId || null,
+    system_type: "hvac",
+    custom_name: "",
+    manufacturer: "",
+    model_number: "",
+    serial_number: "",
+    install_date: "",
+    last_service_date: "",
+    warranty_start_date: "",
+    warranty_expiration_date: "",
+    expected_lifespan_years: "",
+    condition: "unknown",
+    service_provider: "",
+    notes: "",
+    linked_document_ids: [],
+  };
+}
 
-function timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders }) {
+function systemToForm(system, propertyId) {
+  return {
+    property_id: propertyId || null,
+    system_type: system.system_type || "other",
+    custom_name: system.custom_name || "",
+    manufacturer: system.manufacturer || "",
+    model_number: system.model_number || system.model || "",
+    serial_number: system.serial_number || "",
+    install_date: system.install_date || system.installDate || "",
+    last_service_date: system.last_service_date || system.lastServiceDate || "",
+    warranty_start_date: system.warranty_start_date || system.warrantyStartDate || "",
+    warranty_expiration_date: system.warranty_expiration_date || system.warrantyExpiration || "",
+    expected_lifespan_years: system.expected_lifespan_years || system.expectedLifespanYears || "",
+    condition: system.condition || "unknown",
+    service_provider: system.service_provider || system.serviceProvider || "",
+    notes: system.notes || "",
+    linked_document_ids: (system.linked_documents || system.linkedDocuments || []).map((document) => Number(document.record_id || String(document.id || "").replace("property-document-", ""))).filter(Boolean),
+  };
+}
+
+function HomeSystemModal({ mode, form, documents = [], saving, onChange, onClose, onSubmit }) {
+  if (!mode) return null;
+  const title = mode === "edit" ? "Edit Home System" : "Add Home System";
+  const update = (field, value) => onChange?.({ ...(form || {}), [field]: value });
+  return (
+    <div data-testid="property-home-system-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit?.();
+        }}
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-amber-300/35 bg-slate-950 p-5 shadow-2xl shadow-black/50"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Home Systems</div>
+            <h3 className="mt-1 text-xl font-bold text-white">{title}</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              Store service dates, warranty details, model numbers, notes, and linked records for this property system.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">
+            Close
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-slate-200">
+            System type
+            <select value={form?.system_type || "hvac"} onChange={(event) => update("system_type", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+              {HOME_SYSTEM_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Custom name
+            <input value={form?.custom_name || ""} onChange={(event) => update("custom_name", event.target.value)} placeholder="Main HVAC, North roof..." className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Manufacturer
+            <input value={form?.manufacturer || ""} onChange={(event) => update("manufacturer", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Model number
+            <input value={form?.model_number || ""} onChange={(event) => update("model_number", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Serial number
+            <input value={form?.serial_number || ""} onChange={(event) => update("serial_number", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Condition
+            <select value={form?.condition || "unknown"} onChange={(event) => update("condition", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+              {HOME_SYSTEM_CONDITION_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Install date
+            <input type="date" value={form?.install_date || ""} onChange={(event) => update("install_date", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Last service date
+            <input type="date" value={form?.last_service_date || ""} onChange={(event) => update("last_service_date", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Warranty start date
+            <input type="date" value={form?.warranty_start_date || ""} onChange={(event) => update("warranty_start_date", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Warranty expiration date
+            <input type="date" value={form?.warranty_expiration_date || ""} onChange={(event) => update("warranty_expiration_date", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Expected lifespan
+            <input type="number" min="0" value={form?.expected_lifespan_years || ""} onChange={(event) => update("expected_lifespan_years", event.target.value ? Number(event.target.value) : "")} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Service provider
+            <input value={form?.service_provider || ""} onChange={(event) => update("service_provider", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Linked documents
+            <select
+              multiple
+              value={(form?.linked_document_ids || []).map(String)}
+              onChange={(event) => update("linked_document_ids", Array.from(event.target.selectedOptions).map((option) => Number(option.value)))}
+              className="mt-1 min-h-28 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            >
+              {documents.map((document) => (
+                <option key={document.id} value={Number(document.record_id || String(document.id || "").replace("property-document-", ""))}>
+                  {document.title || document.filename || "Property document"}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">Hold Ctrl or Command to select more than one document.</span>
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Notes
+            <textarea rows={4} value={form?.notes || ""} onChange={(event) => update("notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+        </div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:border-slate-400">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving} className="rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
+            {saving ? "Saving..." : mode === "edit" ? "Save system" : "Add system"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+
+function timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, homeSystems = [] }) {
   const rows = [];
+  for (const system of homeSystems) {
+    if (system.updated_at || system.created_at) {
+      rows.push({
+        id: `system-${system.id}`,
+        date: system.updated_at || system.created_at,
+        title: `${system.name} record updated`,
+        type: "Home System",
+        description: [system.manufacturer, system.model].filter(Boolean).join(" ") || system.notes || "Home system record saved.",
+        actionLabel: "View system",
+      });
+    }
+    if (system.lastServiceDate) {
+      rows.push({
+        id: `system-service-${system.id}`,
+        date: system.lastServiceDate,
+        title: `${system.name} serviced`,
+        type: "Maintenance",
+        description: system.serviceProvider || "Service provider not recorded",
+        actionLabel: "View system",
+      });
+    }
+    if (system.warrantyExpiration) {
+      rows.push({
+        id: `system-warranty-expiration-${system.id}`,
+        date: system.warrantyExpiration,
+        title: `${system.name} warranty expiration`,
+        type: "Warranty",
+        description: "Warranty expiration date saved in Home Systems.",
+        actionLabel: "View warranty",
+      });
+    }
+  }
   for (const project of completedProjectRows(projects, agreements, documents)) {
     rows.push({
       id: `project-${project.id}`,
@@ -430,18 +706,21 @@ function timelineRows({ profile, projects, agreements, documents, payments, main
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab }) {
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
   const grouped = documentGroups(profile, documents);
-  const warranties = warrantyRows(agreements, documents);
   const completedProjects = completedProjectRows(projects, agreements, documents);
   const maintenance = maintenanceRows(maintenanceWorkOrders);
-  const systems = systemRows({ projects, agreements, documents, requests, maintenanceWorkOrders, propertyIntelligence });
+  const hasStructuredSystems = Array.isArray(profile?.home_systems);
+  const systems = hasStructuredSystems
+    ? (profile.home_systems || []).map(normalizeHomeSystem)
+    : systemRows({ projects, agreements, documents, requests, maintenanceWorkOrders, propertyIntelligence });
+  const warranties = warrantyRows(agreements, documents, systems.filter((system) => system.isStructured));
   const activeProjects = activeProjectRows(projects);
   const openRequests = openRequestRows(requests);
-  const timeline = timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders });
+  const timeline = timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
   const importantDocuments = [
     ...grouped.Warranties,
     ...grouped.Agreements,
@@ -457,7 +736,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
 
   return (
     <div className="space-y-5">
-      <HomeSystemsSection systems={systems} />
+      <HomeSystemsSection systems={systems} onAdd={onAddSystem} onEdit={onEditSystem} onArchive={onArchiveSystem} />
 
       <ActiveWorkSection projects={activeProjects} requests={openRequests} />
 
@@ -648,8 +927,12 @@ export default function CustomerPropertyProfile({
   onSave,
   onAdd,
   onUpload,
+  onCreateSystem,
+  onUpdateSystem,
+  onArchiveSystem,
   saving = false,
   uploading = false,
+  systemSaving = false,
   uploadError = "",
 }) {
   const profileOptions = useMemo(() => (profiles.length ? profiles : profile?.id ? [profile] : []), [profiles, profile]);
@@ -661,6 +944,9 @@ export default function CustomerPropertyProfile({
   const [form, setForm] = useState(selectedProfile || {});
   const [addingProperty, setAddingProperty] = useState(false);
   const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
+  const [systemModalMode, setSystemModalMode] = useState("");
+  const [editingSystemId, setEditingSystemId] = useState(null);
+  const [systemForm, setSystemForm] = useState(emptySystemForm(selectedProfile?.id));
   const startAddProperty = () => {
     setAddingProperty(true);
     const next = {
@@ -687,9 +973,40 @@ export default function CustomerPropertyProfile({
 
   useEffect(() => {
     setForm(selectedProfile || {});
+    setSystemForm((prev) => ({ ...(prev || emptySystemForm(selectedProfile?.id)), property_id: selectedProfile?.id || null }));
   }, [selectedProfileId]);
 
   const update = (field, value) => setForm((prev) => ({ ...(prev || {}), [field]: value }));
+  const closeSystemModal = () => {
+    setSystemModalMode("");
+    setEditingSystemId(null);
+    setSystemForm(emptySystemForm(selectedProfile?.id));
+  };
+  const openAddSystem = () => {
+    setEditingSystemId(null);
+    setSystemForm(emptySystemForm(selectedProfile?.id));
+    setSystemModalMode("add");
+  };
+  const openEditSystem = (system) => {
+    setEditingSystemId(system.id);
+    setSystemForm(systemToForm(system, selectedProfile?.id));
+    setSystemModalMode("edit");
+  };
+  const submitSystem = async () => {
+    const dateFields = ["install_date", "last_service_date", "warranty_start_date", "warranty_expiration_date"];
+    const payload = {
+      ...systemForm,
+      property_id: selectedProfile?.id || systemForm.property_id || null,
+      expected_lifespan_years: systemForm.expected_lifespan_years === "" ? null : systemForm.expected_lifespan_years,
+    };
+    for (const field of dateFields) {
+      if (!payload[field]) payload[field] = null;
+    }
+    const ok = systemModalMode === "edit"
+      ? await onUpdateSystem?.(editingSystemId, payload)
+      : await onCreateSystem?.(payload);
+    if (ok !== false) closeSystemModal();
+  };
 
   return (
     <div data-testid="customer-property-profile" className="space-y-5">
@@ -717,6 +1034,21 @@ export default function CustomerPropertyProfile({
         maintenanceWorkOrders={maintenanceWorkOrders}
         propertyIntelligence={propertyIntelligence}
         onOpenTab={onOpenTab}
+        onAddSystem={openAddSystem}
+        onEditSystem={openEditSystem}
+        onArchiveSystem={async (system) => {
+          await onArchiveSystem?.(system.id);
+        }}
+      />
+
+      <HomeSystemModal
+        mode={systemModalMode}
+        form={systemForm}
+        documents={selectedProfile?.documents || []}
+        saving={systemSaving}
+        onChange={setSystemForm}
+        onClose={closeSystemModal}
+        onSubmit={submitSystem}
       />
 
       <section data-testid="customer-property-manager" className="rounded-2xl border border-amber-300/35 bg-slate-950/60 p-5">

@@ -33,6 +33,40 @@ const portalPayload = {
     address: "123 Main St, Austin, TX, 78701",
     year_built: 1998,
     square_feet: 2400,
+    home_systems: [
+      {
+        id: 11,
+        display_name: "Main HVAC",
+        system_type: "hvac",
+        system_type_label: "HVAC",
+        custom_name: "Main HVAC",
+        manufacturer: "Carrier",
+        model_number: "XR-500",
+        serial_number: "SN-123",
+        install_date: "2022-05-01",
+        last_service_date: "2026-05-15",
+        warranty_start_date: "2022-05-01",
+        warranty_expiration_date: "2032-05-01",
+        expected_lifespan_years: 15,
+        condition: "good",
+        condition_label: "Good",
+        service_provider: "Builder Co",
+        notes: "Filter size documented.",
+        linked_records_count: 2,
+        linked_documents: [
+          {
+            id: "property-document-1",
+            record_id: 1,
+            title: "Roof warranty",
+            type_label: "Warranty",
+            filename: "roof-warranty.pdf",
+            url: "/files/roof-warranty.pdf",
+          },
+        ],
+        linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
+        linked_requests: [],
+      },
+    ],
     documents: [
       {
         id: "property-document-1",
@@ -75,6 +109,29 @@ const portalPayload = {
       postal_code: "78701",
       address: "123 Main St, Austin, TX, 78701",
       is_primary: true,
+      home_systems: [
+        {
+          id: 11,
+          display_name: "Main HVAC",
+          system_type: "hvac",
+          system_type_label: "HVAC",
+          custom_name: "Main HVAC",
+          manufacturer: "Carrier",
+          model_number: "XR-500",
+          serial_number: "SN-123",
+          install_date: "2022-05-01",
+          last_service_date: "2026-05-15",
+          warranty_expiration_date: "2032-05-01",
+          condition: "good",
+          condition_label: "Good",
+          service_provider: "Builder Co",
+          notes: "Filter size documented.",
+          linked_records_count: 2,
+          linked_documents: [],
+          linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
+          linked_requests: [],
+        },
+      ],
       documents: [
         {
           id: "property-document-1",
@@ -99,6 +156,7 @@ const portalPayload = {
       postal_code: "78703",
       address: "44 Lake Dr, Austin, TX, 78703",
       is_primary: false,
+      home_systems: [],
       documents: [],
       photos: [],
     },
@@ -769,6 +827,59 @@ const uploadedPhotoPortalPayload = {
   },
 };
 
+const systemCreatedPortalPayload = {
+  ...portalPayload,
+  property_profile: {
+    ...portalPayload.property_profile,
+    home_systems: [
+      ...portalPayload.property_profile.home_systems,
+      {
+        id: 12,
+        display_name: "Water Heater",
+        system_type: "water_heater",
+        system_type_label: "Water Heater",
+        custom_name: "",
+        manufacturer: "Rheem",
+        model_number: "WH-200",
+        serial_number: "",
+        install_date: "2024-01-10",
+        last_service_date: "",
+        warranty_start_date: "",
+        warranty_expiration_date: "2030-01-10",
+        expected_lifespan_years: 10,
+        condition: "good",
+        condition_label: "Good",
+        service_provider: "Austin Plumbing",
+        notes: "Located in garage.",
+        linked_records_count: 0,
+        linked_documents: [],
+        linked_projects: [],
+        linked_requests: [],
+      },
+    ],
+  },
+};
+
+const systemUpdatedPortalPayload = {
+  ...portalPayload,
+  property_profile: {
+    ...portalPayload.property_profile,
+    home_systems: portalPayload.property_profile.home_systems.map((system) =>
+      system.id === 11
+        ? { ...system, condition: "needs_service", condition_label: "Needs Service", notes: "Annual service is due." }
+        : system
+    ),
+  },
+};
+
+const systemArchivedPortalPayload = {
+  ...portalPayload,
+  property_profile: {
+    ...portalPayload.property_profile,
+    home_systems: [],
+  },
+};
+
 const notificationReadPortalPayload = {
   ...portalPayload,
   notifications: portalPayload.notifications.map((notification) =>
@@ -871,6 +982,7 @@ const emptyPortalPayload = {
     state: "",
     postal_code: "",
     address: "",
+    home_systems: [],
     documents: [],
     photos: [],
   },
@@ -1482,6 +1594,33 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/") && method === "PATCH") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(systemUpdatedPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/") && method === "DELETE") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(systemArchivedPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(systemCreatedPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/notifications/101/read/") && method === "POST") {
       await route.fulfill({
         status: 200,
@@ -1838,8 +1977,29 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-command-summary")).toContainText("2,400");
   await expect(page.getByTestId("property-summary-selector")).toBeVisible();
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
-  await expect(page.getByTestId("property-home-systems")).toContainText("HVAC");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Carrier");
+  await expect(page.getByTestId("property-home-systems")).toContainText("2032");
+  await page.getByTestId("property-home-system-add").click();
+  await expect(page.getByTestId("property-home-system-modal")).toContainText("Add Home System");
+  await page.getByLabel("System type").selectOption("water_heater");
+  await page.getByLabel("Manufacturer").fill("Rheem");
+  await page.getByLabel("Model number").fill("WH-200");
+  await page.getByLabel("Warranty expiration date").fill("2030-01-10");
+  await page.getByLabel("Service provider").fill("Austin Plumbing");
+  await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Add system" }).click();
   await expect(page.getByTestId("property-home-systems")).toContainText("Water Heater");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Rheem");
+  await page.getByTestId("property-home-system-edit-11").click();
+  await expect(page.getByTestId("property-home-system-modal")).toContainText("Edit Home System");
+  await page.getByLabel("Condition").selectOption("needs_service");
+  await page.getByTestId("property-home-system-modal").getByLabel("Notes").fill("Annual service is due.");
+  await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Save system" }).click();
+  await expect(page.getByTestId("property-home-systems")).toContainText("Needs Service");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Annual service is due.");
+  await expect(page.getByTestId("home-records-warranty-center")).toContainText("Main HVAC");
+  await page.getByTestId("property-home-system-archive-11").click();
+  await expect(page.getByTestId("property-home-systems-empty")).toContainText("No systems recorded yet");
   await expect(page.getByTestId("property-active-work")).toContainText("Active Projects");
   await expect(page.getByTestId("property-active-work")).toContainText("Open Requests");
   await expect(page.getByTestId("property-active-work")).toContainText("Kitchen Remodel");
@@ -1853,7 +2013,6 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-property-add-button").click();
   await expect(page.getByRole("button", { name: "Add property", exact: true })).toBeVisible();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Kitchen Remodel");
-  await expect(page.getByTestId("home-records-timeline")).toContainText("Water heater warranty");
   await expect(page.getByTestId("home-records-warranty-center")).toContainText("One-year workmanship warranty");
   await expect(page.getByTestId("property-photo-gallery")).toContainText("Before kitchen photo");
   await expect(page.getByTestId("home-records-document-groups")).toContainText("Agreements");

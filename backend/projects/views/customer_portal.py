@@ -38,7 +38,7 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
-from projects.models_customer_portal import CustomerRequest, NotificationRule, PropertyDocument, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
+from projects.models_customer_portal import CustomerRequest, NotificationRule, PropertyDocument, PropertyHomeSystem, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
 from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
@@ -400,6 +400,17 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         }
         for row in PropertyPhoto.objects.filter(property_profile=profile).order_by("-uploaded_at", "-id")
     ]
+    home_systems = [
+        _property_home_system_payload(row)
+        for row in PropertyHomeSystem.objects.select_related(
+            "linked_agreement",
+            "linked_agreement__project",
+            "linked_customer_request",
+        )
+        .prefetch_related("linked_documents")
+        .filter(property_profile=profile, is_archived=False)
+        .order_by("system_type", "custom_name", "id")
+    ]
     return {
         "id": profile.id,
         "customer_email": _safe_text(profile.customer_email),
@@ -418,7 +429,73 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "is_primary": bool(getattr(profile, "is_primary", False)),
         "documents": documents,
         "photos": photos,
+        "home_systems": home_systems,
         "updated_at": _safe_dt(profile.updated_at),
+    }
+
+
+def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
+    linked_documents = [
+        {
+            "id": f"property-document-{document.id}",
+            "record_id": document.id,
+            "title": _safe_text(document.title) or "Property document",
+            "type_label": _safe_text(document.document_type) or "Property Document",
+            "filename": _safe_text(getattr(getattr(document, "file", None), "name", "")).rsplit("/", 1)[-1],
+            "date": _safe_dt(document.uploaded_at),
+            "url": _safe_text(getattr(getattr(document, "file", None), "url", "")),
+        }
+        for document in system.linked_documents.all()
+    ]
+    linked_agreement = getattr(system, "linked_agreement", None)
+    linked_request = getattr(system, "linked_customer_request", None)
+    linked_projects = []
+    if linked_agreement:
+        linked_projects.append(
+            {
+                "id": getattr(linked_agreement, "project_id", None),
+                "agreement_id": linked_agreement.id,
+                "title": _agreement_title(linked_agreement),
+                "contractor_name": _contractor_name(getattr(linked_agreement, "contractor", None)),
+                "url": f"/agreements/magic/{linked_agreement.homeowner_access_token}" if getattr(linked_agreement, "homeowner_access_token", "") else "",
+            }
+        )
+    linked_requests = []
+    if linked_request:
+        linked_requests.append(
+            {
+                "id": linked_request.id,
+                "title": _safe_text(getattr(linked_request, "project_title", "")) or _safe_text(getattr(linked_request, "title", "")) or "Request",
+                "status": _safe_text(getattr(linked_request, "status", "")),
+                "status_label": _customer_request_status_label(getattr(linked_request, "status", "")),
+            }
+        )
+    return {
+        "id": system.id,
+        "display_name": system.display_name,
+        "system_type": _safe_text(system.system_type),
+        "system_type_label": system.get_system_type_display(),
+        "custom_name": _safe_text(system.custom_name),
+        "manufacturer": _safe_text(system.manufacturer),
+        "model_number": _safe_text(system.model_number),
+        "serial_number": _safe_text(system.serial_number),
+        "install_date": _safe_dt(system.install_date),
+        "last_service_date": _safe_dt(system.last_service_date),
+        "warranty_start_date": _safe_dt(system.warranty_start_date),
+        "warranty_expiration_date": _safe_dt(system.warranty_expiration_date),
+        "expected_lifespan_years": system.expected_lifespan_years,
+        "condition": _safe_text(system.condition),
+        "condition_label": system.get_condition_display(),
+        "notes": _safe_text(system.notes),
+        "service_provider": _safe_text(system.service_provider),
+        "linked_documents": linked_documents,
+        "linked_projects": linked_projects,
+        "linked_requests": linked_requests,
+        "linked_records_count": len(linked_documents) + len(linked_projects) + len(linked_requests),
+        "linked_agreement_id": getattr(linked_agreement, "id", None),
+        "linked_customer_request_id": getattr(linked_request, "id", None),
+        "created_at": _safe_dt(system.created_at),
+        "updated_at": _safe_dt(system.updated_at),
     }
 
 
@@ -3364,6 +3441,36 @@ class CustomerPortalPropertyProfileSerializer(serializers.Serializer):
     is_primary = serializers.BooleanField(required=False)
 
 
+class CustomerPortalHomeSystemSerializer(serializers.Serializer):
+    property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    system_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyHomeSystem.SYSTEM_TYPE_CHOICES],
+        required=True,
+    )
+    custom_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    manufacturer = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    model_number = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    serial_number = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    install_date = serializers.DateField(required=False, allow_null=True)
+    last_service_date = serializers.DateField(required=False, allow_null=True)
+    warranty_start_date = serializers.DateField(required=False, allow_null=True)
+    warranty_expiration_date = serializers.DateField(required=False, allow_null=True)
+    expected_lifespan_years = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=150)
+    condition = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyHomeSystem.CONDITION_CHOICES],
+        required=False,
+    )
+    notes = serializers.CharField(required=False, allow_blank=True)
+    service_provider = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    linked_agreement_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    linked_customer_request_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    linked_document_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        allow_empty=True,
+    )
+
+
 class CustomerPortalProfileSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
     phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
@@ -3474,6 +3581,128 @@ class CustomerPortalPropertyProfileView(APIView):
                 ),
             },
         )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+def _agreement_for_home_system_or_none(email: str, agreement_id):
+    if not agreement_id:
+        return None
+    agreement = get_object_or_404(
+        Agreement.objects.select_related("project", "contractor", "homeowner"),
+        pk=agreement_id,
+    )
+    if not _agreement_customer_visible_reason(agreement, email):
+        raise PermissionError("That agreement is not available in your portal.")
+    return agreement
+
+
+def _customer_request_for_home_system_or_none(email: str, request_id):
+    if not request_id:
+        return None
+    return get_object_or_404(CustomerRequest, pk=request_id, customer_email__iexact=email.lower().strip())
+
+
+def _documents_for_home_system(profile: PropertyProfile, document_ids) -> list[PropertyDocument]:
+    if document_ids is None:
+        return []
+    ids = [int(value) for value in document_ids]
+    documents = list(PropertyDocument.objects.filter(property_profile=profile, id__in=ids))
+    if len(documents) != len(set(ids)):
+        raise PermissionError("One or more linked documents are not available for this property.")
+    return documents
+
+
+def _home_system_for_email_or_404(email: str, system_id: int) -> PropertyHomeSystem:
+    return get_object_or_404(
+        PropertyHomeSystem.objects.select_related("property_profile"),
+        pk=system_id,
+        property_profile__customer_email__iexact=email.lower().strip(),
+        is_archived=False,
+    )
+
+
+class CustomerPortalHomeSystemView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalHomeSystemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        profile = _property_profile_for_email_or_404(email, data.pop("property_id", None))
+        linked_document_ids = data.pop("linked_document_ids", None)
+        try:
+            linked_agreement = _agreement_for_home_system_or_none(email, data.pop("linked_agreement_id", None))
+            linked_customer_request = _customer_request_for_home_system_or_none(email, data.pop("linked_customer_request_id", None))
+            linked_documents = _documents_for_home_system(profile, linked_document_ids)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            linked_agreement=linked_agreement,
+            linked_customer_request=linked_customer_request,
+            **data,
+        )
+        if linked_document_ids is not None:
+            system.linked_documents.set(linked_documents)
+        create_smart_notification(
+            event_type=SmartNotificationEvent.PROPERTY_PROFILE_UPDATED,
+            recipient_email=email,
+            homeowner=profile.homeowner,
+            property_profile=profile,
+            context={
+                "property_name": profile.display_name or "Property profile",
+                "system_name": system.display_name,
+            },
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+    def patch(self, request, token: str, system_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        system = _home_system_for_email_or_404(email, system_id)
+        serializer = CustomerPortalHomeSystemSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        if "property_id" in data:
+            system.property_profile = _property_profile_for_email_or_404(email, data.pop("property_id"))
+        linked_document_ids = data.pop("linked_document_ids", None)
+        try:
+            if "linked_agreement_id" in data:
+                system.linked_agreement = _agreement_for_home_system_or_none(email, data.pop("linked_agreement_id"))
+            if "linked_customer_request_id" in data:
+                system.linked_customer_request = _customer_request_for_home_system_or_none(email, data.pop("linked_customer_request_id"))
+            linked_documents = _documents_for_home_system(system.property_profile, linked_document_ids) if linked_document_ids is not None else None
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        for field, value in data.items():
+            setattr(system, field, value)
+        system.save()
+        if linked_documents is not None:
+            system.linked_documents.set(linked_documents)
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+    def delete(self, request, token: str, system_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        system = _home_system_for_email_or_404(email, system_id)
+        system.archive()
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 

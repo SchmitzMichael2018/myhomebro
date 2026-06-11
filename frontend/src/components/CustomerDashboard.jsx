@@ -1624,6 +1624,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
+  const [savingHomeSystem, setSavingHomeSystem] = useState(false);
   const [uploadingPropertyFile, setUploadingPropertyFile] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [acceptingBidId, setAcceptingBidId] = useState("");
@@ -1684,6 +1685,50 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       return false;
     } finally {
       setUploadingPropertyFile(false);
+    }
+  };
+  const createHomeSystem = async (payload) => {
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/systems/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Home system saved.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not save that home system.");
+      return false;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
+  const updateHomeSystem = async (systemId, payload) => {
+    if (!systemId) return false;
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Home system updated.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that home system.");
+      return false;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
+  const archiveHomeSystem = async (systemId) => {
+    if (!systemId) return false;
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.delete(`/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/`);
+      onPortalUpdate?.(data);
+      toast.success("Home system archived.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not archive that home system.");
+      return false;
+    } finally {
+      setSavingHomeSystem(false);
     }
   };
   const tabContent = useMemo(() => {
@@ -1779,6 +1824,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onOpenTab={setActiveTab}
           saving={savingProperty}
           uploading={uploadingPropertyFile}
+          systemSaving={savingHomeSystem}
           uploadError={uploadError}
           onSave={async (payload) => {
             setSavingProperty(true);
@@ -1805,6 +1851,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             }
           }}
           onUpload={uploadPropertyFile}
+          onCreateSystem={createHomeSystem}
+          onUpdateSystem={updateHomeSystem}
+          onArchiveSystem={archiveHomeSystem}
         />
       );
     }
@@ -1848,7 +1897,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, savingProfile]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, savingProfile]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

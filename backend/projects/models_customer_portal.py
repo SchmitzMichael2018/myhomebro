@@ -113,6 +113,114 @@ class PropertyPhoto(models.Model):
         return f"{self.property_profile_id} - {self.title or 'Photo'}"
 
 
+class PropertyHomeSystem(models.Model):
+    SYSTEM_HVAC = "hvac"
+    SYSTEM_ROOF = "roof"
+    SYSTEM_WATER_HEATER = "water_heater"
+    SYSTEM_ELECTRICAL = "electrical"
+    SYSTEM_PLUMBING = "plumbing"
+    SYSTEM_APPLIANCE = "appliance"
+    SYSTEM_WINDOWS_DOORS = "windows_doors"
+    SYSTEM_FOUNDATION = "foundation"
+    SYSTEM_EXTERIOR_SIDING = "exterior_siding"
+    SYSTEM_SEPTIC_SEWER = "septic_sewer"
+    SYSTEM_SOLAR = "solar"
+    SYSTEM_POOL_SPA = "pool_spa"
+    SYSTEM_OTHER = "other"
+    SYSTEM_TYPE_CHOICES = [
+        (SYSTEM_HVAC, "HVAC"),
+        (SYSTEM_ROOF, "Roof"),
+        (SYSTEM_WATER_HEATER, "Water Heater"),
+        (SYSTEM_ELECTRICAL, "Electrical Panel"),
+        (SYSTEM_PLUMBING, "Plumbing"),
+        (SYSTEM_APPLIANCE, "Appliances"),
+        (SYSTEM_WINDOWS_DOORS, "Windows/Doors"),
+        (SYSTEM_FOUNDATION, "Foundation/Basement"),
+        (SYSTEM_EXTERIOR_SIDING, "Exterior/Siding"),
+        (SYSTEM_SEPTIC_SEWER, "Septic/Sewer"),
+        (SYSTEM_SOLAR, "Solar"),
+        (SYSTEM_POOL_SPA, "Pool/Spa"),
+        (SYSTEM_OTHER, "Other"),
+    ]
+
+    CONDITION_UNKNOWN = "unknown"
+    CONDITION_EXCELLENT = "excellent"
+    CONDITION_GOOD = "good"
+    CONDITION_FAIR = "fair"
+    CONDITION_NEEDS_SERVICE = "needs_service"
+    CONDITION_REPLACE_SOON = "replace_soon"
+    CONDITION_CHOICES = [
+        (CONDITION_UNKNOWN, "Unknown"),
+        (CONDITION_EXCELLENT, "Excellent"),
+        (CONDITION_GOOD, "Good"),
+        (CONDITION_FAIR, "Fair"),
+        (CONDITION_NEEDS_SERVICE, "Needs Service"),
+        (CONDITION_REPLACE_SOON, "Replace Soon"),
+    ]
+
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="home_systems",
+    )
+    system_type = models.CharField(max_length=32, choices=SYSTEM_TYPE_CHOICES, default=SYSTEM_OTHER)
+    custom_name = models.CharField(max_length=200, blank=True, default="")
+    manufacturer = models.CharField(max_length=200, blank=True, default="")
+    model_number = models.CharField(max_length=200, blank=True, default="")
+    serial_number = models.CharField(max_length=200, blank=True, default="")
+    install_date = models.DateField(null=True, blank=True)
+    last_service_date = models.DateField(null=True, blank=True)
+    warranty_start_date = models.DateField(null=True, blank=True)
+    warranty_expiration_date = models.DateField(null=True, blank=True)
+    expected_lifespan_years = models.PositiveSmallIntegerField(null=True, blank=True)
+    condition = models.CharField(max_length=32, choices=CONDITION_CHOICES, default=CONDITION_UNKNOWN)
+    notes = models.TextField(blank=True, default="")
+    service_provider = models.CharField(max_length=200, blank=True, default="")
+    linked_agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_home_systems",
+    )
+    linked_customer_request = models.ForeignKey(
+        "projects.CustomerRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_home_systems",
+    )
+    linked_documents = models.ManyToManyField(
+        PropertyDocument,
+        blank=True,
+        related_name="home_systems",
+    )
+    is_archived = models.BooleanField(default=False, db_index=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["is_archived", "system_type", "custom_name", "id"]
+        indexes = [
+            models.Index(fields=["property_profile", "is_archived", "system_type"]),
+            models.Index(fields=["warranty_expiration_date"]),
+            models.Index(fields=["last_service_date"]),
+        ]
+
+    @property
+    def display_name(self):
+        return self.custom_name.strip() or self.get_system_type_display()
+
+    def archive(self):
+        self.is_archived = True
+        self.archived_at = timezone.now()
+        self.save(update_fields=["is_archived", "archived_at", "updated_at"])
+
+    def __str__(self):
+        return f"{self.property_profile_id} - {self.display_name}"
+
+
 class PropertyIntelligenceSnapshot(models.Model):
     property_profile = models.ForeignKey(
         PropertyProfile,

@@ -102,12 +102,13 @@ try:
         NotificationLog,
         NotificationRule,
         PropertyDocument,
+        PropertyHomeSystem,
         PropertyPhoto,
         PropertyProfile,
         SmartNotification,
     )
 except Exception:  # pragma: no cover
-    CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
+    CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyHomeSystem = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
 
 try:
     from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent  # type: ignore
@@ -457,6 +458,15 @@ if PropertyDocument is not None:
     class PropertyDocumentAdmin(admin.ModelAdmin):
         list_display = ("title", "property_profile", "document_type", "uploaded_at")
         search_fields = ("title", "document_type", "property_profile__customer_email")
+
+
+if PropertyHomeSystem is not None:
+    @admin.register(PropertyHomeSystem)
+    class PropertyHomeSystemAdmin(admin.ModelAdmin):
+        list_display = ("display_name", "property_profile", "system_type", "condition", "warranty_expiration_date", "is_archived", "updated_at")
+        search_fields = ("custom_name", "manufacturer", "model_number", "serial_number", "property_profile__customer_email")
+        list_filter = ("system_type", "condition", "is_archived")
+        filter_horizontal = ("linked_documents",)
 
 
 if PropertyPhoto is not None:
