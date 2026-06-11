@@ -861,6 +861,38 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertNotIn("Work Includes", result["project_subtype"])
         self.assertNotIn("Work Includes", result["project_title"])
 
+    def test_classify_project_from_scope_prefers_appliance_symptom_over_wrong_plumbing_candidate(self):
+        self._ensure_taxonomy("Plumbing", ["Plumbing Repair", "Water Heater Replacement"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Plumbing",
+                "project_subtype": "Plumbing Repair",
+                "project_title": "Plumbing Repair",
+                "confidence": "high",
+                "reason": "Incorrectly treated appliance noise as plumbing.",
+                "alternatives": [],
+                "recommended_custom_subtype": "",
+            },
+        ):
+            result = classify_project_from_scope(
+                description="Dryer is making loud noises",
+                scope="Dryer is making loud noises",
+                taxonomy=taxonomy,
+                current_values={
+                    "project_type": "Plumbing",
+                    "project_subtype": "Plumbing Repair",
+                    "project_title": "Plumbing Repair",
+                },
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Appliance Repair")
+        self.assertEqual(result["project_subtype"], "Dryer Repair")
+        self.assertEqual(result["project_title"], "Dryer Repair")
+        self.assertIn("appliance", result["reason"].lower())
+
     def test_classify_type_subtype_allows_electrical_when_dominant(self):
         project_type, project_subtype, reason = classify_type_subtype(
             project_title="Install recessed lights",
@@ -2718,7 +2750,7 @@ class ContractorPublicPresenceApiTests(TestCase):
         token = start_response.json()["token"]
 
         with patch(
-            "projects.views.public_intake.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             return_value={"description": "Clearer project description.", "_mode": "improve", "_model": "test-model"},
         ):
             response = self.client.post(
@@ -2748,7 +2780,7 @@ class ContractorPublicPresenceApiTests(TestCase):
         token = start_response.json()["token"]
 
         with patch(
-            "projects.views.public_intake.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             side_effect=RuntimeError("OpenAI unavailable"),
         ):
             response = self.client.post(
@@ -5806,7 +5838,7 @@ class AIFreeAccessRegressionTests(TestCase):
 
     def test_ai_agreement_description_works_without_entitlement_rows(self):
         with patch(
-            "projects.api.ai_agreement_views.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             return_value={
                 "description": "AI-generated scope",
                 "_mode": "generate",
@@ -5835,7 +5867,7 @@ class AIFreeAccessRegressionTests(TestCase):
 
     def test_ai_agreement_description_includes_scope_template_and_milestones(self):
         with patch(
-            "projects.api.ai_agreement_views.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             return_value={
                 "description": "AI-generated scope",
                 "_mode": "generate",
@@ -5868,7 +5900,7 @@ class AIFreeAccessRegressionTests(TestCase):
 
     def test_ai_agreement_description_falls_back_when_ai_fails(self):
         with patch(
-            "projects.api.ai_agreement_views.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             side_effect=RuntimeError("OpenAI unavailable"),
         ):
             response = self.client.post(
@@ -5894,7 +5926,7 @@ class AIFreeAccessRegressionTests(TestCase):
 
     def test_ai_agreement_description_falls_back_to_basement_for_finish_basement(self):
         with patch(
-            "projects.api.ai_agreement_views.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             side_effect=RuntimeError("OpenAI unavailable"),
         ):
             response = self.client.post(
@@ -5917,7 +5949,7 @@ class AIFreeAccessRegressionTests(TestCase):
 
     def test_ai_agreement_description_falls_back_to_pool_for_pool_house(self):
         with patch(
-            "projects.api.ai_agreement_views.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             side_effect=RuntimeError("OpenAI unavailable"),
         ):
             response = self.client.post(
@@ -5973,7 +6005,7 @@ class AIFreeAccessRegressionTests(TestCase):
 
     def test_ai_agreement_description_accepts_unsaved_payload_without_agreement(self):
         with patch(
-            "projects.api.ai_agreement_views.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             return_value={
                 "description": "AI-generated scope",
                 "project_title": "Replace Siding",
@@ -6009,7 +6041,7 @@ class AIFreeAccessRegressionTests(TestCase):
 
     def test_ai_agreement_description_preserves_draft_when_classification_disagrees(self):
         with patch(
-            "projects.api.ai_agreement_views.generate_or_improve_description",
+            "projects.services.ai.project_understanding.generate_or_improve_description",
             return_value={
                 "description": "Included Work\n- Install new gutters and downspouts\n- Verify measurements and roofline conditions\n- Install hangers and gutter runs\n- Place downspouts for drainage\n- Clean the work area",
                 "project_title": "Gutter Installation",
@@ -6019,7 +6051,7 @@ class AIFreeAccessRegressionTests(TestCase):
                 "_model": "test-model",
             },
         ), patch(
-            "projects.api.ai_agreement_views.classify_project_from_scope",
+            "projects.services.ai.project_understanding.classify_project_from_scope",
             return_value={
                 "project_title": "Installation Project",
                 "project_type": "Installation",
@@ -20901,14 +20933,14 @@ class CustomerPortalAccessTests(TestCase):
 
     def test_customer_portal_request_improve_returns_reviewable_suggestion(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
-        with patch("projects.views.customer_portal.classify_project_from_scope") as classify, patch("projects.views.customer_portal.generate_or_improve_description") as improve:
-            classify.return_value = {
+        with patch("projects.views.customer_portal.understand_project_request") as understand:
+            understand.return_value = {
                 "project_title": "Kitchen Sink Repair",
+                "suggested_title": "Kitchen Sink Repair",
                 "project_type": "Plumbing",
                 "project_subtype": "Sink Leak",
-            }
-            improve.return_value = {
                 "description": "Included Work\n- Repair the leaking kitchen sink.\n- Check visible supply and drain connections.",
+                "source": "ai",
             }
             response = self.client.post(
                 f"/api/projects/customer-portal/{token}/requests/improve/",
@@ -20934,6 +20966,139 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIn("Repair the leaking kitchen sink", response.data["project_scope"])
         self.assertEqual(response.data["source"], "ai")
         self.assertFalse(CustomerRequest.objects.filter(title="sink").exists())
+
+    @override_settings(OPENAI_API_KEY="", AI_OPENAI_API_KEY="")
+    def test_customer_portal_request_improve_keeps_description_as_source_of_truth(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        cases = [
+            (
+                "Dryer is making loud noises",
+                "Appliance Repair",
+                "Dryer Repair",
+                ["dryer"],
+                ["plumbing", "toilet", "faucet", "drain"],
+            ),
+            (
+                "Refrigerator is not cooling",
+                "Appliance Repair",
+                "Refrigerator Repair",
+                ["refrigerator", "cooling"],
+                ["plumbing", "toilet", "faucet", "drain"],
+            ),
+            (
+                "HVAC is making noise",
+                "HVAC",
+                "HVAC Repair",
+                ["hvac"],
+                ["plumbing", "toilet", "faucet", "drain"],
+            ),
+            (
+                "Toilet is leaking",
+                "Plumbing",
+                "Plumbing Repair",
+                ["toilet", "leak"],
+                [],
+            ),
+            (
+                "Roof leak over the guest bedroom",
+                "Roofing",
+                "Repair",
+                ["roof", "leak"],
+                ["plumbing", "toilet", "faucet", "drain"],
+            ),
+            (
+                "Water heater is not producing hot water",
+                "Plumbing",
+                "Water Heater Replacement",
+                ["water heater", "hot water"],
+                [],
+            ),
+            (
+                "Install new gutters and downspouts",
+                "Gutters",
+                "Gutter Installation",
+                ["gutters", "downspouts"],
+                ["plumbing", "toilet", "faucet"],
+            ),
+            (
+                "Ceiling has water damage from a leak",
+                "Drywall",
+                "Drywall Repair",
+                ["ceiling", "water damage"],
+                ["plumbing", "toilet", "faucet", "drain"],
+            ),
+        ]
+
+        with patch("projects.services.ai.project_classifier._call_openai_classifier", return_value=None):
+            for description, expected_type, expected_subtype, expected_scope_terms, forbidden_scope_terms in cases:
+                with self.subTest(description=description):
+                    response = self.client.post(
+                        f"/api/projects/customer-portal/{token}/requests/improve/",
+                        {
+                            "request_type": "repair",
+                            "project_mode": "full_service",
+                            "project_type": "Plumbing",
+                            "project_subtype": "Plumbing Repair",
+                            "project_title": "",
+                            "project_scope": description,
+                        },
+                        content_type="application/json",
+                    )
+
+                    self.assertEqual(response.status_code, 200, response.data)
+                    self.assertEqual(response.data["project_type"], expected_type)
+                    self.assertEqual(response.data["project_subtype"], expected_subtype)
+                    scope = response.data["project_scope"].lower()
+                    for term in expected_scope_terms:
+                        self.assertIn(term, scope)
+                    for term in forbidden_scope_terms:
+                        self.assertNotIn(term, scope)
+
+    @override_settings(OPENAI_API_KEY="", AI_OPENAI_API_KEY="")
+    def test_shared_project_understanding_aligns_agreement_portal_and_public_intake(self):
+        portal_token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        description = "Dryer is making loud noises"
+
+        with patch("projects.services.ai.project_classifier._call_openai_classifier", return_value=None):
+            contractor_client = APIClient()
+            contractor_client.force_authenticate(user=self.contractor_user)
+            agreement_response = contractor_client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "current_description": description,
+                    "project_type": "Plumbing",
+                    "project_subtype": "Plumbing Repair",
+                },
+                format="json",
+            )
+
+            portal_response = self.client.post(
+                f"/api/projects/customer-portal/{portal_token}/requests/improve/",
+                {
+                    "project_scope": description,
+                    "project_type": "Plumbing",
+                    "project_subtype": "Plumbing Repair",
+                },
+                content_type="application/json",
+            )
+
+            public_response = self.client.post(
+                f"/api/projects/public-intake/improve-description/?token={self.intake.share_token}",
+                {
+                    "current_description": description,
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(agreement_response.status_code, 200, agreement_response.content)
+        self.assertEqual(portal_response.status_code, 200, portal_response.data)
+        self.assertEqual(public_response.status_code, 200, public_response.data)
+
+        for payload in [agreement_response.json(), portal_response.data, public_response.data]:
+            self.assertEqual(payload["project_type"], "Appliance Repair")
+            self.assertEqual(payload["project_subtype"], "Dryer Repair")
+            self.assertIn("dryer", (payload.get("description") or payload.get("project_scope") or "").lower())
+            self.assertNotIn("plumbing", (payload.get("description") or payload.get("project_scope") or "").lower())
 
     def test_customer_portal_request_improve_rejects_invalid_token(self):
         response = self.client.post(

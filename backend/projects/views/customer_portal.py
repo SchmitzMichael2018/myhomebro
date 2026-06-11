@@ -45,7 +45,6 @@ from projects.models_amendment_request import AmendmentRequest, AmendmentRequest
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
-from projects.ai.agreement_description_writer import generate_or_improve_description
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
     bid_next_action,
@@ -70,7 +69,7 @@ from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
 from projects.services.project_activity import create_project_activity_event, serialize_project_activity_events
-from projects.services.ai.project_classifier import classify_project_from_scope
+from projects.services.ai.project_understanding import understand_project_request
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -3400,34 +3399,30 @@ class CustomerPortalRequestImproveView(APIView):
             return Response({"detail": "Add request details first."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            classification = classify_project_from_scope(
+            understanding = understand_project_request(
                 description=current_description,
-                scope=current_description,
-                current_values={
-                    "project_title": _safe_text(data.get("project_title") or data.get("title")),
-                    "project_type": _safe_text(data.get("project_type") or data.get("project_category") or data.get("request_type")),
-                    "project_subtype": _safe_text(data.get("project_subtype")),
-                },
+                project_title=_safe_text(data.get("project_title") or data.get("title")),
+                project_type=_safe_text(data.get("project_type") or data.get("project_category") or data.get("request_type")),
+                project_subtype=_safe_text(data.get("project_subtype")),
+                urgency=_safe_text(data.get("urgency")),
             )
-            out = generate_or_improve_description(
-                mode="improve",
-                project_title=_safe_text(classification.get("project_title") or data.get("project_title") or data.get("title")),
-                project_type=_safe_text(classification.get("project_type") or data.get("project_type") or data.get("project_category") or data.get("request_type")),
-                project_subtype=_safe_text(classification.get("project_subtype") or data.get("project_subtype") or data.get("project_mode")),
-                current_description=current_description,
-            )
-            description = _safe_text(out.get("description"))
-            source = "ai"
         except Exception:
-            classification = {}
             description = _customer_request_refine_fallback(current_description)
-            source = "fallback"
+            understanding = {
+                "project_title": _safe_text(data.get("project_title") or data.get("title")) or "Project request",
+                "project_type": _safe_text(data.get("project_type") or data.get("project_category")),
+                "project_subtype": _safe_text(data.get("project_subtype")),
+                "description": description,
+                "source": "fallback",
+                "urgency": _safe_text(data.get("urgency")) or "normal",
+                "clarifying_questions": [],
+                "suggested_documents_or_photos": [],
+            }
 
+        description = _safe_text(understanding.get("description") or understanding.get("improved_description"))
         if not description:
             description = _customer_request_refine_fallback(current_description)
-            source = "fallback"
-
-        title = _safe_text(classification.get("project_title") or data.get("project_title") or data.get("title"))
+        title = _safe_text(understanding.get("project_title") or understanding.get("suggested_title") or data.get("project_title") or data.get("title"))
         if not title:
             title = _safe_text(data.get("project_type") or data.get("project_category") or data.get("request_type")) or "Project request"
 
@@ -3436,11 +3431,17 @@ class CustomerPortalRequestImproveView(APIView):
                 "detail": "Request details improved.",
                 "title": title,
                 "project_title": title,
-                "project_type": _safe_text(classification.get("project_type") or data.get("project_type") or data.get("project_category")),
-                "project_subtype": _safe_text(classification.get("project_subtype") or data.get("project_subtype")),
+                "project_type": _safe_text(understanding.get("project_type") or data.get("project_type") or data.get("project_category")),
+                "project_subtype": _safe_text(understanding.get("project_subtype") or data.get("project_subtype")),
+                "urgency": _safe_text(understanding.get("urgency") or data.get("urgency")),
                 "description": description,
                 "project_scope": description,
-                "source": source,
+                "clarification_questions": understanding.get("clarifying_questions") or [],
+                "suggested_documents_or_photos": understanding.get("suggested_documents_or_photos") or [],
+                "confidence": understanding.get("confidence", ""),
+                "confidence_label": understanding.get("confidence_label", ""),
+                "warnings": understanding.get("warnings") or [],
+                "source": understanding.get("source", "fallback"),
             },
             status=status.HTTP_200_OK,
         )

@@ -16,6 +16,7 @@ from projects.services.contractor_matching import score_contractor_project_match
 from projects.services.project_quantity import build_quantity_context
 from projects.services.milestone_roles import annotate_milestone_roles, detect_restricted_trade_categories
 from projects.services.payment_protection import build_payment_protection_summary
+from projects.services.ai.project_understanding import understand_project_request
 
 
 def _safe_str(value: Any) -> str:
@@ -540,6 +541,20 @@ def _build_project_classification(
             project_type, project_subtype = "Installation", "General Installation"
         else:
             project_type, project_subtype = "Repair", "General Repair"
+
+    try:
+        understanding = understand_project_request(
+            description=combined or accomplishment,
+            project_type=project_type,
+            project_subtype=project_subtype,
+            mode="improve",
+        )
+        if _safe_str(understanding.get("project_type")):
+            project_type = _safe_str(understanding.get("project_type"))
+        if _safe_str(understanding.get("project_subtype")):
+            project_subtype = _safe_str(understanding.get("project_subtype"))
+    except Exception:
+        pass
 
     return {
         "family_key": family_key,

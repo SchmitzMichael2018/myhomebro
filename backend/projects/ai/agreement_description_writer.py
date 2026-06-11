@@ -15,6 +15,62 @@ logger = logging.getLogger(__name__)
 
 _FALLBACK_HINTS = [
     {
+        "patterns": [r"\bdryer\b.*\b(noise|noises|loud|rattle|grind|squeal|repair|service)\b", r"\b(noise|noises|loud|rattle|grind|squeal)\b.*\bdryer\b"],
+        "project_type": "Appliance Repair",
+        "project_subtype": "Dryer Repair",
+        "project_title": "Dryer Repair",
+        "summary": "Work includes diagnosing and repairing the dryer issue described by the customer, including checking accessible appliance components, venting concerns, and operating condition as applicable.",
+    },
+    {
+        "patterns": [r"\b(refrigerator|fridge|freezer)\b.*\b(not cooling|warm|repair|service|not working)\b", r"\bnot cooling\b.*\b(refrigerator|fridge|freezer)\b"],
+        "project_type": "Appliance Repair",
+        "project_subtype": "Refrigerator Repair",
+        "project_title": "Refrigerator Repair",
+        "summary": "Work includes diagnosing and repairing the refrigerator cooling issue described by the customer, including checking accessible appliance components and operating condition as applicable.",
+    },
+    {
+        "patterns": [r"\b(hvac|air conditioner|ac unit|a/c|furnace|heat pump|mini-?split)\b.*\b(noise|loud|rattle|buzz|not cooling|not heating|repair|service)\b"],
+        "project_type": "HVAC",
+        "project_subtype": "HVAC Repair",
+        "project_title": "HVAC Repair",
+        "summary": "Work includes diagnosing and servicing the HVAC issue described by the customer, including checking accessible equipment operation, airflow, noise concerns, and recommended follow-up repairs.",
+    },
+    {
+        "patterns": [r"\b(toilet leaking|leaking toilet|toilet leak|toilet is leaking)\b"],
+        "project_type": "Plumbing",
+        "project_subtype": "Plumbing Repair",
+        "project_title": "Toilet Leak Repair",
+        "summary": "Work includes diagnosing and repairing the toilet leak described by the customer, including checking accessible fixture connections, seals, and related plumbing components.",
+    },
+    {
+        "patterns": [r"\b(roof leak|leaking roof|roof is leaking|water coming through roof)\b"],
+        "project_type": "Roofing",
+        "project_subtype": "Repair",
+        "project_title": "Roof Leak Repair",
+        "summary": "Work includes diagnosing and repairing the roof leak described by the customer, including checking accessible roofing, flashing, and leak source areas.",
+    },
+    {
+        "patterns": [r"\b(install new gutters|new gutters|gutters and downspouts|gutter installation|downspout installation)\b"],
+        "project_type": "Gutters",
+        "project_subtype": "Gutter Installation",
+        "project_title": "Gutter Installation",
+        "summary": "Work includes installing the gutters and downspouts described by the customer, including confirming roofline measurements, drainage locations, hangers, outlets, and cleanup.",
+    },
+    {
+        "patterns": [r"\b(ceiling water damage|water damage on ceiling|ceiling has water damage|ceiling leak damage)\b"],
+        "project_type": "Drywall",
+        "project_subtype": "Drywall Repair",
+        "project_title": "Ceiling Drywall Repair",
+        "summary": "Work includes repairing the ceiling water damage described by the customer after the leak source is addressed, including damaged drywall or finish repair and cleanup as applicable.",
+    },
+    {
+        "patterns": [r"\b(water heater|hot water heater|tankless water heater)\b.*\b(no hot water|not producing hot water|not heating|cold water|repair|service|leak|leaking)\b"],
+        "project_type": "Plumbing",
+        "project_subtype": "Water Heater Replacement",
+        "project_title": "Water Heater Service",
+        "summary": "Work includes diagnosing the water heater hot water issue described by the customer, including checking accessible plumbing connections, heater operation, and whether repair or replacement is appropriate.",
+    },
+    {
         "patterns": [r"\breplace siding\b", r"\bsiding replacement\b", r"\bsiding\b"],
         "project_type": "Siding",
         "project_subtype": "Siding Replacement",

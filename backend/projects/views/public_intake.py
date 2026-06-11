@@ -14,8 +14,8 @@ from rest_framework.views import APIView
 from projects.models_invite import ContractorInvite
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models import PublicContractorLead
-from projects.ai.agreement_description_writer import generate_or_improve_description
 from projects.services.invites_delivery import build_invite_url
+from projects.services.ai.project_understanding import understand_project_request
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.project_titles import generate_project_title, normalize_project_classification
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
@@ -698,16 +698,18 @@ class PublicIntakeDescriptionImproveView(APIView):
             )
 
         try:
-            out = generate_or_improve_description(
-                mode="improve",
+            understanding = understand_project_request(
+                description=current_description,
                 project_title=intake.ai_project_title or "",
                 project_type=intake.ai_project_type or "",
                 project_subtype=intake.ai_project_subtype or "",
-                current_description=current_description,
+                mode="improve",
+                contractor=getattr(intake, "contractor", None),
             )
-            description = (out.get("description") or "").strip()
-            source = "ai"
+            description = (understanding.get("description") or understanding.get("improved_description") or "").strip()
+            source = understanding.get("source") or "ai"
         except Exception:
+            understanding = {}
             description = _deterministic_refine_description(current_description)
             source = "fallback"
 
@@ -719,6 +721,12 @@ class PublicIntakeDescriptionImproveView(APIView):
             {
                 "detail": "Description improved.",
                 "description": description,
+                "project_title": understanding.get("project_title", "") if understanding else "",
+                "project_type": understanding.get("project_type", "") if understanding else "",
+                "project_subtype": understanding.get("project_subtype", "") if understanding else "",
+                "clarification_questions": understanding.get("clarifying_questions", []) if understanding else [],
+                "suggested_documents_or_photos": understanding.get("suggested_documents_or_photos", []) if understanding else [],
+                "confidence": understanding.get("confidence", "") if understanding else "",
                 "source": source,
             },
             status=status.HTTP_200_OK,

@@ -52,6 +52,9 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
         "concrete", "slab", "slab pour", "pour slab", "cement",
         "driveway", "sidewalk", "pad", "foundation pour",
     ],
+    "Gutters": [
+        "gutter", "gutters", "downspout", "downspouts", "rain gutter", "seamless gutter",
+    ],
     "Inspection": [
         "inspect", "inspection", "estimate visit", "site visit", "assessment",
     ],
@@ -69,6 +72,10 @@ PROJECT_TYPE_HINTS: dict[str, list[str]] = {
     ],
     "Junk Removal": [
         "junk removal", "debris removal", "appliance removal", "furniture removal", "haul away", "haul-away", "trash out", "construction debris",
+    ],
+    "Appliance Repair": [
+        "appliance repair", "appliance service", "dryer", "refrigerator", "fridge", "washer",
+        "washing machine", "dishwasher", "oven", "range", "stove", "freezer",
     ],
     "Garage Doors": [
         "garage door", "garage doors", "garage door replacement", "garage door repair", "garage door opener", "garage opener",
@@ -99,6 +106,14 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Fixture Install": ["fixture", "fan", "light", "sink", "faucet", "toilet"],
         "Floor Install": ["floor", "tile", "lvp", "vinyl plank", "hardwood", "laminate"],
         "General Install": ["install", "mount", "replace"],
+    },
+    "Appliance Repair": {
+        "Dryer Repair": ["dryer", "tumble dryer"],
+        "Refrigerator Repair": ["refrigerator", "fridge", "freezer", "not cooling", "warm fridge"],
+        "Washer Repair": ["washer", "washing machine"],
+        "Dishwasher Repair": ["dishwasher"],
+        "Oven / Range Repair": ["oven", "range", "stove"],
+        "Appliance Repair": ["appliance", "making noise", "loud noise", "not cooling", "not working", "repair"],
     },
     "Electrical": {
         "Panel": ["panel", "breaker", "subpanel", "service upgrade"],
@@ -170,6 +185,11 @@ SUBTYPE_KEYWORDS: dict[str, dict[str, list[str]]] = {
         "Foundation": ["foundation", "footing", "stem wall"],
         "Driveway": ["driveway", "approach"],
         "Patio": ["patio", "paver", "concrete patio"],
+    },
+    "Gutters": {
+        "Gutter Installation": ["install gutters", "new gutters", "gutters and downspouts", "gutter installation", "downspout installation"],
+        "Gutter Repair": ["repair gutters", "gutter repair", "fix gutters", "leaking gutter"],
+        "Gutter Cleaning": ["clean gutters", "gutter cleaning"],
     },
     "Inspection": {
         "Estimate Visit": ["estimate", "inspection", "site visit", "assessment"],
@@ -818,6 +838,76 @@ def classify_type_subtype(
     if any(sig in hay_norm for sig in pool_signals):
         return "Pool", "Inground Pool and Pool House", "Detected pool-specific scope. Using type 'Pool' and subtype 'Inground Pool and Pool House'."
 
+    water_heater_signals = ["water heater", "hot water heater", "tankless water heater"]
+    if any(sig in hay_norm for sig in water_heater_signals):
+        if any(sig in hay_norm for sig in ["no hot water", "not producing hot water", "not heating", "cold water", "pilot", "leak", "leaking"]):
+            return (
+                "Plumbing",
+                "Water Heater Replacement",
+                "Detected water-heater service scope. Using plumbing water-heater classification.",
+            )
+        return (
+            "Plumbing",
+            "Water Heater Replacement",
+            "Detected water-heater scope. Using plumbing water-heater classification.",
+        )
+
+    hvac_signals = ["hvac", "air conditioner", "ac unit", "a/c", "furnace", "heat pump", "mini split", "mini-split"]
+    if any(sig in hay_norm for sig in hvac_signals):
+        if any(sig in hay_norm for sig in ["noise", "loud", "rattle", "grind", "buzz", "not cooling", "not heating", "repair"]):
+            return "HVAC", "HVAC Repair", "Detected HVAC repair/service scope from the homeowner description."
+        return "HVAC", "HVAC Repair", "Detected HVAC scope from the homeowner description."
+
+    roof_leak_signals = ["roof leak", "leaking roof", "roof is leaking", "water coming through roof"]
+    if any(sig in hay_norm for sig in roof_leak_signals):
+        return "Roofing", "Repair", "Detected roof leak repair scope from the homeowner description."
+
+    gutter_signals = ["install new gutters", "new gutters", "gutters and downspouts", "gutter installation", "downspout installation"]
+    if any(sig in hay_norm for sig in gutter_signals):
+        return "Gutters", "Gutter Installation", "Detected gutter/downspout installation scope from the homeowner description."
+
+    ceiling_water_damage_signals = ["ceiling water damage", "water damage on ceiling", "ceiling has water damage", "ceiling leak damage"]
+    explicit_plumbing_source = any(sig in hay_norm for sig in ["pipe leak", "plumbing leak", "leaking pipe", "toilet", "faucet", "water line"])
+    if any(sig in hay_norm for sig in ceiling_water_damage_signals) and not explicit_plumbing_source:
+        return "Drywall", "Drywall Repair", "Detected ceiling water damage repair scope without an explicit plumbing source."
+
+    toilet_leak_signals = ["toilet leaking", "leaking toilet", "toilet leak", "toilet is leaking"]
+    if any(sig in hay_norm for sig in toilet_leak_signals):
+        return "Plumbing", "Plumbing Repair", "Detected toilet leak plumbing repair scope from the homeowner description."
+
+    appliance_signals = {
+        "Dryer Repair": ["dryer", "tumble dryer"],
+        "Refrigerator Repair": ["refrigerator", "fridge", "freezer"],
+        "Washer Repair": ["washer", "washing machine"],
+        "Dishwasher Repair": ["dishwasher"],
+        "Oven / Range Repair": ["oven", "range", "stove"],
+    }
+    appliance_symptoms = [
+        "noise",
+        "loud",
+        "rattle",
+        "grind",
+        "squeal",
+        "not cooling",
+        "not working",
+        "not heating",
+        "won't start",
+        "wont start",
+        "broken",
+        "repair",
+        "service",
+    ]
+    for subtype, signals in appliance_signals.items():
+        if any(sig in hay_norm for sig in signals) and (
+            any(symptom in hay_norm for symptom in appliance_symptoms)
+            or any(term in hay_norm for term in ["repair", "service", "inspect", "diagnose"])
+        ):
+            return (
+                "Appliance Repair",
+                subtype,
+                "Detected appliance repair scope from the homeowner description. Keeping appliance symptoms separate from plumbing.",
+            )
+
     flooring_signals = [
         "hardwood floor",
         "hardwood flooring",
@@ -922,6 +1012,16 @@ def build_classification_title(project_type: str, project_subtype: str, project_
         if project_subtype == "Garage Door Opener Installation":
             return "Garage Door Opener Installation"
         return "Garage Doors"
+    if project_type == "Appliance Repair":
+        if project_subtype:
+            return project_subtype
+        return "Appliance Repair"
+    if project_type == "Gutters":
+        if project_subtype:
+            return project_subtype
+        return "Gutter Project"
+    if project_type == "Drywall" and project_subtype == "Drywall Repair" and "ceiling" in text:
+        return "Ceiling Drywall Repair"
     if project_type == "Outdoor Living":
         if project_subtype in {"Outdoor Kitchen", "Patio Kitchen", "Outdoor Bar", "Grill Island", "Patio Extension"}:
             return project_subtype

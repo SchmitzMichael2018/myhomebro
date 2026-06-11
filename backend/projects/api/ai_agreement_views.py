@@ -12,7 +12,6 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
-from projects.ai.agreement_description_writer import _fallback_from_context, generate_or_improve_description
 from projects.ai.agreement_milestone_writer import (
     suggest_scope_and_milestones,
     suggest_pricing_refresh,
@@ -21,6 +20,7 @@ from projects.models import Agreement, Milestone
 from projects.services.ai_orchestrator import orchestrate_user_request
 from projects.services.ai.project_classifier import build_project_taxonomy_snapshot, classify_project_from_scope
 from projects.services.ai.project_drafter import draft_project_structure
+from projects.services.ai.project_understanding import understand_project_request
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 
 logger = logging.getLogger(__name__)
@@ -144,63 +144,53 @@ def ai_agreement_description(request):
         )
 
     try:
-        out = generate_or_improve_description(
-            mode=(request.data.get("mode") or "").strip(),
+        understanding = understand_project_request(
+            description=raw_description,
             project_title=raw_project_title,
             project_type=raw_project_type,
             project_subtype=raw_project_subtype,
-            current_description=raw_description,
-        )
-    except Exception:
-        logger.exception("Agreement AI description fallback triggered after unexpected failure.")
-        out = {
-            **_fallback_from_context(
-                project_title=raw_project_title,
-                project_type=raw_project_type,
-                project_subtype=raw_project_subtype,
-                current_description=raw_description,
-            ),
-            "_mode": (request.data.get("mode") or "").strip(),
-        }
-
-    draft = {
-        "project_title": _safe_text(out.get("project_title")) or raw_project_title,
-        "project_type": _safe_text(out.get("project_type")) or raw_project_type,
-        "project_subtype": _safe_text(out.get("project_subtype")) or raw_project_subtype,
-        "description": out["description"],
-    }
-
-    taxonomy = build_project_taxonomy_snapshot(contractor=contractor)
-    try:
-        classification = classify_project_from_scope(
-            description=draft.get("description") or raw_description,
-            scope=draft.get("description") or raw_description,
-            taxonomy=taxonomy,
-            current_values={
-                "project_title": draft.get("project_title") or raw_project_title,
-                "project_type": draft.get("project_type") or raw_project_type,
-                "project_subtype": draft.get("project_subtype") or raw_project_subtype,
-            },
+            mode=(request.data.get("mode") or "").strip(),
             contractor=contractor,
         )
     except Exception:
-        logger.exception("Classification failed during description generation; continuing without it.")
-        classification = {}
+        logger.exception("Agreement AI understanding fallback triggered after unexpected failure.")
+        understanding = {
+            "project_title": raw_project_title or "Project request",
+            "project_type": raw_project_type,
+            "project_subtype": raw_project_subtype,
+            "description": raw_description,
+            "classification": {},
+            "recommendation_source": "fallback",
+            "confidence": "low",
+            "confidence_label": "",
+            "reason": "",
+        }
+
+    classification = understanding.get("classification") or {}
+    draft = {
+        "project_title": _safe_text(understanding.get("project_title") or understanding.get("suggested_title")) or raw_project_title,
+        "project_type": _safe_text(understanding.get("project_type")) or raw_project_type,
+        "project_subtype": _safe_text(understanding.get("project_subtype")) or raw_project_subtype,
+        "description": understanding.get("description") or understanding.get("improved_description") or raw_description,
+    }
 
     payload = {
         "detail": "OK",
-        "description": out["description"],
-        "_mode": out.get("_mode"),
-        "_model": out.get("_model"),
+        "description": draft["description"],
+        "_mode": (request.data.get("mode") or "").strip(),
+        "_model": understanding.get("_model"),
         "project_title": draft["project_title"],
         "project_type": draft["project_type"],
         "project_subtype": draft["project_subtype"],
         "draft": draft,
-        "recommendation_source": out.get("recommendation_source", "ai"),
-        "confidence": out.get("confidence", "recommended"),
-        "confidence_label": out.get("confidence_label", ""),
-        "next_step_guidance": out.get("next_step_guidance", ""),
-        "reason": out.get("reason", ""),
+        "recommendation_source": understanding.get("recommendation_source", "ai"),
+        "confidence": understanding.get("confidence", "recommended"),
+        "confidence_label": understanding.get("confidence_label", ""),
+        "next_step_guidance": understanding.get("next_step_guidance", ""),
+        "reason": understanding.get("reason", ""),
+        "clarifying_questions": understanding.get("clarifying_questions", []),
+        "suggested_documents_or_photos": understanding.get("suggested_documents_or_photos", []),
+        "warnings": understanding.get("warnings", []),
         "classification": {
             "project_type": classification.get("project_type", ""),
             "project_subtype": classification.get("project_subtype", ""),

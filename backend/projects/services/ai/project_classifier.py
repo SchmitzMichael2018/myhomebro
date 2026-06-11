@@ -768,6 +768,16 @@ def classify_project_from_scope(
         scope=scope,
         current_values=clean_current_values,
     )
+    if fallback.get("project_type") == "Appliance Repair" and (
+        not normalized_candidate or normalized_candidate.get("project_type") != "Appliance Repair"
+    ):
+        fallback["alternatives"] = _build_alternatives(
+            text=f"{scope}\n{description}",
+            lookup=lookup,
+            primary=fallback,
+            current_values=clean_current_values,
+        )
+        return fallback
 
     if not normalized_candidate:
         if candidate:
