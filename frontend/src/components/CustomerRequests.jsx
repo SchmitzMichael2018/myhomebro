@@ -303,6 +303,8 @@ export default function CustomerRequests({
   const [contractorSearchRequest, setContractorSearchRequest] = useState(null);
   const [selectedContractors, setSelectedContractors] = useState([]);
   const [routingContractors, setRoutingContractors] = useState(false);
+  const [contractorSearchLoading, setContractorSearchLoading] = useState(false);
+  const [contractorSearchError, setContractorSearchError] = useState("");
   const [improvingRequest, setImprovingRequest] = useState(false);
   const [improveError, setImproveError] = useState("");
   const [requestSuggestion, setRequestSuggestion] = useState(null);
@@ -479,15 +481,32 @@ export default function CustomerRequests({
     setEditingRequest(request);
     setSelectedRequest(null);
     setContractorSearchRequest(null);
+    setContractorSearchError("");
+    setContractorSearchLoading(false);
     setRequestSuggestion(null);
     setImproveError("");
     setForm(formFromRequest(request));
+  };
+
+  const closeContractorSearch = () => {
+    setContractorSearchRequest(null);
+    setSelectedContractors([]);
+    setContractorSearchError("");
+    setContractorSearchLoading(false);
+    setRoutingContractors(false);
   };
 
   const beginContractorSearch = async (request) => {
     setSelectedRequest(null);
     setEditingRequest(null);
     setSelectedContractors([]);
+    setContractorSearchError("");
+    setContractorSearchRequest({
+      ...request,
+      contractor_matching_started: true,
+      workflow_status_label: request.workflow_status_label || "Contractor Matching",
+    });
+    setContractorSearchLoading(true);
     try {
       const response = await onStartContractorSearch?.(request.request_id);
       const updatedRequest =
@@ -499,8 +518,10 @@ export default function CustomerRequests({
           workflow_status_label: "Contractor Matching",
         };
       setContractorSearchRequest(updatedRequest);
-    } catch (_error) {
-      // Parent owns toast/error copy.
+    } catch (error) {
+      setContractorSearchError(error?.response?.data?.detail || error?.message || "Contractor search could not be opened. Please try again.");
+    } finally {
+      setContractorSearchLoading(false);
     }
   };
 
@@ -512,8 +533,10 @@ export default function CustomerRequests({
       const updatedRequest =
         response?.portal?.requests?.find((row) => String(row.request_id) === String(contractorSearchRequest.request_id) && row.source_kind === "customer_request") ||
         null;
-      setContractorSearchRequest(updatedRequest);
-      setSelectedContractors([]);
+      if (updatedRequest) {
+        setContractorSearchRequest(updatedRequest);
+      }
+      closeContractorSearch();
     } finally {
       setRoutingContractors(false);
     }
@@ -980,55 +1003,99 @@ I need help installing shelves and patching drywall.`}
         </div>
 
         {contractorSearchRequest ? (
-          <div data-testid="customer-request-contractor-search-panel" className="mt-5 space-y-4 rounded-3xl border border-sky-300/30 bg-slate-950/80 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-[0.2em] text-sky-200">Find Contractor</div>
-                <h3 className="mt-1 text-xl font-extrabold text-white">{contractorSearchRequest.project_title || "Request contractor review"}</h3>
-                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-                  Select up to 5 contractors to review this request. The request stays in your portal, and contractor responses will appear here.
-                </p>
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 p-3 sm:items-center"
+            data-testid="customer-request-contractor-search-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Find a Contractor"
+          >
+            <div
+              data-testid="customer-request-contractor-search-panel"
+              className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-3xl border border-sky-300/30 bg-slate-950 p-5 shadow-2xl shadow-slate-950"
+            >
+              <div className="flex flex-col gap-4 border-b border-slate-800 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-[0.2em] text-sky-200">Contractor Matching</div>
+                  <h3 className="mt-1 text-2xl font-extrabold text-white">Find a Contractor</h3>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+                    Select up to 5 contractors to review this request. The request stays in your portal, and contractor responses will appear here.
+                  </p>
+                  <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                    <DetailField label="Request" value={contractorSearchRequest.project_title || contractorSearchRequest.title || "Customer request"} />
+                    <DetailField
+                      label="Type"
+                      value={joinPresent([
+                        contractorSearchRequest.project_type || contractorSearchRequest.project_category,
+                        contractorSearchRequest.project_subtype,
+                      ])}
+                    />
+                    <DetailField
+                      label="Location"
+                      value={
+                        contractorSearchRequest.project_address ||
+                        joinPresent([contractorSearchRequest.city, contractorSearchRequest.state, contractorSearchRequest.postal_code])
+                      }
+                    />
+                  </dl>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeContractorSearch}
+                  className="rounded-full border border-slate-700 px-3 py-1 text-sm font-bold text-slate-200 hover:bg-slate-800"
+                  aria-label="Close contractor search"
+                >
+                  Close
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setContractorSearchRequest(null);
-                  setSelectedContractors([]);
-                }}
-                className="rounded-full border border-slate-600 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-800"
-              >
-                Close
-              </button>
-            </div>
-            {contractorSearchRequest.source_intake_token ? (
-              <ContractorDiscoveryStep
-                token={contractorSearchRequest.source_intake_token}
-                form={discoveryFormForRequest(contractorSearchRequest)}
-                active
-                selectedTargets={selectedContractors}
-                setSelectedTargets={setSelectedContractors}
-                onSkipToManual={() => setSelectedContractors([])}
-              />
-            ) : (
-              <EmptyState title="Contractor search is not ready yet">
-                Save this request and try again. We need a request record before showing contractor matches.
-              </EmptyState>
-            )}
-            <div className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-sm text-slate-300">
-                {selectedContractors.length
-                  ? `${selectedContractors.length} contractor${selectedContractors.length === 1 ? "" : "s"} selected for review.`
-                  : "Choose contractor cards above before sending this request."}
+
+              <div className="mt-5 space-y-4">
+                {contractorSearchError ? (
+                  <div
+                    data-testid="customer-request-contractor-search-error"
+                    className="rounded-2xl border border-rose-300/40 bg-rose-500/10 p-4 text-sm font-semibold text-rose-100"
+                  >
+                    {contractorSearchError}
+                  </div>
+                ) : null}
+                {contractorSearchLoading ? (
+                  <div
+                    data-testid="customer-request-contractor-search-loading"
+                    className="rounded-2xl border border-sky-300/30 bg-sky-300/10 p-5 text-sm font-semibold text-sky-100"
+                  >
+                    Preparing contractor matches for this request...
+                  </div>
+                ) : contractorSearchRequest.source_intake_token ? (
+                  <ContractorDiscoveryStep
+                    token={contractorSearchRequest.source_intake_token}
+                    form={discoveryFormForRequest(contractorSearchRequest)}
+                    active
+                    selectedTargets={selectedContractors}
+                    setSelectedTargets={setSelectedContractors}
+                    onSkipToManual={() => setSelectedContractors([])}
+                  />
+                ) : (
+                  <EmptyState title="Contractor search is not ready yet">
+                    Save this request and try again. We need a request record before showing contractor matches.
+                  </EmptyState>
+                )}
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-sm text-slate-300">
+                    {selectedContractors.length
+                      ? `${selectedContractors.length} contractor${selectedContractors.length === 1 ? "" : "s"} selected for review.`
+                      : "Choose contractor cards above before sending this request."}
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="customer-request-route-contractors"
+                    onClick={routeSelectedContractors}
+                    disabled={routingContractors || contractorSearchLoading || !selectedContractors.length}
+                    className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {routingContractors ? "Sending..." : "Send Request to Selected Contractors"}
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                data-testid="customer-request-route-contractors"
-                onClick={routeSelectedContractors}
-                disabled={routingContractors || !selectedContractors.length}
-                className="rounded-xl bg-amber-300 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {routingContractors ? "Sending..." : "Send Request to Selected Contractors"}
-              </button>
             </div>
           </div>
         ) : null}

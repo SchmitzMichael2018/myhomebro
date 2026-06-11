@@ -1492,6 +1492,7 @@ test("customer portal is reachable from the landing page and loads secure record
   const consoleErrors = [];
   let submittedRequestPayload = null;
   let submittedReviewPayload = null;
+  let currentPortalPayload = portalPayload;
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
   });
@@ -1523,7 +1524,7 @@ test("customer portal is reachable from the landing page and loads secure record
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(portalPayload),
+        body: JSON.stringify(currentPortalPayload),
       });
       return;
     }
@@ -1600,63 +1601,159 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/requests/9/contractor-search/") && method === "POST") {
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        requests: currentPortalPayload.requests.map((request) =>
+          request.request_id === 9
+            ? {
+                ...request,
+                workflow_status: "contractor_matching",
+                workflow_status_label: "Contractor Matching",
+                current_next_action: "Review local contractor matches and select who should receive this request.",
+                contractor_matching_started: true,
+                source_intake_id: 99,
+                source_intake_token: "portal-intake-token",
+                source_intake: {
+                  id: 99,
+                  token: "portal-intake-token",
+                  status: "analyzed",
+                  post_submit_flow: "",
+                },
+              }
+            : request
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Contractor matching started.",
+          request_id: 9,
+          source_intake_id: 99,
+          source_intake_token: "portal-intake-token",
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/requests/9/contractors/select/") && method === "POST") {
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        requests: currentPortalPayload.requests.map((request) =>
+          request.request_id === 9
+            ? {
+                ...request,
+                workflow_status: "sent_to_contractors",
+                workflow_status_label: "Sent to 1 Contractor",
+                current_next_action: "Wait for contractor responses or continue reviewing this request.",
+                status: "routed",
+                status_label: "Routed",
+                can_edit: false,
+                edit_lock_reason: "Editing is locked after a request is sent to contractors or converted to an agreement.",
+                contractor_matching_started: true,
+                routed_contractor_count: 1,
+                routed_contractors: [
+                  {
+                    id: "opportunity-77",
+                    business_name: "Austin HVAC Pros",
+                    contact_name: "Alex Tech",
+                    phone: "512-555-0900",
+                    email: "hello@austinhvac.test",
+                    service_area: "Austin, TX",
+                    trade: "HVAC",
+                    status_label: "Sent",
+                    selection_method: "Sent from Customer Portal",
+                    selected_at: "2026-06-09T12:05:00Z",
+                  },
+                ],
+              }
+            : request
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Request sent to selected contractors.",
+          created: [{ opportunity_id: 77, contractor: "Austin HVAC Pros" }],
+          opportunity_count: 1,
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/requests/") && method === "POST") {
       submittedRequestPayload = JSON.parse(route.request().postData() || "{}");
+      currentPortalPayload = {
+        ...portalPayload,
+        requests: [
+          {
+            id: "customer-request-9",
+            request_id: 9,
+            source_kind: "customer_request",
+            source_kind_label: "Customer Portal Request",
+            request_source_label: "Customer Portal",
+            project_title: submittedRequestPayload.project_title || submittedRequestPayload.title,
+            project_scope: submittedRequestPayload.project_scope || submittedRequestPayload.description,
+            original_description: submittedRequestPayload.project_scope || submittedRequestPayload.description,
+            ai_enhanced_description: "",
+            status: "submitted",
+            status_label: "Submitted",
+            workflow_status: "reviewing_request",
+            workflow_status_label: "Reviewing Request",
+            current_next_action: "Edit the request or find contractors when you are ready.",
+            conversion_status: "Reviewing Request",
+            can_edit: true,
+            edit_lock_reason: "",
+            contractor_matching_started: false,
+            routed_contractor_count: 0,
+            routed_contractors: [],
+            request_type_label: "Maintenance",
+            project_mode_label: "Full service",
+            project_category: submittedRequestPayload.project_category || submittedRequestPayload.project_type,
+            project_type: submittedRequestPayload.project_type || submittedRequestPayload.project_category,
+            project_subtype: submittedRequestPayload.project_subtype,
+            payment_preference_label: "Escrow milestone holds",
+            property_id: submittedRequestPayload.property_id,
+            property_name: "Lake House",
+            property_profile: {
+              id: submittedRequestPayload.property_id,
+              display_name: "Lake House",
+              property_type_label: "Single Family",
+              address: "44 Lake Dr, Austin, TX, 78703",
+            },
+            homeowner_email: "customer@example.com",
+            notes: submittedRequestPayload.project_scope || submittedRequestPayload.description,
+            project_address: "44 Lake Dr, Austin, TX, 78703",
+            city: "Austin",
+            state: "TX",
+            postal_code: "78703",
+            urgency: submittedRequestPayload.urgency,
+            preferred_timeline: submittedRequestPayload.preferred_timeline,
+            created_at: "2026-06-09T12:00:00Z",
+            updated_at: "2026-06-09T12:00:00Z",
+            activity_timeline: [
+              {
+                title: "Request saved",
+                description: "Saved in your Customer Portal.",
+                occurred_at: "2026-06-09T12:00:00Z",
+              },
+            ],
+            selected_contractor: null,
+            photos: [],
+            documents: [],
+            linked_work: null,
+          },
+          ...portalPayload.requests,
+        ],
+      };
       await route.fulfill({
         status: 201,
         contentType: "application/json",
-        body: JSON.stringify({
-          ...portalPayload,
-          requests: [
-            {
-              id: "customer-request-9",
-              source_kind: "customer_request",
-              source_kind_label: "Customer Portal Request",
-              request_source_label: "Customer Portal",
-              project_title: submittedRequestPayload.project_title || submittedRequestPayload.title,
-              project_scope: submittedRequestPayload.project_scope || submittedRequestPayload.description,
-              original_description: submittedRequestPayload.project_scope || submittedRequestPayload.description,
-              ai_enhanced_description: "",
-              status: "submitted",
-              status_label: "Submitted",
-              current_next_action: "Review request details",
-              conversion_status: "Submitted",
-              request_type_label: "Maintenance",
-              project_mode_label: "Full service",
-              project_category: submittedRequestPayload.project_category || submittedRequestPayload.project_type,
-              project_type: submittedRequestPayload.project_type || submittedRequestPayload.project_category,
-              project_subtype: submittedRequestPayload.project_subtype,
-              payment_preference_label: "Escrow milestone holds",
-              property_id: submittedRequestPayload.property_id,
-              property_name: "Lake House",
-              property_profile: {
-                id: submittedRequestPayload.property_id,
-                display_name: "Lake House",
-                property_type_label: "Single Family",
-                address: "44 Lake Dr, Austin, TX, 78703",
-              },
-              homeowner_email: "customer@example.com",
-              notes: submittedRequestPayload.project_scope || submittedRequestPayload.description,
-              project_address: "44 Lake Dr, Austin, TX, 78703",
-              urgency: submittedRequestPayload.urgency,
-              preferred_timeline: submittedRequestPayload.preferred_timeline,
-              created_at: "2026-06-09T12:00:00Z",
-              updated_at: "2026-06-09T12:00:00Z",
-              activity_timeline: [
-                {
-                  title: "Request saved",
-                  description: "Saved in your Customer Portal.",
-                  occurred_at: "2026-06-09T12:00:00Z",
-                },
-              ],
-              selected_contractor: null,
-              photos: [],
-              documents: [],
-              linked_work: null,
-            },
-            ...portalPayload.requests,
-          ],
-        }),
+        body: JSON.stringify(currentPortalPayload),
       });
       return;
     }
@@ -1776,6 +1873,42 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    await route.fallback();
+  });
+
+  await page.route("**/api/projects/public-intake/contractor-search/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+    if (method === "GET" && requestUrl.includes("token=portal-intake-token")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          results: [
+            {
+              id: "directory:17",
+              source: "directory",
+              business_name: "Austin HVAC Pros",
+              contact_name: "Alex Tech",
+              phone: "512-555-0900",
+              email: "hello@austinhvac.test",
+              formatted_address: "Austin, TX",
+              service_area: "Austin, TX",
+              primary_service: "HVAC",
+              match_tier: "strong",
+              match_score: 96,
+              distance_miles: 4.2,
+            },
+          ],
+          summary: {
+            total: 1,
+            radius_miles: 25,
+            search_query: "hvac contractor",
+          },
+        }),
+      });
+      return;
+    }
     await route.fallback();
   });
 
@@ -1949,6 +2082,23 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(submittedRequestPayload?.preferred_timeline).toBe("As soon as possible");
   await expect(submittedRequestPayload?.payment_preference).toBe("escrow_milestones");
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Seasonal HVAC maintenance");
+  await page.getByTestId("customer-request-find-contractor-customer-request-9").click();
+  await expect(page.getByTestId("customer-request-contractor-search-modal")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Find a Contractor" })).toBeVisible();
+  await expect(page.getByTestId("customer-request-contractor-search-panel")).toContainText("Seasonal HVAC maintenance");
+  await expect(page.getByTestId("customer-request-contractor-search-panel")).toContainText("HVAC");
+  await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible();
+  await expect(page.getByTestId("public-intake-contractor-results-list")).toContainText("Austin HVAC Pros");
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByTestId("customer-request-contractor-search-modal")).toHaveCount(0);
+  await page.getByTestId("customer-request-find-contractor-customer-request-9").click();
+  await expect(page.getByTestId("customer-request-contractor-search-modal")).toBeVisible();
+  await page.getByTestId("public-intake-contractor-select-directory:17").click();
+  await expect(page.getByTestId("customer-request-route-contractors")).toBeEnabled();
+  await page.getByTestId("customer-request-route-contractors").click();
+  await expect(page.getByTestId("customer-request-contractor-search-modal")).toHaveCount(0);
+  await expect(page.getByTestId("customer-request-card-customer-request-9")).toContainText("Sent to 1 Contractor");
+  await expect(page.getByTestId("customer-request-card-customer-request-9")).not.toContainText("Editable before routing");
   await page.getByTestId("customer-request-view-customer-request-9").click();
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Request Details");
   await expect(page.getByTestId("customer-request-detail-summary")).toContainText("Request Summary");
@@ -1962,6 +2112,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("As soon as possible");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Escrow milestone holds");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("44 Lake Dr, Austin, TX, 78703");
+  await expect(page.getByTestId("customer-request-detail-selected-contractor")).toContainText("Austin HVAC Pros");
   await expect(page.getByTestId("customer-request-detail-activity")).toContainText("Request saved");
   await page.getByRole("button", { name: "Close request details" }).click();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
