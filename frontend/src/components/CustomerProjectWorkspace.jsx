@@ -79,6 +79,21 @@ function Badge({ children, tone = "slate", ...props }) {
   );
 }
 
+const AMENDMENT_CHANGE_TYPES = [
+  ["scope_change", "Scope Change"],
+  ["timeline_change", "Timeline Change"],
+  ["price_change", "Price Change"],
+  ["milestone_change", "Milestone Change"],
+  ["descope_remove_work", "De-scope / Remove Work"],
+  ["materials_change", "Materials Change"],
+  ["warranty_change", "Warranty Change"],
+  ["other", "Other"],
+];
+
+function amendmentChangeTypeLabel(value) {
+  return AMENDMENT_CHANGE_TYPES.find(([key]) => key === value)?.[1] || "Other";
+}
+
 function Section({ title, eyebrow, children, testId }) {
   return (
     <section data-testid={testId} className="rounded-2xl border border-slate-700/80 bg-slate-950/55 p-5 shadow-xl shadow-slate-950/20">
@@ -667,6 +682,9 @@ export default function CustomerProjectWorkspace({
   const [reimbursementAction, setReimbursementAction] = useState("");
   const [actionModal, setActionModal] = useState("");
   const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [amendmentAiBusy, setAmendmentAiBusy] = useState(false);
+  const [amendmentAiError, setAmendmentAiError] = useState("");
+  const [amendmentSuggestion, setAmendmentSuggestion] = useState(null);
   const [actionForm, setActionForm] = useState({
     change_type: "scope_change",
     requested_change: "",
@@ -1134,6 +1152,9 @@ export default function CustomerProjectWorkspace({
   };
 
   const openHomeownerAction = (kind) => {
+    setAmendmentAiBusy(false);
+    setAmendmentAiError("");
+    setAmendmentSuggestion(null);
     setActionForm({
       change_type: "scope_change",
       requested_change: "",
@@ -1146,6 +1167,48 @@ export default function CustomerProjectWorkspace({
       attachment_note: "",
     });
     setActionModal(kind);
+  };
+
+  const improveAmendmentRequest = async () => {
+    const requestedChange = String(actionForm.requested_change || "").trim();
+    if (!token || !selectedRow?.agreement?.id || !requestedChange) {
+      setAmendmentAiError("Describe the change first.");
+      return;
+    }
+    setAmendmentAiBusy(true);
+    setAmendmentAiError("");
+    setAmendmentSuggestion(null);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/agreements/${encodeURIComponent(selectedRow.agreement.id)}/amendments/improve/`,
+        {
+          requested_change: requestedChange,
+          current_change_type: actionForm.change_type,
+        }
+      );
+      setAmendmentSuggestion({
+        original_request: data?.original_request || requestedChange,
+        suggested_change_type: data?.suggested_change_type || actionForm.change_type || "other",
+        suggested_change_type_label: data?.suggested_change_type_label || amendmentChangeTypeLabel(data?.suggested_change_type || actionForm.change_type),
+        improved_description: data?.improved_description || requestedChange,
+        clarification_questions: Array.isArray(data?.clarification_questions) ? data.clarification_questions : [],
+        evidence_note: data?.evidence_note || "",
+      });
+    } catch (error) {
+      setAmendmentAiError(error?.response?.data?.detail || "Could not improve this request right now.");
+    } finally {
+      setAmendmentAiBusy(false);
+    }
+  };
+
+  const applyAmendmentSuggestion = () => {
+    if (!amendmentSuggestion) return;
+    setActionForm((current) => ({
+      ...current,
+      change_type: amendmentSuggestion.suggested_change_type || current.change_type,
+      requested_change: amendmentSuggestion.improved_description || current.requested_change,
+      attachment_note: amendmentSuggestion.evidence_note || current.attachment_note,
+    }));
   };
 
   const submitHomeownerAction = async () => {
@@ -1991,24 +2054,121 @@ export default function CustomerProjectWorkspace({
 
             <div className="mt-5 space-y-4">
               {actionModal === "amendment" ? (
-                <label className="block text-sm font-semibold text-slate-200">
-                  Change type
-                  <select
-                    data-testid="customer-action-change-type"
-                    value={actionForm.change_type}
-                    onChange={(event) => setActionForm((current) => ({ ...current, change_type: event.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none focus:border-amber-300"
-                  >
-                    <option value="scope_change">Scope Change</option>
-                    <option value="timeline_change">Timeline Change</option>
-                    <option value="price_change">Price Change</option>
-                    <option value="milestone_change">Milestone Change</option>
-                    <option value="descope_remove_work">De-scope / Remove Work</option>
-                    <option value="materials_change">Materials Change</option>
-                    <option value="warranty_change">Warranty Change</option>
-                    <option value="other">Other</option>
-                  </select>
-                </label>
+                <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4">
+                  <label className="block text-sm font-semibold text-amber-50">
+                    Describe the change you want to request
+                    <textarea
+                      data-testid="customer-action-requested-change"
+                      value={actionForm.requested_change}
+                      onChange={(event) => {
+                        setActionForm((current) => ({ ...current, requested_change: event.target.value }));
+                        setAmendmentAiError("");
+                      }}
+                      rows={6}
+                      className="mt-2 w-full rounded-xl border border-amber-200/40 bg-slate-950 px-3 py-2 text-white outline-none placeholder:text-slate-500 focus:border-amber-200"
+                      placeholder={`I want to remove the closet expansion from the project.
+Can we change the tile material to porcelain?
+I need to delay the start date by two weeks.
+The price should be adjusted because we removed part of the work.`}
+                    />
+                  </label>
+                  <p className="mt-3 text-sm leading-6 text-amber-50/85">
+                    Describe the change in your own words. MyHomeBro can help clean it up, categorize it, and prepare it for
+                    contractor review. This asks the contractor to review a proposed change and does not modify the signed
+                    agreement automatically.
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      data-testid="customer-action-ai-improve"
+                      onClick={improveAmendmentRequest}
+                      disabled={amendmentAiBusy || !String(actionForm.requested_change || "").trim()}
+                      className="inline-flex min-h-11 items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-200 disabled:opacity-60"
+                    >
+                      {amendmentAiBusy ? "Improving..." : "Improve & Categorize with AI"}
+                    </button>
+                    {amendmentAiError ? (
+                      <span data-testid="customer-action-ai-error" className="text-sm font-semibold text-rose-200">
+                        {amendmentAiError}
+                      </span>
+                    ) : null}
+                  </div>
+                  {amendmentSuggestion ? (
+                    <div
+                      data-testid="customer-action-ai-suggestion"
+                      className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/75 p-4 text-sm text-slate-200"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200/80">
+                        Review AI suggestion before submitting
+                      </div>
+                      <div className="mt-3 grid gap-3">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Original request</div>
+                          <p className="mt-1 leading-6 text-slate-300">{amendmentSuggestion.original_request}</p>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Suggested category</div>
+                          <p className="mt-1 font-semibold text-amber-100">{amendmentSuggestion.suggested_change_type_label}</p>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Improved description</div>
+                          <p className="mt-1 leading-6 text-white">{amendmentSuggestion.improved_description}</p>
+                        </div>
+                        {amendmentSuggestion.clarification_questions?.length ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Questions to consider</div>
+                            <ul className="mt-1 list-disc space-y-1 pl-5 leading-6 text-slate-300">
+                              {amendmentSuggestion.clarification_questions.map((question) => (
+                                <li key={question}>{question}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                        {amendmentSuggestion.evidence_note ? (
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Evidence or document suggestion</div>
+                            <p className="mt-1 leading-6 text-slate-300">{amendmentSuggestion.evidence_note}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid="customer-action-apply-ai-suggestion"
+                          onClick={applyAmendmentSuggestion}
+                          className="rounded-xl bg-amber-300 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-200"
+                        >
+                          Apply AI suggestion
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAmendmentSuggestion(null)}
+                          className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-slate-500"
+                        >
+                          Edit manually
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <label className="mt-4 block text-sm font-semibold text-slate-200">
+                    Change type, optional
+                    <select
+                      data-testid="customer-action-change-type"
+                      value={actionForm.change_type}
+                      onChange={(event) => setActionForm((current) => ({ ...current, change_type: event.target.value }))}
+                      className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none focus:border-amber-300"
+                    >
+                      {AMENDMENT_CHANGE_TYPES.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="mt-2 block text-xs font-normal leading-5 text-slate-400">
+                      You can choose or change the category yourself. Contractor approval or a formal change order may still be required.
+                    </span>
+                  </label>
+                </div>
               ) : null}
 
               {actionModal === "refund" ? (
@@ -2129,20 +2289,6 @@ export default function CustomerProjectWorkspace({
                     />
                   </label>
                 </>
-              ) : null}
-
-              {actionModal === "amendment" ? (
-                <label className="block text-sm font-semibold text-slate-200">
-                  Requested change
-                  <textarea
-                    data-testid="customer-action-requested-change"
-                    value={actionForm.requested_change}
-                    onChange={(event) => setActionForm((current) => ({ ...current, requested_change: event.target.value }))}
-                    rows={4}
-                    className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none focus:border-amber-300"
-                    placeholder="Describe the change you want reviewed."
-                  />
-                </label>
               ) : null}
 
               <label className="block text-sm font-semibold text-slate-200">

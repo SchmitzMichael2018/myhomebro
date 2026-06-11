@@ -20365,6 +20365,34 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_customer_portal_amendment_improve_categorizes_plain_language_request(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/agreements/{self.agreement.id}/amendments/improve/",
+            {
+                "requested_change": "I want to remove the closet expansion from the project.",
+                "current_change_type": "scope_change",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["suggested_change_type"], "descope_remove_work")
+        self.assertEqual(response.data["suggested_change_type_label"], "De-scope / Remove Work")
+        self.assertIn("proposed de-scope change", response.data["improved_description"])
+        self.assertIn("evidence_note", response.data)
+        self.assertEqual(response.data["source"], "ai_advisory")
+
+    def test_customer_portal_amendment_improve_rejects_other_customer_agreement(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/agreements/{self.other_agreement.id}/amendments/improve/",
+            {"requested_change": "Delay the start date by two weeks."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+
     def test_contractor_can_create_and_homeowner_can_respond_to_amendment_request(self):
         milestone = Milestone.objects.create(
             agreement=self.agreement,

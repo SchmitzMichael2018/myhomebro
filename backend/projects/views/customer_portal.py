@@ -4020,6 +4020,136 @@ class CustomerPortalAgreementDisputeSerializer(serializers.Serializer):
     evidence_note = serializers.CharField(required=False, allow_blank=True)
 
 
+class CustomerPortalAgreementAmendmentImproveView(APIView):
+    permission_classes = [AllowAny]
+
+    class InputSerializer(serializers.Serializer):
+        requested_change = serializers.CharField()
+        current_change_type = serializers.ChoiceField(
+            choices=[
+                "scope_change",
+                "timeline_change",
+                "price_change",
+                "milestone_change",
+                "descope_remove_work",
+                "materials_change",
+                "warranty_change",
+                "other",
+            ],
+            required=False,
+        )
+
+    CHANGE_TYPE_LABELS = {
+        "scope_change": "Scope Change",
+        "timeline_change": "Timeline Change",
+        "price_change": "Price Change",
+        "milestone_change": "Milestone Change",
+        "descope_remove_work": "De-scope / Remove Work",
+        "materials_change": "Materials Change",
+        "warranty_change": "Warranty Change",
+        "other": "Other",
+    }
+
+    def _suggest_change_type(self, requested_change: str, current_change_type: str = "") -> str:
+        text = requested_change.lower()
+        if re.search(r"\b(remove|cancel|exclude|take out|cut|de[- ]?scope|reduce scope|remaining work)\b", text):
+            return "descope_remove_work"
+        if re.search(r"\b(tile|material|porcelain|fixture|paint|color|supplier|product|brand|finish)\b", text):
+            return "materials_change"
+        if re.search(r"\b(delay|start date|schedule|timeline|week|month|deadline|reschedule)\b", text):
+            return "timeline_change"
+        if re.search(r"\b(price|cost|amount|credit|refund|adjust|lower|increase|decrease|budget)\b", text):
+            return "price_change"
+        if re.search(r"\b(milestone|phase|draw|payment schedule|payment amount)\b", text):
+            return "milestone_change"
+        if re.search(r"\b(warranty|coverage|guarantee|covered)\b", text):
+            return "warranty_change"
+        if re.search(r"\b(add|replace|change|expand|scope|work)\b", text):
+            return "scope_change"
+        return current_change_type or "other"
+
+    def _improve_description(self, requested_change: str, change_type: str) -> str:
+        clean = re.sub(r"\s+", " ", requested_change).strip()
+        if not clean:
+            return ""
+        if clean.endswith("."):
+            clean = clean[:-1]
+        prefix = "Please review this proposed change"
+        if change_type == "descope_remove_work":
+            prefix = "Please review this proposed de-scope change"
+        elif change_type == "materials_change":
+            prefix = "Please review this proposed materials change"
+        elif change_type == "timeline_change":
+            prefix = "Please review this proposed timeline change"
+        elif change_type == "price_change":
+            prefix = "Please review this proposed price change"
+        elif change_type == "milestone_change":
+            prefix = "Please review this proposed milestone change"
+        elif change_type == "warranty_change":
+            prefix = "Please review this proposed warranty change"
+        return f"{prefix}: {clean}."
+
+    def _clarifying_questions(self, requested_change: str, change_type: str) -> list[str]:
+        text = requested_change.lower()
+        questions: list[str] = []
+        if len(requested_change.strip()) < 40:
+            questions.append("Which specific work, material, date, or milestone should the contractor review?")
+        if change_type in {"price_change", "descope_remove_work"} and not re.search(r"\$|\b\d+(\.\d+)?\b", text):
+            questions.append("What amount or revised project value should the contractor consider, if known?")
+        if change_type == "timeline_change" and not re.search(r"\b(date|week|month|day|start|finish|delay)\b", text):
+            questions.append("What date or timing change are you requesting?")
+        if change_type == "materials_change" and not re.search(r"\b(to|from|brand|model|porcelain|tile|color|finish)\b", text):
+            questions.append("Which material or product should be changed, and what should replace it?")
+        return questions[:3]
+
+    def _evidence_note(self, change_type: str) -> str:
+        notes = {
+            "descope_remove_work": "A revised scope list, estimate, or note identifying removed milestones can help the contractor review this.",
+            "price_change": "A revised estimate, receipt, or written price basis can help support this request.",
+            "materials_change": "A supplier quote, material sample, product link, or photo can help support this request.",
+            "timeline_change": "A schedule constraint, delivery date, or availability note can help support this request.",
+            "milestone_change": "A milestone list, payment schedule note, or project update can help support this request.",
+            "warranty_change": "A warranty document, product detail, or contractor warranty note can help support this request.",
+        }
+        return notes.get(change_type, "Photos, documents, estimates, or notes from your project records can help support this request.")
+
+    def post(self, request, token: str, agreement_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        agreement = _portal_agreement_for_email(email, agreement_id)
+        if not agreement:
+            return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested_change = _safe_text(serializer.validated_data.get("requested_change"))
+        if not requested_change:
+            return Response({"detail": "Describe the change first."}, status=status.HTTP_400_BAD_REQUEST)
+
+        change_type = self._suggest_change_type(
+            requested_change,
+            serializer.validated_data.get("current_change_type") or "",
+        )
+        return Response(
+            {
+                "detail": "Amendment request improved.",
+                "original_request": requested_change,
+                "suggested_change_type": change_type,
+                "suggested_change_type_label": self.CHANGE_TYPE_LABELS.get(change_type, "Other"),
+                "improved_description": self._improve_description(requested_change, change_type),
+                "clarification_questions": self._clarifying_questions(requested_change, change_type),
+                "evidence_note": self._evidence_note(change_type),
+                "source": "ai_advisory",
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class CustomerPortalAgreementAmendmentRequestView(APIView):
     permission_classes = [AllowAny]
 

@@ -2419,6 +2419,23 @@ test("customer portal limits long home records, payments, and documents without 
       });
       return;
     }
+    if (route.request().method() === "POST" && requestUrl.includes("/agreements/105/amendments/improve/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Amendment request improved.",
+          original_request: "I want to remove the remaining cabinet installation milestone.",
+          suggested_change_type: "descope_remove_work",
+          suggested_change_type_label: "De-scope / Remove Work",
+          improved_description: "Please review this proposed de-scope change: remove the remaining cabinet installation milestone.",
+          clarification_questions: ["What revised project value should the contractor consider, if known?"],
+          evidence_note: "A revised scope list or estimate can help the contractor review this.",
+          source: "ai_advisory",
+        }),
+      });
+      return;
+    }
     if (route.request().method() === "POST" && requestUrl.includes("/agreements/105/amendments/")) {
       amendmentPayload = JSON.parse(route.request().postData() || "{}");
       await route.fulfill({
@@ -2485,6 +2502,22 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Need to Change Something?");
   await page.getByTestId("customer-action-amendment").click();
   await expect(page.getByTestId("customer-action-modal")).toContainText("Request Amendment");
+  await expect(page.getByTestId("customer-action-modal")).toContainText("Describe the change you want to request");
+  await expect(page.getByTestId("customer-action-modal")).toContainText("does not modify the signed agreement automatically");
+  await page.getByTestId("customer-action-requested-change").fill("I want to remove the remaining cabinet installation milestone.");
+  await page.getByTestId("customer-action-ai-improve").click();
+  await expect(page.getByTestId("customer-action-ai-suggestion")).toContainText("Original request");
+  await expect(page.getByTestId("customer-action-ai-suggestion")).toContainText("Suggested category");
+  await expect(page.getByTestId("customer-action-ai-suggestion")).toContainText("De-scope / Remove Work");
+  await expect(page.getByTestId("customer-action-ai-suggestion")).toContainText("Improved description");
+  await expect(page.getByTestId("customer-action-ai-suggestion")).toContainText("Evidence or document suggestion");
+  await page.getByTestId("customer-action-apply-ai-suggestion").click();
+  await expect(page.getByTestId("customer-action-requested-change")).toHaveValue(
+    "Please review this proposed de-scope change: remove the remaining cabinet installation milestone."
+  );
+  await expect(page.getByTestId("customer-action-change-type")).toHaveValue("descope_remove_work");
+  await page.getByTestId("customer-action-change-type").selectOption("materials_change");
+  await expect(page.getByTestId("customer-action-change-type")).toHaveValue("materials_change");
   await page.getByTestId("customer-action-change-type").selectOption("descope_remove_work");
   await expect(page.getByTestId("customer-action-descope-summary")).toContainText("De-scope / Remove Work");
   await page.getByTestId("customer-action-revised-project-value").fill("15000");
@@ -2495,12 +2528,12 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-action-descope-summary")).toContainText("Escrow currently funded");
   await expect(page.getByTestId("customer-action-descope-summary")).toContainText("Estimated refundable escrow surplus");
   await expect(page.getByTestId("customer-action-descope-summary")).toContainText("$5,000.00");
-  await page.getByTestId("customer-action-requested-change").fill("Please remove the remaining cabinet installation milestone.");
   await page.getByTestId("customer-action-reason").fill("We are cancelling the remaining work and reducing the project value.");
   await page.getByTestId("customer-action-submit").click();
   await expect(page.getByTestId("customer-action-modal")).toHaveCount(0);
   expect(amendmentPayload).toMatchObject({
     change_type: "descope_remove_work",
+    requested_change: "Please review this proposed de-scope change: remove the remaining cabinet installation milestone.",
     revised_project_value: "15000",
   });
   await page.getByTestId("customer-project-filter-all").click();
