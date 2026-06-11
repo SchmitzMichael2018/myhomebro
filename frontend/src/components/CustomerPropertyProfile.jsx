@@ -279,6 +279,10 @@ function normalizeHomeSystem(system) {
     reminderLeadDays: Number(system.reminder_lead_days ?? 30),
     reminderFrequency: system.reminder_frequency || "once",
     reminderDeliveryStatus: system.reminder_delivery_status || "",
+    reminderChannel: system.reminder_channel || "",
+    lastNotifiedAt: system.last_notified_at || "",
+    nextNotificationAt: system.next_notification_at || "",
+    dismissedUntil: system.dismissed_until || "",
     isStructured: true,
   };
 }
@@ -446,7 +450,7 @@ const MAINTENANCE_STATUS_LABELS = {
   unknown: "Unknown",
 };
 
-function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], onMarkServiced, onEditSystem, onCreateServiceRequest }) {
+function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], onMarkServiced, onEditSystem, onCreateServiceRequest, onDismissReminder }) {
   const health = intelligence?.health || {};
   const buckets = intelligence?.buckets || {};
   const groupedSystems = {
@@ -480,7 +484,15 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
         <div><dt className="text-slate-500">Next suggested</dt><dd className="font-semibold text-slate-200">{system.nextRecommendedServiceDate ? formatDate(system.nextRecommendedServiceDate) : "Needs details"}</dd></div>
         <div><dt className="text-slate-500">Warranty</dt><dd className="font-semibold text-slate-200">{system.warrantyExpiration ? formatDate(system.warrantyExpiration) : "Not recorded"}</dd></div>
         <div><dt className="text-slate-500">Reminders</dt><dd className="font-semibold text-slate-200">{system.remindersEnabled ? `${system.reminderLeadDays} day ${system.reminderFrequency}` : "Off"}</dd></div>
+        <div><dt className="text-slate-500">Last reminded</dt><dd className="font-semibold text-slate-200">{system.lastNotifiedAt ? formatDate(system.lastNotifiedAt) : "Not sent"}</dd></div>
+        <div><dt className="text-slate-500">Next reminder</dt><dd className="font-semibold text-slate-200">{system.nextNotificationAt ? formatDate(system.nextNotificationAt) : system.dismissedUntil ? `Dismissed until ${formatDate(system.dismissedUntil)}` : "Not scheduled"}</dd></div>
       </dl>
+      <div className="mt-3 text-xs text-slate-400">
+        Channels: {[
+          system.emailRemindersEnabled ? "Email" : "",
+          system.smsRemindersEnabled ? "SMS" : "",
+        ].filter(Boolean).join(", ") || "None"}
+      </div>
       <p className="mt-3 text-sm font-semibold text-sky-100">{system.recommendedAction || "Keep this system record up to date."}</p>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" data-testid={`property-maintenance-mark-serviced-${system.id}`} onClick={() => onMarkServiced?.(system)} className="rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20">
@@ -491,6 +503,9 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
         </button>
         <button type="button" data-testid={`property-maintenance-manage-notifications-${system.id}`} onClick={() => onEditSystem?.(system)} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20">
           Manage Notifications
+        </button>
+        <button type="button" data-testid={`property-maintenance-dismiss-${system.id}`} onClick={() => onDismissReminder?.(system)} className="rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">
+          Dismiss Reminder
         </button>
         <button type="button" data-testid={`property-maintenance-create-request-${system.id}`} onClick={() => onCreateServiceRequest?.(system)} className="rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400">
           Create Service Request
@@ -559,6 +574,7 @@ function emptySystemForm(propertyId) {
     sms_reminders_enabled: false,
     reminder_lead_days: 30,
     reminder_frequency: "once",
+    dismissed_until: null,
     notes: "",
     linked_document_ids: [],
   };
@@ -584,6 +600,7 @@ function systemToForm(system, propertyId) {
     sms_reminders_enabled: system.sms_reminders_enabled ?? system.smsRemindersEnabled ?? false,
     reminder_lead_days: system.reminder_lead_days ?? system.reminderLeadDays ?? 30,
     reminder_frequency: system.reminder_frequency || system.reminderFrequency || "once",
+    dismissed_until: system.dismissed_until || system.dismissedUntil || null,
     notes: system.notes || "",
     linked_document_ids: (system.linked_documents || system.linkedDocuments || []).map((document) => Number(document.record_id || String(document.id || "").replace("property-document-", ""))).filter(Boolean),
   };
@@ -895,7 +912,7 @@ function timelineRows({ profile, projects, agreements, documents, payments, main
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest }) {
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
@@ -936,6 +953,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         onMarkServiced={onMarkServiced}
         onEditSystem={onEditSystem}
         onCreateServiceRequest={onCreateServiceRequest}
+        onDismissReminder={onDismissReminder}
       />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
@@ -1241,6 +1259,10 @@ export default function CustomerPropertyProfile({
         onMarkServiced={(system) => setServiceSystem(system)}
         onCreateServiceRequest={async (system) => {
           await onCreateSystemServiceRequest?.(system.id);
+        }}
+        onDismissReminder={async (system) => {
+          const dismissedUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+          await onUpdateSystem?.(system.id, { dismissed_until: dismissedUntil });
         }}
       />
 

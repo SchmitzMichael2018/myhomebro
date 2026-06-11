@@ -6,6 +6,7 @@ import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -21314,8 +21315,107 @@ class CustomerPortalAccessTests(TestCase):
             1,
         )
         self.assertEqual(system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_SENT)
-        self.assertEqual(system.reminder_channel, "in_app")
+        self.assertEqual(system.reminder_channel, NotificationRule.CHANNEL_EMAIL_STUB)
         self.assertIsNotNone(system.last_notified_at)
+
+    def test_home_system_reminder_dispatch_respects_frequency_dismiss_and_disabled_state(self):
+        from projects.services.home_system_reminders import dispatch_home_system_reminders
+
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        due_system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+            reminder_frequency=PropertyHomeSystem.REMINDER_FREQUENCY_WEEKLY,
+        )
+        disabled_system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_WATER_HEATER,
+            custom_name="Disabled water heater",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=500),
+            reminders_enabled=False,
+        )
+        dismissed_system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_ROOF,
+            custom_name="Dismissed roof",
+            warranty_expiration_date=timezone.localdate() + timezone.timedelta(days=20),
+            dismissed_until=timezone.now() + timezone.timedelta(days=10),
+        )
+
+        dry_run = dispatch_home_system_reminders(dry_run=True)
+        self.assertEqual(dry_run.sent, 0)
+        self.assertEqual(SmartNotification.objects.filter(event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER).count(), 0)
+
+        result = dispatch_home_system_reminders()
+        self.assertEqual(result.sent, 1)
+        due_system.refresh_from_db()
+        self.assertEqual(due_system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_SENT)
+        self.assertIsNotNone(due_system.next_notification_at)
+        self.assertEqual(
+            SmartNotification.objects.filter(
+                event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
+                channel=NotificationRule.CHANNEL_EMAIL_STUB,
+            ).count(),
+            1,
+        )
+
+        duplicate = dispatch_home_system_reminders()
+        self.assertEqual(duplicate.sent, 0)
+        self.assertEqual(SmartNotification.objects.filter(event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER).count(), 1)
+        disabled_system.refresh_from_db()
+        dismissed_system.refresh_from_db()
+        self.assertFalse(disabled_system.reminders_enabled)
+        self.assertEqual(dismissed_system.reminder_delivery_status, "")
+
+    def test_home_system_reminder_dispatch_skips_sms_without_opt_in_or_provider(self):
+        from projects.services.home_system_reminders import dispatch_home_system_reminders
+
+        self.customer_homeowner.phone_number = "512-555-0101"
+        self.customer_homeowner.save(update_fields=["phone_number"])
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="SMS HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+            email_reminders_enabled=False,
+            sms_reminders_enabled=True,
+        )
+
+        result = dispatch_home_system_reminders(channel="sms")
+
+        self.assertEqual(result.sent, 0)
+        self.assertEqual(result.skipped, 1)
+        system.refresh_from_db()
+        self.assertEqual(system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_SKIPPED)
+        self.assertEqual(SmartNotification.objects.filter(channel=NotificationRule.CHANNEL_SMS_STUB).count(), 0)
+
+    def test_send_home_system_reminders_management_command_reports_counts(self):
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Command HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+        )
+        output = StringIO()
+
+        call_command("send_home_system_reminders", "--dry-run", stdout=output)
+
+        self.assertIn("scanned=", output.getvalue())
+        self.assertIn("dry_run=True", output.getvalue())
+        self.assertEqual(SmartNotification.objects.filter(event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER).count(), 0)
 
     def test_customer_portal_property_intelligence_generates_advisory_insights_and_snapshot(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
