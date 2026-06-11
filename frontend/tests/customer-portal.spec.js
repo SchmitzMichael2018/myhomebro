@@ -1834,6 +1834,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-activation-checklist")).not.toContainText("Fund escrow or review payments");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Invoice for Kitchen Remodel");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Draw for Kitchen Remodel");
+  await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Main HVAC may need attention");
   await expect(page.getByTestId("customer-unified-recommendations")).toBeVisible();
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("What may need attention");
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("HVAC Maintenance");
@@ -1955,6 +1956,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-detail-activity")).toContainText("Request saved");
   await page.getByRole("button", { name: "Close request details" }).click();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("customer-request-card-request-1")).toContainText("Agreement Draft Created");
+  await expect(page.getByTestId("customer-request-card-request-1")).toContainText("Converted to project agreement");
   await page.getByTestId("customer-request-view-request-1").click();
   await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("Project Details");
   await expect(page.getByTestId("customer-request-detail-project-details")).toContainText("Original Homeowner Description");
@@ -2063,10 +2066,20 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Internal payment email row");
 
   await page.getByTestId("customer-dashboard-tab-documents").click();
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Home Document Vault");
+  await expect(page.getByTestId("customer-documents-vault-controls")).toBeVisible();
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Invoices & Receipts");
-  await expect(page.getByTestId("customer-portal-documents")).toContainText("Other Property Documents");
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Other");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Scope Addendum");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("scope-addendum.txt");
+  await page.getByTestId("customer-documents-category-filter").selectOption("Warranties");
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Roof warranty");
+  await expect(page.getByTestId("customer-portal-documents")).not.toContainText("Scope Addendum");
+  await page.getByTestId("customer-documents-category-filter").selectOption("All");
+  await page.getByTestId("customer-documents-search").fill("scope");
+  await expect(page.getByTestId("customer-portal-documents")).toContainText("Scope Addendum");
+  await expect(page.getByTestId("customer-portal-documents")).not.toContainText("Roof warranty");
+  await page.getByTestId("customer-documents-search").fill("");
   await page.getByLabel("Title").fill("Water heater warranty");
   await page.getByLabel("Document type").fill("Warranty");
   await page.getByTestId("customer-documents-upload-file").setInputFiles({

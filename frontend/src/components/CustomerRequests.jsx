@@ -139,6 +139,55 @@ function TextBlock({ label, value, empty }) {
   );
 }
 
+function homeownerRequestStatus(request = {}, bids = []) {
+  const status = String(request.status || "").toLowerCase();
+  const label = String(request.status_label || "").trim();
+  const conversion = String(request.conversion_status || "").toLowerCase();
+  const contractor = request.selected_contractor || null;
+  const bidCount = Number(request.bids_count ?? bids.length ?? 0);
+  if (request.linked_work || request.agreement_token || conversion.includes("agreement")) return "Agreement Draft Created";
+  if (contractor?.status_label && String(contractor.status_label).toLowerCase().includes("agreement")) return "Agreement Draft Created";
+  if (contractor || status.includes("selected") || status.includes("awarded")) return "Contractor Selected";
+  if (bidCount > 0) return "Contractor Responses Received";
+  if (status.includes("routed") || status.includes("sent")) return "Sent to Contractors";
+  if (status.includes("analyzed") || status.includes("matching")) return "Preparing Contractor Match";
+  if (status.includes("submitted")) return "Reviewing Request";
+  if (status.includes("draft")) return "Draft";
+  if (status.includes("closed") || status.includes("archived") || status.includes("cancel")) return "Closed";
+  return label || "Submitted";
+}
+
+function requestMatchingText(request = {}, bids = []) {
+  const bidCount = Number(request.bids_count ?? bids.length ?? 0);
+  if (request.linked_work || request.agreement_token) return "Converted to project agreement";
+  if (bidCount > 0) return `${bidCount} contractor response${bidCount === 1 ? "" : "s"} received`;
+  if (request.selected_contractor) return "Contractor selected";
+  const status = homeownerRequestStatus(request, bids).toLowerCase();
+  if (status.includes("sent")) return "Contractor matching has started";
+  if (status.includes("preparing")) return "Preparing contractor match";
+  if (status.includes("reviewing")) return "Matching has not started yet";
+  if (status.includes("draft")) return "Not submitted or routed yet";
+  return "Matching status pending";
+}
+
+function requestNextStep(request = {}, bids = []) {
+  const explicit = displayValue(request.current_next_action || request.action_label);
+  if (explicit && !["view request", "review request details"].includes(explicit.toLowerCase())) return explicit;
+  if (request.linked_work || request.agreement_token) return "Open the linked agreement when you are ready.";
+  if (Number(request.bids_count ?? bids.length ?? 0) > 1) return "Compare contractor responses before selecting a contractor.";
+  if (Number(request.bids_count ?? bids.length ?? 0) === 1) return "Review the contractor response.";
+  if (request.selected_contractor) return "Wait for the contractor to respond or prepare agreement details.";
+  return "Review the request details. It stays private until contractor routing is started.";
+}
+
+function requestCanEditText(request = {}) {
+  if (request.linked_work || request.agreement_token) return "Linked agreement available";
+  const status = homeownerRequestStatus(request).toLowerCase();
+  if (status.includes("draft") || status.includes("reviewing")) return "Editable before routing";
+  if (status.includes("closed")) return "Closed";
+  return "Changes may need follow-up";
+}
+
 function RequestTimeline({ items = [] }) {
   const visible = items.filter((item) => displayValue(item?.title) || displayValue(item?.description));
   if (!visible.length) {
@@ -625,15 +674,21 @@ export default function CustomerRequests({
         <div className="mt-4 space-y-3">
           {requests.length ? (
             requests.map((request) => (
-              <div key={request.id} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+              <div key={request.id} data-testid={`customer-request-card-${request.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
+                  <div className="min-w-0">
                     <div className="text-sm font-semibold text-white">{request.project_title}</div>
                     <div className="mt-1 text-sm text-slate-400">{request.project_scope || request.notes || request.project_address || "Request details pending."}</div>
+                    <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2 lg:grid-cols-3">
+                      <span><strong className="text-slate-200">Property:</strong> {request.property_name || request.project_address || request.property_profile?.address || "Property pending"}</span>
+                      <span><strong className="text-slate-200">Matching:</strong> {requestMatchingText(request, requestBids(request))}</span>
+                      <span><strong className="text-slate-200">Next:</strong> {requestNextStep(request, requestBids(request))}</span>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge>{request.project_type || request.project_category || request.request_type_label || request.project_class_label || "Request"}</Badge>
-                    <Badge>{request.status_label || "Submitted"}</Badge>
+                    <HighlightBadge>{homeownerRequestStatus(request, requestBids(request))}</HighlightBadge>
+                    <Badge>{requestCanEditText(request)}</Badge>
                     <button
                       type="button"
                       data-testid={`customer-request-view-${request.id}`}
@@ -693,9 +748,11 @@ export default function CustomerRequests({
               <div className="mt-5 space-y-4">
                 <DetailSection title="Request Summary" eyebrow="Submitted Request" testId="customer-request-detail-summary">
                   <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <DetailField label="Status" value={selectedRequest.status_label || "Submitted"} />
+                    <DetailField label="Current Status" value={homeownerRequestStatus(selectedRequest, requestBids(selectedRequest))} />
                     <DetailField label="Source" value={selectedRequest.request_source_label || selectedRequest.source_kind_label} />
-                    <DetailField label="Next Action" value={selectedRequest.current_next_action || selectedRequest.action_label} />
+                    <DetailField label="What Happens Next" value={requestNextStep(selectedRequest, requestBids(selectedRequest))} />
+                    <DetailField label="Contractor Matching" value={requestMatchingText(selectedRequest, requestBids(selectedRequest))} />
+                    <DetailField label="Can Edit / Cancel" value={requestCanEditText(selectedRequest)} />
                     <DetailField label="Conversion Status" value={selectedRequest.conversion_status} />
                     <DetailField label="Submitted" value={formatDateTime(selectedRequest.created_at)} />
                     <DetailField label="Last Updated" value={formatDateTime(selectedRequest.updated_at || selectedRequest.latest_activity)} />

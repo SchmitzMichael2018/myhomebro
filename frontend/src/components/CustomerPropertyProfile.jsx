@@ -806,7 +806,7 @@ function HomeSystemServiceModal({ system, saving, onClose, onSubmit }) {
 }
 
 
-function timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, homeSystems = [] }) {
+function timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems = [] }) {
   const rows = [];
   for (const system of homeSystems) {
     if (system.updated_at || system.created_at) {
@@ -850,6 +850,30 @@ function timelineRows({ profile, projects, agreements, documents, payments, main
       url: project.action,
       actionLabel: project.action ? "View project" : "",
     });
+  }
+  for (const request of requests || []) {
+    const title = request.project_title || request.title || "Service request";
+    const status = request.status_label || request.conversion_status || "Submitted";
+    const projectAddress = request.project_address || request.property_profile?.address || "";
+    rows.push({
+      id: `request-${request.id}`,
+      date: request.latest_activity || request.updated_at || request.created_at,
+      title,
+      type: "Request",
+      detail: `${status}${projectAddress ? ` - ${projectAddress}` : ""}`,
+      actionLabel: "View request",
+    });
+    if (request.linked_work || request.agreement_token || String(request.conversion_status || "").toLowerCase().includes("agreement")) {
+      rows.push({
+        id: `request-converted-${request.id}`,
+        date: request.updated_at || request.latest_activity || request.created_at,
+        title: `${title} became a project`,
+        type: "Agreement",
+        detail: request.linked_work?.status_label || request.conversion_status || "Agreement draft created",
+        url: request.linked_work?.agreement_url || (request.agreement_token ? `/agreements/magic/${request.agreement_token}` : ""),
+        actionLabel: request.linked_work?.agreement_url || request.agreement_token ? "View agreement" : "",
+      });
+    }
   }
   for (const document of [...(documents || []), ...(profile?.documents || [])]) {
     rows.push({
@@ -926,7 +950,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
   const warranties = warrantyRows(agreements, documents, systems.filter((system) => system.isStructured));
   const activeProjects = activeProjectRows(projects);
   const openRequests = openRequestRows(requests);
-  const timeline = timelineRows({ profile, projects, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
+  const timeline = timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
   const importantDocuments = [
     ...grouped.Warranties,
     ...grouped.Agreements,
@@ -969,7 +993,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
                         <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{item.type}</span>
                         <span className="text-sm font-semibold text-white">{item.title}</span>
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">{item.detail}</div>
+                      <div className="mt-1 text-sm text-slate-400">{item.detail || item.description}</div>
                       {item.actionLabel ? (
                         <div className="mt-2 text-xs font-semibold text-sky-100">{item.actionLabel}</div>
                       ) : null}

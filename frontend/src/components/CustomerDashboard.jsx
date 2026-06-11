@@ -864,6 +864,43 @@ function agreementNeedsCustomerAction(agreement = {}) {
   );
 }
 
+function systemNeedsHomeownerAttention(system = {}) {
+  const status = String(system.maintenance_status || system.maintenanceStatus || "").toLowerCase();
+  const priority = String(system.priority || "").toLowerCase();
+  return (
+    status.includes("overdue") ||
+    status.includes("due_soon") ||
+    status.includes("warranty_expir") ||
+    status.includes("lifespan") ||
+    priority === "high" ||
+    priority === "critical"
+  );
+}
+
+function homeSystemAttentionItems(portal = {}) {
+  const profiles = Array.isArray(portal.property_profiles)
+    ? portal.property_profiles
+    : portal.property_profile?.id
+      ? [portal.property_profile]
+      : [];
+  const rows = [];
+  for (const profile of profiles) {
+    for (const system of profile.home_systems || []) {
+      if (!systemNeedsHomeownerAttention(system)) continue;
+      const label = system.display_name || system.custom_name || system.system_type_label || "Home system";
+      const reason = system.reminder_reason || system.recommended_action || "Maintenance may need attention.";
+      rows.push({
+        id: `system-${profile.id || "property"}-${system.id || label}`,
+        title: `${label} may need attention`,
+        body: `${profile.display_name || profile.address || "Your property"} - ${reason}`,
+        action: "Open Property",
+        tab: "property",
+      });
+    }
+  }
+  return rows;
+}
+
 function CustomerActivationChecklist({ portal, onOpenTab }) {
   const [expanded, setExpanded] = useState(false);
   const property = portal?.property_profile || {};
@@ -1083,6 +1120,7 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
       action: "Track Issue Status",
       tab: "payments",
     })),
+    ...homeSystemAttentionItems(portal).slice(0, 2),
     ...actionableNotifications.slice(0, 3).map((notification) => ({
       id: `notification-${notification.id}`,
       title: notification.title || "Workspace update",
@@ -1101,7 +1139,37 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
 
   return (
     <div data-testid="customer-dashboard-overview" className="space-y-5">
-      <section data-testid="customer-overview-active-projects" className="rounded-2xl border border-amber-300/30 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.14),transparent_34%),rgba(15,23,42,0.78)] p-5">
+      <section data-testid="customer-overview-needs-attention" className="rounded-2xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_34%),rgba(15,23,42,0.86)] p-5 shadow-xl shadow-slate-950/25">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Needs Attention</div>
+            <h2 className="mt-1 text-2xl font-semibold text-white">What needs my attention?</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+              Homeowner-resolvable actions only: signatures, escrow funding, payment reviews, contractor responses, disputes, and maintenance due.
+            </p>
+          </div>
+          <Badge tone={needsAttention.length ? "gold" : "slate"}>{needsAttention.length || "No"} open</Badge>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {needsAttention.length ? (
+            needsAttention.slice(0, 5).map((item) => (
+              <InfoCard
+                key={item.id}
+                title={item.title}
+                body={item.body}
+                actionLabel={item.action}
+                onClick={() => onOpenTab?.(item.tab)}
+              />
+            ))
+          ) : (
+            <div className="lg:col-span-2 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+              Nothing needs your attention right now. New signatures, payment reviews, contractor responses, disputes, and maintenance reminders will appear here.
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section data-testid="customer-overview-active-projects" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Projects</div>
@@ -1129,36 +1197,6 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
               <EmptyState title="No active projects yet" testId="customer-overview-projects-empty">
                 Projects will appear here after a request becomes an agreement or a contractor connects project records to your email.
               </EmptyState>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section data-testid="customer-overview-needs-attention" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Needs Attention</div>
-            <h2 className="mt-1 text-xl font-semibold text-white">What needs my attention?</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-              Clear next actions only: signatures, payment reviews, disputes, and contractor responses that you can resolve.
-            </p>
-          </div>
-          <Badge tone={needsAttention.length ? "gold" : "slate"}>{needsAttention.length || "No"} open</Badge>
-        </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {needsAttention.length ? (
-            needsAttention.slice(0, 4).map((item) => (
-              <InfoCard
-                key={item.id}
-                title={item.title}
-                body={item.body}
-                actionLabel={item.action}
-                onClick={() => onOpenTab?.(item.tab)}
-              />
-            ))
-          ) : (
-            <div className="lg:col-span-2 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-              Nothing needs your attention right now. New signatures, payment reviews, and project updates will appear here.
             </div>
           )}
         </div>
