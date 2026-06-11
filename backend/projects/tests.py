@@ -3357,13 +3357,10 @@ class ContractorPublicPresenceApiTests(TestCase):
 
         ids = [row["id"] for row in payload["results"]]
         self.assertIn(f"listing:{concrete_listing.id}", ids)
-        self.assertIn(f"contractor:{roof_contractor.id}", ids)
+        self.assertNotIn(f"contractor:{roof_contractor.id}", ids)
         concrete_row = next(row for row in payload["results"] if row["id"] == f"listing:{concrete_listing.id}")
-        roof_row = next(row for row in payload["results"] if row["id"] == f"contractor:{roof_contractor.id}")
-        self.assertLess(ids.index(f"listing:{concrete_listing.id}"), ids.index(f"contractor:{roof_contractor.id}"))
-        self.assertGreater(concrete_row["compatibility_score"], roof_row["compatibility_score"])
-        self.assertEqual(roof_row["recommendation_tier"], "Limited Match")
-        self.assertIn("Roofing trade does not match", " ".join(roof_row["recommendation_reasons"]))
+        self.assertEqual(concrete_row["recommendation_tier"], "Strong Match")
+        self.assertIn("Primary concrete / patio trade matches", " ".join(concrete_row["recommendation_reasons"]))
 
     def test_concrete_driveway_query_returns_concrete_contractors(self):
         from projects.services.google_places_contractors import infer_project_places_query
@@ -4317,6 +4314,196 @@ class ContractorPublicPresenceApiTests(TestCase):
         "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
         return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
     )
+    def test_pool_contractor_discovery_prioritizes_primary_trade_over_related_trades(self, _mock_places):
+        from projects.models_contractor_discovery import ContractorDirectoryListing
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_CACHED_DIRECTORY,
+            business_name="Blue Water Pool Builders",
+            city="Austin",
+            state="TX",
+            latitude=30.27,
+            longitude=-97.74,
+            primary_trade="Pool Contractor",
+            trade_categories=["Pool Builder", "Pool Installation"],
+            google_rating=4.4,
+            google_review_count=10,
+        )
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_CACHED_DIRECTORY,
+            business_name="Pipe Pros Plumbing",
+            city="Austin",
+            state="TX",
+            latitude=30.27,
+            longitude=-97.74,
+            primary_trade="Plumbing",
+            trade_categories=["Plumbing"],
+            google_rating=5.0,
+            google_review_count=200,
+        )
+        ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_CACHED_DIRECTORY,
+            business_name="Bright Wire Electrical",
+            city="Austin",
+            state="TX",
+            latitude=30.27,
+            longitude=-97.74,
+            primary_trade="Electrical",
+            trade_categories=["Electrical"],
+            google_rating=5.0,
+            google_review_count=200,
+        )
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Pool Installation",
+                "project_type": "Pool",
+                "project_subtype": "Pool Installation",
+                "description": "Install a backyard pool.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="pool",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+
+        names = [row["business_name"] for row in payload["results"]]
+        self.assertEqual(names[0], "Blue Water Pool Builders")
+        self.assertIn("Pipe Pros Plumbing", names)
+        self.assertIn("Bright Wire Electrical", names)
+        pool_row = next(row for row in payload["results"] if row["business_name"] == "Blue Water Pool Builders")
+        plumbing_row = next(row for row in payload["results"] if row["business_name"] == "Pipe Pros Plumbing")
+        self.assertEqual(pool_row["recommendation_tier"], "Strong Match")
+        self.assertNotEqual(plumbing_row["recommendation_tier"], "Strong Match")
+        self.assertIn("pool contractor", payload["summary"]["search_query"].lower())
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={
+            "diagnostic": {"configured": True, "requested": True, "results_count": 2, "google_raw_count": 2, "after_distance_filter_count": 2},
+            "results": [
+                {
+                    "source": "google_places",
+                    "google_place_id": "hoa-pool",
+                    "business_name": "Oak Creek HOA Pool",
+                    "formatted_address": "1 Clubhouse Dr, Austin, TX",
+                    "city": "Austin",
+                    "state": "TX",
+                    "latitude": 30.268,
+                    "longitude": -97.744,
+                    "distance_miles": 1.0,
+                    "primary_trade": "Swimming pool facility",
+                    "trade_categories": ["swimming_pool", "recreation_center"],
+                    "google_rating": 4.9,
+                    "google_review_count": 250,
+                },
+                {
+                    "source": "google_places",
+                    "google_place_id": "pool-builder",
+                    "business_name": "Real Pool Builder LLC",
+                    "formatted_address": "2 Contractor Rd, Austin, TX",
+                    "city": "Austin",
+                    "state": "TX",
+                    "latitude": 30.269,
+                    "longitude": -97.745,
+                    "distance_miles": 1.1,
+                    "primary_trade": "Pool Contractor",
+                    "trade_categories": ["pool_builder", "pool_installation"],
+                    "google_rating": 4.2,
+                    "google_review_count": 20,
+                },
+            ],
+        },
+    )
+    def test_pool_contractor_discovery_excludes_non_contractor_facilities(self, _mock_places):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Pool Installation",
+                "project_type": "Pool",
+                "project_subtype": "Pool Installation",
+                "description": "Install a pool.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="pool",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+
+        names = [row["business_name"] for row in payload["results"]]
+        self.assertIn("Real Pool Builder LLC", names)
+        self.assertNotIn("Oak Creek HOA Pool", names)
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
+    )
+    def test_verified_wrong_trade_contractor_is_not_strong_match_for_pool_request(self, _mock_places):
+        from projects.services.contractor_discovery import build_contractor_recommendations
+
+        self.contractor.marketplace_verification_status = Contractor.MARKETPLACE_VERIFIED
+        self.contractor.marketplace_preferred = True
+        self.contractor.save(update_fields=["marketplace_verification_status", "marketplace_preferred", "updated_at"])
+        self.profile.specialties = ["Electrical", "Panel Upgrades"]
+        self.profile.work_types = ["Electrical Repairs"]
+        self.profile.bio = "Verified electrical contractor for wiring and panels."
+        self.profile.save(update_fields=["specialties", "work_types", "bio", "updated_at"])
+
+        payload = build_contractor_recommendations(
+            payload={
+                "project_title": "Pool Installation",
+                "project_type": "Pool",
+                "project_subtype": "Pool Installation",
+                "description": "Install a backyard pool.",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+            },
+            query="pool",
+            latitude=30.2672,
+            longitude=-97.7431,
+            limit=5,
+        )
+
+        row = next(row for row in payload["results"] if row["business_name"] == "Bright Build Co")
+        self.assertTrue(row["contractor_verified"])
+        self.assertNotEqual(row["recommendation_tier"], "Strong Match")
+        self.assertLess(row["compatibility_score"], 45)
+        self.assertNotIn("Relevant trade experience appears in the contractor profile.", row["recommendation_reasons"])
+
+    def test_contractor_discovery_infers_expected_trade_queries_for_common_repairs(self):
+        from projects.services.google_places_contractors import infer_project_places_query
+
+        examples = [
+            ("Dryer Repair", "Dryer Repair", "Dryer is making loud noises.", "appliance repair contractor"),
+            ("Roofing", "Repair", "Roof leak near chimney.", "roofing contractor"),
+            ("Plumbing", "Plumbing Repair", "Toilet is leaking at the base.", "plumber"),
+            ("Gutters", "Gutter Installation", "Install new gutters and downspouts.", "gutter contractor gutter installation"),
+            ("HVAC", "HVAC Repair", "HVAC is making noise.", "hvac contractor"),
+        ]
+        for project_type, subtype, description, expected in examples:
+            with self.subTest(description=description):
+                self.assertEqual(
+                    infer_project_places_query(
+                        project_type=project_type,
+                        project_subtype=subtype,
+                        description=description,
+                    ),
+                    expected,
+                )
+
+    @patch(
+        "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+        return_value={"diagnostic": {"configured": True, "requested": True, "results_count": 0}, "results": []},
+    )
     def test_bedroom_extension_overrides_stale_flooring_and_patio_classification(self, _mock_places):
         from projects.services.contractor_discovery import build_contractor_recommendations
         from projects.services.project_titles import generate_project_title, normalize_project_classification
@@ -4587,11 +4774,12 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertRegex(payload["summary"]["search_query"].lower(), r"kitchen remodeling contractor|countertop installer")
         results = payload["results"]
         self.assertGreaterEqual(len(results), 3)
-        self.assertEqual(results[0]["label"], "Claimed Contractor")
-        self.assertEqual(results[0]["source_label"], "Claimed Contractor")
-        self.assertEqual(results[0]["phone"], "512-555-0100")
-        self.assertEqual(results[0]["public_email"], "hello@brightbuild.example")
         listing_row = next(row for row in results if row["id"] == f"listing:{listing.id}")
+        claimed_row = next(row for row in results if row["label"] == "Claimed Contractor")
+        self.assertLess(results.index(listing_row), results.index(claimed_row))
+        self.assertEqual(claimed_row["source_label"], "Claimed Contractor")
+        self.assertEqual(claimed_row["phone"], "512-555-0100")
+        self.assertEqual(claimed_row["public_email"], "hello@brightbuild.example")
         self.assertEqual(listing_row["label"], "Local Business Listing")
         self.assertEqual(listing_row["source_label"], "Local Business Listing")
         self.assertEqual(listing_row["phone"], "512-555-0199")

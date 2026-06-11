@@ -7,11 +7,14 @@ from typing import Any
 import requests
 from django.conf import settings
 from projects.services.project_titles import is_home_addition_description
+from projects.services.contractor_trade_relevance import contractor_entity_excluded, project_trade_intent
 
 logger = logging.getLogger(__name__)
 
 
 PROJECT_TYPE_QUERY_MAP = {
+    "pool": "pool contractor pool builder pool service company",
+    "appliance": "appliance repair contractor",
     "roofing": "roofing contractor",
     "plumbing": "plumber",
     "electrical": "electrician",
@@ -101,6 +104,9 @@ def google_places_api_key() -> str:
 def project_type_to_places_query(project_type: Any, project_subtype: Any = "") -> str:
     text = _safe_text(project_type).lower()
     subtype = _safe_text(project_subtype).lower()
+    intent = project_trade_intent(text, subtype)
+    if intent:
+        return intent.query
     if "outdoor living" in text and any(term in subtype for term in ["patio", "hardscape", "paver"]):
         return "patio contractor concrete contractor hardscape contractor"
     for key, query in PROJECT_TYPE_QUERY_MAP.items():
@@ -136,6 +142,9 @@ def infer_project_places_query(
 
     if is_home_addition_description(description, project_scope_summary):
         return "home addition contractor"
+    intent = project_trade_intent(project_type, project_subtype, project_title, description, project_scope_summary)
+    if intent:
+        return intent.query
     if any(term in text for term in ["floor", "flooring", "hardwood", "laminate", "vinyl", "tile"]):
         return "flooring installation contractor" if any(term in text for term in ["install", "installation"]) else "flooring contractor"
     if any(term in text for term in ["electrical", "electrician", "panel", "wiring"]):
@@ -155,10 +164,10 @@ def infer_project_places_query(
             return "hardscape contractor patio contractor masonry contractor"
         return "concrete contractor"
     if any(term in text for term in ["kitchen", "cabinet", "countertop", "quartz", "granite"]):
-        if "cabinet" in text:
-            return "cabinet installer"
         if any(term in text for term in ["countertop", "quartz", "granite"]):
             return "countertop installer"
+        if "cabinet" in text:
+            return "cabinet installer"
         return "kitchen remodeling contractor"
 
     hints: list[str] = []
@@ -230,9 +239,11 @@ def _place_text(place: dict[str, Any]) -> str:
 
 
 def should_exclude_place_for_context(place: dict[str, Any], *, concrete_or_patio_context: bool = False) -> bool:
+    text = _place_text(place)
+    if contractor_entity_excluded(text):
+        return True
     if not concrete_or_patio_context:
         return False
-    text = _place_text(place)
     return any(keyword in text for keyword in EXCLUDED_CONTRACTOR_KEYWORDS)
 
 

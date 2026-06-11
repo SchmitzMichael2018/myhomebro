@@ -55,6 +55,7 @@ from projects.services.contractor_discovery import (
     create_discovery_invites,
 )
 from projects.services.google_places_contractors import geocode_project_location, search_google_places_contractors_with_diagnostics
+from projects.services.contractor_trade_relevance import contractor_entity_excluded, project_trade_intent, trade_fit
 
 
 def _safe_text(value) -> str:
@@ -610,7 +611,7 @@ def _score_admin_search_relevance(place: dict, query: str) -> dict:
             reason = "Business name shares search words."
 
     raw_services = []
-    for key in ["primaryType", "types", "services", "raw_services", "normalized_services", "primary_service"]:
+    for key in ["primaryType", "types", "services", "raw_services", "normalized_services", "primary_service", "primary_trade", "trade_categories"]:
         value = place.get(key)
         if isinstance(value, list):
             raw_services.extend(_safe_text(item) for item in value)
@@ -621,6 +622,23 @@ def _score_admin_search_relevance(place: dict, query: str) -> dict:
     if service_overlap and score < 68:
         score = max(score, 58 + min(len(service_overlap) * 6, 18))
         reason = "Service/category data overlaps with the search term."
+
+    trade_text = " ".join([place_name, " ".join(raw_services), _safe_text(place.get("formatted_address") or place.get("formattedAddress"))])
+    intent = project_trade_intent(query)
+    if contractor_entity_excluded(trade_text):
+        score = 0
+        reason = "Non-contractor entity filtered from contractor search."
+    elif intent:
+        fit = trade_fit(intent, trade_text)
+        if fit.get("level") == "primary":
+            score = max(score, 84)
+            reason = fit.get("reason") or "Primary trade matches the search."
+        elif fit.get("level") == "secondary":
+            score = min(max(score, 44), 49)
+            reason = fit.get("reason") or "Related trade may support part of the search."
+        else:
+            score = min(score, 35)
+            reason = fit.get("reason") or "Trade metadata does not match the search."
 
     if score >= 80:
         label = "Strong Match"
@@ -701,6 +719,13 @@ def _expanded_admin_search_query(query: str) -> str:
     if not text or any(term in lowered for term in ["contractor", "company", "installer", "electrician", "plumber", "roofer"]):
         return text
     trade_aliases = {
+        "pool": "pool contractor pool builder pool service company",
+        "pool installation": "pool contractor pool builder pool service company",
+        "appliance": "appliance repair contractor",
+        "dryer": "appliance repair contractor",
+        "refrigerator": "appliance repair contractor",
+        "gutter": "gutter contractor gutter installation",
+        "gutters": "gutter contractor gutter installation",
         "roof": "roofing contractor",
         "roofing": "roofing contractor",
         "floor": "flooring contractor",

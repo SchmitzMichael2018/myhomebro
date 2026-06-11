@@ -6,6 +6,7 @@ from typing import Any, Iterable
 from projects.services.milestone_roles import detect_restricted_trade_categories
 from projects.services.payment_protection import build_payment_protection_summary
 from projects.services.contractor_capabilities import get_contractor_capability_flags
+from projects.services.contractor_trade_relevance import apply_trade_fit_cap, project_trade_intent
 
 
 def _safe_text(value: Any) -> str:
@@ -359,6 +360,7 @@ def score_contractor_project_match(contractor, project_payload: Any, profile=Non
         project.get("project_scope_summary", ""),
         project.get("project_mode", ""),
     )
+    trade_intent = project_trade_intent(project_text, project.get("project_scope_summary", ""))
 
     score = 0
     reasons: list[str] = []
@@ -375,7 +377,13 @@ def score_contractor_project_match(contractor, project_payload: Any, profile=Non
     overlap = len(contractor_tokens.intersection(project_tokens))
     if overlap:
         add(min(22, overlap * 4), "Trade and scope keywords overlap.", "trade_match")
-    if any(term in project_text for term in ["electrical", "plumbing", "roofing", "hvac", "inspection", "consultation", "rescue"]):
+    if trade_intent:
+        _intent_score, intent_fit = apply_trade_fit_cap(0, trade_intent, contractor_blob)
+        if intent_fit.get("level") == "primary":
+            add(24, intent_fit.get("reason") or "Primary trade matches the request.", "trade_match")
+        elif intent_fit.get("level") == "secondary":
+            add(4, intent_fit.get("reason") or "Related trade may support this request.", "trade_match")
+    elif any(term in project_text for term in ["electrical", "plumbing", "roofing", "hvac", "inspection", "consultation", "rescue"]):
         project_hint_points = 0
         if any(term in contractor_blob for term in ["electrical", "plumbing", "roofing", "hvac", "inspection", "consultation"]):
             project_hint_points = 8
@@ -463,6 +471,11 @@ def score_contractor_project_match(contractor, project_payload: Any, profile=Non
     if project.get("project_risk") == "high" and (compatibility.get("inspection_capable") or getattr(contractor, "license_number", "")):
         add(4, "High-risk work is better suited to a licensed contractor.", "safety")
 
+    if trade_intent:
+        score, intent_fit = apply_trade_fit_cap(score, trade_intent, contractor_blob)
+        if intent_fit.get("reason"):
+            reasons.append(intent_fit["reason"])
+            reasons_detail.append({"category": "trade_fit", "points": intent_fit.get("score_delta", 0), "reason": intent_fit["reason"]})
     score = max(0, min(score, 100))
     if score >= 75:
         tier = "Strong Match"

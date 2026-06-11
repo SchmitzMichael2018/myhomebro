@@ -15,6 +15,12 @@ from projects.models import Contractor, ContractorPublicProfile, PublicContracto
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite
 from projects.services.contractor_capabilities import get_contractor_capability_flags
 from projects.services.contractor_matching import score_contractor_project_match
+from projects.services.contractor_trade_relevance import (
+    apply_trade_fit_cap,
+    contractor_entity_excluded,
+    project_trade_intent,
+    trade_fit,
+)
 from projects.services.google_places_contractors import (
     calculate_distance_miles,
     geocode_project_location,
@@ -220,8 +226,14 @@ def _resolve_project_location(*, intake=None, project: dict[str, Any], latitude:
 
 def _broader_contractor_queries(query: str) -> list[str]:
     text = _safe_text(query).lower()
+    if "pool" in text:
+        return ["pool contractor", "pool builder", "pool service company"]
+    if "appliance" in text or "dryer" in text or "refrigerator" in text:
+        return ["appliance repair contractor", "dryer repair", "refrigerator repair"]
+    if "gutter" in text or "downspout" in text:
+        return ["gutter contractor", "gutter installation", "gutter repair"]
     if "floor" in text:
-        return ["flooring contractor", "floor installation contractor", "flooring company"]
+        return ["floor installation contractor", "flooring contractor", "flooring company"]
     if "concrete" in text or "patio" in text:
         return ["concrete contractor", "patio contractor", "hardscape contractor", "masonry contractor"]
     if "cabinet" in text or "countertop" in text or "kitchen" in text:
@@ -287,6 +299,16 @@ def _contains_any(text: str, terms: set[str]) -> bool:
 
 
 def _project_trade_family(project: dict[str, Any]) -> str:
+    intent = project_trade_intent(
+        project.get("project_type"),
+        project.get("project_subtype"),
+        project.get("project_title"),
+        project.get("description"),
+        project.get("project_scope_summary"),
+        project.get("contractor_search_query"),
+    )
+    if intent:
+        return intent.key
     text = " ".join(
         _safe_text(value).lower().replace("_", " ")
         for value in [
@@ -314,8 +336,26 @@ def _project_trade_family(project: dict[str, Any]) -> str:
 
 
 def _score_trade_family_alignment(project: dict[str, Any], contractor_text: str) -> tuple[int, list[str]]:
-    family = _project_trade_family(project)
+    intent = project_trade_intent(
+        project.get("project_type"),
+        project.get("project_subtype"),
+        project.get("project_title"),
+        project.get("description"),
+        project.get("project_scope_summary"),
+        project.get("contractor_search_query"),
+    )
     text = _safe_text(contractor_text).lower().replace("_", " ")
+    if intent:
+        fit = trade_fit(intent, text)
+        if fit["level"] == "primary":
+            return 35, [fit["reason"]]
+        if fit["level"] == "secondary":
+            return 6, [fit["reason"]]
+        if fit["level"] in {"unrelated", "missing"}:
+            return -35, [fit["reason"]]
+        if fit["level"] == "excluded":
+            return -100, [fit["reason"]]
+    family = _project_trade_family(project)
     if family == "concrete_patio":
         if _contains_any(text, CONCRETE_PATIO_MATCH_TERMS):
             return 35, ["Patio, concrete, hardscape, or outdoor-living trade aligns with the request."]
@@ -352,6 +392,9 @@ def _sanitize_search_query_for_project(query: str, project: dict[str, Any]) -> s
     )
     if is_home_addition_description(description_text):
         return "home addition contractor"
+    intent = project_trade_intent(classification, project.get("description"), project.get("project_scope_summary"), query)
+    if intent:
+        return intent.query
     source = classification or full_text
     if any(term in source for term in ["floor", "flooring", "hardwood", "laminate", "vinyl", "tile"]):
         return "flooring installation contractor" if any(term in full_text for term in ["install", "installation"]) else "flooring contractor"
@@ -366,10 +409,10 @@ def _sanitize_search_query_for_project(query: str, project: dict[str, Any]) -> s
             return "hardscape contractor patio contractor masonry contractor"
         return "concrete contractor"
     if any(term in source for term in ["kitchen", "cabinet", "countertop", "quartz", "granite"]):
-        if "cabinet" in full_text:
-            return "cabinet installer"
         if any(term in full_text for term in ["countertop", "quartz", "granite"]):
             return "countertop installer"
+        if "cabinet" in full_text:
+            return "cabinet installer"
         return "kitchen remodeling contractor"
     if any(term in source for term in ["electrical", "electrician", "panel", "wiring"]):
         return "electrician"
@@ -585,6 +628,26 @@ def _score_listing(project: dict[str, Any], listing: ContractorDirectoryListing)
             _safe_text(listing.formatted_address),
         ]
     )
+    intent = project_trade_intent(
+        project.get("project_type"),
+        project.get("project_subtype"),
+        project.get("project_title"),
+        project.get("description"),
+        project.get("project_scope_summary"),
+        project.get("contractor_search_query"),
+    )
+    if contractor_entity_excluded(listing_text):
+        return {
+            "score": 0,
+            "tier": "Excluded",
+            "reasons": ["Non-contractor entity filtered from contractor discovery."],
+            "supported_modes": ["full_service"],
+            "escrow_friendly": False,
+            "assisted_diy_friendly": False,
+            "inspection_capable": False,
+            "rescue_project_friendly": False,
+            "excluded": True,
+        }
     project_tokens = _trade_keywords(project)
     listing_tokens = _trade_keywords(
         {
@@ -639,6 +702,10 @@ def _score_listing(project: dict[str, Any], listing: ContractorDirectoryListing)
     family_delta, family_reasons = _score_trade_family_alignment(project, listing_text)
     score += family_delta
     reasons.extend(family_reasons)
+    if intent:
+        score, fit = apply_trade_fit_cap(score, intent, listing_text)
+        if fit.get("reason"):
+            reasons.append(fit["reason"])
 
     score = max(0, min(score, 100))
     if score >= 75:
@@ -687,6 +754,23 @@ def _build_card_from_contractors(contractor: Contractor, profile: ContractorPubl
             "score": adjusted_score,
             "reasons": list(dict.fromkeys([*(match.get("reasons") or []), *family_reasons])),
             "tier": "Strong Match" if adjusted_score >= 75 else "Good Match" if adjusted_score >= 45 else "Limited Match",
+        }
+    intent = project_trade_intent(
+        project.get("project_type"),
+        project.get("project_subtype"),
+        project.get("project_title"),
+        project.get("description"),
+        project.get("project_scope_summary"),
+        project.get("contractor_search_query"),
+    )
+    if intent:
+        capped_score, fit = apply_trade_fit_cap(int(match.get("score", 0) or 0), intent, contractor_text)
+        reasons = list(dict.fromkeys([*(match.get("reasons") or []), *([fit.get("reason")] if fit.get("reason") else [])]))
+        match = {
+            **match,
+            "score": capped_score,
+            "reasons": reasons,
+            "tier": "Strong Match" if capped_score >= 75 else "Good Match" if capped_score >= 45 else "Limited Match",
         }
     claimed = True
     distance_miles = None
@@ -894,6 +978,7 @@ def build_contractor_recommendations(
         project_scope_summary=project.get("project_scope_summary"),
     )
     search_query = _sanitize_search_query_for_project(search_query, project)
+    project["contractor_search_query"] = search_query
     try:
         requested_radius = int(float(radius_miles or 25))
     except Exception:
@@ -956,6 +1041,14 @@ def build_contractor_recommendations(
 
     results: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
+    trade_intent = project_trade_intent(
+        project.get("project_type"),
+        project.get("project_subtype"),
+        project.get("project_title"),
+        project.get("description"),
+        project.get("project_scope_summary"),
+        search_query,
+    )
 
     # Build keyword stems from search_query for trade-relevance filtering of cached listings.
     # We use 4-char stems so "electrician"→"elec" matches "electrical", "plumb" matches "plumbing", etc.
@@ -968,6 +1061,8 @@ def build_contractor_recommendations(
 
     for contractor, profile in _iter_contractors_for_public_profiles():
         card = _build_card_from_contractors(contractor, profile, project)
+        if trade_intent and int(card.get("compatibility_score", 0) or 0) <= 0:
+            continue
         if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
             continue
         if card.get("distance_miles") is not None and float(card.get("distance_miles")) > radius:
@@ -980,6 +1075,8 @@ def build_contractor_recommendations(
 
     for listing in ContractorDirectoryListing.objects.all().order_by("-claimed_profile", "-google_review_count", "-google_rating", "business_name")[:100]:
         card = _build_card_from_listing(listing, project)
+        if card.get("recommendation_tier") == "Excluded":
+            continue
         if project_state and _safe_text(card.get("state")).lower() and _safe_text(card.get("state")).lower() != project_state:
             continue
         if not card.get("claimed") and card.get("distance_miles") is None:
@@ -993,7 +1090,10 @@ def build_contractor_recommendations(
                 " ".join(listing.trade_categories or []).replace("_", " "),
                 _safe_text(listing.business_name),
             ]).lower()
-            if not any(stem in _trade_text for stem in _search_stems):
+            intent_fit = trade_fit(trade_intent, _trade_text) if trade_intent else {"level": "unknown"}
+            if trade_intent and intent_fit.get("level") not in {"primary", "secondary"}:
+                continue
+            if not trade_intent and not any(stem in _trade_text for stem in _search_stems):
                 continue
         key = card["id"]
         if key in seen_keys:
@@ -1064,6 +1164,8 @@ def build_contractor_recommendations(
         if listing is None:
             continue
         card = _build_card_from_listing(listing, project)
+        if card.get("recommendation_tier") == "Excluded":
+            continue
         if card.get("distance_miles") is None or float(card.get("distance_miles")) > radius:
             continue
         key = card["id"]
@@ -1083,7 +1185,11 @@ def build_contractor_recommendations(
         )
     )
     max_results = max(limit, 1)
-    local_results = [row for row in results if row.get("label") == "Local Business Listing"]
+    local_results = [
+        row
+        for row in results
+        if row.get("label") == "Local Business Listing" and int(row.get("compatibility_score", 0) or 0) >= 45
+    ]
     sliced_results = results[:max_results]
     if local_results and not any(row.get("label") == "Local Business Listing" for row in sliced_results) and max_results > 1:
         sliced_results = sliced_results[: max_results - 1] + [local_results[0]]
