@@ -2440,29 +2440,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-photo-gallery")).toHaveCount(0);
   await expect(page.getByTestId("home-records-important-documents")).toHaveCount(0);
   await expect(page.getByTestId("home-records-document-groups")).toHaveCount(0);
-  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Documents & Photos");
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/All \(\d+\)/);
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Agreements \(\d+\)/);
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Invoices & Receipts \(\d+\)/);
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Warranties \(\d+\)/);
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Photos \(\d+\)/);
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Permits \(\d+\)/);
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Manuals \(\d+\)/);
-  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Insurance \/ HOA \(\d+\)/);
-  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Before kitchen photo");
-  await page.getByTestId("home-records-open-documents").click();
+  await expect(page.getByTestId("home-records-documents-photos")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-document-filters")).toHaveCount(0);
+  await expect(page.getByTestId("customer-property-upload-form")).toHaveCount(0);
+  await expect(page.getByTestId("property-view-documents")).toContainText("View documents for this property");
+  await page.getByTestId("property-view-documents").click();
   await expect(page.getByTestId("customer-dashboard-tab-documents")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
-  await page.getByLabel("File type").selectOption("photo");
-  await page.getByLabel("Title").fill("Kitchen after photo");
-  await page.getByTestId("customer-property-upload-file").setInputFiles({
-    name: "kitchen-after.jpg",
-    mimeType: "image/jpeg",
-    buffer: Buffer.from("photo"),
-  });
-  await page.getByRole("button", { name: "Upload property file" }).click();
-  await expect(page.getByTestId("customer-property-profile")).toContainText("Kitchen after photo");
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-portal-bid-accept-lead-2")).toContainText("Award Bid");
@@ -2681,9 +2666,10 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No property timeline yet");
   await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
   await expect(page.getByTestId("property-photo-gallery")).toHaveCount(0);
-  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Documents & Photos");
-  await expect(page.getByTestId("home-records-document-filters")).toContainText("Photos (0)");
-  await expect(page.getByTestId("customer-property-files-empty")).toContainText("No property files yet");
+  await expect(page.getByTestId("home-records-documents-photos")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-document-filters")).toHaveCount(0);
+  await expect(page.getByTestId("customer-property-upload-form")).toHaveCount(0);
+  await expect(page.getByTestId("property-view-documents")).toContainText("View documents for this property");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
   await expect(page.getByTestId("customer-notifications-center-empty")).toContainText("No notifications yet");
@@ -2909,11 +2895,10 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("home-records-important-documents")).toHaveCount(0);
   await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
   await expect(page.getByTestId("property-photo-gallery")).toHaveCount(0);
-  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Documents & Photos");
-  await page.getByTestId("home-records-documents-filter-warranties").click();
-  await expect(page.getByTestId("home-records-documents-photos")).not.toContainText("Extra warranty document 7");
-  await page.getByTestId("home-records-documents-show-more").click();
-  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Extra warranty document 7");
+  await expect(page.getByTestId("home-records-documents-photos")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-document-filters")).toHaveCount(0);
+  await expect(page.getByTestId("customer-property-upload-form")).toHaveCount(0);
+  await expect(page.getByTestId("property-view-documents")).toBeVisible();
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-payment-history")).not.toContainText("Paid receipt 6");

@@ -77,44 +77,6 @@ function categoryForDocument(item) {
   return "Other";
 }
 
-const DOCUMENT_PHOTO_CATEGORIES = [
-  "All",
-  "Agreements",
-  "Invoices & Receipts",
-  "Warranties",
-  "Photos",
-  "Permits",
-  "Manuals",
-  "Insurance / HOA",
-  "Other",
-];
-
-function documentGroups(profile, documents) {
-  const rows = [
-    ...(documents || []),
-    ...(profile?.documents || []),
-    ...(profile?.photos || []).map((photo) => ({ ...photo, type_label: photo.type_label || "Photo" })),
-  ];
-  const seen = new Set();
-  const grouped = {
-    Agreements: [],
-    "Invoices & Receipts": [],
-    Warranties: [],
-    Photos: [],
-    Permits: [],
-    Manuals: [],
-    "Insurance / HOA": [],
-    Other: [],
-  };
-  for (const row of rows) {
-    const key = `${row.id || ""}|${row.url || ""}|${row.title || ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    grouped[categoryForDocument(row)].push(row);
-  }
-  return grouped;
-}
-
 function warrantyRows(agreements, documents, homeSystems = []) {
   const agreementRows = (agreements || [])
     .filter((agreement) => String(agreement.warranty_text || "").trim())
@@ -906,23 +868,14 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
 
 function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
-  const [documentsExpanded, setDocumentsExpanded] = useState(false);
-  const [documentCategory, setDocumentCategory] = useState("All");
-  const grouped = documentGroups(profile, documents);
-  const completedProjects = completedProjectRows(projects, agreements, documents);
   const maintenance = maintenanceRows(maintenanceWorkOrders);
   const hasStructuredSystems = Array.isArray(profile?.home_systems);
   const systems = hasStructuredSystems
     ? (profile.home_systems || []).map(normalizeHomeSystem)
     : systemRows({ projects, agreements, documents, requests, maintenanceWorkOrders, propertyIntelligence });
   const timeline = timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
-  const allDocuments = Object.values(grouped).flat();
-  const categoryRows = documentCategory === "All" ? allDocuments : grouped[documentCategory] || [];
-  const categoryCount = (category) => category === "All" ? allDocuments.length : (grouped[category] || []).length;
   const timelineDefaultCount = 5;
-  const documentsDefaultCount = 5;
   const visibleTimeline = timelineExpanded ? timeline : timeline.slice(0, timelineDefaultCount);
-  const visibleDocuments = documentsExpanded ? categoryRows : categoryRows.slice(0, documentsDefaultCount);
 
   return (
     <div className="space-y-5">
@@ -938,120 +891,61 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         onDismissReminder={onDismissReminder}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <Section title="Timeline / History" eyebrow="Property records" testId="home-records-timeline">
-          {timeline.length ? (
-            <div className="space-y-3">
-              {visibleTimeline.map((item) => {
-                const content = (
-                  <>
-                    <div className="text-xs font-semibold text-amber-100">{formatDate(item.date)}</div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{item.type}</span>
-                        <span className="text-sm font-semibold text-white">{item.title}</span>
-                      </div>
-                      <div className="mt-1 text-sm text-slate-400">{item.detail || item.description}</div>
-                      {item.actionLabel ? (
-                        <div className="mt-2 text-xs font-semibold text-sky-100">{item.actionLabel}</div>
-                      ) : null}
+      <Section title="Timeline / History" eyebrow="Property records" testId="home-records-timeline">
+        {timeline.length ? (
+          <div className="space-y-3">
+            {visibleTimeline.map((item) => {
+              const content = (
+                <>
+                  <div className="text-xs font-semibold text-amber-100">{formatDate(item.date)}</div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{item.type}</span>
+                      <span className="text-sm font-semibold text-white">{item.title}</span>
                     </div>
-                  </>
-                );
-                return item.url ? (
-                  <a
-                    key={item.id}
-                    data-testid={`home-records-timeline-action-${item.id}`}
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 hover:border-amber-300/45 sm:grid-cols-[110px_minmax(0,1fr)]"
-                  >
-                    {content}
-                  </a>
-                ) : (
-                  <div
-                    key={item.id}
-                    data-testid={`home-records-timeline-static-${item.id}`}
-                    className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 sm:grid-cols-[110px_minmax(0,1fr)]"
-                  >
-                    {content}
+                    <div className="mt-1 text-sm text-slate-400">{item.detail || item.description}</div>
+                    {item.actionLabel ? (
+                      <div className="mt-2 text-xs font-semibold text-sky-100">{item.actionLabel}</div>
+                    ) : null}
                   </div>
-                );
-              })}
-              <ShowMoreControl
-                total={timeline.length}
-                visible={timelineDefaultCount}
-                expanded={timelineExpanded}
-                onToggle={() => setTimelineExpanded((value) => !value)}
-                noun="timeline items"
-                testId="home-records-timeline-show-more"
-              />
-            </div>
-          ) : (
-            <EmptyState title="No property timeline yet" testId="home-records-timeline-empty">
-              Uploaded records, warranties, receipts, photos, and completed projects will build a timeline here.
-            </EmptyState>
-          )}
-        </Section>
-
-        <Section title="Documents & Photos" eyebrow="Property records" testId="home-records-documents-photos">
-          <p className="text-sm leading-6 text-slate-300">
-            A focused property-record view using the same files from your full Documents library.
-          </p>
-          <div data-testid="home-records-document-filters" className="mt-4 flex flex-wrap gap-2">
-            {DOCUMENT_PHOTO_CATEGORIES.map((category) => (
-              <button
-                key={category}
-                type="button"
-                data-testid={`home-records-documents-filter-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-                onClick={() => {
-                  setDocumentCategory(category);
-                  setDocumentsExpanded(false);
-                }}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                  documentCategory === category
-                    ? "border-amber-300 bg-amber-300/15 text-amber-100"
-                    : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
-                }`}
-              >
-                {category} ({categoryCount(category)})
-              </button>
-            ))}
-          </div>
-          {categoryRows.length ? (
-            <div className="mt-4 space-y-2">
-              {visibleDocuments.map((document) => (
-                <a key={`${document.id}-${document.url}-${document.title}`} href={document.url || "#"} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/45">
-                  <div className="text-sm font-semibold text-white">{document.title || document.filename || "Property record"}</div>
-                  <div className="mt-1 text-xs text-slate-500">{categoryForDocument(document)} - {formatDate(document.date)}</div>
-                  <div className="mt-2 text-xs font-semibold text-sky-100">Open record</div>
+                </>
+              );
+              return item.url ? (
+                <a
+                  key={item.id}
+                  data-testid={`home-records-timeline-action-${item.id}`}
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 hover:border-amber-300/45 sm:grid-cols-[110px_minmax(0,1fr)]"
+                >
+                  {content}
                 </a>
-              ))}
-              <ShowMoreControl
-                total={categoryRows.length}
-                visible={documentsDefaultCount}
-                expanded={documentsExpanded}
-                onToggle={() => setDocumentsExpanded((value) => !value)}
-                noun="records"
-                testId="home-records-documents-show-more"
-              />
-            </div>
-          ) : (
-            <EmptyState title="No records in this category yet" testId="home-records-documents-empty">
-              Add agreements, warranties, receipts, permits, manuals, insurance files, HOA records, and photos from the Documents tab or Property Files upload.
-            </EmptyState>
-          )}
-          <button
-            type="button"
-            data-testid="home-records-open-documents"
-            onClick={() => onOpenTab?.("documents")}
-            className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
-          >
-            View Full Document Library
-          </button>
-        </Section>
-      </div>
+              ) : (
+                <div
+                  key={item.id}
+                  data-testid={`home-records-timeline-static-${item.id}`}
+                  className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 sm:grid-cols-[110px_minmax(0,1fr)]"
+                >
+                  {content}
+                </div>
+              );
+            })}
+            <ShowMoreControl
+              total={timeline.length}
+              visible={timelineDefaultCount}
+              expanded={timelineExpanded}
+              onToggle={() => setTimelineExpanded((value) => !value)}
+              noun="timeline items"
+              testId="home-records-timeline-show-more"
+            />
+          </div>
+        ) : (
+          <EmptyState title="No property timeline yet" testId="home-records-timeline-empty">
+            Uploaded records, warranties, receipts, photos, and completed projects will build a timeline here.
+          </EmptyState>
+        )}
+      </Section>
     </div>
   );
 }
@@ -1069,16 +963,13 @@ export default function CustomerPropertyProfile({
   onOpenTab,
   onSave,
   onAdd,
-  onUpload,
   onCreateSystem,
   onUpdateSystem,
   onArchiveSystem,
   onMarkSystemServiced,
   onCreateSystemServiceRequest,
   saving = false,
-  uploading = false,
   systemSaving = false,
-  uploadError = "",
 }) {
   const profileOptions = useMemo(() => (profiles.length ? profiles : profile?.id ? [profile] : []), [profiles, profile]);
   const [selectedProfileId, setSelectedProfileId] = useState(profile?.id || profileOptions[0]?.id || "");
@@ -1088,7 +979,6 @@ export default function CustomerPropertyProfile({
       : profileOptions.find((row) => String(row.id) === String(selectedProfileId)) || profile || {};
   const [form, setForm] = useState(selectedProfile || {});
   const [addingProperty, setAddingProperty] = useState(false);
-  const [uploadForm, setUploadForm] = useState({ kind: "document", title: "", documentType: "", file: null });
   const [systemModalMode, setSystemModalMode] = useState("");
   const [editingSystemId, setEditingSystemId] = useState(null);
   const [systemForm, setSystemForm] = useState(emptySystemForm(selectedProfile?.id));
@@ -1434,102 +1324,20 @@ export default function CustomerPropertyProfile({
           </button>
         </form>
 
-        <aside className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
-        <h3 className="text-lg font-semibold text-white">Property files</h3>
-        <form
-          data-testid="customer-property-upload-form"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const ok = await onUpload?.(uploadForm);
-            if (ok !== false) {
-              setUploadForm((prev) => ({ ...prev, title: "", documentType: "", file: null }));
-              event.currentTarget.reset();
-            }
-          }}
-          className="mt-4 rounded-xl border border-slate-700 bg-slate-900/70 p-3"
-        >
-          <div className="grid gap-3">
-            <label className="block text-sm font-medium text-slate-200">
-              File type
-              <select
-                value={uploadForm.kind}
-                onChange={(event) => setUploadForm((prev) => ({ ...prev, kind: event.target.value }))}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              >
-                <option value="document">Document</option>
-                <option value="photo">Photo</option>
-              </select>
-            </label>
-            <label className="block text-sm font-medium text-slate-200">
-              Title
-              <input
-                value={uploadForm.title}
-                onChange={(event) => setUploadForm((prev) => ({ ...prev, title: event.target.value }))}
-                placeholder="Warranty, inspection, roof photo..."
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              />
-            </label>
-            {uploadForm.kind === "document" ? (
-              <label className="block text-sm font-medium text-slate-200">
-                Document type
-                <input
-                  value={uploadForm.documentType}
-                  onChange={(event) => setUploadForm((prev) => ({ ...prev, documentType: event.target.value }))}
-                  placeholder="Warranty, permit, receipt"
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-            ) : null}
-            <label className="block text-sm font-medium text-slate-200">
-              Upload
-              <input
-                type="file"
-                data-testid="customer-property-upload-file"
-                onChange={(event) => setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
-                accept={uploadForm.kind === "photo" ? "image/*" : undefined}
-                className="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-400 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-950 hover:file:bg-sky-300"
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={uploading || !uploadForm.file}
-              className="rounded-xl border border-sky-300/40 bg-sky-400/15 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/25 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {uploading ? "Uploading..." : "Upload property file"}
-            </button>
-            {uploadError ? (
-              <div data-testid="customer-property-upload-error" className="rounded-lg border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
-                {uploadError}
-              </div>
-            ) : null}
-          </div>
-        </form>
-        <div className="mt-4 space-y-3">
-          {(profile?.photos || []).length || (profile?.documents || []).length ? (
-            [...(profile?.photos || []), ...(profile?.documents || [])].map((item) => (
-              <a
-                key={item.id}
-                href={item.url || "#"}
-                target="_blank"
-                rel="noreferrer"
-                className="block rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-3 text-sm text-slate-200 hover:border-sky-400/50"
-              >
-                <div className="font-semibold">{item.title}</div>
-                <div className="mt-1 text-xs text-slate-500">
-                  {item.type_label || "Property file"} - {item.date ? new Date(item.date).toLocaleDateString() : "No date"}
-                </div>
-                <div className="mt-1 truncate text-xs text-slate-400">{item.filename || "Filename pending"}</div>
-              </a>
-            ))
-          ) : (
-            <div data-testid="customer-property-files-empty" className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-300">
-              <div className="font-semibold text-white">No property files yet</div>
-              <p className="mt-1 leading-6 text-slate-400">
-                Add warranties, inspection notes, receipts, permits, and photos so future requests have better context.
-              </p>
-            </div>
-          )}
-        </div>
+        <aside className="rounded-2xl border border-sky-300/25 bg-slate-950/60 p-5">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Documents</div>
+          <h3 className="mt-1 text-lg font-semibold text-white">Document library</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            Uploads, photos, warranties, receipts, manuals, permits, insurance files, and search all live in the Documents tab.
+          </p>
+          <button
+            type="button"
+            data-testid="property-view-documents"
+            onClick={() => onOpenTab?.("documents")}
+            className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
+          >
+            View documents for this property
+          </button>
         </aside>
       </div>
     </div>
