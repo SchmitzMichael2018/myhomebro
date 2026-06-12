@@ -1641,6 +1641,122 @@ export default function CustomerProjectWorkspace({
                 </button>
               </div>
             </section>
+
+            <div data-testid="customer-selected-action-panels" className="space-y-4">
+              <Section title="Need to Change Something?" eyebrow="Homeowner action center" testId="customer-homeowner-action-center">
+                <p className="text-sm leading-6 text-slate-300">
+                  Request a change, ask for escrow review, or open an issue without directly changing the agreement or moving funds.
+                </p>
+                {activeCases.length ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {activeCases.map((caseRow) => (
+                      <div key={`${caseRow.type}-${caseRow.id}`} data-testid={`customer-active-case-${caseRow.type}`} className="rounded-2xl border border-amber-200/35 bg-amber-300/10 p-4">
+                        <div className="text-sm font-semibold text-white">{caseRow.label}</div>
+                        <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-100">{caseRow.status_label || "Open"}</div>
+                        {caseRow.response_label ? (
+                          <div className="mt-2 text-xs font-semibold text-amber-50">Response: {caseRow.response_label}</div>
+                        ) : null}
+                        {caseRow.response_note ? <p className="mt-2 text-sm leading-5 text-slate-300">{caseRow.response_note}</p> : null}
+                        {caseRow.counter_proposal && Object.keys(caseRow.counter_proposal || {}).length ? (
+                          <div data-testid={`customer-counter-proposal-summary-${caseRow.id}`} className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-300">
+                            <div className="font-semibold text-white">Counter proposal</div>
+                            {caseRow.counter_proposal.revised_scope ? <div className="mt-1">Scope: {caseRow.counter_proposal.revised_scope}</div> : null}
+                            {caseRow.counter_proposal.revised_value_change ? <div className="mt-1">Value: {caseRow.counter_proposal.revised_value_change}</div> : null}
+                            {caseRow.counter_proposal.revised_timeline ? <div className="mt-1">Timeline: {caseRow.counter_proposal.revised_timeline}</div> : null}
+                            {caseRow.counter_proposal.revised_milestone_changes ? <div className="mt-1">Milestones: {caseRow.counter_proposal.revised_milestone_changes}</div> : null}
+                          </div>
+                        ) : null}
+                        <AttachmentLinks attachments={caseRow.counter_attachments || []} testId={`customer-counter-attachments-${caseRow.id}`} />
+                        {caseRow.summary ? <p className="mt-2 line-clamp-3 text-sm leading-5 text-slate-300">{caseRow.summary}</p> : null}
+                        {caseRow.estimated_refundable_escrow_surplus && Number(caseRow.estimated_refundable_escrow_surplus) > 0 ? (
+                          <div className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-200">
+                            Estimated surplus: <span className="font-semibold text-white">{money(numericValue(caseRow.estimated_refundable_escrow_surplus))}</span>
+                            <div className="mt-1 text-slate-400">{caseRow.refund_eligibility_label}</div>
+                          </div>
+                        ) : null}
+                        {caseRow.activity_events?.length ? (
+                          <div className="mt-3 space-y-1 border-t border-amber-100/15 pt-3 text-xs text-slate-300">
+                            {caseRow.activity_events.slice(0, 3).map((event) => (
+                              <div key={event.id}>
+                                <div>{event.title || event.event_label}</div>
+                                {event.metadata?.attachment_count ? (
+                                  <div className="text-slate-400">
+                                    {event.metadata.attachment_count} attachment{event.metadata.attachment_count === 1 ? "" : "s"} included
+                                  </div>
+                                ) : null}
+                                <AttachmentLinks
+                                  attachments={event.metadata?.attachments || []}
+                                  testId={`customer-counter-activity-attachments-${caseRow.id}-${event.id}`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {caseRow.url ? (
+                          <a
+                            href={caseRow.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+                          >
+                            View Dispute
+                            <ExternalLink size={14} />
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {[
+                    ["amendment", "Request Amendment", "Ask the contractor to review a scope, timeline, price, milestone, material, or warranty change."],
+                    ["dispute", "Open Dispute", "Open an issue for review when something about the agreement, milestone, or payment needs formal attention."],
+                  ].map(([key, label, description]) => {
+                    const action = homeownerActions[key] || {};
+                    const disabled = !action.available;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        data-testid={`customer-action-${key}`}
+                        onClick={() => !disabled && openHomeownerAction(key)}
+                        disabled={disabled}
+                        className={`rounded-2xl border p-4 text-left transition ${
+                          disabled
+                            ? "border-slate-700 bg-slate-900/55 text-slate-500"
+                            : "border-amber-200/40 bg-amber-300/10 text-slate-100 hover:bg-amber-300/20"
+                        }`}
+                      >
+                        <div className="text-sm font-semibold text-white">{action.label || label}</div>
+                        <p className="mt-2 text-sm leading-5 text-slate-300">{description}</p>
+                        {disabled && !action.active ? <div className="mt-3 text-xs text-slate-500">Not available for the current agreement status.</div> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Section>
+
+              {reviewPayments.length ? (
+                <Section title="Needs Attention" eyebrow="Review before funds move" testId="customer-project-needs-attention">
+                  <div className="space-y-3">
+                    {reviewPayments.map((payment) => (
+                      <ProjectReviewCard key={payment.id} payment={payment} token={token} onPortalUpdate={onRefresh} />
+                    ))}
+                  </div>
+                </Section>
+              ) : (
+                <Section title="Next Action" eyebrow="Nothing waiting right now" testId="customer-project-next-action">
+                  <div className="rounded-2xl border border-emerald-300/35 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-100">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="mt-0.5 shrink-0" size={18} />
+                      <p>No milestone reviews or payment releases need your attention right now. New actions will appear here when your contractor submits work for review.</p>
+                    </div>
+                  </div>
+                </Section>
+              )}
+
+              <ReviewPromptCard project={selected} token={token} onPortalUpdate={onRefresh} />
+            </div>
           </>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-300">
@@ -1656,124 +1772,22 @@ export default function CustomerProjectWorkspace({
               className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.85fr)] 2xl:grid-cols-[minmax(0,1.6fr)_minmax(420px,0.8fr)]"
             >
               <div data-testid="customer-project-detail-secondary" className="space-y-4 xl:order-2">
-            <Section title="Need to Change Something?" eyebrow="Homeowner action center" testId="customer-homeowner-action-center">
-              <p className="text-sm leading-6 text-slate-300">
-                Request a change, ask for escrow review, or open an issue without directly changing the agreement or moving funds.
-              </p>
-              {activeCases.length ? (
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  {activeCases.map((caseRow) => (
-                    <div key={`${caseRow.type}-${caseRow.id}`} data-testid={`customer-active-case-${caseRow.type}`} className="rounded-2xl border border-amber-200/35 bg-amber-300/10 p-4">
-                      <div className="text-sm font-semibold text-white">{caseRow.label}</div>
-                      <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-100">{caseRow.status_label || "Open"}</div>
-                      {caseRow.response_label ? (
-                        <div className="mt-2 text-xs font-semibold text-amber-50">Response: {caseRow.response_label}</div>
-                      ) : null}
-                      {caseRow.response_note ? (
-                        <p className="mt-2 text-sm leading-5 text-slate-300">{caseRow.response_note}</p>
-                      ) : null}
-                      {caseRow.counter_proposal && Object.keys(caseRow.counter_proposal || {}).length ? (
-                        <div data-testid={`customer-counter-proposal-summary-${caseRow.id}`} className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-300">
-                          <div className="font-semibold text-white">Counter proposal</div>
-                          {caseRow.counter_proposal.revised_scope ? <div className="mt-1">Scope: {caseRow.counter_proposal.revised_scope}</div> : null}
-                          {caseRow.counter_proposal.revised_value_change ? <div className="mt-1">Value: {caseRow.counter_proposal.revised_value_change}</div> : null}
-                          {caseRow.counter_proposal.revised_timeline ? <div className="mt-1">Timeline: {caseRow.counter_proposal.revised_timeline}</div> : null}
-                          {caseRow.counter_proposal.revised_milestone_changes ? <div className="mt-1">Milestones: {caseRow.counter_proposal.revised_milestone_changes}</div> : null}
-                        </div>
-                      ) : null}
-                      <AttachmentLinks
-                        attachments={caseRow.counter_attachments || []}
-                        testId={`customer-counter-attachments-${caseRow.id}`}
-                      />
-                      {caseRow.summary ? <p className="mt-2 line-clamp-3 text-sm leading-5 text-slate-300">{caseRow.summary}</p> : null}
-                      {caseRow.estimated_refundable_escrow_surplus && Number(caseRow.estimated_refundable_escrow_surplus) > 0 ? (
-                        <div className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-200">
-                          Estimated surplus: <span className="font-semibold text-white">{money(numericValue(caseRow.estimated_refundable_escrow_surplus))}</span>
-                          <div className="mt-1 text-slate-400">{caseRow.refund_eligibility_label}</div>
-                        </div>
-                      ) : null}
-                      {caseRow.activity_events?.length ? (
-                        <div className="mt-3 space-y-1 border-t border-amber-100/15 pt-3 text-xs text-slate-300">
-                          {caseRow.activity_events.slice(0, 3).map((event) => (
-                            <div key={event.id}>
-                              <div>{event.title || event.event_label}</div>
-                              {event.metadata?.attachment_count ? (
-                                <div className="text-slate-400">
-                                  {event.metadata.attachment_count} attachment{event.metadata.attachment_count === 1 ? "" : "s"} included
-                                </div>
-                              ) : null}
-                              <AttachmentLinks
-                                attachments={event.metadata?.attachments || []}
-                                testId={`customer-counter-activity-attachments-${caseRow.id}-${event.id}`}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {caseRow.url ? (
-                        <a
-                          href={caseRow.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-3 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
-                        >
-                          View Dispute
-                          <ExternalLink size={14} />
-                        </a>
-                      ) : null}
+                <Section title="Financial Summary" eyebrow="Project money" testId="customer-project-detail-financial-summary">
+                  <div className="grid gap-3 text-sm">
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Remaining in escrow</div>
+                      <div className="mt-1 text-xl font-black text-white">{money(selectedPaymentModel.remainingInEscrow)}</div>
                     </div>
-                  ))}
-                </div>
-              ) : null}
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {[
-                  ["amendment", "Request Amendment", "Ask the contractor to review a scope, timeline, price, milestone, material, or warranty change."],
-                  ["dispute", "Open Dispute", "Open an issue for review when something about the agreement, milestone, or payment needs formal attention."],
-                ].map(([key, label, description]) => {
-                  const action = homeownerActions[key] || {};
-                  const disabled = !action.available;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      data-testid={`customer-action-${key}`}
-                      onClick={() => !disabled && openHomeownerAction(key)}
-                      disabled={disabled}
-                      className={`rounded-2xl border p-4 text-left transition ${
-                        disabled
-                          ? "border-slate-700 bg-slate-900/55 text-slate-500"
-                          : "border-amber-200/40 bg-amber-300/10 text-slate-100 hover:bg-amber-300/20"
-                      }`}
-                    >
-                      <div className="text-sm font-semibold text-white">{action.label || label}</div>
-                      <p className="mt-2 text-sm leading-5 text-slate-300">{description}</p>
-                      {disabled && !action.active ? <div className="mt-3 text-xs text-slate-500">Not available for the current agreement status.</div> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </Section>
-
-            {reviewPayments.length ? (
-              <Section title="Needs Attention" eyebrow="Review before funds move" testId="customer-project-needs-attention">
-                <div className="space-y-3">
-                  {reviewPayments.map((payment) => (
-                    <ProjectReviewCard key={payment.id} payment={payment} token={token} onPortalUpdate={onRefresh} />
-                  ))}
-                </div>
-              </Section>
-            ) : (
-              <Section title="Next Action" eyebrow="Nothing waiting right now" testId="customer-project-next-action">
-                <div className="rounded-2xl border border-emerald-300/35 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-100">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="mt-0.5 shrink-0" size={18} />
-                    <p>No milestone reviews or payment releases need your attention right now. New actions will appear here when your contractor submits work for review.</p>
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Escrow funded</div>
+                      <div className="mt-1 font-semibold text-white">{money(selectedPaymentModel.escrowFunded)}</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Released to contractor</div>
+                      <div className="mt-1 font-semibold text-white">{money(selectedPaymentModel.releasedToContractor)}</div>
+                    </div>
                   </div>
-                </div>
-              </Section>
-            )}
-
-            <ReviewPromptCard project={selected} token={token} onPortalUpdate={onRefresh} />
+                </Section>
               </div>
 
               <div data-testid="customer-project-detail-primary" className="space-y-4 xl:order-1">
