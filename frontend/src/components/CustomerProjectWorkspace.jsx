@@ -1641,7 +1641,16 @@ export default function CustomerProjectWorkspace({
                 </button>
               </div>
             </section>
+          </>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-300">
+            Select a project to view details.
+          </div>
+        )}
+      </div>
+      </div>
 
+        {selected ? (
             <div
               data-testid="customer-project-detail-layout"
               className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.85fr)] 2xl:grid-cols-[minmax(0,1.6fr)_minmax(420px,0.8fr)]"
@@ -1988,14 +1997,7 @@ export default function CustomerProjectWorkspace({
             </div>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-300">
-            Select a project to view details.
-          </div>
-        )}
-      </div>
-      </div>
+        ) : null}
       {denyReimbursementPayment ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Deny reimbursement">
           <div className="w-full max-w-lg rounded-3xl border border-rose-300/35 bg-slate-950 p-5 shadow-2xl">

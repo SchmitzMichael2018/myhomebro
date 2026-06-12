@@ -2334,6 +2334,30 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-detail-layout")).toHaveClass(/xl:grid-cols-\[minmax\(0,1\.45fr\)_minmax\(360px,0\.85fr\)\]/);
   await expect(page.getByTestId("customer-project-detail-primary")).toBeVisible();
   await expect(page.getByTestId("customer-project-detail-secondary")).toBeVisible();
+  const projectDetailMetrics = await page.evaluate(() => {
+    const workspace = document.querySelector('[data-testid="customer-project-workspace"]')?.getBoundingClientRect();
+    const details = document.querySelector('[data-testid="customer-project-detail-layout"]')?.getBoundingClientRect();
+    const summary = document.querySelector('[data-testid="customer-selected-agreement-summary"]');
+    const primary = document.querySelector('[data-testid="customer-project-detail-primary"]')?.getBoundingClientRect();
+    const secondary = document.querySelector('[data-testid="customer-project-detail-secondary"]')?.getBoundingClientRect();
+    const projectRow = document.querySelector('[data-testid="customer-projects-layout"]')?.getBoundingClientRect();
+    return {
+      workspaceWidth: workspace?.width || 0,
+      detailsWidth: details?.width || 0,
+      detailsTop: details?.top || 0,
+      projectRowBottom: projectRow?.bottom || 0,
+      primaryLeft: primary?.left || 0,
+      primaryTop: primary?.top || 0,
+      secondaryLeft: secondary?.left || 0,
+      secondaryTop: secondary?.top || 0,
+      summaryContainsDetails: Boolean(summary && details && summary.contains(document.querySelector('[data-testid="customer-project-detail-layout"]'))),
+    };
+  });
+  expect(projectDetailMetrics.detailsWidth).toBeGreaterThan(projectDetailMetrics.workspaceWidth * 0.9);
+  expect(projectDetailMetrics.detailsTop).toBeGreaterThanOrEqual(projectDetailMetrics.projectRowBottom - 1);
+  expect(projectDetailMetrics.secondaryLeft).toBeGreaterThan(projectDetailMetrics.primaryLeft);
+  expect(Math.abs(projectDetailMetrics.secondaryTop - projectDetailMetrics.primaryTop)).toBeLessThan(8);
+  expect(projectDetailMetrics.summaryContainsDetails).toBe(false);
   await expect(page.getByTestId("customer-agreement-view-action")).toHaveAttribute("href", "/agreements/magic/portal-token");
   await expect(page.getByTestId("customer-agreement-pdf-action")).toHaveAttribute("href", "/files/agreement.pdf");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("coming soon");
