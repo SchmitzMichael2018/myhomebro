@@ -33,6 +33,8 @@ const portalPayload = {
     address: "123 Main St, Austin, TX, 78701",
     year_built: 1998,
     square_feet: 2400,
+    bedrooms: 3,
+    bathrooms: "2.5",
     home_systems: [
       {
         id: 11,
@@ -121,6 +123,10 @@ const portalPayload = {
       state: "TX",
       postal_code: "78701",
       address: "123 Main St, Austin, TX, 78701",
+      year_built: 1998,
+      square_feet: 2400,
+      bedrooms: 3,
+      bathrooms: "2.5",
       is_primary: true,
       home_systems: [
         {
@@ -1815,6 +1821,28 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (/\/customer-portal\/customer-token\/property\/(?:\?|$)/.test(requestUrl) && method === "PATCH") {
+      const updatePayload = route.request().postDataJSON();
+      const updatedProperty = {
+        ...currentPortalPayload.property_profile,
+        ...updatePayload,
+        property_type_label: updatePayload.property_type === "townhome" ? "Townhome" : currentPortalPayload.property_profile.property_type_label,
+      };
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: updatedProperty,
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === updatedProperty.id ? { ...property, ...updatedProperty } : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/property/documents/") && method === "POST") {
       await route.fulfill({
         status: 201,
@@ -2339,9 +2367,19 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-command-summary")).toContainText("123 Main St, Austin, TX, 78701");
   await expect(page.getByTestId("property-command-summary")).toContainText("1998");
   await expect(page.getByTestId("property-command-summary")).toContainText("2,400");
+  await expect(page.getByTestId("property-command-summary")).toContainText("3");
+  await expect(page.getByTestId("property-command-summary")).toContainText("2.5");
+  await expect(page.getByTestId("property-command-summary")).not.toContainText("Lot Size");
+  await expect(page.getByTestId("property-command-summary")).not.toContainText("Occupancy");
   await expect(page.getByTestId("property-summary-selector")).toBeVisible();
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/text-white/);
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
+  await page.getByTestId("property-summary-edit").click();
+  await page.getByLabel("Bedrooms").fill("4");
+  await page.getByLabel("Bathrooms").fill("3.5");
+  await page.getByRole("button", { name: "Save property profile" }).click();
+  await expect(page.getByTestId("property-command-summary")).toContainText("4");
+  await expect(page.getByTestId("property-command-summary")).toContainText("3.5");
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
   await expect(page.getByTestId("property-home-systems")).toContainText("Carrier");

@@ -21537,6 +21537,9 @@ class CustomerPortalAccessTests(TestCase):
                 "display_name": "Main House",
                 "property_type": "single_family",
                 "year_built": 1988,
+                "square_feet": 2100,
+                "bedrooms": 3,
+                "bathrooms": "2.5",
                 "notes": "Gate code is saved with the customer.",
             },
             content_type="application/json",
@@ -21546,6 +21549,11 @@ class CustomerPortalAccessTests(TestCase):
         profile = PropertyProfile.objects.get(customer_email=self.customer_email)
         self.assertEqual(profile.display_name, "Main House")
         self.assertEqual(profile.year_built, 1988)
+        self.assertEqual(profile.square_feet, 2100)
+        self.assertEqual(profile.bedrooms, 3)
+        self.assertEqual(str(profile.bathrooms), "2.5")
+        self.assertEqual(response.data["property_profile"]["bedrooms"], 3)
+        self.assertEqual(response.data["property_profile"]["bathrooms"], "2.5")
         self.assertTrue(
             SmartNotification.objects.filter(
                 property_profile=profile,
@@ -21621,6 +21629,8 @@ class CustomerPortalAccessTests(TestCase):
                 "city": "Austin",
                 "state": "TX",
                 "postal_code": "78705",
+                "bedrooms": 2,
+                "bathrooms": "1.5",
                 "is_primary": True,
             },
             content_type="application/json",
@@ -21631,7 +21641,11 @@ class CustomerPortalAccessTests(TestCase):
         created = PropertyProfile.objects.get(display_name="Rental Property")
         self.assertFalse(existing.is_primary)
         self.assertTrue(created.is_primary)
+        self.assertEqual(created.bedrooms, 2)
+        self.assertEqual(str(created.bathrooms), "1.5")
         self.assertEqual(response.data["property_profile"]["display_name"], "Rental Property")
+        self.assertEqual(response.data["property_profile"]["bedrooms"], 2)
+        self.assertEqual(response.data["property_profile"]["bathrooms"], "1.5")
 
     def test_customer_portal_property_uploads_are_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

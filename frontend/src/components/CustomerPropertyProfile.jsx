@@ -301,8 +301,6 @@ function PropertySummarySection({ profile, profileOptions, onSelectProperty, onE
     ["Square Feet", profile?.square_feet ? Number(profile.square_feet).toLocaleString() : ""],
     ["Bedrooms", profile?.bedrooms],
     ["Bathrooms", profile?.bathrooms],
-    ["Lot Size", profile?.lot_size],
-    ["Occupancy", profile?.occupancy_type],
   ];
   return (
     <section data-testid="property-command-summary" className="rounded-3xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.5))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
@@ -1107,6 +1105,8 @@ export default function CustomerPropertyProfile({
       postal_code: "",
       year_built: "",
       square_feet: "",
+      bedrooms: "",
+      bathrooms: "",
       notes: "",
       is_primary: !profileOptions.length,
     };
@@ -1380,6 +1380,28 @@ export default function CustomerPropertyProfile({
               type="number"
               value={form?.square_feet || ""}
               onChange={(event) => update("square_feet", event.target.value ? Number(event.target.value) : null)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Bedrooms
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={form?.bedrooms || ""}
+              onChange={(event) => update("bedrooms", event.target.value ? Number(event.target.value) : null)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Bathrooms
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={form?.bathrooms || ""}
+              onChange={(event) => update("bathrooms", event.target.value ? Number(event.target.value) : null)}
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
             />
           </label>

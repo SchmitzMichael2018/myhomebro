@@ -427,6 +427,8 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "address": address,
         "year_built": profile.year_built,
         "square_feet": profile.square_feet,
+        "bedrooms": profile.bedrooms,
+        "bathrooms": str(profile.bathrooms) if profile.bathrooms is not None else None,
         "notes": _safe_text(profile.notes),
         "is_primary": bool(getattr(profile, "is_primary", False)),
         "documents": documents,
@@ -4070,6 +4072,15 @@ class CustomerPortalPropertyProfileSerializer(serializers.Serializer):
     postal_code = serializers.CharField(max_length=24, required=False, allow_blank=True)
     year_built = serializers.IntegerField(required=False, allow_null=True, min_value=1600, max_value=2200)
     square_feet = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=1000000)
+    bedrooms = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=50)
+    bathrooms = serializers.DecimalField(
+        required=False,
+        allow_null=True,
+        min_value=0,
+        max_value=50,
+        max_digits=4,
+        decimal_places=1,
+    )
     notes = serializers.CharField(required=False, allow_blank=True)
     is_primary = serializers.BooleanField(required=False)
 
