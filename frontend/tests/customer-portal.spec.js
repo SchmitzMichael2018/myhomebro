@@ -2395,6 +2395,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByRole("button", { name: "View Payments" }).click();
   await page.getByRole("button", { name: "View Documents" }).click();
   await page.getByRole("button", { name: "View Activity" }).click();
+  await expect(page.getByTestId("customer-project-expanded-detail-grid")).toHaveClass(/lg:grid-cols-2/);
   await expect(page.getByTestId("customer-project-payments")).toContainText("Invoice & Payment History");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Release Paid");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Paid to contractor from escrow");
@@ -2404,6 +2405,31 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-documents")).toContainText("Scope Addendum");
   await expect(page.getByTestId("customer-project-agreement-summary")).toContainText("One-year workmanship warranty");
   await expect(page.getByTestId("customer-project-updates")).toContainText("Demo is complete and final walkthrough is ready for review.");
+  const expandedGridMetrics = await page.evaluate(() => {
+    const grid = document.querySelector('[data-testid="customer-project-expanded-detail-grid"]')?.getBoundingClientRect();
+    const updates = document.querySelector('[data-testid="customer-project-updates"]')?.getBoundingClientRect();
+    const payments = document.querySelector('[data-testid="customer-project-payments"]')?.getBoundingClientRect();
+    const documents = document.querySelector('[data-testid="customer-project-documents"]')?.getBoundingClientRect();
+    const agreement = document.querySelector('[data-testid="customer-project-agreement-summary"]')?.getBoundingClientRect();
+    return {
+      gridWidth: grid?.width || 0,
+      updatesLeft: updates?.left || 0,
+      updatesTop: updates?.top || 0,
+      updatesWidth: updates?.width || 0,
+      paymentsLeft: payments?.left || 0,
+      paymentsTop: payments?.top || 0,
+      documentsLeft: documents?.left || 0,
+      documentsTop: documents?.top || 0,
+      agreementLeft: agreement?.left || 0,
+      agreementTop: agreement?.top || 0,
+    };
+  });
+  expect(expandedGridMetrics.updatesWidth).toBeLessThan(expandedGridMetrics.gridWidth * 0.7);
+  expect(expandedGridMetrics.paymentsLeft).toBeGreaterThan(expandedGridMetrics.updatesLeft);
+  expect(Math.abs(expandedGridMetrics.paymentsTop - expandedGridMetrics.updatesTop)).toBeLessThan(8);
+  expect(expandedGridMetrics.documentsTop).toBeGreaterThan(expandedGridMetrics.updatesTop);
+  expect(expandedGridMetrics.agreementLeft).toBeGreaterThan(expandedGridMetrics.documentsLeft);
+  expect(Math.abs(expandedGridMetrics.agreementTop - expandedGridMetrics.documentsTop)).toBeLessThan(8);
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-portal-payments")).toContainText("Project Payment Center");

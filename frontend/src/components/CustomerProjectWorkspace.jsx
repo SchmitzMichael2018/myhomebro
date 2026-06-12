@@ -1772,8 +1772,6 @@ export default function CustomerProjectWorkspace({
               className="space-y-4"
             >
               <div data-testid="customer-project-detail-primary" className="space-y-4">
-            <div className="grid gap-4">
-              <div className="space-y-4">
                 <button
                   type="button"
                   data-testid="customer-project-toggle-details"
@@ -1788,208 +1786,206 @@ export default function CustomerProjectWorkspace({
                   Show project details
                 </button>
 
-                {expandedDetails.activity ? (
-                <Section title="Project Updates" eyebrow="Recent activity" testId="customer-project-updates">
-                  {projectUpdates.length ? (
-                    <div className="space-y-3">
-                      {projectUpdates.slice(0, 5).map((notification) => (
-                        <a
-                          key={notification.id}
-                          href={notification.action_url || "#"}
-                          className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-amber-300/45"
-                        >
-                          <MessageSquare size={16} className="mt-1 shrink-0 text-amber-200" />
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-white">{notification.title || "Project update"}</div>
-                            <p className="mt-1 text-sm leading-5 text-slate-300">{notification.message || "A project update is available."}</p>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {notification.author ? `${notification.author} - ` : ""}
-                              {notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}
-                            </div>
+                {expandedDetails.activity || expandedDetails.payments || expandedDetails.documents ? (
+                  <div data-testid="customer-project-expanded-detail-grid" className="grid gap-4 lg:grid-cols-2">
+                    {expandedDetails.activity ? (
+                      <Section title="Project Updates" eyebrow="Recent activity" testId="customer-project-updates">
+                        {projectUpdates.length ? (
+                          <div className="space-y-3">
+                            {projectUpdates.slice(0, 5).map((notification) => (
+                              <a
+                                key={notification.id}
+                                href={notification.action_url || "#"}
+                                className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-amber-300/45"
+                              >
+                                <MessageSquare size={16} className="mt-1 shrink-0 text-amber-200" />
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-white">{notification.title || "Project update"}</div>
+                                  <p className="mt-1 text-sm leading-5 text-slate-300">{notification.message || "A project update is available."}</p>
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {notification.author ? `${notification.author} - ` : ""}
+                                    {notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}
+                                  </div>
+                                </div>
+                              </a>
+                            ))}
                           </div>
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm leading-6 text-slate-300">
-                      <p>Project updates will appear here as work is submitted, payments are reviewed, documents are added, or action is needed.</p>
-                      <a
-                        href={`mailto:?subject=${encodeURIComponent(`Question about ${selected.title || "my project"}`)}`}
-                        className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
-                      >
-                        Ask a question
-                      </a>
-                    </div>
-                  )}
-                </Section>
-                ) : null}
-              </div>
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm leading-6 text-slate-300">
+                            <p>Project updates will appear here as work is submitted, payments are reviewed, documents are added, or action is needed.</p>
+                            <a
+                              href={`mailto:?subject=${encodeURIComponent(`Question about ${selected.title || "my project"}`)}`}
+                              className="mt-3 inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+                            >
+                              Ask a question
+                            </a>
+                          </div>
+                        )}
+                      </Section>
+                    ) : null}
 
-              {expandedDetails.payments || expandedDetails.documents ? (
-              <div className="space-y-4">
-                {expandedDetails.payments ? (
-                <Section title="Invoice & Payment History" eyebrow="Contractor releases and payments" testId="customer-project-payments">
-                  <p className="text-sm leading-6 text-slate-300">Review contractor releases, direct payments, refunds, and adjustments separately from escrow funding activity.</p>
-                  <div className="mt-3 space-y-2">
-                    {projectPaymentHistory.length ? (
-                      projectPaymentHistory.slice(0, 5).map((payment) => {
-                        const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
-                        const primaryUrl = payment.receipt_url || invoiceUrl || "#";
-                        const paid = isPaidPayment(payment);
-                        const actionable = isActionablePayment(payment);
-                        return (
-                        <div key={payment.id} data-testid={`customer-project-payment-${payment.id}`} className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-semibold text-white">
-                                {paymentHistoryLabel(payment)} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
+                    {expandedDetails.payments ? (
+                      <Section title="Invoice & Payment History" eyebrow="Contractor releases and payments" testId="customer-project-payments">
+                        <p className="text-sm leading-6 text-slate-300">Review contractor releases, direct payments, refunds, and adjustments separately from escrow funding activity.</p>
+                        <div className="mt-3 space-y-2">
+                          {projectPaymentHistory.length ? (
+                            projectPaymentHistory.slice(0, 5).map((payment) => {
+                              const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
+                              const primaryUrl = payment.receipt_url || invoiceUrl || "#";
+                              const paid = isPaidPayment(payment);
+                              const actionable = isActionablePayment(payment);
+                              return (
+                              <div key={payment.id} data-testid={`customer-project-payment-${payment.id}`} className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="text-sm font-semibold text-white">
+                                      {paymentHistoryLabel(payment)} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
+                                    </div>
+                                    {paymentHistoryDescription(payment) ? (
+                                      <p className="mt-1 text-xs font-medium text-slate-300">{paymentHistoryDescription(payment)}</p>
+                                    ) : null}
+                                    <div className="mt-1 text-xs text-slate-500">{formatDate(payment.date)}</div>
+                                    <div className="mt-2 grid gap-1 text-xs text-slate-400">
+                                      <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : `Contractor: ${selected.contractor_name || "Your contractor"}`}</span>
+                                      <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Secure payment"}</span>
+                                      {payment.due_date ? <span>Due: {formatDate(payment.due_date)}</span> : null}
+                                      {customerDisputeStatus(payment) ? <span className="text-rose-100">Issue: {customerDisputeStatus(payment).label}</span> : null}
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-sm font-bold text-white">{payment.amount_label || money(payment.amount)}</div>
+                                    <Badge tone={statusTone(payment.status_label)}>{payment.status_label || "Pending"}</Badge>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {primaryUrl && primaryUrl !== "#" ? (
+                                    <a
+                                      data-testid={`customer-project-payment-primary-${payment.id}`}
+                                      href={primaryUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+                                    >
+                                      {isInvoicePayment(payment) ? (paid ? "View Receipt" : actionable ? "Pay Invoice" : "View Record") : isReviewablePayment(payment) ? "Review Release" : "View Record"}
+                                      <ExternalLink size={14} />
+                                    </a>
+                                  ) : null}
+                                  {isInvoicePayment(payment) && invoiceUrl ? (
+                                    <a
+                                      data-testid={`customer-project-payment-view-invoice-${payment.id}`}
+                                      href={invoiceUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
+                                    >
+                                      View Invoice
+                                      <ExternalLink size={14} />
+                                    </a>
+                                  ) : null}
+                                  {isInvoicePayment(payment) && invoiceUrl && actionable ? (
+                                    <a
+                                      data-testid={`customer-project-payment-dispute-${payment.id}`}
+                                      href={`${invoiceUrl}?action=dispute`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
+                                    >
+                                      Open Dispute
+                                      <ExternalLink size={14} />
+                                    </a>
+                                  ) : null}
+                                  {hasOpenDispute(payment) && payment.dispute_url ? (
+                                    <a
+                                      data-testid={`customer-project-payment-track-dispute-${payment.id}`}
+                                      href={payment.dispute_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
+                                    >
+                                      Track Issue Status
+                                      <ExternalLink size={14} />
+                                    </a>
+                                  ) : null}
+                                  {canReviewReimbursement(payment) ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        data-testid={`customer-project-payment-approve-reimbursement-${payment.record_id}`}
+                                        onClick={() => runReimbursementAction(payment, "approve")}
+                                        disabled={Boolean(reimbursementAction)}
+                                        className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
+                                      >
+                                        {reimbursementAction === `approve-${payment.record_id}` ? "Approving..." : "Approve Reimbursement"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        data-testid={`customer-project-payment-deny-reimbursement-${payment.record_id}`}
+                                        onClick={() => openDenyReimbursementModal(payment)}
+                                        disabled={Boolean(reimbursementAction)}
+                                        className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
+                                      >
+                                        {reimbursementAction === `deny-${payment.record_id}` ? "Denying..." : "Deny"}
+                                      </button>
+                                    </>
+                                  ) : null}
+                                </div>
                               </div>
-                              {paymentHistoryDescription(payment) ? (
-                                <p className="mt-1 text-xs font-medium text-slate-300">{paymentHistoryDescription(payment)}</p>
-                              ) : null}
-                              <div className="mt-1 text-xs text-slate-500">{formatDate(payment.date)}</div>
-                              <div className="mt-2 grid gap-1 text-xs text-slate-400">
-                                <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : `Contractor: ${selected.contractor_name || "Your contractor"}`}</span>
-                                <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Secure payment"}</span>
-                                {payment.due_date ? <span>Due: {formatDate(payment.due_date)}</span> : null}
-                                {customerDisputeStatus(payment) ? <span className="text-rose-100">Issue: {customerDisputeStatus(payment).label}</span> : null}
-                              </div>
+                            );
+                            })
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+                              Contractor releases, direct payments, refunds, and adjustments will appear here when connected.
                             </div>
-                            <div className="text-right">
-                              <div className="text-sm font-bold text-white">{payment.amount_label || money(payment.amount)}</div>
-                              <Badge tone={statusTone(payment.status_label)}>{payment.status_label || "Pending"}</Badge>
+                          )}
+                        </div>
+                      </Section>
+                    ) : null}
+
+                    {expandedDetails.documents ? (
+                      <Section title="Documents" eyebrow="Project files" testId="customer-project-documents">
+                        <p className="text-sm leading-6 text-slate-300">Keep your project documents and home records in one place.</p>
+                        <div className="mt-3 space-y-2">
+                          {projectDocuments.length ? (
+                            projectDocuments.slice(0, 5).map((document) => (
+                              <a key={document.id} href={document.url || "#"} target="_blank" rel="noreferrer" className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/40">
+                                <FileText size={16} className="mt-1 shrink-0 text-sky-200" />
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold text-white">{document.title}</div>
+                                  <div className="mt-1 truncate text-xs text-slate-500">{document.type_label || "Document"} - {document.filename || "File"}</div>
+                                </div>
+                              </a>
+                            ))
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
+                              Agreement PDFs, receipts, shared attachments, and property records will appear here.
                             </div>
+                          )}
+                        </div>
+                      </Section>
+                    ) : null}
+
+                    {expandedDetails.documents ? (
+                      <Section title="Agreement Summary" eyebrow="Scope and warranty" testId="customer-project-agreement-summary">
+                        <div className="space-y-3 text-sm leading-6 text-slate-300">
+                          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
+                            <div className="mt-1 font-semibold text-white">{selectedRow?.statusLabel || "Project"}</div>
                           </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {primaryUrl && primaryUrl !== "#" ? (
-                              <a
-                                data-testid={`customer-project-payment-primary-${payment.id}`}
-                                href={primaryUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
-                              >
-                                {isInvoicePayment(payment) ? (paid ? "View Receipt" : actionable ? "Pay Invoice" : "View Record") : isReviewablePayment(payment) ? "Review Release" : "View Record"}
-                                <ExternalLink size={14} />
-                              </a>
-                            ) : null}
-                            {isInvoicePayment(payment) && invoiceUrl ? (
-                              <a
-                                data-testid={`customer-project-payment-view-invoice-${payment.id}`}
-                                href={invoiceUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
-                              >
-                                View Invoice
-                                <ExternalLink size={14} />
-                              </a>
-                            ) : null}
-                            {isInvoicePayment(payment) && invoiceUrl && actionable ? (
-                              <a
-                                data-testid={`customer-project-payment-dispute-${payment.id}`}
-                                href={`${invoiceUrl}?action=dispute`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
-                              >
-                                Open Dispute
-                                <ExternalLink size={14} />
-                              </a>
-                            ) : null}
-                            {hasOpenDispute(payment) && payment.dispute_url ? (
-                              <a
-                                data-testid={`customer-project-payment-track-dispute-${payment.id}`}
-                                href={payment.dispute_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
-                              >
-                                Track Issue Status
-                                <ExternalLink size={14} />
-                              </a>
-                            ) : null}
-                            {canReviewReimbursement(payment) ? (
-                              <>
-                                <button
-                                  type="button"
-                                  data-testid={`customer-project-payment-approve-reimbursement-${payment.record_id}`}
-                                  onClick={() => runReimbursementAction(payment, "approve")}
-                                  disabled={Boolean(reimbursementAction)}
-                                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
-                                >
-                                  {reimbursementAction === `approve-${payment.record_id}` ? "Approving..." : "Approve Reimbursement"}
-                                </button>
-                                <button
-                                  type="button"
-                                  data-testid={`customer-project-payment-deny-reimbursement-${payment.record_id}`}
-                                  onClick={() => openDenyReimbursementModal(payment)}
-                                  disabled={Boolean(reimbursementAction)}
-                                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
-                                >
-                                  {reimbursementAction === `deny-${payment.record_id}` ? "Denying..." : "Deny"}
-                                </button>
-                              </>
-                            ) : null}
+                          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Payment Mode</div>
+                            <div className="mt-1 font-semibold text-white">{selectedAgreement?.payment_mode || "Not set"}</div>
+                          </div>
+                          <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Warranty</div>
+                            <div className="mt-1 whitespace-pre-wrap text-slate-300">
+                              {selectedAgreement?.warranty_text || "Warranty details will appear here when added to your project."}
+                            </div>
                           </div>
                         </div>
-                      );
-                      })
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                        Contractor releases, direct payments, refunds, and adjustments will appear here when connected.
-                      </div>
-                    )}
+                      </Section>
+                    ) : null}
                   </div>
-                </Section>
                 ) : null}
-
-                {expandedDetails.documents ? (
-                <Section title="Documents" eyebrow="Project files" testId="customer-project-documents">
-                  <p className="text-sm leading-6 text-slate-300">Keep your project documents and home records in one place.</p>
-                  <div className="mt-3 space-y-2">
-                    {projectDocuments.length ? (
-                      projectDocuments.slice(0, 5).map((document) => (
-                        <a key={document.id} href={document.url || "#"} target="_blank" rel="noreferrer" className="flex items-start gap-3 rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/40">
-                          <FileText size={16} className="mt-1 shrink-0 text-sky-200" />
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-white">{document.title}</div>
-                            <div className="mt-1 truncate text-xs text-slate-500">{document.type_label || "Document"} - {document.filename || "File"}</div>
-                          </div>
-                        </a>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                        Agreement PDFs, receipts, shared attachments, and property records will appear here.
-                      </div>
-                    )}
-                  </div>
-                </Section>
-                ) : null}
-
-                {expandedDetails.documents ? (
-                <Section title="Agreement Summary" eyebrow="Scope and warranty" testId="customer-project-agreement-summary">
-                  <div className="space-y-3 text-sm leading-6 text-slate-300">
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
-                      <div className="mt-1 font-semibold text-white">{selectedRow?.statusLabel || "Project"}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Payment Mode</div>
-                      <div className="mt-1 font-semibold text-white">{selectedAgreement?.payment_mode || "Not set"}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Warranty</div>
-                      <div className="mt-1 whitespace-pre-wrap text-slate-300">
-                        {selectedAgreement?.warranty_text || "Warranty details will appear here when added to your project."}
-                      </div>
-                    </div>
-                  </div>
-                </Section>
-                ) : null}
-              </div>
-              ) : null}
-            </div>
               </div>
             </div>
         ) : null}
