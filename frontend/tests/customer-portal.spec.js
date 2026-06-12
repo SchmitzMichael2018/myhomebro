@@ -2330,10 +2330,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-projects-layout")).toHaveClass(/xl:grid-cols-\[minmax\(280px,0\.72fr\)_minmax\(0,1\.7fr\)\]/);
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Selected agreement");
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
-  await expect(page.getByTestId("customer-project-detail-layout")).toHaveClass(/grid-cols-1/);
-  await expect(page.getByTestId("customer-project-detail-layout")).toHaveClass(/xl:grid-cols-\[minmax\(0,1\.45fr\)_minmax\(360px,0\.85fr\)\]/);
+  await expect(page.getByTestId("customer-project-detail-layout")).toHaveClass(/space-y-4/);
   await expect(page.getByTestId("customer-project-detail-primary")).toBeVisible();
-  await expect(page.getByTestId("customer-project-detail-secondary")).toBeVisible();
+  await expect(page.getByTestId("customer-project-detail-financial-summary")).toHaveCount(0);
+  await expect(page.getByTestId("customer-project-detail-layout")).not.toContainText("Financial Summary");
+  await expect(page.getByTestId("customer-project-detail-layout")).not.toContainText("Project money");
   const projectDetailMetrics = await page.evaluate(() => {
     const workspace = document.querySelector('[data-testid="customer-project-workspace"]')?.getBoundingClientRect();
     const details = document.querySelector('[data-testid="customer-project-detail-layout"]')?.getBoundingClientRect();
@@ -2342,7 +2343,6 @@ test("customer portal is reachable from the landing page and loads secure record
     const actionPanels = document.querySelector('[data-testid="customer-selected-action-panels"]');
     const actionBox = actionPanels?.getBoundingClientRect();
     const primary = document.querySelector('[data-testid="customer-project-detail-primary"]')?.getBoundingClientRect();
-    const secondary = document.querySelector('[data-testid="customer-project-detail-secondary"]')?.getBoundingClientRect();
     const projectRow = document.querySelector('[data-testid="customer-projects-layout"]')?.getBoundingClientRect();
     return {
       workspaceWidth: workspace?.width || 0,
@@ -2354,10 +2354,9 @@ test("customer portal is reachable from the landing page and loads secure record
       actionLeft: actionBox?.left || 0,
       actionTop: actionBox?.top || 0,
       actionBottom: actionBox?.bottom || 0,
+      primaryWidth: primary?.width || 0,
       primaryLeft: primary?.left || 0,
       primaryTop: primary?.top || 0,
-      secondaryLeft: secondary?.left || 0,
-      secondaryTop: secondary?.top || 0,
       summaryContainsDetails: Boolean(summary && details && summary.contains(document.querySelector('[data-testid="customer-project-detail-layout"]'))),
       detailsContainActionPanels: Boolean(details && actionPanels && document.querySelector('[data-testid="customer-project-detail-layout"]').contains(actionPanels)),
     };
@@ -2367,8 +2366,7 @@ test("customer portal is reachable from the landing page and loads secure record
   expect(Math.abs(projectDetailMetrics.actionLeft - projectDetailMetrics.summaryLeft)).toBeLessThan(8);
   expect(projectDetailMetrics.actionTop).toBeGreaterThanOrEqual(projectDetailMetrics.summaryBottom - 1);
   expect(projectDetailMetrics.detailsTop).toBeGreaterThanOrEqual(projectDetailMetrics.actionBottom - 1);
-  expect(projectDetailMetrics.secondaryLeft).toBeGreaterThan(projectDetailMetrics.primaryLeft);
-  expect(Math.abs(projectDetailMetrics.secondaryTop - projectDetailMetrics.primaryTop)).toBeLessThan(8);
+  expect(projectDetailMetrics.primaryWidth).toBeGreaterThan(projectDetailMetrics.detailsWidth * 0.9);
   expect(projectDetailMetrics.summaryContainsDetails).toBe(false);
   expect(projectDetailMetrics.detailsContainActionPanels).toBe(false);
   await expect(page.getByTestId("customer-agreement-view-action")).toHaveAttribute("href", "/agreements/magic/portal-token");

@@ -1769,28 +1769,9 @@ export default function CustomerProjectWorkspace({
         {selected ? (
             <div
               data-testid="customer-project-detail-layout"
-              className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.85fr)] 2xl:grid-cols-[minmax(0,1.6fr)_minmax(420px,0.8fr)]"
+              className="space-y-4"
             >
-              <div data-testid="customer-project-detail-secondary" className="space-y-4 xl:order-2">
-                <Section title="Financial Summary" eyebrow="Project money" testId="customer-project-detail-financial-summary">
-                  <div className="grid gap-3 text-sm">
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Remaining in escrow</div>
-                      <div className="mt-1 text-xl font-black text-white">{money(selectedPaymentModel.remainingInEscrow)}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Escrow funded</div>
-                      <div className="mt-1 font-semibold text-white">{money(selectedPaymentModel.escrowFunded)}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Released to contractor</div>
-                      <div className="mt-1 font-semibold text-white">{money(selectedPaymentModel.releasedToContractor)}</div>
-                    </div>
-                  </div>
-                </Section>
-              </div>
-
-              <div data-testid="customer-project-detail-primary" className="space-y-4 xl:order-1">
+              <div data-testid="customer-project-detail-primary" className="space-y-4">
             <div className="grid gap-4">
               <div className="space-y-4">
                 <button
