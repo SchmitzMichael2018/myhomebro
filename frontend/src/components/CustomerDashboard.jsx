@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, UserRound } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -1906,10 +1906,16 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [acceptingBidId, setAcceptingBidId] = useState("");
   const [markingNotificationId, setMarkingNotificationId] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [focusedRequestId, setFocusedRequestId] = useState("");
 
   const customerName = portal?.customer?.name || "Customer";
   const notifications = normalizePortalNotifications(portal?.notifications || []);
   const unreadCount = notifications.filter((notification) => notification.status !== "read").length;
+  const openRequestFromPropertyTimeline = useCallback((requestId) => {
+    if (!requestId) return;
+    setFocusedRequestId(String(requestId));
+    setActiveTab("requests");
+  }, []);
 
   const refreshPortal = async () => {
     if (!token) return;
@@ -2083,6 +2089,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           propertyProfiles={portal?.property_profiles || []}
           creating={creatingRequest}
           acceptingBidId={acceptingBidId}
+          focusedRequestId={focusedRequestId}
+          onFocusedRequestHandled={() => setFocusedRequestId("")}
           onAcceptBid={async (bid) => {
             const bidKey = bid?.id || "";
             if (!bidKey) return;
@@ -2195,7 +2203,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           payments={portal?.payments || []}
           maintenanceWorkOrders={portal?.maintenance_work_orders || []}
           propertyIntelligence={portal?.property_intelligence || {}}
-          onOpenTab={setActiveTab}
+          onOpenRequest={openRequestFromPropertyTimeline}
           saving={savingProperty}
           uploading={uploadingPropertyFile}
           systemSaving={savingHomeSystem}
@@ -2273,7 +2281,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, savingProfile]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, savingProfile, focusedRequestId, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

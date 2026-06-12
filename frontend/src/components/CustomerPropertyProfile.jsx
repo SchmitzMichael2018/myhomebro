@@ -791,7 +791,8 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
       title,
       type: "Request",
       detail: `${status}${projectAddress ? ` - ${projectAddress}` : ""}`,
-      actionLabel: "View request",
+      actionLabel: request.id ? "View request" : "",
+      actionTarget: request.id ? { kind: "request", requestId: request.id } : null,
     });
     if (request.linked_work || request.agreement_token || String(request.conversion_status || "").toLowerCase().includes("agreement")) {
       rows.push({
@@ -866,7 +867,7 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder }) {
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const maintenance = maintenanceRows(maintenanceWorkOrders);
   const hasStructuredSystems = Array.isArray(profile?.home_systems);
@@ -895,6 +896,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         {timeline.length ? (
           <div className="space-y-3">
             {visibleTimeline.map((item) => {
+              const requestTarget = item.actionTarget?.kind === "request" && item.actionTarget.requestId ? item.actionTarget : null;
               const content = (
                 <>
                   <div className="text-xs font-semibold text-amber-100">{formatDate(item.date)}</div>
@@ -921,6 +923,17 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
                 >
                   {content}
                 </a>
+              ) : requestTarget ? (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-testid={`home-records-timeline-action-${item.id}`}
+                  aria-label={`View request for ${item.title}`}
+                  onClick={() => onOpenRequest?.(requestTarget.requestId)}
+                  className="grid w-full gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 text-left hover:border-amber-300/45 focus:border-amber-300/70 focus:outline-none focus:ring-2 focus:ring-amber-300/30 sm:grid-cols-[110px_minmax(0,1fr)]"
+                >
+                  {content}
+                </button>
               ) : (
                 <div
                   key={item.id}
@@ -960,7 +973,7 @@ export default function CustomerPropertyProfile({
   payments = [],
   maintenanceWorkOrders = [],
   propertyIntelligence = {},
-  onOpenTab,
+  onOpenRequest,
   onSave,
   onAdd,
   onCreateSystem,
@@ -1071,7 +1084,7 @@ export default function CustomerPropertyProfile({
         payments={payments}
         maintenanceWorkOrders={maintenanceWorkOrders}
         propertyIntelligence={propertyIntelligence}
-        onOpenTab={onOpenTab}
+        onOpenRequest={onOpenRequest}
         onAddSystem={openAddSystem}
         onEditSystem={openEditSystem}
         onArchiveSystem={async (system) => {

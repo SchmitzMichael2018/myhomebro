@@ -2169,6 +2169,15 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "HVAC" })).toHaveCount(0);
   await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "Reviewing Request" })).toHaveCount(0);
   await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "Editable until sent" })).toHaveCount(0);
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toBeVisible();
+  await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toContainText("View request");
+  await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toHaveAttribute("aria-label", "View request for Seasonal HVAC maintenance");
+  await page.getByTestId("home-records-timeline-action-request-customer-request-9").click();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Seasonal HVAC maintenance");
+  await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Request Details");
+  await page.getByRole("button", { name: "Close request details" }).click();
   await page.getByTestId("customer-request-delete-customer-request-9").click();
   await expect(page.getByTestId("customer-request-delete-modal")).toBeVisible();
   await page.getByRole("button", { name: "Keep Request" }).click();

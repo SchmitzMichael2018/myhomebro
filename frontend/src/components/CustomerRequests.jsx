@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
 import ContractorDiscoveryStep from "./intake/ContractorDiscoveryStep.jsx";
 
@@ -331,6 +331,8 @@ export default function CustomerRequests({
   onAcceptBid,
   acceptingBidId = "",
   creating = false,
+  focusedRequestId = "",
+  onFocusedRequestHandled,
 }) {
   const [pendingAwardBid, setPendingAwardBid] = useState(null);
   const [activeComparisonKey, setActiveComparisonKey] = useState("");
@@ -375,6 +377,13 @@ export default function CustomerRequests({
     () => requests.filter((row) => row.source_kind === "customer_request"),
     [requests]
   );
+  useEffect(() => {
+    if (!focusedRequestId) return;
+    const request = requests.find((row) => String(row.id) === String(focusedRequestId));
+    if (!request) return;
+    setSelectedRequest(request);
+    onFocusedRequestHandled?.();
+  }, [focusedRequestId, requests, onFocusedRequestHandled]);
   const bidsByComparisonKey = useMemo(() => {
     const grouped = {};
     bids.forEach((bid) => {
