@@ -448,7 +448,7 @@ export default function AddressAutocomplete({
           autoComplete="off"
           className={
             inputClassName ||
-            "w-full rounded border px-3 py-2 pr-10 text-sm"
+            "w-full rounded border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-950 placeholder:text-slate-500 outline-none focus:border-sky-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:placeholder:text-slate-400"
           }
           disabled={disabled}
           onChange={handleInputChange}
@@ -471,7 +471,7 @@ export default function AddressAutocomplete({
         <div
           className={
             suggestionsClassName ||
-            "absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-xl"
+            "absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-300 bg-white text-sm text-slate-950 shadow-xl"
           }
           data-testid="address-autocomplete-suggestions"
         >
@@ -482,7 +482,7 @@ export default function AddressAutocomplete({
               <button
                 className={
                   suggestionButtonClassName ||
-                  "block w-full px-3 py-2 text-left hover:bg-slate-50 focus:bg-slate-50"
+                  "block w-full px-3 py-2 text-left text-slate-950 hover:bg-sky-50 hover:text-slate-950 focus:bg-sky-100 focus:text-slate-950 focus:outline-none active:bg-sky-200 disabled:bg-slate-100 disabled:text-slate-500"
                 }
                 key={key}
                 onClick={() => handleSelectPrediction(prediction)}

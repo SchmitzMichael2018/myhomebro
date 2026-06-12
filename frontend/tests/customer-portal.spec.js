@@ -2340,6 +2340,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-command-summary")).toContainText("1998");
   await expect(page.getByTestId("property-command-summary")).toContainText("2,400");
   await expect(page.getByTestId("property-summary-selector")).toBeVisible();
+  await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/text-white/);
+  await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
   await expect(page.getByTestId("property-home-systems")).toContainText("Carrier");
@@ -2653,6 +2655,10 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-documents-empty")).toContainText("No documents yet");
+
+  await page.getByTestId("customer-dashboard-tab-account").click();
+  await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/text-white/);
+  await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
 });
 
 test("customer portal limits long home records, payments, and documents without dead timeline links", async ({ page }) => {

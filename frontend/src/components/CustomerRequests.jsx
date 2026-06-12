@@ -948,7 +948,7 @@ I need help installing shelves and patching drywall.`}
                   testId="customer-request-address-autocomplete"
                   inputClassName="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 pr-10 text-sm text-white placeholder:text-slate-400 outline-none focus:border-sky-400"
                   suggestionsClassName="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-600 bg-slate-950 text-sm text-slate-100 shadow-xl"
-                  suggestionButtonClassName="block w-full px-3 py-2 text-left text-slate-100 hover:bg-slate-800 focus:bg-slate-800"
+                  suggestionButtonClassName="block w-full px-3 py-2 text-left text-slate-100 hover:bg-slate-800 hover:text-white focus:bg-sky-900 focus:text-white focus:outline-none active:bg-sky-800 disabled:bg-slate-900 disabled:text-slate-500"
                   helperClassName="mt-1 text-xs text-slate-300"
                 />
               </div>
