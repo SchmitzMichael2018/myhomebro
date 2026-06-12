@@ -1,15 +1,14 @@
 # Python
 __pycache__/
 *.py[cod]
-*.sqlite3
-*.db
 *.log
+venv/
 
-# Env / secrets
+# Env / secrets — never commit these
 .env
 *.env
 backend/.env.local
-!backend/.env.local.example
+.env.*.local
 
 # Node / Frontend
 frontend/node_modules/
@@ -17,21 +16,24 @@ node_modules/
 frontend/dist/
 frontend/playwright/.auth/
 
-# Django static output
+# Django outputs
 staticfiles/
 staticfiles/assets/
 static/
-# ---- MyHomeBro ignores ----
-frontend/dist/
-staticfiles/
-venv/
-__pycache__/
-*.pyc
-.env
-node_modules/
-*.log
-.aider*
 media/
-
-# Uploaded / generated media files
 /media/
+
+# Database — never commit db files or recovery artifacts
+*.sqlite3
+*.db
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+db.sqlite3.bad-*
+db.sqlite3.corrupt-*
+db.sqlite3.locked-*
+db.sqlite3.pre-*
+recovered.sql
+
+# Aider AI assistant
+.aider*

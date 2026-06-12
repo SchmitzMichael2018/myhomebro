@@ -83,9 +83,19 @@ else:
     if discovered:
         load_dotenv(discovered, override=True)
 
-for env_path in (BASE_DIR / ".env.local", REPO_DIR / ".env.local"):
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
+# .env.local is local-development only. By the time we reach this check, the
+# main .env has already been loaded into os.environ, so DEBUG and
+# LOAD_LOCAL_ENV are readable.  On PythonAnywhere (DEBUG not set / DEBUG=False),
+# this block is skipped entirely — .env.local can never override production.
+_load_local_env = os.getenv("DEBUG", "false").lower() in (
+    "1", "true", "t", "yes", "y", "on"
+) or os.getenv("LOAD_LOCAL_ENV", "false").lower() in (
+    "1", "true", "t", "yes", "y", "on"
+)
+if _load_local_env:
+    for env_path in (BASE_DIR / ".env.local", REPO_DIR / ".env.local"):
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -162,7 +172,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     "django_celery_results",
 
-    "core",
+    "core.apps.CoreConfig",
     "accounts",
     "payments",
     "receipts.apps.ReceiptsConfig",
@@ -210,6 +220,16 @@ DATABASES = {
         ssl_require=DATABASE_URL.startswith(("postgres://", "postgresql://")),
     )
 }
+
+# SQLite production hardening.
+# OPTIONS["timeout"] tells Django's sqlite3.connect() to wait up to N seconds
+# for a busy lock before raising OperationalError — the primary fix for
+# "database is locked" under concurrent web requests on PythonAnywhere.
+# journal_mode and synchronous PRAGMAs are applied per-connection in
+# core/apps.py via the connection_created signal (init_command is MySQL-only).
+if DATABASES["default"].get("ENGINE") == "django.db.backends.sqlite3":
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"]["timeout"] = 20
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -37,7 +37,14 @@ else:
         load_dotenv(discovered, override=True)
         loaded = True
 
-if local_override_env.exists():
+# .env.local is local-development only. After the main .env load above, DEBUG
+# is available from os.environ. Skip .env.local on production (DEBUG falsy).
+_load_local_env = os.environ.get("DEBUG", "false").lower() in (
+    "1", "true", "t", "yes", "y", "on"
+) or os.environ.get("LOAD_LOCAL_ENV", "false").lower() in (
+    "1", "true", "t", "yes", "y", "on"
+)
+if _load_local_env and local_override_env.exists():
     load_dotenv(dotenv_path=local_override_env, override=True)
     loaded = True
 
