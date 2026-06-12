@@ -33,6 +33,7 @@ from projects.services.project_titles import is_home_addition_description, norma
 from projects.services.notification_center import create_notification
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
+from projects.services.recipient_validation import normalize_valid_email
 
 logger = logging.getLogger(__name__)
 
@@ -1325,7 +1326,7 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
             directory_listing=listing,
             channel=channel,
             destination_phone=_safe_text(getattr(contractor, "phone", "")) or _safe_text(getattr(listing, "phone_number", "")),
-            destination_email=_safe_text(getattr(contractor, "email", "")) or _safe_text(getattr(listing, "email", "")),
+            destination_email=normalize_valid_email(getattr(getattr(contractor, "user", None), "email", "")) or normalize_valid_email(getattr(listing, "email", "")),
         )
 
         invite_message = (
@@ -1375,9 +1376,10 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
                 body=f"A homeowner selected your business to review a {summary.get('project_type') or 'project'} project.",
                 link=f"/app/bids",
             )
-            if contractor.email:
+            contractor_email = normalize_valid_email(getattr(getattr(contractor, "user", None), "email", ""))
+            if contractor_email:
                 send_postmark_email(
-                    to_email=contractor.email,
+                    to_email=contractor_email,
                     subject="New project request near you on MyHomeBro",
                     text_body=(
                         f"A homeowner near {summary.get('project_city') or summary.get('project_state') or 'your area'} selected "
@@ -1410,18 +1412,19 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
                 invite.destination_phone = listing.phone_number
                 invite.destination_email = ""
                 invite.sent_at = timezone.now() if ok else None
-            elif channel == ContractorDiscoveryInvite.CHANNEL_EMAIL and listing.email and not listing.email_opt_out:
+            listing_email = normalize_valid_email(getattr(listing, "email", ""))
+            if channel == ContractorDiscoveryInvite.CHANNEL_EMAIL and listing_email and not listing.email_opt_out:
                 ok, msg = send_postmark_email(
-                    to_email=listing.email,
+                    to_email=listing_email,
                     subject="New project request near you on MyHomeBro",
                     text_body=body_text,
                 )
                 invite.error_message = "" if ok else msg
                 invite.status = ContractorDiscoveryInvite.STATUS_SENT if ok else ContractorDiscoveryInvite.STATUS_FAILED
-                invite.destination_email = listing.email
+                invite.destination_email = listing_email
                 invite.destination_phone = ""
                 invite.sent_at = timezone.now() if ok else None
-            else:
+            elif not (channel == ContractorDiscoveryInvite.CHANNEL_SMS and listing.phone_number and not listing.sms_opt_out):
                 invite.status = ContractorDiscoveryInvite.STATUS_PENDING
                 invite.error_message = "No supported contact channel available."
             invite.save(update_fields=["status", "error_message", "destination_phone", "destination_email", "sent_at", "updated_at"])

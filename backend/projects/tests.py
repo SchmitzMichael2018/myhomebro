@@ -21325,6 +21325,114 @@ class CustomerPortalAccessTests(TestCase):
             ).exists()
         )
 
+    def test_customer_portal_cancel_routed_request_skips_invalid_contractor_email(self):
+        from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
+
+        self.contractor_user.email = "Builder Co"
+        self.contractor_user.save(update_fields=["email"])
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Dryer repair",
+            description="Dryer is making loud noises.",
+            status=CustomerRequest.STATUS_MARKETPLACE_READY,
+        )
+        source_intake = _sync_customer_request_source_intake(saved)
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Builder Co",
+            normalized_name="builder co",
+            claimed_by_contractor=self.contractor,
+            phone="555-222-1010",
+            public_email="",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            primary_service="Appliance Repair",
+            services=["Appliance Repair", "Dryer Repair"],
+            source="manual",
+        )
+        opportunity = ContractorOpportunity.objects.create(
+            directory_entry=entry,
+            intake_request=source_intake,
+            homeowner_email=self.customer_email,
+            project_title=saved.title,
+            project_type="Appliance Repair",
+            project_subtype="Dryer Repair",
+            status=ContractorOpportunity.STATUS_PENDING,
+        )
+        saved.status = CustomerRequest.STATUS_ROUTED
+        saved.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/cancel/",
+            {"reason": "We are pausing the work."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["notified_contractors"], 0)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_EXPIRED)
+        self.assertFalse(Notification.objects.filter(contractor=self.contractor, title="Customer request cancelled").exists())
+
+    def test_smart_notification_rejects_invalid_recipient_emails(self):
+        from projects.services.smart_notifications import create_smart_notification
+
+        starting_logs = NotificationLog.objects.count()
+        for invalid_email in ["", "Builder Co", "not-an-email", "555-111-2222"]:
+            notification = create_smart_notification(
+                event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+                recipient_email=invalid_email,
+                context={"request_title": "Test request"},
+            )
+            self.assertIsNone(notification)
+
+        self.assertFalse(SmartNotification.objects.exists())
+        self.assertEqual(NotificationLog.objects.filter(status=NotificationLog.STATUS_SKIPPED).count(), starting_logs + 4)
+        self.assertTrue(
+            all(
+                "Invalid or missing recipient email" in message
+                for message in NotificationLog.objects.order_by("-id").values_list("message", flat=True)[:4]
+            )
+        )
+
+    @patch("projects.services.contractor_discovery.send_postmark_email")
+    def test_local_business_listing_without_valid_email_is_skipped_for_email_invite(self, mock_send_email):
+        from projects.models_contractor_discovery import ContractorDiscoveryInvite
+        from projects.services.contractor_discovery import create_discovery_invites
+
+        listing = ContractorDirectoryListing.objects.create(
+            source=ContractorDirectoryListing.SOURCE_GOOGLE_PLACES,
+            google_place_id="places-local-pool",
+            business_name="Austin Pool Builders",
+            phone_number="",
+            email="Austin Pool Builders",
+            city="Austin",
+            state="TX",
+            primary_trade="Pool",
+        )
+
+        result = create_discovery_invites(
+            intake=self.comparison_intake,
+            selected_targets=[
+                {
+                    "source": "listing",
+                    "id": f"listing:{listing.id}",
+                    "channel": "email",
+                }
+            ],
+            preferred_channel="email",
+        )
+
+        invite = ContractorDiscoveryInvite.objects.get(directory_listing=listing)
+        self.assertEqual(invite.status, ContractorDiscoveryInvite.STATUS_PENDING)
+        self.assertEqual(invite.destination_email, "")
+        self.assertIn("No supported contact channel", invite.error_message)
+        self.assertFalse(mock_send_email.called)
+        self.assertEqual(result["created"][0]["status"], ContractorDiscoveryInvite.STATUS_PENDING)
+
     def test_customer_portal_requests_are_scoped_to_verified_email(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         CustomerRequest.objects.create(

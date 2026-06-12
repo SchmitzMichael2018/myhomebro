@@ -1028,15 +1028,16 @@ def _notify_contractors_request_cancelled(customer_request: CustomerRequest) -> 
     ):
         contractor = getattr(getattr(opportunity, "directory_entry", None), "claimed_by_contractor", None)
         if contractor and contractor.id not in contractor_ids:
-            create_notification(
+            notification, _created = create_notification(
                 contractor=contractor,
                 category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
                 title=title,
                 body=body,
                 link=link,
             )
-            contractor_ids.add(contractor.id)
-            notified += 1
+            if notification is not None:
+                contractor_ids.add(contractor.id)
+                notified += 1
         if opportunity.status != ContractorOpportunity.STATUS_CONVERTED:
             opportunity.status = ContractorOpportunity.STATUS_EXPIRED
             opportunity.save(update_fields=["status", "updated_at"])
@@ -1055,15 +1056,16 @@ def _notify_contractors_request_cancelled(customer_request: CustomerRequest) -> 
     ):
         contractor = getattr(invite, "contractor", None)
         if contractor and contractor.id not in contractor_ids:
-            create_notification(
+            notification, _created = create_notification(
                 contractor=contractor,
                 category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
                 title=title,
                 body=body,
                 link=link,
             )
-            contractor_ids.add(contractor.id)
-            notified += 1
+            if notification is not None:
+                contractor_ids.add(contractor.id)
+                notified += 1
         invite.status = ContractorDiscoveryInvite.STATUS_EXPIRED
         invite.save(update_fields=["status", "updated_at"])
 

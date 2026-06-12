@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from projects.models_customer_portal import NotificationLog, NotificationRule, SmartNotification, SmartNotificationEvent
+from projects.services.recipient_validation import normalize_valid_email
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -156,7 +160,8 @@ def create_smart_notification(
     customer_request=None,
     property_profile=None,
 ) -> SmartNotification | None:
-    normalized_email = str(recipient_email or "").strip().lower()
+    raw_email = str(recipient_email or "").strip().lower()
+    normalized_email = normalize_valid_email(raw_email)
     rule = _default_rule(event_type, channel=channel, audience=audience)
     dedupe_key = str((context or {}).get("dedupe_key") or "").strip()
     log_metadata = {
@@ -166,13 +171,19 @@ def create_smart_notification(
     }
 
     if not normalized_email or not rule.is_active:
+        if not normalized_email:
+            logger.warning("Skipped smart notification for event_type=%s: invalid or missing recipient email.", event_type)
         NotificationLog.objects.create(
             notification_rule=rule,
             event_type=event_type,
             channel=channel,
             status=NotificationLog.STATUS_SKIPPED,
             recipient_email=normalized_email,
-            message="Missing recipient email." if not normalized_email else "Notification rule is inactive.",
+            message=(
+                "Invalid or missing recipient email."
+                if not normalized_email
+                else "Notification rule is inactive."
+            ),
             metadata=log_metadata,
         )
         return None

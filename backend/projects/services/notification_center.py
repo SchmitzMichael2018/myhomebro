@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from django.db.models import Q
 
 from projects.models import Notification
+from projects.services.recipient_validation import contractor_has_valid_account_email
 from projects.utils.accounts import get_contractor_for_user
+
+logger = logging.getLogger(__name__)
 
 
 ACTION_NEEDED_CATEGORIES = {
@@ -108,6 +113,9 @@ def create_notification(
         user = getattr(contractor, "user", None)
 
     if contractor is None:
+        return None, False
+    if not contractor_has_valid_account_email(contractor):
+        logger.warning("Skipped contractor notification for contractor_id=%s: invalid or missing account email.", getattr(contractor, "id", None))
         return None, False
 
     actor_display_name, actor_email = _resolve_actor_fields(actor_user, actor_display_name, actor_email)
