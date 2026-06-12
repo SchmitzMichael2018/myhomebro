@@ -61,6 +61,7 @@ from projects.services.bid_notifications import create_bid_outcome_notifications
 from projects.services.escrow_reimbursements import approve_reimbursement, deny_reimbursement, escrow_ledger, serialize_ledger
 from projects.services.contractor_reviews import review_eligibility, serialize_review, submit_customer_review
 from projects.services.smart_notifications import create_smart_notification
+from projects.services.notification_center import create_notification
 from projects.services.maintenance_work_orders import customer_visible_work_order_queryset
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
@@ -579,7 +580,40 @@ def _customer_request_matching_counts(request_row) -> dict:
 def _customer_request_can_edit(request_row) -> bool:
     if getattr(request_row, "converted_project_id", None):
         return False
-    if _safe_text(getattr(request_row, "status", "")) in {CustomerRequest.STATUS_CLOSED, CustomerRequest.STATUS_CONVERTED_TO_PROJECT}:
+    if _safe_text(getattr(request_row, "status", "")) in {
+        CustomerRequest.STATUS_CLOSED,
+        CustomerRequest.STATUS_CANCELLED,
+        CustomerRequest.STATUS_CONVERTED_TO_PROJECT,
+    }:
+        return False
+    return _customer_request_matching_counts(request_row)["total"] == 0
+
+
+def _customer_request_cancel_state(request_row) -> tuple[bool, str]:
+    status_value = _safe_text(getattr(request_row, "status", "")).lower()
+    if getattr(request_row, "converted_project_id", None) or status_value == CustomerRequest.STATUS_CONVERTED_TO_PROJECT:
+        return False, "This request already has an agreement. Use the agreement workflow for changes."
+    if status_value == CustomerRequest.STATUS_CLOSED:
+        return False, "This request is closed."
+    if status_value == CustomerRequest.STATUS_CANCELLED:
+        return False, "This request is already cancelled."
+    if status_value == CustomerRequest.STATUS_MATCHED:
+        return False, "A contractor has already been selected. Review the contractor response or agreement workflow before cancelling."
+    return True, ""
+
+
+def _customer_request_can_delete(request_row) -> bool:
+    if getattr(request_row, "converted_project_id", None):
+        return False
+    if _safe_text(getattr(request_row, "status", "")).lower() in {
+        CustomerRequest.STATUS_ROUTED,
+        CustomerRequest.STATUS_MATCHED,
+        CustomerRequest.STATUS_CONVERTED_TO_PROJECT,
+        CustomerRequest.STATUS_CLOSED,
+        CustomerRequest.STATUS_CANCELLED,
+    }:
+        return False
+    if getattr(request_row, "source_intake_id", None):
         return False
     return _customer_request_matching_counts(request_row)["total"] == 0
 
@@ -588,6 +622,8 @@ def _customer_request_workflow_status(request_row, *, bids_count: int = 0) -> tu
     if getattr(request_row, "converted_project_id", None):
         return "agreement_created", "Agreement Created", "Open the linked agreement when you are ready."
     status_value = _safe_text(getattr(request_row, "status", "")).lower()
+    if status_value == CustomerRequest.STATUS_CANCELLED:
+        return "cancelled", "Cancelled", "This request was cancelled and will not be sent to contractors."
     if status_value == CustomerRequest.STATUS_CLOSED:
         return "closed", "Closed", "This request is closed."
     if bids_count > 0:
@@ -882,6 +918,15 @@ def _customer_request_activity(request_row) -> list[dict]:
                 status="converted",
             )
         )
+    if getattr(request_row, "cancelled_at", None):
+        items.append(
+            _request_activity_item(
+                "Request cancelled",
+                getattr(request_row, "cancelled_at", None),
+                _safe_text(getattr(request_row, "cancellation_reason", "")) or "Cancelled by homeowner.",
+                status="cancelled",
+            )
+        )
     seen = set()
     timeline = []
     for item in items:
@@ -957,6 +1002,67 @@ def _sync_customer_request_source_intake(customer_request: CustomerRequest) -> P
     source_intake.ensure_share_token(save=False)
     source_intake.save()
     return source_intake
+
+
+def _notify_contractors_request_cancelled(customer_request: CustomerRequest) -> int:
+    source_intake = getattr(customer_request, "source_intake", None)
+    if not source_intake:
+        return 0
+    notified = 0
+    contractor_ids = set()
+    title = "Customer request cancelled"
+    body = f"{customer_request.title} was cancelled by the customer."
+    link = "/app/bids"
+    for opportunity in (
+        ContractorOpportunity.objects.select_related("directory_entry__claimed_by_contractor")
+        .filter(intake_request=source_intake)
+        .exclude(status__in=[ContractorOpportunity.STATUS_CONVERTED, ContractorOpportunity.STATUS_EXPIRED])
+    ):
+        contractor = getattr(getattr(opportunity, "directory_entry", None), "claimed_by_contractor", None)
+        if contractor and contractor.id not in contractor_ids:
+            create_notification(
+                contractor=contractor,
+                category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
+                title=title,
+                body=body,
+                link=link,
+            )
+            contractor_ids.add(contractor.id)
+            notified += 1
+        if opportunity.status != ContractorOpportunity.STATUS_CONVERTED:
+            opportunity.status = ContractorOpportunity.STATUS_EXPIRED
+            opportunity.save(update_fields=["status", "updated_at"])
+
+    for invite in (
+        ContractorDiscoveryInvite.objects.select_related("contractor")
+        .filter(public_intake=source_intake)
+        .exclude(
+            status__in=[
+                ContractorDiscoveryInvite.STATUS_RESPONDED,
+                ContractorDiscoveryInvite.STATUS_DECLINED,
+                ContractorDiscoveryInvite.STATUS_EXPIRED,
+                ContractorDiscoveryInvite.STATUS_OPTED_OUT,
+            ]
+        )
+    ):
+        contractor = getattr(invite, "contractor", None)
+        if contractor and contractor.id not in contractor_ids:
+            create_notification(
+                contractor=contractor,
+                category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
+                title=title,
+                body=body,
+                link=link,
+            )
+            contractor_ids.add(contractor.id)
+            notified += 1
+        invite.status = ContractorDiscoveryInvite.STATUS_EXPIRED
+        invite.save(update_fields=["status", "updated_at"])
+
+    PublicContractorLead.objects.filter(source_intake=source_intake).exclude(
+        status__in=[PublicContractorLead.STATUS_ACCEPTED, PublicContractorLead.STATUS_REJECTED, PublicContractorLead.STATUS_CLOSED]
+    ).update(status=PublicContractorLead.STATUS_CLOSED)
+    return notified
 
 
 def _intake_activity(intake, selected_contractor: dict | None = None, agreement=None) -> list[dict]:
@@ -1055,6 +1161,8 @@ def _customer_request_rows(email: str) -> list[dict]:
         )
         can_edit = _customer_request_can_edit(request_row)
         matching_counts = _customer_request_matching_counts(request_row)
+        can_cancel, cancel_lock_reason = _customer_request_cancel_state(request_row)
+        can_delete = _customer_request_can_delete(request_row)
         rows.append(
             {
                 "id": f"customer-request-{request_row.id}",
@@ -1091,6 +1199,12 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "workflow_status_label": workflow_label,
                 "can_edit": can_edit,
                 "edit_lock_reason": "" if can_edit else "Editing is locked after a request is sent to contractors or converted to an agreement.",
+                "can_cancel": can_cancel,
+                "cancel_lock_reason": cancel_lock_reason,
+                "can_delete": can_delete,
+                "delete_lock_reason": "" if can_delete else "Delete is only available before a request is sent to contractors.",
+                "cancelled_at": _safe_dt(getattr(request_row, "cancelled_at", None)),
+                "cancellation_reason": _safe_text(getattr(request_row, "cancellation_reason", "")),
                 "contractor_matching_started": bool(source_intake),
                 "source_intake_id": getattr(source_intake, "id", None),
                 "source_intake_token": _safe_text(getattr(source_intake, "share_token", "")),
@@ -3673,6 +3787,77 @@ class CustomerPortalRequestDetailView(APIView):
         if getattr(customer_request, "source_intake_id", None):
             _sync_customer_request_source_intake(customer_request)
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+    def delete(self, request, token: str, request_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        customer_request = get_object_or_404(
+            CustomerRequest.objects.select_related("property_profile", "source_intake", "converted_project"),
+            pk=request_id,
+            customer_email__iexact=email.lower().strip(),
+        )
+        if not _customer_request_can_delete(customer_request):
+            return Response(
+                {"detail": "Only private requests that have not been sent to contractors can be deleted."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        customer_request.delete()
+        return Response(
+            {
+                "detail": "Request deleted.",
+                "request_id": request_id,
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalRequestCancelView(APIView):
+    permission_classes = [AllowAny]
+
+    class InputSerializer(serializers.Serializer):
+        reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+    def post(self, request, token: str, request_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        customer_request = get_object_or_404(
+            CustomerRequest.objects.select_related("property_profile", "source_intake", "converted_project", "homeowner"),
+            pk=request_id,
+            customer_email__iexact=email.lower().strip(),
+        )
+        can_cancel, reason = _customer_request_cancel_state(customer_request)
+        if not can_cancel:
+            return Response({"detail": reason}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            customer_request.status = CustomerRequest.STATUS_CANCELLED
+            customer_request.cancelled_at = timezone.now()
+            customer_request.cancellation_reason = _safe_text(serializer.validated_data.get("reason"))
+            customer_request.save(update_fields=["status", "cancelled_at", "cancellation_reason", "updated_at"])
+            notified_contractors = _notify_contractors_request_cancelled(customer_request)
+
+        return Response(
+            {
+                "detail": "Request cancelled.",
+                "request_id": customer_request.id,
+                "notified_contractors": notified_contractors,
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalRequestMatchingView(APIView):

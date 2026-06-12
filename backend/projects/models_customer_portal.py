@@ -336,6 +336,7 @@ class CustomerRequest(models.Model):
     STATUS_MATCHED = "matched"
     STATUS_CONVERTED_TO_PROJECT = "converted_to_project"
     STATUS_CLOSED = "closed"
+    STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Draft"),
         (STATUS_SUBMITTED, "Submitted"),
@@ -344,6 +345,7 @@ class CustomerRequest(models.Model):
         (STATUS_MATCHED, "Matched"),
         (STATUS_CONVERTED_TO_PROJECT, "Converted to Project"),
         (STATUS_CLOSED, "Closed"),
+        (STATUS_CANCELLED, "Cancelled"),
     ]
 
     homeowner = models.ForeignKey(
@@ -406,6 +408,8 @@ class CustomerRequest(models.Model):
         blank=True,
         related_name="source_customer_requests",
     )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True, default="")
     internal_notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)

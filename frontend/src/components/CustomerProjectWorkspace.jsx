@@ -238,7 +238,7 @@ function paymentHistoryLabel(payment) {
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
-  if (isEscrowReleasePayment(payment)) return "Escrow balance reduced";
+  if (isEscrowReleasePayment(payment)) return "Released to contractor";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (isEscrowAdjustmentRecord(payment)) return "Escrow Adjustment";
@@ -680,6 +680,9 @@ export default function CustomerProjectWorkspace({
     activity: false,
   });
   const [reimbursementAction, setReimbursementAction] = useState("");
+  const [denyReimbursementPayment, setDenyReimbursementPayment] = useState(null);
+  const [denyReimbursementReason, setDenyReimbursementReason] = useState("");
+  const [denyReimbursementError, setDenyReimbursementError] = useState("");
   const [actionModal, setActionModal] = useState("");
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [amendmentAiBusy, setAmendmentAiBusy] = useState(false);
@@ -1107,7 +1110,6 @@ export default function CustomerProjectWorkspace({
 
   const reviewPayments = projectPayments.filter(isReviewablePayment);
   const projectPaymentHistory = projectPayments.filter(isPaymentHistoryRecord);
-  const projectEscrowHistory = projectPayments.filter(isEscrowHistoryRecord);
   const selectedPaymentModel = selectedRow?.paymentModel || buildPaymentModel(projectPayments);
   const selectedProjectValue = numericValue(selected?.total_cost || selectedAgreement?.total_cost);
   const selectedPaidProgress = paidProgressPercent(selectedPaymentModel.releasedToContractor, selectedProjectValue);
@@ -1123,11 +1125,11 @@ export default function CustomerProjectWorkspace({
   const homeownerActions = selected?.homeowner_actions || selectedAgreement?.homeowner_actions || {};
   const activeCases = selected?.active_cases || selectedAgreement?.active_cases || [];
 
-  const runReimbursementAction = async (payment, action) => {
+  const runReimbursementAction = async (payment, action, providedReason = "") => {
     if (!token || !payment?.record_id) return;
     const payload = {};
     if (action === "deny") {
-      const reason = window.prompt("Reason for denying this reimbursement?");
+      const reason = String(providedReason || "").trim();
       if (!reason) return;
       payload.denial_reason = reason;
     }
@@ -1149,6 +1151,31 @@ export default function CustomerProjectWorkspace({
     } finally {
       setReimbursementAction("");
     }
+  };
+
+  const openDenyReimbursementModal = (payment) => {
+    setDenyReimbursementPayment(payment);
+    setDenyReimbursementReason("");
+    setDenyReimbursementError("");
+  };
+
+  const closeDenyReimbursementModal = () => {
+    if (reimbursementAction) return;
+    setDenyReimbursementPayment(null);
+    setDenyReimbursementReason("");
+    setDenyReimbursementError("");
+  };
+
+  const submitDenyReimbursement = async () => {
+    if (!denyReimbursementPayment) return;
+    if (!String(denyReimbursementReason || "").trim()) {
+      setDenyReimbursementError("Add a reason before denying this reimbursement.");
+      return;
+    }
+    await runReimbursementAction(denyReimbursementPayment, "deny", denyReimbursementReason);
+    setDenyReimbursementPayment(null);
+    setDenyReimbursementReason("");
+    setDenyReimbursementError("");
   };
 
   const openHomeownerAction = (kind) => {
@@ -1429,10 +1456,12 @@ export default function CustomerProjectWorkspace({
                       <div className="mt-1 font-semibold text-slate-100">{project.total_cost || row.agreement?.total_cost ? money(project.total_cost || row.agreement?.total_cost) : "Pending"}</div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Released to contractor</div>
-                      <div className="mt-1 font-semibold text-slate-100">{money(row.paymentModel?.releasedToContractor)}</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Remaining in escrow</div>
+                      <div className="mt-1 font-semibold text-slate-100">{money(row.paymentModel?.remainingInEscrow)}</div>
                       {row.paymentModel?.escrowFunded > 0 ? (
-                        <div className="mt-1 text-xs text-slate-400">Escrow funded: {money(row.paymentModel.escrowFunded)}</div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {money(row.paymentModel.escrowFunded)} funded - {money(row.paymentModel?.releasedToContractor)} released
+                        </div>
                       ) : null}
                     </div>
                     <div>
@@ -1531,9 +1560,9 @@ export default function CustomerProjectWorkspace({
                   </div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-                  <div className="text-xs uppercase tracking-wide text-slate-400">Escrow Funded</div>
-                  <div data-testid="customer-payment-summary-escrow-funded" className="mt-1 text-sm font-semibold text-white">
-                    {money(selectedPaymentModel.escrowFunded)}
+                  <div className="text-xs uppercase tracking-wide text-slate-400">Remaining in Escrow</div>
+                  <div data-testid="customer-payment-summary-remaining-escrow-primary" className="mt-1 text-2xl font-black text-white">
+                    {money(selectedPaymentModel.remainingInEscrow)}
                   </div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
@@ -1551,11 +1580,14 @@ export default function CustomerProjectWorkspace({
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-400">Payment Summary</div>
-                  <div data-testid="customer-payment-summary-released" className="mt-1 text-sm font-semibold text-white">
-                    {money(selectedPaymentModel.releasedToContractor)} released to contractor
-                  </div>
-                  <div data-testid="customer-payment-summary-remaining-escrow" className="mt-1 text-xs text-slate-300">
+                  <div data-testid="customer-payment-summary-remaining-escrow" className="mt-1 text-sm font-semibold text-white">
                     {money(selectedPaymentModel.remainingInEscrow)} remaining in escrow
+                  </div>
+                  <div data-testid="customer-payment-summary-escrow-funded" className="mt-1 text-xs text-slate-300">
+                    {money(selectedPaymentModel.escrowFunded)} escrow funded
+                  </div>
+                  <div data-testid="customer-payment-summary-released" className="mt-1 text-xs text-slate-300">
+                    {money(selectedPaymentModel.releasedToContractor)} released to contractor
                   </div>
                   <div data-testid="customer-payment-summary-pending-review" className="mt-1 text-xs text-slate-300">
                     {money(selectedPaymentModel.pendingReview)} pending review
@@ -1785,7 +1817,7 @@ export default function CustomerProjectWorkspace({
               {expandedDetails.payments || expandedDetails.documents ? (
               <div className="space-y-4">
                 {expandedDetails.payments ? (
-                <Section title="Payment History" eyebrow="Contractor releases and payments" testId="customer-project-payments">
+                <Section title="Invoice & Payment History" eyebrow="Contractor releases and payments" testId="customer-project-payments">
                   <p className="text-sm leading-6 text-slate-300">Review contractor releases, direct payments, refunds, and adjustments separately from escrow funding activity.</p>
                   <div className="mt-3 space-y-2">
                     {projectPaymentHistory.length ? (
@@ -1880,7 +1912,7 @@ export default function CustomerProjectWorkspace({
                                 <button
                                   type="button"
                                   data-testid={`customer-project-payment-deny-reimbursement-${payment.record_id}`}
-                                  onClick={() => runReimbursementAction(payment, "deny")}
+                                  onClick={() => openDenyReimbursementModal(payment)}
                                   disabled={Boolean(reimbursementAction)}
                                   className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
                                 >
@@ -1895,77 +1927,6 @@ export default function CustomerProjectWorkspace({
                     ) : (
                       <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
                         Contractor releases, direct payments, refunds, and adjustments will appear here when connected.
-                      </div>
-                    )}
-                  </div>
-                </Section>
-                ) : null}
-
-                {expandedDetails.payments ? (
-                <Section title="Escrow History" eyebrow="Balance ledger" testId="customer-project-escrow-history">
-                  <p className="text-sm leading-6 text-slate-300">
-                    This ledger shows how escrow balance changed. Payment History shows which invoice or contractor payout was paid.
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {projectEscrowHistory.length ? (
-                      projectEscrowHistory.slice(0, 5).map((payment) => {
-                        const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
-                        const primaryUrl = payment.receipt_url || invoiceUrl || "#";
-                        return (
-                          <div key={payment.id} data-testid={`customer-project-escrow-${payment.id}`} className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-sm font-semibold text-white">
-                                  {escrowHistoryLabel(payment)} {payment.invoice_number || payment.reference ? `- ${payment.invoice_number || payment.reference}` : ""}
-                                </div>
-                                {escrowHistoryDescription(payment) ? (
-                                  <p className="mt-1 text-xs font-medium text-slate-300">{escrowHistoryDescription(payment)}</p>
-                                ) : null}
-                                <div className="mt-1 text-xs text-slate-500">{formatDate(payment.date)}</div>
-                                <div className="mt-2 grid gap-1 text-xs text-slate-400">
-                                  <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : `Contractor: ${selected.contractor_name || "Your contractor"}`}</span>
-                                  <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Escrow (Milestone Hold)"}</span>
-                                  {payment.due_date ? <span>Due: {formatDate(payment.due_date)}</span> : null}
-                                  {customerDisputeStatus(payment) ? <span className="text-rose-100">Issue: {customerDisputeStatus(payment).label}</span> : null}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-sm font-bold text-white">{payment.amount_label || money(payment.amount)}</div>
-                                <Badge tone={statusTone(payment.status_label)}>{payment.status_label || "Recorded"}</Badge>
-                              </div>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {primaryUrl && primaryUrl !== "#" ? (
-                                <a
-                                  data-testid={`customer-project-escrow-primary-${payment.id}`}
-                                  href={primaryUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
-                                >
-                                  View Record
-                                  <ExternalLink size={14} />
-                                </a>
-                              ) : null}
-                              {hasOpenDispute(payment) && payment.dispute_url ? (
-                                <a
-                                  data-testid={`customer-project-escrow-track-dispute-${payment.id}`}
-                                  href={payment.dispute_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
-                                >
-                                  Track Issue Status
-                                  <ExternalLink size={14} />
-                                </a>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 p-4 text-sm text-slate-400">
-                        Escrow deposits, holds, refunds, reversals, and adjustments will appear here when connected.
                       </div>
                     )}
                   </div>
@@ -2026,6 +1987,52 @@ export default function CustomerProjectWorkspace({
         )}
       </div>
       </div>
+      {denyReimbursementPayment ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Deny reimbursement">
+          <div className="w-full max-w-lg rounded-3xl border border-rose-300/35 bg-slate-950 p-5 shadow-2xl">
+            <div className="text-xs font-bold uppercase tracking-[0.2em] text-rose-200">Reimbursement Review</div>
+            <h3 className="mt-1 text-2xl font-extrabold text-white">Deny reimbursement?</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Add a reason so the contractor understands what needs to change. This does not release escrow funds.
+            </p>
+            <label className="mt-4 block text-sm font-semibold text-slate-200">
+              Reason
+              <textarea
+                data-testid={`customer-project-payment-deny-reason-${denyReimbursementPayment.record_id}`}
+                value={denyReimbursementReason}
+                onChange={(event) => {
+                  setDenyReimbursementReason(event.target.value);
+                  setDenyReimbursementError("");
+                }}
+                rows={4}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-rose-300"
+                placeholder="Explain why this reimbursement should not be approved yet."
+              />
+            </label>
+            {denyReimbursementError ? <div className="mt-3 text-sm font-semibold text-rose-100">{denyReimbursementError}</div> : null}
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeDenyReimbursementModal}
+                disabled={Boolean(reimbursementAction)}
+                className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+              >
+                Keep Review Open
+              </button>
+              <button
+                type="button"
+                data-testid={`customer-project-payment-confirm-deny-${denyReimbursementPayment.record_id}`}
+                onClick={submitDenyReimbursement}
+                disabled={Boolean(reimbursementAction)}
+                className="rounded-xl bg-rose-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-rose-200 disabled:opacity-60"
+              >
+                {reimbursementAction === `deny-${denyReimbursementPayment.record_id}` ? "Denying..." : "Deny Reimbursement"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {actionModal ? (
         <div data-testid="customer-action-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-5 shadow-2xl shadow-black/40">

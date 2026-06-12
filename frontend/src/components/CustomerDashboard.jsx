@@ -372,7 +372,7 @@ function paymentHistoryLabel(payment) {
 
 function escrowHistoryLabel(payment) {
   if (isEscrowFundingPayment(payment)) return "Escrow Funded";
-  if (isEscrowReleasePayment(payment)) return "Escrow balance reduced";
+  if (isEscrowReleasePayment(payment)) return "Released to contractor";
   if (payment?.dispute_escrow_hold_active) return "Escrow Hold";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Refund Eligible" : "Refund Issued";
   if (isEscrowAdjustmentRecord(payment)) return "Escrow Adjustment";
@@ -409,6 +409,55 @@ function moneyLabel(value) {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function projectValueForSummary(summary = {}, agreement = {}) {
+  return Number(summary.project_value || agreement.total_cost || 0);
+}
+
+function paidToContractorForSummary(summary = {}) {
+  return Number(summary.released_to_contractor || summary.released || 0);
+}
+
+function remainingProjectValue(summary = {}, agreement = {}) {
+  return Math.max(0, projectValueForSummary(summary, agreement) - paidToContractorForSummary(summary));
+}
+
+function paymentHistoryWithRunningTotals(rows = [], agreement = {}) {
+  const projectValue = projectValueForSummary(agreement.payment_summary || {}, agreement);
+  let totalPaid = 0;
+  return [...(rows || [])]
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+    .map((payment) => {
+      if (isEscrowReleasePayment(payment) || isCustomerPaidPayment(payment)) {
+        totalPaid += Math.max(0, paymentAmountValue(payment));
+      }
+      const percentPaid = projectValue > 0 ? Math.max(0, Math.min(100, Math.round((totalPaid / projectValue) * 100))) : 0;
+      return { payment, totalPaid, percentPaid };
+    });
+}
+
+function escrowSignedAmount(payment) {
+  const amount = Math.abs(paymentAmountValue(payment));
+  if (isEscrowFundingPayment(payment)) return amount;
+  if (isRefundPayment(payment) || isEscrowReleasePayment(payment)) return -amount;
+  if (isEscrowAdjustmentRecord(payment)) return paymentAmountValue(payment);
+  return 0;
+}
+
+function escrowHistoryWithRunningBalances(rows = []) {
+  let balance = 0;
+  return [...(rows || [])]
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+    .map((payment) => {
+      const ledgerBalance =
+        escrowLedgerValue(payment, "available") ||
+        escrowLedgerValue(payment, "remaining") ||
+        escrowLedgerValue(payment, "balance_after");
+      const signedAmount = escrowSignedAmount(payment);
+      balance = ledgerBalance || Math.max(0, balance + signedAmount);
+      return { payment, signedAmount, balance };
+    });
 }
 
 function paymentSummary(payments = []) {
@@ -532,7 +581,12 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
   const visiblePaymentHistory = historyExpanded ? paymentHistory : paymentHistory.slice(0, historyDefaultCount);
   const visibleEscrowHistory = escrowHistoryExpanded ? escrowHistory : escrowHistory.slice(0, historyDefaultCount);
   const agreementRows = (agreements || []).map((agreement) => {
-    const related = payments.filter((payment) => String(payment.agreement_id || "") === String(agreement.id || ""));
+    const agreementTitle = String(agreement.project_title || agreement.title || "").trim().toLowerCase();
+    const related = payments.filter((payment) => {
+      if (String(payment.agreement_id || "") === String(agreement.id || "")) return true;
+      const paymentTitle = String(payment.project_title || "").trim().toLowerCase();
+      return Boolean(agreementTitle && paymentTitle && paymentTitle === agreementTitle);
+    });
     const summary = agreement.payment_summary || paymentSummary(related);
     const milestones = agreement.milestones || [];
     const completed = milestones.filter((milestone) => String(milestone.status || "").toLowerCase().includes("complete") || milestone.completed).length;
@@ -543,6 +597,12 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
   const selectedAgreement = agreementRows.find((row) => String(row.agreement.id) === String(selectedAgreementId)) || agreementRows[0] || null;
   const selectedPaymentHistory = selectedAgreement?.related?.filter(isPaymentHistoryRecord) || [];
   const selectedEscrowHistory = selectedAgreement?.related?.filter(isEscrowHistoryRecord) || [];
+  const selectedPaymentHistoryRows = selectedAgreement ? paymentHistoryWithRunningTotals(selectedPaymentHistory, selectedAgreement.agreement) : [];
+  const selectedEscrowHistoryRows = escrowHistoryWithRunningBalances(selectedEscrowHistory);
+  const selectedProjectValue = selectedAgreement ? projectValueForSummary(selectedAgreement.summary, selectedAgreement.agreement) : 0;
+  const selectedPaidToContractor = selectedAgreement ? paidToContractorForSummary(selectedAgreement.summary) : 0;
+  const selectedRemainingProjectValue = selectedAgreement ? remainingProjectValue(selectedAgreement.summary, selectedAgreement.agreement) : 0;
+  const selectedRemainingEscrow = Number(selectedAgreement?.summary?.remaining_in_escrow || 0);
 
   return (
     <div data-testid="customer-portal-payments" className="space-y-5">
@@ -565,7 +625,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200">Escrow Summary</div>
           <h3 className="mt-1 text-lg font-semibold text-white">Money held and released through MyHomeBro</h3>
           <p className="mt-1 text-sm leading-6 text-sky-100/85">
-            Payment History answers which invoice was paid. Escrow History shows how the escrow balance changed after deposits, releases, holds, refunds, and adjustments.
+            Invoice & Payment History answers which invoice was paid. Escrow History shows how the escrow balance changed after deposits, releases, holds, refunds, and adjustments.
           </p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -622,20 +682,32 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
               <>
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected project</div>
                 <h4 className="mt-1 text-lg font-semibold text-white">{selectedAgreement.agreement.project_title || selectedAgreement.agreement.title || "Project"}</h4>
-                <div className="mt-3 grid gap-2 text-sm text-slate-300">
-                  <div>Project value: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.project_value || selectedAgreement.agreement.total_cost || 0))}</strong></div>
-                  <div>Escrow funded: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.escrow_funded || 0))}</strong></div>
-                  <div>Released to contractor: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.released_to_contractor || 0))}</strong></div>
-                  <div>Remaining in escrow: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.remaining_in_escrow || 0))}</strong></div>
-                  <div>Milestone Progress: <strong className="text-white">{selectedAgreement.milestoneLabel}</strong></div>
-                  <div>Paid Progress: <strong className="text-white">{selectedAgreement.paidPercent}% released</strong></div>
+                <div data-testid="customer-selected-project-financial-summary" className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/45 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project Financial Summary</div>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                    <div>Project Value: <strong className="text-white">{moneyLabel(selectedProjectValue)}</strong></div>
+                    <div>Paid to Contractor: <strong className="text-white">{moneyLabel(selectedPaidToContractor)}</strong></div>
+                    <div>Remaining Project Value: <strong className="text-white">{moneyLabel(selectedRemainingProjectValue)}</strong></div>
+                    <div>Escrow Funded: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.escrow_funded || 0))}</strong></div>
+                    <div>Remaining Escrow: <strong className="text-white">{moneyLabel(selectedRemainingEscrow)}</strong></div>
+                    <div>Milestone Progress: <strong className="text-white">{selectedAgreement.milestoneLabel}</strong></div>
+                    <div>Paid Progress: <strong className="text-white">{selectedAgreement.paidPercent}% of project value paid</strong></div>
+                  </div>
                 </div>
                 <div className="mt-4 space-y-4">
                   <div data-testid="customer-selected-payment-history">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment History</div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Invoice & Payment History</div>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">What work has been paid for.</p>
                     <div className="mt-2 space-y-2">
-                      {selectedPaymentHistory.length ? selectedPaymentHistory.slice(0, 4).map((payment) => (
-                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
+                      {selectedPaymentHistoryRows.length ? selectedPaymentHistoryRows.slice(0, 4).map(({ payment, totalPaid, percentPaid }) => (
+                        <div key={payment.id} data-testid={`customer-selected-payment-running-${payment.id}`} className="space-y-2">
+                          <PaymentActionCard payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
+                          <div className="rounded-xl border border-slate-700 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">
+                            <div>Amount Paid: <strong className="text-white">{moneyLabel(paymentAmountValue(payment))}</strong></div>
+                            <div>Total Paid To Date: <strong className="text-white">{moneyLabel(totalPaid)}</strong></div>
+                            <div>{percentPaid}% of Project Value Paid</div>
+                          </div>
+                        </div>
                       )) : (
                         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No contractor releases, direct payments, refunds, or adjustments are connected yet.</div>
                       )}
@@ -644,14 +716,23 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                   <div data-testid="customer-selected-escrow-history">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Escrow History</div>
                     <p className="mt-1 text-xs leading-5 text-slate-400">
-                      Balance ledger for escrow deposits, contractor-release reductions, holds, refunds, and adjustments.
+                      How your escrow balance changed after deposits, releases, holds, refunds, and adjustments.
                     </p>
                     <div className="mt-2 space-y-2">
-                      {selectedEscrowHistory.length ? selectedEscrowHistory.slice(0, 4).map((payment) => (
-                        <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
+                      {selectedEscrowHistoryRows.length ? selectedEscrowHistoryRows.slice(0, 4).map(({ payment, signedAmount, balance }) => (
+                        <div key={payment.id} data-testid={`customer-selected-escrow-running-${payment.id}`} className="space-y-2">
+                          <PaymentActionCard payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
+                          <div className="rounded-xl border border-slate-700 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">
+                            <div>Amount: <strong className="text-white">{signedAmount >= 0 ? "+" : "-"}{moneyLabel(Math.abs(signedAmount))}</strong></div>
+                            <div>Balance: <strong className="text-white">{moneyLabel(balance)}</strong></div>
+                          </div>
+                        </div>
                       )) : (
                         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No escrow deposits, holds, refunds, or balance adjustments are connected yet.</div>
                       )}
+                    </div>
+                    <div data-testid="customer-selected-current-escrow-balance" className="mt-3 rounded-xl border border-sky-300/30 bg-sky-400/10 p-3 text-sm text-sky-100">
+                      Current Escrow Balance: <strong>{moneyLabel(selectedRemainingEscrow)}</strong>
                     </div>
                   </div>
                 </div>
@@ -687,7 +768,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
 
       <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-lg font-semibold text-white">Payment history</h3>
+          <h3 className="text-lg font-semibold text-white">Invoice & Payment History</h3>
           <Badge>{paymentHistory.length} records</Badge>
         </div>
         <div data-testid="customer-payment-history" className="mt-4 space-y-3">
@@ -724,7 +805,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           <Badge>{escrowHistory.length} records</Badge>
         </div>
         <p className="mt-1 text-sm leading-6 text-slate-400">
-          This ledger shows escrow balance movement. Payment History shows which invoice or contractor payout was paid.
+          This ledger shows escrow balance movement. Invoice & Payment History shows which invoice or contractor payout was paid.
         </p>
         <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
           {escrowHistory.length ? (
@@ -736,6 +817,9 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
               Escrow deposits, holds, refunds, reversals, and adjustments will appear here when this project uses milestone holds.
             </EmptyState>
           )}
+        </div>
+        <div data-testid="customer-current-escrow-balance" className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/10 p-3 text-sm text-sky-100">
+          Current Escrow Balance: <strong>{moneyLabel(escrowTotals.remaining)}</strong>
         </div>
         {escrowHistory.length > historyDefaultCount ? (
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -759,17 +843,20 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
 
 function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdate, displayLabel = "", displayDescription = "", cardTestId = "" }) {
   const [busyAction, setBusyAction] = useState("");
+  const [denyModalOpen, setDenyModalOpen] = useState(false);
+  const [denyReason, setDenyReason] = useState("");
+  const [denyError, setDenyError] = useState("");
   const invoiceUrl = isInvoicePayment(payment) ? normalizeInvoiceMagicUrl(payment.action_target) : payment.action_target;
   const target = payment.receipt_url || invoiceUrl || "#";
   const disputeUrl = isInvoicePayment(payment) && invoiceUrl ? `${invoiceUrl}?action=dispute` : "";
   const actionable = isActionablePayment(payment);
   const disputeStatus = customerDisputeStatus(payment);
 
-  async function runReimbursementAction(action) {
+  async function runReimbursementAction(action, providedReason = "") {
     if (!token || !payment?.record_id) return;
     const payload = {};
     if (action === "deny") {
-      const reason = window.prompt("Reason for denying this reimbursement?");
+      const reason = String(providedReason || "").trim();
       if (!reason) return;
       payload.denial_reason = reason;
     }
@@ -788,6 +875,7 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
   }
 
   return (
+    <>
     <article data-testid={cardTestId || `customer-payment-action-${payment.id}`} className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${compact ? "" : "shadow-xl shadow-slate-950/20"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
@@ -886,7 +974,11 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
                 <button
                   type="button"
                   data-testid={`customer-payment-deny-reimbursement-${payment.record_id}`}
-                  onClick={() => runReimbursementAction("deny")}
+                  onClick={() => {
+                    setDenyReason("");
+                    setDenyError("");
+                    setDenyModalOpen(true);
+                  }}
                   disabled={Boolean(busyAction)}
                   className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
                 >
@@ -898,6 +990,60 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
         </div>
       </div>
     </article>
+    {denyModalOpen ? (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Deny reimbursement">
+        <div className="w-full max-w-lg rounded-3xl border border-rose-300/35 bg-slate-950 p-5 shadow-2xl">
+          <div className="text-xs font-bold uppercase tracking-[0.2em] text-rose-200">Reimbursement Review</div>
+          <h3 className="mt-1 text-2xl font-extrabold text-white">Deny reimbursement?</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            Add a reason so the contractor understands what needs to change. This does not release escrow funds.
+          </p>
+          <label className="mt-4 block text-sm font-semibold text-slate-200">
+            Reason
+            <textarea
+              data-testid={`customer-payment-deny-reason-${payment.record_id}`}
+              value={denyReason}
+              onChange={(event) => {
+                setDenyReason(event.target.value);
+                setDenyError("");
+              }}
+              rows={4}
+              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-rose-300"
+              placeholder="Explain why this reimbursement should not be approved yet."
+            />
+          </label>
+          {denyError ? <div className="mt-3 text-sm font-semibold text-rose-100">{denyError}</div> : null}
+          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setDenyModalOpen(false)}
+              disabled={Boolean(busyAction)}
+              className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+            >
+              Keep Review Open
+            </button>
+            <button
+              type="button"
+              data-testid={`customer-payment-confirm-deny-${payment.record_id}`}
+              onClick={async () => {
+                if (!String(denyReason || "").trim()) {
+                  setDenyError("Add a reason before denying this reimbursement.");
+                  return;
+                }
+                await runReimbursementAction("deny", denyReason);
+                setDenyModalOpen(false);
+                setDenyReason("");
+              }}
+              disabled={Boolean(busyAction)}
+              className="rounded-xl bg-rose-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-rose-200 disabled:opacity-60"
+            >
+              {busyAction === "deny" ? "Denying..." : "Deny Reimbursement"}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 
@@ -1070,7 +1216,7 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-semibold text-white">Workspace setup complete</div>
+            <div className="text-sm font-semibold text-white">Home Profile Setup complete</div>
             <p className="mt-1 text-sm text-emerald-100">Your basic Customer Portal setup is ready.</p>
           </div>
           <Badge tone="gold">{completeCount} of {items.length} complete</Badge>
@@ -1087,7 +1233,7 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-semibold text-white">Workspace setup: {completeCount} of {items.length} complete</div>
+            <div className="text-sm font-semibold text-white">Home Profile Setup: {completeCount} of {items.length} complete</div>
             <p className="mt-1 text-sm text-slate-300">
               {allSetupDone
                 ? "Any remaining active tasks are shown above in Needs Attention."
@@ -1324,7 +1470,7 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
       <section className="rounded-2xl border border-slate-700 bg-slate-950/45 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-semibold text-white">Workspace setup</div>
+            <div className="text-sm font-semibold text-white">Home Profile Setup</div>
             <p className="mt-1 text-sm text-slate-400">Your setup checklist is tucked here so projects and actions stay first.</p>
           </div>
           <div data-testid="customer-portal-summary" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -1995,6 +2141,31 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               return data;
             } catch (error) {
               toast.error(error?.response?.data?.detail || "Could not send this request to contractors.");
+              throw error;
+            }
+          }}
+          onCancelRequest={async (requestId, reason) => {
+            try {
+              const { data } = await api.post(
+                `/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/cancel/`,
+                { reason }
+              );
+              if (data?.portal) onPortalUpdate?.(data.portal);
+              toast.success(data?.detail || "Request cancelled.");
+              return data;
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not cancel this request.");
+              throw error;
+            }
+          }}
+          onDeleteRequest={async (requestId) => {
+            try {
+              const { data } = await api.delete(`/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/`);
+              if (data?.portal) onPortalUpdate?.(data.portal);
+              toast.success(data?.detail || "Request deleted.");
+              return data;
+            } catch (error) {
+              toast.error(error?.response?.data?.detail || "Could not delete this request.");
               throw error;
             }
           }}

@@ -153,7 +153,7 @@ from projects.serializers.agreement import AgreementSerializer
 from projects.services.agreements.public_sign import build_public_sign_url
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
-from projects.views.customer_portal import _portal_token
+from projects.views.customer_portal import _portal_token, _sync_customer_request_source_intake
 from projects.services.compliance import (
     contractor_has_required_license,
     get_compliance_warning_for_trade,
@@ -21197,6 +21197,133 @@ class CustomerPortalAccessTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(locked_edit.status_code, 400)
+
+    def test_customer_portal_request_can_be_cancelled_before_routing(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Door repair",
+            description="The patio door is sticking.",
+            status=CustomerRequest.STATUS_SUBMITTED,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/cancel/",
+            {"reason": "I fixed this myself."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        saved.refresh_from_db()
+        self.assertEqual(saved.status, CustomerRequest.STATUS_CANCELLED)
+        self.assertEqual(saved.cancellation_reason, "I fixed this myself.")
+        self.assertIsNotNone(saved.cancelled_at)
+        row = next(row for row in response.data["portal"]["requests"] if row["request_id"] == saved.id)
+        self.assertEqual(row["workflow_status"], "cancelled")
+        self.assertEqual(row["workflow_status_label"], "Cancelled")
+        self.assertFalse(row["can_edit"])
+        self.assertFalse(row["can_cancel"])
+        self.assertEqual(row["cancellation_reason"], "I fixed this myself.")
+        self.assertTrue(any(item["title"] == "Request cancelled" for item in row["activity_timeline"]))
+
+    def test_customer_portal_private_request_can_be_deleted_before_routing(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Private draft",
+            description="This request has not been shared.",
+            status=CustomerRequest.STATUS_SUBMITTED,
+        )
+
+        response = self.client.delete(f"/api/projects/customer-portal/{token}/requests/{saved.id}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(CustomerRequest.objects.filter(pk=saved.id).exists())
+        self.assertFalse(
+            any(
+                row.get("source_kind") == "customer_request" and row.get("request_id") == saved.id
+                for row in response.data["portal"]["requests"]
+            )
+        )
+
+    def test_customer_portal_routed_request_cannot_be_deleted(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Shared request",
+            description="This request has matching started.",
+            status=CustomerRequest.STATUS_MARKETPLACE_READY,
+        )
+        _sync_customer_request_source_intake(saved)
+
+        response = self.client.delete(f"/api/projects/customer-portal/{token}/requests/{saved.id}/")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(CustomerRequest.objects.filter(pk=saved.id).exists())
+
+    def test_customer_portal_cancel_routed_request_expires_opportunity_and_notifies_contractor(self):
+        from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        saved = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            request_type="repair",
+            title="Dryer repair",
+            description="Dryer is making loud noises.",
+            status=CustomerRequest.STATUS_MARKETPLACE_READY,
+        )
+        source_intake = _sync_customer_request_source_intake(saved)
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Builder Co",
+            normalized_name="builder co",
+            claimed_by_contractor=self.contractor,
+            phone="555-222-1010",
+            public_email="builder@example.com",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            primary_service="Appliance Repair",
+            services=["Appliance Repair", "Dryer Repair"],
+            source="manual",
+        )
+        opportunity = ContractorOpportunity.objects.create(
+            directory_entry=entry,
+            intake_request=source_intake,
+            homeowner_email=self.customer_email,
+            project_title=saved.title,
+            project_type="Appliance Repair",
+            project_subtype="Dryer Repair",
+            status=ContractorOpportunity.STATUS_PENDING,
+        )
+        saved.status = CustomerRequest.STATUS_ROUTED
+        saved.save(update_fields=["status", "updated_at"])
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/{saved.id}/cancel/",
+            {"reason": "We are pausing the work."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["notified_contractors"], 1)
+        saved.refresh_from_db()
+        opportunity.refresh_from_db()
+        self.assertEqual(saved.status, CustomerRequest.STATUS_CANCELLED)
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_EXPIRED)
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                title="Customer request cancelled",
+                message__icontains="Dryer repair",
+            ).exists()
+        )
 
     def test_customer_portal_requests_are_scoped_to_verified_email(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

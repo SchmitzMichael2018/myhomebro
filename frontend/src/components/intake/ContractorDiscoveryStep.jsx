@@ -250,6 +250,7 @@ export default function ContractorDiscoveryStep({
   token,
   form,
   active = false,
+  variant = "public",
   selectedTargets = [],
   setSelectedTargets,
   onSkipToManual,
@@ -309,6 +310,7 @@ export default function ContractorDiscoveryStep({
   const modeLabel = projectModeLabel(form?.project_mode);
   const ctaLabel = normalizeProjectMode(form?.project_mode) === "consultation" ? "Select for Quote" : "Select Contractor";
   const showDebug = Boolean(import.meta.env.DEV || (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG));
+  const portalMode = variant === "portal";
 
   const selectedKeys = useMemo(() => new Set((selectedTargets || []).map(cardSelectionKey).filter(Boolean)), [selectedTargets]);
   const visibleResults = useMemo(() => results.slice(0, visibleCount), [results, visibleCount]);
@@ -449,39 +451,58 @@ export default function ContractorDiscoveryStep({
     });
   }
 
+  const shellClass = portalMode
+    ? "rounded-3xl border border-sky-300/25 bg-slate-900/80 p-5 text-slate-100 shadow-none ring-1 ring-slate-700/80 sm:p-6"
+    : "rounded-3xl border border-slate-200/80 bg-white p-6 text-slate-950 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7";
+  const softPanelClass = portalMode
+    ? "mt-5 rounded-2xl border border-sky-300/25 bg-sky-300/10 p-4 shadow-sm"
+    : "mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm";
+  const infoPanelClass = portalMode
+    ? "mt-5 rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300"
+    : "mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700";
+  const matchPanelClass = portalMode
+    ? "mt-5 rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3"
+    : "mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3";
+  const inputClass = portalMode
+    ? "ml-2 rounded-full border border-slate-600 bg-slate-950 px-4 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20"
+    : "ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100";
+  const selectClass = portalMode
+    ? "ml-2 rounded-full border border-slate-600 bg-slate-950 px-4 py-2 text-sm text-white outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-300/20"
+    : "ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100";
+
   return (
-    <div className="rounded-3xl border border-slate-200/80 bg-white p-6 text-slate-950 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7" data-testid="public-intake-contractor-discovery-step">
+    <div className={shellClass} data-testid="public-intake-contractor-discovery-step">
       <div className="max-w-3xl">
-        <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+        <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${portalMode ? "bg-amber-300/15 text-amber-100" : "bg-indigo-50 text-indigo-700"}`}>
           Local contractor review
         </div>
-        <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Choose Local Contractors</h2>
-        <p className="mt-2 text-base text-slate-600">
+        <h2 className={`mt-3 text-2xl font-semibold tracking-tight ${portalMode ? "text-white" : "text-gray-900"}`}>Choose Local Contractors</h2>
+        <p className={`mt-2 text-base ${portalMode ? "text-slate-300" : "text-slate-600"}`}>
           Select contractors you&apos;d like to review your project. Some listings may be local business listings that have not claimed a MyHomeBro profile yet.
         </p>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className={`mt-1 text-sm ${portalMode ? "text-slate-400" : "text-slate-500"}`}>
           Many homeowners use this step to compare a few good matches before they decide how to proceed.
         </p>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
-        <div className="text-sm font-semibold text-slate-900">Payment and collaboration context</div>
-        <div className="mt-1 text-sm text-slate-600">
+      <div className={softPanelClass}>
+        <div className={`text-sm font-semibold ${portalMode ? "text-white" : "text-slate-900"}`}>Payment and collaboration context</div>
+        <div className={`mt-1 text-sm ${portalMode ? "text-slate-300" : "text-slate-600"}`}>
           {modeLabel} projects can emphasize contractor fit, milestone payment workflow preferences, inspection support, and customer participation preferences.
         </div>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+      <div className={infoPanelClass}>
         Profile-reviewed contractors are active MyHomeBro members whose marketplace eligibility has been reviewed. Local business listings are nearby companies discovered from public business data.
       </div>
 
-      <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 px-4 py-3" data-testid="public-intake-contractor-match-label">
-        <div className="text-sm font-semibold text-indigo-950">Showing contractors that match your project</div>
-        <div className="mt-1 text-sm text-indigo-900/80">{friendlyMatchLabel}</div>
+      <div className={matchPanelClass} data-testid="public-intake-contractor-match-label">
+        <div className={`text-sm font-semibold ${portalMode ? "text-amber-50" : "text-indigo-950"}`}>Showing contractors that match your project</div>
+        <div className={`mt-1 text-sm ${portalMode ? "text-amber-100/80" : "text-indigo-900/80"}`}>{friendlyMatchLabel}</div>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-slate-700">
+        <label className={`text-sm font-medium ${portalMode ? "text-slate-200" : "text-slate-700"}`}>
           Manual search
           <input
             value={userSearchInput}
@@ -491,7 +512,7 @@ export default function ContractorDiscoveryStep({
             }}
             placeholder="Search a contractor type manually"
             data-testid="public-intake-contractor-search-input"
-            className="ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            className={inputClass}
           />
         </label>
         <button
@@ -518,13 +539,13 @@ export default function ContractorDiscoveryStep({
             Enter a contractor type to search.
           </div>
         ) : null}
-        <label className="text-sm font-medium text-slate-700">
+        <label className={`text-sm font-medium ${portalMode ? "text-slate-200" : "text-slate-700"}`}>
           Radius
           <select
             value={radiusMiles}
             onChange={(e) => setRadiusMiles(e.target.value)}
             data-testid="public-intake-contractor-radius-select"
-            className="ml-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            className={selectClass}
           >
             {RADIUS_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -533,23 +554,23 @@ export default function ContractorDiscoveryStep({
             ))}
           </select>
         </label>
-        <div className="text-sm font-medium text-slate-600" data-testid="public-intake-contractor-radius-display">
+        <div className={`text-sm font-medium ${portalMode ? "text-slate-300" : "text-slate-600"}`} data-testid="public-intake-contractor-radius-display">
           {activeRadiusLabel}
         </div>
-        <div className="text-sm text-slate-600">
+        <div className={`text-sm ${portalMode ? "text-slate-300" : "text-slate-600"}`}>
           {selectedTargets.length ? `${selectedTargets.length} selected` : "Select up to 5 contractors"}
         </div>
       </div>
 
       {!loading && results.length ? (
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+        <div className={`mt-5 flex flex-wrap items-center justify-between gap-3 text-sm ${portalMode ? "text-slate-300" : "text-slate-600"}`}>
           <div data-testid="public-intake-contractor-result-count">{resultCountText}</div>
           {visibleCount < results.length ? (
             <button
               type="button"
               onClick={() => setVisibleCount((prev) => Math.min(prev + RESULTS_PER_PAGE, results.length))}
               data-testid="public-intake-contractor-load-more-top"
-              className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+              className={portalMode ? "rounded-full border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-slate-800" : "rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"}
             >
               Load More
             </button>
@@ -559,7 +580,7 @@ export default function ContractorDiscoveryStep({
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2" data-testid="public-intake-contractor-results-list">
         {loading ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+          <div className={portalMode ? "rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-6 text-sm text-slate-300" : "rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600"}>
             Finding the best local contractor matches...
           </div>
         ) : results.length ? (
@@ -575,13 +596,19 @@ export default function ContractorDiscoveryStep({
                 key={card.id}
                 data-testid={`public-intake-contractor-card-${cardSelectionKey(card)}`}
                 className={`rounded-2xl border p-5 shadow-sm transition ${
-                  selected ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100" : "border-slate-200 bg-white hover:bg-slate-50"
+                  selected
+                    ? portalMode
+                      ? "border-amber-300 bg-amber-300/10 ring-2 ring-amber-300/20"
+                      : "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100"
+                    : portalMode
+                      ? "border-slate-700 bg-slate-950/60 hover:bg-slate-900"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-base font-semibold text-gray-900">{card.business_name || "Local contractor"}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                    <div className={`text-base font-semibold ${portalMode ? "text-white" : "text-gray-900"}`}>{card.business_name || "Local contractor"}</div>
+                    <div className={`mt-1 flex flex-wrap items-center gap-2 text-xs ${portalMode ? "text-slate-300" : "text-slate-600"}`}>
                       <span className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${tierClass}`}>{tierLabel}</span>
                       <span
                         data-testid={`public-intake-contractor-source-badge-${cardSelectionKey(card)}`}
@@ -592,21 +619,21 @@ export default function ContractorDiscoveryStep({
                         }`}
                       >
                         {isVerified ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> : <MapPin className="h-3.5 w-3.5" aria-hidden="true" />}
-                        {isVerified ? "Verified on MyHomeBro" : "Local supply lead"}
+                        {isVerified ? "Verified on MyHomeBro" : "Local business listing"}
                       </span>
                       {card.rating ? <span>{Number(card.rating).toFixed(1)} rating</span> : null}
                       {card.review_count ? <span>{card.review_count} reviews</span> : null}
                       {distanceText ? (
                         <span
                           data-testid={`public-intake-contractor-distance-${cardSelectionKey(card)}`}
-                          className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-800"
+                          className={portalMode ? "inline-flex items-center rounded-full bg-slate-800 px-2.5 py-1 text-xs font-bold text-slate-200" : "inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-800"}
                         >
                           {distanceText}
                         </span>
                       ) : null}
                     </div>
                     {!isVerified ? (
-                      <div className="mt-2 text-xs font-medium text-slate-500">Local listing only. This business must claim and be approved before bidding through MyHomeBro.</div>
+                      <div className={`mt-2 text-xs font-medium ${portalMode ? "text-slate-400" : "text-slate-500"}`}>Local listing only. This business must claim and be approved before bidding through MyHomeBro.</div>
                     ) : null}
                   </div>
                   <button
@@ -615,7 +642,9 @@ export default function ContractorDiscoveryStep({
                     className={`rounded-full px-4 py-2 text-sm font-semibold ${
                       selected
                         ? "border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white shadow-sm"
-                        : "border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
+                        : portalMode
+                          ? "border border-slate-600 bg-slate-950 text-sky-100 hover:bg-slate-800"
+                          : "border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
                     }`}
                     data-testid={`public-intake-contractor-select-${cardSelectionKey(card)}`}
                   >
@@ -627,7 +656,7 @@ export default function ContractorDiscoveryStep({
                   {(card.recommendation_reasons || []).slice(0, 4).map((reason) => (
                     <span
                       key={`${card.id}-${reason}`}
-                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700"
+                      className={portalMode ? "rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-200" : "rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700"}
                     >
                       {reason}
                     </span>
@@ -639,30 +668,30 @@ export default function ContractorDiscoveryStep({
                     <ProjectModeBadge key={`${card.id}-${mode}`} mode={mode} />
                   ))}
                   {card.escrow_friendly ? (
-                    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                    <span className={portalMode ? "rounded-full bg-sky-300/15 px-2.5 py-1 text-[11px] font-semibold text-sky-100" : "rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"}>
                       Escrow Workflow Compatible
                     </span>
                   ) : null}
                   {card.assisted_diy_friendly ? (
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                    <span className={portalMode ? "rounded-full bg-amber-300/15 px-2.5 py-1 text-[11px] font-semibold text-amber-100" : "rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800"}>
                       Assisted DIY
                     </span>
                   ) : null}
                   {card.inspection_capable ? (
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                    <span className={portalMode ? "rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-slate-200" : "rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700"}>
                       Inspection Capable
                     </span>
                   ) : null}
                   {card.rescue_project_friendly ? (
-                    <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                    <span className={portalMode ? "rounded-full bg-violet-300/15 px-2.5 py-1 text-[11px] font-semibold text-violet-100" : "rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700"}>
                       Rescue Project
                     </span>
                   ) : null}
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                <div className={`mt-4 flex flex-wrap items-center gap-3 text-sm ${portalMode ? "text-slate-300" : "text-slate-600"}`}>
                   {card.website_url ? (
-                    <a className="font-semibold text-indigo-700 hover:underline" href={card.website_url} target="_blank" rel="noreferrer">
+                    <a className={`font-semibold hover:underline ${portalMode ? "text-sky-100" : "text-indigo-700"}`} href={card.website_url} target="_blank" rel="noreferrer">
                       Website
                     </a>
                   ) : null}
@@ -674,7 +703,7 @@ export default function ContractorDiscoveryStep({
             );
           })
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 lg:col-span-2">
+          <div className={portalMode ? "rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 px-4 py-6 text-sm text-slate-300 lg:col-span-2" : "rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600 lg:col-span-2"}>
             {emptyStateMessage(summary, radiusMiles)}
           </div>
         )}
@@ -686,7 +715,7 @@ export default function ContractorDiscoveryStep({
             type="button"
             onClick={() => setVisibleCount((prev) => Math.min(prev + RESULTS_PER_PAGE, results.length))}
             data-testid="public-intake-contractor-load-more"
-            className="rounded-full border border-indigo-200 bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+            className={portalMode ? "rounded-full border border-slate-600 bg-slate-950 px-5 py-2.5 text-sm font-semibold text-sky-100 shadow-sm hover:bg-slate-800" : "rounded-full border border-indigo-200 bg-white px-5 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"}
           >
             Load More
           </button>
@@ -694,7 +723,7 @@ export default function ContractorDiscoveryStep({
       ) : null}
 
       {!loading && showDebug && summary ? (
-        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500" data-testid="public-intake-contractor-debug">
+        <div className={portalMode ? "mt-3 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-400" : "mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500"} data-testid="public-intake-contractor-debug">
           Location source: {summary.location_source || "unknown"} · Raw: {summary.google_raw_count ?? 0} · After radius:{" "}
           {summary.after_distance_filter_count ?? 0} · Reason: {summary.reason || "none"}
         </div>

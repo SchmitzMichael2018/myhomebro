@@ -61,10 +61,23 @@ function categoryForDocument(item) {
   if (text.includes("invoice") || text.includes("receipt") || text.includes("payment")) return "Invoices & Receipts";
   if (text.includes("warranty")) return "Warranties";
   if (text.includes("permit")) return "Permits";
-  if (text.includes("insurance")) return "Insurance Documents";
+  if (text.includes("manual") || text.includes("owner guide") || text.includes("owner's guide")) return "Manuals";
+  if (text.includes("insurance") || text.includes("hoa")) return "Insurance / HOA";
   if (text.includes("photo") || text.includes("image")) return "Photos";
-  return "Other Property Documents";
+  return "Other";
 }
+
+const DOCUMENT_PHOTO_CATEGORIES = [
+  "All",
+  "Agreements",
+  "Invoices & Receipts",
+  "Warranties",
+  "Photos",
+  "Permits",
+  "Manuals",
+  "Insurance / HOA",
+  "Other",
+];
 
 function documentGroups(profile, documents) {
   const rows = [
@@ -79,8 +92,9 @@ function documentGroups(profile, documents) {
     Warranties: [],
     Photos: [],
     Permits: [],
-    "Insurance Documents": [],
-    "Other Property Documents": [],
+    Manuals: [],
+    "Insurance / HOA": [],
+    Other: [],
   };
   for (const row of rows) {
     const key = `${row.id || ""}|${row.url || ""}|${row.title || ""}`;
@@ -162,23 +176,6 @@ function maintenanceRows(workOrders = []) {
       attachments: workOrder.attachments || [],
     }))
     .sort((a, b) => String(b.completedAt || b.scheduledDate || "").localeCompare(String(a.completedAt || a.scheduledDate || "")));
-}
-
-function statusText(row) {
-  return String(`${row?.status || ""} ${row?.status_label || ""}`).toLowerCase();
-}
-
-function isOpenStatus(row) {
-  const text = statusText(row);
-  return !text.includes("complete") && !text.includes("closed") && !text.includes("archived") && !text.includes("cancel");
-}
-
-function activeProjectRows(projects = []) {
-  return (projects || []).filter(isOpenStatus).slice(0, 5);
-}
-
-function openRequestRows(requests = []) {
-  return (requests || []).filter(isOpenStatus).slice(0, 5);
 }
 
 const SYSTEM_KEYWORDS = [
@@ -406,46 +403,12 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive }) {
   );
 }
 
-function ActiveWorkSection({ projects = [], requests = [] }) {
-  return (
-    <Section title="Active Projects & Requests" eyebrow="Current work" testId="property-active-work">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div>
-          <h4 className="text-sm font-bold text-white">Active Projects</h4>
-          <div className="mt-3 space-y-3">
-            {projects.length ? projects.map((project) => (
-              <article key={project.id} data-testid="property-active-project" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-                <div className="text-sm font-semibold text-white">{project.title || project.project_title || "Project"}</div>
-                <div className="mt-1 text-xs text-slate-400">{project.contractor_name || "Contractor pending"} - {project.status_label || project.status || "Status pending"}</div>
-                <p className="mt-2 text-sm text-slate-300">{project.next_action || project.next_action_label || "Open the project for milestones, payments, documents, and updates."}</p>
-                {project.agreement_url ? <a href={project.agreement_url} className="mt-3 inline-flex text-sm font-semibold text-sky-100">Open Project</a> : null}
-              </article>
-            )) : <EmptyState title="No active projects" testId="property-active-projects-empty">Open projects connected to this property will appear here.</EmptyState>}
-          </div>
-        </div>
-        <div>
-          <h4 className="text-sm font-bold text-white">Open Requests</h4>
-          <div className="mt-3 space-y-3">
-            {requests.length ? requests.map((request) => (
-              <article key={request.id} data-testid="property-open-request" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-                <div className="text-sm font-semibold text-white">{request.project_title || "Request"}</div>
-                <div className="mt-1 text-xs text-slate-400">{request.status_label || "Submitted"} - {request.project_type || request.request_type_label || "Request"}</div>
-                <p className="mt-2 text-sm text-slate-300">{request.project_subtype || request.current_next_action || "Review the request details in the Requests tab."}</p>
-              </article>
-            )) : <EmptyState title="No open requests" testId="property-open-requests-empty">Saved and routed requests for this property will appear here.</EmptyState>}
-          </div>
-        </div>
-      </div>
-    </Section>
-  );
-}
-
 const MAINTENANCE_STATUS_LABELS = {
   overdue: "Overdue",
   due_soon: "Due Soon",
   warranty_expiring: "Warranty Expiring",
   warranty_expired: "Warranty Attention",
-  lifespan_attention: "Lifespan Attention",
+  lifespan_attention: "Nearing End of Life",
   current: "Current",
   unknown: "Unknown",
 };
@@ -498,11 +461,8 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
         <button type="button" data-testid={`property-maintenance-mark-serviced-${system.id}`} onClick={() => onMarkServiced?.(system)} className="rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20">
           Mark Serviced
         </button>
-        <button type="button" data-testid={`property-maintenance-edit-reminder-${system.id}`} onClick={() => onEditSystem?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
-          Edit Reminder Details
-        </button>
-        <button type="button" data-testid={`property-maintenance-manage-notifications-${system.id}`} onClick={() => onEditSystem?.(system)} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20">
-          Manage Notifications
+        <button type="button" data-testid={`property-maintenance-manage-reminder-${system.id}`} onClick={() => onEditSystem?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
+          Manage Reminder
         </button>
         <button type="button" data-testid={`property-maintenance-dismiss-${system.id}`} onClick={() => onDismissReminder?.(system)} className="rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">
           Dismiss Reminder
@@ -530,7 +490,7 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
             ["overdue", "Overdue"],
             ["due_soon", "Due Soon"],
             ["warranty_expiring", "Warranty Expiring"],
-            ["lifespan_attention", "Lifespan Attention"],
+            ["lifespan_attention", "Nearing End of Life"],
             ["current", "Current"],
             ["unknown", "Unknown"],
           ].map(([key, label]) => (
@@ -939,7 +899,7 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
 function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenTab, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
-  const [warrantiesExpanded, setWarrantiesExpanded] = useState(false);
+  const [documentCategory, setDocumentCategory] = useState("All");
   const grouped = documentGroups(profile, documents);
   const completedProjects = completedProjectRows(projects, agreements, documents);
   const maintenance = maintenanceRows(maintenanceWorkOrders);
@@ -947,28 +907,18 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
   const systems = hasStructuredSystems
     ? (profile.home_systems || []).map(normalizeHomeSystem)
     : systemRows({ projects, agreements, documents, requests, maintenanceWorkOrders, propertyIntelligence });
-  const warranties = warrantyRows(agreements, documents, systems.filter((system) => system.isStructured));
-  const activeProjects = activeProjectRows(projects);
-  const openRequests = openRequestRows(requests);
   const timeline = timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
-  const importantDocuments = [
-    ...grouped.Warranties,
-    ...grouped.Agreements,
-    ...grouped["Invoices & Receipts"],
-    ...grouped.Permits,
-  ];
+  const allDocuments = Object.values(grouped).flat();
+  const categoryRows = documentCategory === "All" ? allDocuments : grouped[documentCategory] || [];
+  const categoryCount = (category) => category === "All" ? allDocuments.length : (grouped[category] || []).length;
   const timelineDefaultCount = 5;
   const documentsDefaultCount = 5;
-  const warrantiesDefaultCount = 4;
   const visibleTimeline = timelineExpanded ? timeline : timeline.slice(0, timelineDefaultCount);
-  const visibleImportantDocuments = documentsExpanded ? importantDocuments : importantDocuments.slice(0, documentsDefaultCount);
-  const visibleWarranties = warrantiesExpanded ? warranties : warranties.slice(0, warrantiesDefaultCount);
+  const visibleDocuments = documentsExpanded ? categoryRows : categoryRows.slice(0, documentsDefaultCount);
 
   return (
     <div className="space-y-5">
       <HomeSystemsSection systems={systems} onAdd={onAddSystem} onEdit={onEditSystem} onArchive={onArchiveSystem} />
-
-      <ActiveWorkSection projects={activeProjects} requests={openRequests} />
 
       <MaintenanceCenter
         intelligence={propertyIntelligence}
@@ -1037,116 +987,63 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
           )}
         </Section>
 
-        <Section title="Important Documents" eyebrow="Quick access" testId="home-records-important-documents">
-          {importantDocuments.length ? (
-            <div className="space-y-2">
-              {visibleImportantDocuments.map((document) => (
-                <a key={`${document.id}-${document.url}`} href={document.url || "#"} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/45">
-                  <div className="text-sm font-semibold text-white">{document.title}</div>
+        <Section title="Documents & Photos" eyebrow="Property records" testId="home-records-documents-photos">
+          <p className="text-sm leading-6 text-slate-300">
+            A focused property-record view using the same files from your full Documents library.
+          </p>
+          <div data-testid="home-records-document-filters" className="mt-4 flex flex-wrap gap-2">
+            {DOCUMENT_PHOTO_CATEGORIES.map((category) => (
+              <button
+                key={category}
+                type="button"
+                data-testid={`home-records-documents-filter-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+                onClick={() => {
+                  setDocumentCategory(category);
+                  setDocumentsExpanded(false);
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  documentCategory === category
+                    ? "border-amber-300 bg-amber-300/15 text-amber-100"
+                    : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
+                }`}
+              >
+                {category} ({categoryCount(category)})
+              </button>
+            ))}
+          </div>
+          {categoryRows.length ? (
+            <div className="mt-4 space-y-2">
+              {visibleDocuments.map((document) => (
+                <a key={`${document.id}-${document.url}-${document.title}`} href={document.url || "#"} target="_blank" rel="noreferrer" className="block rounded-xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/45">
+                  <div className="text-sm font-semibold text-white">{document.title || document.filename || "Property record"}</div>
                   <div className="mt-1 text-xs text-slate-500">{categoryForDocument(document)} - {formatDate(document.date)}</div>
-                  <div className="mt-2 text-xs font-semibold text-sky-100">View document</div>
+                  <div className="mt-2 text-xs font-semibold text-sky-100">Open record</div>
                 </a>
               ))}
               <ShowMoreControl
-                total={importantDocuments.length}
+                total={categoryRows.length}
                 visible={documentsDefaultCount}
                 expanded={documentsExpanded}
                 onToggle={() => setDocumentsExpanded((value) => !value)}
-                noun="documents"
-                testId="home-records-important-documents-show-more"
+                noun="records"
+                testId="home-records-documents-show-more"
               />
             </div>
           ) : (
-            <EmptyState title="No important documents yet" testId="home-records-important-documents-empty">
-              Agreements, warranties, receipts, permits, and insurance files will be grouped here as they are added.
+            <EmptyState title="No records in this category yet" testId="home-records-documents-empty">
+              Add agreements, warranties, receipts, permits, manuals, insurance files, HOA records, and photos from the Documents tab or Property Files upload.
             </EmptyState>
           )}
+          <button
+            type="button"
+            data-testid="home-records-open-documents"
+            onClick={() => onOpenTab?.("documents")}
+            className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
+          >
+            View Full Document Library
+          </button>
         </Section>
       </div>
-
-      <Section title="Warranty Center" eyebrow="Coverage" testId="home-records-warranty-center">
-        {warranties.length ? (
-          <div className="grid gap-3 lg:grid-cols-2">
-            {visibleWarranties.map((warranty) => (
-              <article key={warranty.id} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-                <div className="text-sm font-semibold text-white">{warranty.project}</div>
-                <div className="mt-1 text-xs text-slate-500">{warranty.contractor} - {formatDate(warranty.date)}</div>
-                <div className="mt-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-2.5 py-1 text-xs font-semibold text-amber-100 inline-flex">
-                  {warranty.warrantyType}
-                </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{warranty.text}</p>
-                {warranty.documents.length ? (
-                  <div className="mt-3 space-y-2">
-                    {warranty.documents.map((document) => (
-                      <a key={document.id} href={document.url || "#"} target="_blank" rel="noreferrer" className="block text-sm font-semibold text-sky-100 hover:text-sky-50">
-                        {document.title}
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
-              </article>
-            ))}
-            <div className="lg:col-span-2">
-              <ShowMoreControl
-                total={warranties.length}
-                visible={warrantiesDefaultCount}
-                expanded={warrantiesExpanded}
-                onToggle={() => setWarrantiesExpanded((value) => !value)}
-                noun="warranties"
-                testId="home-records-warranty-show-more"
-              />
-            </div>
-          </div>
-        ) : (
-          <EmptyState title="No warranty details yet" testId="home-records-warranty-empty">
-            Warranty details will appear here when contractors add warranty information to completed projects.
-          </EmptyState>
-        )}
-      </Section>
-
-      <Section title="Property Photos" eyebrow="Visual record" testId="property-photo-gallery">
-        {(profile?.photos || []).length ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {(profile?.photos || []).slice(0, 8).map((photo) => (
-              <a key={photo.id} href={photo.url || "#"} target="_blank" rel="noreferrer" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-3 hover:border-sky-300/45">
-                <div className="aspect-video rounded-xl bg-slate-800">
-                  {photo.url ? <img src={photo.url} alt={photo.title || "Property photo"} className="h-full w-full rounded-xl object-cover" /> : null}
-                </div>
-                <div className="mt-2 text-sm font-semibold text-white">{photo.title || "Property photo"}</div>
-                <div className="mt-1 text-xs text-slate-500">{formatDate(photo.date)}</div>
-              </a>
-            ))}
-          </div>
-        ) : (
-          <EmptyState title="No property photos yet" testId="property-photo-gallery-empty">
-            Add exterior, roof, system, and before/after photos to build a visual property history.
-          </EmptyState>
-        )}
-      </Section>
-
-      <Section title="Key Records Summary" eyebrow="Documents and photos" testId="home-records-document-groups">
-        <p className="mb-4 text-sm leading-6 text-slate-300">
-          This is a compact property-record summary. Use the Documents tab for the full searchable document library and uploads.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Object.entries(grouped).map(([category, rows]) => (
-            <div key={category} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h4 className="text-sm font-semibold text-white">{category}</h4>
-                <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-slate-200">{rows.length}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-        <button
-          type="button"
-          data-testid="home-records-open-documents"
-          onClick={() => onOpenTab?.("documents")}
-          className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
-        >
-          View All Documents
-        </button>
-      </Section>
     </div>
   );
 }

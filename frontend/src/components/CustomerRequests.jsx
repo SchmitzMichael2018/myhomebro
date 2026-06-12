@@ -50,6 +50,20 @@ function HighlightBadge({ children }) {
   );
 }
 
+function PassiveBadge({ children, tone = "slate" }) {
+  const classes = {
+    slate: "border-slate-700 bg-slate-950/70 text-slate-300",
+    amber: "border-amber-200/35 bg-amber-300/10 text-amber-100",
+    sky: "border-sky-300/30 bg-sky-400/10 text-sky-100",
+    rose: "border-rose-300/35 bg-rose-400/10 text-rose-100",
+  };
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${classes[tone] || classes.slate}`}>
+      {children}
+    </span>
+  );
+}
+
 function EmptyState({ title, children, testId }) {
   return (
     <div data-testid={testId} className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-5 text-sm text-slate-300">
@@ -168,7 +182,7 @@ function TextBlock({ label, value, empty }) {
 }
 
 function homeownerRequestStatus(request = {}, bids = []) {
-  if (displayValue(request.workflow_status_label)) return request.workflow_status_label;
+  if (displayValue(request.workflow_status_label)) return normalizeRequestStatusLabel(request.workflow_status_label);
   const status = String(request.status || "").toLowerCase();
   const label = String(request.status_label || "").trim();
   const conversion = String(request.conversion_status || "").toLowerCase();
@@ -176,14 +190,24 @@ function homeownerRequestStatus(request = {}, bids = []) {
   const bidCount = Number(request.bids_count ?? bids.length ?? 0);
   if (request.linked_work || request.agreement_token || conversion.includes("agreement")) return "Agreement Draft Created";
   if (contractor?.status_label && String(contractor.status_label).toLowerCase().includes("agreement")) return "Agreement Draft Created";
-  if (contractor || status.includes("selected") || status.includes("awarded")) return "Contractor Selected";
+  if (contractor || status.includes("selected") || status.includes("awarded")) return "Contractor selected";
   if (bidCount > 0) return "Contractor Responses Received";
   if (status.includes("routed") || status.includes("sent")) return "Sent to Contractors";
-  if (status.includes("analyzed") || status.includes("matching")) return "Preparing Contractor Match";
+  if (status.includes("analyzed") || status.includes("matching")) return "Finding contractors";
   if (status.includes("submitted")) return "Reviewing Request";
   if (status.includes("draft")) return "Draft";
-  if (status.includes("closed") || status.includes("archived") || status.includes("cancel")) return "Closed";
+  if (status.includes("cancel")) return "Cancelled";
+  if (status.includes("closed") || status.includes("archived")) return "Closed";
   return label || "Submitted";
+}
+
+function normalizeRequestStatusLabel(label = "") {
+  const text = displayValue(label);
+  if (!text) return "";
+  const lowered = text.toLowerCase();
+  if (lowered === "contractor matching" || lowered === "preparing contractor match") return "Finding contractors";
+  if (lowered === "contractor selected") return "Contractor selected";
+  return text;
 }
 
 function requestMatchingText(request = {}, bids = []) {
@@ -213,13 +237,23 @@ function requestNextStep(request = {}, bids = []) {
 }
 
 function requestCanEditText(request = {}) {
-  if (request.can_edit === true) return "Editable";
+  if (String(request.workflow_status || request.status || "").toLowerCase().includes("cancel")) return "Cancelled";
+  if (request.can_edit === true) return "Editable until sent";
+  if (request.cancel_lock_reason) return request.cancel_lock_reason;
   if (request.can_edit === false) return request.edit_lock_reason || "Editing locked after routing";
   if (request.linked_work || request.agreement_token) return "Linked agreement available";
   const status = homeownerRequestStatus(request).toLowerCase();
-  if (status.includes("draft") || status.includes("reviewing")) return "Editable";
+  if (status.includes("draft") || status.includes("reviewing")) return "Editable until sent";
   if (status.includes("closed")) return "Closed";
-  return "Changes may need follow-up";
+  return "Contact contractor to change";
+}
+
+function requestCanCancel(request = {}) {
+  return request.can_cancel === true;
+}
+
+function requestCanDelete(request = {}) {
+  return request.can_delete === true;
 }
 
 function requestContractorRoutes(request = {}) {
@@ -292,6 +326,8 @@ export default function CustomerRequests({
   onImproveRequest,
   onStartContractorSearch,
   onRouteRequestContractors,
+  onCancelRequest,
+  onDeleteRequest,
   onAcceptBid,
   acceptingBidId = "",
   creating = false,
@@ -305,6 +341,13 @@ export default function CustomerRequests({
   const [routingContractors, setRoutingContractors] = useState(false);
   const [contractorSearchLoading, setContractorSearchLoading] = useState(false);
   const [contractorSearchError, setContractorSearchError] = useState("");
+  const [cancelRequest, setCancelRequest] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelError, setCancelError] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [deleteRequest, setDeleteRequest] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [improvingRequest, setImprovingRequest] = useState(false);
   const [improveError, setImproveError] = useState("");
   const [requestSuggestion, setRequestSuggestion] = useState(null);
@@ -542,6 +585,64 @@ export default function CustomerRequests({
     }
   };
 
+  const openCancelRequest = (request) => {
+    if (!requestCanCancel(request)) return;
+    setCancelRequest(request);
+    setCancelReason("");
+    setCancelError("");
+  };
+
+  const closeCancelRequest = () => {
+    if (cancelBusy) return;
+    setCancelRequest(null);
+    setCancelReason("");
+    setCancelError("");
+  };
+
+  const submitCancelRequest = async () => {
+    if (!cancelRequest?.request_id) return;
+    setCancelBusy(true);
+    setCancelError("");
+    try {
+      await onCancelRequest?.(cancelRequest.request_id, cancelReason);
+      setSelectedRequest(null);
+      setCancelRequest(null);
+      setCancelReason("");
+      setCancelError("");
+    } catch (error) {
+      setCancelError(error?.response?.data?.detail || error?.message || "Could not cancel this request.");
+    } finally {
+      setCancelBusy(false);
+    }
+  };
+
+  const openDeleteRequest = (request) => {
+    if (!requestCanDelete(request)) return;
+    setDeleteRequest(request);
+    setDeleteError("");
+  };
+
+  const closeDeleteRequest = () => {
+    if (deleteBusy) return;
+    setDeleteRequest(null);
+    setDeleteError("");
+  };
+
+  const submitDeleteRequest = async () => {
+    if (!deleteRequest?.request_id) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      await onDeleteRequest?.(deleteRequest.request_id);
+      setSelectedRequest(null);
+      setDeleteRequest(null);
+    } catch (error) {
+      setDeleteError(error?.response?.data?.detail || error?.message || "Could not delete this request.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   const discoveryFormForRequest = (request = {}) => ({
     ai_project_title: request.project_title,
     ai_project_type: request.project_type || request.project_category,
@@ -572,10 +673,10 @@ export default function CustomerRequests({
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Create a Request</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Tell us what you need help with next</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-              Save repairs, maintenance, inspections, new projects, or follow-up work here first. Requests stay private until you choose to send or route them.
+              Save repairs, maintenance, inspections, new projects, or follow-up work here first. Requests stay private until you choose to send them to a contractor.
             </p>
           </div>
-          <Badge>Internal until routed</Badge>
+          <Badge>Private until sent to a contractor</Badge>
         </div>
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-3">
@@ -852,14 +953,6 @@ I need help installing shelves and patching drywall.`}
                 />
               </div>
             </label>
-            <label className="block text-sm font-medium text-slate-200">
-              Street
-              <input
-                value={form.address_line1}
-                onChange={(event) => update("address_line1", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              />
-            </label>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-200">
                 City
@@ -939,20 +1032,31 @@ I need help installing shelves and patching drywall.`}
           {requests.length ? (
             requests.map((request) => (
               <div key={request.id} data-testid={`customer-request-card-${request.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-white">{request.project_title}</div>
-                    <div className="mt-1 text-sm text-slate-400">{request.project_scope || request.notes || request.project_address || "Request details pending."}</div>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-white">{request.project_title}</div>
+                      <div className="mt-2 flex flex-wrap gap-2" data-testid={`customer-request-badges-${request.id}`}>
+                        <PassiveBadge>{request.project_type || request.project_category || request.request_type_label || request.project_class_label || "Request"}</PassiveBadge>
+                        <PassiveBadge tone={String(request.workflow_status || request.status || "").toLowerCase().includes("cancel") ? "rose" : "amber"}>
+                          {homeownerRequestStatus(request, requestBids(request))}
+                        </PassiveBadge>
+                        {request.can_edit ? <PassiveBadge tone="sky">Editable until sent</PassiveBadge> : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-slate-400">{request.project_scope || request.notes || request.project_address || "Request details pending."}</div>
                     <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2 lg:grid-cols-3">
                       <span><strong className="text-slate-200">Property:</strong> {request.property_name || request.project_address || request.property_profile?.address || "Property pending"}</span>
                       <span><strong className="text-slate-200">Matching:</strong> {requestMatchingText(request, requestBids(request))}</span>
                       <span><strong className="text-slate-200">Next:</strong> {requestNextStep(request, requestBids(request))}</span>
                     </div>
+                    {!request.can_edit && requestCanEditText(request) && !String(requestCanEditText(request)).toLowerCase().includes("cancelled") ? (
+                      <p className="mt-2 text-xs font-semibold text-slate-500">{requestCanEditText(request)}</p>
+                    ) : null}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge>{request.project_type || request.project_category || request.request_type_label || request.project_class_label || "Request"}</Badge>
-                    <HighlightBadge>{homeownerRequestStatus(request, requestBids(request))}</HighlightBadge>
-                    <Badge>{requestCanEditText(request)}</Badge>
+                  <div className="flex flex-wrap gap-2" data-testid={`customer-request-actions-${request.id}`}>
                     <button
                       type="button"
                       data-testid={`customer-request-view-${request.id}`}
@@ -971,7 +1075,7 @@ I need help installing shelves and patching drywall.`}
                         Edit Request
                       </button>
                     ) : null}
-                    {request.can_edit || request.contractor_matching_started ? (
+                    {request.can_edit || request.workflow_status === "contractor_matching" ? (
                       <button
                         type="button"
                         data-testid={`customer-request-find-contractor-${request.id}`}
@@ -980,6 +1084,35 @@ I need help installing shelves and patching drywall.`}
                       >
                         Find Contractor
                       </button>
+                    ) : null}
+                    {requestCanCancel(request) ? (
+                      <button
+                        type="button"
+                        data-testid={`customer-request-cancel-${request.id}`}
+                        onClick={() => openCancelRequest(request)}
+                        className="rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
+                      >
+                        Cancel Request
+                      </button>
+                    ) : null}
+                    {requestCanDelete(request) ? (
+                      <button
+                        type="button"
+                        data-testid={`customer-request-delete-${request.id}`}
+                        onClick={() => openDeleteRequest(request)}
+                        className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+                      >
+                        Delete Request
+                      </button>
+                    ) : null}
+                    {(request.linked_work?.agreement_url || request.agreement_token) ? (
+                      <a
+                        data-testid={`customer-request-view-agreement-${request.id}`}
+                        href={request.linked_work?.agreement_url || `/agreements/magic/${request.agreement_token}`}
+                        className="rounded-lg border border-sky-300/40 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/10"
+                      >
+                        View Agreement
+                      </a>
                     ) : null}
                     {(bidsByComparisonKey[request.comparison_key] || []).length > 1 ? (
                       <button
@@ -1070,6 +1203,7 @@ I need help installing shelves and patching drywall.`}
                     token={contractorSearchRequest.source_intake_token}
                     form={discoveryFormForRequest(contractorSearchRequest)}
                     active
+                    variant="portal"
                     selectedTargets={selectedContractors}
                     setSelectedTargets={setSelectedContractors}
                     onSkipToManual={() => setSelectedContractors([])}
@@ -1139,7 +1273,7 @@ I need help installing shelves and patching drywall.`}
                       Edit Request
                     </button>
                   ) : null}
-                  {selectedRequest.can_edit || selectedRequest.contractor_matching_started ? (
+                  {selectedRequest.can_edit || selectedRequest.workflow_status === "contractor_matching" ? (
                     <button
                       type="button"
                       data-testid="customer-request-detail-find-contractor"
@@ -1149,15 +1283,34 @@ I need help installing shelves and patching drywall.`}
                       Find Contractor
                     </button>
                   ) : null}
+                  {requestCanCancel(selectedRequest) ? (
+                    <button
+                      type="button"
+                      data-testid="customer-request-detail-cancel"
+                      onClick={() => openCancelRequest(selectedRequest)}
+                      className="rounded-xl border border-rose-300/40 px-4 py-2 text-sm font-bold text-rose-100 hover:bg-rose-400/10"
+                    >
+                      Cancel Request
+                    </button>
+                  ) : null}
                 </div>
+                {String(selectedRequest.workflow_status || selectedRequest.status || "").toLowerCase().includes("cancel") ? (
+                  <div data-testid="customer-request-cancelled-banner" className="rounded-2xl border border-rose-300/35 bg-rose-400/10 p-4 text-sm text-rose-50">
+                    <div className="font-bold">This request was cancelled.</div>
+                    <p className="mt-1 leading-6 text-rose-100/85">
+                      {selectedRequest.cancellation_reason || "It will not be sent to contractors."}
+                    </p>
+                  </div>
+                ) : null}
                 <DetailSection title="Request Summary" eyebrow="Submitted Request" testId="customer-request-detail-summary">
                   <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <DetailField label="Current Status" value={homeownerRequestStatus(selectedRequest, requestBids(selectedRequest))} />
-                    <DetailField label="Source" value={selectedRequest.request_source_label || selectedRequest.source_kind_label} />
+                    <DetailField label="Request Channel" value={selectedRequest.request_source_label || selectedRequest.source_kind_label} />
                     <DetailField label="What Happens Next" value={requestNextStep(selectedRequest, requestBids(selectedRequest))} />
                     <DetailField label="Contractor Matching" value={requestMatchingText(selectedRequest, requestBids(selectedRequest))} />
                     <DetailField label="Can Edit / Cancel" value={requestCanEditText(selectedRequest)} />
-                    <DetailField label="Conversion Status" value={selectedRequest.conversion_status} />
+                    <DetailField label="Agreement Status" value={selectedRequest.conversion_status} />
+                    <DetailField label="Cancelled" value={formatDateTime(selectedRequest.cancelled_at)} />
                     <DetailField label="Submitted" value={formatDateTime(selectedRequest.created_at)} />
                     <DetailField label="Last Updated" value={formatDateTime(selectedRequest.updated_at || selectedRequest.latest_activity)} />
                     <DetailField label="Contractor Responses" value={`${requestBids(selectedRequest).length} response${requestBids(selectedRequest).length === 1 ? "" : "s"}`} />
@@ -1313,10 +1466,112 @@ I need help installing shelves and patching drywall.`}
           </div>
         ) : null}
 
+        {cancelRequest ? (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center"
+            data-testid="customer-request-cancel-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Cancel Request"
+          >
+            <div className="w-full max-w-lg rounded-3xl border border-rose-300/35 bg-slate-950 p-5 shadow-2xl">
+              <div className="text-xs font-bold uppercase tracking-[0.2em] text-rose-200">Cancel Request</div>
+              <h3 className="mt-1 text-2xl font-extrabold text-white">Cancel Request</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                Cancelling keeps the request in your portal history but stops it from moving forward. If it has already been sent to contractors, they may be notified that the request was withdrawn.
+              </p>
+              <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                <div className="text-sm font-bold text-white">{cancelRequest.project_title || "Customer request"}</div>
+                <p className="mt-1 text-sm text-slate-400">{homeownerRequestStatus(cancelRequest, requestBids(cancelRequest))}</p>
+              </div>
+              <label className="mt-4 block text-sm font-semibold text-slate-200">
+                Reason (optional)
+                <textarea
+                  value={cancelReason}
+                  onChange={(event) => setCancelReason(event.target.value)}
+                  rows={4}
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-rose-300"
+                  placeholder="Share a short note for your records or for contractors who already received the request."
+                />
+              </label>
+              {cancelError ? (
+                <div data-testid="customer-request-cancel-error" className="mt-3 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
+                  {cancelError}
+                </div>
+              ) : null}
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeCancelRequest}
+                  disabled={cancelBusy}
+                  className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                >
+                  Keep Request
+                </button>
+                <button
+                  type="button"
+                  data-testid="customer-request-confirm-cancel"
+                  onClick={submitCancelRequest}
+                  disabled={cancelBusy}
+                  className="rounded-xl bg-rose-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-rose-200 disabled:opacity-60"
+                >
+                  {cancelBusy ? "Cancelling..." : "Cancel Request"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {deleteRequest ? (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center"
+            data-testid="customer-request-delete-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delete Request"
+          >
+            <div className="w-full max-w-lg rounded-3xl border border-slate-600 bg-slate-950 p-5 shadow-2xl">
+              <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-300">Delete Request</div>
+              <h3 className="mt-1 text-2xl font-extrabold text-white">Delete private request?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                This is only available before a request is sent to contractors. Deleting removes the private draft from your portal instead of keeping it in history.
+              </p>
+              <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                <div className="text-sm font-bold text-white">{deleteRequest.project_title || "Customer request"}</div>
+                <p className="mt-1 text-sm text-slate-400">{deleteRequest.project_scope || deleteRequest.notes || "Private request"}</p>
+              </div>
+              {deleteError ? (
+                <div data-testid="customer-request-delete-error" className="mt-3 rounded-xl border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
+                  {deleteError}
+                </div>
+              ) : null}
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={closeDeleteRequest}
+                  disabled={deleteBusy}
+                  className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                >
+                  Keep Request
+                </button>
+                <button
+                  type="button"
+                  data-testid="customer-request-confirm-delete"
+                  onClick={submitDeleteRequest}
+                  disabled={deleteBusy}
+                  className="rounded-xl bg-slate-200 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-white disabled:opacity-60"
+                >
+                  {deleteBusy ? "Deleting..." : "Delete Request"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
           {internalRequests.length
-            ? "New portal requests are saved internally first and are not broadcast to the marketplace unless routing is enabled and you choose that next step."
-            : "Saved requests stay internal here first. They can later be prepared for contractor routing when you choose the next step."}
+            ? "New portal requests are private first and are not sent to contractors unless routing is enabled and you choose that next step."
+            : "Saved requests stay private here first. They can later be prepared for contractor routing when you choose the next step."}
         </div>
 
         {activeComparisonRequest ? (

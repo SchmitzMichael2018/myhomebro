@@ -1651,6 +1651,8 @@ test("customer portal is reachable from the landing page and loads secure record
                 status: "routed",
                 status_label: "Routed",
                 can_edit: false,
+                can_cancel: true,
+                can_delete: false,
                 edit_lock_reason: "Editing is locked after a request is sent to contractors or converted to an agreement.",
                 contractor_matching_started: true,
                 routed_contractor_count: 1,
@@ -1685,6 +1687,50 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/requests/9/cancel/") && method === "POST") {
+      const payload = JSON.parse(route.request().postData() || "{}");
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        requests: currentPortalPayload.requests.map((request) =>
+          request.request_id === 9
+            ? {
+                ...request,
+                workflow_status: "cancelled",
+                workflow_status_label: "Cancelled",
+                current_next_action: "This request was cancelled and will not be sent to contractors.",
+                status: "cancelled",
+                status_label: "Cancelled",
+                can_edit: false,
+                can_cancel: false,
+                can_delete: false,
+                cancellation_reason: payload.reason || "",
+                cancelled_at: "2026-06-09T12:30:00Z",
+                activity_timeline: [
+                  ...(request.activity_timeline || []),
+                  {
+                    title: "Request cancelled",
+                    description: payload.reason || "Cancelled by homeowner.",
+                    occurred_at: "2026-06-09T12:30:00Z",
+                    status: "cancelled",
+                  },
+                ],
+              }
+            : request
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Request cancelled.",
+          request_id: 9,
+          notified_contractors: 1,
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/requests/") && method === "POST") {
       submittedRequestPayload = JSON.parse(route.request().postData() || "{}");
       currentPortalPayload = {
@@ -1707,6 +1753,8 @@ test("customer portal is reachable from the landing page and loads secure record
             current_next_action: "Edit the request or find contractors when you are ready.",
             conversion_status: "Reviewing Request",
             can_edit: true,
+            can_cancel: true,
+            can_delete: true,
             edit_lock_reason: "",
             contractor_matching_started: false,
             routed_contractor_count: 0,
@@ -1965,7 +2013,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-overview-active-projects")).toContainText("Active Projects");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("What needs my attention?");
   await expect(page.getByTestId("customer-overview-property-records")).toContainText("Your home history, organized");
-  await expect(page.getByTestId("customer-activation-checklist")).toContainText("Workspace setup: 5 of 6 complete");
+  await expect(page.getByTestId("customer-activation-checklist")).toContainText("Home Profile Setup: 5 of 6 complete");
   await expect(page.getByTestId("customer-activation-checklist")).toContainText("active task moved to Needs Attention");
   await expect(page.getByTestId("customer-activation-checklist")).not.toContainText("Fund escrow or review payments");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Invoice for Kitchen Remodel");
@@ -2052,7 +2100,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByText("Choose the property this request is for.")).toBeVisible();
   await expect(page.getByTestId("customer-request-property-selector")).toBeVisible();
   await page.getByTestId("customer-request-property-selector").selectOption("2");
-  await expect(page.getByLabel("Street").last()).toHaveValue("44 Lake Dr");
+  await expect(page.getByTestId("customer-request-address-autocomplete").locator("input")).toHaveValue("44 Lake Dr");
   await expect(page.getByLabel("Project Mode")).toBeVisible();
   await expect(page.getByLabel("Project Type")).toBeVisible();
   await expect(page.getByLabel("Project Subtype")).toBeVisible();
@@ -2082,6 +2130,21 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(submittedRequestPayload?.preferred_timeline).toBe("As soon as possible");
   await expect(submittedRequestPayload?.payment_preference).toBe("escrow_milestones");
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Seasonal HVAC maintenance");
+  await expect(page.getByTestId("customer-request-badges-customer-request-9")).toContainText("HVAC");
+  await expect(page.getByTestId("customer-request-badges-customer-request-9")).toContainText("Reviewing Request");
+  await expect(page.getByTestId("customer-request-badges-customer-request-9")).toContainText("Editable until sent");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("View Request");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Edit Request");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Find Contractor");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Cancel Request");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).toContainText("Delete Request");
+  await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "HVAC" })).toHaveCount(0);
+  await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "Reviewing Request" })).toHaveCount(0);
+  await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "Editable until sent" })).toHaveCount(0);
+  await page.getByTestId("customer-request-delete-customer-request-9").click();
+  await expect(page.getByTestId("customer-request-delete-modal")).toBeVisible();
+  await page.getByRole("button", { name: "Keep Request" }).click();
+  await expect(page.getByTestId("customer-request-delete-modal")).toHaveCount(0);
   await page.getByTestId("customer-request-find-contractor-customer-request-9").click();
   await expect(page.getByTestId("customer-request-contractor-search-modal")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Find a Contractor" })).toBeVisible();
@@ -2098,7 +2161,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-request-route-contractors").click();
   await expect(page.getByTestId("customer-request-contractor-search-modal")).toHaveCount(0);
   await expect(page.getByTestId("customer-request-card-customer-request-9")).toContainText("Sent to 1 Contractor");
-  await expect(page.getByTestId("customer-request-card-customer-request-9")).not.toContainText("Editable before routing");
+  await expect(page.getByTestId("customer-request-actions-customer-request-9")).not.toContainText("Delete Request");
   await page.getByTestId("customer-request-view-customer-request-9").click();
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Request Details");
   await expect(page.getByTestId("customer-request-detail-summary")).toContainText("Request Summary");
@@ -2114,6 +2177,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("44 Lake Dr, Austin, TX, 78703");
   await expect(page.getByTestId("customer-request-detail-selected-contractor")).toContainText("Austin HVAC Pros");
   await expect(page.getByTestId("customer-request-detail-activity")).toContainText("Request saved");
+  await page.getByRole("button", { name: "Close request details" }).click();
+  await page.getByTestId("customer-request-cancel-customer-request-9").click();
+  await expect(page.getByTestId("customer-request-cancel-modal")).toBeVisible();
+  await page.getByTestId("customer-request-confirm-cancel").click();
+  await expect(page.getByTestId("customer-request-card-customer-request-9")).toContainText("Cancelled");
+  await page.getByTestId("customer-request-view-customer-request-9").click();
+  await expect(page.getByTestId("customer-request-cancelled-banner")).toContainText("This request was cancelled.");
+  await expect(page.getByTestId("customer-request-detail-activity")).toContainText("Request cancelled");
   await page.getByRole("button", { name: "Close request details" }).click();
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-request-card-request-1")).toContainText("Agreement Draft Created");
@@ -2184,12 +2255,12 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByRole("button", { name: "View Payments" }).click();
   await page.getByRole("button", { name: "View Documents" }).click();
   await page.getByRole("button", { name: "View Activity" }).click();
-  await expect(page.getByTestId("customer-project-payments")).toContainText("Payment History");
+  await expect(page.getByTestId("customer-project-payments")).toContainText("Invoice & Payment History");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Release Paid");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Paid to contractor from escrow");
   await expect(page.getByTestId("customer-project-payments")).not.toContainText("Escrow Funding");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow History");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("This ledger shows how escrow balance changed");
+  await expect(page.getByTestId("customer-project-escrow-history")).toHaveCount(0);
+  await expect(page.getByTestId("customer-rich-project-workspace")).not.toContainText("Balance ledger");
   await expect(page.getByTestId("customer-project-documents")).toContainText("Scope Addendum");
   await expect(page.getByTestId("customer-project-agreement-summary")).toContainText("One-year workmanship warranty");
   await expect(page.getByTestId("customer-project-updates")).toContainText("Demo is complete and final walkthrough is ready for review.");
@@ -2202,6 +2273,12 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Pending Review");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Released to Contractor");
   await expect(page.getByTestId("customer-payments-agreement-list")).toContainText("Payments by project");
+  await expect(page.getByTestId("customer-payment-agreement-detail")).toContainText("Project Financial Summary");
+  await expect(page.getByTestId("customer-payment-agreement-detail")).toContainText("Remaining Project Value");
+  await expect(page.getByTestId("customer-payment-agreement-detail")).toContainText("Invoice & Payment History");
+  await expect(page.getByTestId("customer-payment-agreement-detail")).toContainText("Total Paid To Date");
+  await expect(page.getByTestId("customer-payment-agreement-detail")).toContainText("Escrow History");
+  await expect(page.getByTestId("customer-payment-agreement-detail")).toContainText("Current Escrow Balance");
   await expect(page.getByTestId("customer-payments-summary")).toContainText("Refunds / Adjustments");
   await expect(page.getByTestId("customer-payment-action-invoice-2")).toContainText("Direct Pay");
   await expect(page.getByTestId("customer-payment-primary-invoice-2")).toContainText("Pay Invoice");
@@ -2212,10 +2289,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(drawPaymentCard).toContainText("Escrow hold active");
   await expect(drawPaymentCard.getByTestId("customer-payment-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
   await expect(drawPaymentCard.getByTestId("customer-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
-  await expect(page.getByTestId("customer-payment-action-invoice-1")).toContainText("View Record");
+  await expect(page.getByTestId("customer-payment-history").getByTestId("customer-payment-action-invoice-1")).toContainText("View Record");
   await expect(page.getByTestId("customer-payment-action-invoice-zero")).toHaveCount(0);
   await expect(page.getByTestId("customer-portal-payments")).not.toContainText("$0.00");
   await expect(page.getByTestId("customer-portal-payments")).not.toContainText("No payment required");
+  await expect(page.getByTestId("customer-portal-payments")).not.toContainText("Escrow balance reduced");
 
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-dashboard-overview")).toContainText("Open issue for Kitchen Remodel");
@@ -2270,7 +2348,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Overdue");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Main HVAC service is overdue");
   await expect(page.getByTestId("property-maintenance-group-overdue")).toBeVisible();
-  await page.getByTestId("property-maintenance-edit-reminder-11").click();
+  await page.getByTestId("property-maintenance-manage-reminder-11").click();
   await expect(page.getByTestId("property-home-system-modal")).toContainText("Reminder notifications");
   await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Close" }).click();
   await page.getByTestId("property-maintenance-mark-serviced-11").click();
@@ -2302,12 +2380,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Save system" }).click();
   await expect(page.getByTestId("property-home-systems")).toContainText("Needs Service");
   await expect(page.getByTestId("property-home-systems")).toContainText("Annual service is due.");
-  await expect(page.getByTestId("home-records-warranty-center")).toContainText("Main HVAC");
+  await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
   await page.getByTestId("property-home-system-archive-11").click();
   await expect(page.getByTestId("property-home-systems-empty")).toContainText("No systems recorded yet");
-  await expect(page.getByTestId("property-active-work")).toContainText("Active Projects");
-  await expect(page.getByTestId("property-active-work")).toContainText("Open Requests");
-  await expect(page.getByTestId("property-active-work")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("property-active-work")).toHaveCount(0);
+  await expect(page.getByTestId("property-active-project")).toHaveCount(0);
+  await expect(page.getByTestId("property-open-request")).toHaveCount(0);
+  await expect(page.getByTestId("customer-dashboard-tab-projects")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toBeVisible();
   await expect(page.getByTestId("customer-property-manager")).toContainText("My Properties");
   await expect(page.getByTestId("customer-property-card-1")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-property-card-2")).toContainText("Lake House");
@@ -2316,13 +2396,20 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-property-add-button").click();
   await expect(page.getByRole("button", { name: "Add property", exact: true })).toBeVisible();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Kitchen Remodel");
-  await expect(page.getByTestId("home-records-warranty-center")).toContainText("One-year workmanship warranty");
-  await expect(page.getByTestId("property-photo-gallery")).toContainText("Before kitchen photo");
-  await expect(page.getByTestId("home-records-document-groups")).toContainText("Agreements");
-  await expect(page.getByTestId("home-records-document-groups")).toContainText("Invoices & Receipts");
-  await expect(page.getByTestId("home-records-document-groups")).toContainText("Warranties");
-  await expect(page.getByTestId("home-records-document-groups")).toContainText("Permits");
-  await expect(page.getByTestId("home-records-document-groups")).toContainText("Photos");
+  await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
+  await expect(page.getByTestId("property-photo-gallery")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-important-documents")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-document-groups")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Documents & Photos");
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/All \(\d+\)/);
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Agreements \(\d+\)/);
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Invoices & Receipts \(\d+\)/);
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Warranties \(\d+\)/);
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Photos \(\d+\)/);
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Permits \(\d+\)/);
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Manuals \(\d+\)/);
+  await expect(page.getByTestId("home-records-document-filters")).toContainText(/Insurance \/ HOA \(\d+\)/);
+  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Before kitchen photo");
   await page.getByTestId("home-records-open-documents").click();
   await expect(page.getByTestId("customer-dashboard-tab-documents")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-property").click();
@@ -2541,17 +2628,21 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-requests-empty")).toContainText("No saved requests yet");
-  await expect(page.getByText("Saved requests stay internal here first")).toBeVisible();
+  await expect(page.getByText("Saved requests stay private here first")).toBeVisible();
   await expect(page.getByTestId("customer-bids-empty")).toContainText("No bids yet");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
-  await expect(page.getByTestId("property-active-work")).toContainText("Active Projects");
+  await expect(page.getByTestId("property-active-work")).toHaveCount(0);
+  await expect(page.getByTestId("customer-dashboard-tab-projects")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toBeVisible();
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
   await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No property timeline yet");
-  await expect(page.getByTestId("home-records-warranty-empty")).toContainText("No warranty details yet");
-  await expect(page.getByTestId("property-photo-gallery-empty")).toContainText("No property photos yet");
+  await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
+  await expect(page.getByTestId("property-photo-gallery")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Documents & Photos");
+  await expect(page.getByTestId("home-records-document-filters")).toContainText("Photos (0)");
   await expect(page.getByTestId("customer-property-files-empty")).toContainText("No property files yet");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
@@ -2637,25 +2728,45 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-project-status-escrow-funded-invoice-project")).not.toContainText("Draft");
   await page.getByTestId("customer-project-card-escrow-funded-invoice-project").click();
   await expect(page.getByTestId("customer-payment-summary-project-value")).toContainText("$20,000.00");
-  await expect(page.getByTestId("customer-payment-summary-escrow-funded")).toContainText("$20,000.00");
+  await expect(page.getByTestId("customer-payment-summary-remaining-escrow-primary")).toContainText("$13,000.00");
+  await expect(page.getByTestId("customer-payment-summary-escrow-funded")).toContainText("$20,000.00 escrow funded");
   await expect(page.getByTestId("customer-payment-summary-released")).toContainText("$7,000.00 released to contractor");
   await expect(page.getByTestId("customer-payment-summary-remaining-escrow")).toContainText("$13,000.00 remaining in escrow");
   await expect(page.getByTestId("customer-payment-summary-paid-progress")).toContainText("35% released");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("contractor invoices");
   await page.getByTestId("customer-project-toggle-details").click();
+  await expect(page.getByTestId("customer-project-payments")).toContainText("Invoice & Payment History");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Release Paid");
   await expect(page.getByTestId("customer-project-payments")).toContainText("Paid to contractor from escrow");
   await expect(page.getByTestId("customer-project-payments")).not.toContainText("Escrow Funded");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow Funded");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Escrow balance reduced");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Released from escrow for paid invoice Invoice 7000");
-  await expect(page.getByTestId("customer-project-escrow-history")).toContainText("Remaining escrow after release: $13,000.00");
-  await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Escrow Release to Contractor");
-  await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Reduced escrow balance and paid contractor");
-  await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Linked payment: Release Paid");
-  await expect(page.getByTestId("customer-project-escrow-history")).not.toContainText("Escrow Released");
+  await expect(page.getByTestId("customer-project-escrow-history")).toHaveCount(0);
+  await expect(page.getByTestId("customer-rich-project-workspace")).not.toContainText("Balance ledger");
+  await expect(page.getByTestId("customer-rich-project-workspace")).not.toContainText("Escrow Released");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("$27,000.00");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("Released / Paid");
+  await page.getByTestId("customer-dashboard-tab-payments").click();
+  await page.getByTestId("customer-payment-agreement-105").click();
+  await expect(page.getByTestId("customer-selected-project-financial-summary")).toContainText("Project Value");
+  await expect(page.getByTestId("customer-selected-project-financial-summary")).toContainText("$20,000");
+  await expect(page.getByTestId("customer-selected-project-financial-summary")).toContainText("Paid to Contractor");
+  await expect(page.getByTestId("customer-selected-project-financial-summary")).toContainText("$7,000");
+  await expect(page.getByTestId("customer-selected-project-financial-summary")).toContainText("Remaining Project Value");
+  await expect(page.getByTestId("customer-selected-project-financial-summary")).toContainText("$13,000");
+  await expect(page.getByTestId("customer-selected-project-financial-summary")).toContainText("Remaining Escrow");
+  await expect(page.getByTestId("customer-selected-payment-running-escrow-invoice-7000")).toContainText("Amount Paid");
+  await expect(page.getByTestId("customer-selected-payment-running-escrow-invoice-7000")).toContainText("Total Paid To Date");
+  await expect(page.getByTestId("customer-selected-payment-running-escrow-invoice-7000")).toContainText("$7,000");
+  await expect(page.getByTestId("customer-selected-payment-running-escrow-invoice-7000")).toContainText("35% of Project Value Paid");
+  await expect(page.getByTestId("customer-selected-escrow-running-escrow-funded-20000")).toContainText("+$20,000");
+  await expect(page.getByTestId("customer-selected-escrow-running-escrow-funded-20000")).toContainText("Balance");
+  await expect(page.getByTestId("customer-selected-escrow-running-escrow-funded-20000")).toContainText("$20,000");
+  await expect(page.getByTestId("customer-selected-escrow-running-escrow-invoice-7000")).toContainText("-$7,000");
+  await expect(page.getByTestId("customer-selected-escrow-running-escrow-invoice-7000")).toContainText("$13,000");
+  await expect(page.getByTestId("customer-selected-current-escrow-balance")).toContainText("$13,000");
+  await expect(page.getByTestId("customer-payment-agreement-detail")).not.toContainText("Escrow balance reduced");
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await page.getByTestId("customer-project-search").fill("Escrow Funded Invoice");
+  await page.getByTestId("customer-project-card-escrow-funded-invoice-project").click();
   await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Need to Change Something?");
   await page.getByTestId("customer-action-amendment").click();
   await expect(page.getByTestId("customer-action-modal")).toContainText("Request Amendment");
@@ -2751,18 +2862,19 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("home-records-timeline-static-project-static-history-project")).toBeVisible();
   await expect(page.getByTestId("home-records-timeline-static-project-static-history-project")).not.toHaveAttribute("href", /#/);
 
-  await expect(page.getByTestId("home-records-important-documents")).not.toContainText("Extra warranty document 7");
-  await page.getByTestId("home-records-important-documents-show-more").click();
-  await expect(page.getByTestId("home-records-important-documents")).toContainText("Extra warranty document 7");
-
-  await expect(page.getByTestId("home-records-warranty-center")).not.toContainText("Warranty Project 5");
-  await page.getByTestId("home-records-warranty-show-more").click();
-  await expect(page.getByTestId("home-records-warranty-center")).toContainText("Warranty Project 5");
+  await expect(page.getByTestId("home-records-important-documents")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
+  await expect(page.getByTestId("property-photo-gallery")).toHaveCount(0);
+  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Documents & Photos");
+  await page.getByTestId("home-records-documents-filter-warranties").click();
+  await expect(page.getByTestId("home-records-documents-photos")).not.toContainText("Extra warranty document 7");
+  await page.getByTestId("home-records-documents-show-more").click();
+  await expect(page.getByTestId("home-records-documents-photos")).toContainText("Extra warranty document 7");
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
-  await expect(page.getByTestId("customer-portal-payments")).not.toContainText("Paid receipt 6");
+  await expect(page.getByTestId("customer-payment-history")).not.toContainText("Paid receipt 6");
   await page.getByTestId("customer-payments-history-show-more").click();
-  await expect(page.getByTestId("customer-portal-payments")).toContainText("Paid receipt 6");
+  await expect(page.getByTestId("customer-payment-history")).toContainText("Paid receipt 6");
 
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-portal-documents")).not.toContainText("Portal extra document 10");
