@@ -1155,15 +1155,14 @@ export default function CustomerPropertyProfile({
         </div>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            addingProperty ? onAdd?.(form) : onSave?.(form);
-            setAddingProperty(false);
-          }}
-          className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5"
-        >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          addingProperty ? onAdd?.(form) : onSave?.(form);
+          setAddingProperty(false);
+        }}
+        className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5"
+      >
           <h2 className="text-xl font-semibold text-white">{addingProperty ? "Add Property" : "Property Profile"}</h2>
           <p className="mt-1 text-sm text-slate-300">
             Keep property details available for future repairs, maintenance, inspections, and project planning.
@@ -1322,24 +1321,7 @@ export default function CustomerPropertyProfile({
           >
             {saving ? "Saving..." : addingProperty ? "Add property" : "Save property profile"}
           </button>
-        </form>
-
-        <aside className="rounded-2xl border border-sky-300/25 bg-slate-950/60 p-5">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Documents</div>
-          <h3 className="mt-1 text-lg font-semibold text-white">Document library</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
-            Uploads, photos, warranties, receipts, manuals, permits, insurance files, and search all live in the Documents tab.
-          </p>
-          <button
-            type="button"
-            data-testid="property-view-documents"
-            onClick={() => onOpenTab?.("documents")}
-            className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
-          >
-            View documents for this property
-          </button>
-        </aside>
-      </div>
+      </form>
     </div>
   );
 }

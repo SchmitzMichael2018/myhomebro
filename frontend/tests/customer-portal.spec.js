@@ -2443,8 +2443,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("home-records-documents-photos")).toHaveCount(0);
   await expect(page.getByTestId("home-records-document-filters")).toHaveCount(0);
   await expect(page.getByTestId("customer-property-upload-form")).toHaveCount(0);
-  await expect(page.getByTestId("property-view-documents")).toContainText("View documents for this property");
-  await page.getByTestId("property-view-documents").click();
+  await expect(page.getByTestId("property-view-documents")).toHaveCount(0);
+  await expect(page.getByTestId("customer-property-profile")).not.toContainText("Document library");
+  await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-dashboard-tab-documents")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
@@ -2669,7 +2670,8 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("home-records-documents-photos")).toHaveCount(0);
   await expect(page.getByTestId("home-records-document-filters")).toHaveCount(0);
   await expect(page.getByTestId("customer-property-upload-form")).toHaveCount(0);
-  await expect(page.getByTestId("property-view-documents")).toContainText("View documents for this property");
+  await expect(page.getByTestId("property-view-documents")).toHaveCount(0);
+  await expect(page.getByTestId("customer-property-profile")).not.toContainText("Document library");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
   await expect(page.getByTestId("customer-notifications-center-empty")).toContainText("No notifications yet");
@@ -2898,7 +2900,8 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("home-records-documents-photos")).toHaveCount(0);
   await expect(page.getByTestId("home-records-document-filters")).toHaveCount(0);
   await expect(page.getByTestId("customer-property-upload-form")).toHaveCount(0);
-  await expect(page.getByTestId("property-view-documents")).toBeVisible();
+  await expect(page.getByTestId("property-view-documents")).toHaveCount(0);
+  await expect(page.getByTestId("customer-property-profile")).not.toContainText("Document library");
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-payment-history")).not.toContainText("Paid receipt 6");
