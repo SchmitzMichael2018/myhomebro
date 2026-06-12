@@ -258,6 +258,7 @@ export default function AddressAutocomplete({
   const sessionTokenRef = useRef(null);
   const requestSeqRef = useRef(0);
   const editSeqRef = useRef(0);
+  const selectedValuesRef = useRef(new Set());
 
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState("");
@@ -329,6 +330,13 @@ export default function AddressAutocomplete({
       return;
     }
 
+    if (selectedValuesRef.current.has(query)) {
+      requestSeqRef.current += 1;
+      setPredictions([]);
+      setLoadingPredictions(false);
+      return;
+    }
+
     const service = autocompleteServiceRef.current;
     if (!service) return;
 
@@ -366,6 +374,9 @@ export default function AddressAutocomplete({
   function handleInputChange(event) {
     const next = event.target.value;
     editSeqRef.current += 1;
+    if (!selectedValuesRef.current.has(String(next || "").trim())) {
+      selectedValuesRef.current.clear();
+    }
     setInputValue(next);
     setErr("");
     if (!String(next || "").trim()) {
@@ -380,6 +391,7 @@ export default function AddressAutocomplete({
     if (disabled) return;
     editSeqRef.current += 1;
     requestSeqRef.current += 1;
+    selectedValuesRef.current.clear();
     setInputValue("");
     setPredictions([]);
     setLoadingPredictions(false);
@@ -396,9 +408,13 @@ export default function AddressAutocomplete({
     const predictionText = getPredictionText(prediction);
 
     if (!detailsService || !placeId) {
+      requestSeqRef.current += 1;
+      selectedValuesRef.current.clear();
+      if (predictionText) selectedValuesRef.current.add(predictionText);
       setInputValue(predictionText);
-      onChangeText?.(predictionText);
       setPredictions([]);
+      setLoadingPredictions(false);
+      onChangeText?.(predictionText);
       return;
     }
 
@@ -422,10 +438,16 @@ export default function AddressAutocomplete({
       const lng =
         typeof location?.lng === "function" ? location.lng() : location?.lng ?? null;
       const parts = parseAddressComponentsFromPlace(place);
+      const selectedValue = formatted_address || parts.line1 || "";
 
-      setInputValue(formatted_address || parts.line1 || "");
+      requestSeqRef.current += 1;
+      selectedValuesRef.current.clear();
+      if (selectedValue) selectedValuesRef.current.add(selectedValue);
+      if (parts.line1) selectedValuesRef.current.add(parts.line1);
+      setInputValue(selectedValue);
       setPredictions([]);
-      onChangeText?.(formatted_address || parts.line1 || "");
+      setLoadingPredictions(false);
+      onChangeText?.(selectedValue);
       onSelect?.({
         ...parts,
         line2: "",

@@ -1422,7 +1422,7 @@ export default function CustomerProjectWorkspace({
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+      <div data-testid="customer-projects-layout" className="grid gap-4 xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.7fr)]">
         <section data-testid="customer-agreement-list" className="space-y-3">
           <div data-testid="customer-project-result-count" className="rounded-2xl border border-slate-700 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
             Showing {rangeStart}-{rangeEnd} of {filteredRows.length} projects
@@ -1642,6 +1642,11 @@ export default function CustomerProjectWorkspace({
               </div>
             </section>
 
+            <div
+              data-testid="customer-project-detail-layout"
+              className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.85fr)] 2xl:grid-cols-[minmax(0,1.6fr)_minmax(420px,0.8fr)]"
+            >
+              <div data-testid="customer-project-detail-secondary" className="space-y-4 xl:order-2">
             <Section title="Need to Change Something?" eyebrow="Homeowner action center" testId="customer-homeowner-action-center">
               <p className="text-sm leading-6 text-slate-300">
                 Request a change, ask for escrow review, or open an issue without directly changing the agreement or moving funds.
@@ -1760,7 +1765,9 @@ export default function CustomerProjectWorkspace({
             )}
 
             <ReviewPromptCard project={selected} token={token} onPortalUpdate={onRefresh} />
+              </div>
 
+              <div data-testid="customer-project-detail-primary" className="space-y-4 xl:order-1">
             <div className="grid gap-4">
               <div className="space-y-4">
                 <button
@@ -1978,6 +1985,8 @@ export default function CustomerProjectWorkspace({
                 ) : null}
               </div>
               ) : null}
+            </div>
+              </div>
             </div>
           </>
         ) : (

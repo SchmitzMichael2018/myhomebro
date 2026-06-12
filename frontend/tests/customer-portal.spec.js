@@ -1501,6 +1501,69 @@ test("customer portal is reachable from the landing page and loads secure record
   let currentPortalPayload = portalPayload;
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
+    window.__mhbPlacePredictionInputs = [];
+
+    class MockAutocompleteSessionToken {}
+
+    class MockAutocompleteService {
+      getPlacePredictions(request, callback) {
+        window.__mhbPlacePredictionInputs.push(request.input);
+        callback(
+          [
+            {
+              description: "1515 South Ellison Drive, San Antonio, TX 78245, USA",
+              place_id: "mock-place-1515-ellison",
+            },
+          ],
+          "OK"
+        );
+      }
+    }
+
+    class MockPlacesService {
+      getDetails(request, callback) {
+        callback(
+          {
+            place_id: request.placeId,
+            formatted_address: "1515 South Ellison Drive, San Antonio, TX 78245, USA",
+            geometry: {
+              location: {
+                lat: () => 29.402,
+                lng: () => -98.672,
+              },
+            },
+            address_components: [
+              { long_name: "1515", short_name: "1515", types: ["street_number"] },
+              { long_name: "South Ellison Drive", short_name: "S Ellison Dr", types: ["route"] },
+              { long_name: "San Antonio", short_name: "San Antonio", types: ["locality"] },
+              { long_name: "Texas", short_name: "TX", types: ["administrative_area_level_1"] },
+              { long_name: "78245", short_name: "78245", types: ["postal_code"] },
+              { long_name: "United States", short_name: "US", types: ["country"] },
+            ],
+          },
+          "OK"
+        );
+      }
+    }
+
+    window.google = {
+      maps: {
+        importLibrary: async () => ({
+          AutocompleteService: MockAutocompleteService,
+          PlacesService: MockPlacesService,
+          AutocompleteSessionToken: MockAutocompleteSessionToken,
+        }),
+        places: {
+          AutocompleteService: MockAutocompleteService,
+          PlacesService: MockPlacesService,
+          AutocompleteSessionToken: MockAutocompleteSessionToken,
+          PlacesServiceStatus: {
+            OK: "OK",
+            ZERO_RESULTS: "ZERO_RESULTS",
+          },
+        },
+      },
+    };
   });
 
   page.on("console", (msg) => {
@@ -2264,8 +2327,13 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-filter-closed")).toBeVisible();
   await expect(page.getByTestId("customer-project-filter-all")).toBeVisible();
   await page.getByTestId("customer-project-card-1").click();
+  await expect(page.getByTestId("customer-projects-layout")).toHaveClass(/xl:grid-cols-\[minmax\(280px,0\.72fr\)_minmax\(0,1\.7fr\)\]/);
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Selected agreement");
   await expect(page.getByTestId("customer-selected-agreement-summary")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("customer-project-detail-layout")).toHaveClass(/grid-cols-1/);
+  await expect(page.getByTestId("customer-project-detail-layout")).toHaveClass(/xl:grid-cols-\[minmax\(0,1\.45fr\)_minmax\(360px,0\.85fr\)\]/);
+  await expect(page.getByTestId("customer-project-detail-primary")).toBeVisible();
+  await expect(page.getByTestId("customer-project-detail-secondary")).toBeVisible();
   await expect(page.getByTestId("customer-agreement-view-action")).toHaveAttribute("href", "/agreements/magic/portal-token");
   await expect(page.getByTestId("customer-agreement-pdf-action")).toHaveAttribute("href", "/files/agreement.pdf");
   await expect(page.getByTestId("customer-selected-agreement-summary")).not.toContainText("coming soon");
@@ -2384,6 +2452,19 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/text-white/);
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
   await page.getByTestId("property-summary-edit").click();
+  const propertyAddressSearch = page.getByTestId("customer-property-address-autocomplete").locator("input");
+  await propertyAddressSearch.fill("1515 South Ellison");
+  await expect(page.getByTestId("address-autocomplete-suggestions")).toContainText("1515 South Ellison Drive");
+  await page.getByTestId("address-autocomplete-suggestions").getByRole("button", { name: /1515 South Ellison Drive/ }).click();
+  await expect(page.getByTestId("address-autocomplete-suggestions")).toHaveCount(0);
+  await page.waitForTimeout(350);
+  await expect(page.getByTestId("address-autocomplete-suggestions")).toHaveCount(0);
+  await expect(page.getByLabel("Street")).toHaveValue("1515 South Ellison Drive");
+  await expect(page.getByLabel("City")).toHaveValue("San Antonio");
+  await expect(page.getByLabel("State")).toHaveValue("TX");
+  await expect(page.getByLabel("ZIP")).toHaveValue("78245");
+  await page.getByTestId("customer-property-address-autocomplete").getByLabel("Clear address search").click();
+  await expect(propertyAddressSearch).toHaveValue("");
   await page.getByLabel("Bedrooms").fill("4");
   await page.getByLabel("Bathrooms").fill("3.5");
   await page.getByRole("button", { name: "Save property profile" }).click();
