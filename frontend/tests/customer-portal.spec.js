@@ -67,6 +67,29 @@ const portalPayload = {
         reminder_lead_days: 30,
         reminder_frequency: "once",
         reminder_delivery_status: "",
+        supply_recommendations: [
+          {
+            id: "system-11-supply-1",
+            kind: "supply",
+            system_id: 11,
+            system: "Main HVAC",
+            system_type_label: "HVAC",
+            title: "HVAC filter",
+            supply_name: "HVAC filter",
+            reason: "Filters are a recurring upkeep item for most forced-air systems.",
+            suggested_interval: "Every 1-3 months",
+            next_due_date: "2025-11-15",
+            compatibility_warning: "Confirm size, model, quantity, and compatibility before purchasing.",
+            priority: "medium",
+            confidence: "medium",
+            source_note: "Based on the saved home system type and maintenance records.",
+            provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" }],
+            actions: [
+              { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
+              { type: "diy_help", label: "Get DIY help" },
+            ],
+          },
+        ],
         linked_records_count: 2,
         linked_documents: [
           {
@@ -158,6 +181,29 @@ const portalPayload = {
           reminder_lead_days: 30,
           reminder_frequency: "once",
           reminder_delivery_status: "",
+          supply_recommendations: [
+            {
+              id: "system-11-supply-1",
+              kind: "supply",
+              system_id: 11,
+              system: "Main HVAC",
+              system_type_label: "HVAC",
+              title: "HVAC filter",
+              supply_name: "HVAC filter",
+              reason: "Filters are a recurring upkeep item for most forced-air systems.",
+              suggested_interval: "Every 1-3 months",
+              next_due_date: "2025-11-15",
+              compatibility_warning: "Confirm size, model, quantity, and compatibility before purchasing.",
+              priority: "medium",
+              confidence: "medium",
+              source_note: "Based on the saved home system type and maintenance records.",
+              provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" }],
+              actions: [
+                { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
+                { type: "diy_help", label: "Get DIY help" },
+              ],
+            },
+          ],
           linked_records_count: 2,
           linked_documents: [],
           linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
@@ -209,6 +255,17 @@ const portalPayload = {
       total_cost: "15000.00",
       completed_at: "2026-04-17T16:00:00Z",
       milestones: [{ id: 1, title: "Demo", status: "active", amount: "5000.00" }],
+      suggested_materials: [
+        {
+          id: "project-1-material-1",
+          name: "Dust barriers",
+          category: "Project material",
+          reason: "Suggested from saved milestone material guidance.",
+          related_milestone: "Demo",
+          compatibility_warning: "Confirm exact product, size, quantity, and compatibility before purchasing.",
+          provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Dust+barriers&tag=myhomebro-test-20" }],
+        },
+      ],
       review: {
         eligible: true,
         reason: "Project is complete.",
@@ -2404,6 +2461,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-rich-project-workspace")).not.toContainText("Balance ledger");
   await expect(page.getByTestId("customer-project-documents")).toContainText("Scope Addendum");
   await expect(page.getByTestId("customer-project-agreement-summary")).toContainText("One-year workmanship warranty");
+  await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Suggested Materials");
+  await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Dust barriers");
+  await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Confirm exact product, size, quantity, and compatibility before purchasing.");
+  await expect(page.getByTestId("customer-project-suggested-material-amazon")).toHaveAttribute("href", /amazon\.com\/s\?/);
+  await expect(page.getByTestId("customer-project-suggested-material-amazon")).toHaveAttribute("href", /tag=myhomebro-test-20/);
   await expect(page.getByTestId("customer-project-updates")).toContainText("Demo is complete and final walkthrough is ready for review.");
   const expandedGridMetrics = await page.evaluate(() => {
     const grid = document.querySelector('[data-testid="customer-project-expanded-detail-grid"]')?.getBoundingClientRect();
@@ -2535,6 +2597,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
   await expect(page.getByTestId("property-home-systems")).toContainText("Carrier");
   await expect(page.getByTestId("property-home-systems")).toContainText("2032");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Suggested Supplies & Maintenance");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
+  await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /amazon\.com\/s\?/);
+  await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /tag=myhomebro-test-20/);
+  await page.getByTestId("property-supply-diy-help").first().click();
+  await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("homeowner education");
+  await page.getByRole("dialog", { name: "DIY supply guidance" }).getByRole("button", { name: "Close" }).click();
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Overdue");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Main HVAC service is overdue");

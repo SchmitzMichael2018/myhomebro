@@ -21871,6 +21871,78 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(rows[warranty_system.id]["maintenance_status"], "warranty_expiring")
         self.assertEqual(rows[lifespan_system.id]["maintenance_status"], "lifespan_attention")
 
+    @override_settings(AMAZON_AFFILIATE_TAG="myhomebro-test-20")
+    def test_customer_portal_home_system_supplies_and_project_materials_use_affiliate_config(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        hvac = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            manufacturer="Carrier",
+            model_number="XR-500",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+        )
+        roof = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_ROOF,
+            custom_name="Main Roof",
+            install_date=timezone.localdate() - timezone.timedelta(days=365 * 25),
+            expected_lifespan_years=25,
+        )
+        Milestone.objects.create(
+            agreement=self.agreement,
+            title="Install finishes",
+            order=1,
+            amount=Decimal("1000.00"),
+            materials_hint="Tile grout; waterproof membrane",
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        system_rows = {row["id"]: row for row in response.data["property_profile"]["home_systems"]}
+        hvac_supplies = system_rows[hvac.id]["supply_recommendations"]
+        self.assertTrue(any(row["supply_name"] == "HVAC filter" for row in hvac_supplies))
+        amazon_url = hvac_supplies[0]["provider_links"][0]["url"]
+        self.assertIn("amazon.com/s?", amazon_url)
+        self.assertIn("tag=myhomebro-test-20", amazon_url)
+        self.assertIn("Confirm size, model, quantity, and compatibility", hvac_supplies[0]["compatibility_warning"])
+
+        roof_recommendations = system_rows[roof.id]["supply_recommendations"]
+        self.assertTrue(any(row["kind"] == "end_of_life" for row in roof_recommendations))
+        end_of_life = next(row for row in roof_recommendations if row["kind"] == "end_of_life")
+        self.assertEqual(end_of_life["actions"][0]["label"], "Find Contractor")
+
+        project_row = next(row for row in response.data["projects"] if row["id"] == self.project.id)
+        materials = project_row["suggested_materials"]
+        self.assertTrue(any(row["name"] == "Tile grout" for row in materials))
+        self.assertTrue(any("tag=myhomebro-test-20" in row["provider_links"][0]["url"] for row in materials))
+
+    @override_settings(AMAZON_AFFILIATE_TAG="")
+    def test_customer_portal_amazon_links_work_without_affiliate_config(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        system = response.data["property_profile"]["home_systems"][0]
+        amazon_url = system["supply_recommendations"][0]["provider_links"][0]["url"]
+        self.assertIn("amazon.com/s?", amazon_url)
+        self.assertNotIn("tag=", amazon_url)
+
     def test_customer_portal_home_system_mark_serviced_and_create_request(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         profile = PropertyProfile.objects.get_or_create(

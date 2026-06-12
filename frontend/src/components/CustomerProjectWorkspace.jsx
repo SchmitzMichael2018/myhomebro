@@ -1113,6 +1113,11 @@ export default function CustomerProjectWorkspace({
   const selectedPaymentModel = selectedRow?.paymentModel || buildPaymentModel(projectPayments);
   const selectedProjectValue = numericValue(selected?.total_cost || selectedAgreement?.total_cost);
   const selectedPaidProgress = paidProgressPercent(selectedPaymentModel.releasedToContractor, selectedProjectValue);
+  const selectedSuggestedMaterials = Array.isArray(selected?.suggested_materials)
+    ? selected.suggested_materials
+    : Array.isArray(selected?.suggestedMaterials)
+      ? selected.suggestedMaterials
+      : [];
   const revisedProjectValue = numericValue(actionForm.revised_project_value);
   const estimatedDescopeSurplus =
     actionForm.change_type === "descope_remove_work" && actionForm.revised_project_value
@@ -1981,6 +1986,46 @@ export default function CustomerProjectWorkspace({
                               {selectedAgreement?.warranty_text || "Warranty details will appear here when added to your project."}
                             </div>
                           </div>
+                          {selectedSuggestedMaterials.length ? (
+                            <div data-testid="customer-project-suggested-materials" className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Suggested Materials</div>
+                              <p className="mt-2 text-sm leading-6 text-slate-300">
+                                These materials may be useful for this project. Confirm exact product, size, quantity, and compatibility before purchasing.
+                              </p>
+                              <div className="mt-3 space-y-3">
+                                {selectedSuggestedMaterials.slice(0, 4).map((material) => {
+                                  const amazonLink = (material.provider_links || []).find((link) => link.provider === "amazon") || material.provider_links?.[0];
+                                  return (
+                                    <div key={material.id || material.name} data-testid="customer-project-suggested-material-card" className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                                      <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                          <div className="text-sm font-semibold text-white">{material.name || "Project material"}</div>
+                                          <p className="mt-1 text-xs font-medium text-slate-400">{material.category || "Material"}{material.related_milestone ? ` - ${material.related_milestone}` : ""}</p>
+                                        </div>
+                                        {amazonLink?.url ? (
+                                          <a
+                                            data-testid="customer-project-suggested-material-amazon"
+                                            href={amazonLink.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20"
+                                          >
+                                            Search on Amazon
+                                          </a>
+                                        ) : null}
+                                      </div>
+                                      <p className="mt-2 text-sm leading-6 text-slate-300">{material.reason || "Suggested from project material guidance."}</p>
+                                      {material.compatibility_warning ? (
+                                        <p className="mt-2 rounded-lg border border-amber-300/25 bg-amber-300/10 p-2 text-xs font-semibold leading-5 text-amber-100">
+                                          {material.compatibility_warning}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       </Section>
                     ) : null}

@@ -67,6 +67,10 @@ from projects.services.marketplace_permissions import contractor_marketplace_act
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.property_intelligence import build_property_intelligence
 from projects.services.home_system_reminders import build_home_system_reminder
+from projects.services.customer_portal_supplies import (
+    build_home_system_supply_recommendations,
+    build_project_material_recommendations,
+)
 from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
@@ -440,6 +444,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
 
 def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
     reminder = build_home_system_reminder(system)
+    supply_recommendations = build_home_system_supply_recommendations([system])
     linked_documents = [
         {
             "id": f"property-document-{document.id}",
@@ -518,6 +523,7 @@ def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
         "linked_projects": linked_projects,
         "linked_requests": linked_requests,
         "linked_records_count": len(linked_documents) + len(linked_projects) + len(linked_requests),
+        "supply_recommendations": supply_recommendations,
         "linked_agreement_id": getattr(linked_agreement, "id", None),
         "linked_customer_request_id": getattr(linked_request, "id", None),
         "created_at": _safe_dt(system.created_at),
@@ -1773,49 +1779,50 @@ def _projects(email: str) -> list[dict]:
                     "due_date": _safe_dt(getattr(milestone, "due_date", None) or getattr(milestone, "completion_date", None)),
                     "amendment_review_status": _safe_text(getattr(milestone, "amendment_review_status", "")),
                     "amendment_review_request_id": getattr(milestone, "amendment_review_request_id", None),
+                    "materials_hint": _safe_text(getattr(milestone, "materials_hint", "")),
                 }
                 for milestone in Milestone.objects.filter(agreement=agreement).order_by("order", "id")[:8]
             ]
-        rows.append(
-            {
-                "id": project.id,
-                "project_number": _safe_text(project.number),
-                "title": _safe_text(project.title),
-                "description": _safe_text(project.description),
-                "status": _safe_text(project.status),
-                "status_label": _safe_text(project.status).replace("_", " ").title() or "Project",
-                "address": ", ".join(
-                    part
-                    for part in [
-                        _safe_text(project.project_street_address),
-                        _safe_text(project.project_address_line_2),
-                        _safe_text(project.project_city),
-                        _safe_text(project.project_state),
-                        _safe_text(project.project_zip_code),
-                    ]
-                    if part
-                ),
-                "contractor_name": _contractor_name(getattr(project, "contractor", None)),
-                "agreement_id": getattr(agreement, "id", None),
-                "agreement_token": _safe_text(getattr(agreement, "homeowner_access_token", "")) if agreement else "",
-                "agreement_url": f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
-                "total_cost": _safe_text(getattr(agreement, "total_cost", "")) if agreement else "",
-                "escrow_funded": bool(getattr(agreement, "escrow_funded", False)) if agreement else False,
-                "escrow_funded_amount": _safe_text(getattr(agreement, "escrow_funded_amount", "")) if agreement else "",
-                "milestones": milestone_rows,
-                "updates": _project_messages(agreement) if agreement else [],
-                "updated_at": _safe_dt(getattr(project, "updated_at", None) or getattr(project, "created_at", None)),
-                "customer_visible_reason": visible_reason,
-                "review": _portal_review_state(agreement, email) if agreement else {
-                    "eligible": False,
-                    "reason": "Agreement is not ready for review yet.",
-                    "message": "Share feedback about your project experience.",
-                    "existing_review": None,
-                    "submitted": False,
-                    "agreement_id": None,
-                },
-            }
-        )
+        row = {
+            "id": project.id,
+            "project_number": _safe_text(project.number),
+            "title": _safe_text(project.title),
+            "description": _safe_text(project.description),
+            "status": _safe_text(project.status),
+            "status_label": _safe_text(project.status).replace("_", " ").title() or "Project",
+            "address": ", ".join(
+                part
+                for part in [
+                    _safe_text(project.project_street_address),
+                    _safe_text(project.project_address_line_2),
+                    _safe_text(project.project_city),
+                    _safe_text(project.project_state),
+                    _safe_text(project.project_zip_code),
+                ]
+                if part
+            ),
+            "contractor_name": _contractor_name(getattr(project, "contractor", None)),
+            "agreement_id": getattr(agreement, "id", None),
+            "agreement_token": _safe_text(getattr(agreement, "homeowner_access_token", "")) if agreement else "",
+            "agreement_url": f"/agreements/magic/{agreement.homeowner_access_token}" if agreement else "",
+            "total_cost": _safe_text(getattr(agreement, "total_cost", "")) if agreement else "",
+            "escrow_funded": bool(getattr(agreement, "escrow_funded", False)) if agreement else False,
+            "escrow_funded_amount": _safe_text(getattr(agreement, "escrow_funded_amount", "")) if agreement else "",
+            "milestones": milestone_rows,
+            "updates": _project_messages(agreement) if agreement else [],
+            "updated_at": _safe_dt(getattr(project, "updated_at", None) or getattr(project, "created_at", None)),
+            "customer_visible_reason": visible_reason,
+            "review": _portal_review_state(agreement, email) if agreement else {
+                "eligible": False,
+                "reason": "Agreement is not ready for review yet.",
+                "message": "Share feedback about your project experience.",
+                "existing_review": None,
+                "submitted": False,
+                "agreement_id": None,
+            },
+        }
+        row["suggested_materials"] = build_project_material_recommendations(row, milestone_rows)
+        rows.append(row)
     return rows
 
 
