@@ -50,21 +50,18 @@ def _log_startup():
 
 def _apply_sqlite_pragmas(sender, connection, **kwargs):
     """
-    Apply PRAGMAs on every new SQLite connection to prevent stale-lock issues
-    on PythonAnywhere (and any single-file SQLite deployment).
+    Apply lightweight SQLite PRAGMAs on every new connection.
 
-    WAL mode + an unexpected process death leaves db.sqlite3-wal and
-    db.sqlite3-shm behind; the next connection cannot acquire a shared lock
-    and raises OperationalError: database is locked even though no process is
-    actively writing.  Forcing DELETE journal mode eliminates those sidecar
-    files entirely.
+    Do not change journal_mode here. Switching journal modes can require an
+    exclusive lock, so doing that during app startup or request handling can
+    make an already-busy PythonAnywhere SQLite database harder to recover.
+    Journal mode is reported by startup logging and db_health_check instead.
 
     busy_timeout is belt-and-suspenders alongside OPTIONS["timeout"]; SQLite
-    will retry for up to 20 s before surfacing OperationalError to Django.
+    will retry for up to 20s before surfacing OperationalError to Django.
     """
     if connection.vendor != "sqlite":
         return
     with connection.cursor() as cursor:
-        cursor.execute("PRAGMA journal_mode=DELETE;")
         cursor.execute("PRAGMA synchronous=FULL;")
         cursor.execute("PRAGMA busy_timeout=20000;")

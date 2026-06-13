@@ -47,15 +47,21 @@ class SQLitePragmaTests(TestCase):
             "Check that core.apps.CoreConfig is in INSTALLED_APPS.",
         )
 
-    def test_journal_mode_is_delete(self):
-        """journal_mode should be DELETE as set by the connection signal (skipped for in-memory test DB)."""
+    def test_pragma_helper_does_not_change_journal_mode(self):
+        """The connection signal must not attempt journal_mode changes at startup."""
         if connection.vendor != "sqlite":
             self.skipTest("SQLite-only test")
-        db_name = str(connection.settings_dict.get("NAME", ""))
-        if "mode=memory" in db_name or db_name == ":memory:":
-            self.skipTest("In-memory SQLite always reports 'memory' journal mode — not testable here")
-        mode = self._current_journal_mode()
-        self.assertEqual(mode, "delete", f"Expected journal_mode=delete, got {mode!r}")
+        from core.apps import _apply_sqlite_pragmas
+
+        fake_cursor = mock.MagicMock()
+        fake = mock.MagicMock()
+        fake.vendor = "sqlite"
+        fake.cursor.return_value.__enter__.return_value = fake_cursor
+
+        _apply_sqlite_pragmas(sender=None, connection=fake)
+
+        executed = [call.args[0] for call in fake_cursor.execute.call_args_list]
+        self.assertNotIn("PRAGMA journal_mode=DELETE;", executed)
 
     def test_synchronous_is_full(self):
         """synchronous should be 2 (FULL) as set by the connection signal."""

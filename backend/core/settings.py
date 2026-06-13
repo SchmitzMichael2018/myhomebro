@@ -225,8 +225,9 @@ DATABASES = {
 # OPTIONS["timeout"] tells Django's sqlite3.connect() to wait up to N seconds
 # for a busy lock before raising OperationalError — the primary fix for
 # "database is locked" under concurrent web requests on PythonAnywhere.
-# journal_mode and synchronous PRAGMAs are applied per-connection in
-# core/apps.py via the connection_created signal (init_command is MySQL-only).
+# Lightweight connection PRAGMAs are applied in core/apps.py via the
+# connection_created signal (init_command is MySQL-only). journal_mode is
+# reported by startup logging/db_health_check, but is not changed at startup.
 if DATABASES["default"].get("ENGINE") == "django.db.backends.sqlite3":
     DATABASES["default"].setdefault("OPTIONS", {})
     DATABASES["default"]["OPTIONS"]["timeout"] = 20

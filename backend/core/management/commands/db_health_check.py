@@ -129,7 +129,7 @@ class Command(BaseCommand):
                         self.stdout.write(self.style.WARNING(
                             "  WARNING: journal_mode is WAL. "
                             "Stale -wal/-shm files can cause 'database is locked' on PythonAnywhere. "
-                            "Set PRAGMA journal_mode=DELETE (applied automatically via core/apps.py signal)."
+                            "Switch journal_mode during a controlled maintenance window if needed."
                         ))
             except sqlite3.OperationalError as exc:
                 result["errors"].append(f"PRAGMA read failed: {exc}")
@@ -216,7 +216,7 @@ class Command(BaseCommand):
 
     # -------------------------------------------------------------------------
     def _hr(self):
-        self.stdout.write("─" * 60)
+        self.stdout.write("-" * 60)
 
     def _finish(self, result: dict, output_json: bool):
         if output_json:
