@@ -1141,6 +1141,70 @@ export default function CustomerProjectWorkspace({
   const milestoneCount = (selected?.milestones || []).length;
   const homeownerActions = selected?.homeowner_actions || selectedAgreement?.homeowner_actions || {};
   const activeCases = selected?.active_cases || selectedAgreement?.active_cases || [];
+  const suggestedMaterialsCard = (
+    <Section title="Suggested Materials" eyebrow="Planning and supplies" testId="customer-project-suggested-materials">
+      <p className="text-sm leading-6 text-slate-300">
+        These materials may be useful for this project. Confirm exact size, quantity, finish, model, and compatibility before purchasing.
+      </p>
+      {selectedSuggestedMaterials.length ? (
+        <>
+          <div className="mt-3 space-y-3">
+            {visibleSuggestedMaterials.map((material) => {
+              const amazonLink = (material.provider_links || []).find((link) => link.provider === "amazon") || material.provider_links?.[0];
+              const quantityLabel = [material.quantity, material.unit].filter(Boolean).join(" ");
+              return (
+                <div key={material.id || material.name} data-testid="customer-project-suggested-material-card" className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{material.name || "Project material"}</div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs font-medium text-slate-400">
+                        {material.category ? <span>{material.category}</span> : null}
+                        {material.related_milestone ? <span>Related milestone: {material.related_milestone}</span> : null}
+                        {quantityLabel ? <span>Quantity: {quantityLabel}</span> : null}
+                      </div>
+                    </div>
+                    {amazonLink?.url ? (
+                      <a
+                        data-testid="customer-project-suggested-material-amazon"
+                        href={amazonLink.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+                      >
+                        Search on Amazon
+                      </a>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    {materialReasonText(material)}
+                  </p>
+                  {material.compatibility_warning ? (
+                    <p className="mt-2 rounded-lg border border-amber-300/25 bg-amber-300/10 p-2 text-xs font-semibold leading-5 text-amber-100">
+                      {material.compatibility_warning}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          {selectedSuggestedMaterials.length > 4 ? (
+            <button
+              type="button"
+              data-testid="customer-project-suggested-materials-show-more"
+              onClick={() => setMaterialsExpanded((value) => !value)}
+              className="mt-3 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+            >
+              {materialsExpanded ? "Show fewer materials" : `Show ${selectedSuggestedMaterials.length - 4} more materials`}
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <p className="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-400">
+          No suggested materials available for this project yet.
+        </p>
+      )}
+    </Section>
+  );
 
   const runReimbursementAction = async (payment, action, providedReason = "") => {
     if (!token || !payment?.record_id) return;
@@ -1841,6 +1905,8 @@ export default function CustomerProjectWorkspace({
                       </Section>
                     ) : null}
 
+                    {expandedDetails.activity ? suggestedMaterialsCard : null}
+
                     {expandedDetails.payments ? (
                       <Section title="Invoice & Payment History" eyebrow="Contractor releases and payments" testId="customer-project-payments">
                         <p className="text-sm leading-6 text-slate-300">Review contractor releases, direct payments, refunds, and adjustments separately from escrow funding activity.</p>
@@ -1997,69 +2063,6 @@ export default function CustomerProjectWorkspace({
                             <div className="mt-1 whitespace-pre-wrap text-slate-300">
                               {selectedAgreement?.warranty_text || "Warranty details will appear here when added to your project."}
                             </div>
-                          </div>
-                          <div data-testid="customer-project-suggested-materials" className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-                            <div className="text-xs uppercase tracking-wide text-slate-500">Suggested Materials</div>
-                            <p className="mt-2 text-sm leading-6 text-slate-300">
-                              These materials may be useful for this project. Confirm exact size, quantity, finish, model, and compatibility before purchasing.
-                            </p>
-                            {selectedSuggestedMaterials.length ? (
-                              <>
-                                <div className="mt-3 space-y-3">
-                                  {visibleSuggestedMaterials.map((material) => {
-                                    const amazonLink = (material.provider_links || []).find((link) => link.provider === "amazon") || material.provider_links?.[0];
-                                    const quantityLabel = [material.quantity, material.unit].filter(Boolean).join(" ");
-                                    return (
-                                      <div key={material.id || material.name} data-testid="customer-project-suggested-material-card" className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                                        <div className="flex flex-wrap items-start justify-between gap-3">
-                                          <div>
-                                            <div className="text-sm font-semibold text-white">{material.name || "Project material"}</div>
-                                            <div className="mt-1 flex flex-wrap gap-2 text-xs font-medium text-slate-400">
-                                              {material.category ? <span>{material.category}</span> : null}
-                                              {material.related_milestone ? <span>Related milestone: {material.related_milestone}</span> : null}
-                                              {quantityLabel ? <span>Quantity: {quantityLabel}</span> : null}
-                                            </div>
-                                          </div>
-                                          {amazonLink?.url ? (
-                                            <a
-                                              data-testid="customer-project-suggested-material-amazon"
-                                              href={amazonLink.url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
-                                            >
-                                              Search on Amazon
-                                            </a>
-                                          ) : null}
-                                        </div>
-                                        <p className="mt-2 text-sm leading-6 text-slate-300">
-                                          {materialReasonText(material)}
-                                        </p>
-                                        {material.compatibility_warning ? (
-                                          <p className="mt-2 rounded-lg border border-amber-300/25 bg-amber-300/10 p-2 text-xs font-semibold leading-5 text-amber-100">
-                                            {material.compatibility_warning}
-                                          </p>
-                                        ) : null}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                                {selectedSuggestedMaterials.length > 4 ? (
-                                  <button
-                                    type="button"
-                                    data-testid="customer-project-suggested-materials-show-more"
-                                    onClick={() => setMaterialsExpanded((value) => !value)}
-                                    className="mt-3 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
-                                  >
-                                    {materialsExpanded ? "Show fewer materials" : `Show ${selectedSuggestedMaterials.length - 4} more materials`}
-                                  </button>
-                                ) : null}
-                              </>
-                            ) : (
-                              <p className="mt-3 rounded-lg border border-dashed border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-400">
-                                No suggested materials available for this project yet.
-                              </p>
-                            )}
                           </div>
                         </div>
                       </Section>

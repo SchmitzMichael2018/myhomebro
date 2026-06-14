@@ -2516,6 +2516,7 @@ test("customer portal is reachable from the landing page and loads secure record
   const expandedGridMetrics = await page.evaluate(() => {
     const grid = document.querySelector('[data-testid="customer-project-expanded-detail-grid"]')?.getBoundingClientRect();
     const updates = document.querySelector('[data-testid="customer-project-updates"]')?.getBoundingClientRect();
+    const materials = document.querySelector('[data-testid="customer-project-suggested-materials"]')?.getBoundingClientRect();
     const payments = document.querySelector('[data-testid="customer-project-payments"]')?.getBoundingClientRect();
     const documents = document.querySelector('[data-testid="customer-project-documents"]')?.getBoundingClientRect();
     const agreement = document.querySelector('[data-testid="customer-project-agreement-summary"]')?.getBoundingClientRect();
@@ -2524,6 +2525,8 @@ test("customer portal is reachable from the landing page and loads secure record
       updatesLeft: updates?.left || 0,
       updatesTop: updates?.top || 0,
       updatesWidth: updates?.width || 0,
+      materialsLeft: materials?.left || 0,
+      materialsTop: materials?.top || 0,
       paymentsLeft: payments?.left || 0,
       paymentsTop: payments?.top || 0,
       documentsLeft: documents?.left || 0,
@@ -2533,11 +2536,12 @@ test("customer portal is reachable from the landing page and loads secure record
     };
   });
   expect(expandedGridMetrics.updatesWidth).toBeLessThan(expandedGridMetrics.gridWidth * 0.7);
-  expect(expandedGridMetrics.paymentsLeft).toBeGreaterThan(expandedGridMetrics.updatesLeft);
-  expect(Math.abs(expandedGridMetrics.paymentsTop - expandedGridMetrics.updatesTop)).toBeLessThan(8);
-  expect(expandedGridMetrics.documentsTop).toBeGreaterThan(expandedGridMetrics.updatesTop);
-  expect(expandedGridMetrics.agreementLeft).toBeGreaterThan(expandedGridMetrics.documentsLeft);
-  expect(Math.abs(expandedGridMetrics.agreementTop - expandedGridMetrics.documentsTop)).toBeLessThan(8);
+  expect(expandedGridMetrics.materialsLeft).toBeGreaterThan(expandedGridMetrics.updatesLeft);
+  expect(Math.abs(expandedGridMetrics.materialsTop - expandedGridMetrics.updatesTop)).toBeLessThan(8);
+  expect(expandedGridMetrics.paymentsTop).toBeGreaterThan(expandedGridMetrics.updatesTop);
+  expect(expandedGridMetrics.documentsLeft).toBeGreaterThan(expandedGridMetrics.paymentsLeft);
+  expect(Math.abs(expandedGridMetrics.documentsTop - expandedGridMetrics.paymentsTop)).toBeLessThan(8);
+  expect(expandedGridMetrics.agreementTop).toBeGreaterThan(expandedGridMetrics.paymentsTop);
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-portal-payments")).toContainText("Project Payment Center");
