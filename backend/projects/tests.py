@@ -22009,7 +22009,7 @@ class CustomerPortalAccessTests(TestCase):
             materials_hint="Tile grout; waterproof membrane",
         )
 
-        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
 
         self.assertEqual(response.status_code, 200, response.data)
         system_rows = {row["id"]: row for row in response.data["property_profile"]["home_systems"]}
@@ -22030,6 +22030,83 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(any(row["name"] == "Tile grout" for row in materials))
         self.assertTrue(any("tag=myhomebro-test-20" in row["provider_links"][0]["url"] for row in materials))
 
+    @override_settings(AMAZON_AFFILIATE_TAG="myhomebro-test-20")
+    def test_customer_portal_home_system_subtype_inference_improves_supplies(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        systems = [
+            PropertyHomeSystem.objects.create(
+                property_profile=profile,
+                system_type=PropertyHomeSystem.SYSTEM_APPLIANCE,
+                custom_name="Kitchen Refrigerator",
+                manufacturer="Whirlpool",
+                model_number="WRF-100",
+                last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+            ),
+            PropertyHomeSystem.objects.create(
+                property_profile=profile,
+                system_type=PropertyHomeSystem.SYSTEM_APPLIANCE,
+                custom_name="Laundry Dryer",
+                notes="Dryer vent cleaned last year.",
+            ),
+            PropertyHomeSystem.objects.create(
+                property_profile=profile,
+                system_type=PropertyHomeSystem.SYSTEM_PLUMBING,
+                custom_name="Basement Water Softener",
+            ),
+            PropertyHomeSystem.objects.create(
+                property_profile=profile,
+                system_type=PropertyHomeSystem.SYSTEM_PLUMBING,
+                custom_name="Guest Bath Plumbing",
+            ),
+            PropertyHomeSystem.objects.create(
+                property_profile=profile,
+                system_type=PropertyHomeSystem.SYSTEM_HVAC,
+                custom_name="Downstairs Air Conditioner",
+            ),
+            PropertyHomeSystem.objects.create(
+                property_profile=profile,
+                system_type=PropertyHomeSystem.SYSTEM_POOL_SPA,
+                custom_name="Pool Pump",
+            ),
+        ]
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = {row["id"]: row for row in response.data["property_profile"]["home_systems"]}
+
+        refrigerator_supplies = rows[systems[0].id]["supply_recommendations"]
+        self.assertEqual(refrigerator_supplies[0]["supply_name"], "Refrigerator water filter")
+        self.assertIn("Whirlpool+WRF-100+refrigerator+water+filter", refrigerator_supplies[0]["provider_links"][0]["url"])
+        self.assertEqual(rows[systems[0].id]["service_interval_months"], 6)
+
+        dryer_supplies = rows[systems[1].id]["supply_recommendations"]
+        self.assertEqual(dryer_supplies[0]["supply_name"], "Dryer vent brush")
+        self.assertIn("dryer+vent+brush", dryer_supplies[0]["provider_links"][0]["url"])
+        self.assertEqual(rows[systems[1].id]["service_interval_months"], 12)
+
+        softener_supplies = rows[systems[2].id]["supply_recommendations"]
+        self.assertEqual(softener_supplies[0]["supply_name"], "Water softener salt")
+        self.assertIn("water+softener+salt", softener_supplies[0]["provider_links"][0]["url"])
+        self.assertEqual(rows[systems[2].id]["service_interval_months"], 1)
+
+        generic_plumbing_supplies = rows[systems[3].id]["supply_recommendations"]
+        self.assertEqual(generic_plumbing_supplies, [])
+
+        ac_supplies = rows[systems[4].id]["supply_recommendations"]
+        self.assertEqual(ac_supplies[0]["supply_name"], "Air conditioner filter")
+        self.assertIn("air+conditioner+filter", ac_supplies[0]["provider_links"][0]["url"])
+        self.assertEqual(rows[systems[4].id]["service_interval_months"], 6)
+
+        pump_supplies = rows[systems[5].id]["supply_recommendations"]
+        self.assertEqual(pump_supplies[0]["supply_name"], "Pool pump basket")
+        self.assertIn("pool+pump+basket", pump_supplies[0]["provider_links"][0]["url"])
+        self.assertEqual(rows[systems[5].id]["service_interval_months"], 3)
+
     @override_settings(AMAZON_AFFILIATE_TAG="")
     def test_customer_portal_amazon_links_work_without_affiliate_config(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
@@ -22043,7 +22120,7 @@ class CustomerPortalAccessTests(TestCase):
             custom_name="Main HVAC",
         )
 
-        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
 
         self.assertEqual(response.status_code, 200, response.data)
         system = response.data["property_profile"]["home_systems"][0]

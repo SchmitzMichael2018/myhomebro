@@ -9,6 +9,27 @@ from django.utils import timezone
 from projects.models_customer_portal import NotificationRule, PropertyHomeSystem, SmartNotificationEvent
 from projects.services.sms_service import get_sms_status_payload
 from projects.services.smart_notifications import create_smart_notification
+from projects.services.home_system_subtypes import (
+    SUBTYPE_AIR_CONDITIONER,
+    SUBTYPE_AIR_HANDLER,
+    SUBTYPE_DISHWASHER,
+    SUBTYPE_DRYER,
+    SUBTYPE_FREEZER,
+    SUBTYPE_FURNACE,
+    SUBTYPE_HEAT_PUMP,
+    SUBTYPE_MICROWAVE,
+    SUBTYPE_OVEN,
+    SUBTYPE_POOL_FILTER,
+    SUBTYPE_POOL_PUMP,
+    SUBTYPE_RANGE,
+    SUBTYPE_REFRIGERATOR,
+    SUBTYPE_SPA,
+    SUBTYPE_SUMP_PUMP,
+    SUBTYPE_WASHER,
+    SUBTYPE_WATER_HEATER,
+    SUBTYPE_WATER_SOFTENER,
+    infer_home_system_subtype,
+)
 
 
 DEFAULT_SERVICE_INTERVAL_MONTHS = {
@@ -25,6 +46,27 @@ DEFAULT_SERVICE_INTERVAL_MONTHS = {
     PropertyHomeSystem.SYSTEM_SOLAR: 12,
     PropertyHomeSystem.SYSTEM_POOL_SPA: 1,
     PropertyHomeSystem.SYSTEM_OTHER: 12,
+}
+
+SUBTYPE_SERVICE_INTERVAL_MONTHS = {
+    SUBTYPE_REFRIGERATOR: 6,
+    SUBTYPE_DRYER: 12,
+    SUBTYPE_WASHER: 12,
+    SUBTYPE_DISHWASHER: 12,
+    SUBTYPE_OVEN: 12,
+    SUBTYPE_RANGE: 12,
+    SUBTYPE_MICROWAVE: 12,
+    SUBTYPE_FREEZER: 12,
+    SUBTYPE_WATER_SOFTENER: 1,
+    SUBTYPE_SUMP_PUMP: 12,
+    SUBTYPE_WATER_HEATER: 12,
+    SUBTYPE_FURNACE: 6,
+    SUBTYPE_AIR_CONDITIONER: 6,
+    SUBTYPE_HEAT_PUMP: 6,
+    SUBTYPE_AIR_HANDLER: 6,
+    SUBTYPE_POOL_FILTER: 1,
+    SUBTYPE_POOL_PUMP: 3,
+    SUBTYPE_SPA: 1,
 }
 
 STATUS_OVERDUE = "overdue"
@@ -94,7 +136,8 @@ def _system_label(system: PropertyHomeSystem) -> str:
 
 def build_home_system_reminder(system: PropertyHomeSystem, *, today: date | None = None) -> HomeSystemReminder:
     today = today or timezone.localdate()
-    interval = DEFAULT_SERVICE_INTERVAL_MONTHS.get(system.system_type, 12)
+    subtype = infer_home_system_subtype(system)
+    interval = SUBTYPE_SERVICE_INTERVAL_MONTHS.get(subtype, DEFAULT_SERVICE_INTERVAL_MONTHS.get(system.system_type, 12))
     label = _system_label(system)
     next_service = _add_months(system.last_service_date, interval) if system.last_service_date else None
     days_until_due = (next_service - today).days if next_service else None

@@ -9,6 +9,27 @@ from django.utils import timezone
 
 from projects.models_customer_portal import PropertyHomeSystem
 from projects.services.home_system_reminders import build_home_system_reminder
+from projects.services.home_system_subtypes import (
+    SUBTYPE_AIR_CONDITIONER,
+    SUBTYPE_AIR_HANDLER,
+    SUBTYPE_DISHWASHER,
+    SUBTYPE_DRYER,
+    SUBTYPE_FREEZER,
+    SUBTYPE_FURNACE,
+    SUBTYPE_HEAT_PUMP,
+    SUBTYPE_MICROWAVE,
+    SUBTYPE_OVEN,
+    SUBTYPE_POOL_FILTER,
+    SUBTYPE_POOL_PUMP,
+    SUBTYPE_RANGE,
+    SUBTYPE_REFRIGERATOR,
+    SUBTYPE_SPA,
+    SUBTYPE_SUMP_PUMP,
+    SUBTYPE_WASHER,
+    SUBTYPE_WATER_HEATER,
+    SUBTYPE_WATER_SOFTENER,
+    infer_home_system_subtype,
+)
 
 
 RISKY_SYSTEM_TYPES = {
@@ -18,6 +39,14 @@ RISKY_SYSTEM_TYPES = {
     PropertyHomeSystem.SYSTEM_FOUNDATION,
     PropertyHomeSystem.SYSTEM_SEPTIC_SEWER,
     PropertyHomeSystem.SYSTEM_SOLAR,
+}
+
+GENERIC_SUPPLY_FALLBACK_TYPES = {
+    PropertyHomeSystem.SYSTEM_HVAC,
+    PropertyHomeSystem.SYSTEM_WATER_HEATER,
+    PropertyHomeSystem.SYSTEM_APPLIANCE,
+    PropertyHomeSystem.SYSTEM_POOL_SPA,
+    PropertyHomeSystem.SYSTEM_SEPTIC_SEWER,
 }
 
 SUPPLY_RULES = {
@@ -93,6 +122,153 @@ SUPPLY_RULES = {
             "reason": "Homes with water softeners may need recurring salt refills.",
             "interval": "Monthly or as needed",
             "query": "water softener salt",
+        }
+    ],
+}
+
+SUBTYPE_SUPPLY_RULES = {
+    SUBTYPE_REFRIGERATOR: [
+        {
+            "name": "Refrigerator water filter",
+            "reason": "Refrigerators with water dispensers usually need model-specific filters.",
+            "interval": "Every 6 months",
+            "query": "refrigerator water filter",
+        }
+    ],
+    SUBTYPE_DRYER: [
+        {
+            "name": "Dryer vent brush",
+            "reason": "Dryer vents and lint paths may need routine cleaning to keep airflow clear.",
+            "interval": "Every 6-12 months",
+            "query": "dryer vent brush",
+        }
+    ],
+    SUBTYPE_WASHER: [
+        {
+            "name": "Washing machine cleaner",
+            "reason": "Washers may need periodic cleaning to reduce residue and odors.",
+            "interval": "Monthly or as needed",
+            "query": "washing machine cleaner",
+        }
+    ],
+    SUBTYPE_DISHWASHER: [
+        {
+            "name": "Dishwasher cleaner",
+            "reason": "Dishwashers may need periodic cleaning to reduce buildup.",
+            "interval": "Monthly or as needed",
+            "query": "dishwasher cleaner",
+        }
+    ],
+    SUBTYPE_OVEN: [
+        {
+            "name": "Oven cleaner",
+            "reason": "Ovens may need periodic cleaning supplies for routine upkeep.",
+            "interval": "As needed",
+            "query": "oven cleaner",
+        }
+    ],
+    SUBTYPE_RANGE: [
+        {
+            "name": "Range hood filter",
+            "reason": "Ranges with vent hoods may need replacement filters.",
+            "interval": "Every 3-6 months",
+            "query": "range hood filter",
+        }
+    ],
+    SUBTYPE_MICROWAVE: [
+        {
+            "name": "Microwave charcoal filter",
+            "reason": "Over-range microwaves may use model-specific charcoal filters.",
+            "interval": "Every 6-12 months",
+            "query": "microwave charcoal filter",
+        }
+    ],
+    SUBTYPE_FREEZER: [
+        {
+            "name": "Freezer thermometer",
+            "reason": "A freezer thermometer can help monitor storage temperature.",
+            "interval": "As needed",
+            "query": "freezer thermometer",
+        }
+    ],
+    SUBTYPE_WATER_SOFTENER: [
+        {
+            "name": "Water softener salt",
+            "reason": "Water softeners may need recurring salt refills.",
+            "interval": "Monthly or as needed",
+            "query": "water softener salt",
+        }
+    ],
+    SUBTYPE_SUMP_PUMP: [
+        {
+            "name": "Sump pump alarm",
+            "reason": "A sump pump alarm can help flag water level problems early.",
+            "interval": "As needed",
+            "query": "sump pump alarm",
+        }
+    ],
+    SUBTYPE_WATER_HEATER: [
+        {
+            "name": "Water heater maintenance kit",
+            "reason": "Anode rod and flushing supplies may support routine water heater maintenance.",
+            "interval": "Annually",
+            "query": "water heater anode rod flush kit",
+        }
+    ],
+    SUBTYPE_FURNACE: [
+        {
+            "name": "Furnace filter",
+            "reason": "Furnace filters are a recurring upkeep item for forced-air heating systems.",
+            "interval": "Every 1-3 months",
+            "query": "furnace filter",
+        }
+    ],
+    SUBTYPE_AIR_CONDITIONER: [
+        {
+            "name": "Air conditioner filter",
+            "reason": "Air conditioner filters are a recurring upkeep item for forced-air cooling systems.",
+            "interval": "Every 1-3 months",
+            "query": "air conditioner filter",
+        }
+    ],
+    SUBTYPE_HEAT_PUMP: [
+        {
+            "name": "Heat pump filter",
+            "reason": "Heat pump filters are a recurring upkeep item for forced-air systems.",
+            "interval": "Every 1-3 months",
+            "query": "heat pump filter",
+        }
+    ],
+    SUBTYPE_AIR_HANDLER: [
+        {
+            "name": "Air handler filter",
+            "reason": "Air handler filters are a recurring upkeep item for forced-air systems.",
+            "interval": "Every 1-3 months",
+            "query": "air handler filter",
+        }
+    ],
+    SUBTYPE_POOL_FILTER: [
+        {
+            "name": "Pool filter cartridge",
+            "reason": "Pool filters may need cleaning or replacement based on the filter type.",
+            "interval": "Seasonally or as needed",
+            "query": "pool filter cartridge",
+        }
+    ],
+    SUBTYPE_POOL_PUMP: [
+        {
+            "name": "Pool pump basket",
+            "reason": "Pool pumps may use baskets and small upkeep parts that need periodic checks.",
+            "interval": "As needed",
+            "query": "pool pump basket",
+        }
+    ],
+    SUBTYPE_SPA: [
+        {
+            "name": "Spa filter cartridge",
+            "reason": "Spas and hot tubs often need recurring filter cleaning or replacement.",
+            "interval": "Monthly or as needed",
+            "query": "spa filter cartridge",
         }
     ],
 }
@@ -197,7 +373,12 @@ def build_home_system_supply_recommendations(systems, *, today: date | None = No
     for system in systems:
         if getattr(system, "is_archived", False):
             continue
-        for index, rule in enumerate(SUPPLY_RULES.get(system.system_type, [])[:2], start=1):
+        subtype = infer_home_system_subtype(system)
+        rules = SUBTYPE_SUPPLY_RULES.get(subtype)
+        if rules is None and system.system_type in GENERIC_SUPPLY_FALLBACK_TYPES:
+            rules = SUPPLY_RULES.get(system.system_type, [])
+        rules = rules or []
+        for index, rule in enumerate(rules[:2], start=1):
             recommendations.append(_supply_card(system, rule, index))
         end_of_life = _end_of_life_card(system, today)
         if end_of_life:
