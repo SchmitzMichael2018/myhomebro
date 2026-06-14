@@ -106,17 +106,17 @@ const portalPayload = {
       },
       {
         id: 12,
-        display_name: "Electrical Panel",
-        system_type: "electrical",
-        system_type_label: "Electrical Panel",
-        custom_name: "Electrical Panel",
-        manufacturer: "Square D",
-        model_number: "QO-200",
+        display_name: "Laundry Dryer",
+        system_type: "appliance",
+        system_type_label: "Appliance",
+        custom_name: "Laundry Dryer",
+        manufacturer: "",
+        model_number: "",
         condition: "good",
         condition_label: "Good",
         maintenance_status: "current",
         priority: "low",
-        notes: "Main panel record.",
+        notes: "",
         supply_recommendations: [],
         linked_records_count: 0,
         linked_documents: [],
@@ -230,17 +230,17 @@ const portalPayload = {
         },
         {
           id: 12,
-          display_name: "Electrical Panel",
-          system_type: "electrical",
-          system_type_label: "Electrical Panel",
-          custom_name: "Electrical Panel",
-          manufacturer: "Square D",
-          model_number: "QO-200",
+          display_name: "Laundry Dryer",
+          system_type: "appliance",
+          system_type_label: "Appliance",
+          custom_name: "Laundry Dryer",
+          manufacturer: "",
+          model_number: "",
           condition: "good",
           condition_label: "Good",
           maintenance_status: "current",
           priority: "low",
-          notes: "Main panel record.",
+          notes: "",
           supply_recommendations: [],
           linked_records_count: 0,
           linked_documents: [],
@@ -2694,6 +2694,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("1 suggested item");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Reminders");
   await expect(page.getByTestId("property-home-system-recommendation-preview-12")).toContainText("No current recommendations");
+  await expect(page.getByTestId("property-home-system-accuracy-prompt-11")).toHaveCount(0);
+  await expect(page.getByTestId("property-home-system-accuracy-prompt-12")).toContainText("Improve recommendation accuracy");
+  await expect(page.getByTestId("property-home-system-accuracy-prompt-12")).toContainText("Manufacturer");
+  await expect(page.getByTestId("property-home-system-accuracy-prompt-12")).toContainText("Model Number");
+  await expect(page.getByTestId("property-home-system-accuracy-prompt-12")).toContainText("Notes");
+  await expect(page.getByTestId("property-home-system-accuracy-prompt-12")).toContainText("Better system information improves maintenance reminders");
+  await page.getByTestId("property-home-system-accuracy-edit-12").click();
+  await expect(page.getByTestId("property-home-system-modal")).toContainText("Edit Home System");
+  await expect(page.getByTestId("property-home-system-modal").getByLabel("System type")).toHaveValue("appliance");
+  await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Close" }).click();
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("Suggested Supplies & Maintenance");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("May be due soon");

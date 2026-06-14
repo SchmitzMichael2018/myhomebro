@@ -457,6 +457,28 @@ function systemRecommendationPreview(system) {
   return { supplyCount, maintenanceText, reminderText, hasRecommendations };
 }
 
+function recommendationAccuracyPrompt(system) {
+  const typeText = `${system.system_type || ""} ${system.system_type_label || ""} ${system.name || ""}`.toLowerCase();
+  const supportedType =
+    typeText.includes("hvac") ||
+    typeText.includes("appliance") ||
+    typeText.includes("water heater") ||
+    typeText.includes("pool") ||
+    typeText.includes("spa");
+  if (!supportedType) return null;
+  const missing = [
+    !system.manufacturer ? "Manufacturer" : "",
+    !system.model ? "Model Number" : "",
+    !system.notes ? "Notes" : "",
+  ].filter(Boolean);
+  const missingCoreFields = missing.includes("Manufacturer") || missing.includes("Model Number");
+  if (!missingCoreFields) return null;
+  return {
+    missing,
+    summary: "Better system information improves maintenance reminders, supply suggestions, and replacement planning.",
+  };
+}
+
 function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewRecommendations }) {
   return (
     <Section title="Home Systems" eyebrow="Systems and components" testId="property-home-systems">
@@ -477,6 +499,7 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {systems.map((system) => {
             const preview = systemRecommendationPreview(system);
+            const accuracyPrompt = recommendationAccuracyPrompt(system);
             return (
             <article key={system.id || system.name} data-testid={`property-home-system-${String(system.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
               <div className="flex items-start justify-between gap-3">
@@ -497,6 +520,26 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
                 <div><dt className="text-slate-500">Condition</dt><dd className="font-semibold text-slate-100">{system.conditionLabel || "Unknown"}</dd></div>
               </dl>
               {system.notes ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">{system.notes}</p> : null}
+              {accuracyPrompt ? (
+                <div className="mt-4 rounded-2xl border border-sky-300/25 bg-sky-400/10 p-3" data-testid={`property-home-system-accuracy-prompt-${system.id}`}>
+                  <div className="text-xs font-bold uppercase tracking-wide text-sky-100">Improve recommendation accuracy</div>
+                  <div className="mt-2 text-xs font-semibold text-slate-200">Add:</div>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-300">
+                    {accuracyPrompt.missing.map((field) => (
+                      <li key={field}>{field}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs leading-5 text-slate-300">{accuracyPrompt.summary}</p>
+                  <button
+                    type="button"
+                    data-testid={`property-home-system-accuracy-edit-${system.id}`}
+                    onClick={() => onEdit?.(system)}
+                    className="mt-3 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-sky-400/20"
+                  >
+                    Edit System
+                  </button>
+                </div>
+              ) : null}
               <div className="mt-4 rounded-2xl border border-slate-700/80 bg-slate-950/60 p-3" data-testid={`property-home-system-recommendation-preview-${system.id}`}>
                 {preview.hasRecommendations ? (
                   <div className="space-y-2 text-xs text-slate-300">
