@@ -57,11 +57,75 @@ function formatDate(value) {
 }
 
 function materialReasonText(material = {}) {
+  const name = String(material.name || material.supply_name || material.title || "").trim().toLowerCase();
+  const materialDescriptions = {
+    "framing lumber": "Structural framing materials.",
+    "drywall sheets": "Interior wall finishing.",
+    insulation: "Wall and ceiling insulation.",
+    "interior paint": "Final finishing and touch-up work.",
+    "roofing underlayment": "Moisture protection beneath roofing materials.",
+    "starter shingles": "Starter course for roof edges.",
+    flashing: "Waterproof transitions around roof penetrations.",
+    "roofing nails": "Fasteners for roofing materials.",
+    "drip edge": "Roof edge water-shedding trim.",
+    "roof sealant": "Sealing around roof transitions.",
+    "vent flashing": "Flashing for roof vents and penetrations.",
+    "ice and water shield": "Extra moisture barrier in vulnerable roof areas.",
+    "backer board": "Stable backing for wet-area tile.",
+    "waterproofing membrane": "Moisture barrier for wet areas.",
+    "tile mortar": "Tile installation adhesive.",
+    grout: "Tile joint finishing material.",
+    tile: "Selected wall or floor finish.",
+    "fixture sealant": "Sealant around wet-area fixtures.",
+    "concrete mix or ready-mix planning": "Concrete material planning for the pour.",
+    "gravel base": "Compacted base layer.",
+    "form boards": "Temporary forms for concrete edges.",
+    "concrete sealer": "Final surface protection.",
+    "rebar or wire mesh": "Concrete reinforcement.",
+    "expansion joint material": "Joint spacing for concrete movement.",
+    "curing supplies": "Supplies to support proper curing.",
+    stakes: "Layout and form support.",
+    "flooring material": "Selected finished flooring.",
+    underlayment: "Layer beneath finished flooring.",
+    transitions: "Flooring edge and room transitions.",
+    trim: "Finish trim and edge details.",
+    cabinetry: "Cabinet boxes and components.",
+    countertops: "Countertop surface material.",
+    sealant: "Sealing gaps and finish transitions.",
+    "backsplash tile": "Kitchen wall finish material.",
+    "cabinet hardware": "Pulls, knobs, and cabinet accessories.",
+    "decking boards": "Finished deck surface.",
+    "rail components": "Guardrail and handrail parts.",
+    fasteners: "Project fasteners.",
+    "post bases": "Post connection hardware.",
+    "drywall sheets or patch panels": "Wall or ceiling patch material.",
+    "joint compound": "Drywall seam and patch compound.",
+    "drywall tape": "Drywall seam reinforcement.",
+    primer: "Base coat before paint.",
+    "texture material": "Wall or ceiling texture match.",
+    "sanding supplies": "Surface preparation supplies.",
+    "dust barriers": "Temporary dust-control protection.",
+    "gutter sections": "Main gutter runs.",
+    downspouts: "Vertical water drainage pieces.",
+    elbows: "Downspout direction changes.",
+    hangers: "Gutter mounting hardware.",
+    "splash blocks": "Ground-level water diversion.",
+    "end caps": "Gutter end closures.",
+  };
+  if (materialDescriptions[name]) return materialDescriptions[name];
   const reason = String(material.reason || "").trim();
   if (!reason || /materials?_hint|material guidance|saved milestone/i.test(reason)) {
     return "May be useful for this project based on the planned work.";
   }
   return reason;
+}
+
+function materialCategoryLabel(material = {}) {
+  const category = String(material.category || "").trim();
+  if (!category) return "";
+  const generic = /^(project material|project materials|addition materials|closeout materials|finish supplies|installation supplies|site prep)$/i;
+  if (generic.test(category)) return "";
+  return category;
 }
 
 function statusTone(status = "") {
@@ -1152,13 +1216,14 @@ export default function CustomerProjectWorkspace({
             {visibleSuggestedMaterials.map((material) => {
               const amazonLink = (material.provider_links || []).find((link) => link.provider === "amazon") || material.provider_links?.[0];
               const quantityLabel = [material.quantity, material.unit].filter(Boolean).join(" ");
+              const categoryLabel = materialCategoryLabel(material);
               return (
                 <div key={material.id || material.name} data-testid="customer-project-suggested-material-card" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-white">{material.name || "Project material"}</div>
                       <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-medium text-slate-400">
-                        {material.category ? <span className="rounded-full bg-slate-900 px-2 py-0.5">{material.category}</span> : null}
+                        {categoryLabel ? <span className="rounded-full bg-slate-900 px-2 py-0.5">{categoryLabel}</span> : null}
                         {material.related_milestone ? <span className="rounded-full bg-slate-900 px-2 py-0.5">{material.related_milestone}</span> : null}
                         {quantityLabel ? <span className="rounded-full bg-slate-900 px-2 py-0.5">{quantityLabel}</span> : null}
                       </div>

@@ -2504,9 +2504,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-agreement-summary")).toContainText("One-year workmanship warranty");
   await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Suggested Materials");
   await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Dust barriers");
+  await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Temporary dust-control protection.");
   await expect(page.getByTestId("customer-project-suggested-materials-notice")).toContainText("Confirm size, quantity, finish, model, and compatibility");
   await expect(page.getByTestId("customer-project-suggested-material-card").first()).not.toContainText("Confirm exact product");
-  await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("May be useful for this project based on the planned work.");
+  await expect(page.getByTestId("customer-project-suggested-materials")).not.toContainText("Suggested from saved milestone material guidance.");
   await expect(page.getByTestId("customer-project-suggested-materials")).not.toContainText("material guidance");
   await expect(page.getByTestId("customer-project-suggested-materials")).not.toContainText("materials_hint");
   await expect(page.getByTestId("customer-project-suggested-materials")).not.toContainText("Confidence");
