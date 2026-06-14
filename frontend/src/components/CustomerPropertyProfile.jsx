@@ -257,7 +257,7 @@ function normalizeHomeSystem(system) {
   };
 }
 
-function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest }) {
+function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highlightedSystemId }) {
   const [diyRecommendation, setDiyRecommendation] = useState(null);
   const recommendations = systems.flatMap((system) =>
     (system.supplyRecommendations || []).map((recommendation) => ({
@@ -279,11 +279,13 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest }) {
           const amazonAction = (recommendation.actions || []).find((action) => action.type === "amazon_search") || recommendation.provider_links?.[0];
           const isReplacement = recommendation.kind === "end_of_life";
           const actionLabel = isReplacement ? "Major replacement" : recommendation.next_due_date ? "May be due soon" : "Maintenance item";
+          const isHighlighted = String(highlightedSystemId || "") === String(recommendation.systemRecord?.id || recommendation.system_id || "");
           return (
             <article
               key={recommendation.id}
               data-testid="property-supply-recommendation-card"
-              className={`rounded-2xl border p-4 ${isReplacement ? "border-amber-300/35 bg-amber-300/10" : "border-slate-700 bg-slate-900/60"}`}
+              data-system-id={recommendation.systemRecord?.id || recommendation.system_id || ""}
+              className={`rounded-2xl border p-4 transition ${isHighlighted ? "ring-2 ring-amber-300/70" : ""} ${isReplacement ? "border-amber-300/35 bg-amber-300/10" : "border-slate-700 bg-slate-900/60"}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -437,7 +439,25 @@ function PropertySummarySection({ profile, profileOptions, onSelectProperty, onE
   );
 }
 
-function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive }) {
+function systemRecommendationPreview(system) {
+  const supplyCount = (system.supplyRecommendations || []).length;
+  const maintenanceText = (() => {
+    if (system.maintenanceStatus && !["current", "unknown"].includes(system.maintenanceStatus)) {
+      return system.reminderReason || system.recommendedAction || `${MAINTENANCE_STATUS_LABELS[system.maintenanceStatus] || "Maintenance"} recommendation`;
+    }
+    return "";
+  })();
+  const reminderText = (() => {
+    if (system.nextNotificationAt) return `Next reminder ${formatDate(system.nextNotificationAt)}`;
+    if (system.nextRecommendedServiceDate) return `${formatDate(system.nextRecommendedServiceDate)} suggested service`;
+    if (system.warrantyExpiration) return `Warranty through ${formatDate(system.warrantyExpiration)}`;
+    return "";
+  })();
+  const hasRecommendations = Boolean(maintenanceText || supplyCount || reminderText);
+  return { supplyCount, maintenanceText, reminderText, hasRecommendations };
+}
+
+function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewRecommendations }) {
   return (
     <Section title="Home Systems" eyebrow="Systems and components" testId="property-home-systems">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -455,7 +475,9 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive }) {
       </div>
       {systems.length ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {systems.map((system) => (
+          {systems.map((system) => {
+            const preview = systemRecommendationPreview(system);
+            return (
             <article key={system.id || system.name} data-testid={`property-home-system-${String(system.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -475,6 +497,40 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive }) {
                 <div><dt className="text-slate-500">Condition</dt><dd className="font-semibold text-slate-100">{system.conditionLabel || "Unknown"}</dd></div>
               </dl>
               {system.notes ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">{system.notes}</p> : null}
+              <div className="mt-4 rounded-2xl border border-slate-700/80 bg-slate-950/60 p-3" data-testid={`property-home-system-recommendation-preview-${system.id}`}>
+                {preview.hasRecommendations ? (
+                  <div className="space-y-2 text-xs text-slate-300">
+                    {preview.maintenanceText ? (
+                      <div>
+                        <div className="font-bold text-slate-100">Maintenance</div>
+                        <p className="mt-0.5 line-clamp-2">{preview.maintenanceText}</p>
+                      </div>
+                    ) : null}
+                    {preview.supplyCount ? (
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-bold text-slate-100">Supplies</span>
+                        <span>{preview.supplyCount} suggested item{preview.supplyCount === 1 ? "" : "s"}</span>
+                      </div>
+                    ) : null}
+                    {preview.reminderText ? (
+                      <div>
+                        <div className="font-bold text-slate-100">Reminders</div>
+                        <p className="mt-0.5">{preview.reminderText}</p>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      data-testid={`property-home-system-view-recommendations-${system.id}`}
+                      onClick={() => onViewRecommendations?.(system)}
+                      className="mt-1 rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-300/20"
+                    >
+                      View Recommendations
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs font-semibold text-slate-400">No current recommendations</p>
+                )}
+              </div>
               {system.isStructured ? (
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
@@ -486,7 +542,8 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive }) {
                 </div>
               ) : null}
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <EmptyState title="No systems recorded yet" testId="property-home-systems-empty">
@@ -993,6 +1050,7 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
 
 function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
+  const [highlightedRecommendationSystemId, setHighlightedRecommendationSystemId] = useState("");
   const maintenance = maintenanceRows(maintenanceWorkOrders);
   const hasStructuredSystems = Array.isArray(profile?.home_systems);
   const systems = hasStructuredSystems
@@ -1001,14 +1059,27 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
   const timeline = timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
   const timelineDefaultCount = 5;
   const visibleTimeline = timelineExpanded ? timeline : timeline.slice(0, timelineDefaultCount);
+  const handleViewRecommendations = (system) => {
+    setHighlightedRecommendationSystemId(system?.id || "");
+    window.requestAnimationFrame(() => {
+      document.querySelector("[data-testid='property-suggested-supplies']")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   return (
     <div className="space-y-5">
-      <HomeSystemsSection systems={systems} onAdd={onAddSystem} onEdit={onEditSystem} onArchive={onArchiveSystem} />
+      <HomeSystemsSection
+        systems={systems}
+        onAdd={onAddSystem}
+        onEdit={onEditSystem}
+        onArchive={onArchiveSystem}
+        onViewRecommendations={handleViewRecommendations}
+      />
 
       <SuggestedSuppliesSection
         systems={systems.filter((system) => system.isStructured)}
         onCreateServiceRequest={onCreateServiceRequest}
+        highlightedSystemId={highlightedRecommendationSystemId}
       />
 
       <MaintenanceCenter

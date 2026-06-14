@@ -104,6 +104,25 @@ const portalPayload = {
         linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
         linked_requests: [],
       },
+      {
+        id: 12,
+        display_name: "Electrical Panel",
+        system_type: "electrical",
+        system_type_label: "Electrical Panel",
+        custom_name: "Electrical Panel",
+        manufacturer: "Square D",
+        model_number: "QO-200",
+        condition: "good",
+        condition_label: "Good",
+        maintenance_status: "current",
+        priority: "low",
+        notes: "Main panel record.",
+        supply_recommendations: [],
+        linked_records_count: 0,
+        linked_documents: [],
+        linked_projects: [],
+        linked_requests: [],
+      },
     ],
     documents: [
       {
@@ -207,6 +226,25 @@ const portalPayload = {
           linked_records_count: 2,
           linked_documents: [],
           linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
+          linked_requests: [],
+        },
+        {
+          id: 12,
+          display_name: "Electrical Panel",
+          system_type: "electrical",
+          system_type_label: "Electrical Panel",
+          custom_name: "Electrical Panel",
+          manufacturer: "Square D",
+          model_number: "QO-200",
+          condition: "good",
+          condition_label: "Good",
+          maintenance_status: "current",
+          priority: "low",
+          notes: "Main panel record.",
+          supply_recommendations: [],
+          linked_records_count: 0,
+          linked_documents: [],
+          linked_projects: [],
           linked_requests: [],
         },
       ],
@@ -2650,12 +2688,20 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
   await expect(page.getByTestId("property-home-systems")).toContainText("Carrier");
   await expect(page.getByTestId("property-home-systems")).toContainText("2032");
+  await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Maintenance");
+  await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Main HVAC service is overdue");
+  await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Supplies");
+  await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("1 suggested item");
+  await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Reminders");
+  await expect(page.getByTestId("property-home-system-recommendation-preview-12")).toContainText("No current recommendations");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("Suggested Supplies & Maintenance");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("May be due soon");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
   await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Confidence");
   await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Source");
+  await page.getByTestId("property-home-system-view-recommendations-11").click();
+  await expect(page.getByTestId("property-supply-recommendation-card").first()).toHaveClass(/ring-2/);
   await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /amazon\.com\/s\?/);
   await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /tag=myhomebro-test-20/);
   await page.getByTestId("property-supply-diy-help").first().click();
