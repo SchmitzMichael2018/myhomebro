@@ -2599,11 +2599,15 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-systems")).toContainText("2032");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("Suggested Supplies & Maintenance");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("May be due soon");
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
+  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Confidence");
+  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Source");
   await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /amazon\.com\/s\?/);
   await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /tag=myhomebro-test-20/);
   await page.getByTestId("property-supply-diy-help").first().click();
-  await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("homeowner education");
+  await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
+  await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("hire a qualified professional");
   await page.getByRole("dialog", { name: "DIY supply guidance" }).getByRole("button", { name: "Close" }).click();
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Overdue");
