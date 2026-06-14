@@ -22416,7 +22416,8 @@ class CustomerPortalAccessTests(TestCase):
         )
 
         response = self.client.post(
-            f"/api/projects/customer-portal/{token}/notifications/{own_notification.id}/read/"
+            f"/api/projects/customer-portal/{token}/notifications/{own_notification.id}/read/",
+            secure=True,
         )
 
         self.assertEqual(response.status_code, 200, response.data)
@@ -22439,7 +22440,92 @@ class CustomerPortalAccessTests(TestCase):
         )
 
         response = self.client.post(
-            f"/api/projects/customer-portal/{token}/notifications/{other_notification.id}/read/"
+            f"/api/projects/customer-portal/{token}/notifications/{other_notification.id}/read/",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 404)
+        other_notification.refresh_from_db()
+        self.assertEqual(other_notification.status, SmartNotification.STATUS_UNREAD)
+
+    def test_customer_portal_can_mark_all_own_notifications_read(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(customer_email=self.customer_email)[0]
+        own_notifications = [
+            SmartNotification.objects.create(
+                event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+                recipient_email=self.customer_email,
+                title="Request submitted",
+                message="Your request was saved.",
+                property_profile=profile,
+            ),
+            SmartNotification.objects.create(
+                event_type=SmartNotificationEvent.PROPERTY_PROFILE_UPDATED,
+                recipient_email=self.customer_email,
+                title="Property updated",
+                message="Your property profile was updated.",
+                property_profile=profile,
+            ),
+        ]
+        other_notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.other_homeowner.email,
+            title="Other request",
+            message="This should remain scoped away.",
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.other_homeowner.email)[0],
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/notifications/mark-all-read/",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        for notification in own_notifications:
+            notification.refresh_from_db()
+            self.assertEqual(notification.status, SmartNotification.STATUS_READ)
+            self.assertIsNotNone(notification.read_at)
+        other_notification.refresh_from_db()
+        self.assertEqual(other_notification.status, SmartNotification.STATUS_UNREAD)
+        payload_by_id = {row["id"]: row for row in response.data["notifications"]}
+        for notification in own_notifications:
+            if notification.id in payload_by_id:
+                self.assertEqual(payload_by_id[notification.id]["status"], SmartNotification.STATUS_READ)
+
+    def test_customer_portal_can_archive_own_notification(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.customer_email,
+            title="Request submitted",
+            message="Your request was saved.",
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.customer_email)[0],
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/notifications/{notification.id}/archive/",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, SmartNotification.STATUS_DISMISSED)
+        self.assertIsNotNone(notification.read_at)
+        self.assertFalse(any(row["id"] == notification.id for row in response.data["notifications"]))
+
+    def test_customer_portal_cannot_archive_other_customer_notification(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.other_homeowner.email,
+            title="Other request",
+            message="This should remain scoped away.",
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.other_homeowner.email)[0],
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/notifications/{other_notification.id}/archive/",
+            secure=True,
         )
 
         self.assertEqual(response.status_code, 404)

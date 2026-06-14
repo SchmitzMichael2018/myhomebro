@@ -520,13 +520,8 @@ function paidProgress(summary = {}, agreement = {}) {
   return Math.max(0, Math.min(100, Math.round((released / value) * 100)));
 }
 
-function isRecentNotification(notification, now = Date.now()) {
-  if (notification?.status !== "read") return true;
-  if (!notification?.created_at) return false;
-  const createdAt = new Date(notification.created_at).getTime();
-  if (!Number.isFinite(createdAt)) return false;
-  const threeDays = 3 * 24 * 60 * 60 * 1000;
-  return now - createdAt <= threeDays;
+function isUnreadNotification(notification) {
+  return notification?.status !== "read" && notification?.status !== "dismissed";
 }
 
 const ACTIONABLE_NOTIFICATION_EVENTS = new Set([
@@ -1324,12 +1319,12 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
   );
 }
 
-function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
+function OverviewPanel({ portal, onOpenTab, markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead }) {
   const summary = portal?.summary || {};
   const latestRequests = (portal?.requests || []).slice(0, 3);
   const latestProjects = (portal?.projects || []).slice(0, 3);
   const notifications = portal?.notifications || [];
-  const recentNotifications = notifications.filter((notification) => isRecentNotification(notification));
+  const unreadNotifications = notifications.filter(isUnreadNotification);
   const overviewRecommendations = [
     ...(Array.isArray(portal?.recommendations) ? portal.recommendations : []),
     ...(Array.isArray(portal?.property_intelligence?.insights)
@@ -1440,10 +1435,12 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
       </section>
 
       <NotificationPanel
-        notifications={recentNotifications}
-        unreadCount={recentNotifications.filter((notification) => notification.status !== "read").length}
+        notifications={unreadNotifications}
+        unreadCount={unreadNotifications.length}
         markingId={markingId}
+        bulkMarking={bulkMarking}
         onMarkRead={onMarkRead}
+        onMarkAllRead={onMarkAllRead}
         onOpenHistory={() => onOpenTab?.("notifications")}
       />
 
@@ -1498,21 +1495,47 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", onMarkRead }) {
   );
 }
 
-function NotificationsCenter({ notifications = [], unreadCount = 0, markingId = "", onMarkRead }) {
+function NotificationsCenter({
+  notifications = [],
+  unreadCount = 0,
+  markingId = "",
+  archivingId = "",
+  bulkMarking = false,
+  onMarkRead,
+  onMarkAllRead,
+  onArchive,
+}) {
   const [filter, setFilter] = useState("all");
-  const filtered = filter === "unread" ? notifications.filter((notification) => notification.status !== "read") : notifications;
+  const filtered = filter === "unread"
+    ? notifications.filter(isUnreadNotification)
+    : filter === "read"
+      ? notifications.filter((notification) => notification.status === "read")
+      : notifications;
 
   return (
     <section data-testid="customer-notifications-center" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-white">Notifications Center</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-300">Your full project activity feed, with unread updates available as a quick filter.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-300">Your full notification history, with unread and read updates available as quick filters.</p>
         </div>
-        <Badge>{unreadCount} unread</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge>{unreadCount} unread</Badge>
+          {unreadCount > 0 ? (
+            <button
+              type="button"
+              data-testid="customer-notifications-center-mark-all-read"
+              disabled={bulkMarking}
+              onClick={() => onMarkAllRead?.()}
+              className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-300/20 disabled:opacity-50"
+            >
+              {bulkMarking ? "Saving..." : "Mark all as read"}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {["unread", "all"].map((value) => (
+        {["unread", "read", "all"].map((value) => (
           <button
             key={value}
             type="button"
@@ -1524,7 +1547,7 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, markingId = 
                 : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
             }`}
           >
-            {value === "unread" ? "Unread" : "All"}
+            {value === "unread" ? "Unread" : value === "read" ? "Read" : "All"}
           </button>
         ))}
       </div>
@@ -1544,7 +1567,13 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, markingId = 
                     <p className="mt-2 text-sm leading-6 text-slate-300">{notification.message || "A workspace update is available."}</p>
                     <div className="mt-2 text-xs text-slate-500">{notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}</div>
                     {notification.action_url ? (
-                      <a href={notification.action_url} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50">
+                      <a
+                        href={notification.action_url}
+                        onClick={() => {
+                          if (isUnread) onMarkRead?.(notification);
+                        }}
+                        className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50"
+                      >
                         Open related item
                         <ExternalLink size={14} />
                       </a>
@@ -1561,12 +1590,21 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, markingId = 
                       {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    data-testid={`customer-notifications-center-archive-${notification.id}`}
+                    disabled={archivingId === String(notification.id)}
+                    onClick={() => onArchive?.(notification)}
+                    className="shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
+                  >
+                    {archivingId === String(notification.id) ? "Saving..." : "Archive"}
+                  </button>
                 </div>
               </article>
             );
           })
         ) : (
-          <EmptyState title={filter === "unread" ? "No unread notifications" : "No notifications yet"} testId="customer-notifications-center-empty">
+          <EmptyState title={filter === "unread" ? "No unread notifications" : filter === "read" ? "No read notifications" : "No notifications yet"} testId="customer-notifications-center-empty">
             Project activity, payment reviews, signing reminders, document updates, and request history will appear here.
           </EmptyState>
         )}
@@ -1602,16 +1640,13 @@ function normalizePortalNotifications(rows = []) {
   });
 }
 
-function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", onMarkRead, onOpenHistory }) {
-  const recent = notifications
-    .filter((notification) => isRecentNotification(notification))
+function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead, onOpenHistory }) {
+  const unreadNotifications = notifications
+    .filter(isUnreadNotification)
     .sort((a, b) => {
-      const unreadDelta = (a.status !== "read" ? 0 : 1) - (b.status !== "read" ? 0 : 1);
-      if (unreadDelta) return unreadDelta;
       return String(b.created_at || "").localeCompare(String(a.created_at || ""));
     })
     .slice(0, 4);
-  const unreadRecent = recent.filter((notification) => notification.status !== "read");
 
   return (
     <section data-testid="customer-notifications-panel" className="mt-5 rounded-2xl border border-slate-700 bg-slate-950/70 p-4 sm:p-5">
@@ -1621,20 +1656,21 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
             <Bell size={18} className="text-sky-200" />
             <h2 className="text-lg font-semibold text-white">Recent Updates</h2>
           </div>
-          <p className="mt-1 text-sm text-slate-300">Unread and recent project, payment, request, and property updates.</p>
+          <p className="mt-1 text-sm text-slate-300">New notifications that may need your attention.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span data-testid="customer-notifications-unread-count" className="inline-flex w-fit rounded-full border border-sky-300/35 bg-sky-400/10 px-3 py-1 text-xs font-semibold text-sky-100 shadow-[0_0_16px_rgba(56,189,248,0.12)]">
-            {unreadCount > 0 ? `${unreadCount} unread` : "No new updates"}
+            {unreadCount > 0 ? `${unreadCount} unread` : "No new notifications"}
           </span>
-          {unreadRecent.length ? (
+          {unreadCount > 0 ? (
             <button
               type="button"
               data-testid="customer-notifications-mark-all-read"
-              onClick={() => unreadRecent.forEach((notification) => onMarkRead?.(notification))}
+              disabled={bulkMarking}
+              onClick={() => onMarkAllRead?.()}
               className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
             >
-              Mark all as read
+              {bulkMarking ? "Saving..." : "Mark all as read"}
             </button>
           ) : null}
           <button
@@ -1643,24 +1679,19 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
             onClick={() => onOpenHistory?.()}
             className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
           >
-            View full history
+            View all
           </button>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-        {recent.length ? (
-          recent.map((notification) => {
-            const isUnread = notification.status !== "read";
+        {unreadNotifications.length ? (
+          unreadNotifications.map((notification) => {
             return (
               <article
                 key={notification.id}
                 data-testid={`customer-notification-${notification.id}`}
-                className={`rounded-xl border p-4 ${
-                  isUnread
-                    ? "border-sky-300/45 bg-sky-400/10 shadow-[inset_3px_0_0_rgba(56,189,248,0.55)]"
-                    : "border-slate-800 bg-slate-950/35 opacity-75"
-                }`}
+                className="rounded-xl border border-sky-300/45 bg-sky-400/10 p-4 shadow-[inset_3px_0_0_rgba(56,189,248,0.55)]"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -1669,35 +1700,31 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
                       <span className="rounded-full border border-slate-600 bg-slate-950/70 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
                         {eventLabel(notification.event_type)}
                       </span>
-                      {isUnread ? (
-                        <span className="rounded-full border border-sky-300/40 bg-sky-400/15 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
-                          Unread
-                        </span>
-                      ) : null}
+                      <span className="rounded-full border border-sky-300/40 bg-sky-400/15 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
+                        Unread
+                      </span>
                     </div>
                     <p className="mt-2 text-sm leading-5 text-slate-300">{notification.message || "A workspace update is available."}</p>
                     <div className="mt-2 text-xs text-slate-500">
                       {notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}
                     </div>
                   </div>
-                  {isUnread ? (
-                    <button
-                      type="button"
-                      data-testid={`customer-notification-mark-read-${notification.id}`}
-                      disabled={markingId === String(notification.id)}
-                      onClick={() => onMarkRead?.(notification)}
-                      className="shrink-0 rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white disabled:opacity-50"
-                    >
-                      {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    data-testid={`customer-notification-mark-read-${notification.id}`}
+                    disabled={markingId === String(notification.id)}
+                    onClick={() => onMarkRead?.(notification)}
+                    className="shrink-0 rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white disabled:opacity-50"
+                  >
+                    {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
+                  </button>
                 </div>
               </article>
             );
           })
         ) : (
           <div className="lg:col-span-2">
-            <EmptyState title="No new updates" testId="customer-notifications-empty">
+            <EmptyState title="No new notifications" testId="customer-notifications-empty">
               Open Notifications for the full activity history whenever you need it.
             </EmptyState>
           </div>
@@ -1905,12 +1932,14 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [uploadError, setUploadError] = useState("");
   const [acceptingBidId, setAcceptingBidId] = useState("");
   const [markingNotificationId, setMarkingNotificationId] = useState("");
+  const [markingAllNotifications, setMarkingAllNotifications] = useState(false);
+  const [archivingNotificationId, setArchivingNotificationId] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [focusedRequestId, setFocusedRequestId] = useState("");
 
   const customerName = portal?.customer?.name || "Customer";
   const notifications = normalizePortalNotifications(portal?.notifications || []);
-  const unreadCount = notifications.filter((notification) => notification.status !== "read").length;
+  const unreadCount = notifications.filter(isUnreadNotification).length;
   const openRequestFromPropertyTimeline = useCallback((requestId) => {
     if (!requestId) return;
     setFocusedRequestId(String(requestId));
@@ -1929,6 +1958,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
 
   const markNotificationRead = async (notification) => {
     if (!notification?.id) return;
+    if (notification.status === "read") return;
     setMarkingNotificationId(String(notification.id));
     try {
       const { data } = await api.post(
@@ -1940,6 +1970,38 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       toast.error(error?.response?.data?.detail || "Could not update that notification.");
     } finally {
       setMarkingNotificationId("");
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    if (!token || unreadCount <= 0) return;
+    setMarkingAllNotifications(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/mark-all-read/`
+      );
+      onPortalUpdate?.(data);
+      toast.success("Notifications marked as read.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update notifications.");
+    } finally {
+      setMarkingAllNotifications(false);
+    }
+  };
+
+  const archiveNotification = async (notification) => {
+    if (!notification?.id) return;
+    setArchivingNotificationId(String(notification.id));
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/archive/`
+      );
+      onPortalUpdate?.(data);
+      toast.success("Notification archived.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not archive that notification.");
+    } finally {
+      setArchivingNotificationId("");
     }
   };
 
@@ -2056,7 +2118,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           portal={{ ...portal, notifications }}
           onOpenTab={setActiveTab}
           markingId={markingNotificationId}
+          bulkMarking={markingAllNotifications}
           onMarkRead={markNotificationRead}
+          onMarkAllRead={markAllNotificationsRead}
         />
       );
     }
@@ -2248,7 +2312,11 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           notifications={notifications}
           unreadCount={unreadCount}
           markingId={markingNotificationId}
+          archivingId={archivingNotificationId}
+          bulkMarking={markingAllNotifications}
           onMarkRead={markNotificationRead}
+          onMarkAllRead={markAllNotificationsRead}
+          onArchive={archiveNotification}
         />
       );
     }
@@ -2281,7 +2349,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, savingProfile, focusedRequestId, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, savingProfile, focusedRequestId, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

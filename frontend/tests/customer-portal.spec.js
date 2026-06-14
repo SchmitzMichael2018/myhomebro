@@ -1041,6 +1041,18 @@ const notificationReadPortalPayload = {
   ),
 };
 
+const notificationsAllReadPortalPayload = {
+  ...portalPayload,
+  notifications: portalPayload.notifications.map((notification) =>
+    notification.channel === "in_app" ? { ...notification, status: "read" } : notification
+  ),
+};
+
+const notificationArchivedPortalPayload = {
+  ...notificationReadPortalPayload,
+  notifications: notificationReadPortalPayload.notifications.filter((notification) => ![102, 103].includes(notification.id)),
+};
+
 const disputedPortalPayload = {
   ...portalPayload,
   payments: portalPayload.payments.map((payment) =>
@@ -2035,6 +2047,30 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/notifications/mark-all-read/") && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationsAllReadPortalPayload),
+      });
+      return;
+    }
+
+    if (
+      (
+        requestUrl.includes("/customer-portal/customer-token/notifications/102/archive/")
+        || requestUrl.includes("/customer-portal/customer-token/notifications/103/archive/")
+      )
+      && method === "POST"
+    ) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationArchivedPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/draws/2/dispute/") && method === "POST") {
       await route.fulfill({
         status: 201,
@@ -2203,7 +2239,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent Updates");
   await expect(page.getByRole("heading", { name: "Recent Updates" })).toHaveCount(1);
-  await expect(page.getByTestId("customer-notifications-panel")).toContainText("Unread and recent project, payment, request, and property updates.");
+  await expect(page.getByTestId("customer-notifications-panel")).toContainText("New notifications that may need your attention.");
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-panel")).not.toContainText("Payment received");
   await expect(page.getByTestId("customer-notifications-panel")).not.toContainText("Internal payment email row");
@@ -2212,12 +2248,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notification-101")).toHaveClass(/border-sky-300/);
   await expect(page.getByTestId("customer-notification-102")).toHaveCount(0);
   await page.getByTestId("customer-notification-mark-read-101").click();
-  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new updates");
-  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("No new updates");
+  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new notifications");
+  await expect(page.getByTestId("customer-notifications-unread-count")).toContainText("No new notifications");
   await page.getByTestId("customer-notifications-open-history").click();
   await expect(page.getByTestId("customer-dashboard-tab-notifications")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
+  await page.getByTestId("customer-notifications-filter-read").click();
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
+  await page.getByTestId("customer-notifications-center").getByRole("button", { name: "Archive" }).last().click();
+  await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Payment received");
   await page.getByTestId("customer-dashboard-tab-overview").click();
 
   await page.getByTestId("customer-dashboard-tab-account").click();
@@ -2875,7 +2916,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.goto("/portal/empty-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
-  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new updates");
+  await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new notifications");
   await expect(page.getByTestId("customer-overview-projects-empty")).toContainText("No active projects yet");
   await expect(page.getByTestId("customer-overview-requests-empty")).toContainText("No requests yet");
 

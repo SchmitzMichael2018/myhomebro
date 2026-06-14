@@ -3563,18 +3563,19 @@ class CustomerPortalView(APIView):
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 
-class CustomerPortalNotificationMarkReadView(APIView):
+class CustomerPortalNotificationActionMixin:
     permission_classes = [AllowAny]
 
-    def post(self, request, token: str, notification_id: int):
+    def _portal_email(self, token: str):
         try:
-            email = _unsign_portal_token(token)
+            return _unsign_portal_token(token)
         except signing.SignatureExpired:
             return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
         except signing.BadSignature:
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
-        notification = get_object_or_404(
+    def _notification_queryset(self):
+        return (
             SmartNotification.objects.select_related(
                 "property_profile",
                 "customer_request",
@@ -3599,15 +3600,81 @@ class CustomerPortalNotificationMarkReadView(APIView):
                 "draw_request__agreement__homeowner",
                 "draw_request__agreement__project",
                 "draw_request__agreement__project__homeowner",
-            ),
-            pk=notification_id,
+            )
         )
+
+    def _get_notification(self, notification_id: int, email: str):
+        notification = get_object_or_404(self._notification_queryset(), pk=notification_id)
         if not _smart_notification_belongs_to_email(notification, email):
+            return None
+        return notification
+
+
+class CustomerPortalNotificationMarkReadView(CustomerPortalNotificationActionMixin, APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, notification_id: int):
+        email = self._portal_email(token)
+        if isinstance(email, Response):
+            return email
+
+        notification = self._get_notification(notification_id, email)
+        if notification is None:
             return Response({"detail": "Notification not found."}, status=status.HTTP_404_NOT_FOUND)
 
         if notification.status != SmartNotification.STATUS_READ:
             notification.status = SmartNotification.STATUS_READ
             notification.read_at = timezone.now()
+            notification.save(update_fields=["status", "read_at"])
+
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalNotificationMarkAllReadView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        notifications = SmartNotification.objects.filter(
+            recipient_email__iexact=email,
+            channel=NotificationRule.CHANNEL_IN_APP,
+            status=SmartNotification.STATUS_UNREAD,
+        )
+        for notification in notifications:
+            if _safe_text(notification.event_type) not in HOMEOWNER_VISIBLE_NOTIFICATION_EVENTS:
+                continue
+            if not _smart_notification_belongs_to_email(notification, email):
+                continue
+            notification.status = SmartNotification.STATUS_READ
+            notification.read_at = now
+            notification.save(update_fields=["status", "read_at"])
+
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalNotificationArchiveView(CustomerPortalNotificationActionMixin, APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, notification_id: int):
+        email = self._portal_email(token)
+        if isinstance(email, Response):
+            return email
+
+        notification = self._get_notification(notification_id, email)
+        if notification is None:
+            return Response({"detail": "Notification not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if notification.status != SmartNotification.STATUS_DISMISSED:
+            notification.status = SmartNotification.STATUS_DISMISSED
+            if not notification.read_at:
+                notification.read_at = timezone.now()
             notification.save(update_fields=["status", "read_at"])
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
