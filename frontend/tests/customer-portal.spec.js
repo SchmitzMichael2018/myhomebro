@@ -2504,7 +2504,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-agreement-summary")).toContainText("One-year workmanship warranty");
   await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Suggested Materials");
   await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Dust barriers");
-  await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("Confirm exact size, quantity, finish, model, and compatibility before purchasing.");
+  await expect(page.getByTestId("customer-project-suggested-materials-notice")).toContainText("Confirm size, quantity, finish, model, and compatibility");
+  await expect(page.getByTestId("customer-project-suggested-material-card").first()).not.toContainText("Confirm exact product");
   await expect(page.getByTestId("customer-project-suggested-materials")).toContainText("May be useful for this project based on the planned work.");
   await expect(page.getByTestId("customer-project-suggested-materials")).not.toContainText("material guidance");
   await expect(page.getByTestId("customer-project-suggested-materials")).not.toContainText("materials_hint");
@@ -2512,6 +2513,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-project-suggested-materials")).not.toContainText("Source");
   await expect(page.getByTestId("customer-project-suggested-material-amazon")).toHaveAttribute("href", /amazon\.com\/s\?/);
   await expect(page.getByTestId("customer-project-suggested-material-amazon")).toHaveAttribute("href", /tag=myhomebro-test-20/);
+  await expect(page.getByTestId("customer-project-suggested-material-amazon").first()).toContainText("Amazon");
   await expect(page.getByTestId("customer-project-updates")).toContainText("Demo is complete and final walkthrough is ready for review.");
   const expandedGridMetrics = await page.evaluate(() => {
     const grid = document.querySelector('[data-testid="customer-project-expanded-detail-grid"]')?.getBoundingClientRect();

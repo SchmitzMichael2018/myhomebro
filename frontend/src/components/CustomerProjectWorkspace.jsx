@@ -1143,24 +1143,24 @@ export default function CustomerProjectWorkspace({
   const activeCases = selected?.active_cases || selectedAgreement?.active_cases || [];
   const suggestedMaterialsCard = (
     <Section title="Suggested Materials" eyebrow="Planning and supplies" testId="customer-project-suggested-materials">
-      <p className="text-sm leading-6 text-slate-300">
-        These materials may be useful for this project. Confirm exact size, quantity, finish, model, and compatibility before purchasing.
-      </p>
+      <div data-testid="customer-project-suggested-materials-notice" className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-xs font-semibold leading-5 text-amber-100">
+        Materials commonly used for this type of project. Confirm size, quantity, finish, model, and compatibility with your contractor before purchasing.
+      </div>
       {selectedSuggestedMaterials.length ? (
         <>
-          <div className="mt-3 space-y-3">
+          <div className={`mt-3 grid gap-2 ${visibleSuggestedMaterials.length >= 4 ? "md:grid-cols-2" : ""}`}>
             {visibleSuggestedMaterials.map((material) => {
               const amazonLink = (material.provider_links || []).find((link) => link.provider === "amazon") || material.provider_links?.[0];
               const quantityLabel = [material.quantity, material.unit].filter(Boolean).join(" ");
               return (
-                <div key={material.id || material.name} data-testid="customer-project-suggested-material-card" className="rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold text-white">{material.name || "Project material"}</div>
-                      <div className="mt-1 flex flex-wrap gap-2 text-xs font-medium text-slate-400">
-                        {material.category ? <span>{material.category}</span> : null}
-                        {material.related_milestone ? <span>Related milestone: {material.related_milestone}</span> : null}
-                        {quantityLabel ? <span>Quantity: {quantityLabel}</span> : null}
+                <div key={material.id || material.name} data-testid="customer-project-suggested-material-card" className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-white">{material.name || "Project material"}</div>
+                      <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-medium text-slate-400">
+                        {material.category ? <span className="rounded-full bg-slate-900 px-2 py-0.5">{material.category}</span> : null}
+                        {material.related_milestone ? <span className="rounded-full bg-slate-900 px-2 py-0.5">{material.related_milestone}</span> : null}
+                        {quantityLabel ? <span className="rounded-full bg-slate-900 px-2 py-0.5">{quantityLabel}</span> : null}
                       </div>
                     </div>
                     {amazonLink?.url ? (
@@ -1169,20 +1169,15 @@ export default function CustomerProjectWorkspace({
                         href={amazonLink.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+                        className="shrink-0 rounded-lg border border-slate-600 bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
                       >
-                        Search on Amazon
+                        Amazon
                       </a>
                     ) : null}
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                  <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-300">
                     {materialReasonText(material)}
                   </p>
-                  {material.compatibility_warning ? (
-                    <p className="mt-2 rounded-lg border border-amber-300/25 bg-amber-300/10 p-2 text-xs font-semibold leading-5 text-amber-100">
-                      {material.compatibility_warning}
-                    </p>
-                  ) : null}
                 </div>
               );
             })}
