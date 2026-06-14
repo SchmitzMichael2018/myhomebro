@@ -22028,7 +22028,46 @@ class CustomerPortalAccessTests(TestCase):
         project_row = next(row for row in response.data["projects"] if row["id"] == self.project.id)
         materials = project_row["suggested_materials"]
         self.assertTrue(any(row["name"] == "Tile grout" for row in materials))
+        self.assertFalse(any(row["name"] == "Kitchen project supplies" for row in materials))
         self.assertTrue(any("tag=myhomebro-test-20" in row["provider_links"][0]["url"] for row in materials))
+
+    @override_settings(AMAZON_AFFILIATE_TAG="myhomebro-test-20")
+    def test_customer_portal_project_materials_fallback_uses_shared_project_type_rules(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        addition_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Master Bedroom Addition",
+            description="Build a new bedroom addition with framing, insulation, drywall, and paint.",
+            project_street_address="123 Main St",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+        )
+        Agreement.objects.create(
+            project=addition_project,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            project_class=AgreementProjectClass.RESIDENTIAL,
+            project_type="Addition",
+            project_subtype="Bedroom Addition",
+            total_cost=Decimal("42000.00"),
+            description="Bedroom addition project.",
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        project_row = next(row for row in response.data["projects"] if row["id"] == addition_project.id)
+        material_names = [row["name"] for row in project_row["suggested_materials"]]
+        self.assertIn("Framing lumber", material_names)
+        self.assertIn("Drywall sheets", material_names)
+        self.assertIn("Insulation", material_names)
+        self.assertIn("Interior paint", material_names)
+        self.assertFalse(any(name.endswith("project supplies") for name in material_names))
+        self.assertTrue(any("tag=myhomebro-test-20" in row["provider_links"][0]["url"] for row in project_row["suggested_materials"]))
 
     @override_settings(AMAZON_AFFILIATE_TAG="myhomebro-test-20")
     def test_customer_portal_home_system_subtype_inference_improves_supplies(self):
@@ -24180,6 +24219,23 @@ class TemplateAIGenerationTests(TestCase):
         self.assertEqual(result["workflow_profile"]["assistance_format"], "milestone_based")
         self.assertEqual(result["workflow_profile"]["scheduling_mode"], "milestone_driven")
         self.assertEqual(result["_generation_status"]["workflow"], "fallback")
+
+    def test_shared_project_material_rules_cover_common_project_types(self):
+        from projects.services.project_materials import project_material_names
+
+        roofing = [row["name"] for row in project_material_names(project_type="Roofing", project_subtype="Repair", title="Roof leak near chimney")]
+        bathroom = [row["name"] for row in project_material_names(project_type="Remodel", project_subtype="Bathroom Remodel")]
+        addition = [row["name"] for row in project_material_names(project_type="Addition", project_subtype="Bedroom Addition")]
+        concrete = [row["name"] for row in project_material_names(project_type="Concrete", project_subtype="Concrete Patio")]
+
+        self.assertIn("Roofing underlayment", roofing)
+        self.assertIn("Starter shingles", roofing)
+        self.assertIn("Backer board", bathroom)
+        self.assertIn("Waterproofing membrane", bathroom)
+        self.assertIn("Framing lumber", addition)
+        self.assertIn("Drywall sheets", addition)
+        self.assertIn("Concrete mix or ready-mix planning", concrete)
+        self.assertIn("Gravel base", concrete)
 
     def test_project_template_serializers_expose_workflow_profile(self):
         from projects.serializers_template import ProjectTemplateDetailSerializer, ProjectTemplateListSerializer

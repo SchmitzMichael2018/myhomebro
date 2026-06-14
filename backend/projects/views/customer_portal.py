@@ -1790,6 +1790,8 @@ def _projects(email: str) -> list[dict]:
             "project_number": _safe_text(project.number),
             "title": _safe_text(project.title),
             "description": _safe_text(project.description),
+            "project_type": _safe_text(getattr(agreement, "project_type", "")) or _safe_text(getattr(project, "project_type", "")),
+            "project_subtype": _safe_text(getattr(agreement, "project_subtype", "")) or _safe_text(getattr(project, "project_subtype", "")),
             "status": _safe_text(project.status),
             "status_label": _safe_text(project.status).replace("_", " ").title() or "Project",
             "address": ", ".join(

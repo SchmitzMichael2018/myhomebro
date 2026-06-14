@@ -30,6 +30,7 @@ from projects.services.home_system_subtypes import (
     SUBTYPE_WATER_SOFTENER,
     infer_home_system_subtype,
 )
+from projects.services.project_materials import project_material_names
 
 
 RISKY_SYSTEM_TYPES = {
@@ -398,51 +399,63 @@ def build_project_material_recommendations(project_row: dict, milestone_rows: li
     materials: list[dict] = []
     seen = set()
     source_rows = milestone_rows or []
+
+    def add_material(name: str, *, category: str, reason: str, related_milestone: str = "") -> None:
+        material = _safe_text(name)
+        if not material:
+            return
+        key = material.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        materials.append(
+            {
+                "id": f"project-{project_row.get('id')}-material-{len(materials) + 1}",
+                "name": material,
+                "category": _safe_text(category) or "Project material",
+                "reason": _safe_text(reason) or "Materials commonly used for this type of project.",
+                "related_milestone": _safe_text(related_milestone),
+                "quantity": "",
+                "unit": "",
+                "compatibility_warning": "Confirm exact product, size, quantity, and compatibility before purchasing.",
+                "provider_links": [
+                    {
+                        "provider": "amazon",
+                        "label": "Search on Amazon",
+                        "url": amazon_search_url(material),
+                    }
+                ],
+            }
+        )
+
     for row in source_rows:
         for material in _clean_material_hint(row.get("materials_hint", "")):
-            key = material.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            materials.append(
-                {
-                    "id": f"project-{project_row.get('id')}-material-{len(materials) + 1}",
-                    "name": material,
-                    "category": "Project material",
-                    "reason": "Suggested from saved milestone material guidance.",
-                    "related_milestone": _safe_text(row.get("title")),
-                    "quantity": "",
-                    "unit": "",
-                    "compatibility_warning": "Confirm exact product, size, quantity, and compatibility before purchasing.",
-                    "provider_links": [
-                        {
-                            "provider": "amazon",
-                            "label": "Search on Amazon",
-                            "url": amazon_search_url(material),
-                        }
-                    ],
-                }
+            add_material(
+                material,
+                category="Project material",
+                reason="Suggested from saved milestone material guidance.",
+                related_milestone=row.get("title"),
             )
+
+    if not materials:
+        for row in project_material_names(
+            project_type=_safe_text(project_row.get("project_type") or project_row.get("project_class_label")),
+            project_subtype=_safe_text(project_row.get("project_subtype")),
+            title=_safe_text(project_row.get("title") or project_row.get("project_title")),
+            description=_safe_text(project_row.get("description") or project_row.get("project_scope")),
+        ):
+            add_material(
+                row.get("name", ""),
+                category=row.get("category", "Planning"),
+                reason=row.get("reason", "Materials commonly used for this type of project."),
+            )
+
     if not materials:
         project_type = _safe_text(project_row.get("project_class_label") or project_row.get("title"))
         if project_type:
-            materials.append(
-                {
-                    "id": f"project-{project_row.get('id')}-material-general",
-                    "name": f"{project_type} project supplies",
-                    "category": "Planning",
-                    "reason": "Use this as a broad planning search only; contractor specifications should control final purchases.",
-                    "related_milestone": "",
-                    "quantity": "",
-                    "unit": "",
-                    "compatibility_warning": "Confirm exact product, size, quantity, and compatibility before purchasing.",
-                    "provider_links": [
-                        {
-                            "provider": "amazon",
-                            "label": "Search on Amazon",
-                            "url": amazon_search_url(f"{project_type} project supplies"),
-                        }
-                    ],
-                }
+            add_material(
+                f"{project_type} project supplies",
+                category="Planning",
+                reason="Use this as a broad planning search only; contractor specifications should control final purchases.",
             )
     return materials[:6]

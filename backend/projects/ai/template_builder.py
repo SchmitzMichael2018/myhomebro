@@ -7,6 +7,8 @@ from typing import Any, Dict, List
 
 from django.conf import settings
 
+from projects.services.project_materials import project_material_categories
+
 logger = logging.getLogger(__name__)
 
 
@@ -597,43 +599,7 @@ def _fallback_template_milestones(project_type: str, project_subtype: str, descr
 
 
 def _fallback_template_materials(project_type: str, project_subtype: str, description: str) -> List[Dict[str, Any]]:
-    seed = f"{project_type} {project_subtype} {description}".lower()
-    if "deck" in seed or "outdoor" in seed:
-        return [
-            {
-                "category": "Project Materials",
-                "options": ["Decking boards", "Framing lumber", "Rail components", "Fasteners"],
-                "notes": "Use exterior-rated materials and weather-resistant fasteners.",
-            },
-            {
-                "category": "Closeout Materials",
-                "options": ["Sealant", "Cleanup supplies", "Protection materials"],
-                "notes": "Include finish and cleanup supplies for final delivery.",
-            },
-        ]
-    if "bath" in seed:
-        return [
-            {
-                "category": "Project Materials",
-                "options": ["Tile", "Waterproofing", "Fixtures", "Fasteners"],
-                "notes": "Use moisture-rated materials for wet areas.",
-            }
-        ]
-    if "kitchen" in seed:
-        return [
-            {
-                "category": "Project Materials",
-                "options": ["Cabinetry", "Countertops", "Trim", "Sealant"],
-                "notes": "Use cabinet-grade materials and finish supplies.",
-            }
-        ]
-    return [
-        {
-            "category": "Project Materials",
-            "options": ["Protection materials", "Trade-specific materials", "Fasteners", "Cleanup supplies"],
-            "notes": "Use reusable categories rather than exact takeoff quantities.",
-        }
-    ]
+    return project_material_categories(project_type, project_subtype, description)
 
 
 def _fallback_template_pricing(milestones: List[Dict[str, Any]]) -> Dict[str, Any]:
