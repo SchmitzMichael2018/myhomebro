@@ -265,6 +265,61 @@ class PropertyHomeSystem(models.Model):
         return f"{self.property_profile_id} - {self.display_name}"
 
 
+class PropertyHomeSystemRecommendationPreference(models.Model):
+    STATUS_ACTIVE = "active"
+    STATUS_IGNORED = "ignored"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_IGNORED, "Ignored"),
+    ]
+
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="home_system_recommendation_preferences",
+    )
+    home_system = models.ForeignKey(
+        PropertyHomeSystem,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="recommendation_preferences",
+    )
+    recommendation_key = models.CharField(max_length=160)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    ignored_at = models.DateTimeField(null=True, blank=True)
+    restored_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["property_profile_id", "home_system_id", "recommendation_key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["property_profile", "home_system", "recommendation_key"],
+                name="uniq_home_system_recommendation_preference",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["property_profile", "status"]),
+            models.Index(fields=["home_system", "status"]),
+        ]
+
+    def ignore(self):
+        self.status = self.STATUS_IGNORED
+        self.ignored_at = timezone.now()
+        self.restored_at = None
+        self.save(update_fields=["status", "ignored_at", "restored_at", "updated_at"])
+
+    def restore(self):
+        self.status = self.STATUS_ACTIVE
+        self.restored_at = timezone.now()
+        self.save(update_fields=["status", "restored_at", "updated_at"])
+
+    def __str__(self):
+        return f"{self.property_profile_id}:{self.home_system_id}:{self.recommendation_key}:{self.status}"
+
+
 class PropertyIntelligenceSnapshot(models.Model):
     property_profile = models.ForeignKey(
         PropertyProfile,

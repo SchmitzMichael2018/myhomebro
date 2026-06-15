@@ -274,6 +274,7 @@ from .views.customer_portal import (
     CustomerPortalNotificationMarkReadView,
     CustomerPortalProfileView,
     CustomerPortalHomeSystemView,
+    CustomerPortalHomeSystemRecommendationPreferenceView,
     CustomerPortalHomeSystemServiceRequestView,
     CustomerPortalHomeSystemServiceView,
     CustomerPortalPropertyProfileView,
@@ -396,6 +397,11 @@ urlpatterns = [
     path("customer-portal/<str:token>/property/systems/<int:system_id>/", CustomerPortalHomeSystemView.as_view(), name="customer-portal-home-system-detail"),
     path("customer-portal/<str:token>/property/systems/<int:system_id>/mark-serviced/", CustomerPortalHomeSystemServiceView.as_view(), name="customer-portal-home-system-mark-serviced"),
     path("customer-portal/<str:token>/property/systems/<int:system_id>/service-request/", CustomerPortalHomeSystemServiceRequestView.as_view(), name="customer-portal-home-system-service-request"),
+    path(
+        "customer-portal/<str:token>/property/systems/recommendations/<str:recommendation_key>/<str:action>/",
+        CustomerPortalHomeSystemRecommendationPreferenceView.as_view(),
+        name="customer-portal-home-system-recommendation-preference",
+    ),
     path(
         "customer-portal/<str:token>/property/<str:upload_kind>/",
         CustomerPortalPropertyUploadView.as_view(),

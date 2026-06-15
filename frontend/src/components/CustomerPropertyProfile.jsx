@@ -235,7 +235,11 @@ function normalizeHomeSystem(system) {
     linkedProjects: system.linked_projects || system.linkedProjects || [],
     linkedRequests: system.linked_requests || system.linkedRequests || [],
     linkedRecordsCount: Number(system.linked_records_count ?? 0),
-    supplyRecommendations: system.supply_recommendations || system.supplyRecommendations || [],
+    supplyRecommendations: (system.supply_recommendations || system.supplyRecommendations || []).map((recommendation) => ({
+      ...recommendation,
+      recommendationKey: recommendation.recommendation_key || recommendation.recommendationKey || recommendation.id || "",
+      isIgnored: Boolean(recommendation.is_ignored || recommendation.isIgnored),
+    })),
     maintenanceStatus: system.maintenance_status || "unknown",
     priority: system.priority || "low",
     nextRecommendedServiceDate: system.next_recommended_service_date || "",
@@ -253,6 +257,7 @@ function normalizeHomeSystem(system) {
     lastNotifiedAt: system.last_notified_at || "",
     nextNotificationAt: system.next_notification_at || "",
     dismissedUntil: system.dismissed_until || "",
+    isArchived: Boolean(system.is_archived || system.isArchived),
     lifecycle: {
       ...(system.lifecycle || {}),
       state: system.lifecycle?.state || "current",
@@ -268,65 +273,95 @@ function normalizeHomeSystem(system) {
   };
 }
 
-function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highlightedSystemId }) {
+function recommendationStatusLabel(recommendation) {
+  if (recommendation.kind === "end_of_life") return "Major replacement";
+  if (recommendation.next_due_date) return "May be due soon";
+  return "Maintenance item";
+}
+
+function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highlightedSystemId, onIgnoreRecommendation, onRestoreRecommendation }) {
   const [diyRecommendation, setDiyRecommendation] = useState(null);
+  const [viewRecommendation, setViewRecommendation] = useState(null);
+  const [filter, setFilter] = useState("active");
   const recommendations = systems.flatMap((system) =>
     (system.supplyRecommendations || []).map((recommendation) => ({
       ...recommendation,
+      recommendationKey: recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id || "",
+      isIgnored: Boolean(recommendation.isIgnored || recommendation.is_ignored),
       systemRecord: system,
     }))
   );
+  const activeRecommendations = recommendations.filter((recommendation) => !recommendation.isIgnored);
+  const ignoredRecommendations = recommendations.filter((recommendation) => recommendation.isIgnored);
+  const visibleRecommendations = filter === "ignored" ? ignoredRecommendations : filter === "all" ? recommendations : activeRecommendations;
   if (!recommendations.length) return null;
   return (
     <Section title="Suggested Supplies & Maintenance" eyebrow="Helpful upkeep" testId="property-suggested-supplies">
-      <div className="mb-4 space-y-2 text-sm leading-6 text-slate-300">
-        <p>Useful maintenance ideas based on the home systems you have saved.</p>
-        <p className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-xs font-semibold leading-5 text-amber-100">
-          Confirm size, model, quantity, and compatibility before purchasing.
-        </p>
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2 text-sm leading-6 text-slate-300">
+          <p>Useful maintenance ideas based on the home systems you have saved.</p>
+          <p className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-xs font-semibold leading-5 text-amber-100">
+            Confirm size, model, quantity, and compatibility before purchasing.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested supply filters">
+          {[
+            ["active", `Active (${activeRecommendations.length})`],
+            ["ignored", `Ignored (${ignoredRecommendations.length})`],
+            ["all", `All (${recommendations.length})`],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              data-testid={`property-supply-filter-${value}`}
+              onClick={() => setFilter(value)}
+              className={`rounded-xl border px-3 py-2 text-xs font-bold ${filter === value ? "border-amber-300/60 bg-amber-300/20 text-amber-100" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {recommendations.slice(0, 4).map((recommendation) => {
+      {visibleRecommendations.length ? (
+        <div className="space-y-2">
+          {visibleRecommendations.slice(0, 6).map((recommendation) => {
           const amazonAction = (recommendation.actions || []).find((action) => action.type === "amazon_search") || recommendation.provider_links?.[0];
           const isReplacement = recommendation.kind === "end_of_life";
-          const actionLabel = isReplacement ? "Major replacement" : recommendation.next_due_date ? "May be due soon" : "Maintenance item";
+          const actionLabel = recommendationStatusLabel(recommendation);
           const isHighlighted = String(highlightedSystemId || "") === String(recommendation.systemRecord?.id || recommendation.system_id || "");
           return (
             <article
-              key={recommendation.id}
-              data-testid="property-supply-recommendation-card"
+              key={`${recommendation.systemRecord?.id || recommendation.system_id}-${recommendation.recommendationKey || recommendation.id}`}
+              data-testid="property-supply-recommendation-row"
               data-system-id={recommendation.systemRecord?.id || recommendation.system_id || ""}
-              className={`rounded-2xl border p-4 transition ${isHighlighted ? "ring-2 ring-amber-300/70" : ""} ${isReplacement ? "border-amber-300/35 bg-amber-300/10" : "border-slate-700 bg-slate-900/60"}`}
+              className={`grid gap-3 rounded-2xl border p-3 transition md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] md:items-center ${isHighlighted ? "ring-2 ring-amber-300/70" : ""} ${isReplacement ? "border-amber-300/35 bg-amber-300/10" : "border-slate-700 bg-slate-900/60"}`}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
                   <h4 className="text-sm font-bold text-white">{recommendation.title || recommendation.supply_name}</h4>
-                  <div className="mt-1 text-xs font-semibold text-slate-400">{recommendation.system} - {recommendation.system_type_label}</div>
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${isReplacement ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-slate-600 bg-slate-950 text-slate-300"}`}>
+                    {actionLabel}
+                  </span>
+                  {recommendation.isIgnored ? (
+                    <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-bold text-slate-300">Ignored</span>
+                  ) : null}
                 </div>
-                <span className={`rounded-full border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${isReplacement ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-slate-600 bg-slate-950 text-slate-300"}`}>
-                  {actionLabel}
-                </span>
+                <div className="mt-1 text-xs font-semibold text-slate-400">{recommendation.system} - {recommendation.system_type_label}</div>
+                <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-300">{recommendation.reason}</p>
               </div>
-              <p className="mt-3 text-sm leading-6 text-slate-300">{recommendation.reason}</p>
-              <dl className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
-                {recommendation.suggested_interval ? <div><dt className="text-slate-500">Suggested interval</dt><dd className="font-semibold text-slate-200">{recommendation.suggested_interval}</dd></div> : null}
+              <dl className="grid gap-1 text-xs text-slate-400 sm:grid-cols-2 md:grid-cols-1">
+                {recommendation.suggested_interval ? <div><dt className="text-slate-500">Interval</dt><dd className="font-semibold text-slate-200">{recommendation.suggested_interval}</dd></div> : null}
                 {recommendation.next_due_date ? <div><dt className="text-slate-500">Next due</dt><dd className="font-semibold text-slate-200">{formatDate(recommendation.next_due_date)}</dd></div> : null}
               </dl>
-              {recommendation.compatibility_warning ? (
-                <p className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-xs font-semibold leading-5 text-amber-100">
-                  {recommendation.compatibility_warning}
-                </p>
-              ) : null}
-              {recommendation.safety_note ? (
-                <p className="mt-3 rounded-xl border border-sky-300/25 bg-sky-400/10 p-3 text-xs font-semibold leading-5 text-sky-100">
-                  {recommendation.safety_note}
-                </p>
-              ) : isReplacement ? (
-                <p className="mt-3 rounded-xl border border-sky-300/25 bg-sky-400/10 p-3 text-xs font-semibold leading-5 text-sky-100">
-                  For electrical, gas, roofing, structural, or major plumbing work, hire a qualified professional.
-                </p>
-              ) : null}
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="flex flex-wrap justify-start gap-2 md:justify-end">
+                <button
+                  type="button"
+                  data-testid="property-supply-view"
+                  onClick={() => setViewRecommendation(recommendation)}
+                  className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
+                >
+                  View
+                </button>
                 {isReplacement ? (
                   <button
                     type="button"
@@ -355,14 +390,67 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
                     onClick={() => setDiyRecommendation(recommendation)}
                     className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
                   >
-                    Get DIY help
+                    Get DIY Help
                   </button>
                 ) : null}
+                {recommendation.isIgnored ? (
+                  <button
+                    type="button"
+                    data-testid="property-supply-restore"
+                    onClick={() => onRestoreRecommendation?.(recommendation)}
+                    className="rounded-xl border border-emerald-300/35 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20"
+                  >
+                    Restore
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-testid="property-supply-ignore"
+                    onClick={() => onIgnoreRecommendation?.(recommendation)}
+                    className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
+                  >
+                    Ignore
+                  </button>
+                )}
               </div>
             </article>
           );
-        })}
-      </div>
+          })}
+        </div>
+      ) : (
+        <EmptyState title={filter === "ignored" ? "No ignored recommendations" : "No active recommendations"} testId="property-suggested-supplies-empty">
+          {filter === "ignored"
+            ? "Ignored items will appear here so you can restore them later."
+            : "All current supply suggestions are hidden or there is nothing due right now."}
+        </EmptyState>
+      )}
+      {viewRecommendation ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Supply recommendation details">
+          <div className="w-full max-w-lg rounded-3xl border border-amber-300/35 bg-slate-950 p-5 shadow-2xl">
+            <div className="text-xs font-bold uppercase tracking-[0.2em] text-amber-200">Maintenance item</div>
+            <h3 className="mt-1 text-xl font-extrabold text-white">{viewRecommendation.title || viewRecommendation.supply_name}</h3>
+            <p className="mt-2 text-sm font-semibold text-slate-300">{viewRecommendation.system} - {viewRecommendation.system_type_label}</p>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{viewRecommendation.reason}</p>
+            {viewRecommendation.safety_note || viewRecommendation.kind === "end_of_life" ? (
+              <p className="mt-3 rounded-xl border border-sky-300/25 bg-sky-400/10 p-3 text-sm font-semibold leading-6 text-sky-100">
+                {viewRecommendation.safety_note || "For electrical, gas, roofing, structural, or major plumbing work, hire a qualified professional."}
+              </p>
+            ) : null}
+            <p className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-sm font-semibold leading-6 text-amber-100">
+              Confirm size, model, quantity, and compatibility before purchasing.
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewRecommendation(null)}
+                className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {diyRecommendation ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="DIY supply guidance">
           <div className="w-full max-w-lg rounded-3xl border border-sky-300/35 bg-slate-950 p-5 shadow-2xl">
@@ -490,7 +578,158 @@ function recommendationAccuracyPrompt(system) {
   };
 }
 
+function homeSystemStatus(system) {
+  const lifecycleState = system.lifecycle?.state || "";
+  if (system.isArchived) return { key: "ignored", label: "Archived" };
+  if (system.supplyRecommendations?.some((recommendation) => recommendation.isIgnored)) return { key: "ignored", label: "Ignored" };
+  if (["overdue", "warranty_expired", "lifespan_attention"].includes(system.maintenanceStatus) || system.priority === "high") {
+    return { key: "needs_attention", label: "Needs Attention" };
+  }
+  if (["due_soon", "warranty_expiring"].includes(system.maintenanceStatus) || lifecycleState === "scheduled") {
+    return { key: "due_soon", label: "Due Soon" };
+  }
+  if (["completed", "resolved", "current"].includes(lifecycleState) || system.reminderDeliveryStatus === "resolved") {
+    return { key: "completed", label: "Completed" };
+  }
+  return { key: "good", label: system.conditionLabel && system.conditionLabel !== "Unknown" ? system.conditionLabel : "Good" };
+}
+
+function homeSystemStatusClass(key) {
+  if (key === "needs_attention") return "border-rose-300/50 bg-rose-400/15 text-rose-100";
+  if (key === "due_soon") return "border-amber-300/50 bg-amber-300/15 text-amber-100";
+  if (key === "completed" || key === "good") return "border-emerald-300/45 bg-emerald-400/10 text-emerald-100";
+  if (key === "ignored") return "border-slate-600 bg-slate-900 text-slate-300";
+  return "border-slate-600 bg-slate-950 text-slate-300";
+}
+
+function HomeSystemDetails({ system, onEdit, onArchive, onViewRecommendations }) {
+  const preview = systemRecommendationPreview(system);
+  const accuracyPrompt = recommendationAccuracyPrompt(system);
+  return (
+    <div data-testid={`property-home-system-details-${system.id}`} className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        {[
+          ["Manufacturer", system.manufacturer],
+          ["Model", system.model],
+          ["Serial", system.serialNumber],
+          ["Install date", system.installDate ? formatDate(system.installDate) : ""],
+          ["Warranty expiration", system.warrantyExpiration ? formatDate(system.warrantyExpiration) : ""],
+          ["Linked records", system.linkedRecordsCount],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+            <div className="mt-1 text-sm font-semibold text-slate-100">{value || "Not recorded yet"}</div>
+          </div>
+        ))}
+      </div>
+      {system.notes ? <p className="mt-4 text-sm leading-6 text-slate-300">{system.notes}</p> : null}
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-700/80 bg-slate-900/60 p-3" data-testid={`property-home-system-recommendation-preview-${system.id}`}>
+          {preview.hasRecommendations ? (
+            <div className="space-y-2 text-xs text-slate-300">
+              {preview.maintenanceText ? (
+                <div>
+                  <div className="font-bold text-slate-100">Maintenance</div>
+                  <p className="mt-0.5 line-clamp-2">{preview.maintenanceText}</p>
+                </div>
+              ) : null}
+              {preview.supplyCount ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-slate-100">Supplies</span>
+                  <span>{preview.supplyCount} suggested item{preview.supplyCount === 1 ? "" : "s"}</span>
+                </div>
+              ) : null}
+              {preview.reminderText ? (
+                <div>
+                  <div className="font-bold text-slate-100">Reminders</div>
+                  <p className="mt-0.5">{preview.reminderText}</p>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                data-testid={`property-home-system-view-recommendations-${system.id}`}
+                onClick={() => onViewRecommendations?.(system)}
+                className="mt-1 rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-300/20"
+              >
+                View Recommendations
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs font-semibold text-slate-400">No current recommendations</p>
+          )}
+        </div>
+        {accuracyPrompt ? (
+          <div className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-3" data-testid={`property-home-system-accuracy-prompt-${system.id}`}>
+            <div className="text-xs font-bold uppercase tracking-wide text-sky-100">Improve recommendation accuracy</div>
+            <div className="mt-2 text-xs font-semibold text-slate-200">Add:</div>
+            <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-300">
+              {accuracyPrompt.missing.map((field) => <li key={field}>{field}</li>)}
+            </ul>
+            <p className="mt-2 text-xs leading-5 text-slate-300">{accuracyPrompt.summary}</p>
+            <button
+              type="button"
+              data-testid={`property-home-system-accuracy-edit-${system.id}`}
+              onClick={() => onEdit?.(system)}
+              className="mt-3 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-sky-400/20"
+            >
+              Edit System
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
+          Edit System
+        </button>
+        {system.isStructured ? (
+          <button type="button" data-testid={`property-home-system-archive-${system.id}`} onClick={() => onArchive?.(system)} className="rounded-xl border border-red-300/35 bg-red-400/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-400/20">
+            Archive
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewRecommendations }) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [viewMode, setViewMode] = useState("list");
+  const [expandedId, setExpandedId] = useState("");
+  const rows = systems.map((system) => ({ ...system, status: homeSystemStatus(system) }));
+  const filteredSystems = rows.filter((system) => {
+    const matchesQuery = !query.trim() || `${system.name} ${system.system_type_label} ${system.manufacturer} ${system.model}`.toLowerCase().includes(query.toLowerCase());
+    const matchesFilter = filter === "all" || system.status.key === filter;
+    return matchesQuery && matchesFilter;
+  });
+  const counts = {
+    all: systems.length,
+    needs_attention: rows.filter((system) => system.status.key === "needs_attention").length,
+    due_soon: rows.filter((system) => system.status.key === "due_soon").length,
+    completed: rows.filter((system) => system.status.key === "completed").length,
+    ignored: rows.filter((system) => system.status.key === "ignored").length,
+  };
+  const renderGridCard = (system) => (
+    <article key={system.id || system.name} data-testid={`property-home-system-${String(system.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-bold text-white">{system.name}</h4>
+          <div className="mt-1 text-xs font-semibold text-slate-400">{system.manufacturer || system.system_type_label} {system.model || ""}</div>
+        </div>
+        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${homeSystemStatusClass(system.status.key)}`}>{system.status.label}</span>
+      </div>
+      <dl className="mt-3 grid gap-2 text-xs text-slate-300">
+        <div><dt className="text-slate-500">Next service</dt><dd className="font-semibold text-slate-100">{system.nextRecommendedServiceDate ? formatDate(system.nextRecommendedServiceDate) : "Not scheduled"}</dd></div>
+        <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-100">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "No service record yet"}</dd></div>
+        <div><dt className="text-slate-500">Condition</dt><dd className="font-semibold text-slate-100">{system.conditionLabel || "Unknown"}</dd></div>
+      </dl>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" data-testid={`property-home-system-view-${system.id}`} onClick={() => setExpandedId((value) => String(value) === String(system.id) ? "" : system.id)} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">View</button>
+        <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">Edit</button>
+      </div>
+      {String(expandedId) === String(system.id) ? <div className="mt-4"><HomeSystemDetails system={system} onEdit={onEdit} onArchive={onArchive} onViewRecommendations={onViewRecommendations} /></div> : null}
+    </article>
+  );
   return (
     <Section title="Home Systems" eyebrow="Systems and components" testId="property-home-systems">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -507,97 +746,88 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
         </button>
       </div>
       {systems.length ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {systems.map((system) => {
-            const preview = systemRecommendationPreview(system);
-            const accuracyPrompt = recommendationAccuracyPrompt(system);
-            return (
-            <article key={system.id || system.name} data-testid={`property-home-system-${String(system.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h4 className="text-sm font-bold text-white">{system.name}</h4>
-                  <div className="mt-1 text-xs font-semibold text-slate-400">{system.system_type_label || system.conditionLabel || "Home system"}</div>
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row">
+              <input
+                data-testid="property-home-system-search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search systems..."
+                className="min-h-10 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-sky-400"
+              />
+              <select
+                data-testid="property-home-system-filter"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-sky-400"
+              >
+                <option value="all">All Systems ({counts.all})</option>
+                <option value="needs_attention">Needs Attention ({counts.needs_attention})</option>
+                <option value="due_soon">Due Soon ({counts.due_soon})</option>
+                <option value="completed">Completed ({counts.completed})</option>
+                <option value="ignored">Ignored/Archived ({counts.ignored})</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["list", "List"],
+                ["grid", "Grid"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-testid={`property-home-system-view-${value}`}
+                  onClick={() => setViewMode(value)}
+                  className={`rounded-xl border px-3 py-2 text-sm font-bold ${viewMode === value ? "border-amber-300/60 bg-amber-300/20 text-amber-100" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {filteredSystems.length ? (
+            viewMode === "grid" ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filteredSystems.map(renderGridCard)}</div>
+            ) : (
+              <div data-testid="property-home-systems-list" className="overflow-hidden rounded-2xl border border-slate-800">
+                <div className="hidden grid-cols-[minmax(220px,1.4fr)_110px_140px_150px_130px_130px_170px] gap-3 bg-slate-950 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-400 xl:grid">
+                  <div>System</div><div>Type</div><div>Status</div><div>Next Service</div><div>Last Service</div><div>Condition</div><div>Actions</div>
                 </div>
-                <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
-                  {system.linkedRecordsCount || system.linkedDocuments.length + system.linkedProjects.length + system.linkedRequests.length} linked
-                </span>
+                <div className="divide-y divide-slate-800">
+                  {filteredSystems.map((system) => (
+                    <div key={system.id || system.name} data-testid={`property-home-system-${String(system.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+                      <div className="grid gap-3 px-4 py-3 xl:grid-cols-[minmax(220px,1.4fr)_110px_140px_150px_130px_130px_170px] xl:items-center">
+                        <div>
+                          <div className="text-sm font-bold text-white">{system.name}</div>
+                          <div className="mt-1 text-xs font-semibold text-slate-400">{[system.manufacturer, system.model].filter(Boolean).join(" ") || "System details not recorded"}</div>
+                        </div>
+                        <div className="text-sm font-semibold text-slate-200">{system.system_type_label || "System"}</div>
+                        <div><span className={`inline-flex rounded-full border px-2 py-1 text-xs font-bold ${homeSystemStatusClass(system.status.key)}`}>{system.status.label}</span></div>
+                        <div className="text-sm text-slate-200">{system.nextRecommendedServiceDate ? formatDate(system.nextRecommendedServiceDate) : "Not scheduled"}</div>
+                        <div className="text-sm text-slate-300">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "Not recorded"}</div>
+                        <div className="text-sm text-slate-200">{system.conditionLabel || "Unknown"}</div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" data-testid={`property-home-system-view-${system.id}`} onClick={() => setExpandedId((value) => String(value) === String(system.id) ? "" : system.id)} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">View</button>
+                          <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">Edit</button>
+                        </div>
+                      </div>
+                      {String(expandedId) === String(system.id) ? (
+                        <div className="px-4 pb-4">
+                          <HomeSystemDetails system={system} onEdit={onEdit} onArchive={onArchive} onViewRecommendations={onViewRecommendations} />
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <dl className="mt-3 grid gap-2 text-xs text-slate-300">
-                <div><dt className="text-slate-500">Manufacturer</dt><dd className="font-semibold text-slate-100">{system.manufacturer || "Not recorded yet"}</dd></div>
-                <div><dt className="text-slate-500">Model</dt><dd className="font-semibold text-slate-100">{system.model || "Not recorded yet"}</dd></div>
-                <div><dt className="text-slate-500">Install date</dt><dd className="font-semibold text-slate-100">{system.installDate ? formatDate(system.installDate) : "Not recorded yet"}</dd></div>
-                <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-100">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "No service record yet"}</dd></div>
-                <div><dt className="text-slate-500">Warranty expiration</dt><dd className="font-semibold text-slate-100">{system.warrantyExpiration ? formatDate(system.warrantyExpiration) : "Not recorded yet"}</dd></div>
-                <div><dt className="text-slate-500">Condition</dt><dd className="font-semibold text-slate-100">{system.conditionLabel || "Unknown"}</dd></div>
-              </dl>
-              {system.notes ? <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">{system.notes}</p> : null}
-              {accuracyPrompt ? (
-                <div className="mt-4 rounded-2xl border border-sky-300/25 bg-sky-400/10 p-3" data-testid={`property-home-system-accuracy-prompt-${system.id}`}>
-                  <div className="text-xs font-bold uppercase tracking-wide text-sky-100">Improve recommendation accuracy</div>
-                  <div className="mt-2 text-xs font-semibold text-slate-200">Add:</div>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-slate-300">
-                    {accuracyPrompt.missing.map((field) => (
-                      <li key={field}>{field}</li>
-                    ))}
-                  </ul>
-                  <p className="mt-2 text-xs leading-5 text-slate-300">{accuracyPrompt.summary}</p>
-                  <button
-                    type="button"
-                    data-testid={`property-home-system-accuracy-edit-${system.id}`}
-                    onClick={() => onEdit?.(system)}
-                    className="mt-3 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-sky-400/20"
-                  >
-                    Edit System
-                  </button>
-                </div>
-              ) : null}
-              <div className="mt-4 rounded-2xl border border-slate-700/80 bg-slate-950/60 p-3" data-testid={`property-home-system-recommendation-preview-${system.id}`}>
-                {preview.hasRecommendations ? (
-                  <div className="space-y-2 text-xs text-slate-300">
-                    {preview.maintenanceText ? (
-                      <div>
-                        <div className="font-bold text-slate-100">Maintenance</div>
-                        <p className="mt-0.5 line-clamp-2">{preview.maintenanceText}</p>
-                      </div>
-                    ) : null}
-                    {preview.supplyCount ? (
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-bold text-slate-100">Supplies</span>
-                        <span>{preview.supplyCount} suggested item{preview.supplyCount === 1 ? "" : "s"}</span>
-                      </div>
-                    ) : null}
-                    {preview.reminderText ? (
-                      <div>
-                        <div className="font-bold text-slate-100">Reminders</div>
-                        <p className="mt-0.5">{preview.reminderText}</p>
-                      </div>
-                    ) : null}
-                    <button
-                      type="button"
-                      data-testid={`property-home-system-view-recommendations-${system.id}`}
-                      onClick={() => onViewRecommendations?.(system)}
-                      className="mt-1 rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-300/20"
-                    >
-                      View Recommendations
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-xs font-semibold text-slate-400">No current recommendations</p>
-                )}
-              </div>
-              {system.isStructured ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
-                    Edit System
-                  </button>
-                  <button type="button" data-testid={`property-home-system-archive-${system.id}`} onClick={() => onArchive?.(system)} className="rounded-xl border border-red-300/35 bg-red-400/10 px-3 py-2 text-sm font-semibold text-red-100 hover:bg-red-400/20">
-                    Archive
-                  </button>
-                </div>
-              ) : null}
-            </article>
-            );
-          })}
+            )
+          ) : (
+            <EmptyState title="No systems match those filters" testId="property-home-systems-filter-empty">
+              Try another search term or show all systems.
+            </EmptyState>
+          )}
+          <div className="text-sm font-semibold text-slate-300">Showing {filteredSystems.length ? `1 to ${filteredSystems.length}` : "0"} of {systems.length} systems</div>
         </div>
       ) : (
         <EmptyState title="No systems recorded yet" testId="property-home-systems-empty">
@@ -1170,7 +1400,7 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder }) {
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [highlightedRecommendationSystemId, setHighlightedRecommendationSystemId] = useState("");
   const maintenance = maintenanceRows(maintenanceWorkOrders);
@@ -1202,6 +1432,8 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         systems={systems.filter((system) => system.isStructured)}
         onCreateServiceRequest={onCreateServiceRequest}
         highlightedSystemId={highlightedRecommendationSystemId}
+        onIgnoreRecommendation={onIgnoreRecommendation}
+        onRestoreRecommendation={onRestoreRecommendation}
       />
 
       <MaintenanceCenter
@@ -1304,6 +1536,8 @@ export default function CustomerPropertyProfile({
   onArchiveSystem,
   onMarkSystemServiced,
   onCreateSystemServiceRequest,
+  onIgnoreSystemRecommendation,
+  onRestoreSystemRecommendation,
   saving = false,
   systemSaving = false,
 }) {
@@ -1420,6 +1654,12 @@ export default function CustomerPropertyProfile({
         onDismissReminder={async (system) => {
           const dismissedUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
           await onUpdateSystem?.(system.id, { dismissed_until: dismissedUntil });
+        }}
+        onIgnoreRecommendation={async (recommendation) => {
+          await onIgnoreSystemRecommendation?.(recommendation.systemRecord?.id || recommendation.system_id, recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id);
+        }}
+        onRestoreRecommendation={async (recommendation) => {
+          await onRestoreSystemRecommendation?.(recommendation.systemRecord?.id || recommendation.system_id, recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id);
         }}
       />
 

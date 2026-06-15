@@ -2111,6 +2111,24 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       setSavingHomeSystem(false);
     }
   };
+  const updateHomeSystemRecommendationPreference = async (systemId, recommendationKey, action) => {
+    if (!systemId || !recommendationKey) return false;
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/recommendations/${encodeURIComponent(recommendationKey)}/${action}/`,
+        { system_id: systemId }
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success(data?.detail || (action === "ignore" ? "Recommendation ignored." : "Recommendation restored."));
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that recommendation.");
+      return false;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") {
       return (
@@ -2302,6 +2320,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onArchiveSystem={archiveHomeSystem}
           onMarkSystemServiced={markHomeSystemServiced}
           onCreateSystemServiceRequest={createHomeSystemServiceRequest}
+          onIgnoreSystemRecommendation={(systemId, recommendationKey) => updateHomeSystemRecommendationPreference(systemId, recommendationKey, "ignore")}
+          onRestoreSystemRecommendation={(systemId, recommendationKey) => updateHomeSystemRecommendationPreference(systemId, recommendationKey, "restore")}
         />
       );
     }

@@ -2728,6 +2728,7 @@ from .models_customer_portal import (  # noqa: E402,F401
     NotificationRule,
     PropertyDocument,
     PropertyHomeSystem,
+    PropertyHomeSystemRecommendationPreference,
     PropertyIntelligenceSnapshot,
     PropertyPhoto,
     PropertyProfile,

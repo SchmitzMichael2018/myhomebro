@@ -11,6 +11,7 @@ from django.core import signing
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
@@ -38,7 +39,17 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
-from projects.models_customer_portal import CustomerRequest, NotificationRule, PropertyDocument, PropertyHomeSystem, PropertyPhoto, PropertyProfile, SmartNotification, SmartNotificationEvent
+from projects.models_customer_portal import (
+    CustomerRequest,
+    NotificationRule,
+    PropertyDocument,
+    PropertyHomeSystem,
+    PropertyHomeSystemRecommendationPreference,
+    PropertyPhoto,
+    PropertyProfile,
+    SmartNotification,
+    SmartNotificationEvent,
+)
 from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
@@ -445,7 +456,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
 
 def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
     reminder = build_home_system_reminder(system)
-    supply_recommendations = build_home_system_supply_recommendations([system])
+    supply_recommendations = _home_system_supply_recommendation_payloads(system)
     linked_documents = [
         {
             "id": f"property-document-{document.id}",
@@ -537,6 +548,51 @@ def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
         "created_at": _safe_dt(system.created_at),
         "updated_at": _safe_dt(system.updated_at),
     }
+
+
+def _home_system_recommendation_key(system: PropertyHomeSystem, recommendation: dict) -> str:
+    raw_key = _safe_text(recommendation.get("recommendation_key")) or _safe_text(recommendation.get("id"))
+    if raw_key:
+        return raw_key[:160]
+    title = _safe_text(recommendation.get("title")) or _safe_text(recommendation.get("supply_name")) or _safe_text(recommendation.get("kind")) or "recommendation"
+    normalized = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "recommendation"
+    return f"system-{system.id}-{normalized}"[:160]
+
+
+def _home_system_supply_recommendation_payloads(system: PropertyHomeSystem) -> list[dict]:
+    recommendations = build_home_system_supply_recommendations([system])
+    ignored_keys = set(
+        PropertyHomeSystemRecommendationPreference.objects.filter(
+            property_profile=system.property_profile,
+            home_system=system,
+            status=PropertyHomeSystemRecommendationPreference.STATUS_IGNORED,
+        ).values_list("recommendation_key", flat=True)
+    )
+    rows = []
+    for recommendation in recommendations:
+        key = _home_system_recommendation_key(system, recommendation)
+        rows.append(
+            {
+                **recommendation,
+                "recommendation_key": key,
+                "is_ignored": key in ignored_keys,
+            }
+        )
+    return rows
+
+
+def _home_system_recommendation_or_404(email: str, system_id: int, recommendation_key: str) -> tuple[PropertyHomeSystem, str]:
+    system = _home_system_for_email_or_404(email, system_id)
+    normalized_key = _safe_text(recommendation_key)
+    if not normalized_key:
+        raise Http404("Recommendation not found.")
+    keys = {
+        _home_system_recommendation_key(system, recommendation)
+        for recommendation in build_home_system_supply_recommendations([system])
+    }
+    if normalized_key not in keys:
+        raise Http404("Recommendation not found.")
+    return system, normalized_key
 
 
 def _home_system_lifecycle_payload(*, system: PropertyHomeSystem, reminder, linked_request=None, linked_agreement=None) -> dict:
@@ -4706,6 +4762,49 @@ class CustomerPortalHomeSystemServiceRequestView(APIView):
             },
         )
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalHomeSystemRecommendationPreferenceView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, recommendation_key: str, action: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        if action not in {"ignore", "restore"}:
+            return Response({"detail": "Unsupported recommendation action."}, status=status.HTTP_404_NOT_FOUND)
+        system_id = request.data.get("system_id") or request.data.get("home_system_id")
+        if not system_id:
+            return Response({"detail": "Please include the home system for this recommendation."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            system, normalized_key = _home_system_recommendation_or_404(email, int(system_id), recommendation_key)
+        except (TypeError, ValueError):
+            return Response({"detail": "Please include a valid home system."}, status=status.HTTP_400_BAD_REQUEST)
+        preference, _created = PropertyHomeSystemRecommendationPreference.objects.get_or_create(
+            property_profile=system.property_profile,
+            home_system=system,
+            recommendation_key=normalized_key,
+            defaults={"status": PropertyHomeSystemRecommendationPreference.STATUS_ACTIVE},
+        )
+        if action == "ignore":
+            preference.ignore()
+            detail = "Recommendation ignored."
+        else:
+            preference.restore()
+            detail = "Recommendation restored."
+        return Response(
+            {
+                "detail": detail,
+                "recommendation_key": normalized_key,
+                "system_id": system.id,
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalPropertyUploadView(APIView):

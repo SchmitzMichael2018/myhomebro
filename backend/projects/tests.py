@@ -84,6 +84,7 @@ from projects.models import (
     PropertyProfile,
     PropertyDocument,
     PropertyHomeSystem,
+    PropertyHomeSystemRecommendationPreference,
     PropertyIntelligenceSnapshot,
     PropertyPhoto,
     SmartNotification,
@@ -22052,6 +22053,93 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(any(row["name"] == "Tile grout" for row in materials))
         self.assertFalse(any(row["name"] == "Kitchen project supplies" for row in materials))
         self.assertTrue(any("tag=myhomebro-test-20" in row["provider_links"][0]["url"] for row in materials))
+
+    def test_customer_portal_home_system_recommendation_ignore_and_restore_are_scoped(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        hvac = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            manufacturer="Carrier",
+            model_number="XR-500",
+        )
+        second_hvac = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Upstairs HVAC",
+            manufacturer="Trane",
+            model_number="XR-900",
+        )
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = {row["id"]: row for row in response.data["property_profile"]["home_systems"]}
+        recommendation_key = rows[hvac.id]["supply_recommendations"][0]["recommendation_key"]
+
+        ignore_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/systems/recommendations/{recommendation_key}/ignore/",
+            {"system_id": hvac.id},
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(ignore_response.status_code, 200, ignore_response.data)
+        self.assertTrue(
+            PropertyHomeSystemRecommendationPreference.objects.filter(
+                property_profile=profile,
+                home_system=hvac,
+                recommendation_key=recommendation_key,
+                status=PropertyHomeSystemRecommendationPreference.STATUS_IGNORED,
+            ).exists()
+        )
+        ignored_rows = {row["id"]: row for row in ignore_response.data["portal"]["property_profile"]["home_systems"]}
+        self.assertTrue(ignored_rows[hvac.id]["supply_recommendations"][0]["is_ignored"])
+        self.assertFalse(ignored_rows[second_hvac.id]["supply_recommendations"][0]["is_ignored"])
+
+        restore_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/systems/recommendations/{recommendation_key}/restore/",
+            {"system_id": hvac.id},
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(restore_response.status_code, 200, restore_response.data)
+        restored_rows = {row["id"]: row for row in restore_response.data["portal"]["property_profile"]["home_systems"]}
+        self.assertFalse(restored_rows[hvac.id]["supply_recommendations"][0]["is_ignored"])
+
+    def test_customer_portal_home_system_recommendation_preference_rejects_invalid_scope(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_token = signing.dumps({"email": "other@example.com"}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        hvac = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            manufacturer="Carrier",
+            model_number="XR-500",
+        )
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+        recommendation_key = response.data["property_profile"]["home_systems"][0]["supply_recommendations"][0]["recommendation_key"]
+
+        invalid_token_response = self.client.post(
+            f"/api/projects/customer-portal/not-a-token/property/systems/recommendations/{recommendation_key}/ignore/",
+            {"system_id": hvac.id},
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(invalid_token_response.status_code, 403)
+
+        outside_scope_response = self.client.post(
+            f"/api/projects/customer-portal/{other_token}/property/systems/recommendations/{recommendation_key}/ignore/",
+            {"system_id": hvac.id},
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(outside_scope_response.status_code, 404)
 
     @override_settings(AMAZON_AFFILIATE_TAG="myhomebro-test-20")
     def test_customer_portal_project_materials_fallback_uses_shared_project_type_rules(self):

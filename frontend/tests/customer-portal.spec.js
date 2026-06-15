@@ -80,6 +80,7 @@ const portalPayload = {
         supply_recommendations: [
           {
             id: "system-11-supply-1",
+            recommendation_key: "system-11-supply-1",
             kind: "supply",
             system_id: 11,
             system: "Main HVAC",
@@ -98,6 +99,7 @@ const portalPayload = {
               { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
               { type: "diy_help", label: "Get DIY help" },
             ],
+            is_ignored: false,
           },
         ],
         linked_records_count: 2,
@@ -213,6 +215,7 @@ const portalPayload = {
           supply_recommendations: [
             {
               id: "system-11-supply-1",
+              recommendation_key: "system-11-supply-1",
               kind: "supply",
               system_id: 11,
               system: "Main HVAC",
@@ -231,6 +234,7 @@ const portalPayload = {
                 { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
                 { type: "diy_help", label: "Get DIY help" },
               ],
+              is_ignored: false,
             },
           ],
           linked_records_count: 2,
@@ -2077,6 +2081,72 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/ignore/") && method === "POST") {
+      const updateRecommendations = (systems = []) => systems.map((system) =>
+        system.id === 11
+          ? {
+              ...system,
+              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
+                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
+                  ? { ...recommendation, is_ignored: true }
+                  : recommendation
+              ),
+            }
+          : system
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          home_systems: updateRecommendations(currentPortalPayload.property_profile.home_systems),
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === currentPortalPayload.property_profile.id
+            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Recommendation ignored.", portal: currentPortalPayload }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/restore/") && method === "POST") {
+      const updateRecommendations = (systems = []) => systems.map((system) =>
+        system.id === 11
+          ? {
+              ...system,
+              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
+                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
+                  ? { ...recommendation, is_ignored: false }
+                  : recommendation
+              ),
+            }
+          : system
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          home_systems: updateRecommendations(currentPortalPayload.property_profile.home_systems),
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === currentPortalPayload.property_profile.id
+            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Recommendation restored.", portal: currentPortalPayload }),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/") && method === "POST") {
       await route.fulfill({
         status: 201,
@@ -2695,14 +2765,28 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-command-summary")).toContainText("4");
   await expect(page.getByTestId("property-command-summary")).toContainText("3.5");
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
+  await expect(page.getByTestId("property-home-systems-list")).toBeVisible();
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
   await expect(page.getByTestId("property-home-systems")).toContainText("Carrier");
-  await expect(page.getByTestId("property-home-systems")).toContainText("2032");
+  await page.getByTestId("property-home-system-search").fill("dryer");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Laundry Dryer");
+  await expect(page.getByTestId("property-home-systems")).not.toContainText("Main HVAC");
+  await page.getByTestId("property-home-system-search").fill("");
+  await page.getByTestId("property-home-system-filter").selectOption("needs_attention");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
+  await expect(page.getByTestId("property-home-systems")).not.toContainText("Laundry Dryer");
+  await page.getByTestId("property-home-system-filter").selectOption("all");
+  await page.getByTestId("property-home-system-view-grid").click();
+  await expect(page.getByTestId("property-home-system-main-hvac")).toBeVisible();
+  await page.getByTestId("property-home-system-view-list").click();
+  await page.getByTestId("property-home-system-view-11").click();
+  await expect(page.getByTestId("property-home-system-details-11")).toContainText("2032");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Maintenance");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Main HVAC service is overdue");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Supplies");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("1 suggested item");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Reminders");
+  await page.getByTestId("property-home-system-view-12").click();
   await expect(page.getByTestId("property-home-system-recommendation-preview-12")).toContainText("No current recommendations");
   await expect(page.getByTestId("property-home-system-accuracy-prompt-11")).toHaveCount(0);
   await expect(page.getByTestId("property-home-system-accuracy-prompt-12")).toContainText("Improve recommendation accuracy");
@@ -2720,14 +2804,25 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
   await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Confidence");
   await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Source");
+  await page.getByTestId("property-home-system-view-11").click();
   await page.getByTestId("property-home-system-view-recommendations-11").click();
-  await expect(page.getByTestId("property-supply-recommendation-card").first()).toHaveClass(/ring-2/);
+  await expect(page.getByTestId("property-supply-recommendation-row").first()).toHaveClass(/ring-2/);
   await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /amazon\.com\/s\?/);
   await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /tag=myhomebro-test-20/);
+  await page.getByTestId("property-supply-view").first().click();
+  await expect(page.getByRole("dialog", { name: "Supply recommendation details" })).toContainText("HVAC filter");
+  await page.getByRole("dialog", { name: "Supply recommendation details" }).getByRole("button", { name: "Close" }).click();
   await page.getByTestId("property-supply-diy-help").first().click();
   await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
   await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("hire a qualified professional");
   await page.getByRole("dialog", { name: "DIY supply guidance" }).getByRole("button", { name: "Close" }).click();
+  await page.getByTestId("property-supply-ignore").first().click();
+  await expect(page.getByTestId("property-suggested-supplies-empty")).toContainText("No active recommendations");
+  await page.getByTestId("property-supply-filter-ignored").click();
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
+  await page.getByTestId("property-supply-restore").first().click();
+  await page.getByTestId("property-supply-filter-active").click();
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Home upkeep");
   await expect(page.getByTestId("property-maintenance-kpi-needs-attention")).toContainText("View details");
@@ -2776,7 +2871,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-home-system-modal").getByLabel("Notes").fill("Annual service is due.");
   await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Save system" }).click();
   await expect(page.getByTestId("property-home-systems")).toContainText("Needs Service");
-  await expect(page.getByTestId("property-home-systems")).toContainText("Annual service is due.");
+  if ((await page.getByTestId("property-home-system-details-11").count()) === 0) {
+    await page.getByTestId("property-home-system-view-11").click();
+  }
+  await expect(page.getByTestId("property-home-system-details-11")).toContainText("Annual service is due.");
   await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
   await page.getByTestId("property-home-system-archive-11").click();
   await expect(page.getByTestId("property-home-systems-empty")).toContainText("No systems recorded yet");
