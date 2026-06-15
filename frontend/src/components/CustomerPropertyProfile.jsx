@@ -178,6 +178,8 @@ const HOME_SYSTEM_TYPE_OPTIONS = [
   ["other", "Other"],
 ];
 
+const HOME_SYSTEM_DOCUMENT_TYPES = ["Equipment Label", "Receipt", "Invoice", "Warranty", "Manual", "Service Record", "Other"];
+
 const HOME_SYSTEM_CONDITION_OPTIONS = [
   ["unknown", "Unknown"],
   ["excellent", "Excellent"],
@@ -664,7 +666,7 @@ function homeSystemStatusClass(key) {
   return "border-slate-600 bg-slate-950 text-slate-300";
 }
 
-function HomeSystemDetails({ system, onEdit, onArchive, onViewRecommendations }) {
+function HomeSystemDetails({ system, onEdit, onArchive, onViewRecommendations, onScan }) {
   const preview = systemRecommendationPreview(system);
   const accuracyPrompt = recommendationAccuracyPrompt(system);
   return (
@@ -740,6 +742,9 @@ function HomeSystemDetails({ system, onEdit, onArchive, onViewRecommendations })
         ) : null}
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" data-testid={`property-home-system-scan-${system.id}`} onClick={() => onScan?.(system)} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20">
+          Scan Document / Label
+        </button>
         <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
           Edit System
         </button>
@@ -753,7 +758,7 @@ function HomeSystemDetails({ system, onEdit, onArchive, onViewRecommendations })
   );
 }
 
-function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewRecommendations }) {
+function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewRecommendations, onScan }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [viewMode, setViewMode] = useState("list");
@@ -787,9 +792,10 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
       </dl>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" data-testid={`property-home-system-view-${system.id}`} onClick={() => setExpandedId((value) => String(value) === String(system.id) ? "" : system.id)} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">View</button>
+        <button type="button" data-testid={`property-home-system-scan-${system.id}`} onClick={() => onScan?.(system)} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20">Scan</button>
         <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">Edit</button>
       </div>
-      {String(expandedId) === String(system.id) ? <div className="mt-4"><HomeSystemDetails system={system} onEdit={onEdit} onArchive={onArchive} onViewRecommendations={onViewRecommendations} /></div> : null}
+      {String(expandedId) === String(system.id) ? <div className="mt-4"><HomeSystemDetails system={system} onEdit={onEdit} onArchive={onArchive} onViewRecommendations={onViewRecommendations} onScan={onScan} /></div> : null}
     </article>
   );
   return (
@@ -871,12 +877,13 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
                         <div className="text-sm text-slate-200">{system.conditionLabel || "Unknown"}</div>
                         <div className="flex flex-wrap gap-2">
                           <button type="button" data-testid={`property-home-system-view-${system.id}`} onClick={() => setExpandedId((value) => String(value) === String(system.id) ? "" : system.id)} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400">View</button>
+                          <button type="button" data-testid={`property-home-system-scan-${system.id}`} onClick={() => onScan?.(system)} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/20">Scan</button>
                           <button type="button" data-testid={`property-home-system-edit-${system.id}`} onClick={() => onEdit?.(system)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">Edit</button>
                         </div>
                       </div>
                       {String(expandedId) === String(system.id) ? (
                         <div className="px-4 pb-4">
-                          <HomeSystemDetails system={system} onEdit={onEdit} onArchive={onArchive} onViewRecommendations={onViewRecommendations} />
+                          <HomeSystemDetails system={system} onEdit={onEdit} onArchive={onArchive} onViewRecommendations={onViewRecommendations} onScan={onScan} />
                         </div>
                       ) : null}
                     </div>
@@ -1129,6 +1136,211 @@ function systemToForm(system, propertyId) {
     notes: system.notes || "",
     linked_document_ids: (system.linked_documents || system.linkedDocuments || []).map((document) => Number(document.record_id || String(document.id || "").replace("property-document-", ""))).filter(Boolean),
   };
+}
+
+function ExtractionReview({ extraction = {}, system = {}, selected = {}, onToggle }) {
+  const suggestions = extraction.suggested_fields || {};
+  const rows = Object.entries(suggestions);
+  if (!rows.length) {
+    return (
+      <div data-testid="home-system-extraction-empty" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-300">
+        No structured fields were found yet. The file is still saved to this Home System.
+      </div>
+    );
+  }
+  const currentValue = (field) => {
+    if (field === "manufacturer") return system.manufacturer;
+    if (field === "model_number") return system.model;
+    if (field === "serial_number") return system.serialNumber;
+    if (field === "install_date") return system.installDate;
+    if (field === "warranty_expiration_date") return system.warrantyExpiration;
+    if (field === "condition") return system.conditionLabel;
+    return "";
+  };
+  return (
+    <div data-testid="home-system-extraction-review" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+      <h4 className="text-sm font-bold text-white">Document Analysis Results</h4>
+      <p className="mt-1 text-xs leading-5 text-slate-400">Review suggestions before applying them. Low confidence suggestions are unchecked by default.</p>
+      <div className="mt-3 space-y-2">
+        {rows.map(([field, suggestion]) => {
+          const isLow = suggestion.confidence === "low";
+          const checked = Boolean(selected[field] ?? (!isLow && suggestion.apply_default !== false));
+          return (
+            <label key={field} data-testid={`home-system-extraction-field-${field}`} className="grid gap-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3 text-sm md:grid-cols-[90px_1fr_1fr_90px] md:items-center">
+              <span className="flex items-center gap-2 font-bold capitalize text-slate-100">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(event) => onToggle?.(field, event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-amber-300"
+                />
+                {field.replaceAll("_", " ")}
+              </span>
+              <span className="text-slate-400">Current: {currentValue(field) || "Not recorded"}</span>
+              <span className="font-semibold text-white">Suggested: {suggestion.value || "Not found"}</span>
+              <span className={`rounded-full border px-2 py-1 text-center text-xs font-bold ${suggestion.confidence === "high" ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-100" : suggestion.confidence === "medium" ? "border-amber-300/40 bg-amber-300/10 text-amber-100" : "border-slate-600 bg-slate-950 text-slate-300"}`}>
+                {suggestion.confidence || "low"}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HomeSystemScanModal({
+  system,
+  propertyId,
+  saving,
+  onClose,
+  onUpload,
+  onCreateSession,
+  onApplyExtraction,
+}) {
+  const [documentType, setDocumentType] = useState("Equipment Label");
+  const [file, setFile] = useState(null);
+  const [result, setResult] = useState(null);
+  const [session, setSession] = useState(null);
+  const [error, setError] = useState("");
+  const [selectedFields, setSelectedFields] = useState({});
+
+  useEffect(() => {
+    const suggestions = result?.extraction?.suggested_fields || {};
+    const next = {};
+    for (const [field, suggestion] of Object.entries(suggestions)) {
+      next[field] = suggestion.confidence !== "low" && suggestion.apply_default !== false;
+    }
+    setSelectedFields(next);
+  }, [result]);
+
+  if (!system) return null;
+  const upload = async () => {
+    if (!file) {
+      setError("Choose a photo or file first.");
+      return;
+    }
+    setError("");
+    const data = await onUpload?.({
+      file,
+      title: file.name,
+      documentType,
+      propertyProfileId: propertyId,
+      homeSystemId: system.id,
+      uploadSource: "portal_desktop",
+    });
+    if (data) setResult(data);
+  };
+  const createSession = async () => {
+    setError("");
+    const data = await onCreateSession?.({
+      property_profile_id: propertyId,
+      home_system_id: system.id,
+      document_type: documentType,
+    });
+    if (data) setSession(data);
+  };
+  const apply = async () => {
+    const suggestions = result?.extraction?.suggested_fields || {};
+    const selected = {};
+    for (const [field, checked] of Object.entries(selectedFields)) {
+      if (checked && suggestions[field]) selected[field] = suggestions[field];
+    }
+    if (!Object.keys(selected).length) {
+      setError("Select at least one suggestion to apply.");
+      return;
+    }
+    const ok = await onApplyExtraction?.(result?.document?.record_id, selected);
+    if (ok !== false) onClose?.();
+  };
+  return (
+    <div data-testid="home-system-scan-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-[0.18em] text-amber-200">Home System Records</div>
+            <h3 className="mt-1 text-xl font-black text-white">Scan or upload document</h3>
+            <p className="mt-1 text-sm text-slate-300">Saving to: {system.name}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-bold text-slate-200">Close</button>
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+            <h4 className="text-sm font-bold text-white">Upload from this device</h4>
+            <label className="mt-3 block text-sm font-semibold text-slate-200">
+              Document type
+              <select
+                data-testid="home-system-scan-document-type"
+                value={documentType}
+                onChange={(event) => setDocumentType(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+              >
+                {HOME_SYSTEM_DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </label>
+            <label className="mt-3 block text-sm font-semibold text-slate-200">
+              Photo or file
+              <input
+                data-testid="home-system-scan-file"
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200"
+              />
+            </label>
+            <button
+              type="button"
+              data-testid="home-system-scan-upload"
+              onClick={upload}
+              disabled={saving}
+              className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-200 disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Upload and analyze"}
+            </button>
+          </section>
+          <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+            <h4 className="text-sm font-bold text-white">Scan with phone</h4>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Open this on your phone to take a photo or upload a file directly to this Home System.</p>
+            <button
+              type="button"
+              data-testid="home-system-scan-create-qr"
+              onClick={createSession}
+              disabled={saving}
+              className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-4 py-2 text-sm font-bold text-sky-100 hover:bg-sky-400/20 disabled:opacity-60"
+            >
+              Show QR code for phone scan
+            </button>
+            {session ? (
+              <div data-testid="home-system-scan-qr-panel" className="mt-4 space-y-3">
+                {session.qr_code_data_url ? <img src={session.qr_code_data_url} alt="QR code for mobile upload" className="mx-auto h-44 w-44 rounded-2xl bg-white p-2" /> : null}
+                <div className="rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300">
+                  Expires {session.expires_at ? new Date(session.expires_at).toLocaleString() : "soon"}
+                </div>
+                <input data-testid="home-system-scan-copy-link" readOnly value={session.upload_url || ""} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200" />
+              </div>
+            ) : null}
+          </section>
+        </div>
+        {error ? <div data-testid="home-system-scan-error" className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</div> : null}
+        {result ? (
+          <div className="mt-5 space-y-4">
+            <div data-testid="home-system-scan-saved" className="rounded-xl border border-emerald-300/35 bg-emerald-400/10 p-3 text-sm font-semibold text-emerald-100">File saved.</div>
+            <ExtractionReview
+              extraction={result.extraction}
+              system={system}
+              selected={selectedFields}
+              onToggle={(field, checked) => setSelectedFields((prev) => ({ ...prev, [field]: checked }))}
+            />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" data-testid="home-system-extraction-apply" onClick={apply} disabled={saving} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-200 disabled:opacity-60">Apply selected</button>
+              {result.document?.url ? <a href={result.document.url} target="_blank" rel="noreferrer" className="rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-bold text-slate-200">View uploaded file</a> : null}
+              <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 bg-slate-950 px-4 py-2 text-sm font-bold text-slate-200">Ignore suggestions</button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function HomeSystemModal({ mode, form, documents = [], saving, onChange, onClose, onSubmit }) {
@@ -1462,7 +1674,7 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation }) {
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation, onScanSystem }) {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [highlightedRecommendationSystemId, setHighlightedRecommendationSystemId] = useState("");
   const maintenance = maintenanceRows(maintenanceWorkOrders);
@@ -1488,6 +1700,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         onEdit={onEditSystem}
         onArchive={onArchiveSystem}
         onViewRecommendations={handleViewRecommendations}
+        onScan={onScanSystem}
       />
 
       <SuggestedSuppliesSection
@@ -1598,6 +1811,9 @@ export default function CustomerPropertyProfile({
   onArchiveSystem,
   onMarkSystemServiced,
   onCreateSystemServiceRequest,
+  onUploadSystemDocument,
+  onCreateSystemUploadSession,
+  onApplySystemDocumentExtraction,
   onCreateRequestDraft,
   onIgnoreSystemRecommendation,
   onRestoreSystemRecommendation,
@@ -1614,6 +1830,7 @@ export default function CustomerPropertyProfile({
   const [addingProperty, setAddingProperty] = useState(false);
   const [systemModalMode, setSystemModalMode] = useState("");
   const [editingSystemId, setEditingSystemId] = useState(null);
+  const [scanSystem, setScanSystem] = useState(null);
   const [systemForm, setSystemForm] = useState(emptySystemForm(selectedProfile?.id));
   const [serviceSystem, setServiceSystem] = useState(null);
   const startAddProperty = () => {
@@ -1737,6 +1954,17 @@ export default function CustomerPropertyProfile({
         onRestoreRecommendation={async (recommendation) => {
           await onRestoreSystemRecommendation?.(recommendation.systemRecord?.id || recommendation.system_id, recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id);
         }}
+        onScanSystem={(system) => setScanSystem(system)}
+      />
+
+      <HomeSystemScanModal
+        system={scanSystem}
+        propertyId={selectedProfile?.id}
+        saving={systemSaving}
+        onClose={() => setScanSystem(null)}
+        onUpload={onUploadSystemDocument}
+        onCreateSession={onCreateSystemUploadSession}
+        onApplyExtraction={onApplySystemDocumentExtraction}
       />
 
       <HomeSystemModal

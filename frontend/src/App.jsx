@@ -16,6 +16,7 @@ import ResetPassword from "./components/ResetPassword";
 
 import AgreementReview from "./pages/AgreementReview.jsx";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage.jsx";
+import CustomerPortalUploadSessionPage from "./pages/CustomerPortalUploadSessionPage.jsx";
 import StripeOnboarding from "./components/Stripe/StripeOnboarding.jsx";
 
 import PublicSign from "./components/PublicSign";
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/customer-portal/:token" element={<LegacyPortalTokenRedirect />} />
           <Route path="/my-records" element={<Navigate to="/portal" replace />} />
           <Route path="/my-records/:token" element={<LegacyPortalTokenRedirect />} />
+          <Route path="/portal/upload-session/:sessionToken" element={<CustomerPortalUploadSessionPage />} />
 
           {/* 🔐 Public password reset */}
           <Route path="/forgot-password" element={<ForgotPassword />} />

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
+import secrets
+from io import BytesIO
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -15,6 +19,7 @@ from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -42,9 +47,11 @@ from projects.models import (
 from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import (
     CustomerNotificationCleanupPreference,
+    CustomerPortalUploadSession,
     CustomerRequest,
     NotificationRule,
     PropertyDocument,
+    PropertyDocumentExtraction,
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
     PropertyPhoto,
@@ -86,6 +93,7 @@ from projects.services.contractor_opportunities import create_or_update_opportun
 from projects.services.property_intelligence import build_property_intelligence
 from projects.services.home_system_reminders import build_home_system_reminder
 from projects.services.customer_lifecycle import sync_customer_request_agreement_links
+from projects.services.home_system_document_extraction import extract_home_system_document
 from projects.services.customer_portal_supplies import (
     build_home_system_supply_recommendations,
     build_project_material_recommendations,
@@ -98,6 +106,21 @@ from projects.services.ai.project_understanding import understand_project_reques
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
+HOME_SYSTEM_SCAN_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
+HOME_SYSTEM_SCAN_DOCUMENT_TYPES = {
+    "Equipment Label",
+    "Receipt",
+    "Invoice",
+    "Warranty",
+    "Manual",
+    "Service Record",
+    "Other",
+}
+HOME_SYSTEM_SCAN_UPLOAD_SOURCES = {
+    PropertyDocument.UPLOAD_SOURCE_PORTAL_DESKTOP,
+    PropertyDocument.UPLOAD_SOURCE_QR_MOBILE_WEB,
+    PropertyDocument.UPLOAD_SOURCE_MOBILE_APP,
+}
 User = get_user_model()
 
 
@@ -391,6 +414,47 @@ def _property_profiles_for_email(email: str):
     return PropertyProfile.objects.filter(customer_email__iexact=normalized_email).order_by("-is_primary", "-updated_at", "-id")
 
 
+def _serialize_document_extraction(document: PropertyDocument) -> dict:
+    try:
+        extraction = getattr(document, "extraction", None)
+    except PropertyDocumentExtraction.DoesNotExist:
+        extraction = None
+    if not extraction:
+        return {
+            "status": "",
+            "document_classification": "",
+            "suggested_fields": {},
+            "reviewed_at": "",
+            "applied_at": "",
+            "error_message": "",
+        }
+    return {
+        "id": extraction.id,
+        "status": _safe_text(extraction.extraction_status),
+        "document_classification": _safe_text(extraction.document_classification),
+        "suggested_fields": extraction.suggested_fields or {},
+        "reviewed_at": _safe_dt(extraction.reviewed_at),
+        "applied_at": _safe_dt(extraction.applied_at),
+        "error_message": _safe_text(extraction.error_message),
+    }
+
+
+def _property_document_payload(row: PropertyDocument, *, include_record_id: bool = False) -> dict:
+    payload = {
+        "id": f"property-document-{row.id}",
+        "title": _safe_text(row.title) or "Property document",
+        "type_label": _safe_text(row.document_type) or "Property Document",
+        "filename": _safe_text(getattr(getattr(row, "file", None), "name", "")).rsplit("/", 1)[-1],
+        "date": _safe_dt(row.uploaded_at),
+        "url": _safe_text(getattr(getattr(row, "file", None), "url", "")),
+        "upload_source": _safe_text(getattr(row, "upload_source", "")),
+        "extraction": _serialize_document_extraction(row),
+    }
+    if include_record_id:
+        payload["record_id"] = row.id
+    return payload
+
+
 def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
     address = ", ".join(
         part
@@ -403,17 +467,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         ]
         if part
     )
-    documents = [
-        {
-            "id": f"property-document-{row.id}",
-            "title": _safe_text(row.title) or "Property document",
-            "type_label": _safe_text(row.document_type) or "Property Document",
-            "filename": _safe_text(getattr(getattr(row, "file", None), "name", "")).rsplit("/", 1)[-1],
-            "date": _safe_dt(row.uploaded_at),
-            "url": _safe_text(getattr(getattr(row, "file", None), "url", "")),
-        }
-        for row in PropertyDocument.objects.filter(property_profile=profile).order_by("-uploaded_at", "-id")
-    ]
+    documents = [_property_document_payload(row) for row in PropertyDocument.objects.filter(property_profile=profile).order_by("-uploaded_at", "-id")]
     photos = [
         {
             "id": f"property-photo-{row.id}",
@@ -464,18 +518,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
 def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
     reminder = build_home_system_reminder(system)
     supply_recommendations = _home_system_supply_recommendation_payloads(system)
-    linked_documents = [
-        {
-            "id": f"property-document-{document.id}",
-            "record_id": document.id,
-            "title": _safe_text(document.title) or "Property document",
-            "type_label": _safe_text(document.document_type) or "Property Document",
-            "filename": _safe_text(getattr(getattr(document, "file", None), "name", "")).rsplit("/", 1)[-1],
-            "date": _safe_dt(document.uploaded_at),
-            "url": _safe_text(getattr(getattr(document, "file", None), "url", "")),
-        }
-        for document in system.linked_documents.all()
-    ]
+    linked_documents = [_property_document_payload(document, include_record_id=True) for document in system.linked_documents.all()]
     linked_agreement = getattr(system, "linked_agreement", None)
     linked_request = getattr(system, "linked_customer_request", None)
     linked_projects = []
@@ -4951,6 +4994,150 @@ class CustomerPortalHomeSystemRecommendationPreferenceView(APIView):
         )
 
 
+class CustomerPortalUploadSessionSerializer(serializers.Serializer):
+    property_profile_id = serializers.IntegerField(required=False)
+    home_system_id = serializers.IntegerField(required=False, allow_null=True)
+    document_type = serializers.ChoiceField(choices=sorted(HOME_SYSTEM_SCAN_DOCUMENT_TYPES), required=False, allow_blank=True)
+
+
+class CustomerPortalScanUploadSerializer(serializers.Serializer):
+    property_profile_id = serializers.IntegerField(required=False)
+    home_system_id = serializers.IntegerField(required=False, allow_null=True)
+    document_type = serializers.ChoiceField(choices=sorted(HOME_SYSTEM_SCAN_DOCUMENT_TYPES), required=False, allow_blank=True)
+    upload_source = serializers.ChoiceField(choices=sorted(HOME_SYSTEM_SCAN_UPLOAD_SOURCES), required=False)
+    title = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
+
+class CustomerPortalApplyExtractionSerializer(serializers.Serializer):
+    selected_fields = serializers.DictField(child=serializers.JSONField(), allow_empty=False)
+
+
+def _property_profile_for_email_or_404(email: str, property_id=None) -> PropertyProfile:
+    queryset = PropertyProfile.objects.filter(customer_email__iexact=email.lower().strip())
+    if property_id:
+        return get_object_or_404(queryset, pk=property_id)
+    profile = queryset.order_by("-is_primary", "-updated_at", "-id").first()
+    if profile:
+        return profile
+    return _get_or_create_property_profile(email)
+
+
+def _home_system_for_profile_or_404(profile: PropertyProfile, system_id) -> PropertyHomeSystem | None:
+    if not system_id:
+        return None
+    return get_object_or_404(PropertyHomeSystem.objects.filter(property_profile=profile, is_archived=False), pk=system_id)
+
+
+def _validate_scan_file(uploaded_file) -> str:
+    filename = _safe_text(getattr(uploaded_file, "name", "")).lower()
+    extension = ""
+    if "." in filename:
+        extension = f".{filename.rsplit('.', 1)[-1]}"
+    content_type = _safe_text(getattr(uploaded_file, "content_type", "")).lower()
+    if extension not in HOME_SYSTEM_SCAN_ALLOWED_EXTENSIONS:
+        raise serializers.ValidationError("Unsupported file type. Upload JPG, PNG, or PDF.")
+    if content_type and not (
+        content_type.startswith("image/")
+        or content_type == "application/pdf"
+        or content_type == "application/octet-stream"
+    ):
+        raise serializers.ValidationError("Unsupported file type. Upload JPG, PNG, or PDF.")
+    return extension
+
+
+def _frontend_portal_url(path: str) -> str:
+    base = (
+        getattr(settings, "FRONTEND_URL", "")
+        or getattr(settings, "PUBLIC_SITE_URL", "")
+        or "https://www.myhomebro.com"
+    ).rstrip("/")
+    return f"{base}{path}"
+
+
+def _qr_data_url(value: str) -> str:
+    try:
+        import qrcode
+
+        image = qrcode.make(value)
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+    except Exception:
+        escaped = (
+            value.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+        svg = (
+            "<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'>"
+            "<rect width='240' height='240' fill='white'/>"
+            "<rect x='18' y='18' width='54' height='54' fill='#0f172a'/>"
+            "<rect x='168' y='18' width='54' height='54' fill='#0f172a'/>"
+            "<rect x='18' y='168' width='54' height='54' fill='#0f172a'/>"
+            "<path d='M96 32h18v18H96zm36 0h18v18h-18zm-18 36h18v18h-18zm54 36h18v18h-18zm-72 18h18v18H96zm36 36h18v18h-18zm54 18h18v18h-18z' fill='#0f172a'/>"
+            "<text x='120' y='112' text-anchor='middle' font-size='12' font-family='Arial' fill='#0f172a'>Open link below</text>"
+            f"<title>{escaped}</title>"
+            "</svg>"
+        )
+        return f"data:image/svg+xml;base64,{base64.b64encode(svg.encode('utf-8')).decode('ascii')}"
+
+
+def _upload_session_payload(session: CustomerPortalUploadSession) -> dict:
+    path = f"/portal/upload-session/{session.session_token}"
+    url = _frontend_portal_url(path)
+    return {
+        "session_token": session.session_token,
+        "upload_url": url,
+        "frontend_path": path,
+        "expires_at": _safe_dt(session.expires_at),
+        "document_type": _safe_text(session.document_type),
+        "property_profile_id": session.property_profile_id,
+        "home_system_id": session.home_system_id,
+        "home_system_name": session.home_system.display_name if session.home_system_id else "",
+        "qr_code_data_url": _qr_data_url(url),
+    }
+
+
+def _serialize_scan_upload(document: PropertyDocument, extraction: PropertyDocumentExtraction) -> dict:
+    return {
+        "detail": "File saved. Review suggested fields before applying anything to your Home System.",
+        "document": _property_document_payload(document, include_record_id=True),
+        "extraction": _serialize_document_extraction(document),
+        "home_system_id": getattr(extraction, "home_system_id", None),
+    }
+
+
+def _save_scanned_property_document(
+    *,
+    email: str,
+    uploaded_file,
+    property_profile: PropertyProfile,
+    home_system: PropertyHomeSystem | None,
+    document_type: str,
+    upload_source: str,
+    title: str = "",
+) -> tuple[PropertyDocument, PropertyDocumentExtraction]:
+    _validate_scan_file(uploaded_file)
+    document_type = _safe_text(document_type) or "Equipment Label"
+    if document_type not in HOME_SYSTEM_SCAN_DOCUMENT_TYPES:
+        raise serializers.ValidationError("Unsupported document type.")
+    if upload_source not in HOME_SYSTEM_SCAN_UPLOAD_SOURCES:
+        raise serializers.ValidationError("Unsupported upload source.")
+    document = PropertyDocument.objects.create(
+        property_profile=property_profile,
+        title=_safe_text(title) or _safe_text(getattr(uploaded_file, "name", "")) or "Home system document",
+        document_type=document_type,
+        upload_source=upload_source,
+        file=uploaded_file,
+    )
+    if home_system is not None:
+        home_system.linked_documents.add(document)
+    extraction = extract_home_system_document(document, home_system=home_system)
+    return document, extraction
+
+
 class CustomerPortalPropertyUploadView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [MultiPartParser, FormParser]
@@ -4973,7 +5160,9 @@ class CustomerPortalPropertyUploadView(APIView):
         if uploaded_file is None:
             return Response({"detail": "Please attach a file."}, status=status.HTTP_400_BAD_REQUEST)
 
-        profile = _get_or_create_property_profile(email)
+        profile_id = request.data.get("property_profile_id") or request.data.get("property_id")
+        profile = _property_profile_for_email_or_404(email, profile_id)
+        home_system = _home_system_for_profile_or_404(profile, request.data.get("home_system_id"))
         title = _safe_text(request.data.get("title")) or _safe_text(getattr(uploaded_file, "name", "")) or "Property file"
         if upload_kind == "photos":
             PropertyPhoto.objects.create(
@@ -4982,14 +5171,189 @@ class CustomerPortalPropertyUploadView(APIView):
                 photo=uploaded_file,
             )
         else:
-            PropertyDocument.objects.create(
-                property_profile=profile,
-                title=title,
-                document_type=_safe_text(request.data.get("document_type")) or "Property Document",
-                file=uploaded_file,
+            upload_source = _safe_text(request.data.get("upload_source")) or PropertyDocument.UPLOAD_SOURCE_PORTAL_DESKTOP
+            scan_upload = bool(
+                home_system
+                or request.data.get("run_extraction")
+                or upload_source
+                in {
+                    PropertyDocument.UPLOAD_SOURCE_QR_MOBILE_WEB,
+                    PropertyDocument.UPLOAD_SOURCE_MOBILE_APP,
+                }
             )
+            if scan_upload:
+                try:
+                    document, extraction = _save_scanned_property_document(
+                        email=email,
+                        uploaded_file=uploaded_file,
+                        property_profile=profile,
+                        home_system=home_system,
+                        document_type=_safe_text(request.data.get("document_type")) or "Equipment Label",
+                        upload_source=upload_source,
+                        title=title,
+                    )
+                except serializers.ValidationError as exc:
+                    return Response({"detail": exc.detail[0] if isinstance(exc.detail, list) else exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+                payload = _serialize_scan_upload(document, extraction)
+                payload["portal"] = _build_customer_portal_payload(email, request=request)
+                return Response(payload, status=status.HTTP_201_CREATED)
+            else:
+                PropertyDocument.objects.create(
+                    property_profile=profile,
+                    title=title,
+                    document_type=_safe_text(request.data.get("document_type")) or "Property Document",
+                    upload_source=upload_source,
+                    file=uploaded_file,
+                )
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalUploadSessionView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalUploadSessionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profile = _property_profile_for_email_or_404(email, serializer.validated_data.get("property_profile_id"))
+        home_system = _home_system_for_profile_or_404(profile, serializer.validated_data.get("home_system_id"))
+        session = CustomerPortalUploadSession.objects.create(
+            session_token=secrets.token_urlsafe(32),
+            customer_email=email.lower().strip(),
+            property_profile=profile,
+            home_system=home_system,
+            document_type=serializer.validated_data.get("document_type") or "Equipment Label",
+            upload_source=PropertyDocument.UPLOAD_SOURCE_QR_MOBILE_WEB,
+            expires_at=timezone.now() + timedelta(minutes=30),
+        )
+        return Response(_upload_session_payload(session), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalUploadSessionDetailView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def _session_or_error(self, session_token: str):
+        session = CustomerPortalUploadSession.objects.select_related("property_profile", "home_system").filter(
+            session_token=_safe_text(session_token)
+        ).first()
+        if session is None:
+            return None, Response({"detail": "Upload session not found."}, status=status.HTTP_404_NOT_FOUND)
+        if session.is_expired:
+            return None, Response({"detail": "This upload session has expired."}, status=status.HTTP_403_FORBIDDEN)
+        return session, None
+
+    def get(self, request, session_token: str):
+        session, error = self._session_or_error(session_token)
+        if error:
+            return error
+        return Response(_upload_session_payload(session), status=status.HTTP_200_OK)
+
+    def post(self, request, session_token: str):
+        session, error = self._session_or_error(session_token)
+        if error:
+            return error
+        uploaded_file = request.FILES.get("file")
+        if uploaded_file is None:
+            files = list(request.FILES.values())
+            uploaded_file = files[0] if files else None
+        if uploaded_file is None:
+            return Response({"detail": "Please attach a file."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            document, extraction = _save_scanned_property_document(
+                email=session.customer_email,
+                uploaded_file=uploaded_file,
+                property_profile=session.property_profile,
+                home_system=session.home_system,
+                document_type=_safe_text(request.data.get("document_type")) or session.document_type or "Equipment Label",
+                upload_source=session.upload_source or PropertyDocument.UPLOAD_SOURCE_QR_MOBILE_WEB,
+                title=_safe_text(request.data.get("title")),
+            )
+        except serializers.ValidationError as exc:
+            return Response({"detail": exc.detail[0] if isinstance(exc.detail, list) else exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        session.mark_used()
+        return Response(_serialize_scan_upload(document, extraction), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalApplyDocumentExtractionView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, document_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalApplyExtractionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        document = get_object_or_404(
+            PropertyDocument.objects.select_related("property_profile").filter(
+                property_profile__customer_email__iexact=email.lower().strip()
+            ),
+            pk=document_id,
+        )
+        try:
+            extraction = document.extraction
+        except PropertyDocumentExtraction.DoesNotExist:
+            return Response({"detail": "No extraction results are available for this document."}, status=status.HTTP_404_NOT_FOUND)
+        home_system = extraction.home_system or document.home_systems.filter(property_profile=document.property_profile, is_archived=False).first()
+        if home_system is None:
+            return Response({"detail": "This document is not linked to a Home System."}, status=status.HTTP_400_BAD_REQUEST)
+
+        allowed_fields = {
+            "manufacturer": "manufacturer",
+            "model_number": "model_number",
+            "serial_number": "serial_number",
+            "install_date": "install_date",
+            "warranty_expiration_date": "warranty_expiration_date",
+            "condition": "condition",
+        }
+        selected = serializer.validated_data["selected_fields"] or {}
+        suggestions = extraction.suggested_fields or {}
+        updated_fields = []
+        for source_field, model_field in allowed_fields.items():
+            if source_field not in selected:
+                continue
+            suggestion = suggestions.get(source_field)
+            value = selected.get(source_field)
+            if isinstance(value, dict):
+                value = value.get("value")
+            if not value and isinstance(suggestion, dict):
+                value = suggestion.get("value")
+            value = _safe_text(value)
+            if not value:
+                continue
+            if model_field in {"install_date", "warranty_expiration_date"}:
+                parsed = parse_date(value)
+                if parsed is None:
+                    continue
+                value = parsed
+            setattr(home_system, model_field, value)
+            updated_fields.append(model_field)
+        if "notes" in selected:
+            note_value = selected.get("notes")
+            if isinstance(note_value, dict):
+                note_value = note_value.get("value")
+            note_value = _safe_text(note_value)
+            if note_value:
+                existing = _safe_text(home_system.notes)
+                home_system.notes = f"{existing}\n\n{note_value}".strip() if existing else note_value
+                updated_fields.append("notes")
+        if updated_fields:
+            home_system.save(update_fields=sorted(set(updated_fields + ["updated_at"])))
+        extraction.reviewed_at = timezone.now()
+        extraction.applied_at = timezone.now() if updated_fields else None
+        extraction.save(update_fields=["reviewed_at", "applied_at", "updated_at"])
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 
 class CustomerProjectDashboardView(APIView):

@@ -70,6 +70,15 @@ def property_document_upload_path(instance, filename):
 
 
 class PropertyDocument(models.Model):
+    UPLOAD_SOURCE_PORTAL_DESKTOP = "portal_desktop"
+    UPLOAD_SOURCE_QR_MOBILE_WEB = "qr_mobile_web"
+    UPLOAD_SOURCE_MOBILE_APP = "mobile_app"
+    UPLOAD_SOURCE_CHOICES = [
+        (UPLOAD_SOURCE_PORTAL_DESKTOP, "Portal Desktop"),
+        (UPLOAD_SOURCE_QR_MOBILE_WEB, "QR Mobile Web"),
+        (UPLOAD_SOURCE_MOBILE_APP, "Mobile App"),
+    ]
+
     property_profile = models.ForeignKey(
         PropertyProfile,
         on_delete=models.CASCADE,
@@ -77,6 +86,7 @@ class PropertyDocument(models.Model):
     )
     title = models.CharField(max_length=200)
     document_type = models.CharField(max_length=64, blank=True, default="")
+    upload_source = models.CharField(max_length=32, choices=UPLOAD_SOURCE_CHOICES, blank=True, default="")
     file = models.FileField(upload_to=property_document_upload_path)
     uploaded_at = models.DateTimeField(default=timezone.now, db_index=True)
 
@@ -85,6 +95,99 @@ class PropertyDocument(models.Model):
 
     def __str__(self):
         return f"{self.property_profile_id} - {self.title}"
+
+
+class CustomerPortalUploadSession(models.Model):
+    PURPOSE_HOME_SYSTEM_DOCUMENT_SCAN = "home_system_document_scan"
+    PURPOSE_CHOICES = [
+        (PURPOSE_HOME_SYSTEM_DOCUMENT_SCAN, "Home System Document Scan"),
+    ]
+
+    session_token = models.CharField(max_length=96, unique=True, db_index=True)
+    customer_email = models.EmailField(db_index=True)
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="upload_sessions",
+    )
+    home_system = models.ForeignKey(
+        "projects.PropertyHomeSystem",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="upload_sessions",
+    )
+    purpose = models.CharField(max_length=48, choices=PURPOSE_CHOICES, default=PURPOSE_HOME_SYSTEM_DOCUMENT_SCAN)
+    document_type = models.CharField(max_length=64, blank=True, default="")
+    upload_source = models.CharField(
+        max_length=32,
+        choices=PropertyDocument.UPLOAD_SOURCE_CHOICES,
+        default=PropertyDocument.UPLOAD_SOURCE_QR_MOBILE_WEB,
+    )
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["customer_email", "expires_at"]),
+            models.Index(fields=["property_profile", "home_system"]),
+        ]
+
+    @property
+    def is_expired(self):
+        return self.expires_at <= timezone.now()
+
+    def mark_used(self):
+        self.used_at = timezone.now()
+        self.save(update_fields=["used_at"])
+
+    def __str__(self):
+        return f"{self.customer_email}: {self.purpose}"
+
+
+class PropertyDocumentExtraction(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    property_document = models.OneToOneField(
+        PropertyDocument,
+        on_delete=models.CASCADE,
+        related_name="extraction",
+    )
+    home_system = models.ForeignKey(
+        "projects.PropertyHomeSystem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="document_extractions",
+    )
+    extraction_status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    document_classification = models.CharField(max_length=80, blank=True, default="")
+    extracted_text = models.TextField(blank=True, default="")
+    suggested_fields = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["home_system", "extraction_status"]),
+            models.Index(fields=["extraction_status", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Extraction for document #{self.property_document_id}: {self.extraction_status}"
 
 
 def property_photo_upload_path(instance, filename):

@@ -2724,9 +2724,11 @@ from .models_expense_request import ExpenseRequest  # noqa: E402,F401
 from .models_templates import ProjectTemplate, ProjectTemplateMilestone, SeedBenchmarkProfile  # noqa: E402,F401
 from .models_customer_portal import (  # noqa: E402,F401
     CustomerRequest,
+    CustomerPortalUploadSession,
     NotificationLog,
     NotificationRule,
     PropertyDocument,
+    PropertyDocumentExtraction,
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
     PropertyIntelligenceSnapshot,

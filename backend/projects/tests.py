@@ -81,8 +81,10 @@ from projects.models import (
     NotificationLog,
     NotificationRule,
     Project,
+    CustomerPortalUploadSession,
     PropertyProfile,
     PropertyDocument,
+    PropertyDocumentExtraction,
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
     PropertyIntelligenceSnapshot,
@@ -21821,6 +21823,191 @@ class CustomerPortalAccessTests(TestCase):
         other_titles = [row["title"] for row in other_response.data["documents"]]
         self.assertNotIn("Water heater warranty", other_titles)
         self.assertNotIn("Roof condition", other_titles)
+
+    def test_customer_portal_home_system_desktop_scan_saves_document_and_extraction(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Downstairs HVAC",
+        )
+
+        with self.settings(MEDIA_ROOT=tempfile.mkdtemp()):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/property/documents/",
+                {
+                    "title": "Carrier label model ABC123 serial SN9876",
+                    "document_type": "Equipment Label",
+                    "upload_source": "portal_desktop",
+                    "property_profile_id": profile.id,
+                    "home_system_id": system.id,
+                    "file": SimpleUploadedFile("carrier-model-ABC123-serial-SN9876.jpg", b"fake-image", content_type="image/jpeg"),
+                },
+                format="multipart",
+                secure=True,
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        document = PropertyDocument.objects.get(title="Carrier label model ABC123 serial SN9876")
+        self.assertEqual(document.property_profile, profile)
+        self.assertEqual(document.upload_source, "portal_desktop")
+        self.assertIn(document, system.linked_documents.all())
+        extraction = PropertyDocumentExtraction.objects.get(property_document=document)
+        self.assertEqual(extraction.extraction_status, PropertyDocumentExtraction.STATUS_COMPLETED)
+        self.assertEqual(extraction.home_system, system)
+        self.assertIn("manufacturer", extraction.suggested_fields)
+        self.assertEqual(response.data["document"]["record_id"], document.id)
+        self.assertEqual(response.data["extraction"]["status"], PropertyDocumentExtraction.STATUS_COMPLETED)
+
+    def test_customer_portal_home_system_qr_upload_session_is_scoped_and_expires(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        other_profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.other_homeowner.email,
+            defaults={"homeowner": self.other_homeowner, "display_name": "Other Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_WATER_HEATER,
+            custom_name="Water Heater",
+        )
+        other_system = PropertyHomeSystem.objects.create(
+            property_profile=other_profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Other HVAC",
+        )
+
+        wrong_owner = self.client.post(
+            f"/api/projects/customer-portal/{other_token}/property/upload-sessions/",
+            {"property_profile_id": profile.id, "home_system_id": system.id},
+            content_type="application/json",
+            secure=True,
+        )
+        self.assertEqual(wrong_owner.status_code, 404)
+
+        wrong_system = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/upload-sessions/",
+            {"property_profile_id": profile.id, "home_system_id": other_system.id},
+            content_type="application/json",
+            secure=True,
+        )
+        self.assertEqual(wrong_system.status_code, 404)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/upload-sessions/",
+            {"property_profile_id": profile.id, "home_system_id": system.id, "document_type": "Warranty"},
+            content_type="application/json",
+            secure=True,
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIn("/portal/upload-session/", response.data["upload_url"])
+        self.assertIn("data:image/", response.data["qr_code_data_url"])
+        session = CustomerPortalUploadSession.objects.get(session_token=response.data["session_token"])
+        self.assertEqual(session.customer_email, self.customer_email)
+        self.assertEqual(session.home_system, system)
+
+        CustomerPortalUploadSession.objects.filter(pk=session.pk).update(expires_at=timezone.now() - timedelta(minutes=1))
+        expired = self.client.get(f"/api/projects/customer-portal/upload-sessions/{session.session_token}/", secure=True)
+        self.assertEqual(expired.status_code, 403)
+
+    def test_customer_portal_qr_upload_saves_document_and_rejects_invalid_file(self):
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_APPLIANCE,
+            custom_name="Refrigerator",
+        )
+        session = CustomerPortalUploadSession.objects.create(
+            session_token="scan-token",
+            customer_email=self.customer_email,
+            property_profile=profile,
+            home_system=system,
+            document_type="Manual",
+            expires_at=timezone.now() + timedelta(minutes=30),
+        )
+
+        with self.settings(MEDIA_ROOT=tempfile.mkdtemp()):
+            invalid = self.client.post(
+                f"/api/projects/customer-portal/upload-sessions/{session.session_token}/",
+                {"file": SimpleUploadedFile("manual.txt", b"not allowed", content_type="text/plain")},
+                format="multipart",
+                secure=True,
+            )
+            valid = self.client.post(
+                f"/api/projects/customer-portal/upload-sessions/{session.session_token}/",
+                {
+                    "document_type": "Manual",
+                    "file": SimpleUploadedFile("samsung-model RF28R7351SR.pdf", b"%PDF-1.4", content_type="application/pdf"),
+                },
+                format="multipart",
+                secure=True,
+            )
+
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(valid.status_code, 201, valid.data)
+        document = PropertyDocument.objects.get(title="samsung-model RF28R7351SR.pdf")
+        self.assertEqual(document.upload_source, "qr_mobile_web")
+        self.assertIn(document, system.linked_documents.all())
+        self.assertEqual(document.extraction.extraction_status, PropertyDocumentExtraction.STATUS_COMPLETED)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.used_at)
+
+    def test_customer_portal_apply_extraction_updates_only_selected_fields(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            manufacturer="Existing Brand",
+        )
+        document = PropertyDocument.objects.create(
+            property_profile=profile,
+            title="HVAC label",
+            document_type="Equipment Label",
+            file=SimpleUploadedFile("hvac-label.jpg", b"fake-image", content_type="image/jpeg"),
+        )
+        system.linked_documents.add(document)
+        PropertyDocumentExtraction.objects.create(
+            property_document=document,
+            home_system=system,
+            extraction_status=PropertyDocumentExtraction.STATUS_COMPLETED,
+            suggested_fields={
+                "manufacturer": {"value": "Carrier", "confidence": "medium", "apply_default": True},
+                "model_number": {"value": "ABC123", "confidence": "high", "apply_default": True},
+                "serial_number": {"value": "SN9876", "confidence": "high", "apply_default": False},
+            },
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/property/documents/{document.id}/apply-extraction/",
+            {"selected_fields": {"model_number": {"value": "ABC123"}}},
+            content_type="application/json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        system.refresh_from_db()
+        self.assertEqual(system.manufacturer, "Existing Brand")
+        self.assertEqual(system.model_number, "ABC123")
+        self.assertEqual(system.serial_number, "")
+        document.extraction.refresh_from_db()
+        self.assertIsNotNone(document.extraction.reviewed_at)
+        self.assertIsNotNone(document.extraction.applied_at)
 
     def test_customer_portal_home_systems_payload_and_crud_are_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

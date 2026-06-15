@@ -2215,6 +2215,71 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       setUploadingPropertyFile(false);
     }
   };
+  const uploadHomeSystemDocument = async ({ file, title, documentType, propertyProfileId, homeSystemId, uploadSource }) => {
+    if (!file) return null;
+    setUploadError("");
+    setSavingHomeSystem(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", title || file.name || "Home system document");
+      formData.append("document_type", documentType || "Equipment Label");
+      formData.append("upload_source", uploadSource || "portal_desktop");
+      formData.append("run_extraction", "true");
+      if (propertyProfileId) formData.append("property_profile_id", propertyProfileId);
+      if (homeSystemId) formData.append("home_system_id", homeSystemId);
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/documents/`,
+        formData
+      );
+      onPortalUpdate?.(data.portal || data);
+      toast.success(data?.detail || "File saved.");
+      return data;
+    } catch (error) {
+      const message = error?.response?.data?.detail || "Could not upload that file.";
+      setUploadError(message);
+      toast.error(message);
+      return null;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
+
+  const createHomeSystemUploadSession = async (payload) => {
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/upload-sessions/`,
+        payload
+      );
+      toast.success("Phone scan link created.");
+      return data;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not create a phone scan link.");
+      return null;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
+
+  const applyHomeSystemDocumentExtraction = async (documentId, selectedFields) => {
+    if (!documentId) return false;
+    setSavingHomeSystem(true);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/documents/${documentId}/apply-extraction/`,
+        { selected_fields: selectedFields }
+      );
+      onPortalUpdate?.(data);
+      toast.success("Home System updated.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not apply those suggestions.");
+      return false;
+    } finally {
+      setSavingHomeSystem(false);
+    }
+  };
   const createHomeSystem = async (payload) => {
     setSavingHomeSystem(true);
     try {
@@ -2506,6 +2571,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onArchiveSystem={archiveHomeSystem}
           onMarkSystemServiced={markHomeSystemServiced}
           onCreateSystemServiceRequest={createHomeSystemServiceRequest}
+          onUploadSystemDocument={uploadHomeSystemDocument}
+          onCreateSystemUploadSession={createHomeSystemUploadSession}
+          onApplySystemDocumentExtraction={applyHomeSystemDocumentExtraction}
           onCreateRequestDraft={(draft) => {
             setRequestDraft(draft);
             setActiveTab("requests");

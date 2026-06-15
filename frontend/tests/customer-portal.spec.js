@@ -987,6 +987,78 @@ const uploadedPhotoPortalPayload = {
   },
 };
 
+const scanUploadResult = {
+  detail: "File saved. Review suggested fields before applying anything to your Home System.",
+  document: {
+    id: "property-document-44",
+    record_id: 44,
+    title: "carrier-model-ABC123.jpg",
+    type_label: "Equipment Label",
+    filename: "carrier-model-ABC123.jpg",
+    date: "2026-06-15T12:00:00Z",
+    url: "/files/carrier-model-ABC123.jpg",
+    upload_source: "portal_desktop",
+    extraction: {
+      status: "completed",
+      document_classification: "Equipment Label",
+      suggested_fields: {
+        manufacturer: { value: "Carrier", confidence: "medium", source_text: "Carrier", apply_default: false },
+        model_number: { value: "ABC123", confidence: "high", source_text: "model ABC123", apply_default: true },
+        serial_number: { value: "SN9876", confidence: "low", source_text: "serial SN9876", apply_default: false },
+      },
+    },
+  },
+  extraction: {
+    status: "completed",
+    document_classification: "Equipment Label",
+    suggested_fields: {
+      manufacturer: { value: "Carrier", confidence: "medium", source_text: "Carrier", apply_default: false },
+      model_number: { value: "ABC123", confidence: "high", source_text: "model ABC123", apply_default: true },
+      serial_number: { value: "SN9876", confidence: "low", source_text: "serial SN9876", apply_default: false },
+    },
+  },
+  portal: portalPayload,
+};
+
+const scanAppliedPortalPayload = {
+  ...portalPayload,
+  property_profile: {
+    ...portalPayload.property_profile,
+    home_systems: portalPayload.property_profile.home_systems.map((system) =>
+      system.id === 11
+        ? {
+            ...system,
+            model_number: "ABC123",
+            linked_documents: [
+              ...system.linked_documents,
+              {
+                id: "property-document-44",
+                record_id: 44,
+                title: "carrier-model-ABC123.jpg",
+                type_label: "Equipment Label",
+                filename: "carrier-model-ABC123.jpg",
+                url: "/files/carrier-model-ABC123.jpg",
+                extraction: scanUploadResult.extraction,
+              },
+            ],
+          }
+        : system
+    ),
+  },
+};
+
+const scanSessionPayload = {
+  session_token: "scan-session-token",
+  upload_url: "https://www.myhomebro.com/portal/upload-session/scan-session-token",
+  frontend_path: "/portal/upload-session/scan-session-token",
+  expires_at: "2026-06-15T12:30:00Z",
+  document_type: "Equipment Label",
+  property_profile_id: 1,
+  home_system_id: 11,
+  home_system_name: "Main HVAC",
+  qr_code_data_url: "data:image/svg+xml;base64,PHN2Zy8+",
+};
+
 const systemCreatedPortalPayload = {
   ...portalPayload,
   property_profile: {
@@ -2072,11 +2144,57 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/property/upload-sessions/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(scanSessionPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/documents/44/apply-extraction/") && method === "POST") {
+      currentPortalPayload = scanAppliedPortalPayload;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(scanAppliedPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/property/documents/") && method === "POST") {
+      const postData = await route.request().postData();
+      if (postData && postData.includes("home_system_id")) {
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify(scanUploadResult),
+        });
+        return;
+      }
       await route.fulfill({
         status: 201,
         contentType: "application/json",
         body: JSON.stringify(uploadedPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/upload-sessions/scan-session-token/") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(scanSessionPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/upload-sessions/scan-session-token/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(scanUploadResult),
       });
       return;
     }
@@ -2878,6 +2996,27 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Supplies");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("1 suggested item");
   await expect(page.getByTestId("property-home-system-recommendation-preview-11")).toContainText("Reminders");
+  await page.getByTestId("property-home-system-scan-11").first().click();
+  await expect(page.getByTestId("home-system-scan-modal")).toContainText("Scan or upload document");
+  await expect(page.getByTestId("home-system-scan-modal")).toContainText("Saving to: Main HVAC");
+  await page.getByTestId("home-system-scan-document-type").selectOption("Equipment Label");
+  await page.getByTestId("home-system-scan-create-qr").click();
+  await expect(page.getByTestId("home-system-scan-qr-panel")).toContainText("Expires");
+  await expect(page.getByTestId("home-system-scan-copy-link")).toHaveValue(/\/portal\/upload-session\/scan-session-token/);
+  await page.getByTestId("home-system-scan-file").setInputFiles({
+    name: "carrier-model-ABC123.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("fake image"),
+  });
+  await page.getByTestId("home-system-scan-upload").click();
+  await expect(page.getByTestId("home-system-scan-saved")).toContainText("File saved");
+  await expect(page.getByTestId("home-system-extraction-review")).toContainText("Document Analysis Results");
+  await expect(page.getByTestId("home-system-extraction-field-model_number")).toContainText("ABC123");
+  await expect(page.getByTestId("home-system-extraction-field-model_number").locator("input")).toBeChecked();
+  await expect(page.getByTestId("home-system-extraction-field-serial_number").locator("input")).not.toBeChecked();
+  await page.getByTestId("home-system-extraction-apply").click();
+  await expect(page.getByTestId("home-system-scan-modal")).toHaveCount(0);
+  await expect(page.getByTestId("property-home-system-details-11")).toContainText("ABC123");
   await page.getByTestId("property-home-system-view-12").click();
   await expect(page.getByTestId("property-home-system-recommendation-preview-12")).toContainText("No current recommendations");
   await expect(page.getByTestId("property-home-system-accuracy-prompt-11")).toHaveCount(0);
@@ -2912,7 +3051,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Recommended item:/);
   await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/HVAC filter/);
   await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Manufacturer: Carrier/);
-  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Model: XR-500/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Model: ABC123/);
   await expect(page.getByTestId("customer-request-help-mode")).toHaveValue("diy_assist");
   await expect(page.getByTestId("customer-request-help-mode")).toContainText("DIY Assistance");
   await expect(page.getByTestId("customer-request-help-mode")).toContainText("Full service");
@@ -3468,6 +3607,42 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-portal-documents")).not.toContainText("Portal extra document 10");
   await page.getByTestId("customer-documents-show-more").click();
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Portal extra document 10");
+});
+
+test("customer portal mobile upload session saves a home system document", async ({ page }) => {
+  await page.route("**/api/projects/customer-portal/upload-sessions/scan-session-token/**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(scanSessionPayload),
+      });
+      return;
+    }
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(scanUploadResult),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/upload-session/scan-session-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("portal-upload-session-page")).toContainText("Saving to:");
+  await expect(page.getByTestId("portal-upload-session-page")).toContainText("Main HVAC");
+  await page.getByTestId("portal-upload-session-document-type").selectOption("Warranty");
+  await page.getByTestId("portal-upload-session-file").setInputFiles({
+    name: "carrier-model-ABC123.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("fake image"),
+  });
+  await page.getByTestId("portal-upload-session-submit").click();
+  await expect(page.getByTestId("portal-upload-session-result")).toContainText("File saved");
+  await expect(page.getByTestId("portal-upload-session-result")).toContainText("Document Analysis Results");
+  await expect(page.getByTestId("portal-upload-session-result")).toContainText("ABC123");
 });
 
 test("legacy customer portal aliases redirect to the active portal", async ({ page }) => {

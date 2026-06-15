@@ -281,6 +281,9 @@ from .views.customer_portal import (
     CustomerPortalHomeSystemServiceView,
     CustomerPortalPropertyProfileView,
     CustomerPortalPropertyUploadView,
+    CustomerPortalUploadSessionDetailView,
+    CustomerPortalUploadSessionView,
+    CustomerPortalApplyDocumentExtractionView,
     CustomerPortalReimbursementApproveView,
     CustomerPortalReimbursementDenyView,
     CustomerPortalReviewSubmitView,
@@ -405,9 +408,24 @@ urlpatterns = [
         name="customer-portal-home-system-recommendation-preference",
     ),
     path(
+        "customer-portal/<str:token>/property/upload-sessions/",
+        CustomerPortalUploadSessionView.as_view(),
+        name="customer-portal-upload-session-create",
+    ),
+    path(
         "customer-portal/<str:token>/property/<str:upload_kind>/",
         CustomerPortalPropertyUploadView.as_view(),
         name="customer-portal-property-upload",
+    ),
+    path(
+        "customer-portal/upload-sessions/<str:session_token>/",
+        CustomerPortalUploadSessionDetailView.as_view(),
+        name="customer-portal-upload-session-detail",
+    ),
+    path(
+        "customer-portal/<str:token>/property/documents/<int:document_id>/apply-extraction/",
+        CustomerPortalApplyDocumentExtractionView.as_view(),
+        name="customer-portal-document-apply-extraction",
     ),
     path(
         "customer-portal/<str:token>/notifications/<int:notification_id>/read/",
