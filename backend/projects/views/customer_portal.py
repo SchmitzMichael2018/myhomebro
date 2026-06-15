@@ -41,6 +41,7 @@ from projects.models import (
 )
 from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import (
+    CustomerNotificationCleanupPreference,
     CustomerRequest,
     NotificationRule,
     PropertyDocument,
@@ -50,6 +51,11 @@ from projects.models_customer_portal import (
     PropertyProfile,
     SmartNotification,
     SmartNotificationEvent,
+)
+from projects.services.customer_notification_cleanup import (
+    cleanup_preferences_for_email,
+    cleanup_preferences_payload,
+    next_cleanup_run_at,
 )
 from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
@@ -2541,6 +2547,9 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "property_intelligence": property_intelligence,
         "recommendations": recommendations,
         "notifications": _smart_notification_rows(email),
+        "notification_cleanup_preferences": cleanup_preferences_payload(
+            cleanup_preferences_for_email(email, homeowner=_primary_homeowner_for_email(email))
+        ),
     }
 
 
@@ -2761,6 +2770,7 @@ HOMEOWNER_VISIBLE_NOTIFICATION_EVENTS = {
     SmartNotificationEvent.MAINTENANCE_WORK_ORDER_SCHEDULED,
     SmartNotificationEvent.MAINTENANCE_WORK_ORDER_COMPLETED,
     SmartNotificationEvent.MAINTENANCE_CONTRACT_CANCELLED,
+    SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
 }
 
 
@@ -2802,6 +2812,10 @@ def _serialize_smart_notification(row: SmartNotification) -> dict:
         "event_type": _safe_text(row.event_type),
         "channel": _safe_text(row.channel),
         "status": _safe_text(row.status),
+        "is_archived": bool(row.archived_at or row.status == SmartNotification.STATUS_DISMISSED),
+        "archived_at": _safe_dt(row.archived_at),
+        "auto_archived_at": _safe_dt(row.auto_archived_at),
+        "archive_reason": _safe_text(row.archive_reason),
         "title": title,
         "message": message,
         "action_url": _safe_text(row.action_url),
@@ -2824,7 +2838,6 @@ def _smart_notification_rows(email: str) -> list[dict]:
             "property_profile",
         )
         .filter(recipient_email__iexact=email, channel=NotificationRule.CHANNEL_IN_APP)
-        .exclude(status=SmartNotification.STATUS_DISMISSED)
         .order_by("-created_at", "-id")[:100]
     )
     for row in qs:
@@ -3904,8 +3917,70 @@ class CustomerPortalNotificationArchiveView(CustomerPortalNotificationActionMixi
             notification.status = SmartNotification.STATUS_DISMISSED
             if not notification.read_at:
                 notification.read_at = timezone.now()
-            notification.save(update_fields=["status", "read_at"])
+            notification.archived_at = timezone.now()
+            notification.archive_reason = "manual_archive"
+            notification.auto_archived_at = None
+            notification.save(update_fields=["status", "read_at", "archived_at", "auto_archived_at", "archive_reason"])
+        elif not notification.archived_at:
+            notification.archived_at = timezone.now()
+            notification.archive_reason = notification.archive_reason or "manual_archive"
+            notification.save(update_fields=["archived_at", "archive_reason"])
 
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalNotificationRestoreView(CustomerPortalNotificationActionMixin, APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, notification_id: int):
+        email = self._portal_email(token)
+        if isinstance(email, Response):
+            return email
+
+        notification = self._get_notification(notification_id, email)
+        if notification is None:
+            return Response({"detail": "Notification not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        notification.status = SmartNotification.STATUS_READ
+        if not notification.read_at:
+            notification.read_at = timezone.now()
+        notification.archived_at = None
+        notification.auto_archived_at = None
+        notification.archive_reason = ""
+        notification.save(update_fields=["status", "read_at", "archived_at", "auto_archived_at", "archive_reason"])
+
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalNotificationCleanupPreferenceSerializer(serializers.Serializer):
+    auto_archive_enabled = serializers.BooleanField(required=False)
+    auto_archive_frequency = serializers.ChoiceField(
+        choices=[choice[0] for choice in CustomerNotificationCleanupPreference.FREQUENCY_CHOICES],
+        required=False,
+    )
+    auto_archive_read_after_days = serializers.IntegerField(required=False, min_value=7, max_value=3650)
+    auto_archive_maintenance_after_days = serializers.IntegerField(required=False, min_value=14, max_value=3650)
+    auto_archive_completed_work_after_days = serializers.IntegerField(required=False, min_value=30, max_value=3650)
+
+
+class CustomerPortalNotificationCleanupPreferenceView(APIView):
+    permission_classes = [AllowAny]
+
+    def patch(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = CustomerPortalNotificationCleanupPreferenceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        preference = cleanup_preferences_for_email(email, homeowner=_primary_homeowner_for_email(email))
+        for field, value in serializer.validated_data.items():
+            setattr(preference, field, value)
+        preference.next_auto_archive_run_at = next_cleanup_run_at(preference)
+        preference.save()
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 

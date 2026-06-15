@@ -899,6 +899,18 @@ const portalPayload = {
       created_at: "2026-04-15T17:02:00Z",
     },
     {
+      id: 105,
+      event_type: "customer_request_submitted",
+      channel: "in_app",
+      status: "dismissed",
+      is_archived: true,
+      archived_at: "2026-05-20T12:00:00Z",
+      title: "Request submitted",
+      message: "Pool service request was saved.",
+      action_url: "/portal#requests",
+      created_at: "2026-04-10T16:00:00Z",
+    },
+    {
       id: 104,
       event_type: "payment_received",
       channel: "email_stub",
@@ -909,6 +921,15 @@ const portalPayload = {
       created_at: "2026-04-15T17:03:00Z",
     },
   ],
+  notification_cleanup_preferences: {
+    auto_archive_enabled: true,
+    auto_archive_frequency: "daily",
+    auto_archive_read_after_days: 30,
+    auto_archive_maintenance_after_days: 60,
+    auto_archive_completed_work_after_days: 90,
+    last_auto_archive_run_at: "2026-05-10T12:00:00Z",
+    next_auto_archive_run_at: "2026-06-16T12:00:00Z",
+  },
 };
 
 const uploadedPortalPayload = {
@@ -1100,7 +1121,33 @@ const notificationsAllReadPortalPayload = {
 
 const notificationArchivedPortalPayload = {
   ...notificationReadPortalPayload,
-  notifications: notificationReadPortalPayload.notifications.filter((notification) => ![102, 103].includes(notification.id)),
+  notifications: notificationReadPortalPayload.notifications.map((notification) =>
+    notification.id === 102 || notification.id === 103
+      ? { ...notification, status: "dismissed", is_archived: true, archived_at: "2026-06-01T12:00:00Z", archive_reason: "manual_archive" }
+      : notification
+  ),
+};
+
+const notificationRestoredPortalPayload = {
+  ...notificationArchivedPortalPayload,
+  notifications: notificationArchivedPortalPayload.notifications.map((notification) =>
+    notification.id === 102
+      ? { ...notification, status: "read", is_archived: false, archived_at: "", auto_archived_at: "", archive_reason: "" }
+      : notification
+  ),
+};
+
+const notificationCleanupUpdatedPortalPayload = {
+  ...portalPayload,
+  notification_cleanup_preferences: {
+    ...portalPayload.notification_cleanup_preferences,
+    auto_archive_enabled: false,
+    auto_archive_frequency: "weekly",
+    auto_archive_read_after_days: 45,
+    auto_archive_maintenance_after_days: 75,
+    auto_archive_completed_work_after_days: 120,
+    next_auto_archive_run_at: "2026-06-22T12:00:00Z",
+  },
 };
 
 const disputedPortalPayload = {
@@ -2187,6 +2234,24 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/notifications/102/restore/") && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationRestoredPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/notifications/cleanup-preferences/") && method === "PATCH") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationCleanupUpdatedPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/draws/2/dispute/") && method === "POST") {
       await route.fulfill({
         status: 201,
@@ -2370,10 +2435,39 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-dashboard-tab-notifications")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
-  await page.getByTestId("customer-notifications-filter-read").click();
+  await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Pool service request was saved.");
+  await expect(page.getByTestId("customer-notification-cleanup-settings")).toContainText("Notification cleanup");
+  await expect(page.getByTestId("customer-notification-cleanup-settings")).toContainText(
+    "Unread and action-required notifications are never auto-archived."
+  );
+  await expect(page.getByTestId("notification-cleanup-enabled")).toBeChecked();
+  await expect(page.getByTestId("notification-cleanup-frequency")).toHaveValue("daily");
+  await page.getByTestId("notification-cleanup-read-days").fill("6");
+  await page.getByTestId("notification-cleanup-save").click();
+  await expect(page.getByTestId("notification-cleanup-error")).toContainText("at least 7 days");
+  await page.getByTestId("notification-cleanup-read-days").fill("45");
+  await page.getByTestId("notification-cleanup-maintenance-days").fill("75");
+  await page.getByTestId("notification-cleanup-completed-days").fill("120");
+  await page.getByTestId("notification-cleanup-frequency").selectOption("weekly");
+  await page.getByTestId("notification-cleanup-enabled").uncheck();
+  await page.getByTestId("notification-cleanup-save").click();
+  await expect(page.getByTestId("notification-cleanup-enabled")).not.toBeChecked();
+  await expect(page.getByTestId("notification-cleanup-frequency")).toHaveValue("weekly");
+  await expect(page.getByTestId("notification-cleanup-read-days")).toHaveValue("45");
+  await page.getByTestId("customer-notifications-filter-archived").click();
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Pool service request was saved.");
+  await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Payment received");
+  await page.getByTestId("customer-notifications-filter-recent").click();
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
   await page.getByTestId("customer-notifications-center").getByRole("button", { name: "Archive" }).last().click();
+  await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Payment received");
+  await page.getByTestId("customer-notifications-filter-archived").click();
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
+  await page.getByTestId("customer-notifications-center-restore-102").click();
+  await page.getByTestId("customer-notifications-filter-recent").click();
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
+  await page.getByTestId("customer-notifications-filter-archived").click();
   await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Payment received");
   await page.getByTestId("customer-dashboard-tab-overview").click();
 
@@ -2698,7 +2792,7 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Notifications Center");
-  await page.getByTestId("customer-notifications-filter-all").click();
+  await page.getByTestId("customer-notifications-filter-recent").click();
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
   await expect(page.getByTestId("customer-notifications-center").getByRole("heading", { name: "Payment received" })).toHaveCount(1);
@@ -3136,7 +3230,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-property-profile")).not.toContainText("Document library");
 
   await page.getByTestId("customer-dashboard-tab-notifications").click();
-  await expect(page.getByTestId("customer-notifications-center-empty")).toContainText("No notifications yet");
+  await expect(page.getByTestId("customer-notifications-center-empty")).toContainText("No recent notifications");
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-payments-empty")).toContainText("No payment records yet");

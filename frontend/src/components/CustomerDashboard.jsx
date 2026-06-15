@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, UserRound } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -521,7 +521,11 @@ function paidProgress(summary = {}, agreement = {}) {
 }
 
 function isUnreadNotification(notification) {
-  return notification?.status !== "read" && notification?.status !== "dismissed";
+  return !isArchivedNotification(notification) && notification?.status !== "read";
+}
+
+function isArchivedNotification(notification) {
+  return Boolean(notification?.is_archived || notification?.archived_at || notification?.status === "dismissed" || notification?.status === "archived");
 }
 
 const ACTIONABLE_NOTIFICATION_EVENTS = new Set([
@@ -1498,26 +1502,48 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", bulkMarking = false,
 function NotificationsCenter({
   notifications = [],
   unreadCount = 0,
+  preferences = {},
   markingId = "",
   archivingId = "",
+  restoringId = "",
+  savingPreferences = false,
+  preferenceError = "",
   bulkMarking = false,
   onMarkRead,
   onMarkAllRead,
   onArchive,
+  onRestore,
+  onSavePreferences,
 }) {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("recent");
+  const [settings, setSettings] = useState({
+    auto_archive_enabled: true,
+    auto_archive_frequency: "daily",
+    auto_archive_read_after_days: 30,
+    auto_archive_maintenance_after_days: 60,
+    auto_archive_completed_work_after_days: 90,
+  });
+  useEffect(() => {
+    setSettings({
+      auto_archive_enabled: preferences?.auto_archive_enabled !== false,
+      auto_archive_frequency: preferences?.auto_archive_frequency || "daily",
+      auto_archive_read_after_days: preferences?.auto_archive_read_after_days || 30,
+      auto_archive_maintenance_after_days: preferences?.auto_archive_maintenance_after_days || 60,
+      auto_archive_completed_work_after_days: preferences?.auto_archive_completed_work_after_days || 90,
+    });
+  }, [preferences]);
   const filtered = filter === "unread"
     ? notifications.filter(isUnreadNotification)
-    : filter === "read"
-      ? notifications.filter((notification) => notification.status === "read")
-      : notifications;
+    : filter === "archived"
+      ? notifications.filter(isArchivedNotification)
+      : notifications.filter((notification) => !isArchivedNotification(notification));
 
   return (
     <section data-testid="customer-notifications-center" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-white">Notifications Center</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-300">Your full notification history, with unread and read updates available as quick filters.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-300">Your notification history, with archived updates kept separately for reference.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{unreadCount} unread</Badge>
@@ -1534,8 +1560,93 @@ function NotificationsCenter({
           ) : null}
         </div>
       </div>
+      <div data-testid="customer-notification-cleanup-settings" className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white">Notification cleanup</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              Unread and action-required notifications are never auto-archived.
+            </p>
+            <div className="mt-2 text-xs text-slate-400">
+              Last cleanup: {preferences?.last_auto_archive_run_at ? new Date(preferences.last_auto_archive_run_at).toLocaleString() : "Not run yet"}
+              <span className="mx-2 text-slate-600">|</span>
+              Next scheduled: {preferences?.next_auto_archive_run_at ? new Date(preferences.next_auto_archive_run_at).toLocaleString() : "Not scheduled yet"}
+            </div>
+          </div>
+          <label className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200">
+            <input
+              type="checkbox"
+              data-testid="notification-cleanup-enabled"
+              checked={settings.auto_archive_enabled}
+              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_enabled: event.target.checked }))}
+              className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-300"
+            />
+            Enable auto-archive old read notifications
+          </label>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="text-sm font-medium text-slate-200">
+            Frequency
+            <select
+              data-testid="notification-cleanup-frequency"
+              value={settings.auto_archive_frequency}
+              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_frequency: event.target.value }))}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <label className="text-sm font-medium text-slate-200">
+            Read informational after
+            <input
+              type="number"
+              min="7"
+              data-testid="notification-cleanup-read-days"
+              value={settings.auto_archive_read_after_days}
+              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_read_after_days: Number(event.target.value) }))}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            />
+          </label>
+          <label className="text-sm font-medium text-slate-200">
+            Resolved maintenance after
+            <input
+              type="number"
+              min="14"
+              data-testid="notification-cleanup-maintenance-days"
+              value={settings.auto_archive_maintenance_after_days}
+              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_maintenance_after_days: Number(event.target.value) }))}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            />
+          </label>
+          <label className="text-sm font-medium text-slate-200">
+            Completed work after
+            <input
+              type="number"
+              min="30"
+              data-testid="notification-cleanup-completed-days"
+              value={settings.auto_archive_completed_work_after_days}
+              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_completed_work_after_days: Number(event.target.value) }))}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            />
+          </label>
+        </div>
+        {preferenceError ? <p data-testid="notification-cleanup-error" className="mt-3 text-sm font-semibold text-rose-200">{preferenceError}</p> : null}
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            data-testid="notification-cleanup-save"
+            disabled={savingPreferences}
+            onClick={() => onSavePreferences?.(settings)}
+            className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50"
+          >
+            {savingPreferences ? "Saving..." : "Save cleanup settings"}
+          </button>
+        </div>
+      </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        {["unread", "read", "all"].map((value) => (
+        {["unread", "recent", "archived"].map((value) => (
           <button
             key={value}
             type="button"
@@ -1547,22 +1658,24 @@ function NotificationsCenter({
                 : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
             }`}
           >
-            {value === "unread" ? "Unread" : value === "read" ? "Read" : "All"}
+            {value === "unread" ? "Unread" : value === "archived" ? "Archived" : "Recent"}
           </button>
         ))}
       </div>
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {filtered.length ? (
           filtered.map((notification) => {
-            const isUnread = notification.status !== "read";
+            const isArchived = isArchivedNotification(notification);
+            const isUnread = isUnreadNotification(notification);
             return (
-              <article key={notification.id} data-testid={`customer-notifications-center-item-${notification.id}`} className={`rounded-2xl border p-4 ${isUnread ? "border-amber-300/45 bg-amber-300/10" : "border-slate-700 bg-slate-900/70"}`}>
+              <article key={notification.id} data-testid={`customer-notifications-center-item-${notification.id}`} className={`rounded-2xl border p-4 ${isUnread ? "border-amber-300/45 bg-amber-300/10" : isArchived ? "border-slate-800 bg-slate-950/70 opacity-85" : "border-slate-700 bg-slate-900/70"}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm font-semibold text-white">{notification.title || "Update"}</h3>
                       <Badge>{eventLabel(notification.event_type)}</Badge>
                       {isUnread ? <Badge tone="gold">Unread</Badge> : null}
+                      {isArchived ? <Badge>Archived</Badge> : null}
                     </div>
                     <p className="mt-2 text-sm leading-6 text-slate-300">{notification.message || "A workspace update is available."}</p>
                     <div className="mt-2 text-xs text-slate-500">{notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}</div>
@@ -1590,21 +1703,33 @@ function NotificationsCenter({
                       {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    data-testid={`customer-notifications-center-archive-${notification.id}`}
-                    disabled={archivingId === String(notification.id)}
-                    onClick={() => onArchive?.(notification)}
-                    className="shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
-                  >
-                    {archivingId === String(notification.id) ? "Saving..." : "Archive"}
-                  </button>
+                  {isArchived ? (
+                    <button
+                      type="button"
+                      data-testid={`customer-notifications-center-restore-${notification.id}`}
+                      disabled={restoringId === String(notification.id)}
+                      onClick={() => onRestore?.(notification)}
+                      className="shrink-0 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20 disabled:opacity-50"
+                    >
+                      {restoringId === String(notification.id) ? "Saving..." : "Move to recent"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`customer-notifications-center-archive-${notification.id}`}
+                      disabled={archivingId === String(notification.id)}
+                      onClick={() => onArchive?.(notification)}
+                      className="shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
+                    >
+                      {archivingId === String(notification.id) ? "Saving..." : "Archive"}
+                    </button>
+                  )}
                 </div>
               </article>
             );
           })
         ) : (
-          <EmptyState title={filter === "unread" ? "No unread notifications" : filter === "read" ? "No read notifications" : "No notifications yet"} testId="customer-notifications-center-empty">
+          <EmptyState title={filter === "unread" ? "No unread notifications" : filter === "archived" ? "No archived notifications" : "No recent notifications"} testId="customer-notifications-center-empty">
             Project activity, payment reviews, signing reminders, document updates, and request history will appear here.
           </EmptyState>
         )}
@@ -1934,6 +2059,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [markingNotificationId, setMarkingNotificationId] = useState("");
   const [markingAllNotifications, setMarkingAllNotifications] = useState(false);
   const [archivingNotificationId, setArchivingNotificationId] = useState("");
+  const [restoringNotificationId, setRestoringNotificationId] = useState("");
+  const [savingNotificationPreferences, setSavingNotificationPreferences] = useState(false);
+  const [notificationPreferenceError, setNotificationPreferenceError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [focusedRequestId, setFocusedRequestId] = useState("");
   const [requestDraft, setRequestDraft] = useState(null);
@@ -2003,6 +2131,61 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       toast.error(error?.response?.data?.detail || "Could not archive that notification.");
     } finally {
       setArchivingNotificationId("");
+    }
+  };
+
+  const restoreNotification = async (notification) => {
+    if (!notification?.id) return;
+    setRestoringNotificationId(String(notification.id));
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/restore/`
+      );
+      onPortalUpdate?.(data);
+      toast.success("Notification moved to recent.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not restore that notification.");
+    } finally {
+      setRestoringNotificationId("");
+    }
+  };
+
+  const saveNotificationCleanupPreferences = async (preferences) => {
+    setNotificationPreferenceError("");
+    const payload = {
+      ...preferences,
+      auto_archive_read_after_days: Number(preferences?.auto_archive_read_after_days || 0),
+      auto_archive_maintenance_after_days: Number(preferences?.auto_archive_maintenance_after_days || 0),
+      auto_archive_completed_work_after_days: Number(preferences?.auto_archive_completed_work_after_days || 0),
+    };
+    if (payload.auto_archive_read_after_days < 7) {
+      setNotificationPreferenceError("Read informational notifications must be at least 7 days.");
+      return;
+    }
+    if (payload.auto_archive_maintenance_after_days < 14) {
+      setNotificationPreferenceError("Resolved maintenance reminders must be at least 14 days.");
+      return;
+    }
+    if (payload.auto_archive_completed_work_after_days < 30) {
+      setNotificationPreferenceError("Completed work notifications must be at least 30 days.");
+      return;
+    }
+
+    setSavingNotificationPreferences(true);
+    try {
+      const { data } = await api.patch(
+        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/cleanup-preferences/`,
+        payload
+      );
+      onPortalUpdate?.(data);
+      toast.success("Notification cleanup settings saved.");
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      const message = typeof detail === "string" ? detail : "Could not save notification cleanup settings.";
+      setNotificationPreferenceError(message);
+      toast.error(message);
+    } finally {
+      setSavingNotificationPreferences(false);
     }
   };
 
@@ -2338,12 +2521,18 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         <NotificationsCenter
           notifications={notifications}
           unreadCount={unreadCount}
+          preferences={portal?.notification_cleanup_preferences || {}}
           markingId={markingNotificationId}
           archivingId={archivingNotificationId}
+          restoringId={restoringNotificationId}
+          savingPreferences={savingNotificationPreferences}
+          preferenceError={notificationPreferenceError}
           bulkMarking={markingAllNotifications}
           onMarkRead={markNotificationRead}
           onMarkAllRead={markAllNotificationsRead}
           onArchive={archiveNotification}
+          onRestore={restoreNotification}
+          onSavePreferences={saveNotificationCleanupPreferences}
         />
       );
     }
@@ -2376,7 +2565,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, savingProfile, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

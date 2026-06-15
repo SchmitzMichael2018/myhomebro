@@ -320,6 +320,44 @@ class PropertyHomeSystemRecommendationPreference(models.Model):
         return f"{self.property_profile_id}:{self.home_system_id}:{self.recommendation_key}:{self.status}"
 
 
+class CustomerNotificationCleanupPreference(models.Model):
+    FREQUENCY_DAILY = "daily"
+    FREQUENCY_WEEKLY = "weekly"
+    FREQUENCY_MONTHLY = "monthly"
+    FREQUENCY_CHOICES = [
+        (FREQUENCY_DAILY, "Daily"),
+        (FREQUENCY_WEEKLY, "Weekly"),
+        (FREQUENCY_MONTHLY, "Monthly"),
+    ]
+
+    customer_email = models.EmailField(unique=True, db_index=True)
+    homeowner = models.ForeignKey(
+        "projects.Homeowner",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification_cleanup_preferences",
+    )
+    auto_archive_enabled = models.BooleanField(default=True)
+    auto_archive_frequency = models.CharField(max_length=16, choices=FREQUENCY_CHOICES, default=FREQUENCY_DAILY)
+    auto_archive_read_after_days = models.PositiveIntegerField(default=30)
+    auto_archive_maintenance_after_days = models.PositiveIntegerField(default=60)
+    auto_archive_completed_work_after_days = models.PositiveIntegerField(default=90)
+    last_auto_archive_run_at = models.DateTimeField(null=True, blank=True)
+    next_auto_archive_run_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["customer_email"]
+        indexes = [
+            models.Index(fields=["auto_archive_enabled", "next_auto_archive_run_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.customer_email}: notification cleanup"
+
+
 class PropertyIntelligenceSnapshot(models.Model):
     property_profile = models.ForeignKey(
         PropertyProfile,
@@ -636,11 +674,15 @@ class SmartNotification(models.Model):
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     read_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    auto_archived_at = models.DateTimeField(null=True, blank=True)
+    archive_reason = models.CharField(max_length=160, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at", "-id"]
         indexes = [
             models.Index(fields=["recipient_email", "status"]),
+            models.Index(fields=["recipient_email", "archived_at"]),
             models.Index(fields=["event_type", "created_at"]),
         ]
 

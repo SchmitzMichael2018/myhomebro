@@ -106,6 +106,7 @@ from projects.models import (
 )
 from projects.models import AgreementWarranty
 from projects.models_attachments import AgreementAttachment
+from projects.models_customer_portal import CustomerNotificationCleanupPreference
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
@@ -22821,7 +22822,10 @@ class CustomerPortalAccessTests(TestCase):
         notification.refresh_from_db()
         self.assertEqual(notification.status, SmartNotification.STATUS_DISMISSED)
         self.assertIsNotNone(notification.read_at)
-        self.assertFalse(any(row["id"] == notification.id for row in response.data["notifications"]))
+        self.assertIsNotNone(notification.archived_at)
+        payload_notification = next(row for row in response.data["notifications"] if row["id"] == notification.id)
+        self.assertTrue(payload_notification["is_archived"])
+        self.assertEqual(payload_notification["archive_reason"], "manual_archive")
 
     def test_customer_portal_cannot_archive_other_customer_notification(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
@@ -22841,6 +22845,214 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.status_code, 404)
         other_notification.refresh_from_db()
         self.assertEqual(other_notification.status, SmartNotification.STATUS_UNREAD)
+
+    def test_customer_portal_can_restore_archived_notification(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.customer_email,
+            title="Request submitted",
+            message="Your request was saved.",
+            property_profile=PropertyProfile.objects.get_or_create(customer_email=self.customer_email)[0],
+            status=SmartNotification.STATUS_DISMISSED,
+            read_at=timezone.now() - timedelta(days=31),
+            archived_at=timezone.now() - timedelta(days=1),
+            auto_archived_at=timezone.now() - timedelta(days=1),
+            archive_reason="auto_archive_read_customer_request_submitted_30_days",
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/notifications/{notification.id}/restore/",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        notification.refresh_from_db()
+        self.assertEqual(notification.status, SmartNotification.STATUS_READ)
+        self.assertIsNone(notification.archived_at)
+        self.assertIsNone(notification.auto_archived_at)
+        self.assertEqual(notification.archive_reason, "")
+        payload_notification = next(row for row in response.data["notifications"] if row["id"] == notification.id)
+        self.assertFalse(payload_notification["is_archived"])
+
+    def test_customer_portal_serializes_default_notification_cleanup_preferences(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        prefs = response.data["notification_cleanup_preferences"]
+        self.assertTrue(prefs["auto_archive_enabled"])
+        self.assertEqual(prefs["auto_archive_frequency"], CustomerNotificationCleanupPreference.FREQUENCY_DAILY)
+        self.assertEqual(prefs["auto_archive_read_after_days"], 30)
+        self.assertEqual(prefs["auto_archive_maintenance_after_days"], 60)
+        self.assertEqual(prefs["auto_archive_completed_work_after_days"], 90)
+        self.assertTrue(CustomerNotificationCleanupPreference.objects.filter(customer_email__iexact=self.customer_email).exists())
+
+    def test_customer_portal_updates_notification_cleanup_preferences(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/notifications/cleanup-preferences/",
+            {
+                "auto_archive_enabled": False,
+                "auto_archive_frequency": CustomerNotificationCleanupPreference.FREQUENCY_WEEKLY,
+                "auto_archive_read_after_days": 45,
+                "auto_archive_maintenance_after_days": 75,
+                "auto_archive_completed_work_after_days": 120,
+            },
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        prefs = response.data["notification_cleanup_preferences"]
+        self.assertFalse(prefs["auto_archive_enabled"])
+        self.assertEqual(prefs["auto_archive_frequency"], CustomerNotificationCleanupPreference.FREQUENCY_WEEKLY)
+        self.assertEqual(prefs["auto_archive_read_after_days"], 45)
+        self.assertEqual(prefs["auto_archive_maintenance_after_days"], 75)
+        self.assertEqual(prefs["auto_archive_completed_work_after_days"], 120)
+        preference = CustomerNotificationCleanupPreference.objects.get(customer_email__iexact=self.customer_email)
+        self.assertIsNotNone(preference.next_auto_archive_run_at)
+
+    def test_customer_portal_rejects_invalid_notification_cleanup_preferences(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        invalid_frequency = self.client.patch(
+            f"/api/projects/customer-portal/{token}/notifications/cleanup-preferences/",
+            {"auto_archive_frequency": "hourly"},
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(invalid_frequency.status_code, 400)
+
+        too_low_days = self.client.patch(
+            f"/api/projects/customer-portal/{token}/notifications/cleanup-preferences/",
+            {
+                "auto_archive_read_after_days": 6,
+                "auto_archive_maintenance_after_days": 13,
+                "auto_archive_completed_work_after_days": 29,
+            },
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(too_low_days.status_code, 400)
+
+    def test_customer_portal_notification_auto_archive_rules_are_conservative(self):
+        from projects.services.customer_notification_cleanup import auto_archive_customer_notifications
+
+        now = timezone.now()
+        profile = PropertyProfile.objects.get_or_create(customer_email=self.customer_email)[0]
+
+        def make_notification(event_type, *, status=SmartNotification.STATUS_READ, age_days=45, metadata=None):
+            row = SmartNotification.objects.create(
+                event_type=event_type,
+                recipient_email=self.customer_email,
+                title=str(event_type),
+                message="Portal update.",
+                status=status,
+                read_at=now - timedelta(days=age_days) if status == SmartNotification.STATUS_READ else None,
+                property_profile=profile,
+                metadata=metadata or {},
+            )
+            SmartNotification.objects.filter(pk=row.pk).update(created_at=now - timedelta(days=age_days))
+            row.refresh_from_db()
+            return row
+
+        old_info = make_notification(SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED, age_days=35)
+        unread_info = make_notification(SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED, status=SmartNotification.STATUS_UNREAD, age_days=60)
+        recent_info = make_notification(SmartNotificationEvent.PROPERTY_PROFILE_UPDATED, age_days=10)
+        actionable = make_notification(SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE, age_days=90)
+        financial = make_notification(SmartNotificationEvent.PAYMENT_RECEIVED, age_days=90)
+        active_reminder = make_notification(
+            SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
+            age_days=70,
+            metadata={"maintenance_status": "overdue"},
+        )
+        resolved_reminder = make_notification(
+            SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
+            age_days=70,
+            metadata={"maintenance_status": "current", "resolved_at": (now - timedelta(days=65)).isoformat()},
+        )
+        completed_work = make_notification(SmartNotificationEvent.MAINTENANCE_WORK_ORDER_COMPLETED, age_days=95)
+
+        dry_run = auto_archive_customer_notifications(now=now, dry_run=True, customer_email=self.customer_email)
+        self.assertEqual(dry_run.eligible, 3)
+        for row in [old_info, resolved_reminder, completed_work]:
+            row.refresh_from_db()
+            self.assertIsNone(row.archived_at)
+
+        result = auto_archive_customer_notifications(now=now, customer_email=self.customer_email)
+        self.assertEqual(result.archived, 3)
+        for row in [old_info, resolved_reminder, completed_work]:
+            row.refresh_from_db()
+            self.assertEqual(row.status, SmartNotification.STATUS_DISMISSED)
+            self.assertIsNotNone(row.archived_at)
+            self.assertIsNotNone(row.auto_archived_at)
+            self.assertTrue(row.archive_reason.startswith("auto_archive_read_"))
+        for row in [unread_info, recent_info, actionable, financial, active_reminder]:
+            row.refresh_from_db()
+            self.assertIsNone(row.archived_at)
+
+    def test_customer_portal_notification_cleanup_command_respects_schedule_and_force(self):
+        now = timezone.now()
+        profile = PropertyProfile.objects.get_or_create(customer_email=self.customer_email)[0]
+        preference = CustomerNotificationCleanupPreference.objects.create(
+            customer_email=self.customer_email,
+            auto_archive_enabled=True,
+            auto_archive_frequency=CustomerNotificationCleanupPreference.FREQUENCY_WEEKLY,
+            next_auto_archive_run_at=now + timedelta(days=3),
+        )
+        due_preference = CustomerNotificationCleanupPreference.objects.create(
+            customer_email="due@example.com",
+            auto_archive_enabled=True,
+            auto_archive_frequency=CustomerNotificationCleanupPreference.FREQUENCY_DAILY,
+            next_auto_archive_run_at=now - timedelta(minutes=5),
+        )
+        skipped_notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email=self.customer_email,
+            title="Not due",
+            message="Should not archive yet.",
+            status=SmartNotification.STATUS_READ,
+            read_at=now - timedelta(days=40),
+            property_profile=profile,
+        )
+        SmartNotification.objects.filter(pk=skipped_notification.pk).update(created_at=now - timedelta(days=40))
+        due_notification = SmartNotification.objects.create(
+            event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
+            recipient_email="due@example.com",
+            title="Due",
+            message="Should archive.",
+            status=SmartNotification.STATUS_READ,
+            read_at=now - timedelta(days=40),
+        )
+        SmartNotification.objects.filter(pk=due_notification.pk).update(created_at=now - timedelta(days=40))
+
+        out = StringIO()
+        call_command("auto_archive_customer_notifications", "--due-only", stdout=out)
+        due_notification.refresh_from_db()
+        skipped_notification.refresh_from_db()
+        self.assertIsNotNone(due_notification.archived_at)
+        self.assertIsNone(skipped_notification.archived_at)
+        due_preference.refresh_from_db()
+        preference.refresh_from_db()
+        self.assertIsNotNone(due_preference.last_auto_archive_run_at)
+        self.assertIsNone(preference.last_auto_archive_run_at)
+
+        dry_out = StringIO()
+        call_command("auto_archive_customer_notifications", "--customer-email", self.customer_email, "--force", "--dry-run", stdout=dry_out)
+        preference.refresh_from_db()
+        self.assertIsNone(preference.last_auto_archive_run_at)
+        skipped_notification.refresh_from_db()
+        self.assertIsNone(skipped_notification.archived_at)
+
+        force_out = StringIO()
+        call_command("auto_archive_customer_notifications", "--customer-email", self.customer_email, "--force", stdout=force_out)
+        skipped_notification.refresh_from_db()
+        preference.refresh_from_db()
+        self.assertIsNotNone(skipped_notification.archived_at)
+        self.assertIsNotNone(preference.last_auto_archive_run_at)
 
     def test_customer_portal_can_open_draw_dispute_for_own_review(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
