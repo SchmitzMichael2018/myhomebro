@@ -232,6 +232,26 @@ from projects.serializers.milestone import MilestoneSerializer
 from projects.serializers_calendar import CalendarMilestoneSerializer
 
 
+def _use_secure_requests(client):
+    client.defaults.update(
+        {
+            "wsgi.url_scheme": "https",
+            "SERVER_PORT": "443",
+            "HTTPS": "on",
+            "HTTP_X_FORWARDED_PROTO": "https",
+        }
+    )
+    for method_name in ("get", "post", "put", "patch", "delete"):
+        original = getattr(client, method_name)
+
+        def secure_method(*args, _original=original, **kwargs):
+            kwargs.setdefault("secure", True)
+            return _original(*args, **kwargs)
+
+        setattr(client, method_name, secure_method)
+    return client
+
+
 class AgreementMilestoneAIRouteTests(TestCase):
     def setUp(self):
         self.pdf_task_patcher = patch(
@@ -266,7 +286,7 @@ class AgreementMilestoneAIRouteTests(TestCase):
             homeowner=self.homeowner,
             description="Test agreement",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_ai_suggest_milestones_route_and_contract(self):
@@ -5930,7 +5950,7 @@ class AgreementWarrantyApiTests(TestCase):
             homeowner=self.homeowner,
             description="Warranty agreement",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_can_create_and_filter_warranty_records_for_agreement(self):
@@ -6011,7 +6031,7 @@ class AIFreeAccessRegressionTests(TestCase):
             escrow_frozen=True,
             status="open",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_ai_entitlements_endpoint_returns_included_payload(self):
@@ -7057,6 +7077,7 @@ class SMSComplianceTests(TestCase):
 
 class SMSAutomationTests(TestCase):
     def setUp(self):
+        self.client = _use_secure_requests(self.client)
         cache.clear()
         self.pdf_task_patcher = patch(
             "projects.signals.task_generate_full_agreement_pdf.delay",
@@ -19335,7 +19356,7 @@ class RecurringMaintenanceTests(TestCase):
             recurrence_interval=1,
             recurrence_anchor_date=self.agreement.recurrence_start_date,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_maintenance_agreement_creation_serializes_recurring_fields(self):
@@ -19748,6 +19769,7 @@ class AgreementStep1RecurringFieldSaveTests(TestCase):
 
 class CustomerPortalAccessTests(TestCase):
     def setUp(self):
+        self.client = _use_secure_requests(APIClient())
         cache.clear()
         User = get_user_model()
         self.contractor_user = User.objects.create_user(
@@ -20047,7 +20069,7 @@ class CustomerPortalAccessTests(TestCase):
         )
 
     def _contractor_api(self, user=None):
-        client = APIClient()
+        client = _use_secure_requests(APIClient())
         client.force_authenticate(user=user or self.contractor_user)
         return client
 
@@ -20400,7 +20422,7 @@ class CustomerPortalAccessTests(TestCase):
             ).exists()
         )
 
-        contractor_client = APIClient()
+        contractor_client = _use_secure_requests(APIClient())
         contractor_client.force_authenticate(user=self.contractor_user)
         complete_response = contractor_client.patch(
             f"/api/projects/milestones/{milestone.id}/",
@@ -20622,7 +20644,7 @@ class CustomerPortalAccessTests(TestCase):
             amount=Decimal("1200.00"),
             completion_date=timezone.localdate() + timedelta(days=5),
         )
-        contractor_client = APIClient()
+        contractor_client = _use_secure_requests(APIClient())
         contractor_client.force_authenticate(user=self.contractor_user)
         create_response = contractor_client.post(
             f"/api/projects/agreements/{self.agreement.id}/amendment-requests/",
@@ -20650,7 +20672,7 @@ class CustomerPortalAccessTests(TestCase):
         )
 
         homeowner_user = get_user_model().objects.create_user(email=self.customer_email, password="password123")
-        homeowner_client = APIClient()
+        homeowner_client = _use_secure_requests(APIClient())
         homeowner_client.force_authenticate(user=homeowner_user)
         response = homeowner_client.post(
             f"/api/projects/amendment-requests/{amendment_request.id}/respond/",
@@ -20700,7 +20722,7 @@ class CustomerPortalAccessTests(TestCase):
         amendment_request.affected_milestones.set([milestone])
         apply_descoped_milestone_hold(amendment_request)
 
-        contractor_client = APIClient()
+        contractor_client = _use_secure_requests(APIClient())
         contractor_client.force_authenticate(user=self.contractor_user)
         response = contractor_client.get(f"/api/projects/agreements/{self.agreement.id}/")
 
@@ -20730,7 +20752,7 @@ class CustomerPortalAccessTests(TestCase):
             recipient_role="contractor",
             delivered=True,
         )
-        contractor_client = APIClient()
+        contractor_client = _use_secure_requests(APIClient())
         contractor_client.force_authenticate(user=self.contractor_user)
 
         reject_response = contractor_client.post(
@@ -20777,7 +20799,7 @@ class CustomerPortalAccessTests(TestCase):
         amendment_request.affected_milestones.set([milestone])
         apply_descoped_milestone_hold(amendment_request)
 
-        contractor_client = APIClient()
+        contractor_client = _use_secure_requests(APIClient())
         contractor_client.force_authenticate(user=self.contractor_user)
         response = contractor_client.post(f"/api/projects/milestones/{milestone.id}/complete/")
 
@@ -20881,7 +20903,7 @@ class CustomerPortalAccessTests(TestCase):
     def test_customer_portal_account_login_returns_email_scoped_records(self):
         User = get_user_model()
         user = User.objects.create_user(email=self.customer_email, password="CustomerPass123!")
-        client = APIClient()
+        client = _use_secure_requests(APIClient())
         client.force_authenticate(user=user)
 
         response = client.get("/api/projects/customer-portal/account/")
@@ -20927,7 +20949,7 @@ class CustomerPortalAccessTests(TestCase):
     def test_customer_portal_account_login_requires_connected_records(self):
         User = get_user_model()
         user = User.objects.create_user(email="unconnected@example.com", password="CustomerPass123!")
-        client = APIClient()
+        client = _use_secure_requests(APIClient())
         client.force_authenticate(user=user)
 
         response = client.get("/api/projects/customer-portal/account/")
@@ -21586,7 +21608,7 @@ class CustomerPortalAccessTests(TestCase):
         description = "Dryer is making loud noises"
 
         with patch("projects.services.ai.project_classifier._call_openai_classifier", return_value=None):
-            contractor_client = APIClient()
+            contractor_client = _use_secure_requests(APIClient())
             contractor_client.force_authenticate(user=self.contractor_user)
             agreement_response = contractor_client.post(
                 "/api/projects/agreements/ai/description/",
@@ -22188,6 +22210,7 @@ class CustomerPortalAccessTests(TestCase):
                 "notes": "Annual flush completed.",
             },
             content_type="application/json",
+            secure=True,
         )
 
         self.assertEqual(service_response.status_code, 200, service_response.data)
@@ -22201,6 +22224,7 @@ class CustomerPortalAccessTests(TestCase):
             f"/api/projects/customer-portal/{token}/property/systems/{system.id}/service-request/",
             {},
             content_type="application/json",
+            secure=True,
         )
 
         self.assertEqual(request_response.status_code, 201, request_response.data)
@@ -22208,8 +22232,89 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(created.request_type, CustomerRequest.TYPE_MAINTENANCE)
         self.assertEqual(created.project_type, "Water Heater")
         self.assertEqual(created.project_subtype, "Maintenance Service")
+        self.assertEqual(created.linked_home_system, system)
         system.refresh_from_db()
         self.assertEqual(system.linked_customer_request, created)
+        portal_response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+        self.assertEqual(portal_response.status_code, 200, portal_response.data)
+        portal_system = next(row for row in portal_response.data["property_profile"]["home_systems"] if row["id"] == system.id)
+        self.assertEqual(portal_system["lifecycle"]["state"], "service_requested")
+        self.assertEqual(portal_system["lifecycle"]["linked_request_id"], created.id)
+        portal_request = next(row for row in portal_response.data["requests"] if row.get("request_id") == created.id)
+        self.assertEqual(portal_request["linked_home_system_id"], system.id)
+        self.assertEqual(portal_request["lifecycle_status"], "requested")
+
+    def test_customer_portal_lifecycle_syncs_request_agreement_and_work_order_completion(self):
+        from projects.services.customer_lifecycle import sync_customer_request_agreement_links
+        from projects.services.maintenance_work_orders import complete_work_order
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=400),
+        )
+        request_row = CustomerRequest.objects.create(
+            customer_email=self.customer_email,
+            property_profile=profile,
+            linked_home_system=system,
+            request_type=CustomerRequest.TYPE_MAINTENANCE,
+            title="Main HVAC service request",
+            description="Schedule HVAC service.",
+            project_type="HVAC",
+            project_subtype="Maintenance Service",
+            status=CustomerRequest.STATUS_SUBMITTED,
+        )
+        source_intake = _sync_customer_request_source_intake(request_row)
+        source_intake.agreement = self.agreement
+        source_intake.save(update_fields=["agreement", "updated_at"])
+
+        synced_request = sync_customer_request_agreement_links(
+            intake=source_intake,
+            agreement=self.agreement,
+            project=self.project,
+        )
+
+        self.assertEqual(synced_request.id, request_row.id)
+        request_row.refresh_from_db()
+        system.refresh_from_db()
+        self.assertEqual(request_row.status, CustomerRequest.STATUS_CONVERTED_TO_PROJECT)
+        self.assertEqual(request_row.converted_project, self.project)
+        self.assertEqual(system.linked_agreement, self.agreement)
+
+        work_order = MaintenanceWorkOrder.objects.create(
+            maintenance_agreement=self.agreement,
+            property_profile=profile,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Main HVAC service visit",
+            scheduled_date=timezone.localdate() + timezone.timedelta(days=3),
+            status=MaintenanceWorkOrder.STATUS_SCHEDULED,
+        )
+        portal_before = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+        self.assertEqual(portal_before.status_code, 200, portal_before.data)
+        before_system = next(row for row in portal_before.data["property_profile"]["home_systems"] if row["id"] == system.id)
+        self.assertEqual(before_system["lifecycle"]["state"], "scheduled")
+        self.assertEqual(before_system["lifecycle"]["linked_work_order_id"], work_order.id)
+
+        complete_work_order(work_order, completed_by=self.contractor_user, notes="Seasonal service completed.")
+
+        system.refresh_from_db()
+        work_order.refresh_from_db()
+        self.assertEqual(work_order.home_system, system)
+        self.assertEqual(system.last_service_date, work_order.completed_at.date())
+        self.assertEqual(system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_RESOLVED)
+        portal_after = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+        self.assertEqual(portal_after.status_code, 200, portal_after.data)
+        after_system = next(row for row in portal_after.data["property_profile"]["home_systems"] if row["id"] == system.id)
+        self.assertEqual(after_system["lifecycle"]["state"], "completed")
+        linked_request = next(row for row in portal_after.data["requests"] if row.get("request_id") == request_row.id)
+        self.assertTrue(any(item["title"] == "Service completed" for item in linked_request["activity_timeline"]))
 
     def test_home_system_reminder_notification_is_deduplicated_and_tracked(self):
         from projects.services.home_system_reminders import create_home_system_reminder_notification
@@ -22854,7 +22959,7 @@ class CustomerPortalAccessTests(TestCase):
             [recipient for message in mail.outbox for recipient in message.to],
         )
 
-        notify_client = APIClient()
+        notify_client = _use_secure_requests(APIClient())
         notify_client.force_authenticate(user=self.contractor_user)
         notifications_response = notify_client.get("/api/notifications/")
         self.assertEqual(notifications_response.status_code, 200)

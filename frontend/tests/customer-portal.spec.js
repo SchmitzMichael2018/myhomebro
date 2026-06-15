@@ -67,6 +67,16 @@ const portalPayload = {
         reminder_lead_days: 30,
         reminder_frequency: "once",
         reminder_delivery_status: "",
+        lifecycle: {
+          state: "service_requested",
+          label: "Service Requested",
+          linked_request_id: 9,
+          linked_agreement_id: null,
+          linked_work_order_id: null,
+          scheduled_date: "",
+          completed_at: "",
+          next_action: "Open the linked request to find or contact a contractor.",
+        },
         supply_recommendations: [
           {
             id: "system-11-supply-1",
@@ -2727,6 +2737,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Needs attention");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Reminder schedule");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Reminder delivery: Email reminders");
+  await expect(page.getByTestId("property-maintenance-lifecycle-11")).toContainText("Service Requested");
+  await expect(page.getByTestId("property-maintenance-lifecycle-11")).toContainText("Open the linked request to find or contact a contractor.");
   await expect(page.getByTestId("property-maintenance-center")).not.toContainText("Channels:");
   await expect(page.getByTestId("property-maintenance-center")).not.toContainText("Last reminded");
   await expect(page.getByTestId("property-maintenance-center")).not.toContainText("Confidence");

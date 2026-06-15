@@ -7,6 +7,7 @@ from django.utils import timezone
 from projects.models import Agreement, AgreementMode, MaintenanceStatus, Milestone, Notification
 from projects.models_customer_portal import PropertyProfile, SmartNotificationEvent
 from projects.models_maintenance import MaintenanceWorkOrder
+from projects.services.customer_lifecycle import complete_home_system_from_work_order
 from projects.services.notification_center import create_notification
 from projects.services.smart_notifications import create_smart_notification
 
@@ -220,6 +221,7 @@ def complete_work_order(work_order: MaintenanceWorkOrder, *, completed_by=None, 
         handle_milestone_recurring_state_change(milestone)
         ensure_work_orders_for_agreement(work_order.maintenance_agreement, horizon=1)
 
+    complete_home_system_from_work_order(work_order)
     _notify_work_order_completed(work_order)
     return work_order
 

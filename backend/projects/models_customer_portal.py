@@ -364,6 +364,13 @@ class CustomerRequest(models.Model):
         blank=True,
         related_name="customer_requests",
     )
+    linked_home_system = models.ForeignKey(
+        "projects.PropertyHomeSystem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="customer_requests",
+    )
     customer_email = models.EmailField(db_index=True)
     request_type = models.CharField(max_length=32, choices=REQUEST_TYPE_CHOICES)
     project_mode = models.CharField(

@@ -38,6 +38,13 @@ class MaintenanceWorkOrder(models.Model):
         blank=True,
         related_name="maintenance_work_orders",
     )
+    home_system = models.ForeignKey(
+        "projects.PropertyHomeSystem",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="maintenance_work_orders",
+    )
     contractor = models.ForeignKey(
         "projects.Contractor",
         on_delete=models.CASCADE,

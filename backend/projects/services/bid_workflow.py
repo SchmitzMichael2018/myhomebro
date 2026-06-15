@@ -17,6 +17,7 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.models_templates import ProjectTemplate
+from projects.services.customer_lifecycle import sync_customer_request_agreement_links
 from projects.services.sms_service import ensure_sms_consent
 
 COMMERCIAL_HINTS = {
@@ -214,6 +215,7 @@ def sync_bid_agreement_links(*, agreement, lead=None, intake=None) -> None:
         if updates:
             updates.append("updated_at")
             intake.save(update_fields=updates)
+        sync_customer_request_agreement_links(intake=intake, agreement=agreement, project=getattr(agreement, "project", None))
 
     if lead is not None:
         updates = []

@@ -253,6 +253,17 @@ function normalizeHomeSystem(system) {
     lastNotifiedAt: system.last_notified_at || "",
     nextNotificationAt: system.next_notification_at || "",
     dismissedUntil: system.dismissed_until || "",
+    lifecycle: {
+      ...(system.lifecycle || {}),
+      state: system.lifecycle?.state || "current",
+      label: system.lifecycle?.label || "",
+      nextAction: system.lifecycle?.next_action || "",
+      linkedRequestId: system.lifecycle?.linked_request_id || system.linked_customer_request_id || "",
+      linkedAgreementId: system.lifecycle?.linked_agreement_id || system.linked_agreement_id || "",
+      linkedWorkOrderId: system.lifecycle?.linked_work_order_id || "",
+      scheduledDate: system.lifecycle?.scheduled_date || "",
+      completedAt: system.lifecycle?.completed_at || "",
+    },
     isStructured: true,
   };
 }
@@ -630,7 +641,7 @@ function homeownerMaintenanceText(value, fallback = "") {
     .trim() || fallback;
 }
 
-function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], onMarkServiced, onEditSystem, onCreateServiceRequest, onDismissReminder }) {
+function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], onMarkServiced, onEditSystem, onCreateServiceRequest, onDismissReminder, onOpenRequest }) {
   const health = intelligence?.health || {};
   const buckets = intelligence?.buckets || {};
   const groupedSystems = {
@@ -663,6 +674,43 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
         </span>
       </div>
       <p className="mt-3 text-sm leading-6 text-slate-300">{system.reminderReason || "Add service and warranty records to improve future reminders."}</p>
+      {system.lifecycle?.label ? (
+        <div className="mt-3 rounded-2xl border border-sky-300/25 bg-sky-400/10 p-3" data-testid={`property-maintenance-lifecycle-${system.id}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wide text-sky-100">Service lifecycle</div>
+              <p className="mt-1 text-sm font-bold text-white">{system.lifecycle.label}</p>
+            </div>
+            {system.lifecycle.scheduledDate ? (
+              <span className="rounded-full border border-sky-300/35 bg-sky-400/10 px-2 py-1 text-xs font-semibold text-sky-100">
+                {formatDate(system.lifecycle.scheduledDate)}
+              </span>
+            ) : null}
+          </div>
+          {system.lifecycle.nextAction ? <p className="mt-2 text-xs leading-5 text-slate-300">{system.lifecycle.nextAction}</p> : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {system.lifecycle.linkedRequestId ? (
+              <button
+                type="button"
+                data-testid={`property-maintenance-view-request-${system.id}`}
+                onClick={() => onOpenRequest?.(`customer-request-${system.lifecycle.linkedRequestId}`)}
+                className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-sky-400/20"
+              >
+                View Request
+              </button>
+            ) : null}
+            {system.linkedProjects?.[0]?.url ? (
+              <a
+                data-testid={`property-maintenance-view-agreement-${system.id}`}
+                href={system.linkedProjects[0].url}
+                className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-sky-400/20"
+              >
+                View Agreement
+              </a>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <dl className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
         <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-200">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "Not recorded"}</dd></div>
         <div><dt className="text-slate-500">Next suggested</dt><dd className="font-semibold text-slate-200">{system.nextRecommendedServiceDate ? formatDate(system.nextRecommendedServiceDate) : "Needs details"}</dd></div>
@@ -1164,6 +1212,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         onEditSystem={onEditSystem}
         onCreateServiceRequest={onCreateServiceRequest}
         onDismissReminder={onDismissReminder}
+        onOpenRequest={onOpenRequest}
       />
 
       <Section title="Timeline / History" eyebrow="Property records" testId="home-records-timeline">

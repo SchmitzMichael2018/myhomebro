@@ -15,6 +15,7 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
+from projects.services.customer_lifecycle import sync_customer_request_agreement_links
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.notification_center import create_notification
 from projects.services.project_titles import generate_project_title, normalize_project_classification
@@ -375,6 +376,7 @@ def convert_opportunity_to_customer_and_draft_agreement(opportunity: ContractorO
         intake.status = "converted"
         intake.converted_at = intake.converted_at or timezone.now()
         intake.save(update_fields=["homeowner", "agreement", "status", "converted_at", "updated_at"])
+        sync_customer_request_agreement_links(intake=intake, agreement=agreement, project=project)
 
     return {"customer": customer, "agreement": agreement, "created": True}
 

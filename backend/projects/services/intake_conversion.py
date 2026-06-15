@@ -12,6 +12,7 @@ from projects.models_ai_scope import AgreementAIScope
 from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
 from projects.services.assisted_diy import build_assisted_diy_snapshot
+from projects.services.customer_lifecycle import sync_customer_request_agreement_links
 from projects.services.milestone_roles import annotate_milestone_roles
 from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
 from projects.services.sms_service import ensure_sms_consent
@@ -264,6 +265,7 @@ def convert_intake_to_agreement(
     intake.status = "converted"
     intake.converted_at = timezone.now()
     intake.save(update_fields=["homeowner", "agreement", "status", "converted_at", "updated_at"])
+    sync_customer_request_agreement_links(intake=intake, agreement=agreement, project=project)
 
     if getattr(intake, "public_lead", None) is not None:
         sync_bid_agreement_links(agreement=agreement, lead=intake.public_lead, intake=intake)

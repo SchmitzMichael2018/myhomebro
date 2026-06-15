@@ -67,6 +67,7 @@ from projects.services.marketplace_permissions import contractor_marketplace_act
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.property_intelligence import build_property_intelligence
 from projects.services.home_system_reminders import build_home_system_reminder
+from projects.services.customer_lifecycle import sync_customer_request_agreement_links
 from projects.services.customer_portal_supplies import (
     build_home_system_supply_recommendations,
     build_project_material_recommendations,
@@ -480,6 +481,12 @@ def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
                 "status_label": _customer_request_status_label(getattr(linked_request, "status", "")),
             }
         )
+    lifecycle = _home_system_lifecycle_payload(
+        system=system,
+        reminder=reminder,
+        linked_request=linked_request,
+        linked_agreement=linked_agreement,
+    )
     return {
         "id": system.id,
         "display_name": system.display_name,
@@ -526,9 +533,84 @@ def _property_home_system_payload(system: PropertyHomeSystem) -> dict:
         "supply_recommendations": supply_recommendations,
         "linked_agreement_id": getattr(linked_agreement, "id", None),
         "linked_customer_request_id": getattr(linked_request, "id", None),
+        "lifecycle": lifecycle,
         "created_at": _safe_dt(system.created_at),
         "updated_at": _safe_dt(system.updated_at),
     }
+
+
+def _home_system_lifecycle_payload(*, system: PropertyHomeSystem, reminder, linked_request=None, linked_agreement=None) -> dict:
+    now = timezone.now()
+    work_order_filter = Q(home_system=system)
+    if linked_agreement is not None:
+        work_order_filter |= Q(
+            maintenance_agreement=linked_agreement,
+            property_profile=system.property_profile,
+            home_system__isnull=True,
+        )
+    work_order_qs = MaintenanceWorkOrder.objects.filter(work_order_filter)
+    work_orders = list(work_order_qs.select_related("maintenance_agreement", "contractor").order_by("-scheduled_date", "-id")[:5])
+    completed = next((row for row in work_orders if row.status == MaintenanceWorkOrder.STATUS_COMPLETED), None)
+    in_progress = next((row for row in work_orders if row.status == MaintenanceWorkOrder.STATUS_IN_PROGRESS), None)
+    scheduled = next((row for row in work_orders if row.status == MaintenanceWorkOrder.STATUS_SCHEDULED), None)
+    request_status = _safe_text(getattr(linked_request, "status", ""))
+    matching_counts = _customer_request_matching_counts(linked_request) if linked_request is not None else {"total": 0}
+    if system.dismissed_until and system.dismissed_until > now:
+        key, label = "dismissed", "Dismissed"
+    elif completed is not None:
+        key, label = "completed", "Completed"
+    elif in_progress is not None:
+        key, label = "in_progress", "In Progress"
+    elif scheduled is not None:
+        key, label = "scheduled", "Scheduled"
+    elif linked_agreement is not None:
+        key, label = "agreement_created", "Agreement Created"
+    elif linked_request is not None and matching_counts["total"] > 0:
+        key, label = "sent_to_contractors", "Sent to Contractors"
+    elif linked_request is not None and request_status not in {CustomerRequest.STATUS_CANCELLED, CustomerRequest.STATUS_CLOSED}:
+        key, label = "service_requested", "Service Requested"
+    elif reminder.maintenance_status in {"overdue", "due_soon", "warranty_expired", "warranty_expiring", "lifespan_attention"}:
+        reminder_labels = {
+            "overdue": "Overdue",
+            "due_soon": "Due Soon",
+            "warranty_expired": "Warranty Attention",
+            "warranty_expiring": "Warranty Expiring",
+            "lifespan_attention": "Nearing End of Life",
+        }
+        key, label = reminder.maintenance_status, reminder_labels.get(reminder.maintenance_status, "Needs Attention")
+    else:
+        key, label = "current", "Current"
+    current_work_order = completed or in_progress or scheduled
+    return {
+        "state": key,
+        "label": label,
+        "linked_request_id": getattr(linked_request, "id", None),
+        "linked_request_status": request_status,
+        "linked_agreement_id": getattr(linked_agreement, "id", None),
+        "linked_work_order_id": getattr(current_work_order, "id", None),
+        "linked_work_order_status": _safe_text(getattr(current_work_order, "status", "")),
+        "scheduled_date": _safe_dt(getattr(current_work_order, "scheduled_date", None)),
+        "completed_at": _safe_dt(getattr(current_work_order, "completed_at", None)),
+        "next_action": _home_system_lifecycle_next_action(key),
+    }
+
+
+def _home_system_lifecycle_next_action(state: str) -> str:
+    return {
+        "dismissed": "Reminder paused until the selected date.",
+        "service_requested": "Open the linked request to find or contact a contractor.",
+        "sent_to_contractors": "Watch for contractor responses.",
+        "agreement_created": "Open the linked agreement for next steps.",
+        "scheduled": "Review the scheduled service visit.",
+        "in_progress": "Wait for the contractor to complete the service.",
+        "completed": "Service is recorded for this system.",
+        "overdue": "Create a service request or mark the system serviced if work is already done.",
+        "due_soon": "Plan upcoming service.",
+        "warranty_expiring": "Review warranty coverage.",
+        "warranty_expired": "Review warranty records.",
+        "lifespan_attention": "Plan replacement or inspection.",
+        "current": "No maintenance action is needed right now.",
+    }.get(state, "Review this system record.")
 
 
 def _property_profile_payload(email: str, property_id: int | None = None) -> dict:
@@ -894,11 +976,22 @@ def _request_linked_work_payload(agreement=None, project=None) -> dict | None:
 
 def _customer_request_activity(request_row) -> list[dict]:
     source_intake = getattr(request_row, "source_intake", None)
+    linked_system = getattr(request_row, "linked_home_system", None)
+    linked_agreement = getattr(source_intake, "agreement", None) or getattr(linked_system, "linked_agreement", None)
     matching_counts = _customer_request_matching_counts(request_row)
     items = [
         _request_activity_item("Request saved", getattr(request_row, "created_at", None), "Saved in your Customer Portal."),
         _request_activity_item("Request updated", getattr(request_row, "updated_at", None), "Request details were updated."),
     ]
+    if linked_system is not None:
+        items.append(
+            _request_activity_item(
+                "Linked to home system",
+                getattr(request_row, "created_at", None),
+                f"Connected to {linked_system.display_name}.",
+                status="home_system",
+            )
+        )
     if source_intake:
         items.append(
             _request_activity_item(
@@ -917,15 +1010,49 @@ def _customer_request_activity(request_row) -> list[dict]:
                 status="routed",
             )
         )
-    if getattr(request_row, "converted_project_id", None):
+    if getattr(request_row, "converted_project_id", None) or linked_agreement is not None:
         items.append(
             _request_activity_item(
-                "Linked project created",
-                getattr(request_row, "updated_at", None),
-                "This request is linked to a project record.",
+                "Agreement created",
+                getattr(linked_agreement, "created_at", None) or getattr(request_row, "updated_at", None),
+                "This request is linked to an agreement.",
                 status="converted",
             )
         )
+    if linked_system is not None:
+        work_orders = MaintenanceWorkOrder.objects.filter(
+            Q(home_system=linked_system) | Q(maintenance_agreement=linked_agreement, property_profile=linked_system.property_profile, home_system__isnull=True)
+        ).order_by("-scheduled_date", "-id")
+        scheduled = work_orders.filter(status=MaintenanceWorkOrder.STATUS_SCHEDULED).first()
+        in_progress = work_orders.filter(status=MaintenanceWorkOrder.STATUS_IN_PROGRESS).first()
+        completed = work_orders.filter(status=MaintenanceWorkOrder.STATUS_COMPLETED).first()
+        if scheduled is not None:
+            items.append(
+                _request_activity_item(
+                    "Service scheduled",
+                    getattr(scheduled, "scheduled_date", None),
+                    scheduled.title,
+                    status="scheduled",
+                )
+            )
+        if in_progress is not None:
+            items.append(
+                _request_activity_item(
+                    "Service in progress",
+                    getattr(in_progress, "updated_at", None),
+                    in_progress.title,
+                    status="in_progress",
+                )
+            )
+        if completed is not None:
+            items.append(
+                _request_activity_item(
+                    "Service completed",
+                    getattr(completed, "completed_at", None),
+                    completed.title,
+                    status="completed",
+                )
+            )
     if getattr(request_row, "cancelled_at", None):
         items.append(
             _request_activity_item(
@@ -1144,9 +1271,34 @@ def _customer_request_refine_fallback(description: str) -> str:
     return text
 
 
+def _request_lifecycle_payload(request_row, *, source_intake=None, linked_agreement=None, matching_counts=None) -> dict:
+    if linked_agreement is not None:
+        return {"state": "agreement_created", "label": "Agreement Created", "next_action": "Open the linked agreement for next steps."}
+    if getattr(request_row, "converted_project_id", None) or request_row.status == CustomerRequest.STATUS_CONVERTED_TO_PROJECT:
+        return {"state": "agreement_created", "label": "Agreement Created", "next_action": "Open the linked project or agreement."}
+    if matching_counts and matching_counts.get("total", 0) > 0:
+        return {"state": "sent_to_contractors", "label": "Sent to Contractors", "next_action": "Watch for contractor responses."}
+    if source_intake is not None:
+        return {"state": "reviewing", "label": "Reviewing Request", "next_action": "Find or select contractors when ready."}
+    if request_row.status == CustomerRequest.STATUS_CANCELLED:
+        return {"state": "closed", "label": "Closed", "next_action": "This request is cancelled."}
+    if request_row.status == CustomerRequest.STATUS_CLOSED:
+        return {"state": "closed", "label": "Closed", "next_action": "This request is closed."}
+    if request_row.status == CustomerRequest.STATUS_DRAFT:
+        return {"state": "draft", "label": "Draft", "next_action": "Finish and submit this request."}
+    return {"state": "requested", "label": "Requested", "next_action": "Review the request or find a contractor."}
+
+
 def _customer_request_rows(email: str) -> list[dict]:
     rows = []
-    for request_row in CustomerRequest.objects.select_related("converted_project", "property_profile", "source_intake").filter(
+    for request_row in CustomerRequest.objects.select_related(
+        "converted_project",
+        "property_profile",
+        "source_intake",
+        "source_intake__agreement",
+        "linked_home_system",
+        "linked_home_system__linked_agreement",
+    ).filter(
         customer_email__iexact=email
     ).order_by("-created_at", "-id"):
         project_type = _safe_text(getattr(request_row, "project_type", "")) or _safe_text(getattr(request_row, "project_category", ""))
@@ -1173,6 +1325,14 @@ def _customer_request_rows(email: str) -> list[dict]:
         matching_counts = _customer_request_matching_counts(request_row)
         can_cancel, cancel_lock_reason = _customer_request_cancel_state(request_row)
         can_delete = _customer_request_can_delete(request_row)
+        linked_system = getattr(request_row, "linked_home_system", None)
+        linked_agreement = getattr(source_intake, "agreement", None) or getattr(linked_system, "linked_agreement", None)
+        lifecycle = _request_lifecycle_payload(
+            request_row,
+            source_intake=source_intake,
+            linked_agreement=linked_agreement,
+            matching_counts=matching_counts,
+        )
         rows.append(
             {
                 "id": f"customer-request-{request_row.id}",
@@ -1207,6 +1367,9 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "status_label": workflow_label,
                 "workflow_status": workflow_key,
                 "workflow_status_label": workflow_label,
+                "lifecycle": lifecycle,
+                "lifecycle_status": lifecycle["state"],
+                "lifecycle_status_label": lifecycle["label"],
                 "can_edit": can_edit,
                 "edit_lock_reason": "" if can_edit else "Editing is locked after a request is sent to contractors or converted to an agreement.",
                 "can_cancel": can_cancel,
@@ -1227,8 +1390,8 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "updated_at": _safe_dt(request_row.updated_at),
                 "latest_activity_label": "Updated",
                 "bids_count": 0,
-                "agreement_id": None,
-                "agreement_token": "",
+                "agreement_id": getattr(linked_agreement, "id", None),
+                "agreement_token": _safe_text(getattr(linked_agreement, "homeowner_access_token", "")),
                 "action_label": "View Request",
                 "action_target": "",
                 "current_next_action": next_action,
@@ -1245,6 +1408,9 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "homeowner_email": _safe_text(getattr(request_row, "customer_email", "")),
                 "homeowner_phone": "",
                 "converted_project_id": getattr(request_row.converted_project, "id", None),
+                "linked_home_system_id": getattr(linked_system, "id", None),
+                "linked_home_system_name": _safe_text(getattr(linked_system, "display_name", "")) if linked_system else "",
+                "linked_agreement_id": getattr(linked_agreement, "id", None),
                 "property_id": getattr(property_profile, "id", None),
                 "property_name": _safe_text(getattr(property_profile, "display_name", "")),
                 "property_profile": {
@@ -1270,7 +1436,7 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "photos": [],
                 "documents": [],
                 "activity_timeline": _customer_request_activity(request_row),
-                "linked_work": _request_linked_work_payload(project=linked_project),
+                "linked_work": _request_linked_work_payload(agreement=linked_agreement, project=linked_project),
             }
         )
     return rows
@@ -4501,6 +4667,7 @@ class CustomerPortalHomeSystemServiceRequestView(APIView):
         customer_request = CustomerRequest.objects.create(
             homeowner=homeowner,
             property_profile=profile,
+            linked_home_system=system,
             customer_email=email.lower().strip(),
             request_type=CustomerRequest.TYPE_MAINTENANCE,
             project_mode=CustomerRequest.PROJECT_MODE_FULL_SERVICE,
@@ -5319,6 +5486,11 @@ class CustomerPortalBidAcceptView(APIView):
                 source_intake=source_intake,
                 agreement=agreement,
                 competing_leads=competing_group,
+            )
+            sync_customer_request_agreement_links(
+                intake=source_intake,
+                agreement=agreement,
+                project=getattr(agreement, "project", None),
             )
 
             create_bid_outcome_notifications(
