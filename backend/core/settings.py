@@ -529,3 +529,8 @@ AI_SCOPE_ASSIST_ENABLED = get_bool("AI_SCOPE_ASSIST_ENABLED", default=True)
 OPENAI_DISPUTE_SUMMARY_MODEL = get_env_var("OPENAI_DISPUTE_SUMMARY_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = get_env_var("OPENAI_API_KEY", required=False)
 AI_OPENAI_API_KEY = get_env_var("AI_OPENAI_API_KEY", default=OPENAI_API_KEY, required=False)
+HOME_SYSTEM_EXTRACTION_PROVIDER = get_env_var("HOME_SYSTEM_EXTRACTION_PROVIDER", "stub").strip().lower()
+HOME_SYSTEM_EXTRACTION_MODEL = get_env_var(
+    "HOME_SYSTEM_EXTRACTION_MODEL",
+    get_env_var("AI_OPENAI_MODEL_HOME_SYSTEM_EXTRACTION", get_env_var("AI_OPENAI_MODEL", "gpt-4.1-mini")),
+)

@@ -22009,6 +22009,140 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIsNotNone(document.extraction.reviewed_at)
         self.assertIsNotNone(document.extraction.applied_at)
 
+    @override_settings(HOME_SYSTEM_EXTRACTION_PROVIDER="ai")
+    def test_customer_portal_home_system_ai_image_extraction_returns_reviewable_suggestions(self):
+        from projects.services.home_system_document_extraction import EXTRACTABLE_FIELDS
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Downstairs HVAC",
+            manufacturer="Existing Brand",
+        )
+        suggested_fields = {field_name: None for field_name in EXTRACTABLE_FIELDS}
+        suggested_fields.update(
+            {
+                "manufacturer": {
+                    "value": "Carrier",
+                    "confidence": "high",
+                    "source_text": "Carrier",
+                    "apply_default": True,
+                },
+                "model_number": {
+                    "value": "ABC123",
+                    "confidence": "high",
+                    "source_text": "Model ABC123",
+                    "apply_default": True,
+                },
+                "warranty_expiration_date": {
+                    "value": "2027-04-01",
+                    "confidence": "low",
+                    "source_text": "Warranty through 2027",
+                    "apply_default": True,
+                },
+            }
+        )
+        ai_payload = {
+            "document_classification": "Equipment Label",
+            "confidence": "high",
+            "suggested_fields": suggested_fields,
+        }
+
+        class FakeResponses:
+            def __init__(self):
+                self.kwargs = None
+
+            def create(self, **kwargs):
+                self.kwargs = kwargs
+                return SimpleNamespace(output_text=json.dumps(ai_payload))
+
+        fake_responses = FakeResponses()
+        fake_client = SimpleNamespace(responses=fake_responses)
+
+        with self.settings(MEDIA_ROOT=tempfile.mkdtemp()), patch(
+            "projects.services.home_system_document_extraction._require_openai_client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/property/documents/",
+                {
+                    "title": "Carrier HVAC equipment label",
+                    "document_type": "Equipment Label",
+                    "upload_source": "portal_desktop",
+                    "property_profile_id": profile.id,
+                    "home_system_id": system.id,
+                    "file": SimpleUploadedFile(
+                        "carrier-label.jpg",
+                        b"fake-image",
+                        content_type="image/jpeg",
+                    ),
+                },
+                format="multipart",
+                secure=True,
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        document = PropertyDocument.objects.get(title="Carrier HVAC equipment label")
+        extraction = document.extraction
+        self.assertEqual(extraction.extraction_status, PropertyDocumentExtraction.STATUS_COMPLETED)
+        self.assertEqual(extraction.document_classification, "Equipment Label")
+        self.assertEqual(extraction.suggested_fields["manufacturer"]["value"], "Carrier")
+        self.assertFalse(extraction.suggested_fields["manufacturer"]["apply_default"])
+        self.assertEqual(extraction.suggested_fields["model_number"]["value"], "ABC123")
+        self.assertTrue(extraction.suggested_fields["model_number"]["apply_default"])
+        self.assertFalse(extraction.suggested_fields["warranty_expiration_date"]["apply_default"])
+        system.refresh_from_db()
+        self.assertEqual(system.manufacturer, "Existing Brand")
+        user_content = fake_responses.kwargs["input"][1]["content"]
+        self.assertTrue(any(part.get("type") == "input_image" for part in user_content))
+
+    @override_settings(HOME_SYSTEM_EXTRACTION_PROVIDER="ai")
+    def test_customer_portal_home_system_ai_failure_falls_back_to_stub(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_WATER_HEATER,
+            custom_name="Water Heater",
+        )
+
+        with self.settings(MEDIA_ROOT=tempfile.mkdtemp()), patch(
+            "projects.services.home_system_document_extraction._require_openai_client",
+            side_effect=RuntimeError("AI unavailable"),
+        ):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/property/documents/",
+                {
+                    "title": "Rheem label model WH123",
+                    "document_type": "Equipment Label",
+                    "upload_source": "portal_desktop",
+                    "property_profile_id": profile.id,
+                    "home_system_id": system.id,
+                    "file": SimpleUploadedFile(
+                        "rheem-model-WH123.jpg",
+                        b"fake-image",
+                        content_type="image/jpeg",
+                    ),
+                },
+                format="multipart",
+                secure=True,
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        document = PropertyDocument.objects.get(title="Rheem label model WH123")
+        extraction = document.extraction
+        self.assertEqual(extraction.extraction_status, PropertyDocumentExtraction.STATUS_COMPLETED)
+        self.assertIn("stub fallback used", extraction.error_message)
+        self.assertEqual(extraction.suggested_fields["manufacturer"]["value"], "Rheem")
+
     def test_customer_portal_home_systems_payload_and_crud_are_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         profile = PropertyProfile.objects.get_or_create(
