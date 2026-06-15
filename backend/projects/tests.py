@@ -21963,6 +21963,53 @@ class CustomerPortalAccessTests(TestCase):
         session.refresh_from_db()
         self.assertIsNotNone(session.used_at)
 
+    def test_customer_portal_home_system_pdf_scan_extracts_text_with_pypdf(self):
+        from io import BytesIO
+
+        from reportlab.pdfgen import canvas
+
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+        )
+        pdf_buffer = BytesIO()
+        page = canvas.Canvas(pdf_buffer)
+        page.drawString(72, 720, "Carrier HVAC warranty")
+        page.drawString(72, 700, "Model: ABC123")
+        page.drawString(72, 680, "Serial: SN9876")
+        page.save()
+        pdf_bytes = pdf_buffer.getvalue()
+
+        with self.settings(MEDIA_ROOT=tempfile.mkdtemp()):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/property/documents/",
+                {
+                    "title": "Carrier HVAC warranty PDF",
+                    "document_type": "Warranty",
+                    "upload_source": "portal_desktop",
+                    "property_profile_id": profile.id,
+                    "home_system_id": system.id,
+                    "file": SimpleUploadedFile("carrier-hvac-warranty.pdf", pdf_bytes, content_type="application/pdf"),
+                },
+                format="multipart",
+                secure=True,
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        document = PropertyDocument.objects.get(title="Carrier HVAC warranty PDF")
+        extraction = document.extraction
+        self.assertEqual(extraction.extraction_status, PropertyDocumentExtraction.STATUS_COMPLETED)
+        self.assertIn("Carrier HVAC warranty", extraction.extracted_text)
+        self.assertEqual(extraction.suggested_fields["manufacturer"]["value"], "Carrier")
+        self.assertEqual(extraction.suggested_fields["model_number"]["value"], "ABC123")
+        self.assertEqual(extraction.suggested_fields["serial_number"]["value"], "SN9876")
+
     def test_customer_portal_apply_extraction_updates_only_selected_fields(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         profile = PropertyProfile.objects.get_or_create(
