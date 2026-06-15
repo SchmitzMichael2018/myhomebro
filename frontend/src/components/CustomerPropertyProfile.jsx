@@ -607,6 +607,29 @@ const MAINTENANCE_STATUS_LABELS = {
   unknown: "Unknown",
 };
 
+const MAINTENANCE_PRIORITY_LABELS = {
+  high: "Needs attention",
+  medium: "Plan soon",
+  low: "For awareness",
+};
+
+function reminderDeliveryLabel(system) {
+  const channels = [
+    system.emailRemindersEnabled ? "Email reminders" : "",
+    system.smsRemindersEnabled ? "Text reminders" : "",
+  ].filter(Boolean);
+  return channels.join(" and ") || "Reminders off";
+}
+
+function homeownerMaintenanceText(value, fallback = "") {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  return text
+    .replace(/\s*Confidence is [^.]+ based on available records\.?/gi, "")
+    .replace(/\s*confidence[:\s][^.]+\.?/gi, "")
+    .trim() || fallback;
+}
+
 function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], onMarkServiced, onEditSystem, onCreateServiceRequest, onDismissReminder }) {
   const health = intelligence?.health || {};
   const buckets = intelligence?.buckets || {};
@@ -619,11 +642,15 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
     unknown: systems.filter((system) => system.maintenanceStatus === "unknown"),
   };
   const cards = [
-    ["Maintenance status", health.label || "Needs Attention", health.summary || "Add service records to improve recommendations."],
-    ["Upcoming suggested maintenance", `${groupedSystems.due_soon.length + groupedSystems.warranty_expiring.length || (buckets.upcoming || []).length}`, groupedSystems.due_soon[0]?.name || groupedSystems.warranty_expiring[0]?.name || (buckets.upcoming || [])[0]?.title || "No upcoming suggestions right now."],
-    ["Completed maintenance", `${maintenance.filter((row) => String(row.status).toLowerCase().includes("complete")).length}`, "Completed service visits linked to this property."],
-    ["Overdue items", `${groupedSystems.overdue.length || (buckets.needs_attention || []).length}`, groupedSystems.overdue[0]?.name || (buckets.needs_attention || [])[0]?.title || "No overdue items detected."],
+    { label: "Maintenance status", value: health.label || "Needs Attention", body: homeownerMaintenanceText(health.summary, "Add service records to improve future reminders."), target: groupedSystems.overdue.length ? "overdue" : groupedSystems.due_soon.length ? "due_soon" : "" },
+    { label: "Due soon", value: `${groupedSystems.due_soon.length + groupedSystems.warranty_expiring.length || (buckets.upcoming || []).length}`, body: groupedSystems.due_soon[0]?.name || groupedSystems.warranty_expiring[0]?.name || (buckets.upcoming || [])[0]?.title || "No upcoming suggestions right now.", target: groupedSystems.due_soon.length ? "due_soon" : groupedSystems.warranty_expiring.length ? "warranty_expiring" : "" },
+    { label: "Completed service", value: `${maintenance.filter((row) => String(row.status).toLowerCase().includes("complete")).length}`, body: "Completed service visits linked to this property.", target: "current" },
+    { label: "Needs attention", value: `${groupedSystems.overdue.length || (buckets.needs_attention || []).length}`, body: groupedSystems.overdue[0]?.name || (buckets.needs_attention || [])[0]?.title || "No overdue items detected.", target: groupedSystems.overdue.length ? "overdue" : "" },
   ];
+  const scrollToGroup = (key) => {
+    if (!key) return;
+    document.querySelector(`[data-testid='property-maintenance-group-${key}']`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const renderSystemCard = (system) => (
     <article key={system.id} data-testid="property-maintenance-reminder-card" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -632,23 +659,20 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
           <div className="mt-1 text-xs text-slate-400">{system.system_type_label || "Home system"} - {MAINTENANCE_STATUS_LABELS[system.maintenanceStatus] || "Unknown"}</div>
         </div>
         <span className={`rounded-full border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${system.priority === "high" ? "border-rose-300/50 bg-rose-400/15 text-rose-100" : system.priority === "medium" ? "border-amber-300/50 bg-amber-300/15 text-amber-100" : "border-slate-600 bg-slate-900 text-slate-300"}`}>
-          {system.priority || "low"}
+          {MAINTENANCE_PRIORITY_LABELS[system.priority] || "For awareness"}
         </span>
       </div>
-      <p className="mt-3 text-sm leading-6 text-slate-300">{system.reminderReason || "Add service and warranty records to improve this recommendation."}</p>
+      <p className="mt-3 text-sm leading-6 text-slate-300">{system.reminderReason || "Add service and warranty records to improve future reminders."}</p>
       <dl className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
         <div><dt className="text-slate-500">Last service</dt><dd className="font-semibold text-slate-200">{system.lastServiceDate ? formatDate(system.lastServiceDate) : "Not recorded"}</dd></div>
         <div><dt className="text-slate-500">Next suggested</dt><dd className="font-semibold text-slate-200">{system.nextRecommendedServiceDate ? formatDate(system.nextRecommendedServiceDate) : "Needs details"}</dd></div>
         <div><dt className="text-slate-500">Warranty</dt><dd className="font-semibold text-slate-200">{system.warrantyExpiration ? formatDate(system.warrantyExpiration) : "Not recorded"}</dd></div>
-        <div><dt className="text-slate-500">Reminders</dt><dd className="font-semibold text-slate-200">{system.remindersEnabled ? `${system.reminderLeadDays} day ${system.reminderFrequency}` : "Off"}</dd></div>
-        <div><dt className="text-slate-500">Last reminded</dt><dd className="font-semibold text-slate-200">{system.lastNotifiedAt ? formatDate(system.lastNotifiedAt) : "Not sent"}</dd></div>
-        <div><dt className="text-slate-500">Next reminder</dt><dd className="font-semibold text-slate-200">{system.nextNotificationAt ? formatDate(system.nextNotificationAt) : system.dismissedUntil ? `Dismissed until ${formatDate(system.dismissedUntil)}` : "Not scheduled"}</dd></div>
+        <div><dt className="text-slate-500">Reminder schedule</dt><dd className="font-semibold text-slate-200">{system.remindersEnabled ? `${system.reminderLeadDays} days before due` : "Off"}</dd></div>
+        <div><dt className="text-slate-500">Last reminder sent</dt><dd className="font-semibold text-slate-200">{system.lastNotifiedAt ? formatDate(system.lastNotifiedAt) : "Not sent yet"}</dd></div>
+        <div><dt className="text-slate-500">Next reminder planned</dt><dd className="font-semibold text-slate-200">{system.nextNotificationAt ? formatDate(system.nextNotificationAt) : system.dismissedUntil ? `Paused until ${formatDate(system.dismissedUntil)}` : "Not scheduled"}</dd></div>
       </dl>
       <div className="mt-3 text-xs text-slate-400">
-        Channels: {[
-          system.emailRemindersEnabled ? "Email" : "",
-          system.smsRemindersEnabled ? "SMS" : "",
-        ].filter(Boolean).join(", ") || "None"}
+        Reminder delivery: {reminderDeliveryLabel(system)}
       </div>
       <p className="mt-3 text-sm font-semibold text-sky-100">{system.recommendedAction || "Keep this system record up to date."}</p>
       <div className="mt-4 flex flex-wrap gap-2">
@@ -668,14 +692,21 @@ function MaintenanceCenter({ intelligence = {}, maintenance = [], systems = [], 
     </article>
   );
   return (
-    <Section title="Maintenance Center" eyebrow="Compact property health" testId="property-maintenance-center">
+    <Section title="Maintenance Center" eyebrow="Home upkeep" testId="property-maintenance-center">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map(([label, value, body]) => (
-          <div key={label} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-            <div className="mt-2 text-2xl font-black text-white">{value}</div>
-            <p className="mt-2 text-sm leading-5 text-slate-400">{body}</p>
-          </div>
+        {cards.map((card) => (
+          <button
+            key={card.label}
+            type="button"
+            data-testid={`property-maintenance-kpi-${card.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+            onClick={() => scrollToGroup(card.target)}
+            className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4 text-left transition hover:border-amber-300/45 focus:border-amber-300/70 focus:outline-none focus:ring-2 focus:ring-amber-300/30"
+          >
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
+            <div className="mt-2 text-2xl font-black text-white">{card.value}</div>
+            <p className="mt-2 text-sm leading-5 text-slate-400">{card.body}</p>
+            {card.target ? <div className="mt-3 text-xs font-bold text-amber-100">View details</div> : null}
+          </button>
         ))}
       </div>
       {systems.length ? (

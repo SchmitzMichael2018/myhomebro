@@ -2719,8 +2719,19 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("hire a qualified professional");
   await page.getByRole("dialog", { name: "DIY supply guidance" }).getByRole("button", { name: "Close" }).click();
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Home upkeep");
+  await expect(page.getByTestId("property-maintenance-kpi-needs-attention")).toContainText("View details");
+  await expect(page.getByTestId("property-maintenance-kpi-due-soon")).toContainText("Due soon");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Overdue");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Main HVAC service is overdue");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Needs attention");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Reminder schedule");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Reminder delivery: Email reminders");
+  await expect(page.getByTestId("property-maintenance-center")).not.toContainText("Channels:");
+  await expect(page.getByTestId("property-maintenance-center")).not.toContainText("Last reminded");
+  await expect(page.getByTestId("property-maintenance-center")).not.toContainText("Confidence");
+  await expect(page.getByTestId("property-maintenance-group-overdue")).toBeVisible();
+  await page.getByTestId("property-maintenance-kpi-needs-attention").click();
   await expect(page.getByTestId("property-maintenance-group-overdue")).toBeVisible();
   await page.getByTestId("property-maintenance-manage-reminder-11").click();
   await expect(page.getByTestId("property-home-system-modal")).toContainText("Reminder notifications");
@@ -3220,7 +3231,7 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId(/home-records-timeline-(action|static)-/)).toHaveCount(5);
   await expect(page.getByTestId("home-records-timeline")).not.toContainText("Older Deck Repair");
   await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
-  await expect(page.getByTestId("property-maintenance-center")).toContainText("Completed maintenance");
+  await expect(page.getByTestId("property-maintenance-center")).toContainText("Completed service");
   await page.getByTestId("home-records-timeline-show-more").click();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Older Deck Repair");
   await expect(page.getByTestId("home-records-timeline-action-document-document-1")).toHaveAttribute("href", "/files/scope-addendum.txt");
