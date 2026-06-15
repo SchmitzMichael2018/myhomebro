@@ -280,7 +280,6 @@ function recommendationStatusLabel(recommendation) {
 }
 
 function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highlightedSystemId, onIgnoreRecommendation, onRestoreRecommendation }) {
-  const [diyRecommendation, setDiyRecommendation] = useState(null);
   const [viewRecommendation, setViewRecommendation] = useState(null);
   const [filter, setFilter] = useState("active");
   const recommendations = systems.flatMap((system) =>
@@ -383,16 +382,14 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
                     Search on Amazon
                   </a>
                 ) : null}
-                {!isReplacement ? (
-                  <button
-                    type="button"
-                    data-testid="property-supply-diy-help"
-                    onClick={() => setDiyRecommendation(recommendation)}
-                    className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-400"
-                  >
-                    Get DIY Help
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  data-testid="property-supply-create-service-request"
+                  onClick={() => onCreateServiceRequest?.(recommendation.systemRecord, recommendation)}
+                  className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
+                >
+                  Create Service Request
+                </button>
                 {recommendation.isIgnored ? (
                   <button
                     type="button"
@@ -443,32 +440,6 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
               <button
                 type="button"
                 onClick={() => setViewRecommendation(null)}
-                className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {diyRecommendation ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="DIY supply guidance">
-          <div className="w-full max-w-lg rounded-3xl border border-sky-300/35 bg-slate-950 p-5 shadow-2xl">
-            <div className="text-xs font-bold uppercase tracking-[0.2em] text-sky-200">DIY Help</div>
-            <h3 className="mt-1 text-xl font-extrabold text-white">{diyRecommendation.title || diyRecommendation.supply_name}</h3>
-            <p className="mt-3 text-sm leading-6 text-slate-300">
-              MyHomeBro can help you organize questions, photos, and compatibility details before you purchase supplies or ask a contractor.
-            </p>
-            <p className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-sm font-semibold leading-6 text-amber-100">
-              Confirm size, model, quantity, and compatibility before purchasing.
-            </p>
-            <p className="mt-3 rounded-xl border border-sky-300/25 bg-sky-400/10 p-3 text-sm font-semibold leading-6 text-sky-100">
-              For electrical, gas, roofing, structural, or major plumbing work, hire a qualified professional.
-            </p>
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setDiyRecommendation(null)}
                 className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800"
               >
                 Close
@@ -575,6 +546,97 @@ function recommendationAccuracyPrompt(system) {
   return {
     missing,
     summary: "Better system information improves maintenance reminders, supply suggestions, and replacement planning.",
+  };
+}
+
+function formatSystemDetail(label, value) {
+  const text = String(value || "").trim();
+  return text ? `* ${label}: ${text}` : "";
+}
+
+function requestDraftFromSystemRecommendation(system = {}, recommendation = {}) {
+  const title = `${system.name || recommendation.system || "Home System"} Maintenance - ${recommendation.title || recommendation.supply_name || "Recommended Item"}`;
+  const status = recommendationStatusLabel(recommendation);
+  const systemDetails = [
+    formatSystemDetail("System", system.name || recommendation.system),
+    formatSystemDetail("Type", system.system_type_label || recommendation.system_type_label),
+    formatSystemDetail("Manufacturer", system.manufacturer),
+    formatSystemDetail("Model", system.model),
+    formatSystemDetail("Serial number", system.serialNumber),
+    formatSystemDetail("Install date", system.installDate ? formatDate(system.installDate) : ""),
+    formatSystemDetail("Warranty expiration", system.warrantyExpiration ? formatDate(system.warrantyExpiration) : ""),
+    formatSystemDetail("Condition", system.conditionLabel),
+    formatSystemDetail("Lifecycle", system.lifecycle?.label),
+    formatSystemDetail("Last service", system.lastServiceDate ? formatDate(system.lastServiceDate) : ""),
+    formatSystemDetail("Next service", system.nextRecommendedServiceDate ? formatDate(system.nextRecommendedServiceDate) : ""),
+  ].filter(Boolean);
+  const recommendationDetails = [
+    formatSystemDetail("Recommended item", recommendation.title || recommendation.supply_name),
+    formatSystemDetail("Recommendation key", recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id),
+    formatSystemDetail("Suggested interval", recommendation.suggested_interval),
+    formatSystemDetail("Status", status),
+    formatSystemDetail("Maintenance reason", system.reminderReason || recommendation.reason),
+    formatSystemDetail("Compatibility note", recommendation.compatibility_warning),
+  ].filter(Boolean);
+  return {
+    property_id: system.property_profile_id || system.propertyId || "",
+    request_type: "maintenance",
+    project_mode: "diy_assist",
+    project_category: "Maintenance",
+    project_type: system.system_type_label || recommendation.system_type_label || "Maintenance",
+    project_subtype: recommendation.title || recommendation.supply_name || "Recommended Maintenance",
+    payment_preference: "discuss",
+    title,
+    description: [
+      `I would like assistance with a recommended maintenance item for my ${system.name || recommendation.system || "home system"} system.`,
+      "",
+      "Recommended item:",
+      recommendation.title || recommendation.supply_name || "Recommended maintenance item",
+      "",
+      "System details:",
+      ...systemDetails,
+      "",
+      "Recommendation details:",
+      ...recommendationDetails,
+      "",
+      "Please review the system and advise whether replacement or service is needed.",
+    ].join("\n"),
+    urgency: system.priority === "high" ? "urgent" : recommendation.next_due_date ? "soon" : "normal",
+    preferred_timeline: recommendation.next_due_date || system.maintenanceStatus === "overdue" ? "As soon as possible" : "Within the next month",
+    address_line1: "",
+    address_line2: "",
+    city: "",
+    state: "",
+    postal_code: "",
+    linked_home_system_id: system.id,
+    recommendation_key: recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id || "",
+    recommendation_title: recommendation.title || recommendation.supply_name || "",
+    recommendation_context: {
+      source: "home_system_recommendation",
+      system_id: system.id,
+      system_name: system.name || recommendation.system || "",
+      system_type: system.system_type || recommendation.system_type || "",
+      system_type_label: system.system_type_label || recommendation.system_type_label || "",
+      manufacturer: system.manufacturer || "",
+      model_number: system.model || "",
+      serial_number: system.serialNumber || "",
+      install_date: system.installDate || "",
+      warranty_expiration_date: system.warrantyExpiration || "",
+      condition: system.condition || "",
+      condition_label: system.conditionLabel || "",
+      lifecycle_state: system.lifecycle?.state || "",
+      lifecycle_label: system.lifecycle?.label || "",
+      last_service_date: system.lastServiceDate || "",
+      next_service_date: system.nextRecommendedServiceDate || "",
+      recommendation_key: recommendation.recommendationKey || recommendation.recommendation_key || recommendation.id || "",
+      recommendation_title: recommendation.title || recommendation.supply_name || "",
+      suggested_interval: recommendation.suggested_interval || "",
+      due_status: status,
+      reason: recommendation.reason || "",
+      maintenance_reason: system.reminderReason || "",
+      compatibility_warning: recommendation.compatibility_warning || "",
+      notes: recommendation.safety_note || "",
+    },
   };
 }
 
@@ -1430,7 +1492,7 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
 
       <SuggestedSuppliesSection
         systems={systems.filter((system) => system.isStructured)}
-        onCreateServiceRequest={onCreateServiceRequest}
+        onCreateServiceRequest={(system, recommendation) => onCreateServiceRequest?.(system, recommendation, profile)}
         highlightedSystemId={highlightedRecommendationSystemId}
         onIgnoreRecommendation={onIgnoreRecommendation}
         onRestoreRecommendation={onRestoreRecommendation}
@@ -1536,6 +1598,7 @@ export default function CustomerPropertyProfile({
   onArchiveSystem,
   onMarkSystemServiced,
   onCreateSystemServiceRequest,
+  onCreateRequestDraft,
   onIgnoreSystemRecommendation,
   onRestoreSystemRecommendation,
   saving = false,
@@ -1648,7 +1711,20 @@ export default function CustomerPropertyProfile({
           await onArchiveSystem?.(system.id);
         }}
         onMarkServiced={(system) => setServiceSystem(system)}
-        onCreateServiceRequest={async (system) => {
+        onCreateServiceRequest={async (system, recommendation, sourceProfile) => {
+          if (recommendation) {
+            const draft = {
+              ...requestDraftFromSystemRecommendation(system, recommendation),
+              property_id: sourceProfile?.id || selectedProfile?.id || "",
+              address_line1: sourceProfile?.address_line1 || selectedProfile?.address_line1 || "",
+              address_line2: sourceProfile?.address_line2 || selectedProfile?.address_line2 || "",
+              city: sourceProfile?.city || selectedProfile?.city || "",
+              state: sourceProfile?.state || selectedProfile?.state || "",
+              postal_code: sourceProfile?.postal_code || selectedProfile?.postal_code || "",
+            };
+            onCreateRequestDraft?.(draft);
+            return;
+          }
           await onCreateSystemServiceRequest?.(system.id);
         }}
         onDismissReminder={async (system) => {

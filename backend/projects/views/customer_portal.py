@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from decimal import Decimal
 
@@ -1382,6 +1383,7 @@ def _customer_request_rows(email: str) -> list[dict]:
         can_cancel, cancel_lock_reason = _customer_request_cancel_state(request_row)
         can_delete = _customer_request_can_delete(request_row)
         linked_system = getattr(request_row, "linked_home_system", None)
+        recommendation_payload = _customer_request_recommendation_payload(request_row)
         linked_agreement = getattr(source_intake, "agreement", None) or getattr(linked_system, "linked_agreement", None)
         lifecycle = _request_lifecycle_payload(
             request_row,
@@ -1459,13 +1461,16 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "budget_preference": "",
                 "materials_preferences": "",
                 "scheduling_access_notes": "",
-                "special_instructions": _safe_text(getattr(request_row, "internal_notes", "")),
+                "special_instructions": "" if recommendation_payload else _safe_text(getattr(request_row, "internal_notes", "")),
                 "homeowner_name": "",
                 "homeowner_email": _safe_text(getattr(request_row, "customer_email", "")),
                 "homeowner_phone": "",
                 "converted_project_id": getattr(request_row.converted_project, "id", None),
                 "linked_home_system_id": getattr(linked_system, "id", None),
                 "linked_home_system_name": _safe_text(getattr(linked_system, "display_name", "")) if linked_system else "",
+                "recommendation_key": _safe_text(recommendation_payload.get("recommendation_key")),
+                "recommendation_title": _safe_text(recommendation_payload.get("recommendation_title")),
+                "recommendation_context": recommendation_payload.get("context", {}) if recommendation_payload else {},
                 "linked_agreement_id": getattr(linked_agreement, "id", None),
                 "property_id": getattr(property_profile, "id", None),
                 "property_name": _safe_text(getattr(property_profile, "display_name", "")),
@@ -3917,11 +3922,7 @@ CUSTOMER_PORTAL_TIMELINE_CHOICES = [
 class CustomerPortalRequestSerializer(serializers.Serializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     request_type = serializers.ChoiceField(choices=[choice[0] for choice in CustomerRequest.REQUEST_TYPE_CHOICES])
-    project_mode = serializers.ChoiceField(
-        choices=[choice[0] for choice in CustomerRequest.PROJECT_MODE_CHOICES],
-        required=False,
-        allow_blank=True,
-    )
+    project_mode = serializers.CharField(max_length=32, required=False, allow_blank=True)
     project_category = serializers.CharField(max_length=80, required=False, allow_blank=True)
     project_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
     project_subtype = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -3945,6 +3946,10 @@ class CustomerPortalRequestSerializer(serializers.Serializer):
     city = serializers.CharField(max_length=120, required=False, allow_blank=True)
     state = serializers.CharField(max_length=60, required=False, allow_blank=True)
     postal_code = serializers.CharField(max_length=24, required=False, allow_blank=True)
+    linked_home_system_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    recommendation_key = serializers.CharField(max_length=160, required=False, allow_blank=True)
+    recommendation_title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    recommendation_context = serializers.JSONField(required=False)
     status = serializers.ChoiceField(
         choices=[CustomerRequest.STATUS_DRAFT, CustomerRequest.STATUS_SUBMITTED],
         required=False,
@@ -3962,7 +3967,54 @@ class CustomerPortalRequestSerializer(serializers.Serializer):
         attrs["project_type"] = _safe_text(attrs.get("project_type") or attrs.get("project_category"))
         attrs["project_subtype"] = _safe_text(attrs.get("project_subtype"))
         attrs["project_category"] = _safe_text(attrs.get("project_category") or attrs.get("project_type"))
+        if attrs.get("project_mode") == "diy_assistance":
+            attrs["project_mode"] = CustomerRequest.PROJECT_MODE_DIY_ASSIST
+        allowed_modes = {choice[0] for choice in CustomerRequest.PROJECT_MODE_CHOICES}
+        if attrs.get("project_mode") and attrs["project_mode"] not in allowed_modes:
+            raise serializers.ValidationError({"project_mode": "Select a valid project mode."})
         return attrs
+
+
+def _home_system_for_request_or_none(email: str, profile: PropertyProfile, system_id) -> PropertyHomeSystem | None:
+    if not system_id:
+        return None
+    return get_object_or_404(
+        PropertyHomeSystem.objects.select_related("property_profile"),
+        pk=system_id,
+        property_profile=profile,
+        property_profile__customer_email__iexact=email.lower().strip(),
+        is_archived=False,
+    )
+
+
+def _customer_request_recommendation_notes(data: dict, system: PropertyHomeSystem | None) -> str:
+    key = _safe_text(data.get("recommendation_key"))
+    title = _safe_text(data.get("recommendation_title"))
+    context = data.get("recommendation_context") if isinstance(data.get("recommendation_context"), dict) else {}
+    if not key and not title and not context:
+        return ""
+    payload = {
+        "source": "home_system_recommendation",
+        "linked_home_system_id": getattr(system, "id", None),
+        "linked_home_system_name": _safe_text(getattr(system, "display_name", "")) if system else "",
+        "recommendation_key": key,
+        "recommendation_title": title,
+        "context": context,
+    }
+    return json.dumps(payload, sort_keys=True)
+
+
+def _customer_request_recommendation_payload(request_row: CustomerRequest) -> dict:
+    raw = _safe_text(getattr(request_row, "internal_notes", ""))
+    if not raw or "home_system_recommendation" not in raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if payload.get("source") != "home_system_recommendation":
+        return {}
+    return payload
 
 
 class CustomerPortalRequestCreateView(APIView):
@@ -3988,9 +4040,12 @@ class CustomerPortalRequestCreateView(APIView):
             "state": data.get("state") or profile.state,
             "postal_code": data.get("postal_code") or profile.postal_code,
         }
+        linked_system = _home_system_for_request_or_none(email, profile, data.get("linked_home_system_id"))
+        internal_notes = _customer_request_recommendation_notes(data, linked_system)
         customer_request = CustomerRequest.objects.create(
             homeowner=homeowner,
             property_profile=profile,
+            linked_home_system=linked_system,
             customer_email=email.lower().strip(),
             request_type=data["request_type"],
             project_mode=data.get("project_mode", ""),
@@ -4003,8 +4058,12 @@ class CustomerPortalRequestCreateView(APIView):
             description=data["description"],
             urgency=data.get("urgency", ""),
             preferred_timeline=data.get("preferred_timeline", ""),
+            internal_notes=internal_notes,
             **address_defaults,
         )
+        if linked_system and linked_system.linked_customer_request_id is None:
+            linked_system.linked_customer_request = customer_request
+            linked_system.save(update_fields=["linked_customer_request", "updated_at"])
         create_smart_notification(
             event_type=SmartNotificationEvent.CUSTOMER_REQUEST_SUBMITTED,
             recipient_email=email,
@@ -4041,6 +4100,7 @@ class CustomerPortalRequestDetailView(APIView):
                 {"detail": "This request has already been sent to contractors. Use follow-up messaging or an amendment request for changes."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        recommendation_payload = _customer_request_recommendation_payload(customer_request)
         merged = {
             "property_id": getattr(customer_request.property_profile, "id", None),
             "request_type": customer_request.request_type,
@@ -4059,12 +4119,17 @@ class CustomerPortalRequestDetailView(APIView):
             "state": customer_request.state,
             "postal_code": customer_request.postal_code,
             "status": customer_request.status,
+            "linked_home_system_id": getattr(customer_request, "linked_home_system_id", None),
+            "recommendation_key": recommendation_payload.get("recommendation_key", ""),
+            "recommendation_title": recommendation_payload.get("recommendation_title", ""),
+            "recommendation_context": recommendation_payload.get("context", {}),
         }
         merged.update(request.data)
         serializer = CustomerPortalRequestSerializer(data=merged)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         profile = _property_profile_for_email_or_404(email, data.get("property_id"))
+        linked_system = _home_system_for_request_or_none(email, profile, data.get("linked_home_system_id"))
         for field in [
             "request_type",
             "project_mode",
@@ -4083,8 +4148,12 @@ class CustomerPortalRequestDetailView(APIView):
         ]:
             setattr(customer_request, field, data.get(field, ""))
         customer_request.property_profile = profile
+        customer_request.linked_home_system = linked_system
         customer_request.title = data["title"]
         customer_request.description = data["description"]
+        recommendation_notes = _customer_request_recommendation_notes(data, linked_system)
+        if recommendation_notes:
+            customer_request.internal_notes = recommendation_notes
         customer_request.save()
         if getattr(customer_request, "source_intake_id", None):
             _sync_customer_request_source_intake(customer_request)

@@ -13,7 +13,7 @@ const REQUEST_TYPES = [
 
 const PROJECT_MODES = [
   ["full_service", "Full service"],
-  ["diy_assist", "DIY assist"],
+  ["diy_assist", "DIY Assistance"],
   ["inspection_only", "Consultation / advice"],
   ["not_sure", "Not sure yet"],
 ];
@@ -333,6 +333,8 @@ export default function CustomerRequests({
   creating = false,
   focusedRequestId = "",
   onFocusedRequestHandled,
+  initialDraft = null,
+  onInitialDraftHandled,
 }) {
   const [pendingAwardBid, setPendingAwardBid] = useState(null);
   const [activeComparisonKey, setActiveComparisonKey] = useState("");
@@ -371,6 +373,10 @@ export default function CustomerRequests({
     city: propertyProfile?.city || "",
     state: propertyProfile?.state || "",
     postal_code: propertyProfile?.postal_code || "",
+    linked_home_system_id: "",
+    recommendation_key: "",
+    recommendation_title: "",
+    recommendation_context: null,
   });
 
   const internalRequests = useMemo(
@@ -384,6 +390,27 @@ export default function CustomerRequests({
     setSelectedRequest(request);
     onFocusedRequestHandled?.();
   }, [focusedRequestId, requests, onFocusedRequestHandled]);
+  useEffect(() => {
+    if (!initialDraft) return;
+    setEditingRequest(null);
+    setSelectedRequest(null);
+    setContractorSearchRequest(null);
+    setRequestSuggestion(null);
+    setImproveError("");
+    setForm((prev) => ({
+      ...prev,
+      ...initialDraft,
+      property_id: initialDraft.property_id || prev.property_id || propertyProfile?.id || "",
+      request_type: initialDraft.request_type || "maintenance",
+      project_mode: initialDraft.project_mode || "diy_assist",
+      payment_preference: initialDraft.payment_preference || "discuss",
+      urgency: initialDraft.urgency || "normal",
+    }));
+    window.requestAnimationFrame(() => {
+      document.querySelector("[data-testid='customer-request-create-panel']")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    onInitialDraftHandled?.();
+  }, [initialDraft, onInitialDraftHandled, propertyProfile?.id]);
   const bidsByComparisonKey = useMemo(() => {
     const grouped = {};
     bids.forEach((bid) => {
@@ -429,6 +456,10 @@ export default function CustomerRequests({
     city: request.city || request.project_city || propertyProfile?.city || "",
     state: request.state || request.project_state || propertyProfile?.state || "",
     postal_code: request.postal_code || request.project_postal_code || propertyProfile?.postal_code || "",
+    linked_home_system_id: request.linked_home_system_id || "",
+    recommendation_key: request.recommendation_key || "",
+    recommendation_title: request.recommendation_title || "",
+    recommendation_context: request.recommendation_context || null,
   });
 
   const applyProperty = (propertyId) => {
@@ -477,6 +508,10 @@ export default function CustomerRequests({
       preferred_timeline: "",
       urgency: "normal",
       property_id: form.property_id,
+      linked_home_system_id: "",
+      recommendation_key: "",
+      recommendation_title: "",
+      recommendation_context: null,
     }));
   };
 
@@ -845,6 +880,14 @@ I need help installing shelves and patching drywall.`}
                 )}
               </label>
             </div>
+            {form.linked_home_system_id || form.recommendation_key ? (
+              <div data-testid="customer-request-recommendation-context" className="rounded-xl border border-sky-300/30 bg-sky-400/10 p-3 text-sm leading-6 text-sky-50">
+                <div className="font-bold">Created from a Home System recommendation</div>
+                <p className="mt-1">
+                  {form.recommendation_title || "Recommended maintenance"} is linked to this request so it stays connected to your property timeline and maintenance history.
+                </p>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-200">
                 Request type
@@ -863,6 +906,7 @@ I need help installing shelves and patching drywall.`}
                 <select
                   value={form.project_mode}
                   onChange={(event) => update("project_mode", event.target.value)}
+                  data-testid="customer-request-help-mode"
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                 >
                   {PROJECT_MODES.map(([value, label]) => (
@@ -1356,6 +1400,8 @@ I need help installing shelves and patching drywall.`}
                     <DetailField label="Project Subtype" value={selectedRequest.ai_generated_subtype || selectedRequest.project_subtype} />
                     <DetailField label="Project Mode" value={selectedRequest.project_mode_label} />
                     <DetailField label="Request Type" value={selectedRequest.request_type_label || selectedRequest.project_class_label} />
+                    <DetailField label="Linked Home System" value={selectedRequest.linked_home_system_name} />
+                    <DetailField label="Recommendation" value={selectedRequest.recommendation_title} />
                     <DetailField label="Timeline" value={joinPresent([selectedRequest.timeline_label || selectedRequest.preferred_timeline, selectedRequest.urgency])} />
                     <DetailField label="Budget" value={selectedRequest.budget_preference} />
                     <DetailField label="Payment Preference" value={selectedRequest.payment_preference_label} />

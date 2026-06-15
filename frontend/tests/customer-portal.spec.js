@@ -97,7 +97,6 @@ const portalPayload = {
             provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" }],
             actions: [
               { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
-              { type: "diy_help", label: "Get DIY help" },
             ],
             is_ignored: false,
           },
@@ -232,7 +231,6 @@ const portalPayload = {
               provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" }],
               actions: [
                 { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
-                { type: "diy_help", label: "Get DIY help" },
               ],
               is_ignored: false,
             },
@@ -2812,10 +2810,19 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-supply-view").first().click();
   await expect(page.getByRole("dialog", { name: "Supply recommendation details" })).toContainText("HVAC filter");
   await page.getByRole("dialog", { name: "Supply recommendation details" }).getByRole("button", { name: "Close" }).click();
-  await page.getByTestId("property-supply-diy-help").first().click();
-  await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
-  await expect(page.getByRole("dialog", { name: "DIY supply guidance" })).toContainText("hire a qualified professional");
-  await page.getByRole("dialog", { name: "DIY supply guidance" }).getByRole("button", { name: "Close" }).click();
+  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("DIY Help");
+  await page.getByTestId("property-supply-create-service-request").first().click();
+  await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
+  await expect(page.getByTestId("customer-request-recommendation-context")).toContainText("Created from a Home System recommendation");
+  await expect(page.getByLabel("Project Title")).toHaveValue("Main HVAC Maintenance - HVAC filter");
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Recommended item:/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/HVAC filter/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Manufacturer: Carrier/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Model: XR-500/);
+  await expect(page.getByTestId("customer-request-help-mode")).toHaveValue("diy_assist");
+  await expect(page.getByTestId("customer-request-help-mode")).toContainText("DIY Assistance");
+  await expect(page.getByTestId("customer-request-help-mode")).toContainText("Full service");
+  await page.getByTestId("customer-dashboard-tab-property").click();
   await page.getByTestId("property-supply-ignore").first().click();
   await expect(page.getByTestId("property-suggested-supplies-empty")).toContainText("No active recommendations");
   await page.getByTestId("property-supply-filter-ignored").click();

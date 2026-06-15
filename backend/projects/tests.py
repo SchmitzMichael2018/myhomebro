@@ -22332,6 +22332,84 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(portal_request["linked_home_system_id"], system.id)
         self.assertEqual(portal_request["lifecycle_status"], "requested")
 
+    def test_customer_portal_request_create_links_home_system_and_recommendation_context(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Downstairs HVAC",
+            manufacturer="Goodman",
+            model_number="GSX16",
+            last_service_date=date(2025, 10, 19),
+        )
+        payload = {
+            "property_id": profile.id,
+            "request_type": CustomerRequest.TYPE_MAINTENANCE,
+            "project_mode": "diy_assistance",
+            "project_category": "Maintenance",
+            "project_type": "HVAC",
+            "project_subtype": "Furnace Humidifier Pad",
+            "payment_preference": CustomerRequest.PAYMENT_PREFERENCE_DISCUSS,
+            "project_title": "Downstairs HVAC Maintenance - Furnace Humidifier Pad",
+            "project_scope": "I would like assistance with a recommended maintenance item.",
+            "urgency": "soon",
+            "preferred_timeline": "Within the next month",
+            "linked_home_system_id": system.id,
+            "recommendation_key": "system-1-humidifier-pad",
+            "recommendation_title": "Furnace Humidifier Pad",
+            "recommendation_context": {
+                "system_name": "Downstairs HVAC",
+                "manufacturer": "Goodman",
+                "model_number": "GSX16",
+                "suggested_interval": "Seasonal",
+                "due_status": "Due Soon",
+            },
+        }
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/",
+            payload,
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        created = CustomerRequest.objects.get(title="Downstairs HVAC Maintenance - Furnace Humidifier Pad")
+        self.assertEqual(created.linked_home_system, system)
+        self.assertEqual(created.request_type, CustomerRequest.TYPE_MAINTENANCE)
+        self.assertEqual(created.project_mode, CustomerRequest.PROJECT_MODE_DIY_ASSIST)
+        self.assertIn("system-1-humidifier-pad", created.internal_notes)
+        system.refresh_from_db()
+        self.assertEqual(system.linked_customer_request, created)
+        portal_request = next(row for row in response.data["requests"] if row.get("request_id") == created.id)
+        self.assertEqual(portal_request["linked_home_system_id"], system.id)
+        self.assertEqual(portal_request["linked_home_system_name"], "Downstairs HVAC")
+        self.assertEqual(portal_request["recommendation_key"], "system-1-humidifier-pad")
+        self.assertEqual(portal_request["recommendation_title"], "Furnace Humidifier Pad")
+        self.assertEqual(portal_request["recommendation_context"]["suggested_interval"], "Seasonal")
+        self.assertEqual(portal_request["lifecycle_status"], "requested")
+
+        full_service_payload = {
+            **payload,
+            "project_title": "Downstairs HVAC Full Service",
+            "project_mode": CustomerRequest.PROJECT_MODE_FULL_SERVICE,
+            "recommendation_key": "system-1-hvac-service",
+            "recommendation_title": "HVAC Service",
+        }
+        full_service_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/requests/",
+            full_service_payload,
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(full_service_response.status_code, 201, full_service_response.data)
+        full_service = CustomerRequest.objects.get(title="Downstairs HVAC Full Service")
+        self.assertEqual(full_service.project_mode, CustomerRequest.PROJECT_MODE_FULL_SERVICE)
+
     def test_customer_portal_lifecycle_syncs_request_agreement_and_work_order_completion(self):
         from projects.services.customer_lifecycle import sync_customer_request_agreement_links
         from projects.services.maintenance_work_orders import complete_work_order

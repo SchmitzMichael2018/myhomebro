@@ -1936,6 +1936,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [archivingNotificationId, setArchivingNotificationId] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [focusedRequestId, setFocusedRequestId] = useState("");
+  const [requestDraft, setRequestDraft] = useState(null);
 
   const customerName = portal?.customer?.name || "Customer";
   const notifications = normalizePortalNotifications(portal?.notifications || []);
@@ -2173,6 +2174,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           acceptingBidId={acceptingBidId}
           focusedRequestId={focusedRequestId}
           onFocusedRequestHandled={() => setFocusedRequestId("")}
+          initialDraft={requestDraft}
+          onInitialDraftHandled={() => setRequestDraft(null)}
           onAcceptBid={async (bid) => {
             const bidKey = bid?.id || "";
             if (!bidKey) return;
@@ -2320,6 +2323,10 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onArchiveSystem={archiveHomeSystem}
           onMarkSystemServiced={markHomeSystemServiced}
           onCreateSystemServiceRequest={createHomeSystemServiceRequest}
+          onCreateRequestDraft={(draft) => {
+            setRequestDraft(draft);
+            setActiveTab("requests");
+          }}
           onIgnoreSystemRecommendation={(systemId, recommendationKey) => updateHomeSystemRecommendationPreference(systemId, recommendationKey, "ignore")}
           onRestoreSystemRecommendation={(systemId, recommendationKey) => updateHomeSystemRecommendationPreference(systemId, recommendationKey, "restore")}
         />
@@ -2369,7 +2376,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, savingProfile, focusedRequestId, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, savingProfile, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">
