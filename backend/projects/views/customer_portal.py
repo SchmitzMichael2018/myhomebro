@@ -2768,24 +2768,50 @@ def _attach_homeowner_action_metadata(project_rows: list[dict], agreement_rows: 
 def _customer_profile_payload(email: str) -> dict:
     homeowner = _primary_homeowner_for_email(email)
     user = User.objects.filter(email__iexact=email).first()
+    default_account_type = getattr(Homeowner, "ACCOUNT_TYPE_INDIVIDUAL", "individual")
     return {
         "full_name": _safe_text(getattr(homeowner, "full_name", "")) or _safe_text(getattr(user, "get_full_name", lambda: "")()),
         "phone_number": _safe_text(getattr(homeowner, "phone_number", "")),
+        "account_type": _safe_text(getattr(homeowner, "account_type", "")) or default_account_type,
         "address_line1": _safe_text(getattr(homeowner, "street_address", "")),
         "address_line2": _safe_text(getattr(homeowner, "address_line_2", "")),
         "city": _safe_text(getattr(homeowner, "city", "")),
         "state": _safe_text(getattr(homeowner, "state", "")),
         "postal_code": _safe_text(getattr(homeowner, "zip_code", "")),
+        "company_name": _safe_text(getattr(homeowner, "company_name", "")),
+        "company_phone": _safe_text(getattr(homeowner, "company_phone", "")),
+        "company_email": _safe_text(getattr(homeowner, "company_email", "")),
+        "company_website": _safe_text(getattr(homeowner, "company_website", "")),
+        "company_street": _safe_text(getattr(homeowner, "company_street", "")),
+        "company_unit": _safe_text(getattr(homeowner, "company_unit", "")),
+        "company_city": _safe_text(getattr(homeowner, "company_city", "")),
+        "company_state": _safe_text(getattr(homeowner, "company_state", "")),
+        "company_zip": _safe_text(getattr(homeowner, "company_zip", "")),
+        "company_license_number": _safe_text(getattr(homeowner, "company_license_number", "")),
+        "company_notes": _safe_text(getattr(homeowner, "company_notes", "")),
     }
 
 
 def _customer_account_payload(email: str) -> dict:
     user = User.objects.filter(email__iexact=email).first()
+    profile = _customer_profile_payload(email)
     return {
         "email": email,
         "has_user": bool(user),
         "has_usable_password": bool(user and user.has_usable_password()),
         "portal_token": _portal_token(email),
+        "account_type": profile["account_type"],
+        "company_name": profile["company_name"],
+        "company_phone": profile["company_phone"],
+        "company_email": profile["company_email"],
+        "company_website": profile["company_website"],
+        "company_street": profile["company_street"],
+        "company_unit": profile["company_unit"],
+        "company_city": profile["company_city"],
+        "company_state": profile["company_state"],
+        "company_zip": profile["company_zip"],
+        "company_license_number": profile["company_license_number"],
+        "company_notes": profile["company_notes"],
     }
 
 
@@ -4620,11 +4646,26 @@ class CustomerPortalHomeSystemServiceSerializer(serializers.Serializer):
 class CustomerPortalProfileSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
     phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    account_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in Homeowner.ACCOUNT_TYPE_CHOICES],
+        required=False,
+    )
     address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
     address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
     city = serializers.CharField(max_length=100, required=False, allow_blank=True)
     state = serializers.CharField(max_length=50, required=False, allow_blank=True)
     postal_code = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    company_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    company_phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    company_email = serializers.EmailField(required=False, allow_blank=True)
+    company_website = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    company_street = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    company_unit = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    company_city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    company_state = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    company_zip = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    company_license_number = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    company_notes = serializers.CharField(required=False, allow_blank=True)
 
 
 class CustomerPortalProfileView(APIView):
@@ -4646,11 +4687,23 @@ class CustomerPortalProfileView(APIView):
         field_map = {
             "full_name": "full_name",
             "phone_number": "phone_number",
+            "account_type": "account_type",
             "address_line1": "street_address",
             "address_line2": "address_line_2",
             "city": "city",
             "state": "state",
             "postal_code": "zip_code",
+            "company_name": "company_name",
+            "company_phone": "company_phone",
+            "company_email": "company_email",
+            "company_website": "company_website",
+            "company_street": "company_street",
+            "company_unit": "company_unit",
+            "company_city": "company_city",
+            "company_state": "company_state",
+            "company_zip": "company_zip",
+            "company_license_number": "company_license_number",
+            "company_notes": "company_notes",
         }
         update_fields = []
         for source, target in field_map.items():

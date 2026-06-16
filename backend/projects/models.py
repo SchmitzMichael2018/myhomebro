@@ -928,6 +928,13 @@ class ContractorReview(models.Model):
 
 
 class Homeowner(models.Model):
+    ACCOUNT_TYPE_INDIVIDUAL = "individual"
+    ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY = "property_management_company"
+    ACCOUNT_TYPE_CHOICES = [
+        (ACCOUNT_TYPE_INDIVIDUAL, "Individual / Homeowner"),
+        (ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY, "Property Management Company"),
+    ]
+
     created_by = models.ForeignKey(
         Contractor,
         on_delete=models.CASCADE,
@@ -946,6 +953,12 @@ class Homeowner(models.Model):
 
     email = models.EmailField(db_index=True)
     phone_number = models.CharField(max_length=20, blank=True, default="")
+    account_type = models.CharField(
+        max_length=40,
+        choices=ACCOUNT_TYPE_CHOICES,
+        default=ACCOUNT_TYPE_INDIVIDUAL,
+        db_index=True,
+    )
 
     street_address = models.CharField(max_length=255, blank=True, default="")
     address_line_2 = models.CharField(
@@ -957,6 +970,16 @@ class Homeowner(models.Model):
     city = models.CharField(max_length=100, blank=True, default="")
     state = models.CharField(max_length=50, blank=True, default="")
     zip_code = models.CharField(max_length=20, blank=True, default="")
+    company_phone = models.CharField(max_length=40, blank=True, default="")
+    company_email = models.EmailField(blank=True, default="")
+    company_website = models.CharField(max_length=255, blank=True, default="")
+    company_street = models.CharField(max_length=255, blank=True, default="")
+    company_unit = models.CharField(max_length=255, blank=True, default="")
+    company_city = models.CharField(max_length=100, blank=True, default="")
+    company_state = models.CharField(max_length=50, blank=True, default="")
+    company_zip = models.CharField(max_length=20, blank=True, default="")
+    company_license_number = models.CharField(max_length=120, blank=True, default="")
+    company_notes = models.TextField(blank=True, default="")
 
     status = models.CharField(
         max_length=20,

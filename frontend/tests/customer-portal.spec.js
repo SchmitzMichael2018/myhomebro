@@ -4,12 +4,25 @@ const portalPayload = {
   customer: {
     name: "Pat Customer",
     email: "customer@example.com",
+    account_type: "individual",
+    company_name: "",
+    company_phone: "",
+    company_email: "",
+    company_website: "",
+    company_street: "",
+    company_unit: "",
+    company_city: "",
+    company_state: "",
+    company_zip: "",
+    company_license_number: "",
+    company_notes: "",
   },
   account: {
     email: "customer@example.com",
     has_user: true,
     has_usable_password: true,
     portal_token: "customer-token",
+    account_type: "individual",
   },
   summary: {
     active_requests: 1,
@@ -1359,6 +1372,14 @@ const emptyPortalPayload = {
   customer: {
     name: "Empty Customer",
     email: "empty@example.com",
+    account_type: "individual",
+  },
+  account: {
+    email: "empty@example.com",
+    has_user: false,
+    has_usable_password: false,
+    portal_token: "empty-token",
+    account_type: "individual",
   },
   summary: {
     active_requests: 0,
@@ -1944,6 +1965,7 @@ test("customer portal is reachable from the landing page and loads secure record
   const consoleErrors = [];
   let submittedRequestPayload = null;
   let submittedReviewPayload = null;
+  let savedProfilePayload = null;
   let currentPortalPayload = portalPayload;
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
@@ -2082,6 +2104,7 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/profile/") && method === "PATCH") {
+      savedProfilePayload = JSON.parse(route.request().postData() || "{}");
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -2089,9 +2112,22 @@ test("customer portal is reachable from the landing page and loads secure record
           ...portalPayload,
           customer: {
             ...portalPayload.customer,
-            full_name: "Pat Updated",
-            phone_number: "512-555-1212",
-            address_line1: "700 Customer Ln",
+            ...savedProfilePayload,
+          },
+          account: {
+            ...portalPayload.account,
+            account_type: savedProfilePayload.account_type,
+            company_name: savedProfilePayload.company_name,
+            company_phone: savedProfilePayload.company_phone,
+            company_email: savedProfilePayload.company_email,
+            company_website: savedProfilePayload.company_website,
+            company_street: savedProfilePayload.company_street,
+            company_unit: savedProfilePayload.company_unit,
+            company_city: savedProfilePayload.company_city,
+            company_state: savedProfilePayload.company_state,
+            company_zip: savedProfilePayload.company_zip,
+            company_license_number: savedProfilePayload.company_license_number,
+            company_notes: savedProfilePayload.company_notes,
           },
         }),
       });
@@ -2655,7 +2691,7 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("landing-hero-heading")).toContainText("Everything you need to plan, hire, and manage your project.");
-  await expect(page.getByTestId("landing-customer-portal-button")).toContainText("View Your Project");
+  await expect(page.getByTestId("landing-customer-portal-button")).toContainText("Customer Log In");
   await expect(page.getByRole("button", { name: "Contractor Sign Up" })).toBeVisible();
   await expect(page.getByRole("button", { name: "For Contractors" })).toBeVisible();
   const footer = page.getByRole("contentinfo");
@@ -2803,14 +2839,41 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-account-panel")).toContainText("My Profile");
   await expect(page.getByTestId("customer-profile-email")).toHaveValue("customer@example.com");
   await expect(page.getByTestId("customer-profile-phone")).toBeVisible();
+  await expect(page.getByTestId("customer-account-type-section")).toContainText("Account Type");
+  await expect(page.getByTestId("customer-account-type-individual")).toBeChecked();
+  await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
   await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Lake House");
   await expect(page.getByTestId("customer-account-logout")).toContainText("Log out");
+  await page.getByTestId("customer-account-type-property_management_company").check();
+  await expect(page.getByTestId("customer-company-profile-section")).toContainText("Company Profile");
+  await page.getByTestId("customer-company-name").fill("Austin Rentals Group");
+  await page.getByTestId("customer-company-phone").fill("512-555-3434");
+  await page.getByTestId("customer-company-email").fill("ops@austinrentals.example");
+  await page.getByTestId("customer-company-website").fill("https://austinrentals.example");
+  await page.getByTestId("customer-company-street").fill("700 Leasing Ave");
+  await page.getByTestId("customer-company-license-number").fill("PM-12345");
+  await page.getByTestId("customer-company-notes").fill("Portfolio onboarding account.");
   await page.getByTestId("customer-profile-name").fill("Pat Updated");
   await page.getByTestId("customer-profile-phone").fill("512-555-1212");
   await page.getByTestId("customer-profile-address-line1").fill("700 Customer Ln");
   await page.getByRole("button", { name: "Save profile" }).click();
   await expect(page.getByTestId("customer-profile-phone")).toHaveValue("512-555-1212");
+  await expect(page.getByTestId("customer-company-name")).toHaveValue("Austin Rentals Group");
+  expect(savedProfilePayload).toMatchObject({
+    account_type: "property_management_company",
+    company_name: "Austin Rentals Group",
+    company_phone: "512-555-3434",
+    company_email: "ops@austinrentals.example",
+    company_website: "https://austinrentals.example",
+    company_street: "700 Leasing Ave",
+    company_license_number: "PM-12345",
+    company_notes: "Portfolio onboarding account.",
+  });
+  await page.getByTestId("customer-account-type-individual").check();
+  await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
+  await page.getByTestId("customer-account-type-property_management_company").check();
+  await expect(page.getByTestId("customer-company-name")).toHaveValue("Austin Rentals Group");
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);

@@ -1862,22 +1862,74 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
 function AccountPanel({ portal, saving = false, onSave }) {
   const customer = portal?.customer || {};
   const account = portal?.account || {};
+  const accountType = customer.account_type || account.account_type || "individual";
   const linkedProperties = Array.isArray(portal?.property_profiles)
     ? portal.property_profiles
     : portal?.property_profile?.id
       ? [portal.property_profile]
       : [];
-  const [form, setForm] = useState({
+  const profileForm = {
     full_name: customer.full_name || customer.name || "",
     phone_number: customer.phone_number || "",
+    account_type: accountType,
     address_line1: customer.address_line1 || "",
     address_line2: customer.address_line2 || "",
     city: customer.city || "",
     state: customer.state || "",
     postal_code: customer.postal_code || "",
-  });
+    company_name: customer.company_name || account.company_name || "",
+    company_phone: customer.company_phone || account.company_phone || "",
+    company_email: customer.company_email || account.company_email || "",
+    company_website: customer.company_website || account.company_website || "",
+    company_street: customer.company_street || account.company_street || "",
+    company_unit: customer.company_unit || account.company_unit || "",
+    company_city: customer.company_city || account.company_city || "",
+    company_state: customer.company_state || account.company_state || "",
+    company_zip: customer.company_zip || account.company_zip || "",
+    company_license_number: customer.company_license_number || account.company_license_number || "",
+    company_notes: customer.company_notes || account.company_notes || "",
+  };
+  const [form, setForm] = useState(profileForm);
+
+  useEffect(() => {
+    setForm(profileForm);
+  }, [
+    customer.full_name,
+    customer.name,
+    customer.phone_number,
+    customer.account_type,
+    customer.address_line1,
+    customer.address_line2,
+    customer.city,
+    customer.state,
+    customer.postal_code,
+    customer.company_name,
+    customer.company_phone,
+    customer.company_email,
+    customer.company_website,
+    customer.company_street,
+    customer.company_unit,
+    customer.company_city,
+    customer.company_state,
+    customer.company_zip,
+    customer.company_license_number,
+    customer.company_notes,
+    account.account_type,
+    account.company_name,
+    account.company_phone,
+    account.company_email,
+    account.company_website,
+    account.company_street,
+    account.company_unit,
+    account.company_city,
+    account.company_state,
+    account.company_zip,
+    account.company_license_number,
+    account.company_notes,
+  ]);
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const isCompanyAccount = form.account_type === "property_management_company";
 
   return (
     <section data-testid="customer-account-panel" className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -1895,7 +1947,37 @@ function AccountPanel({ portal, saving = false, onSave }) {
           Keep your contact details current so project updates, payment notices, and property records stay connected to you.
         </p>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/70 p-3" data-testid="customer-account-type-section">
+          <div className="text-sm font-semibold text-white">Account Type</div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Account Type">
+            {[
+              ["individual", "Individual / Homeowner"],
+              ["property_management_company", "Property Management Company"],
+            ].map(([value, label]) => (
+              <label
+                key={value}
+                className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
+                  form.account_type === value
+                    ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
+                    : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-slate-500"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="customer-account-type"
+                  value={value}
+                  checked={form.account_type === value}
+                  onChange={(event) => update("account_type", event.target.value)}
+                  className="h-4 w-4 border-slate-600 bg-slate-950"
+                  data-testid={`customer-account-type-${value}`}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-200">
             Name
             <input
@@ -1987,6 +2069,135 @@ function AccountPanel({ portal, saving = false, onSave }) {
             />
           </label>
         </div>
+
+        {isCompanyAccount ? (
+          <div data-testid="customer-company-profile-section" className="mt-4 rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
+            <h3 className="text-base font-semibold text-white">Company Profile</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-300">
+              Use this for property management companies that manage multiple properties, owners, tenants, and maintenance requests.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-200">
+                Company name
+                <input
+                  data-testid="customer-company-name"
+                  value={form.company_name}
+                  onChange={(event) => update("company_name", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Company phone
+                <input
+                  data-testid="customer-company-phone"
+                  value={form.company_phone}
+                  onChange={(event) => update("company_phone", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Company email
+                <input
+                  data-testid="customer-company-email"
+                  value={form.company_email}
+                  onChange={(event) => update("company_email", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Website
+                <input
+                  data-testid="customer-company-website"
+                  value={form.company_website}
+                  onChange={(event) => update("company_website", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Company mailing address search
+                <div className="mt-1">
+                  <AddressAutocomplete
+                    value={form.company_street}
+                    onChangeText={(value) => update("company_street", value)}
+                    onSelect={(address) => {
+                      setForm((prev) => ({
+                        ...prev,
+                        company_street: address.line1 || prev.company_street,
+                        company_unit: address.line2 || "",
+                        company_city: address.city || prev.company_city,
+                        company_state: address.state || prev.company_state,
+                        company_zip: address.postal_code || prev.company_zip,
+                      }));
+                    }}
+                    placeholder="Search company mailing address..."
+                    testId="customer-company-address-autocomplete"
+                    {...PORTAL_ADDRESS_AUTOCOMPLETE_CLASSES}
+                  />
+                </div>
+              </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Street
+                <input
+                  data-testid="customer-company-street"
+                  value={form.company_street}
+                  onChange={(event) => update("company_street", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Unit / suite
+                <input
+                  value={form.company_unit}
+                  onChange={(event) => update("company_unit", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                City
+                <input
+                  value={form.company_city}
+                  onChange={(event) => update("company_city", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                State
+                <input
+                  value={form.company_state}
+                  onChange={(event) => update("company_state", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                ZIP
+                <input
+                  value={form.company_zip}
+                  onChange={(event) => update("company_zip", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                License number
+                <input
+                  data-testid="customer-company-license-number"
+                  value={form.company_license_number}
+                  onChange={(event) => update("company_license_number", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Notes
+                <textarea
+                  rows={3}
+                  data-testid="customer-company-notes"
+                  value={form.company_notes}
+                  onChange={(event) => update("company_notes", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+            </div>
+          </div>
+        ) : null}
 
         <button
           type="submit"

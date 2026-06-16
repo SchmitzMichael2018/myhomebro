@@ -20187,6 +20187,50 @@ class CustomerPortalAccessTests(TestCase):
         self.assertFalse(response.data["account"]["has_user"])
         self.assertFalse(response.data["account"]["has_usable_password"])
         self.assertTrue(response.data["account"]["portal_token"])
+        self.assertEqual(response.data["customer"]["account_type"], Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
+        self.assertEqual(response.data["account"]["account_type"], Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
+
+    def test_customer_portal_profile_updates_account_type_and_company_fields(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/profile/",
+            {
+                "full_name": "Pat Updated",
+                "phone_number": "512-555-1212",
+                "account_type": Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY,
+                "company_name": "Austin Rentals Group",
+                "company_phone": "512-555-3434",
+                "company_email": "ops@austinrentals.example",
+                "company_website": "https://austinrentals.example",
+                "company_street": "700 Leasing Ave",
+                "company_unit": "Suite 12",
+                "company_city": "Austin",
+                "company_state": "TX",
+                "company_zip": "78704",
+                "company_license_number": "PM-12345",
+                "company_notes": "Portfolio onboarding account.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.customer_homeowner.refresh_from_db()
+        self.assertEqual(self.customer_homeowner.account_type, Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY)
+        self.assertEqual(self.customer_homeowner.company_name, "Austin Rentals Group")
+        self.assertEqual(self.customer_homeowner.company_email, "ops@austinrentals.example")
+        self.assertEqual(response.data["customer"]["account_type"], Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY)
+        self.assertEqual(response.data["customer"]["company_street"], "700 Leasing Ave")
+        self.assertEqual(response.data["account"]["company_license_number"], "PM-12345")
+
+        invalid = self.client.patch(
+            f"/api/projects/customer-portal/{token}/profile/",
+            {"account_type": "tenant_portal"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("account_type", invalid.data)
 
     def test_customer_portal_notifications_are_canonical_deduped_and_filtered(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
