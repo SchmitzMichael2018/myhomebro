@@ -1403,6 +1403,8 @@ const emptyPortalPayload = {
     home_systems: [],
     documents: [],
     photos: [],
+    units: [],
+    unit_count: 0,
   },
   projects: [],
   requests: [],
@@ -1967,8 +1969,10 @@ test("customer portal is reachable from the landing page and loads secure record
   let submittedReviewPayload = null;
   let savedProfilePayload = null;
   let submittedTeamPayload = null;
+  let submittedUnitPayload = null;
   let currentPortalPayload = portalPayload;
   let teamMembers = [];
+  let propertyUnits = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
     window.__mhbPlacePredictionInputs = [];
@@ -2215,6 +2219,122 @@ test("customer portal is reachable from the landing page and loads secure record
           ...currentPortalPayload.account,
           team_members: teamMembers,
         },
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/units/") && method === "POST") {
+      submittedUnitPayload = JSON.parse(route.request().postData() || "{}");
+      propertyUnits = [
+        ...propertyUnits,
+        {
+          id: 601,
+          unit_label: submittedUnitPayload.unit_label,
+          unit_type: submittedUnitPayload.unit_type,
+          unit_type_label: "Apartment",
+          status: submittedUnitPayload.status || "active",
+          status_label: "Vacant",
+          access_notes: submittedUnitPayload.access_notes,
+          notes: submittedUnitPayload.notes,
+        },
+      ];
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          units: propertyUnits,
+          unit_count: propertyUnits.length,
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                units: propertyUnits,
+                unit_count: propertyUnits.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/units/601/") && method === "PATCH") {
+      const editPayload = JSON.parse(route.request().postData() || "{}");
+      propertyUnits = propertyUnits.map((unit) =>
+        unit.id === 601
+          ? {
+              ...unit,
+              unit_label: editPayload.unit_label ?? unit.unit_label,
+              unit_type: editPayload.unit_type ?? unit.unit_type,
+              unit_type_label: editPayload.unit_type === "condo" ? "Condo" : unit.unit_type_label,
+              status: editPayload.status ?? unit.status,
+              status_label: editPayload.status === "active" ? "Active" : unit.status_label,
+              access_notes: editPayload.access_notes ?? unit.access_notes,
+              notes: editPayload.notes ?? unit.notes,
+            }
+          : unit
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          units: propertyUnits,
+          unit_count: propertyUnits.length,
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                units: propertyUnits,
+                unit_count: propertyUnits.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/units/601/") && method === "DELETE") {
+      propertyUnits = propertyUnits.map((unit) =>
+        unit.id === 601
+          ? {
+              ...unit,
+              status: "inactive",
+              status_label: "Inactive",
+            }
+          : unit
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          units: propertyUnits,
+          unit_count: propertyUnits.length,
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                units: propertyUnits,
+                unit_count: propertyUnits.length,
+              }
+            : property
+        ),
       };
       await route.fulfill({
         status: 200,
@@ -3002,6 +3122,45 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("pm-team-member-501")).toContainText("Disabled");
   await expect(page.getByTestId("pm-team-disable-501")).toHaveCount(0);
 
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
+  await expect(page.getByTestId("property-units-section")).toContainText("Units");
+  await expect(page.getByTestId("property-units-empty")).toContainText("No units added yet.");
+  await expect(page.getByTestId("property-units-empty")).toContainText("Add units to track tenants, maintenance requests, and work orders by location.");
+  await page.getByTestId("property-unit-add-button").click();
+  await expect(page.getByTestId("property-unit-add-modal")).toBeVisible();
+  await page.getByTestId("property-unit-label").fill("Unit A");
+  await page.getByTestId("property-unit-type").selectOption("apartment");
+  await page.getByTestId("property-unit-status").selectOption("vacant");
+  await page.getByTestId("property-unit-access-notes").fill("Use north stairwell.");
+  await page.getByTestId("property-unit-notes").fill("Top floor unit.");
+  await page.getByTestId("property-unit-save-add").click();
+  await expect(page.getByTestId("property-unit-add-modal")).toHaveCount(0);
+  expect(submittedUnitPayload).toMatchObject({
+    unit_label: "Unit A",
+    unit_type: "apartment",
+    status: "vacant",
+    access_notes: "Use north stairwell.",
+    notes: "Top floor unit.",
+  });
+  await expect(page.getByTestId("property-unit-601")).toContainText("Unit A");
+  await expect(page.getByTestId("property-unit-601")).toContainText("Apartment");
+  await expect(page.getByTestId("property-unit-601")).toContainText("Vacant");
+  await page.getByTestId("property-unit-edit-601").click();
+  await expect(page.getByTestId("property-unit-edit-modal")).toBeVisible();
+  await page.getByTestId("property-unit-label").fill("Unit 101");
+  await page.getByTestId("property-unit-type").selectOption("condo");
+  await page.getByTestId("property-unit-status").selectOption("active");
+  await page.getByTestId("property-unit-access-notes").fill("Use keypad entry.");
+  await page.getByTestId("property-unit-save-edit").click();
+  await expect(page.getByTestId("property-unit-edit-modal")).toHaveCount(0);
+  await expect(page.getByTestId("property-unit-601")).toContainText("Unit 101");
+  await expect(page.getByTestId("property-unit-601")).toContainText("Condo");
+  await expect(page.getByTestId("property-unit-601")).toContainText("Active");
+  await page.getByTestId("property-unit-disable-601").click();
+  await expect(page.getByTestId("property-unit-601")).toContainText("Inactive");
+  await expect(page.getByTestId("property-unit-disable-601")).toHaveCount(0);
+
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
@@ -3721,6 +3880,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
+  await expect(page.getByTestId("property-units-section")).toHaveCount(0);
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
   await expect(page.getByTestId("property-active-work")).toHaveCount(0);
   await expect(page.getByTestId("customer-dashboard-tab-projects")).toBeVisible();

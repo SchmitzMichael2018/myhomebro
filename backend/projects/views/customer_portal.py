@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core import signing
 from django.core.mail import send_mail
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404
@@ -104,6 +104,7 @@ from projects.services.customer_portal_supplies import (
 from projects.services.property_management import (
     company_payload,
     create_or_sync_company_from_homeowner,
+    homeowner_is_property_management_company,
     managed_properties_for_company,
     units_for_property,
 )
@@ -512,10 +513,15 @@ def _property_management_team_payload(company: PropertyManagementCompany | None)
 
 def _property_management_company_for_email_or_response(email: str):
     homeowner = _primary_homeowner_for_email(email)
+    if not homeowner_is_property_management_company(homeowner):
+        return None, Response(
+            {"detail": "This action is available only for property management company accounts."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     company = create_or_sync_company_from_homeowner(homeowner)
     if company is None:
         return None, Response(
-            {"detail": "Team member management is available only for property management company accounts."},
+            {"detail": "This action is available only for property management company accounts."},
             status=status.HTTP_403_FORBIDDEN,
         )
     return company, None
@@ -4681,6 +4687,20 @@ class CustomerPortalPropertyProfileSerializer(serializers.Serializer):
     is_primary = serializers.BooleanField(required=False)
 
 
+class CustomerPortalPropertyUnitSerializer(serializers.Serializer):
+    unit_label = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    unit_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyUnit.UNIT_TYPE_CHOICES],
+        required=False,
+    )
+    status = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyUnit.STATUS_CHOICES],
+        required=False,
+    )
+    access_notes = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
 class CustomerPortalHomeSystemSerializer(serializers.Serializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     system_type = serializers.ChoiceField(
@@ -4903,6 +4923,129 @@ class CustomerPortalTeamMemberView(APIView):
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 
+class CustomerPortalPropertyUnitView(APIView):
+    permission_classes = [AllowAny]
+
+    def _email_from_token(self, token: str):
+        try:
+            return _unsign_portal_token(token), None
+        except signing.SignatureExpired:
+            return None, Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return None, Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def _property_from_token(self, token: str, property_id: int):
+        email, error = self._email_from_token(token)
+        if error is not None:
+            return None, None, error
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return email, None, error
+        property_profile = get_object_or_404(
+            PropertyProfile.objects.filter(
+                id=property_id,
+                customer_email__iexact=email.lower().strip(),
+            ).filter(
+                Q(managed_by_company=company) | Q(managed_by_company__isnull=True)
+            )
+        )
+        if property_profile.managed_by_company_id is None:
+            property_profile.managed_by_company = company
+            property_profile.save(update_fields=["managed_by_company", "updated_at"])
+        return email, property_profile, None
+
+    def _duplicate_response(self):
+        return Response(
+            {"unit_label": ["A non-inactive unit with this label already exists for this property."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def _duplicate_label_exists(self, property_profile: PropertyProfile, unit_label: str, unit_id: int | None = None) -> bool:
+        queryset = PropertyUnit.objects.filter(
+            property_profile=property_profile,
+            unit_label__iexact=unit_label,
+        ).exclude(status=PropertyUnit.STATUS_INACTIVE)
+        if unit_id:
+            queryset = queryset.exclude(id=unit_id)
+        return queryset.exists()
+
+    def get(self, request, token: str, property_id: int):
+        email, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        return Response({"units": [_property_unit_payload(unit) for unit in units_for_property(property_profile)]}, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str, property_id: int):
+        email, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+
+        serializer = CustomerPortalPropertyUnitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        unit_label = _safe_text(data.get("unit_label"))
+        if not unit_label:
+            return Response({"unit_label": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        if self._duplicate_label_exists(property_profile, unit_label):
+            return self._duplicate_response()
+        try:
+            PropertyUnit.objects.create(
+                property_profile=property_profile,
+                unit_label=unit_label,
+                unit_type=data.get("unit_type") or PropertyUnit.UNIT_WHOLE_PROPERTY,
+                status=data.get("status") or PropertyUnit.STATUS_ACTIVE,
+                access_notes=_safe_text(data.get("access_notes")),
+                notes=_safe_text(data.get("notes")),
+            )
+        except IntegrityError:
+            return self._duplicate_response()
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+    def patch(self, request, token: str, property_id: int, unit_id: int):
+        email, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+
+        unit = get_object_or_404(PropertyUnit.objects.filter(property_profile=property_profile), pk=unit_id)
+        serializer = CustomerPortalPropertyUnitSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        unit_label = _safe_text(data.get("unit_label", unit.unit_label))
+        if not unit_label:
+            return Response({"unit_label": ["This field may not be blank."]}, status=status.HTTP_400_BAD_REQUEST)
+        if unit_label.lower() != _safe_text(unit.unit_label).lower() and self._duplicate_label_exists(property_profile, unit_label, unit.id):
+            return self._duplicate_response()
+        update_fields = []
+        field_values = {
+            "unit_label": unit_label,
+            "unit_type": data.get("unit_type", unit.unit_type),
+            "status": data.get("status", unit.status),
+            "access_notes": _safe_text(data.get("access_notes", unit.access_notes)),
+            "notes": _safe_text(data.get("notes", unit.notes)),
+        }
+        for field, value in field_values.items():
+            if getattr(unit, field) != value:
+                setattr(unit, field, value)
+                update_fields.append(field)
+        if update_fields:
+            try:
+                unit.save(update_fields=[*update_fields, "updated_at"])
+            except IntegrityError:
+                return self._duplicate_response()
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+    def delete(self, request, token: str, property_id: int, unit_id: int):
+        email, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+
+        unit = get_object_or_404(PropertyUnit.objects.filter(property_profile=property_profile), pk=unit_id)
+        if unit.status != PropertyUnit.STATUS_INACTIVE:
+            unit.status = PropertyUnit.STATUS_INACTIVE
+            unit.save(update_fields=["status", "updated_at"])
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
 class CustomerPortalPropertyProfileView(APIView):
     permission_classes = [AllowAny]
 
@@ -4918,11 +5061,13 @@ class CustomerPortalPropertyProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         homeowner = _primary_homeowner_for_email(email)
+        managed_by_company = create_or_sync_company_from_homeowner(homeowner) if homeowner_is_property_management_company(homeowner) else None
         should_be_primary = bool(data.pop("is_primary", False)) or not PropertyProfile.objects.filter(customer_email__iexact=email).exists()
         data.pop("id", None)
         profile = PropertyProfile.objects.create(
             homeowner=homeowner,
             customer_email=email.lower().strip(),
+            managed_by_company=managed_by_company,
             is_primary=should_be_primary,
             **data,
         )

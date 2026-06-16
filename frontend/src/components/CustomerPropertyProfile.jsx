@@ -189,6 +189,37 @@ const HOME_SYSTEM_CONDITION_OPTIONS = [
   ["replace_soon", "Replace Soon"],
 ];
 
+const PROPERTY_UNIT_TYPE_OPTIONS = [
+  ["whole_property", "Whole Property"],
+  ["apartment", "Apartment"],
+  ["condo", "Condo"],
+  ["suite", "Suite"],
+  ["room", "Room"],
+  ["other", "Other"],
+];
+
+const PROPERTY_UNIT_STATUS_OPTIONS = [
+  ["active", "Active"],
+  ["vacant", "Vacant"],
+  ["inactive", "Inactive"],
+];
+
+const emptyUnitForm = {
+  unit_label: "",
+  unit_type: "whole_property",
+  status: "active",
+  access_notes: "",
+  notes: "",
+};
+
+function unitTypeLabel(value) {
+  return PROPERTY_UNIT_TYPE_OPTIONS.find(([key]) => key === value)?.[1] || value || "Whole Property";
+}
+
+function unitStatusLabel(value) {
+  return PROPERTY_UNIT_STATUS_OPTIONS.find(([key]) => key === value)?.[1] || value || "Active";
+}
+
 function systemRows({ projects = [], agreements = [], documents = [], requests = [], maintenanceWorkOrders = [], propertyIntelligence = {} }) {
   const haystackItems = [
     ...projects.map((row) => ({ source: row, text: `${row.title || ""} ${row.description || ""} ${row.project_type || ""}` })),
@@ -535,6 +566,215 @@ function PropertySummarySection({ profile, profileOptions, onSelectProperty, onE
         ))}
       </dl>
     </section>
+  );
+}
+
+function PropertyUnitModal({ mode = "add", unit = null, saving = false, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    ...emptyUnitForm,
+    ...(unit || {}),
+    unit_type: unit?.unit_type || "whole_property",
+    status: unit?.status || "active",
+  }));
+
+  useEffect(() => {
+    setForm({
+      ...emptyUnitForm,
+      ...(unit || {}),
+      unit_type: unit?.unit_type || "whole_property",
+      status: unit?.status || "active",
+    });
+  }, [unit]);
+
+  const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const isEdit = mode === "edit";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
+      <form
+        data-testid={isEdit ? "property-unit-edit-modal" : "property-unit-add-modal"}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit?.(form);
+        }}
+        className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Property Units</div>
+            <h3 className="mt-1 text-lg font-semibold text-white">{isEdit ? "Edit Unit" : "Add Unit"}</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500">
+            Close
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-slate-200">
+            Unit label
+            <input
+              data-testid="property-unit-label"
+              required
+              value={form.unit_label || ""}
+              onChange={(event) => update("unit_label", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Unit type
+            <select
+              data-testid="property-unit-type"
+              value={form.unit_type || "whole_property"}
+              onChange={(event) => update("unit_type", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            >
+              {PROPERTY_UNIT_TYPE_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Status
+            <select
+              data-testid="property-unit-status"
+              value={form.status || "active"}
+              onChange={(event) => update("status", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            >
+              {PROPERTY_UNIT_STATUS_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Access notes
+            <textarea
+              data-testid="property-unit-access-notes"
+              rows={3}
+              value={form.access_notes || ""}
+              onChange={(event) => update("access_notes", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Notes
+            <textarea
+              data-testid="property-unit-notes"
+              rows={3}
+              value={form.notes || ""}
+              onChange={(event) => update("notes", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+        </div>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            data-testid={isEdit ? "property-unit-save-edit" : "property-unit-save-add"}
+            className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : isEdit ? "Save Unit" : "Add Unit"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PropertyUnitsSection({ units = [], saving = false, onAdd, onEdit, onDisable }) {
+  const [modalMode, setModalMode] = useState("");
+  const [editingUnit, setEditingUnit] = useState(null);
+
+  return (
+    <Section title="Units" eyebrow="Property Management" testId="property-units-section">
+      {modalMode ? (
+        <PropertyUnitModal
+          mode={modalMode}
+          unit={editingUnit}
+          saving={saving}
+          onClose={() => {
+            setModalMode("");
+            setEditingUnit(null);
+          }}
+          onSubmit={async (payload) => {
+            if (modalMode === "edit" && editingUnit) {
+              await onEdit?.(editingUnit, payload);
+            } else {
+              await onAdd?.(payload);
+            }
+            setModalMode("");
+            setEditingUnit(null);
+          }}
+        />
+      ) : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p className="max-w-2xl text-sm leading-6 text-slate-300">
+          Track property locations for future tenants, maintenance requests, and work orders.
+        </p>
+        <button
+          type="button"
+          data-testid="property-unit-add-button"
+          onClick={() => {
+            setEditingUnit(null);
+            setModalMode("add");
+          }}
+          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400"
+        >
+          Add Unit
+        </button>
+      </div>
+      <div className="mt-4 space-y-2">
+        {units.length ? units.map((unit) => (
+          <article key={unit.id || unit.unit_label} data-testid={`property-unit-${unit.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">{unit.unit_label || "Unit"}</h4>
+                  <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-bold text-slate-300">
+                    {unit.unit_type_label || unitTypeLabel(unit.unit_type)}
+                  </span>
+                  <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-bold text-amber-100">
+                    {unit.status_label || unitStatusLabel(unit.status)}
+                  </span>
+                </div>
+                {unit.access_notes ? <p className="mt-2 text-sm leading-5 text-slate-300">{unit.access_notes}</p> : null}
+                {unit.notes ? <p className="mt-1 text-xs leading-5 text-slate-400">{unit.notes}</p> : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid={`property-unit-edit-${unit.id}`}
+                  onClick={() => {
+                    setEditingUnit(unit);
+                    setModalMode("edit");
+                  }}
+                  className="min-h-9 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
+                >
+                  Edit
+                </button>
+                {unit.status !== "inactive" ? (
+                  <button
+                    type="button"
+                    data-testid={`property-unit-disable-${unit.id}`}
+                    onClick={() => onDisable?.(unit)}
+                    className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
+                  >
+                    Mark inactive
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </article>
+        )) : (
+          <EmptyState title="No units added yet." testId="property-units-empty">
+            Add units to track tenants, maintenance requests, and work orders by location.
+          </EmptyState>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -1851,6 +2091,9 @@ export default function CustomerPropertyProfile({
   onUpdateSystem,
   onArchiveSystem,
   onMarkSystemServiced,
+  onCreateUnit,
+  onUpdateUnit,
+  onDisableUnit,
   onCreateSystemServiceRequest,
   onUploadSystemDocument,
   onCreateSystemUploadSession,
@@ -1860,6 +2103,8 @@ export default function CustomerPropertyProfile({
   onRestoreSystemRecommendation,
   saving = false,
   systemSaving = false,
+  unitSaving = false,
+  isPropertyManagementCompany = false,
 }) {
   const profileOptions = useMemo(() => (profiles.length ? profiles : profile?.id ? [profile] : []), [profiles, profile]);
   const [selectedProfileId, setSelectedProfileId] = useState(profile?.id || profileOptions[0]?.id || "");
@@ -1952,6 +2197,22 @@ export default function CustomerPropertyProfile({
         }}
         onAdd={startAddProperty}
       />
+
+      {isPropertyManagementCompany ? (
+        <PropertyUnitsSection
+          units={selectedProfile?.units || []}
+          saving={unitSaving}
+          onAdd={async (payload) => {
+            await onCreateUnit?.(selectedProfile?.id, payload);
+          }}
+          onEdit={async (unit, payload) => {
+            await onUpdateUnit?.(selectedProfile?.id, unit.id, payload);
+          }}
+          onDisable={async (unit) => {
+            await onDisableUnit?.(selectedProfile?.id, unit.id);
+          }}
+        />
+      ) : null}
 
       <HomeRecordsDashboard
         profile={selectedProfile}

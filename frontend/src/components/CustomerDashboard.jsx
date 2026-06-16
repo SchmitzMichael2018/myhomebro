@@ -2521,6 +2521,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
+  const [savingUnit, setSavingUnit] = useState(false);
   const [savingHomeSystem, setSavingHomeSystem] = useState(false);
   const [uploadingPropertyFile, setUploadingPropertyFile] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -2733,6 +2734,55 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       setUploadingPropertyFile(false);
     }
   };
+
+  const createPropertyUnit = async (propertyId, payload) => {
+    if (!propertyId) return false;
+    setSavingUnit(true);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/units/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Unit added.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.unit_label?.[0] || "Could not add that unit.");
+      throw error;
+    } finally {
+      setSavingUnit(false);
+    }
+  };
+
+  const updatePropertyUnit = async (propertyId, unitId, payload) => {
+    if (!propertyId || !unitId) return false;
+    setSavingUnit(true);
+    try {
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/units/${unitId}/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Unit updated.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.unit_label?.[0] || "Could not update that unit.");
+      throw error;
+    } finally {
+      setSavingUnit(false);
+    }
+  };
+
+  const disablePropertyUnit = async (propertyId, unitId) => {
+    if (!propertyId || !unitId) return false;
+    setSavingUnit(true);
+    try {
+      const { data } = await api.delete(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/units/${unitId}/`);
+      onPortalUpdate?.(data);
+      toast.success("Unit marked inactive.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that unit.");
+      return false;
+    } finally {
+      setSavingUnit(false);
+    }
+  };
+
   const uploadHomeSystemDocument = async ({ file, title, documentType, propertyProfileId, homeSystemId, uploadSource }) => {
     if (!file) return null;
     setUploadError("");
@@ -3054,8 +3104,10 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           payments={portal?.payments || []}
           maintenanceWorkOrders={portal?.maintenance_work_orders || []}
           propertyIntelligence={portal?.property_intelligence || {}}
+          isPropertyManagementCompany={Boolean(portal?.account?.is_property_management_company || portal?.account?.account_type === "property_management_company" || portal?.customer?.account_type === "property_management_company")}
           onOpenRequest={openRequestFromPropertyTimeline}
           saving={savingProperty}
+          unitSaving={savingUnit}
           uploading={uploadingPropertyFile}
           systemSaving={savingHomeSystem}
           uploadError={uploadError}
@@ -3084,6 +3136,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             }
           }}
           onUpload={uploadPropertyFile}
+          onCreateUnit={createPropertyUnit}
+          onUpdateUnit={updatePropertyUnit}
+          onDisableUnit={disablePropertyUnit}
           onCreateSystem={createHomeSystem}
           onUpdateSystem={updateHomeSystem}
           onArchiveSystem={archiveHomeSystem}
@@ -3155,7 +3210,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

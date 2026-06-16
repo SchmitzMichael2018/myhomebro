@@ -20343,6 +20343,127 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.data["property_profile"]["units"], [])
         self.assertEqual(ContractorSubAccount.objects.count(), 0)
 
+    def test_property_management_company_can_list_create_edit_and_disable_units(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Duplex",
+            property_type=PropertyProfile.PROPERTY_TYPE_MULTI_FAMILY,
+        )
+        property_profile.managed_by_company = company
+        property_profile.save(update_fields=["managed_by_company", "updated_at"])
+
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/")
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertEqual(list_response.data["units"], [])
+
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/",
+            {
+                "unit_label": "Unit A",
+                "unit_type": PropertyUnit.UNIT_APARTMENT,
+                "status": PropertyUnit.STATUS_VACANT,
+                "access_notes": "Use north stairwell.",
+                "notes": "Top floor unit.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        unit = PropertyUnit.objects.get(property_profile=property_profile, unit_label="Unit A")
+        self.assertEqual(unit.unit_type, PropertyUnit.UNIT_APARTMENT)
+        self.assertEqual(create_response.data["property_profile"]["unit_count"], 1)
+        self.assertEqual(create_response.data["property_profile"]["units"][0]["unit_label"], "Unit A")
+
+        edit_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/{unit.id}/",
+            {
+                "unit_label": "Unit 101",
+                "unit_type": PropertyUnit.UNIT_CONDO,
+                "status": PropertyUnit.STATUS_ACTIVE,
+                "access_notes": "Use keypad entry.",
+                "notes": "Updated unit notes.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(edit_response.status_code, 200, edit_response.data)
+        unit.refresh_from_db()
+        self.assertEqual(unit.unit_label, "Unit 101")
+        self.assertEqual(unit.unit_type, PropertyUnit.UNIT_CONDO)
+        self.assertEqual(unit.status, PropertyUnit.STATUS_ACTIVE)
+        self.assertEqual(edit_response.data["property_profile"]["units"][0]["status"], PropertyUnit.STATUS_ACTIVE)
+
+        disable_response = self.client.delete(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/{unit.id}/")
+
+        self.assertEqual(disable_response.status_code, 200, disable_response.data)
+        unit.refresh_from_db()
+        self.assertEqual(unit.status, PropertyUnit.STATUS_INACTIVE)
+        self.assertEqual(disable_response.data["property_profile"]["units"][0]["status"], PropertyUnit.STATUS_INACTIVE)
+
+    def test_property_management_unit_duplicate_active_labels_are_blocked(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Duplex",
+            property_type=PropertyProfile.PROPERTY_TYPE_MULTI_FAMILY,
+        )
+        property_profile.managed_by_company = company
+        property_profile.save(update_fields=["managed_by_company", "updated_at"])
+        PropertyUnit.objects.create(
+            property_profile=property_profile,
+            unit_label="Unit A",
+            unit_type=PropertyUnit.UNIT_APARTMENT,
+            status=PropertyUnit.STATUS_ACTIVE,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/",
+            {
+                "unit_label": "unit a",
+                "unit_type": PropertyUnit.UNIT_APARTMENT,
+                "status": PropertyUnit.STATUS_ACTIVE,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("unit_label", response.data)
+        self.assertEqual(PropertyUnit.objects.filter(property_profile=property_profile).count(), 1)
+
+    def test_individual_customer_cannot_manage_property_units(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Duplex",
+            property_type=PropertyProfile.PROPERTY_TYPE_MULTI_FAMILY,
+        )
+
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/")
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/",
+            {
+                "unit_label": "Unit A",
+                "unit_type": PropertyUnit.UNIT_APARTMENT,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(create_response.status_code, 403)
+        self.assertEqual(PropertyUnit.objects.count(), 0)
+
     def test_property_management_company_can_create_team_members(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
