@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
@@ -26,6 +27,13 @@ class PropertyProfile(models.Model):
         blank=True,
         related_name="property_profiles",
     )
+    managed_by_company = models.ForeignKey(
+        "projects.PropertyManagementCompany",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_properties",
+    )
     customer_email = models.EmailField(db_index=True)
     display_name = models.CharField(max_length=200, blank=True, default="")
     property_type = models.CharField(
@@ -51,11 +59,232 @@ class PropertyProfile(models.Model):
         ordering = ["customer_email", "display_name", "id"]
         indexes = [
             models.Index(fields=["customer_email", "updated_at"]),
+            models.Index(fields=["managed_by_company", "updated_at"]),
         ]
 
     def __str__(self):
         label = (self.display_name or self.address_line1 or self.customer_email or "").strip()
         return label or f"PropertyProfile #{self.pk}"
+
+
+class PropertyManagementCompany(models.Model):
+    homeowner = models.OneToOneField(
+        "projects.Homeowner",
+        on_delete=models.CASCADE,
+        related_name="property_management_company",
+    )
+    name = models.CharField(max_length=255)
+    phone = models.CharField(max_length=40, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    website = models.CharField(max_length=255, blank=True, default="")
+    address_line1 = models.CharField(max_length=255, blank=True, default="")
+    address_line2 = models.CharField(max_length=255, blank=True, default="")
+    city = models.CharField(max_length=100, blank=True, default="")
+    state = models.CharField(max_length=50, blank=True, default="")
+    postal_code = models.CharField(max_length=20, blank=True, default="")
+    license_number = models.CharField(max_length=120, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["email"]),
+            models.Index(fields=["is_active", "updated_at"]),
+        ]
+
+    def __str__(self):
+        return self.name or f"Property Management Company #{self.pk}"
+
+
+class PropertyManagementStaffMembership(models.Model):
+    ROLE_ADMIN = "admin"
+    ROLE_MANAGER = "manager"
+    ROLE_MAINTENANCE_COORDINATOR = "maintenance_coordinator"
+    ROLE_ACCOUNTING = "accounting"
+    ROLE_VIEWER = "viewer"
+    ROLE_CHOICES = [
+        (ROLE_ADMIN, "Admin"),
+        (ROLE_MANAGER, "Manager"),
+        (ROLE_MAINTENANCE_COORDINATOR, "Maintenance Coordinator"),
+        (ROLE_ACCOUNTING, "Accounting"),
+        (ROLE_VIEWER, "Viewer"),
+    ]
+
+    STATUS_ACTIVE = "active"
+    STATUS_INVITED = "invited"
+    STATUS_DISABLED = "disabled"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_INVITED, "Invited"),
+        (STATUS_DISABLED, "Disabled"),
+    ]
+
+    company = models.ForeignKey(
+        PropertyManagementCompany,
+        on_delete=models.CASCADE,
+        related_name="staff_memberships",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_management_staff_memberships",
+    )
+    email = models.EmailField(db_index=True)
+    name = models.CharField(max_length=255, blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    role = models.CharField(max_length=32, choices=ROLE_CHOICES, default=ROLE_VIEWER, db_index=True)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_INVITED, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["company", "name", "email"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "email"], name="uniq_pm_staff_email_per_company"),
+        ]
+        indexes = [
+            models.Index(fields=["company", "status"]),
+            models.Index(fields=["company", "role"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name or self.email} ({self.get_role_display()})"
+
+
+class PropertyOwnerContact(models.Model):
+    company = models.ForeignKey(
+        PropertyManagementCompany,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="owner_contacts",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_owner_contacts",
+    )
+    name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    mailing_address = models.TextField(blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        indexes = [
+            models.Index(fields=["company", "name"]),
+            models.Index(fields=["email"]),
+        ]
+
+    def __str__(self):
+        return self.name or self.email or f"Owner Contact #{self.pk}"
+
+
+class PropertyOwnership(models.Model):
+    OWNERSHIP_SOLE_OWNER = "sole_owner"
+    OWNERSHIP_CO_OWNER = "co_owner"
+    OWNERSHIP_ENTITY = "entity"
+    OWNERSHIP_TRUST = "trust"
+    OWNERSHIP_OTHER = "other"
+    OWNERSHIP_TYPE_CHOICES = [
+        (OWNERSHIP_SOLE_OWNER, "Sole Owner"),
+        (OWNERSHIP_CO_OWNER, "Co-Owner"),
+        (OWNERSHIP_ENTITY, "Entity"),
+        (OWNERSHIP_TRUST, "Trust"),
+        (OWNERSHIP_OTHER, "Other"),
+    ]
+
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="ownerships",
+    )
+    owner_contact = models.ForeignKey(
+        PropertyOwnerContact,
+        on_delete=models.CASCADE,
+        related_name="property_ownerships",
+    )
+    ownership_type = models.CharField(max_length=32, choices=OWNERSHIP_TYPE_CHOICES, default=OWNERSHIP_SOLE_OWNER)
+    is_primary = models.BooleanField(default=False, db_index=True)
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["property_profile", "-is_primary", "owner_contact__name", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["property_profile", "owner_contact"], name="uniq_property_owner_contact"),
+        ]
+        indexes = [
+            models.Index(fields=["property_profile", "is_primary"]),
+            models.Index(fields=["owner_contact", "ownership_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.owner_contact} owns {self.property_profile}"
+
+
+class PropertyUnit(models.Model):
+    UNIT_WHOLE_PROPERTY = "whole_property"
+    UNIT_APARTMENT = "apartment"
+    UNIT_CONDO = "condo"
+    UNIT_SUITE = "suite"
+    UNIT_ROOM = "room"
+    UNIT_OTHER = "other"
+    UNIT_TYPE_CHOICES = [
+        (UNIT_WHOLE_PROPERTY, "Whole Property"),
+        (UNIT_APARTMENT, "Apartment"),
+        (UNIT_CONDO, "Condo"),
+        (UNIT_SUITE, "Suite"),
+        (UNIT_ROOM, "Room"),
+        (UNIT_OTHER, "Other"),
+    ]
+
+    STATUS_ACTIVE = "active"
+    STATUS_VACANT = "vacant"
+    STATUS_INACTIVE = "inactive"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_VACANT, "Vacant"),
+        (STATUS_INACTIVE, "Inactive"),
+    ]
+
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="units",
+    )
+    unit_label = models.CharField(max_length=120)
+    unit_type = models.CharField(max_length=32, choices=UNIT_TYPE_CHOICES, default=UNIT_WHOLE_PROPERTY)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    access_notes = models.TextField(blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["property_profile", "unit_label", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["property_profile", "unit_label"], name="uniq_property_unit_label"),
+        ]
+        indexes = [
+            models.Index(fields=["property_profile", "status"]),
+            models.Index(fields=["unit_type", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.property_profile}: {self.unit_label}"
 
 
 def property_document_upload_path(instance, filename):

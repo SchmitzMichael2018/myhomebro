@@ -54,6 +54,8 @@ from projects.models_customer_portal import (
     PropertyDocumentExtraction,
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
+    PropertyManagementCompany,
+    PropertyUnit,
     PropertyPhoto,
     PropertyProfile,
     SmartNotification,
@@ -97,6 +99,12 @@ from projects.services.home_system_document_extraction import extract_home_syste
 from projects.services.customer_portal_supplies import (
     build_home_system_supply_recommendations,
     build_project_material_recommendations,
+)
+from projects.services.property_management import (
+    company_payload,
+    create_or_sync_company_from_homeowner,
+    managed_properties_for_company,
+    units_for_property,
 )
 from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
@@ -455,6 +463,30 @@ def _property_document_payload(row: PropertyDocument, *, include_record_id: bool
     return payload
 
 
+def _property_management_company_ref(company: PropertyManagementCompany | None) -> dict | None:
+    if company is None:
+        return None
+    return {
+        "id": company.id,
+        "name": _safe_text(company.name),
+        "is_active": bool(company.is_active),
+    }
+
+
+def _property_unit_payload(unit: PropertyUnit) -> dict:
+    return {
+        "id": unit.id,
+        "unit_label": _safe_text(unit.unit_label),
+        "unit_type": _safe_text(unit.unit_type),
+        "unit_type_label": unit.get_unit_type_display(),
+        "status": _safe_text(unit.status),
+        "status_label": unit.get_status_display(),
+        "access_notes": _safe_text(unit.access_notes),
+        "notes": _safe_text(unit.notes),
+        "updated_at": _safe_dt(unit.updated_at),
+    }
+
+
 def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
     address = ", ".join(
         part
@@ -490,6 +522,8 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         .filter(property_profile=profile, is_archived=False)
         .order_by("system_type", "custom_name", "id")
     ]
+    units = [_property_unit_payload(unit) for unit in units_for_property(profile)]
+    managed_by_company = _property_management_company_ref(getattr(profile, "managed_by_company", None))
     return {
         "id": profile.id,
         "customer_email": _safe_text(profile.customer_email),
@@ -511,6 +545,10 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "documents": documents,
         "photos": photos,
         "home_systems": home_systems,
+        "managed_by_company": managed_by_company,
+        "managed_by_company_id": managed_by_company["id"] if managed_by_company else None,
+        "units": units,
+        "unit_count": len(units),
         "updated_at": _safe_dt(profile.updated_at),
     }
 
@@ -2794,13 +2832,23 @@ def _customer_profile_payload(email: str) -> dict:
 
 def _customer_account_payload(email: str) -> dict:
     user = User.objects.filter(email__iexact=email).first()
+    homeowner = _primary_homeowner_for_email(email)
+    company = create_or_sync_company_from_homeowner(homeowner)
     profile = _customer_profile_payload(email)
+    is_property_management_company = profile["account_type"] == getattr(
+        Homeowner,
+        "ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY",
+        "property_management_company",
+    )
     return {
         "email": email,
         "has_user": bool(user),
         "has_usable_password": bool(user and user.has_usable_password()),
         "portal_token": _portal_token(email),
         "account_type": profile["account_type"],
+        "is_property_management_company": is_property_management_company,
+        "company": company_payload(company),
+        "managed_property_count": managed_properties_for_company(company).count() if company else 0,
         "company_name": profile["company_name"],
         "company_phone": profile["company_phone"],
         "company_email": profile["company_email"],

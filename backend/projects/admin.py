@@ -103,12 +103,18 @@ try:
         NotificationRule,
         PropertyDocument,
         PropertyHomeSystem,
+        PropertyManagementCompany,
+        PropertyManagementStaffMembership,
+        PropertyOwnerContact,
+        PropertyOwnership,
         PropertyPhoto,
         PropertyProfile,
+        PropertyUnit,
         SmartNotification,
     )
 except Exception:  # pragma: no cover
     CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyHomeSystem = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
+    PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyUnit = None  # type: ignore
 
 try:
     from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent  # type: ignore
@@ -440,9 +446,54 @@ if ProjectIntake is not None:
 if PropertyProfile is not None:
     @admin.register(PropertyProfile)
     class PropertyProfileAdmin(admin.ModelAdmin):
-        list_display = ("customer_email", "display_name", "property_type", "city", "state", "updated_at")
-        search_fields = ("customer_email", "display_name", "address_line1", "city", "state")
-        list_filter = ("property_type", "state")
+        list_display = ("customer_email", "display_name", "property_type", "managed_by_company", "city", "state", "updated_at")
+        search_fields = ("customer_email", "display_name", "address_line1", "city", "state", "managed_by_company__name")
+        list_filter = ("property_type", "state", "managed_by_company")
+
+
+if PropertyManagementCompany is not None:
+    @admin.register(PropertyManagementCompany)
+    class PropertyManagementCompanyAdmin(admin.ModelAdmin):
+        list_display = ("id", "name", "homeowner", "email", "phone", "city", "state", "is_active", "updated_at")
+        search_fields = ("name", "email", "phone", "license_number", "homeowner__full_name", "homeowner__email")
+        list_filter = ("is_active", "state")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if PropertyManagementStaffMembership is not None:
+    @admin.register(PropertyManagementStaffMembership)
+    class PropertyManagementStaffMembershipAdmin(admin.ModelAdmin):
+        list_display = ("id", "company", "name", "email", "role", "status", "updated_at")
+        search_fields = ("company__name", "name", "email", "phone", "user__email")
+        list_filter = ("role", "status", "company")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if PropertyOwnerContact is not None:
+    @admin.register(PropertyOwnerContact)
+    class PropertyOwnerContactAdmin(admin.ModelAdmin):
+        list_display = ("id", "name", "company", "email", "phone", "updated_at")
+        search_fields = ("name", "email", "phone", "mailing_address", "company__name")
+        list_filter = ("company",)
+        readonly_fields = ("created_at", "updated_at")
+
+
+if PropertyOwnership is not None:
+    @admin.register(PropertyOwnership)
+    class PropertyOwnershipAdmin(admin.ModelAdmin):
+        list_display = ("id", "property_profile", "owner_contact", "ownership_type", "is_primary", "updated_at")
+        search_fields = ("property_profile__display_name", "property_profile__customer_email", "owner_contact__name", "owner_contact__email")
+        list_filter = ("ownership_type", "is_primary")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if PropertyUnit is not None:
+    @admin.register(PropertyUnit)
+    class PropertyUnitAdmin(admin.ModelAdmin):
+        list_display = ("id", "property_profile", "unit_label", "unit_type", "status", "updated_at")
+        search_fields = ("property_profile__display_name", "property_profile__customer_email", "unit_label", "access_notes")
+        list_filter = ("unit_type", "status")
+        readonly_fields = ("created_at", "updated_at")
 
 
 if CustomerRequest is not None:

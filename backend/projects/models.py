@@ -2755,8 +2755,13 @@ from .models_customer_portal import (  # noqa: E402,F401
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
     PropertyIntelligenceSnapshot,
+    PropertyManagementCompany,
+    PropertyManagementStaffMembership,
+    PropertyOwnerContact,
+    PropertyOwnership,
     PropertyPhoto,
     PropertyProfile,
+    PropertyUnit,
     SmartNotification,
     SmartNotificationEvent,
 )

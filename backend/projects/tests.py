@@ -88,9 +88,14 @@ from projects.models import (
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
     PropertyIntelligenceSnapshot,
+    PropertyManagementCompany,
+    PropertyManagementStaffMembership,
+    PropertyOwnerContact,
+    PropertyOwnership,
     PropertyPhoto,
     SmartNotification,
     SmartNotificationEvent,
+    PropertyUnit,
     ProjectBenchmarkAggregate,
     RegionalBenchmarkAggregate,
     ProjectEmailReportLog,
@@ -20231,6 +20236,112 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(invalid.status_code, 400)
         self.assertIn("account_type", invalid.data)
+
+    def test_property_management_company_foundation_links_properties_owners_units_and_staff(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.company_phone = "512-555-3434"
+        self.customer_homeowner.company_email = "ops@austinrentals.example"
+        self.customer_homeowner.company_street = "700 Leasing Ave"
+        self.customer_homeowner.company_unit = "Suite 12"
+        self.customer_homeowner.company_city = "Austin"
+        self.customer_homeowner.company_state = "TX"
+        self.customer_homeowner.company_zip = "78704"
+        self.customer_homeowner.company_license_number = "PM-12345"
+        self.customer_homeowner.save(
+            update_fields=[
+                "account_type",
+                "company_name",
+                "company_phone",
+                "company_email",
+                "company_street",
+                "company_unit",
+                "company_city",
+                "company_state",
+                "company_zip",
+                "company_license_number",
+                "updated_at",
+            ]
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        company = PropertyManagementCompany.objects.get(homeowner=self.customer_homeowner)
+        self.assertEqual(company.name, "Austin Rentals Group")
+        self.assertEqual(company.email, "ops@austinrentals.example")
+        self.assertTrue(response.data["account"]["is_property_management_company"])
+        self.assertEqual(response.data["account"]["company"]["id"], company.id)
+        self.assertEqual(response.data["account"]["managed_property_count"], 0)
+
+        primary_property = PropertyProfile.objects.get(customer_email=self.customer_email)
+        primary_property.managed_by_company = company
+        primary_property.save(update_fields=["managed_by_company", "updated_at"])
+        second_property = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Lake House",
+            property_type=PropertyProfile.PROPERTY_TYPE_SINGLE_FAMILY,
+            address_line1="44 Lake Dr",
+            city="Austin",
+            state="TX",
+            postal_code="78703",
+        )
+        PropertyManagementStaffMembership.objects.create(
+            company=company,
+            email="manager@austinrentals.example",
+            name="Morgan Manager",
+            phone="512-555-5656",
+            role=PropertyManagementStaffMembership.ROLE_MANAGER,
+            status=PropertyManagementStaffMembership.STATUS_ACTIVE,
+        )
+        owner = PropertyOwnerContact.objects.create(
+            company=company,
+            name="Owner One",
+            email="owner@example.com",
+            phone="512-555-7878",
+            mailing_address="PO Box 100\nAustin, TX 78701",
+        )
+        ownership = PropertyOwnership.objects.create(
+            property_profile=primary_property,
+            owner_contact=owner,
+            ownership_type=PropertyOwnership.OWNERSHIP_SOLE_OWNER,
+            is_primary=True,
+        )
+        unit = PropertyUnit.objects.create(
+            property_profile=primary_property,
+            unit_label="Whole Property",
+            unit_type=PropertyUnit.UNIT_WHOLE_PROPERTY,
+            status=PropertyUnit.STATUS_ACTIVE,
+            access_notes="Use side gate.",
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["account"]["managed_property_count"], 2)
+        self.assertEqual(response.data["property_profile"]["managed_by_company"]["name"], "Austin Rentals Group")
+        self.assertEqual(response.data["property_profile"]["units"][0]["unit_label"], "Whole Property")
+        self.assertEqual(response.data["property_profile"]["unit_count"], 1)
+        self.assertEqual(ownership.owner_contact, owner)
+        self.assertEqual(unit.property_profile, primary_property)
+        self.assertEqual(second_property.managed_by_company, company)
+
+    def test_individual_customer_portal_payload_is_not_property_management_company(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["customer"]["account_type"], Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
+        self.assertFalse(response.data["account"]["is_property_management_company"])
+        self.assertIsNone(response.data["account"]["company"])
+        self.assertEqual(response.data["account"]["managed_property_count"], 0)
+        self.assertIsNone(response.data["property_profile"]["managed_by_company"])
+        self.assertEqual(response.data["property_profile"]["units"], [])
+        self.assertEqual(ContractorSubAccount.objects.count(), 0)
 
     def test_customer_portal_notifications_are_canonical_deduped_and_filtered(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
