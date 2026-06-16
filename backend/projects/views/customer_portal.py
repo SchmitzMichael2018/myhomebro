@@ -61,6 +61,8 @@ from projects.models_customer_portal import (
     PropertyProfile,
     SmartNotification,
     SmartNotificationEvent,
+    Tenant,
+    Tenancy,
 )
 from projects.services.customer_notification_cleanup import (
     cleanup_preferences_for_email,
@@ -489,6 +491,49 @@ def _property_unit_payload(unit: PropertyUnit) -> dict:
     }
 
 
+def _tenancy_payload(tenancy: Tenancy) -> dict:
+    tenant = tenancy.tenant
+    unit = tenancy.unit
+    return {
+        "id": tenancy.id,
+        "tenant_id": tenant.id,
+        "first_name": _safe_text(tenant.first_name),
+        "last_name": _safe_text(tenant.last_name),
+        "name": _safe_text(getattr(tenant, "display_name", "")),
+        "email": _safe_text(tenant.email),
+        "phone": _safe_text(tenant.phone),
+        "tenant_status": _safe_text(tenant.status),
+        "tenant_status_label": tenant.get_status_display(),
+        "status": _safe_text(tenancy.status),
+        "status_label": tenancy.get_status_display(),
+        "property_profile_id": tenancy.property_profile_id,
+        "unit_id": tenancy.unit_id,
+        "unit_label": _safe_text(getattr(unit, "unit_label", "")) if unit else "",
+        "unit": _property_unit_payload(unit) if unit else None,
+        "move_in_date": tenancy.move_in_date.isoformat() if tenancy.move_in_date else "",
+        "move_out_date": tenancy.move_out_date.isoformat() if tenancy.move_out_date else "",
+        "emergency_contact_name": _safe_text(tenant.emergency_contact_name),
+        "emergency_contact_phone": _safe_text(tenant.emergency_contact_phone),
+        "maintenance_access_enabled": bool(tenant.maintenance_access_enabled),
+        "portal_enabled": bool(tenant.portal_enabled),
+        "notes": _safe_text(tenancy.notes or tenant.notes),
+        "tenant_notes": _safe_text(tenant.notes),
+        "tenancy_notes": _safe_text(tenancy.notes),
+        "updated_at": _safe_dt(max(tenant.updated_at, tenancy.updated_at)),
+    }
+
+
+def _tenant_payloads_for_property(property_profile: PropertyProfile | None) -> list[dict]:
+    if property_profile is None:
+        return []
+    rows = (
+        Tenancy.objects.select_related("tenant", "unit", "property_profile")
+        .filter(property_profile=property_profile)
+        .order_by("unit__unit_label", "tenant__last_name", "tenant__first_name", "id")
+    )
+    return [_tenancy_payload(row) for row in rows]
+
+
 def _property_management_staff_payload(member: PropertyManagementStaffMembership) -> dict:
     return {
         "id": member.id,
@@ -563,6 +608,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         .order_by("system_type", "custom_name", "id")
     ]
     units = [_property_unit_payload(unit) for unit in units_for_property(profile)]
+    tenants = _tenant_payloads_for_property(profile)
     managed_by_company = _property_management_company_ref(getattr(profile, "managed_by_company", None))
     return {
         "id": profile.id,
@@ -589,6 +635,8 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "managed_by_company_id": managed_by_company["id"] if managed_by_company else None,
         "units": units,
         "unit_count": len(units),
+        "tenants": tenants,
+        "tenant_count": len(tenants),
         "updated_at": _safe_dt(profile.updated_at),
     }
 
@@ -4701,6 +4749,25 @@ class CustomerPortalPropertyUnitSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class CustomerPortalTenantSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    unit_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    status = serializers.ChoiceField(
+        choices=[choice[0] for choice in Tenancy.STATUS_CHOICES],
+        required=False,
+    )
+    move_in_date = serializers.DateField(required=False, allow_null=True)
+    move_out_date = serializers.DateField(required=False, allow_null=True)
+    emergency_contact_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    emergency_contact_phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    maintenance_access_enabled = serializers.BooleanField(required=False)
+    portal_enabled = serializers.BooleanField(required=False)
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+
 class CustomerPortalHomeSystemSerializer(serializers.Serializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     system_type = serializers.ChoiceField(
@@ -5043,6 +5110,212 @@ class CustomerPortalPropertyUnitView(APIView):
         if unit.status != PropertyUnit.STATUS_INACTIVE:
             unit.status = PropertyUnit.STATUS_INACTIVE
             unit.save(update_fields=["status", "updated_at"])
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalTenantView(APIView):
+    permission_classes = [AllowAny]
+
+    def _email_from_token(self, token: str):
+        try:
+            return _unsign_portal_token(token), None
+        except signing.SignatureExpired:
+            return None, Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return None, Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def _property_from_token(self, token: str, property_id: int):
+        email, error = self._email_from_token(token)
+        if error is not None:
+            return None, None, None, error
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return email, company, None, error
+        property_profile = get_object_or_404(
+            PropertyProfile.objects.filter(
+                id=property_id,
+                customer_email__iexact=email.lower().strip(),
+            ).filter(
+                Q(managed_by_company=company) | Q(managed_by_company__isnull=True)
+            )
+        )
+        if property_profile.managed_by_company_id is None:
+            property_profile.managed_by_company = company
+            property_profile.save(update_fields=["managed_by_company", "updated_at"])
+        return email, company, property_profile, None
+
+    def _unit_for_property_or_none(self, property_profile: PropertyProfile, unit_id):
+        if not unit_id:
+            return None
+        return get_object_or_404(PropertyUnit.objects.filter(property_profile=property_profile), pk=unit_id)
+
+    def _duplicate_active_occupancy_exists(self, *, company, property_profile, unit, tenant_email: str, tenancy_id=None) -> bool:
+        if not tenant_email:
+            return False
+        queryset = Tenancy.objects.select_related("tenant").filter(
+            tenant__company=company,
+            tenant__email__iexact=tenant_email,
+            property_profile=property_profile,
+            status__in=[Tenancy.STATUS_PENDING, Tenancy.STATUS_ACTIVE],
+        )
+        if unit is None:
+            queryset = queryset.filter(unit__isnull=True)
+        else:
+            queryset = queryset.filter(unit=unit)
+        if tenancy_id:
+            queryset = queryset.exclude(id=tenancy_id)
+        return queryset.exists()
+
+    def _duplicate_response(self):
+        return Response(
+            {"email": ["This tenant already has a pending or active occupancy for that property/unit."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def get(self, request, token: str, property_id: int):
+        _email, _company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        rows = _tenant_payloads_for_property(property_profile)
+        unit_id = request.query_params.get("unit_id")
+        status_filter = _safe_text(request.query_params.get("status"))
+        if unit_id:
+            rows = [row for row in rows if str(row.get("unit_id") or "") == str(unit_id)]
+        if status_filter:
+            rows = [row for row in rows if row.get("status") == status_filter]
+        return Response({"tenants": rows}, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str, property_id: int):
+        email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+
+        serializer = CustomerPortalTenantSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        first_name = _safe_text(data.get("first_name"))
+        last_name = _safe_text(data.get("last_name"))
+        tenant_email = _safe_text(data.get("email")).lower()
+        phone = _safe_text(data.get("phone"))
+        if not any([first_name, last_name, tenant_email, phone]):
+            return Response({"detail": "Enter a tenant name, email, or phone number."}, status=status.HTTP_400_BAD_REQUEST)
+        unit = self._unit_for_property_or_none(property_profile, data.get("unit_id"))
+        tenancy_status = data.get("status") or Tenancy.STATUS_PENDING
+        if tenancy_status in {Tenancy.STATUS_PENDING, Tenancy.STATUS_ACTIVE} and self._duplicate_active_occupancy_exists(
+            company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant_email=tenant_email,
+        ):
+            return self._duplicate_response()
+
+        tenant = Tenant.objects.create(
+            company=company,
+            first_name=first_name,
+            last_name=last_name,
+            email=tenant_email,
+            phone=phone,
+            status=tenancy_status,
+            emergency_contact_name=_safe_text(data.get("emergency_contact_name")),
+            emergency_contact_phone=_safe_text(data.get("emergency_contact_phone")),
+            notes=_safe_text(data.get("notes")),
+            maintenance_access_enabled=bool(data.get("maintenance_access_enabled", False)),
+            portal_enabled=bool(data.get("portal_enabled", False)),
+        )
+        Tenancy.objects.create(
+            tenant=tenant,
+            property_profile=property_profile,
+            unit=unit,
+            status=tenancy_status,
+            move_in_date=data.get("move_in_date"),
+            move_out_date=data.get("move_out_date"),
+            notes=_safe_text(data.get("notes")),
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+    def patch(self, request, token: str, property_id: int, tenancy_id: int):
+        email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+
+        tenancy = get_object_or_404(
+            Tenancy.objects.select_related("tenant", "unit").filter(property_profile=property_profile),
+            pk=tenancy_id,
+        )
+        serializer = CustomerPortalTenantSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        tenant = tenancy.tenant
+        next_email = _safe_text(data.get("email", tenant.email)).lower()
+        next_unit = self._unit_for_property_or_none(property_profile, data.get("unit_id", tenancy.unit_id))
+        next_status = data.get("status", tenancy.status)
+        if next_status in {Tenancy.STATUS_PENDING, Tenancy.STATUS_ACTIVE} and self._duplicate_active_occupancy_exists(
+            company=company,
+            property_profile=property_profile,
+            unit=next_unit,
+            tenant_email=next_email,
+            tenancy_id=tenancy.id,
+        ):
+            return self._duplicate_response()
+
+        tenant_fields = {
+            "first_name": _safe_text(data.get("first_name", tenant.first_name)),
+            "last_name": _safe_text(data.get("last_name", tenant.last_name)),
+            "email": next_email,
+            "phone": _safe_text(data.get("phone", tenant.phone)),
+            "status": next_status,
+            "emergency_contact_name": _safe_text(data.get("emergency_contact_name", tenant.emergency_contact_name)),
+            "emergency_contact_phone": _safe_text(data.get("emergency_contact_phone", tenant.emergency_contact_phone)),
+            "notes": _safe_text(data.get("notes", tenant.notes)),
+            "maintenance_access_enabled": bool(data.get("maintenance_access_enabled", tenant.maintenance_access_enabled)),
+            "portal_enabled": bool(data.get("portal_enabled", tenant.portal_enabled)),
+        }
+        tenant_update_fields = []
+        for field, value in tenant_fields.items():
+            if getattr(tenant, field) != value:
+                setattr(tenant, field, value)
+                tenant_update_fields.append(field)
+        if tenant_update_fields:
+            tenant.save(update_fields=[*tenant_update_fields, "updated_at"])
+
+        tenancy_fields = {
+            "unit": next_unit,
+            "status": next_status,
+            "move_in_date": data.get("move_in_date", tenancy.move_in_date),
+            "move_out_date": data.get("move_out_date", tenancy.move_out_date),
+            "notes": _safe_text(data.get("notes", tenancy.notes)),
+        }
+        tenancy_update_fields = []
+        for field, value in tenancy_fields.items():
+            if getattr(tenancy, field) != value:
+                setattr(tenancy, field, value)
+                tenancy_update_fields.append(field)
+        if tenancy_update_fields:
+            tenancy.save(update_fields=[*tenancy_update_fields, "updated_at"])
+
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+    def delete(self, request, token: str, property_id: int, tenancy_id: int):
+        email, _company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+
+        tenancy = get_object_or_404(
+            Tenancy.objects.select_related("tenant").filter(property_profile=property_profile),
+            pk=tenancy_id,
+        )
+        changed = False
+        if tenancy.status != Tenancy.STATUS_FORMER:
+            tenancy.status = Tenancy.STATUS_FORMER
+            tenancy.save(update_fields=["status", "updated_at"])
+            changed = True
+        tenant = tenancy.tenant
+        if tenant.status != Tenant.STATUS_FORMER:
+            tenant.status = Tenant.STATUS_FORMER
+            tenant.save(update_fields=["status", "updated_at"])
+            changed = True
+        if not changed:
+            tenant.save(update_fields=["updated_at"])
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 

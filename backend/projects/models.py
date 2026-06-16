@@ -2764,6 +2764,8 @@ from .models_customer_portal import (  # noqa: E402,F401
     PropertyUnit,
     SmartNotification,
     SmartNotificationEvent,
+    Tenant,
+    Tenancy,
 )
 from .models_amendment_request import AmendmentRequest, AmendmentRequestAttachment  # noqa: E402,F401
 from .models_customer_refund_request import CustomerRefundRequest  # noqa: E402,F401

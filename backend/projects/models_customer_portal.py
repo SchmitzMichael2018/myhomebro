@@ -287,6 +287,97 @@ class PropertyUnit(models.Model):
         return f"{self.property_profile}: {self.unit_label}"
 
 
+class Tenant(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_ACTIVE = "active"
+    STATUS_FORMER = "former"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_FORMER, "Former"),
+    ]
+
+    company = models.ForeignKey(
+        PropertyManagementCompany,
+        on_delete=models.CASCADE,
+        related_name="tenants",
+    )
+    first_name = models.CharField(max_length=120, blank=True, default="")
+    last_name = models.CharField(max_length=120, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    emergency_contact_name = models.CharField(max_length=255, blank=True, default="")
+    emergency_contact_phone = models.CharField(max_length=40, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    maintenance_access_enabled = models.BooleanField(default=False)
+    portal_enabled = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["last_name", "first_name", "email", "id"]
+        indexes = [
+            models.Index(fields=["company", "status"]),
+            models.Index(fields=["company", "email"]),
+        ]
+
+    @property
+    def display_name(self):
+        name = " ".join(part for part in [self.first_name, self.last_name] if part).strip()
+        return name or self.email or f"Tenant #{self.pk}"
+
+    def __str__(self):
+        return self.display_name
+
+
+class Tenancy(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_ACTIVE = "active"
+    STATUS_FORMER = "former"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_FORMER, "Former"),
+    ]
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="tenancies",
+    )
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="tenancies",
+    )
+    unit = models.ForeignKey(
+        PropertyUnit,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tenancies",
+    )
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    move_in_date = models.DateField(null=True, blank=True)
+    move_out_date = models.DateField(null=True, blank=True)
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["property_profile", "unit__unit_label", "tenant__last_name", "tenant__first_name", "id"]
+        indexes = [
+            models.Index(fields=["property_profile", "status"]),
+            models.Index(fields=["unit", "status"]),
+            models.Index(fields=["tenant", "status"]),
+        ]
+
+    def __str__(self):
+        unit_label = self.unit.unit_label if self.unit else "No unit"
+        return f"{self.tenant} at {self.property_profile} ({unit_label})"
+
+
 def property_document_upload_path(instance, filename):
     base, _dot, ext = filename.rpartition(".")
     safe = slugify(base or "document")

@@ -204,11 +204,32 @@ const PROPERTY_UNIT_STATUS_OPTIONS = [
   ["inactive", "Inactive"],
 ];
 
+const TENANT_STATUS_OPTIONS = [
+  ["pending", "Pending"],
+  ["active", "Active"],
+  ["former", "Former"],
+];
+
 const emptyUnitForm = {
   unit_label: "",
   unit_type: "whole_property",
   status: "active",
   access_notes: "",
+  notes: "",
+};
+
+const emptyTenantForm = {
+  first_name: "",
+  last_name: "",
+  email: "",
+  phone: "",
+  unit_id: "",
+  status: "pending",
+  move_in_date: "",
+  move_out_date: "",
+  emergency_contact_name: "",
+  emergency_contact_phone: "",
+  maintenance_access_enabled: false,
   notes: "",
 };
 
@@ -218,6 +239,10 @@ function unitTypeLabel(value) {
 
 function unitStatusLabel(value) {
   return PROPERTY_UNIT_STATUS_OPTIONS.find(([key]) => key === value)?.[1] || value || "Active";
+}
+
+function tenantStatusLabel(value) {
+  return TENANT_STATUS_OPTIONS.find(([key]) => key === value)?.[1] || value || "Pending";
 }
 
 function systemRows({ projects = [], agreements = [], documents = [], requests = [], maintenanceWorkOrders = [], propertyIntelligence = {} }) {
@@ -771,6 +796,188 @@ function PropertyUnitsSection({ units = [], saving = false, onAdd, onEdit, onDis
         )) : (
           <EmptyState title="No units added yet." testId="property-units-empty">
             Add units to track tenants, maintenance requests, and work orders by location.
+          </EmptyState>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function TenantModal({ mode = "add", tenant = null, units = [], saving = false, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    ...emptyTenantForm,
+    ...(tenant || {}),
+    unit_id: tenant?.unit_id || "",
+    status: tenant?.status || "pending",
+    notes: tenant?.notes || "",
+  }));
+
+  useEffect(() => {
+    setForm({
+      ...emptyTenantForm,
+      ...(tenant || {}),
+      unit_id: tenant?.unit_id || "",
+      status: tenant?.status || "pending",
+      notes: tenant?.notes || "",
+    });
+  }, [tenant]);
+
+  const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const isEdit = mode === "edit";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
+      <form
+        data-testid={isEdit ? "property-tenant-edit-modal" : "property-tenant-add-modal"}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit?.({
+            ...form,
+            unit_id: form.unit_id ? Number(form.unit_id) : null,
+            move_in_date: form.move_in_date || null,
+            move_out_date: form.move_out_date || null,
+          });
+        }}
+        className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Tenants</div>
+            <h3 className="mt-1 text-lg font-semibold text-white">{isEdit ? "Edit Tenant" : "Add Tenant"}</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500">
+            Close
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-slate-200">
+            First name
+            <input data-testid="property-tenant-first-name" value={form.first_name || ""} onChange={(event) => update("first_name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Last name
+            <input data-testid="property-tenant-last-name" value={form.last_name || ""} onChange={(event) => update("last_name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Email
+            <input data-testid="property-tenant-email" type="email" value={form.email || ""} onChange={(event) => update("email", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Phone
+            <input data-testid="property-tenant-phone" value={form.phone || ""} onChange={(event) => update("phone", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Unit
+            <select data-testid="property-tenant-unit" value={form.unit_id || ""} onChange={(event) => update("unit_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+              <option value="">No unit / whole property</option>
+              {units.map((unit) => (
+                <option key={unit.id} value={unit.id}>{unit.unit_label || "Unit"}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Status
+            <select data-testid="property-tenant-status" value={form.status || "pending"} onChange={(event) => update("status", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+              {TENANT_STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Move-in date
+            <input data-testid="property-tenant-move-in" type="date" value={form.move_in_date || ""} onChange={(event) => update("move_in_date", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Move-out date
+            <input data-testid="property-tenant-move-out" type="date" value={form.move_out_date || ""} onChange={(event) => update("move_out_date", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Emergency contact name
+            <input data-testid="property-tenant-emergency-name" value={form.emergency_contact_name || ""} onChange={(event) => update("emergency_contact_name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Emergency contact phone
+            <input data-testid="property-tenant-emergency-phone" value={form.emergency_contact_phone || ""} onChange={(event) => update("emergency_contact_phone", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+          <label className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm font-medium text-slate-200 sm:col-span-2">
+            <input data-testid="property-tenant-maintenance-access" type="checkbox" checked={Boolean(form.maintenance_access_enabled)} onChange={(event) => update("maintenance_access_enabled", event.target.checked)} className="h-4 w-4 rounded border-slate-600 bg-slate-950" />
+            Maintenance access enabled
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Notes
+            <textarea data-testid="property-tenant-notes" rows={3} value={form.notes || ""} onChange={(event) => update("notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+          </label>
+        </div>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500">Cancel</button>
+          <button type="submit" disabled={saving} data-testid={isEdit ? "property-tenant-save-edit" : "property-tenant-save-add"} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
+            {saving ? "Saving..." : isEdit ? "Save Tenant" : "Add Tenant"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function TenantsSection({ tenants = [], units = [], saving = false, onAdd, onEdit, onFormer }) {
+  const [modalMode, setModalMode] = useState("");
+  const [editingTenant, setEditingTenant] = useState(null);
+
+  return (
+    <Section title="Tenants" eyebrow="Property Management" testId="property-tenants-section">
+      {modalMode ? (
+        <TenantModal
+          mode={modalMode}
+          tenant={editingTenant}
+          units={units}
+          saving={saving}
+          onClose={() => {
+            setModalMode("");
+            setEditingTenant(null);
+          }}
+          onSubmit={async (payload) => {
+            if (modalMode === "edit" && editingTenant) {
+              await onEdit?.(editingTenant, payload);
+            } else {
+              await onAdd?.(payload);
+            }
+            setModalMode("");
+            setEditingTenant(null);
+          }}
+        />
+      ) : null}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p className="max-w-2xl text-sm leading-6 text-slate-300">Track resident contacts and occupancy history by property and unit.</p>
+        <button type="button" data-testid="property-tenant-add-button" onClick={() => { setEditingTenant(null); setModalMode("add"); }} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400">
+          Add Tenant
+        </button>
+      </div>
+      <div className="mt-4 space-y-2">
+        {tenants.length ? tenants.map((tenant) => (
+          <article key={tenant.id || tenant.email} data-testid={`property-tenant-${tenant.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">{tenant.name || `${tenant.first_name || ""} ${tenant.last_name || ""}`.trim() || "Tenant"}</h4>
+                  <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-bold text-slate-300">{tenantStatusLabel(tenant.status)}</span>
+                  <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-bold text-amber-100">{tenant.unit_label || "No unit"}</span>
+                  {tenant.maintenance_access_enabled ? <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-bold text-emerald-100">Maintenance access</span> : null}
+                </div>
+                <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+                  <div>{tenant.email || "No email"}</div>
+                  <div>{tenant.phone || "No phone"}</div>
+                </div>
+                {tenant.notes ? <p className="mt-2 text-xs leading-5 text-slate-400">{tenant.notes}</p> : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" data-testid={`property-tenant-edit-${tenant.id}`} onClick={() => { setEditingTenant(tenant); setModalMode("edit"); }} className="min-h-9 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white">Edit</button>
+                {tenant.status !== "former" ? (
+                  <button type="button" data-testid={`property-tenant-former-${tenant.id}`} onClick={() => onFormer?.(tenant)} className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10">Mark Former</button>
+                ) : null}
+              </div>
+            </div>
+          </article>
+        )) : (
+          <EmptyState title="No tenants added yet." testId="property-tenants-empty">
+            Add tenants so maintenance requests can be tied to the right property, unit, and resident.
           </EmptyState>
         )}
       </div>
@@ -2094,6 +2301,9 @@ export default function CustomerPropertyProfile({
   onCreateUnit,
   onUpdateUnit,
   onDisableUnit,
+  onCreateTenant,
+  onUpdateTenant,
+  onMarkTenantFormer,
   onCreateSystemServiceRequest,
   onUploadSystemDocument,
   onCreateSystemUploadSession,
@@ -2104,6 +2314,7 @@ export default function CustomerPropertyProfile({
   saving = false,
   systemSaving = false,
   unitSaving = false,
+  tenantSaving = false,
   isPropertyManagementCompany = false,
 }) {
   const profileOptions = useMemo(() => (profiles.length ? profiles : profile?.id ? [profile] : []), [profiles, profile]);
@@ -2199,19 +2410,35 @@ export default function CustomerPropertyProfile({
       />
 
       {isPropertyManagementCompany ? (
-        <PropertyUnitsSection
-          units={selectedProfile?.units || []}
-          saving={unitSaving}
-          onAdd={async (payload) => {
-            await onCreateUnit?.(selectedProfile?.id, payload);
-          }}
-          onEdit={async (unit, payload) => {
-            await onUpdateUnit?.(selectedProfile?.id, unit.id, payload);
-          }}
-          onDisable={async (unit) => {
-            await onDisableUnit?.(selectedProfile?.id, unit.id);
-          }}
-        />
+        <>
+          <PropertyUnitsSection
+            units={selectedProfile?.units || []}
+            saving={unitSaving}
+            onAdd={async (payload) => {
+              await onCreateUnit?.(selectedProfile?.id, payload);
+            }}
+            onEdit={async (unit, payload) => {
+              await onUpdateUnit?.(selectedProfile?.id, unit.id, payload);
+            }}
+            onDisable={async (unit) => {
+              await onDisableUnit?.(selectedProfile?.id, unit.id);
+            }}
+          />
+          <TenantsSection
+            tenants={selectedProfile?.tenants || []}
+            units={selectedProfile?.units || []}
+            saving={tenantSaving}
+            onAdd={async (payload) => {
+              await onCreateTenant?.(selectedProfile?.id, payload);
+            }}
+            onEdit={async (tenant, payload) => {
+              await onUpdateTenant?.(selectedProfile?.id, tenant.id, payload);
+            }}
+            onFormer={async (tenant) => {
+              await onMarkTenantFormer?.(selectedProfile?.id, tenant.id);
+            }}
+          />
+        </>
       ) : null}
 
       <HomeRecordsDashboard

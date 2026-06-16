@@ -1405,6 +1405,8 @@ const emptyPortalPayload = {
     photos: [],
     units: [],
     unit_count: 0,
+    tenants: [],
+    tenant_count: 0,
   },
   projects: [],
   requests: [],
@@ -1970,9 +1972,11 @@ test("customer portal is reachable from the landing page and loads secure record
   let savedProfilePayload = null;
   let submittedTeamPayload = null;
   let submittedUnitPayload = null;
+  let submittedTenantPayload = null;
   let currentPortalPayload = portalPayload;
   let teamMembers = [];
   let propertyUnits = [];
+  let propertyTenants = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
     window.__mhbPlacePredictionInputs = [];
@@ -2332,6 +2336,135 @@ test("customer portal is reachable from the landing page and loads secure record
                 ...property,
                 units: propertyUnits,
                 unit_count: propertyUnits.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/tenants/") && method === "POST") {
+      submittedTenantPayload = JSON.parse(route.request().postData() || "{}");
+      propertyTenants = [
+        ...propertyTenants,
+        {
+          id: 701,
+          tenant_id: 801,
+          first_name: submittedTenantPayload.first_name,
+          last_name: submittedTenantPayload.last_name,
+          name: `${submittedTenantPayload.first_name} ${submittedTenantPayload.last_name}`.trim(),
+          email: submittedTenantPayload.email,
+          phone: submittedTenantPayload.phone,
+          unit_id: submittedTenantPayload.unit_id,
+          unit_label: "Unit 101",
+          status: submittedTenantPayload.status || "pending",
+          status_label: "Active",
+          move_in_date: submittedTenantPayload.move_in_date,
+          move_out_date: submittedTenantPayload.move_out_date || "",
+          emergency_contact_name: submittedTenantPayload.emergency_contact_name,
+          emergency_contact_phone: submittedTenantPayload.emergency_contact_phone,
+          maintenance_access_enabled: Boolean(submittedTenantPayload.maintenance_access_enabled),
+          notes: submittedTenantPayload.notes,
+        },
+      ];
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          tenants: propertyTenants,
+          tenant_count: propertyTenants.length,
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                tenants: propertyTenants,
+                tenant_count: propertyTenants.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/tenants/701/") && method === "PATCH") {
+      const editPayload = JSON.parse(route.request().postData() || "{}");
+      propertyTenants = propertyTenants.map((tenant) =>
+        tenant.id === 701
+          ? {
+              ...tenant,
+              first_name: editPayload.first_name ?? tenant.first_name,
+              last_name: editPayload.last_name ?? tenant.last_name,
+              name: `${editPayload.first_name ?? tenant.first_name} ${editPayload.last_name ?? tenant.last_name}`.trim(),
+              email: editPayload.email ?? tenant.email,
+              phone: editPayload.phone ?? tenant.phone,
+              unit_id: editPayload.unit_id ?? tenant.unit_id,
+              unit_label: editPayload.unit_id ? "Unit 101" : "",
+              status: editPayload.status ?? tenant.status,
+              status_label: editPayload.status === "pending" ? "Pending" : tenant.status_label,
+              maintenance_access_enabled: editPayload.maintenance_access_enabled ?? tenant.maintenance_access_enabled,
+              notes: editPayload.notes ?? tenant.notes,
+            }
+          : tenant
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          tenants: propertyTenants,
+          tenant_count: propertyTenants.length,
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                tenants: propertyTenants,
+                tenant_count: propertyTenants.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/tenants/701/") && method === "DELETE") {
+      propertyTenants = propertyTenants.map((tenant) =>
+        tenant.id === 701
+          ? {
+              ...tenant,
+              status: "former",
+              status_label: "Former",
+            }
+          : tenant
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          tenants: propertyTenants,
+          tenant_count: propertyTenants.length,
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                tenants: propertyTenants,
+                tenant_count: propertyTenants.length,
               }
             : property
         ),
@@ -3161,6 +3294,60 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-unit-601")).toContainText("Inactive");
   await expect(page.getByTestId("property-unit-disable-601")).toHaveCount(0);
 
+  await expect(page.getByTestId("property-tenants-section")).toContainText("Tenants");
+  await expect(page.getByTestId("property-tenants-empty")).toContainText("No tenants added yet.");
+  await expect(page.getByTestId("property-tenants-empty")).toContainText(
+    "Add tenants so maintenance requests can be tied to the right property, unit, and resident.",
+  );
+  await page.getByTestId("property-tenant-add-button").click();
+  await expect(page.getByTestId("property-tenant-add-modal")).toBeVisible();
+  await expect(page.getByTestId("property-tenant-unit")).toContainText("Unit 101");
+  await page.getByTestId("property-tenant-first-name").fill("Taylor");
+  await page.getByTestId("property-tenant-last-name").fill("Tenant");
+  await page.getByTestId("property-tenant-email").fill("taylor@example.com");
+  await page.getByTestId("property-tenant-phone").fill("512-555-1111");
+  await page.getByTestId("property-tenant-unit").selectOption("601");
+  await page.getByTestId("property-tenant-status").selectOption("active");
+  await page.getByTestId("property-tenant-move-in").fill("2026-06-01");
+  await page.getByTestId("property-tenant-emergency-name").fill("Casey Contact");
+  await page.getByTestId("property-tenant-emergency-phone").fill("512-555-2222");
+  await page.getByTestId("property-tenant-maintenance-access").check();
+  await page.getByTestId("property-tenant-notes").fill("Prefers text messages.");
+  await page.getByTestId("property-tenant-save-add").click();
+  await expect(page.getByTestId("property-tenant-add-modal")).toHaveCount(0);
+  expect(submittedTenantPayload).toMatchObject({
+    first_name: "Taylor",
+    last_name: "Tenant",
+    email: "taylor@example.com",
+    phone: "512-555-1111",
+    unit_id: 601,
+    status: "active",
+    move_in_date: "2026-06-01",
+    emergency_contact_name: "Casey Contact",
+    emergency_contact_phone: "512-555-2222",
+    maintenance_access_enabled: true,
+    notes: "Prefers text messages.",
+  });
+  await expect(page.getByTestId("property-tenant-701")).toContainText("Taylor Tenant");
+  await expect(page.getByTestId("property-tenant-701")).toContainText("Active");
+  await expect(page.getByTestId("property-tenant-701")).toContainText("Unit 101");
+  await expect(page.getByTestId("property-tenant-701")).toContainText("Maintenance access");
+  await page.getByTestId("property-tenant-edit-701").click();
+  await expect(page.getByTestId("property-tenant-edit-modal")).toBeVisible();
+  await page.getByTestId("property-tenant-last-name").fill("Resident");
+  await page.getByTestId("property-tenant-email").fill("resident@example.com");
+  await page.getByTestId("property-tenant-status").selectOption("pending");
+  await page.getByTestId("property-tenant-maintenance-access").uncheck();
+  await page.getByTestId("property-tenant-notes").fill("Updated notes.");
+  await page.getByTestId("property-tenant-save-edit").click();
+  await expect(page.getByTestId("property-tenant-edit-modal")).toHaveCount(0);
+  await expect(page.getByTestId("property-tenant-701")).toContainText("Taylor Resident");
+  await expect(page.getByTestId("property-tenant-701")).toContainText("Pending");
+  await expect(page.getByTestId("property-tenant-701")).not.toContainText("Maintenance access");
+  await page.getByTestId("property-tenant-former-701").click();
+  await expect(page.getByTestId("property-tenant-701")).toContainText("Former");
+  await expect(page.getByTestId("property-tenant-former-701")).toHaveCount(0);
+
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
@@ -3881,6 +4068,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
   await expect(page.getByTestId("property-units-section")).toHaveCount(0);
+  await expect(page.getByTestId("property-tenants-section")).toHaveCount(0);
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
   await expect(page.getByTestId("property-active-work")).toHaveCount(0);
   await expect(page.getByTestId("customer-dashboard-tab-projects")).toBeVisible();

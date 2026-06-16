@@ -2522,6 +2522,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
   const [savingUnit, setSavingUnit] = useState(false);
+  const [savingTenant, setSavingTenant] = useState(false);
   const [savingHomeSystem, setSavingHomeSystem] = useState(false);
   const [uploadingPropertyFile, setUploadingPropertyFile] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -2780,6 +2781,54 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       return false;
     } finally {
       setSavingUnit(false);
+    }
+  };
+
+  const createTenant = async (propertyId, payload) => {
+    if (!propertyId) return false;
+    setSavingTenant(true);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenants/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Tenant added.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.email?.[0] || "Could not add that tenant.");
+      throw error;
+    } finally {
+      setSavingTenant(false);
+    }
+  };
+
+  const updateTenant = async (propertyId, tenancyId, payload) => {
+    if (!propertyId || !tenancyId) return false;
+    setSavingTenant(true);
+    try {
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenants/${tenancyId}/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Tenant updated.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.email?.[0] || "Could not update that tenant.");
+      throw error;
+    } finally {
+      setSavingTenant(false);
+    }
+  };
+
+  const markTenantFormer = async (propertyId, tenancyId) => {
+    if (!propertyId || !tenancyId) return false;
+    setSavingTenant(true);
+    try {
+      const { data } = await api.delete(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenants/${tenancyId}/`);
+      onPortalUpdate?.(data);
+      toast.success("Tenant marked former.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that tenant.");
+      return false;
+    } finally {
+      setSavingTenant(false);
     }
   };
 
@@ -3108,6 +3157,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onOpenRequest={openRequestFromPropertyTimeline}
           saving={savingProperty}
           unitSaving={savingUnit}
+          tenantSaving={savingTenant}
           uploading={uploadingPropertyFile}
           systemSaving={savingHomeSystem}
           uploadError={uploadError}
@@ -3139,6 +3189,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onCreateUnit={createPropertyUnit}
           onUpdateUnit={updatePropertyUnit}
           onDisableUnit={disablePropertyUnit}
+          onCreateTenant={createTenant}
+          onUpdateTenant={updateTenant}
+          onMarkTenantFormer={markTenantFormer}
           onCreateSystem={createHomeSystem}
           onUpdateSystem={updateHomeSystem}
           onArchiveSystem={archiveHomeSystem}
@@ -3210,7 +3263,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

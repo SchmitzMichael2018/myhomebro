@@ -111,10 +111,13 @@ try:
         PropertyProfile,
         PropertyUnit,
         SmartNotification,
+        Tenant,
+        Tenancy,
     )
 except Exception:  # pragma: no cover
     CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyHomeSystem = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
     PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyUnit = None  # type: ignore
+    Tenant = Tenancy = None  # type: ignore
 
 try:
     from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent  # type: ignore
@@ -493,6 +496,24 @@ if PropertyUnit is not None:
         list_display = ("id", "property_profile", "unit_label", "unit_type", "status", "updated_at")
         search_fields = ("property_profile__display_name", "property_profile__customer_email", "unit_label", "access_notes")
         list_filter = ("unit_type", "status")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if Tenant is not None:
+    @admin.register(Tenant)
+    class TenantAdmin(admin.ModelAdmin):
+        list_display = ("id", "display_name", "company", "email", "phone", "status", "maintenance_access_enabled", "portal_enabled", "updated_at")
+        search_fields = ("first_name", "last_name", "email", "phone", "company__name")
+        list_filter = ("status", "maintenance_access_enabled", "portal_enabled", "company")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if Tenancy is not None:
+    @admin.register(Tenancy)
+    class TenancyAdmin(admin.ModelAdmin):
+        list_display = ("id", "tenant", "property_profile", "unit", "status", "move_in_date", "move_out_date", "updated_at")
+        search_fields = ("tenant__first_name", "tenant__last_name", "tenant__email", "property_profile__display_name", "unit__unit_label")
+        list_filter = ("status", "property_profile", "unit")
         readonly_fields = ("created_at", "updated_at")
 
 
