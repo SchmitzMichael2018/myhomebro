@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, UserRound } from "lucide-react";
+import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, Pencil, UserRound, Users } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -1859,7 +1859,162 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
   );
 }
 
-function AccountPanel({ portal, saving = false, onSave }) {
+const PM_TEAM_ROLES = [
+  ["admin", "Admin"],
+  ["manager", "Manager"],
+  ["maintenance_coordinator", "Maintenance Coordinator"],
+  ["accounting", "Accounting"],
+  ["viewer", "Viewer"],
+];
+
+const PM_TEAM_STATUSES = [
+  ["invited", "Invited"],
+  ["active", "Active"],
+  ["disabled", "Disabled"],
+];
+
+const emptyTeamMemberForm = {
+  name: "",
+  email: "",
+  phone: "",
+  role: "viewer",
+  status: "invited",
+};
+
+function roleLabel(value) {
+  return PM_TEAM_ROLES.find(([key]) => key === value)?.[1] || value || "Viewer";
+}
+
+function statusLabel(value) {
+  return PM_TEAM_STATUSES.find(([key]) => key === value)?.[1] || value || "Invited";
+}
+
+function TeamMemberModal({ mode = "add", member = null, saving = false, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    ...emptyTeamMemberForm,
+    ...(member || {}),
+    role: member?.role || "viewer",
+    status: member?.status || "invited",
+  }));
+
+  useEffect(() => {
+    setForm({
+      ...emptyTeamMemberForm,
+      ...(member || {}),
+      role: member?.role || "viewer",
+      status: member?.status || "invited",
+    });
+  }, [member]);
+
+  const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const isEdit = mode === "edit";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
+      <form
+        data-testid={isEdit ? "pm-team-edit-modal" : "pm-team-add-modal"}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit?.(form);
+        }}
+        className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Team Members</div>
+            <h3 className="mt-1 text-lg font-semibold text-white">{isEdit ? "Edit Team Member" : "Add Team Member"}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500"
+          >
+            Close
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-slate-200">
+            Name
+            <input
+              data-testid="pm-team-member-name"
+              value={form.name || ""}
+              onChange={(event) => update("name", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Email
+            <input
+              data-testid="pm-team-member-email"
+              type="email"
+              required={!isEdit}
+              readOnly={isEdit}
+              value={form.email || ""}
+              onChange={(event) => update("email", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400 read-only:bg-slate-900/60 read-only:text-slate-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Phone
+            <input
+              data-testid="pm-team-member-phone"
+              value={form.phone || ""}
+              onChange={(event) => update("phone", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Role
+            <select
+              data-testid="pm-team-member-role"
+              value={form.role || "viewer"}
+              onChange={(event) => update("role", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            >
+              {PM_TEAM_ROLES.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          {isEdit ? (
+            <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+              Status
+              <select
+                data-testid="pm-team-member-status"
+                value={form.status || "invited"}
+                onChange={(event) => update("status", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              >
+                {PM_TEAM_STATUSES.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            data-testid={isEdit ? "pm-team-save-edit" : "pm-team-save-add"}
+            className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : isEdit ? "Save changes" : "Add Team Member"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AccountPanel({ portal, saving = false, teamSaving = false, onSave, onAddTeamMember, onEditTeamMember, onDisableTeamMember }) {
   const customer = portal?.customer || {};
   const account = portal?.account || {};
   const accountType = customer.account_type || account.account_type || "individual";
@@ -1890,6 +2045,8 @@ function AccountPanel({ portal, saving = false, onSave }) {
     company_notes: customer.company_notes || account.company_notes || "",
   };
   const [form, setForm] = useState(profileForm);
+  const [teamModalMode, setTeamModalMode] = useState("");
+  const [editingTeamMember, setEditingTeamMember] = useState(null);
 
   useEffect(() => {
     setForm(profileForm);
@@ -1930,9 +2087,30 @@ function AccountPanel({ portal, saving = false, onSave }) {
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
   const isCompanyAccount = form.account_type === "property_management_company";
+  const teamMembers = Array.isArray(account.team_members) ? account.team_members : [];
 
   return (
     <section data-testid="customer-account-panel" className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      {teamModalMode ? (
+        <TeamMemberModal
+          mode={teamModalMode}
+          member={editingTeamMember}
+          saving={teamSaving}
+          onClose={() => {
+            setTeamModalMode("");
+            setEditingTeamMember(null);
+          }}
+          onSubmit={async (payload) => {
+            if (teamModalMode === "edit" && editingTeamMember) {
+              await onEditTeamMember?.(editingTeamMember, payload);
+            } else {
+              await onAddTeamMember?.(payload);
+            }
+            setTeamModalMode("");
+            setEditingTeamMember(null);
+          }}
+        />
+      ) : null}
       <form
         data-testid="customer-profile-form"
         onSubmit={(event) => {
@@ -2071,12 +2249,13 @@ function AccountPanel({ portal, saving = false, onSave }) {
         </div>
 
         {isCompanyAccount ? (
-          <div data-testid="customer-company-profile-section" className="mt-4 rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
-            <h3 className="text-base font-semibold text-white">Company Profile</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-300">
-              Use this for property management companies that manage multiple properties, owners, tenants, and maintenance requests.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="mt-4 space-y-4">
+            <div data-testid="customer-company-profile-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
+              <h3 className="text-base font-semibold text-white">Company Profile</h3>
+              <p className="mt-1 text-xs leading-5 text-slate-300">
+                Use this for property management companies that manage multiple properties, owners, tenants, and maintenance requests.
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-200">
                 Company name
                 <input
@@ -2195,6 +2374,85 @@ function AccountPanel({ portal, saving = false, onSave }) {
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                 />
               </label>
+              </div>
+            </div>
+
+            <div data-testid="pm-team-members-section" className="rounded-xl border border-sky-300/25 bg-slate-900/55 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-white">Team Members</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-300">
+                    Team members help manage properties, maintenance requests, tenants, vendors, and operations.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid="pm-team-add-button"
+                  onClick={() => {
+                    setEditingTeamMember(null);
+                    setTeamModalMode("add");
+                  }}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400"
+                >
+                  <Users size={16} />
+                  Add Team Member
+                </button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {teamMembers.length ? teamMembers.map((member) => (
+                  <article
+                    key={member.id || member.email}
+                    data-testid={`pm-team-member-${member.id}`}
+                    className="rounded-xl border border-slate-700 bg-slate-950/70 p-3"
+                  >
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-sm font-semibold text-white">{member.name || member.email || "Team Member"}</div>
+                          <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
+                            {member.role_label || roleLabel(member.role)}
+                          </span>
+                          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                            {member.status_label || statusLabel(member.status)}
+                          </span>
+                        </div>
+                        <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+                          <div>{member.email || "No email"}</div>
+                          <div>{member.phone || "No phone"}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid={`pm-team-edit-${member.id}`}
+                          onClick={() => {
+                            setEditingTeamMember(member);
+                            setTeamModalMode("edit");
+                          }}
+                          className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
+                        >
+                          <Pencil size={13} />
+                          Edit
+                        </button>
+                        {member.status !== "disabled" ? (
+                          <button
+                            type="button"
+                            data-testid={`pm-team-disable-${member.id}`}
+                            onClick={() => onDisableTeamMember?.(member)}
+                            className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
+                          >
+                            Disable
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                )) : (
+                  <div data-testid="pm-team-members-empty" className="rounded-xl border border-dashed border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-400">
+                    Add team members who help manage company operations.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : null}
@@ -2274,6 +2532,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [savingNotificationPreferences, setSavingNotificationPreferences] = useState(false);
   const [notificationPreferenceError, setNotificationPreferenceError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingTeamMember, setSavingTeamMember] = useState(false);
   const [focusedRequestId, setFocusedRequestId] = useState("");
   const [requestDraft, setRequestDraft] = useState(null);
 
@@ -2342,6 +2601,54 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       toast.error(error?.response?.data?.detail || "Could not archive that notification.");
     } finally {
       setArchivingNotificationId("");
+    }
+  };
+
+  const addTeamMember = async (payload) => {
+    setSavingTeamMember(true);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/team-members/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Team member added.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.email?.[0] || "Could not add that team member.");
+      throw error;
+    } finally {
+      setSavingTeamMember(false);
+    }
+  };
+
+  const editTeamMember = async (member, payload) => {
+    if (!member?.id) return;
+    setSavingTeamMember(true);
+    try {
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/team-members/${member.id}/`, {
+        name: payload.name,
+        phone: payload.phone,
+        role: payload.role,
+        status: payload.status,
+      });
+      onPortalUpdate?.(data);
+      toast.success("Team member updated.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that team member.");
+      throw error;
+    } finally {
+      setSavingTeamMember(false);
+    }
+  };
+
+  const disableTeamMember = async (member) => {
+    if (!member?.id) return;
+    setSavingTeamMember(true);
+    try {
+      const { data } = await api.delete(`/projects/customer-portal/${encodeURIComponent(token)}/team-members/${member.id}/`);
+      onPortalUpdate?.(data);
+      toast.success("Team member disabled.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not disable that team member.");
+    } finally {
+      setSavingTeamMember(false);
     }
   };
 
@@ -2820,6 +3127,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         <AccountPanel
           portal={portal}
           saving={savingProfile}
+          teamSaving={savingTeamMember}
           onSave={async (payload) => {
             setSavingProfile(true);
             try {
@@ -2832,6 +3140,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               setSavingProfile(false);
             }
           }}
+          onAddTeamMember={addTeamMember}
+          onEditTeamMember={editTeamMember}
+          onDisableTeamMember={disableTeamMember}
         />
       );
     }
@@ -2844,7 +3155,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

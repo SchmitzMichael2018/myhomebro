@@ -1966,7 +1966,9 @@ test("customer portal is reachable from the landing page and loads secure record
   let submittedRequestPayload = null;
   let submittedReviewPayload = null;
   let savedProfilePayload = null;
+  let submittedTeamPayload = null;
   let currentPortalPayload = portalPayload;
+  let teamMembers = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
     window.__mhbPlacePredictionInputs = [];
@@ -2105,31 +2107,119 @@ test("customer portal is reachable from the landing page and loads secure record
 
     if (requestUrl.includes("/customer-portal/customer-token/profile/") && method === "PATCH") {
       savedProfilePayload = JSON.parse(route.request().postData() || "{}");
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        customer: {
+          ...currentPortalPayload.customer,
+          ...savedProfilePayload,
+        },
+        account: {
+          ...currentPortalPayload.account,
+          account_type: savedProfilePayload.account_type,
+          is_property_management_company: savedProfilePayload.account_type === "property_management_company",
+          company_name: savedProfilePayload.company_name,
+          company_phone: savedProfilePayload.company_phone,
+          company_email: savedProfilePayload.company_email,
+          company_website: savedProfilePayload.company_website,
+          company_street: savedProfilePayload.company_street,
+          company_unit: savedProfilePayload.company_unit,
+          company_city: savedProfilePayload.company_city,
+          company_state: savedProfilePayload.company_state,
+          company_zip: savedProfilePayload.company_zip,
+          company_license_number: savedProfilePayload.company_license_number,
+          company_notes: savedProfilePayload.company_notes,
+          team_members: teamMembers,
+        },
+      };
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({
-          ...portalPayload,
-          customer: {
-            ...portalPayload.customer,
-            ...savedProfilePayload,
-          },
-          account: {
-            ...portalPayload.account,
-            account_type: savedProfilePayload.account_type,
-            company_name: savedProfilePayload.company_name,
-            company_phone: savedProfilePayload.company_phone,
-            company_email: savedProfilePayload.company_email,
-            company_website: savedProfilePayload.company_website,
-            company_street: savedProfilePayload.company_street,
-            company_unit: savedProfilePayload.company_unit,
-            company_city: savedProfilePayload.company_city,
-            company_state: savedProfilePayload.company_state,
-            company_zip: savedProfilePayload.company_zip,
-            company_license_number: savedProfilePayload.company_license_number,
-            company_notes: savedProfilePayload.company_notes,
-          },
-        }),
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/team-members/") && method === "POST") {
+      submittedTeamPayload = JSON.parse(route.request().postData() || "{}");
+      teamMembers = [
+        ...teamMembers,
+        {
+          id: 501,
+          name: submittedTeamPayload.name,
+          email: submittedTeamPayload.email,
+          phone: submittedTeamPayload.phone,
+          role: submittedTeamPayload.role,
+          role_label: "Manager",
+          status: "invited",
+          status_label: "Invited",
+        },
+      ];
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        account: {
+          ...currentPortalPayload.account,
+          team_members: teamMembers,
+        },
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/team-members/501/") && method === "PATCH") {
+      const editPayload = JSON.parse(route.request().postData() || "{}");
+      teamMembers = teamMembers.map((member) =>
+        member.id === 501
+          ? {
+              ...member,
+              name: editPayload.name ?? member.name,
+              phone: editPayload.phone ?? member.phone,
+              role: editPayload.role ?? member.role,
+              role_label: editPayload.role === "accounting" ? "Accounting" : member.role_label,
+              status: editPayload.status ?? member.status,
+              status_label: editPayload.status === "active" ? "Active" : member.status_label,
+            }
+          : member
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        account: {
+          ...currentPortalPayload.account,
+          team_members: teamMembers,
+        },
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/team-members/501/") && method === "DELETE") {
+      teamMembers = teamMembers.map((member) =>
+        member.id === 501
+          ? {
+              ...member,
+              status: "disabled",
+              status_label: "Disabled",
+            }
+          : member
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        account: {
+          ...currentPortalPayload.account,
+          team_members: teamMembers,
+        },
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
       });
       return;
     }
@@ -2842,11 +2932,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-account-type-section")).toContainText("Account Type");
   await expect(page.getByTestId("customer-account-type-individual")).toBeChecked();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
+  await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
   await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Lake House");
   await expect(page.getByTestId("customer-account-logout")).toContainText("Log out");
   await page.getByTestId("customer-account-type-property_management_company").check();
   await expect(page.getByTestId("customer-company-profile-section")).toContainText("Company Profile");
+  await expect(page.getByTestId("pm-team-members-section")).toContainText("Team Members");
+  await expect(page.getByTestId("pm-team-members-section")).toContainText(
+    "Team members help manage properties, maintenance requests, tenants, vendors, and operations."
+  );
+  await expect(page.getByTestId("pm-team-members-empty")).toContainText("Add team members");
   await page.getByTestId("customer-company-name").fill("Austin Rentals Group");
   await page.getByTestId("customer-company-phone").fill("512-555-3434");
   await page.getByTestId("customer-company-email").fill("ops@austinrentals.example");
@@ -2872,8 +2968,39 @@ test("customer portal is reachable from the landing page and loads secure record
   });
   await page.getByTestId("customer-account-type-individual").check();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
+  await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
   await page.getByTestId("customer-account-type-property_management_company").check();
   await expect(page.getByTestId("customer-company-name")).toHaveValue("Austin Rentals Group");
+  await page.getByTestId("pm-team-add-button").click();
+  await expect(page.getByTestId("pm-team-add-modal")).toBeVisible();
+  await page.getByTestId("pm-team-member-name").fill("Morgan Manager");
+  await page.getByTestId("pm-team-member-email").fill("manager@austinrentals.example");
+  await page.getByTestId("pm-team-member-phone").fill("512-555-5656");
+  await page.getByTestId("pm-team-member-role").selectOption("manager");
+  await page.getByTestId("pm-team-save-add").click();
+  await expect(page.getByTestId("pm-team-add-modal")).toHaveCount(0);
+  expect(submittedTeamPayload).toMatchObject({
+    name: "Morgan Manager",
+    email: "manager@austinrentals.example",
+    phone: "512-555-5656",
+    role: "manager",
+  });
+  await expect(page.getByTestId("pm-team-member-501")).toContainText("Morgan Manager");
+  await expect(page.getByTestId("pm-team-member-501")).toContainText("Manager");
+  await expect(page.getByTestId("pm-team-member-501")).toContainText("Invited");
+  await page.getByTestId("pm-team-edit-501").click();
+  await expect(page.getByTestId("pm-team-edit-modal")).toBeVisible();
+  await page.getByTestId("pm-team-member-phone").fill("512-555-7878");
+  await page.getByTestId("pm-team-member-role").selectOption("accounting");
+  await page.getByTestId("pm-team-member-status").selectOption("active");
+  await page.getByTestId("pm-team-save-edit").click();
+  await expect(page.getByTestId("pm-team-edit-modal")).toHaveCount(0);
+  await expect(page.getByTestId("pm-team-member-501")).toContainText("Accounting");
+  await expect(page.getByTestId("pm-team-member-501")).toContainText("Active");
+  await expect(page.getByTestId("pm-team-member-501")).toContainText("512-555-7878");
+  await page.getByTestId("pm-team-disable-501").click();
+  await expect(page.getByTestId("pm-team-member-501")).toContainText("Disabled");
+  await expect(page.getByTestId("pm-team-disable-501")).toHaveCount(0);
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);

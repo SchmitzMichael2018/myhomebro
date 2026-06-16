@@ -55,6 +55,7 @@ from projects.models_customer_portal import (
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
     PropertyManagementCompany,
+    PropertyManagementStaffMembership,
     PropertyUnit,
     PropertyPhoto,
     PropertyProfile,
@@ -485,6 +486,39 @@ def _property_unit_payload(unit: PropertyUnit) -> dict:
         "notes": _safe_text(unit.notes),
         "updated_at": _safe_dt(unit.updated_at),
     }
+
+
+def _property_management_staff_payload(member: PropertyManagementStaffMembership) -> dict:
+    return {
+        "id": member.id,
+        "name": _safe_text(member.name),
+        "email": _safe_text(member.email),
+        "phone": _safe_text(member.phone),
+        "role": _safe_text(member.role),
+        "role_label": member.get_role_display(),
+        "status": _safe_text(member.status),
+        "status_label": member.get_status_display(),
+        "created_at": _safe_dt(member.created_at),
+        "updated_at": _safe_dt(member.updated_at),
+    }
+
+
+def _property_management_team_payload(company: PropertyManagementCompany | None) -> list[dict]:
+    if company is None:
+        return []
+    rows = PropertyManagementStaffMembership.objects.filter(company=company).order_by("name", "email", "id")
+    return [_property_management_staff_payload(member) for member in rows]
+
+
+def _property_management_company_for_email_or_response(email: str):
+    homeowner = _primary_homeowner_for_email(email)
+    company = create_or_sync_company_from_homeowner(homeowner)
+    if company is None:
+        return None, Response(
+            {"detail": "Team member management is available only for property management company accounts."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return company, None
 
 
 def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
@@ -2848,6 +2882,7 @@ def _customer_account_payload(email: str) -> dict:
         "account_type": profile["account_type"],
         "is_property_management_company": is_property_management_company,
         "company": company_payload(company),
+        "team_members": _property_management_team_payload(company),
         "managed_property_count": managed_properties_for_company(company).count() if company else 0,
         "company_name": profile["company_name"],
         "company_phone": profile["company_phone"],
@@ -4716,6 +4751,20 @@ class CustomerPortalProfileSerializer(serializers.Serializer):
     company_notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class CustomerPortalTeamMemberSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False)
+    phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    role = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyManagementStaffMembership.ROLE_CHOICES],
+        required=False,
+    )
+    status = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyManagementStaffMembership.STATUS_CHOICES],
+        required=False,
+    )
+
+
 class CustomerPortalProfileView(APIView):
     permission_classes = [AllowAny]
 
@@ -4762,6 +4811,95 @@ class CustomerPortalProfileView(APIView):
         if update_fields:
             update_fields.append("updated_at")
             homeowner.save(update_fields=sorted(set(update_fields)))
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalTeamMemberView(APIView):
+    permission_classes = [AllowAny]
+
+    def _email_from_token(self, token: str):
+        try:
+            return _unsign_portal_token(token), None
+        except signing.SignatureExpired:
+            return None, Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return None, Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def _company_from_token(self, token: str):
+        email, error = self._email_from_token(token)
+        if error is not None:
+            return None, None, error
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return email, None, error
+        return email, company, None
+
+    def get(self, request, token: str):
+        email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+        return Response({"team_members": _property_management_team_payload(company)}, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str):
+        email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+
+        serializer = CustomerPortalTeamMemberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        member_email = _safe_text(data.get("email")).lower()
+        if not member_email:
+            return Response({"email": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        duplicate_exists = PropertyManagementStaffMembership.objects.filter(
+            company=company,
+            email__iexact=member_email,
+        ).exclude(status=PropertyManagementStaffMembership.STATUS_DISABLED).exists()
+        if duplicate_exists:
+            return Response(
+                {"email": ["A non-disabled team member with this email already exists for this company."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        PropertyManagementStaffMembership.objects.create(
+            company=company,
+            name=_safe_text(data.get("name")),
+            email=member_email,
+            phone=_safe_text(data.get("phone")),
+            role=data.get("role") or PropertyManagementStaffMembership.ROLE_VIEWER,
+            status=PropertyManagementStaffMembership.STATUS_INVITED,
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+    def patch(self, request, token: str, member_id: int):
+        email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+
+        member = get_object_or_404(PropertyManagementStaffMembership, pk=member_id, company=company)
+        serializer = CustomerPortalTeamMemberSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        update_fields = []
+        for field in ("name", "phone", "role", "status"):
+            if field not in data:
+                continue
+            value = _safe_text(data[field]) if field in {"name", "phone"} else data[field]
+            if getattr(member, field) != value:
+                setattr(member, field, value)
+                update_fields.append(field)
+        if update_fields:
+            member.save(update_fields=[*update_fields, "updated_at"])
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+    def delete(self, request, token: str, member_id: int):
+        email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+
+        member = get_object_or_404(PropertyManagementStaffMembership, pk=member_id, company=company)
+        if member.status != PropertyManagementStaffMembership.STATUS_DISABLED:
+            member.status = PropertyManagementStaffMembership.STATUS_DISABLED
+            member.save(update_fields=["status", "updated_at"])
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 

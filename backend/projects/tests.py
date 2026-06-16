@@ -20343,6 +20343,135 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.data["property_profile"]["units"], [])
         self.assertEqual(ContractorSubAccount.objects.count(), 0)
 
+    def test_property_management_company_can_create_team_members(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/team-members/",
+            {
+                "name": "Morgan Manager",
+                "email": "Morgan.Manager@AustinRentals.example",
+                "phone": "512-555-5656",
+                "role": PropertyManagementStaffMembership.ROLE_MANAGER,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        company = PropertyManagementCompany.objects.get(homeowner=self.customer_homeowner)
+        member = PropertyManagementStaffMembership.objects.get(company=company)
+        self.assertEqual(member.email, "morgan.manager@austinrentals.example")
+        self.assertEqual(member.status, PropertyManagementStaffMembership.STATUS_INVITED)
+        self.assertEqual(member.role, PropertyManagementStaffMembership.ROLE_MANAGER)
+        self.assertEqual(response.data["account"]["team_members"][0]["email"], "morgan.manager@austinrentals.example")
+        self.assertEqual(response.data["account"]["team_members"][0]["status"], PropertyManagementStaffMembership.STATUS_INVITED)
+
+    def test_property_management_company_can_edit_team_members(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        member = PropertyManagementStaffMembership.objects.create(
+            company=company,
+            name="Morgan Manager",
+            email="manager@austinrentals.example",
+            phone="512-555-5656",
+            role=PropertyManagementStaffMembership.ROLE_MANAGER,
+            status=PropertyManagementStaffMembership.STATUS_INVITED,
+        )
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/team-members/{member.id}/",
+            {
+                "name": "Morgan Ops",
+                "phone": "512-555-7878",
+                "role": PropertyManagementStaffMembership.ROLE_ACCOUNTING,
+                "status": PropertyManagementStaffMembership.STATUS_ACTIVE,
+                "email": "ignored@example.com",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        member.refresh_from_db()
+        self.assertEqual(member.name, "Morgan Ops")
+        self.assertEqual(member.email, "manager@austinrentals.example")
+        self.assertEqual(member.phone, "512-555-7878")
+        self.assertEqual(member.role, PropertyManagementStaffMembership.ROLE_ACCOUNTING)
+        self.assertEqual(member.status, PropertyManagementStaffMembership.STATUS_ACTIVE)
+        self.assertEqual(response.data["account"]["team_members"][0]["role"], PropertyManagementStaffMembership.ROLE_ACCOUNTING)
+
+    def test_property_management_company_can_disable_team_members(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        member = PropertyManagementStaffMembership.objects.create(
+            company=company,
+            name="Morgan Manager",
+            email="manager@austinrentals.example",
+            role=PropertyManagementStaffMembership.ROLE_MANAGER,
+            status=PropertyManagementStaffMembership.STATUS_ACTIVE,
+        )
+
+        response = self.client.delete(f"/api/projects/customer-portal/{token}/team-members/{member.id}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        member.refresh_from_db()
+        self.assertEqual(member.status, PropertyManagementStaffMembership.STATUS_DISABLED)
+        self.assertEqual(response.data["account"]["team_members"][0]["status"], PropertyManagementStaffMembership.STATUS_DISABLED)
+
+    def test_property_management_team_member_duplicate_prevention(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        PropertyManagementStaffMembership.objects.create(
+            company=company,
+            name="Morgan Manager",
+            email="manager@austinrentals.example",
+            role=PropertyManagementStaffMembership.ROLE_MANAGER,
+            status=PropertyManagementStaffMembership.STATUS_ACTIVE,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/team-members/",
+            {
+                "name": "Morgan Duplicate",
+                "email": "MANAGER@austinrentals.example",
+                "role": PropertyManagementStaffMembership.ROLE_VIEWER,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("email", response.data)
+        self.assertEqual(PropertyManagementStaffMembership.objects.filter(company=company).count(), 1)
+
+    def test_individual_customer_cannot_manage_team_members(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/team-members/")
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/team-members/",
+            {
+                "name": "Morgan Manager",
+                "email": "manager@austinrentals.example",
+                "role": PropertyManagementStaffMembership.ROLE_MANAGER,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(create_response.status_code, 403)
+        self.assertEqual(PropertyManagementStaffMembership.objects.count(), 0)
+
     def test_customer_portal_notifications_are_canonical_deduped_and_filtered(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         now = timezone.now()
