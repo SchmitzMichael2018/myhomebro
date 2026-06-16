@@ -22408,8 +22408,14 @@ class CustomerPortalAccessTests(TestCase):
         hvac_supplies = system_rows[hvac.id]["supply_recommendations"]
         self.assertTrue(any(row["supply_name"] == "HVAC filter" for row in hvac_supplies))
         amazon_url = hvac_supplies[0]["provider_links"][0]["url"]
+        provider_urls = {row["provider"]: row["url"] for row in hvac_supplies[0]["provider_links"]}
         self.assertIn("amazon.com/s?", amazon_url)
         self.assertIn("tag=myhomebro-test-20", amazon_url)
+        self.assertEqual(hvac_supplies[0]["amazon_url"], provider_urls["amazon"])
+        self.assertEqual(hvac_supplies[0]["home_depot_url"], provider_urls["home_depot"])
+        self.assertEqual(hvac_supplies[0]["lowes_url"], provider_urls["lowes"])
+        self.assertIn("homedepot.com/s/Carrier+XR-500+HVAC+air+filter", provider_urls["home_depot"])
+        self.assertIn("lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter", provider_urls["lowes"])
         self.assertIn("Confirm size, model, quantity, and compatibility", hvac_supplies[0]["compatibility_warning"])
 
         roof_recommendations = system_rows[roof.id]["supply_recommendations"]
@@ -22602,6 +22608,9 @@ class CustomerPortalAccessTests(TestCase):
         refrigerator_supplies = rows[systems[0].id]["supply_recommendations"]
         self.assertEqual(refrigerator_supplies[0]["supply_name"], "Refrigerator water filter")
         self.assertIn("Whirlpool+WRF-100+refrigerator+water+filter", refrigerator_supplies[0]["provider_links"][0]["url"])
+        refrigerator_provider_urls = {row["provider"]: row["url"] for row in refrigerator_supplies[0]["provider_links"]}
+        self.assertIn("Whirlpool+WRF-100+refrigerator+water+filter", refrigerator_provider_urls["home_depot"])
+        self.assertIn("searchTerm=Whirlpool+WRF-100+refrigerator+water+filter", refrigerator_provider_urls["lowes"])
         self.assertEqual(rows[systems[0].id]["service_interval_months"], 6)
 
         dryer_supplies = rows[systems[1].id]["supply_recommendations"]
@@ -22644,9 +22653,12 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         system = response.data["property_profile"]["home_systems"][0]
-        amazon_url = system["supply_recommendations"][0]["provider_links"][0]["url"]
+        recommendation = system["supply_recommendations"][0]
+        amazon_url = recommendation["provider_links"][0]["url"]
         self.assertIn("amazon.com/s?", amazon_url)
         self.assertNotIn("tag=", amazon_url)
+        self.assertIn("homedepot.com/s/HVAC+air+filter", recommendation["home_depot_url"])
+        self.assertIn("lowes.com/search?searchTerm=HVAC+air+filter", recommendation["lowes_url"])
 
     def test_customer_portal_home_system_mark_serviced_and_create_request(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

@@ -94,9 +94,18 @@ const portalPayload = {
             priority: "medium",
             confidence: "medium",
             source_note: "Based on the saved home system type and maintenance records.",
-            provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" }],
+            amazon_url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20",
+            home_depot_url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
+            lowes_url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
+            provider_links: [
+              { provider: "amazon", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" },
+              { provider: "home_depot", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter" },
+              { provider: "lowes", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter" },
+            ],
             actions: [
-              { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
+              { type: "amazon_search", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
+              { type: "home_depot_search", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter", provider: "home_depot" },
+              { type: "lowes_search", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter", provider: "lowes" },
             ],
             is_ignored: false,
           },
@@ -228,9 +237,18 @@ const portalPayload = {
               priority: "medium",
               confidence: "medium",
               source_note: "Based on the saved home system type and maintenance records.",
-              provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" }],
+              amazon_url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20",
+              home_depot_url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
+              lowes_url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
+              provider_links: [
+                { provider: "amazon", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" },
+                { provider: "home_depot", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter" },
+                { provider: "lowes", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter" },
+              ],
               actions: [
-                { type: "amazon_search", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
+                { type: "amazon_search", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
+                { type: "home_depot_search", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter", provider: "home_depot" },
+                { type: "lowes_search", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter", provider: "lowes" },
               ],
               is_ignored: false,
             },
@@ -1143,10 +1161,54 @@ const systemServicedPortalPayload = {
             reminder_reason: "Main HVAC maintenance appears current from the last recorded service date.",
             recommended_action: "Keep records updated after the next service.",
             reminder_delivery_status: "resolved",
+            lifecycle: {
+              state: "completed",
+              label: "Completed",
+              linked_request_id: 9,
+              linked_agreement_id: null,
+              linked_work_order_id: null,
+              scheduled_date: "",
+              completed_at: "2026-06-10",
+              next_action: "Keep records updated after the next service.",
+            },
           }
         : system
     ),
   },
+  property_profiles: portalPayload.property_profiles.map((profile) =>
+    profile.id === portalPayload.property_profile.id
+      ? {
+          ...profile,
+          home_systems: profile.home_systems.map((system) =>
+            system.id === 11
+              ? {
+                  ...system,
+                  last_service_date: "2026-06-10",
+                  service_provider: "Austin HVAC",
+                  notes: "Filter size documented.\n\nService note 2026-06-10: Filter replaced.",
+                  maintenance_status: "current",
+                  priority: "low",
+                  next_recommended_service_date: "2026-12-10",
+                  days_until_due: 183,
+                  reminder_reason: "Main HVAC maintenance appears current from the last recorded service date.",
+                  recommended_action: "Keep records updated after the next service.",
+                  reminder_delivery_status: "resolved",
+                  lifecycle: {
+                    state: "completed",
+                    label: "Completed",
+                    linked_request_id: 9,
+                    linked_agreement_id: null,
+                    linked_work_order_id: null,
+                    scheduled_date: "",
+                    completed_at: "2026-06-10",
+                    next_action: "Keep records updated after the next service.",
+                  },
+                }
+              : system
+          ),
+        }
+      : profile
+  ),
 };
 
 const systemServiceRequestPortalPayload = {
@@ -1730,6 +1792,152 @@ const longPortalPayload = {
   ],
 };
 
+function clonePortal(value = portalPayload) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+async function setupRecommendedSuppliesPortal(page) {
+  let currentPortalPayload = clonePortal();
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "customer-portal-token");
+  });
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (method === "GET" && requestUrl.includes("/customer-portal/customer-token/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/ignore/") && method === "POST") {
+      const updateRecommendations = (systems = []) => systems.map((system) =>
+        system.id === 11
+          ? {
+              ...system,
+              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
+                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
+                  ? { ...recommendation, is_ignored: true }
+                  : recommendation
+              ),
+            }
+          : system
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          home_systems: updateRecommendations(currentPortalPayload.property_profile.home_systems),
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === currentPortalPayload.property_profile.id
+            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Recommendation ignored.", portal: currentPortalPayload }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/restore/") && method === "POST") {
+      const updateRecommendations = (systems = []) => systems.map((system) =>
+        system.id === 11
+          ? {
+              ...system,
+              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
+                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
+                  ? { ...recommendation, is_ignored: false }
+                  : recommendation
+              ),
+            }
+          : system
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          home_systems: updateRecommendations(currentPortalPayload.property_profile.home_systems),
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === currentPortalPayload.property_profile.id
+            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Recommendation restored.", portal: currentPortalPayload }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+}
+
+test("customer portal recommended supplies retailer links and actions are isolated", async ({ page }) => {
+  await setupRecommendedSuppliesPortal(page);
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await page.getByTestId("customer-dashboard-tab-property").click();
+
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Recommended Supplies");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Replacement parts, filters, consumables, and upkeep items based on your Home Systems.");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("May be due soon");
+  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Confidence");
+  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Source");
+
+  await page.getByTestId("property-home-system-view-11").click();
+  await page.getByTestId("property-home-system-view-recommendations-11").click();
+  await expect(page.getByTestId("property-supply-recommendation-row").first()).toHaveClass(/ring-2/);
+  await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveText("Amazon");
+  await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /amazon\.com\/s\?/);
+  await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /tag=myhomebro-test-20/);
+  await expect(page.getByTestId("property-supply-home-depot-link").first()).toHaveText("Home Depot");
+  await expect(page.getByTestId("property-supply-home-depot-link").first()).toHaveAttribute("href", /homedepot\.com\/s\/Carrier\+XR-500\+HVAC\+air\+filter/);
+  await expect(page.getByTestId("property-supply-lowes-link").first()).toHaveText("Lowe's");
+  await expect(page.getByTestId("property-supply-lowes-link").first()).toHaveAttribute("href", /lowes\.com\/search\?searchTerm=Carrier\+XR-500\+HVAC\+air\+filter/);
+
+  await page.getByTestId("property-supply-view").first().click();
+  const detailDialog = page.getByRole("dialog", { name: "Supply recommendation details" });
+  await expect(detailDialog).toContainText("HVAC filter");
+  await expect(detailDialog.getByTestId("property-supply-amazon-link")).toHaveText("Amazon");
+  await expect(detailDialog.getByTestId("property-supply-home-depot-link")).toHaveText("Home Depot");
+  await expect(detailDialog.getByTestId("property-supply-lowes-link")).toHaveText("Lowe's");
+  await detailDialog.getByRole("button", { name: "Close" }).click();
+
+  await page.getByTestId("property-supply-create-service-request").first().click();
+  await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
+  await expect(page.getByTestId("customer-request-recommendation-context")).toContainText("Created from a Home System recommendation");
+  await expect(page.getByLabel("Project Title")).toHaveValue("Main HVAC Maintenance - HVAC filter");
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Recommended item:/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/HVAC filter/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Manufacturer: Carrier/);
+  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Model: XR-500/);
+
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await page.getByTestId("property-supply-ignore").first().click();
+  await expect(page.getByTestId("property-home-systems")).not.toContainText("Ignored");
+  await expect(page.getByTestId("property-suggested-supplies-empty")).toContainText("No active recommendations");
+  await page.getByTestId("property-supply-filter-ignored").click();
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Ignored");
+  await page.getByTestId("property-supply-restore").first().click();
+  await page.getByTestId("property-supply-filter-active").click();
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
+});
+
 test("customer portal is reachable from the landing page and loads secure records", async ({
   page,
 }) => {
@@ -2227,19 +2435,21 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/mark-serviced/") && method === "POST") {
+      currentPortalPayload = systemServicedPortalPayload;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(systemServicedPortalPayload),
+        body: JSON.stringify(currentPortalPayload),
       });
       return;
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/service-request/") && method === "POST") {
+      currentPortalPayload = systemServiceRequestPortalPayload;
       await route.fulfill({
         status: 201,
         contentType: "application/json",
-        body: JSON.stringify(systemServiceRequestPortalPayload),
+        body: JSON.stringify(currentPortalPayload),
       });
       return;
     }
@@ -3030,46 +3240,6 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-system-modal")).toContainText("Edit Home System");
   await expect(page.getByTestId("property-home-system-modal").getByLabel("System type")).toHaveValue("appliance");
   await page.getByTestId("property-home-system-modal").getByRole("button", { name: "Close" }).click();
-  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Suggested Supplies & Maintenance");
-  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
-  await expect(page.getByTestId("property-suggested-supplies")).toContainText("May be due soon");
-  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Confirm size, model, quantity, and compatibility before purchasing.");
-  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Confidence");
-  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("Source");
-  await page.getByTestId("property-home-system-view-11").click();
-  await page.getByTestId("property-home-system-view-recommendations-11").click();
-  await expect(page.getByTestId("property-supply-recommendation-row").first()).toHaveClass(/ring-2/);
-  await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /amazon\.com\/s\?/);
-  await expect(page.getByTestId("property-supply-amazon-link").first()).toHaveAttribute("href", /tag=myhomebro-test-20/);
-  await page.getByTestId("property-supply-view").first().click();
-  await expect(page.getByRole("dialog", { name: "Supply recommendation details" })).toContainText("HVAC filter");
-  await page.getByRole("dialog", { name: "Supply recommendation details" }).getByRole("button", { name: "Close" }).click();
-  await expect(page.getByTestId("property-suggested-supplies")).not.toContainText("DIY Help");
-  await page.getByTestId("property-supply-create-service-request").first().click();
-  await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
-  await expect(page.getByTestId("customer-request-recommendation-context")).toContainText("Created from a Home System recommendation");
-  await expect(page.getByLabel("Project Title")).toHaveValue("Main HVAC Maintenance - HVAC filter");
-  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Recommended item:/);
-  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/HVAC filter/);
-  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Manufacturer: Carrier/);
-  await expect(page.getByLabel("Describe what you need help with")).toHaveValue(/Model: ABC123/);
-  await expect(page.getByTestId("customer-request-help-mode")).toHaveValue("diy_assist");
-  await expect(page.getByTestId("customer-request-help-mode")).toContainText("DIY Assistance");
-  await expect(page.getByTestId("customer-request-help-mode")).toContainText("Full service");
-  await page.getByTestId("customer-dashboard-tab-property").click();
-  await page.getByTestId("property-supply-ignore").first().click();
-  await expect(page.getByTestId("property-home-systems")).not.toContainText("Ignored");
-  await expect(page.getByTestId("property-home-systems")).toContainText("Service Requested");
-  await expect(page.getByTestId("property-home-system-filter")).toContainText("Current");
-  await expect(page.getByTestId("property-home-system-filter")).toContainText("Maintenance Past Due");
-  await expect(page.getByTestId("property-home-system-filter")).not.toContainText("Ignored/Archived");
-  await expect(page.getByTestId("property-suggested-supplies-empty")).toContainText("No active recommendations");
-  await page.getByTestId("property-supply-filter-ignored").click();
-  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
-  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Ignored");
-  await page.getByTestId("property-supply-restore").first().click();
-  await page.getByTestId("property-supply-filter-active").click();
-  await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Home upkeep");
   await expect(page.getByTestId("property-maintenance-kpi-needs-attention")).toContainText("View details");

@@ -281,6 +281,41 @@ function recommendationStatusLabel(recommendation) {
   return "Maintenance item";
 }
 
+const RETAILER_LINKS = [
+  { provider: "amazon", label: "Amazon", testId: "property-supply-amazon-link", urlKey: "amazon_url" },
+  { provider: "home_depot", label: "Home Depot", testId: "property-supply-home-depot-link", urlKey: "home_depot_url" },
+  { provider: "lowes", label: "Lowe's", testId: "property-supply-lowes-link", urlKey: "lowes_url" },
+];
+
+function retailerUrl(recommendation, retailer) {
+  if (recommendation?.[retailer.urlKey]) return recommendation[retailer.urlKey];
+  const providerLink = (recommendation?.provider_links || []).find((link) => link.provider === retailer.provider);
+  if (providerLink?.url) return providerLink.url;
+  const action = (recommendation?.actions || []).find((item) => item.provider === retailer.provider);
+  return action?.url || "";
+}
+
+function RetailerLinks({ recommendation, compact = false }) {
+  const links = RETAILER_LINKS.map((retailer) => ({ ...retailer, url: retailerUrl(recommendation, retailer) })).filter((retailer) => retailer.url);
+  if (!links.length) return null;
+  return (
+    <>
+      {links.map((retailer) => (
+        <a
+          key={retailer.provider}
+          data-testid={retailer.testId}
+          href={retailer.url}
+          target="_blank"
+          rel="noreferrer"
+          className={`rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white ${compact ? "text-xs" : ""}`}
+        >
+          {retailer.label}
+        </a>
+      ))}
+    </>
+  );
+}
+
 function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highlightedSystemId, onIgnoreRecommendation, onRestoreRecommendation }) {
   const [viewRecommendation, setViewRecommendation] = useState(null);
   const [filter, setFilter] = useState("active");
@@ -297,10 +332,10 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
   const visibleRecommendations = filter === "ignored" ? ignoredRecommendations : filter === "all" ? recommendations : activeRecommendations;
   if (!recommendations.length) return null;
   return (
-    <Section title="Suggested Supplies & Maintenance" eyebrow="Helpful upkeep" testId="property-suggested-supplies">
+    <Section title="Recommended Supplies" eyebrow="Helpful upkeep" testId="property-suggested-supplies">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-2 text-sm leading-6 text-slate-300">
-          <p>Useful maintenance ideas based on the home systems you have saved.</p>
+          <p>Replacement parts, filters, consumables, and upkeep items based on your Home Systems.</p>
           <p className="rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-xs font-semibold leading-5 text-amber-100">
             Confirm size, model, quantity, and compatibility before purchasing.
           </p>
@@ -326,7 +361,6 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
       {visibleRecommendations.length ? (
         <div className="space-y-2">
           {visibleRecommendations.slice(0, 6).map((recommendation) => {
-          const amazonAction = (recommendation.actions || []).find((action) => action.type === "amazon_search") || recommendation.provider_links?.[0];
           const isReplacement = recommendation.kind === "end_of_life";
           const actionLabel = recommendationStatusLabel(recommendation);
           const isHighlighted = String(highlightedSystemId || "") === String(recommendation.systemRecord?.id || recommendation.system_id || "");
@@ -373,17 +407,7 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
                     Find Contractor
                   </button>
                 ) : null}
-                {!isReplacement && amazonAction?.url ? (
-                  <a
-                    data-testid="property-supply-amazon-link"
-                    href={amazonAction.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
-                  >
-                    Search on Amazon
-                  </a>
-                ) : null}
+                <RetailerLinks recommendation={recommendation} compact />
                 <button
                   type="button"
                   data-testid="property-supply-create-service-request"
@@ -438,7 +462,10 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
             <p className="mt-3 rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-sm font-semibold leading-6 text-amber-100">
               Confirm size, model, quantity, and compatibility before purchasing.
             </p>
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex flex-wrap justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                <RetailerLinks recommendation={viewRecommendation} />
+              </div>
               <button
                 type="button"
                 onClick={() => setViewRecommendation(null)}

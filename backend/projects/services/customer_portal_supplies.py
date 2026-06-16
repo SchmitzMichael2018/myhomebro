@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
 
 from django.conf import settings
 from django.utils import timezone
@@ -287,6 +287,40 @@ def amazon_search_url(query: str) -> str:
     return f"https://www.amazon.com/s?{urlencode(params)}"
 
 
+def home_depot_search_url(query: str) -> str:
+    return f"https://www.homedepot.com/s/{quote_plus(_safe_text(query))}"
+
+
+def lowes_search_url(query: str) -> str:
+    return f"https://www.lowes.com/search?{urlencode({'searchTerm': _safe_text(query)})}"
+
+
+def retailer_search_urls(query: str) -> dict:
+    return {
+        "amazon_url": amazon_search_url(query),
+        "home_depot_url": home_depot_search_url(query),
+        "lowes_url": lowes_search_url(query),
+    }
+
+
+def retailer_provider_links(query: str) -> list[dict]:
+    urls = retailer_search_urls(query)
+    return [
+        {"provider": "amazon", "label": "Amazon", "url": urls["amazon_url"]},
+        {"provider": "home_depot", "label": "Home Depot", "url": urls["home_depot_url"]},
+        {"provider": "lowes", "label": "Lowe's", "url": urls["lowes_url"]},
+    ]
+
+
+def retailer_search_actions(query: str) -> list[dict]:
+    urls = retailer_search_urls(query)
+    return [
+        {"type": "amazon_search", "label": "Amazon", "url": urls["amazon_url"], "provider": "amazon"},
+        {"type": "home_depot_search", "label": "Home Depot", "url": urls["home_depot_url"], "provider": "home_depot"},
+        {"type": "lowes_search", "label": "Lowe's", "url": urls["lowes_url"], "provider": "lowes"},
+    ]
+
+
 def _system_query(system: PropertyHomeSystem, fallback: str) -> str:
     parts = [
         _safe_text(system.manufacturer),
@@ -306,6 +340,7 @@ def _add_months(value: date, months: int) -> date:
 
 def _supply_card(system: PropertyHomeSystem, rule: dict, index: int) -> dict:
     query = _system_query(system, rule["query"])
+    retailer_urls = retailer_search_urls(query)
     next_due = None
     reminder = build_home_system_reminder(system)
     if reminder.next_recommended_service_date:
@@ -326,15 +361,10 @@ def _supply_card(system: PropertyHomeSystem, rule: dict, index: int) -> dict:
         "priority": "medium" if reminder.maintenance_status in {"due_soon", "overdue"} else "low",
         "confidence": "medium",
         "source_note": "Based on the saved home system type and maintenance records.",
-        "provider_links": [
-            {
-                "provider": "amazon",
-                "label": "Search on Amazon",
-                "url": amazon_search_url(query),
-            }
-        ],
+        **retailer_urls,
+        "provider_links": retailer_provider_links(query),
         "actions": [
-            {"type": "amazon_search", "label": "Search on Amazon", "url": amazon_search_url(query), "provider": "amazon"},
+            *retailer_search_actions(query),
             {"type": "diy_help", "label": "Get DIY help"},
         ],
     }
@@ -345,6 +375,8 @@ def _end_of_life_card(system: PropertyHomeSystem, today: date) -> dict | None:
     if reminder.maintenance_status != "lifespan_attention":
         return None
     replacement_query = f"{system.get_system_type_display()} replacement contractor"
+    options_query = f"{system.get_system_type_display()} replacement options"
+    retailer_urls = retailer_search_urls(options_query)
     return {
         "id": f"system-{system.id}-end-of-life",
         "kind": "end_of_life",
@@ -360,9 +392,12 @@ def _end_of_life_card(system: PropertyHomeSystem, today: date) -> dict | None:
         "priority": reminder.priority,
         "confidence": "medium",
         "source_note": "Based on install date and expected lifespan saved in Home Systems.",
+        **retailer_urls,
+        "provider_links": retailer_provider_links(options_query),
         "actions": [
             {"type": "find_contractor", "label": "Find Contractor", "query": replacement_query},
-            {"type": "view_options", "label": "View replacement options", "url": amazon_search_url(f"{system.get_system_type_display()} replacement options")},
+            {"type": "view_options", "label": "View replacement options", "url": retailer_urls["amazon_url"]},
+            *retailer_search_actions(options_query),
         ],
         "safety_note": "For major replacement work, compare contractor options before planning DIY work.",
     }
