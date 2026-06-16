@@ -31,6 +31,7 @@ import PublicDisputeDecision from "../pages/PublicDisputeDecision.jsx"; // /disp
 import SubcontractorInvitationAcceptPage from "../pages/SubcontractorInvitationAcceptPage.jsx";
 import CustomerPortalPage from "../pages/CustomerPortalPage.jsx"; // /portal
 import ContractorClaimPage from "../pages/ContractorClaimPage.jsx";
+import TenantMaintenanceRequestPage from "../pages/TenantMaintenanceRequestPage.jsx";
 
 function PortalTokenRedirect() {
   const { token = "" } = useParams();
@@ -61,6 +62,9 @@ export default function PublicRoutes() {
       <Route path="/customer-portal/:token" element={<PortalTokenRedirect />} />
       <Route path="/my-records" element={<Navigate to="/portal" replace />} />
       <Route path="/my-records/:token" element={<PortalTokenRedirect />} />
+
+      {/* Tenant maintenance intake */}
+      <Route path="/maintenance-request/:token" element={<TenantMaintenanceRequestPage />} />
 
       {/* Public intake */}
       <Route path="/start-project" element={<StartProjectIntake />} />

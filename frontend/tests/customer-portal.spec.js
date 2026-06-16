@@ -185,7 +185,15 @@ const portalPayload = {
         url: "/files/before-kitchen.jpg",
       },
     ],
+    units: [],
+    unit_count: 0,
+    tenants: [],
+    tenant_count: 0,
+    tenant_maintenance_request_token: "property-maintenance-token",
+    tenant_maintenance_requests: [],
+    tenant_maintenance_request_count: 0,
   },
+  tenant_maintenance_requests: [],
   property_profiles: [
     {
       id: 1,
@@ -1407,7 +1415,11 @@ const emptyPortalPayload = {
     unit_count: 0,
     tenants: [],
     tenant_count: 0,
+    tenant_maintenance_request_token: "empty-maintenance-token",
+    tenant_maintenance_requests: [],
+    tenant_maintenance_request_count: 0,
   },
+  tenant_maintenance_requests: [],
   projects: [],
   requests: [],
   bids: [],
@@ -1973,10 +1985,12 @@ test("customer portal is reachable from the landing page and loads secure record
   let submittedTeamPayload = null;
   let submittedUnitPayload = null;
   let submittedTenantPayload = null;
+  let submittedTenantMaintenanceReviewPayload = null;
   let currentPortalPayload = portalPayload;
   let teamMembers = [];
   let propertyUnits = [];
   let propertyTenants = [];
+  let tenantMaintenanceRequests = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
     window.__mhbPlacePredictionInputs = [];
@@ -2115,12 +2129,59 @@ test("customer portal is reachable from the landing page and loads secure record
 
     if (requestUrl.includes("/customer-portal/customer-token/profile/") && method === "PATCH") {
       savedProfilePayload = JSON.parse(route.request().postData() || "{}");
+      if (savedProfilePayload.account_type === "property_management_company" && !tenantMaintenanceRequests.length) {
+        tenantMaintenanceRequests = [
+          {
+            id: 801,
+            reference: "TMR-000801",
+            property_profile_id: 1,
+            property_name: "Kitchen Remodel",
+            unit_id: null,
+            unit_label: "",
+            submitted_by_name: "Taylor Tenant",
+            submitted_by_email: "taylor@example.com",
+            submitted_by_phone: "512-555-1111",
+            category: "plumbing",
+            category_label: "Plumbing",
+            urgency: "urgent",
+            urgency_label: "Urgent",
+            title: "Kitchen sink leak",
+            description: "Water is dripping under the kitchen sink.",
+            permission_to_enter: true,
+            pets_present: false,
+            preferred_access_times: "Weekday mornings",
+            status: "submitted",
+            status_label: "Submitted",
+            manager_notes: "",
+            created_at: "2026-06-16T15:00:00Z",
+          },
+        ];
+      }
       currentPortalPayload = {
         ...currentPortalPayload,
+        tenant_maintenance_requests: tenantMaintenanceRequests,
+        summary: {
+          ...currentPortalPayload.summary,
+          tenant_maintenance_requests: tenantMaintenanceRequests.length,
+        },
         customer: {
           ...currentPortalPayload.customer,
           ...savedProfilePayload,
         },
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          tenant_maintenance_requests: tenantMaintenanceRequests,
+          tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                tenant_maintenance_requests: tenantMaintenanceRequests,
+                tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+              }
+            : property
+        ),
         account: {
           ...currentPortalPayload.account,
           account_type: savedProfilePayload.account_type,
@@ -2473,6 +2534,59 @@ test("customer portal is reachable from the landing page and loads secure record
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/tenant-maintenance-requests/801/") && method === "PATCH") {
+      submittedTenantMaintenanceReviewPayload = JSON.parse(route.request().postData() || "{}");
+      tenantMaintenanceRequests = tenantMaintenanceRequests.map((request) =>
+        request.id === 801
+          ? {
+              ...request,
+              ...submittedTenantMaintenanceReviewPayload,
+              status_label:
+                submittedTenantMaintenanceReviewPayload.status === "under_review"
+                  ? "Under Review"
+                  : submittedTenantMaintenanceReviewPayload.status === "more_info_requested"
+                    ? "More Info Requested"
+                    : submittedTenantMaintenanceReviewPayload.status === "approved"
+                      ? "Approved"
+                      : submittedTenantMaintenanceReviewPayload.status === "rejected"
+                        ? "Rejected"
+                        : submittedTenantMaintenanceReviewPayload.status === "closed"
+                          ? "Closed"
+                          : request.status_label,
+              reviewed_by: "customer@example.com",
+              reviewed_at: "2026-06-16T16:00:00Z",
+            }
+          : request
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        tenant_maintenance_requests: tenantMaintenanceRequests,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          tenant_maintenance_requests: tenantMaintenanceRequests,
+          tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                tenant_maintenance_requests: tenantMaintenanceRequests,
+                tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          request: tenantMaintenanceRequests.find((request) => request.id === 801),
+          portal: currentPortalPayload,
+        }),
       });
       return;
     }
@@ -3349,6 +3463,24 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-tenant-former-701")).toHaveCount(0);
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("tenant-maintenance-review-queue")).toContainText("Maintenance Requests");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Urgent");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Submitted");
+  await page.getByTestId("tenant-maintenance-notes-801").fill("Checking with maintenance coordinator.");
+  await page.getByTestId("tenant-maintenance-under_review-801").click();
+  expect(submittedTenantMaintenanceReviewPayload).toMatchObject({
+    status: "under_review",
+    manager_notes: "Checking with maintenance coordinator.",
+  });
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Under Review");
+  await page.getByTestId("tenant-maintenance-notes-801").fill("Approved for maintenance follow-up.");
+  await page.getByTestId("tenant-maintenance-approved-801").click();
+  expect(submittedTenantMaintenanceReviewPayload).toMatchObject({
+    status: "approved",
+    manager_notes: "Approved for maintenance follow-up.",
+  });
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Approved");
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
   await expect(page.getByTestId("customer-request-create-panel")).toContainText("Tell us what you need help with next");
@@ -3906,6 +4038,96 @@ test("customer portal supports returning customer login", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
 });
 
+test("tenant maintenance request intake form submits and confirms", async ({ page }) => {
+  let submittedPayload = null;
+  await page.route("**/api/projects/maintenance-request/public-token/", async (route) => {
+    const method = route.request().method();
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          property: {
+            id: 1,
+            display_name: "Duplex",
+          },
+          unit: null,
+          units: [
+            {
+              id: 601,
+              unit_label: "Unit 101",
+              unit_type: "apartment",
+              unit_type_label: "Apartment",
+              status: "active",
+              status_label: "Active",
+            },
+          ],
+          categories: [
+            { value: "plumbing", label: "Plumbing" },
+            { value: "general_repair", label: "General Repair" },
+          ],
+          urgencies: [
+            { value: "urgent", label: "Urgent" },
+            { value: "normal", label: "Normal" },
+          ],
+        }),
+      });
+      return;
+    }
+    if (method === "POST") {
+      submittedPayload = JSON.parse(route.request().postData() || "{}");
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          detail: "Maintenance request submitted.",
+          request: {
+            id: 901,
+            reference: "TMR-000901",
+            status: "submitted",
+            status_label: "Submitted",
+            title: submittedPayload.title,
+          },
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/maintenance-request/public-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("tenant-maintenance-form")).toBeVisible();
+  await expect(page.getByText("Duplex")).toBeVisible();
+  await expect(page.getByTestId("tenant-maintenance-unit")).toContainText("Unit 101");
+  await page.getByTestId("tenant-maintenance-name").fill("Taylor Tenant");
+  await page.getByTestId("tenant-maintenance-email").fill("taylor@example.com");
+  await page.getByTestId("tenant-maintenance-phone").fill("512-555-1111");
+  await page.getByTestId("tenant-maintenance-unit").selectOption("601");
+  await page.getByTestId("tenant-maintenance-category").selectOption("plumbing");
+  await page.getByTestId("tenant-maintenance-urgency").selectOption("urgent");
+  await page.getByTestId("tenant-maintenance-title").fill("Kitchen sink leak");
+  await page.getByTestId("tenant-maintenance-description").fill("Water is dripping under the kitchen sink.");
+  await page.getByTestId("tenant-maintenance-permission").check();
+  await page.getByTestId("tenant-maintenance-access-times").fill("Weekday mornings");
+  await page.getByTestId("tenant-maintenance-submit").click();
+
+  expect(submittedPayload).toMatchObject({
+    submitted_by_name: "Taylor Tenant",
+    submitted_by_email: "taylor@example.com",
+    submitted_by_phone: "512-555-1111",
+    unit_id: 601,
+    category: "plumbing",
+    urgency: "urgent",
+    title: "Kitchen sink leak",
+    description: "Water is dripping under the kitchen sink.",
+    permission_to_enter: true,
+    preferred_access_times: "Weekday mornings",
+  });
+  await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("Maintenance request submitted.");
+  await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000901");
+});
+
 test("customer portal can approve escrow reimbursement requests from payments", async ({ page }) => {
   let approveCalled = false;
   await page.route("**/api/projects/customer-portal/**", async (route) => {
@@ -4064,6 +4286,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-requests-empty")).toContainText("No saved requests yet");
   await expect(page.getByText("Saved requests stay private here first")).toBeVisible();
   await expect(page.getByTestId("customer-bids-empty")).toContainText("No bids yet");
+  await expect(page.getByTestId("tenant-maintenance-review-queue")).toHaveCount(0);
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");

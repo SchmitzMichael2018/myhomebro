@@ -2995,6 +2995,21 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       setSavingHomeSystem(false);
     }
   };
+  const reviewTenantMaintenanceRequest = async (propertyId, requestId, payload) => {
+    if (!propertyId || !requestId) return false;
+    try {
+      const { data } = await api.patch(
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenant-maintenance-requests/${requestId}/`,
+        payload
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success("Maintenance request updated.");
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that maintenance request.");
+      throw error;
+    }
+  };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") {
       return (
@@ -3033,8 +3048,10 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         <CustomerRequests
           requests={portal?.requests || []}
           bids={portal?.bids || []}
+          tenantMaintenanceRequests={portal?.tenant_maintenance_requests || []}
           propertyProfile={portal?.property_profile || {}}
           propertyProfiles={portal?.property_profiles || []}
+          isPropertyManagementCompany={Boolean(portal?.account?.is_property_management_company || portal?.account?.account_type === "property_management_company" || portal?.customer?.account_type === "property_management_company")}
           creating={creatingRequest}
           acceptingBidId={acceptingBidId}
           focusedRequestId={focusedRequestId}
@@ -3082,6 +3099,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
               setCreatingRequest(false);
             }
           }}
+          onReviewTenantMaintenanceRequest={reviewTenantMaintenanceRequest}
           onImproveRequest={async (payload) => {
             const { data } = await api.post(
               `/projects/customer-portal/${encodeURIComponent(token)}/requests/improve/`,

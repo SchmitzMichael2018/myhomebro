@@ -34,6 +34,14 @@ const PAYMENT_PREFERENCES = [
   ["discuss", "Discuss with contractor"],
 ];
 
+const TENANT_MAINTENANCE_STATUS_ACTIONS = [
+  ["under_review", "Mark Under Review"],
+  ["approved", "Approve"],
+  ["more_info_requested", "Request More Info"],
+  ["rejected", "Reject"],
+  ["closed", "Close"],
+];
+
 function Badge({ children }) {
   return (
     <span className="inline-flex rounded-full border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-200">
@@ -100,6 +108,122 @@ function formatDateTime(value) {
   } catch (_error) {
     return "";
   }
+}
+
+function TenantMaintenanceReviewQueue({
+  requests = [],
+  onReview,
+  updatingId = "",
+}) {
+  const [notesById, setNotesById] = useState({});
+
+  const noteFor = (request) => {
+    const key = String(request.id || "");
+    return Object.prototype.hasOwnProperty.call(notesById, key)
+      ? notesById[key]
+      : request.manager_notes || "";
+  };
+
+  const submitReview = (request, status) => {
+    if (!request?.id || !request?.property_profile_id || !onReview) return;
+    onReview(request.property_profile_id, request.id, {
+      status,
+      manager_notes: noteFor(request),
+    });
+  };
+
+  return (
+    <section data-testid="tenant-maintenance-review-queue" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Maintenance Requests</h2>
+          <p className="mt-1 text-sm text-slate-300">
+            Review resident-submitted maintenance requests before converting them into work orders later.
+          </p>
+        </div>
+        <Badge>{requests.length} tenant request{requests.length === 1 ? "" : "s"}</Badge>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {requests.length ? (
+          requests.map((request) => {
+            const busy = String(updatingId) === String(request.id);
+            return (
+              <article
+                key={request.id}
+                data-testid={`tenant-maintenance-request-${request.id}`}
+                className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white">{request.title || "Maintenance request"}</h3>
+                      <PassiveBadge tone={request.urgency === "emergency" || request.urgency === "urgent" ? "rose" : "amber"}>
+                        {request.urgency_label || request.urgency || "Normal"}
+                      </PassiveBadge>
+                      <PassiveBadge tone="sky">{request.status_label || "Submitted"}</PassiveBadge>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">{request.description || "No description provided."}</p>
+                    <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
+                      <span><strong className="text-slate-200">Resident:</strong> {request.submitted_by_name || request.tenant_name || "Resident"}</span>
+                      <span><strong className="text-slate-200">Unit:</strong> {request.unit_label || "Whole property"}</span>
+                      <span><strong className="text-slate-200">Category:</strong> {request.category_label || "General Repair"}</span>
+                      <span><strong className="text-slate-200">Submitted:</strong> {formatDateTime(request.created_at) || "Recently"}</span>
+                    </div>
+                    <div className="mt-2 grid gap-2 text-xs text-slate-400 sm:grid-cols-3">
+                      <span><strong className="text-slate-200">Email:</strong> {request.submitted_by_email || "-"}</span>
+                      <span><strong className="text-slate-200">Phone:</strong> {request.submitted_by_phone || "-"}</span>
+                      <span><strong className="text-slate-200">Access:</strong> {request.permission_to_enter ? "Permission to enter" : "Coordinate first"}</span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-500">{request.reference || `#${request.id}`}</div>
+                </div>
+
+                <label className="mt-4 block text-sm font-medium text-slate-200">
+                  Manager notes
+                  <textarea
+                    data-testid={`tenant-maintenance-notes-${request.id}`}
+                    value={noteFor(request)}
+                    onChange={(event) => setNotesById((prev) => ({ ...prev, [request.id]: event.target.value }))}
+                    rows={2}
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                  />
+                </label>
+
+                <div className="mt-3 flex flex-wrap gap-2" data-testid={`tenant-maintenance-actions-${request.id}`}>
+                  {TENANT_MAINTENANCE_STATUS_ACTIONS.map(([status, label]) => (
+                    <button
+                      key={status}
+                      type="button"
+                      data-testid={`tenant-maintenance-${status}-${request.id}`}
+                      disabled={busy}
+                      onClick={() => submitReview(request, status)}
+                      className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-300/60 hover:bg-amber-300/10 disabled:opacity-50"
+                    >
+                      {busy ? "Saving..." : label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    data-testid={`tenant-maintenance-save-notes-${request.id}`}
+                    disabled={busy}
+                    onClick={() => submitReview(request, request.status || "under_review")}
+                    className="rounded-lg bg-amber-300 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50"
+                  >
+                    Save Notes
+                  </button>
+                </div>
+              </article>
+            );
+          })
+        ) : (
+          <EmptyState title="No tenant maintenance requests yet" testId="tenant-maintenance-requests-empty">
+            Resident-submitted maintenance requests will appear here for manager review.
+          </EmptyState>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function displayValue(value) {
@@ -319,10 +443,13 @@ function comparisonHighlights(bids) {
 export default function CustomerRequests({
   requests = [],
   bids = [],
+  tenantMaintenanceRequests = [],
   propertyProfile = {},
   propertyProfiles = [],
+  isPropertyManagementCompany = false,
   onCreateRequest,
   onUpdateRequest,
+  onReviewTenantMaintenanceRequest,
   onImproveRequest,
   onStartContractorSearch,
   onRouteRequestContractors,
@@ -352,6 +479,7 @@ export default function CustomerRequests({
   const [deleteRequest, setDeleteRequest] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [updatingTenantMaintenanceRequestId, setUpdatingTenantMaintenanceRequestId] = useState("");
   const [improvingRequest, setImprovingRequest] = useState(false);
   const [improveError, setImproveError] = useState("");
   const [requestSuggestion, setRequestSuggestion] = useState(null);
@@ -378,6 +506,16 @@ export default function CustomerRequests({
     recommendation_title: "",
     recommendation_context: null,
   });
+
+  const reviewTenantMaintenanceRequest = async (propertyId, requestId, payload) => {
+    if (!onReviewTenantMaintenanceRequest) return;
+    setUpdatingTenantMaintenanceRequestId(String(requestId));
+    try {
+      await onReviewTenantMaintenanceRequest(propertyId, requestId, payload);
+    } finally {
+      setUpdatingTenantMaintenanceRequestId("");
+    }
+  };
 
   const internalRequests = useMemo(
     () => requests.filter((row) => row.source_kind === "customer_request"),
@@ -1066,6 +1204,14 @@ I need help installing shelves and patching drywall.`}
           </button>
         ) : null}
       </form>
+
+      {isPropertyManagementCompany ? (
+        <TenantMaintenanceReviewQueue
+          requests={tenantMaintenanceRequests}
+          onReview={reviewTenantMaintenanceRequest}
+          updatingId={updatingTenantMaintenanceRequestId}
+        />
+      ) : null}
 
       <section data-testid="customer-portal-requests" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex items-start justify-between gap-3">

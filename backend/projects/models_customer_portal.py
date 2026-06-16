@@ -378,6 +378,103 @@ class Tenancy(models.Model):
         return f"{self.tenant} at {self.property_profile} ({unit_label})"
 
 
+class TenantMaintenanceRequest(models.Model):
+    CATEGORY_PLUMBING = "plumbing"
+    CATEGORY_ELECTRICAL = "electrical"
+    CATEGORY_HVAC = "hvac"
+    CATEGORY_APPLIANCE = "appliance"
+    CATEGORY_PEST = "pest"
+    CATEGORY_ACCESS_LOCK = "access_lock"
+    CATEGORY_SAFETY = "safety"
+    CATEGORY_GENERAL_REPAIR = "general_repair"
+    CATEGORY_OTHER = "other"
+    CATEGORY_CHOICES = [
+        (CATEGORY_PLUMBING, "Plumbing"),
+        (CATEGORY_ELECTRICAL, "Electrical"),
+        (CATEGORY_HVAC, "HVAC"),
+        (CATEGORY_APPLIANCE, "Appliance"),
+        (CATEGORY_PEST, "Pest"),
+        (CATEGORY_ACCESS_LOCK, "Access / Lock"),
+        (CATEGORY_SAFETY, "Safety"),
+        (CATEGORY_GENERAL_REPAIR, "General Repair"),
+        (CATEGORY_OTHER, "Other"),
+    ]
+
+    URGENCY_EMERGENCY = "emergency"
+    URGENCY_URGENT = "urgent"
+    URGENCY_NORMAL = "normal"
+    URGENCY_LOW = "low"
+    URGENCY_CHOICES = [
+        (URGENCY_EMERGENCY, "Emergency"),
+        (URGENCY_URGENT, "Urgent"),
+        (URGENCY_NORMAL, "Normal"),
+        (URGENCY_LOW, "Low"),
+    ]
+
+    STATUS_SUBMITTED = "submitted"
+    STATUS_UNDER_REVIEW = "under_review"
+    STATUS_MORE_INFO_REQUESTED = "more_info_requested"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CLOSED = "closed"
+    STATUS_CHOICES = [
+        (STATUS_SUBMITTED, "Submitted"),
+        (STATUS_UNDER_REVIEW, "Under Review"),
+        (STATUS_MORE_INFO_REQUESTED, "More Info Requested"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_CLOSED, "Closed"),
+    ]
+
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="tenant_maintenance_requests",
+    )
+    unit = models.ForeignKey(
+        PropertyUnit,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tenant_maintenance_requests",
+    )
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="maintenance_requests",
+    )
+    submitted_by_name = models.CharField(max_length=255, blank=True, default="")
+    submitted_by_email = models.EmailField(blank=True, default="")
+    submitted_by_phone = models.CharField(max_length=40, blank=True, default="")
+    category = models.CharField(max_length=32, choices=CATEGORY_CHOICES, default=CATEGORY_GENERAL_REPAIR)
+    urgency = models.CharField(max_length=24, choices=URGENCY_CHOICES, default=URGENCY_NORMAL)
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    permission_to_enter = models.BooleanField(default=False)
+    pets_present = models.BooleanField(default=False)
+    preferred_access_times = models.CharField(max_length=500, blank=True, default="")
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_SUBMITTED, db_index=True)
+    manager_notes = models.TextField(blank=True, default="")
+    reviewed_by = models.EmailField(blank=True, default="")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["property_profile", "status"]),
+            models.Index(fields=["unit", "status"]),
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["submitted_by_email", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.title} ({self.get_status_display()})"
+
+
 def property_document_upload_path(instance, filename):
     base, _dot, ext = filename.rpartition(".")
     safe = slugify(base or "document")

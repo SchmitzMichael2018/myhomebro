@@ -62,6 +62,7 @@ from projects.models_customer_portal import (
     SmartNotification,
     SmartNotificationEvent,
     Tenant,
+    TenantMaintenanceRequest,
     Tenancy,
 )
 from projects.services.customer_notification_cleanup import (
@@ -118,6 +119,7 @@ from projects.services.ai.project_understanding import understand_project_reques
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
+TENANT_MAINTENANCE_TOKEN_SALT = "myhomebro.tenant-maintenance-request"
 HOME_SYSTEM_SCAN_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
 HOME_SYSTEM_SCAN_DOCUMENT_TYPES = {
     "Equipment Label",
@@ -534,6 +536,109 @@ def _tenant_payloads_for_property(property_profile: PropertyProfile | None) -> l
     return [_tenancy_payload(row) for row in rows]
 
 
+def _tenant_maintenance_request_token(property_profile: PropertyProfile, unit: PropertyUnit | None = None) -> str:
+    payload = {"property_id": property_profile.id}
+    if unit is not None:
+        payload["unit_id"] = unit.id
+    return signing.dumps(payload, salt=TENANT_MAINTENANCE_TOKEN_SALT)
+
+
+def _resolve_tenant_maintenance_token(token: str):
+    try:
+        payload = signing.loads(token, salt=TENANT_MAINTENANCE_TOKEN_SALT, max_age=PORTAL_TOKEN_MAX_AGE_SECONDS)
+    except signing.SignatureExpired:
+        return None, None, Response({"detail": "This maintenance request link has expired."}, status=status.HTTP_403_FORBIDDEN)
+    except signing.BadSignature:
+        return None, None, Response({"detail": "Invalid maintenance request link."}, status=status.HTTP_403_FORBIDDEN)
+    property_id = payload.get("property_id") if isinstance(payload, dict) else None
+    unit_id = payload.get("unit_id") if isinstance(payload, dict) else None
+    property_profile = get_object_or_404(PropertyProfile.objects.select_related("managed_by_company"), pk=property_id)
+    if not getattr(property_profile, "managed_by_company_id", None):
+        return None, None, Response({"detail": "This property is not accepting tenant maintenance requests yet."}, status=status.HTTP_404_NOT_FOUND)
+    unit = None
+    if unit_id:
+        unit = get_object_or_404(PropertyUnit.objects.filter(property_profile=property_profile), pk=unit_id)
+    return property_profile, unit, None
+
+
+def _tenant_maintenance_request_payload(row: TenantMaintenanceRequest) -> dict:
+    property_profile = getattr(row, "property_profile", None)
+    unit = getattr(row, "unit", None)
+    tenant = getattr(row, "tenant", None)
+    submitted_name = _safe_text(row.submitted_by_name) or _safe_text(getattr(tenant, "display_name", ""))
+    return {
+        "id": row.id,
+        "reference": f"TMR-{row.id:06d}",
+        "property_profile_id": getattr(property_profile, "id", None),
+        "property_name": _safe_text(getattr(property_profile, "display_name", "")),
+        "unit_id": getattr(unit, "id", None),
+        "unit_label": _safe_text(getattr(unit, "unit_label", "")) if unit else "",
+        "tenant_id": getattr(tenant, "id", None),
+        "tenant_name": _safe_text(getattr(tenant, "display_name", "")),
+        "submitted_by_name": submitted_name,
+        "submitted_by_email": _safe_text(row.submitted_by_email),
+        "submitted_by_phone": _safe_text(row.submitted_by_phone),
+        "category": _safe_text(row.category),
+        "category_label": row.get_category_display(),
+        "urgency": _safe_text(row.urgency),
+        "urgency_label": row.get_urgency_display(),
+        "title": _safe_text(row.title),
+        "description": _safe_text(row.description),
+        "permission_to_enter": bool(row.permission_to_enter),
+        "pets_present": bool(row.pets_present),
+        "preferred_access_times": _safe_text(row.preferred_access_times),
+        "status": _safe_text(row.status),
+        "status_label": row.get_status_display(),
+        "manager_notes": _safe_text(row.manager_notes),
+        "reviewed_by": _safe_text(row.reviewed_by),
+        "reviewed_at": _safe_dt(row.reviewed_at),
+        "created_at": _safe_dt(row.created_at),
+        "updated_at": _safe_dt(row.updated_at),
+    }
+
+
+def _tenant_maintenance_requests_for_property(property_profile: PropertyProfile | None) -> list[dict]:
+    if property_profile is None:
+        return []
+    rows = (
+        TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant")
+        .filter(property_profile=property_profile)
+        .order_by("-created_at", "-id")
+    )
+    return [_tenant_maintenance_request_payload(row) for row in rows]
+
+
+def _tenant_maintenance_requests_for_email(email: str) -> list[dict]:
+    company = create_or_sync_company_from_homeowner(_primary_homeowner_for_email(email))
+    if company is None:
+        return []
+    property_ids = list(
+        PropertyProfile.objects.filter(customer_email__iexact=email.lower().strip(), managed_by_company=company).values_list("id", flat=True)
+    )
+    if not property_ids:
+        return []
+    rows = (
+        TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant")
+        .filter(property_profile_id__in=property_ids)
+        .order_by("-created_at", "-id")
+    )
+    return [_tenant_maintenance_request_payload(row) for row in rows]
+
+
+def _tenant_for_maintenance_submission(property_profile: PropertyProfile, unit: PropertyUnit | None, email: str) -> Tenant | None:
+    normalized = _safe_text(email).lower()
+    if not normalized:
+        return None
+    queryset = Tenancy.objects.select_related("tenant").filter(
+        property_profile=property_profile,
+        tenant__email__iexact=normalized,
+        status__in=[Tenancy.STATUS_PENDING, Tenancy.STATUS_ACTIVE],
+    )
+    if unit is not None:
+        queryset = queryset.filter(Q(unit=unit) | Q(unit__isnull=True))
+    return getattr(queryset.order_by("-updated_at", "-id").first(), "tenant", None)
+
+
 def _property_management_staff_payload(member: PropertyManagementStaffMembership) -> dict:
     return {
         "id": member.id,
@@ -607,8 +712,14 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         .filter(property_profile=profile, is_archived=False)
         .order_by("system_type", "custom_name", "id")
     ]
-    units = [_property_unit_payload(unit) for unit in units_for_property(profile)]
+    unit_rows = list(units_for_property(profile))
+    units = []
+    for unit in unit_rows:
+        unit_payload = _property_unit_payload(unit)
+        unit_payload["tenant_maintenance_request_token"] = _tenant_maintenance_request_token(profile, unit)
+        units.append(unit_payload)
     tenants = _tenant_payloads_for_property(profile)
+    tenant_maintenance_requests = _tenant_maintenance_requests_for_property(profile)
     managed_by_company = _property_management_company_ref(getattr(profile, "managed_by_company", None))
     return {
         "id": profile.id,
@@ -633,10 +744,13 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "home_systems": home_systems,
         "managed_by_company": managed_by_company,
         "managed_by_company_id": managed_by_company["id"] if managed_by_company else None,
+        "tenant_maintenance_request_token": _tenant_maintenance_request_token(profile),
         "units": units,
         "unit_count": len(units),
         "tenants": tenants,
         "tenant_count": len(tenants),
+        "tenant_maintenance_requests": tenant_maintenance_requests,
+        "tenant_maintenance_request_count": len(tenant_maintenance_requests),
         "updated_at": _safe_dt(profile.updated_at),
     }
 
@@ -2682,6 +2796,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     document_rows = _documents(email, request=request)
     property_profile = _property_profile_payload(email)
     property_profiles = _property_profiles_payload(email)
+    tenant_maintenance_request_rows = _tenant_maintenance_requests_for_email(email)
     property_intelligence = build_property_intelligence(email)
     recommendations = build_customer_recommendations(email, property_intelligence=property_intelligence)
 
@@ -2693,6 +2808,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "payments": len(payment_rows),
         "documents": len(document_rows),
         "maintenance_work_orders": len(maintenance_work_order_rows),
+        "tenant_maintenance_requests": len(tenant_maintenance_request_rows),
     }
 
     return {
@@ -2710,6 +2826,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "agreements": agreement_rows,
         "payments": payment_rows,
         "maintenance_work_orders": maintenance_work_order_rows,
+        "tenant_maintenance_requests": tenant_maintenance_request_rows,
         "documents": document_rows,
         "property_profile": property_profile,
         "property_profiles": property_profiles,
@@ -4768,6 +4885,45 @@ class CustomerPortalTenantSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class TenantMaintenanceRequestPublicSerializer(serializers.Serializer):
+    submitted_by_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    submitted_by_email = serializers.EmailField(required=False, allow_blank=True)
+    submitted_by_phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    unit_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    category = serializers.ChoiceField(choices=[choice[0] for choice in TenantMaintenanceRequest.CATEGORY_CHOICES])
+    urgency = serializers.ChoiceField(choices=[choice[0] for choice in TenantMaintenanceRequest.URGENCY_CHOICES], required=False)
+    title = serializers.CharField(max_length=200)
+    description = serializers.CharField()
+    permission_to_enter = serializers.BooleanField(required=False)
+    pets_present = serializers.BooleanField(required=False)
+    preferred_access_times = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if not _safe_text(attrs.get("submitted_by_name")) and not _safe_text(attrs.get("submitted_by_email")) and not _safe_text(attrs.get("submitted_by_phone")):
+            raise serializers.ValidationError({"submitted_by_name": "Add your name, email, or phone so the manager can follow up."})
+        attrs["title"] = _safe_text(attrs.get("title"))
+        attrs["description"] = _safe_text(attrs.get("description"))
+        if not attrs["title"]:
+            raise serializers.ValidationError({"title": "Title is required."})
+        if not attrs["description"]:
+            raise serializers.ValidationError({"description": "Description is required."})
+        return attrs
+
+
+class TenantMaintenanceRequestReviewSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=[
+            TenantMaintenanceRequest.STATUS_UNDER_REVIEW,
+            TenantMaintenanceRequest.STATUS_MORE_INFO_REQUESTED,
+            TenantMaintenanceRequest.STATUS_APPROVED,
+            TenantMaintenanceRequest.STATUS_REJECTED,
+            TenantMaintenanceRequest.STATUS_CLOSED,
+        ],
+        required=False,
+    )
+    manager_notes = serializers.CharField(required=False, allow_blank=True)
+
+
 class CustomerPortalHomeSystemSerializer(serializers.Serializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     system_type = serializers.ChoiceField(
@@ -5317,6 +5473,151 @@ class CustomerPortalTenantView(APIView):
         if not changed:
             tenant.save(update_fields=["updated_at"])
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class TenantMaintenanceRequestPublicView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token: str):
+        property_profile, token_unit, error = _resolve_tenant_maintenance_token(token)
+        if error is not None:
+            return error
+        units = []
+        if token_unit is None:
+            units = [
+                _property_unit_payload(unit)
+                for unit in PropertyUnit.objects.filter(property_profile=property_profile).exclude(status=PropertyUnit.STATUS_INACTIVE).order_by("unit_label", "id")
+            ]
+        return Response(
+            {
+                "property": {
+                    "id": property_profile.id,
+                    "display_name": _safe_text(property_profile.display_name) or "Managed property",
+                },
+                "unit": _property_unit_payload(token_unit) if token_unit else None,
+                "units": units,
+                "categories": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.CATEGORY_CHOICES],
+                "urgencies": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.URGENCY_CHOICES],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request, token: str):
+        property_profile, token_unit, error = _resolve_tenant_maintenance_token(token)
+        if error is not None:
+            return error
+        serializer = TenantMaintenanceRequestPublicSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        unit = token_unit
+        if unit is None and data.get("unit_id"):
+            unit = get_object_or_404(
+                PropertyUnit.objects.filter(property_profile=property_profile).exclude(status=PropertyUnit.STATUS_INACTIVE),
+                pk=data.get("unit_id"),
+            )
+        elif token_unit is not None and data.get("unit_id") and int(data.get("unit_id")) != token_unit.id:
+            return Response({"detail": "This request link is for a specific unit."}, status=status.HTTP_400_BAD_REQUEST)
+
+        tenant = _tenant_for_maintenance_submission(property_profile, unit, data.get("submitted_by_email", ""))
+        row = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            submitted_by_name=_safe_text(data.get("submitted_by_name")),
+            submitted_by_email=_safe_text(data.get("submitted_by_email")).lower(),
+            submitted_by_phone=_safe_text(data.get("submitted_by_phone")),
+            category=data["category"],
+            urgency=data.get("urgency") or TenantMaintenanceRequest.URGENCY_NORMAL,
+            title=data["title"],
+            description=data["description"],
+            permission_to_enter=bool(data.get("permission_to_enter", False)),
+            pets_present=bool(data.get("pets_present", False)),
+            preferred_access_times=_safe_text(data.get("preferred_access_times")),
+        )
+        return Response(
+            {
+                "ok": True,
+                "detail": "Maintenance request submitted.",
+                "request": _tenant_maintenance_request_payload(row),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CustomerPortalTenantMaintenanceRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def _email_from_token(self, token: str):
+        try:
+            return _unsign_portal_token(token), None
+        except signing.SignatureExpired:
+            return None, Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return None, Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def _property_from_token(self, token: str, property_id: int):
+        email, error = self._email_from_token(token)
+        if error is not None:
+            return None, None, None, error
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return email, company, None, error
+        property_profile = get_object_or_404(
+            PropertyProfile.objects.filter(
+                id=property_id,
+                customer_email__iexact=email.lower().strip(),
+                managed_by_company=company,
+            )
+        )
+        return email, company, property_profile, None
+
+    def get(self, request, token: str, property_id: int):
+        _email, _company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        rows = _tenant_maintenance_requests_for_property(property_profile)
+        status_filter = _safe_text(request.query_params.get("status"))
+        unit_id = _safe_text(request.query_params.get("unit_id"))
+        if status_filter:
+            rows = [row for row in rows if row.get("status") == status_filter]
+        if unit_id:
+            rows = [row for row in rows if str(row.get("unit_id") or "") == unit_id]
+        return Response({"tenant_maintenance_requests": rows}, status=status.HTTP_200_OK)
+
+    def patch(self, request, token: str, property_id: int, request_id: int):
+        email, _company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        serializer = TenantMaintenanceRequestReviewSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        row = get_object_or_404(
+            TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant"),
+            pk=request_id,
+            property_profile=property_profile,
+        )
+        data = serializer.validated_data
+        update_fields = []
+        if "status" in data and row.status != data["status"]:
+            row.status = data["status"]
+            row.reviewed_at = timezone.now()
+            row.reviewed_by = email.lower().strip()
+            update_fields.extend(["status", "reviewed_at", "reviewed_by"])
+        if "manager_notes" in data:
+            row.manager_notes = _safe_text(data.get("manager_notes"))
+            if "reviewed_at" not in update_fields:
+                row.reviewed_at = timezone.now()
+                row.reviewed_by = email.lower().strip()
+                update_fields.extend(["reviewed_at", "reviewed_by"])
+            update_fields.append("manager_notes")
+        if update_fields:
+            row.save(update_fields=[*dict.fromkeys(update_fields), "updated_at"])
+        return Response(
+            {
+                "request": _tenant_maintenance_request_payload(row),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalPropertyProfileView(APIView):

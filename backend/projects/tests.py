@@ -97,6 +97,7 @@ from projects.models import (
     SmartNotificationEvent,
     PropertyUnit,
     Tenant,
+    TenantMaintenanceRequest,
     Tenancy,
     ProjectBenchmarkAggregate,
     RegionalBenchmarkAggregate,
@@ -20622,6 +20623,238 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(Tenant.objects.count(), 0)
+
+    def test_tenant_maintenance_request_can_be_submitted_via_public_token(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        unit = PropertyUnit.objects.create(
+            property_profile=property_profile,
+            unit_label="Unit A",
+            unit_type=PropertyUnit.UNIT_APARTMENT,
+            status=PropertyUnit.STATUS_ACTIVE,
+        )
+        tenant = Tenant.objects.create(
+            company=company,
+            first_name="Taylor",
+            last_name="Tenant",
+            email="taylor@example.com",
+            status=Tenant.STATUS_ACTIVE,
+        )
+        Tenancy.objects.create(
+            tenant=tenant,
+            property_profile=property_profile,
+            unit=unit,
+            status=Tenancy.STATUS_ACTIVE,
+        )
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+
+        get_response = self.client.get(f"/api/projects/maintenance-request/{public_token}/")
+        self.assertEqual(get_response.status_code, 200, get_response.data)
+        self.assertEqual(get_response.data["property"]["display_name"], "Duplex")
+        self.assertEqual(get_response.data["units"][0]["unit_label"], "Unit A")
+
+        response = self.client.post(
+            f"/api/projects/maintenance-request/{public_token}/",
+            {
+                "submitted_by_name": "Taylor Tenant",
+                "submitted_by_email": "taylor@example.com",
+                "submitted_by_phone": "512-555-1111",
+                "unit_id": unit.id,
+                "category": TenantMaintenanceRequest.CATEGORY_PLUMBING,
+                "urgency": TenantMaintenanceRequest.URGENCY_URGENT,
+                "title": "Kitchen sink leak",
+                "description": "Water is dripping under the kitchen sink.",
+                "permission_to_enter": True,
+                "pets_present": False,
+                "preferred_access_times": "Weekday mornings",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        row = TenantMaintenanceRequest.objects.get()
+        self.assertEqual(row.property_profile, property_profile)
+        self.assertEqual(row.unit, unit)
+        self.assertEqual(row.tenant, tenant)
+        self.assertEqual(row.status, TenantMaintenanceRequest.STATUS_SUBMITTED)
+        self.assertTrue(row.permission_to_enter)
+        self.assertEqual(response.data["request"]["reference"], f"TMR-{row.id:06d}")
+
+    def test_tenant_maintenance_request_supports_property_without_unit_and_rejects_invalid_token(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Single Family Rental",
+        )
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+
+        response = self.client.post(
+            f"/api/projects/maintenance-request/{public_token}/",
+            {
+                "submitted_by_name": "Jordan House",
+                "submitted_by_email": "jordan@example.com",
+                "category": TenantMaintenanceRequest.CATEGORY_HVAC,
+                "title": "AC is not cooling",
+                "description": "The home is warm even though the system is running.",
+            },
+            content_type="application/json",
+        )
+        invalid_response = self.client.post(
+            "/api/projects/maintenance-request/not-a-valid-token/",
+            {"submitted_by_name": "Nope", "category": TenantMaintenanceRequest.CATEGORY_OTHER, "title": "Bad", "description": "Bad"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        row = TenantMaintenanceRequest.objects.get()
+        self.assertIsNone(row.unit)
+        self.assertIsNone(row.tenant)
+        self.assertEqual(invalid_response.status_code, 403)
+
+    def test_property_management_company_can_list_and_review_tenant_maintenance_requests(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        unit = PropertyUnit.objects.create(property_profile=property_profile, unit_label="Unit A")
+        row = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            unit=unit,
+            submitted_by_name="Taylor Tenant",
+            submitted_by_email="taylor@example.com",
+            category=TenantMaintenanceRequest.CATEGORY_APPLIANCE,
+            urgency=TenantMaintenanceRequest.URGENCY_NORMAL,
+            title="Dishwasher issue",
+            description="Dishwasher is not draining.",
+        )
+
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/")
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertEqual(list_response.data["tenant_maintenance_requests"][0]["title"], "Dishwasher issue")
+
+        for next_status in [
+            TenantMaintenanceRequest.STATUS_UNDER_REVIEW,
+            TenantMaintenanceRequest.STATUS_MORE_INFO_REQUESTED,
+            TenantMaintenanceRequest.STATUS_APPROVED,
+            TenantMaintenanceRequest.STATUS_REJECTED,
+            TenantMaintenanceRequest.STATUS_CLOSED,
+        ]:
+            response = self.client.patch(
+                f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/{row.id}/",
+                {"status": next_status, "manager_notes": f"Set to {next_status}."},
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+            row.refresh_from_db()
+            self.assertEqual(row.status, next_status)
+            self.assertEqual(row.reviewed_by, self.customer_email)
+            self.assertIsNotNone(row.reviewed_at)
+            self.assertIn("tenant_maintenance_requests", response.data["portal"])
+
+    def test_property_management_company_cannot_review_unmanaged_tenant_maintenance_request(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        other_company = PropertyManagementCompany.objects.create(homeowner=self.other_homeowner, name="Other PM")
+        other_property = PropertyProfile.objects.create(
+            homeowner=self.other_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=other_company,
+            display_name="Other Managed Property",
+        )
+        row = TenantMaintenanceRequest.objects.create(
+            property_profile=other_property,
+            submitted_by_name="Other Tenant",
+            category=TenantMaintenanceRequest.CATEGORY_OTHER,
+            title="Other issue",
+            description="Should not be visible.",
+        )
+
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{other_property.id}/tenant-maintenance-requests/")
+        review_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{other_property.id}/tenant-maintenance-requests/{row.id}/",
+            {"status": TenantMaintenanceRequest.STATUS_APPROVED},
+            content_type="application/json",
+        )
+
+        self.assertEqual(list_response.status_code, 404)
+        self.assertEqual(review_response.status_code, 404)
+
+    def test_individual_customer_cannot_access_tenant_maintenance_review_queue(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Individual Home",
+        )
+        row = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            submitted_by_name="Resident",
+            category=TenantMaintenanceRequest.CATEGORY_OTHER,
+            title="Issue",
+            description="Needs review.",
+        )
+
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/")
+        review_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/{row.id}/",
+            {"status": TenantMaintenanceRequest.STATUS_UNDER_REVIEW},
+            content_type="application/json",
+        )
+
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(review_response.status_code, 403)
+
+    def test_tenant_maintenance_requests_do_not_create_customer_requests(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+
+        response = self.client.post(
+            f"/api/projects/maintenance-request/{public_token}/",
+            {
+                "submitted_by_name": "Taylor Tenant",
+                "submitted_by_email": "taylor@example.com",
+                "category": TenantMaintenanceRequest.CATEGORY_GENERAL_REPAIR,
+                "title": "Loose handrail",
+                "description": "The front handrail is loose.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(TenantMaintenanceRequest.objects.count(), 1)
+        self.assertEqual(CustomerRequest.objects.count(), 0)
 
     def test_property_management_company_can_create_team_members(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

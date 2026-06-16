@@ -112,12 +112,13 @@ try:
         PropertyUnit,
         SmartNotification,
         Tenant,
+        TenantMaintenanceRequest,
         Tenancy,
     )
 except Exception:  # pragma: no cover
     CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyHomeSystem = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
     PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyUnit = None  # type: ignore
-    Tenant = Tenancy = None  # type: ignore
+    Tenant = TenantMaintenanceRequest = Tenancy = None  # type: ignore
 
 try:
     from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent  # type: ignore
@@ -515,6 +516,15 @@ if Tenancy is not None:
         search_fields = ("tenant__first_name", "tenant__last_name", "tenant__email", "property_profile__display_name", "unit__unit_label")
         list_filter = ("status", "property_profile", "unit")
         readonly_fields = ("created_at", "updated_at")
+
+
+if TenantMaintenanceRequest is not None:
+    @admin.register(TenantMaintenanceRequest)
+    class TenantMaintenanceRequestAdmin(admin.ModelAdmin):
+        list_display = ("id", "title", "property_profile", "unit", "submitted_by_name", "urgency", "status", "created_at")
+        search_fields = ("title", "description", "submitted_by_name", "submitted_by_email", "submitted_by_phone", "property_profile__display_name", "unit__unit_label")
+        list_filter = ("status", "urgency", "category", "property_profile")
+        readonly_fields = ("created_at", "updated_at", "reviewed_at")
 
 
 if CustomerRequest is not None:
