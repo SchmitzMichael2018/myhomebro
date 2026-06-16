@@ -175,6 +175,28 @@ function TenantMaintenanceReviewQueue({
                       <span><strong className="text-slate-200">Phone:</strong> {request.submitted_by_phone || "-"}</span>
                       <span><strong className="text-slate-200">Access:</strong> {request.permission_to_enter ? "Permission to enter" : "Coordinate first"}</span>
                     </div>
+                    {(request.attachments || []).length ? (
+                      <div data-testid={`tenant-maintenance-attachments-${request.id}`} className="mt-3 flex flex-wrap gap-2">
+                        {request.attachments.map((attachment) => (
+                          <a
+                            key={attachment.id || attachment.url || attachment.filename}
+                            href={attachment.url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex max-w-full items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs font-semibold text-slate-200 hover:border-sky-300/50"
+                          >
+                            {attachment.is_image && attachment.url ? (
+                              <img
+                                src={attachment.url}
+                                alt=""
+                                className="h-10 w-10 rounded-lg border border-slate-700 object-cover"
+                              />
+                            ) : null}
+                            <span className="min-w-0 truncate">{attachment.filename || "Attachment"}</span>
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="text-xs text-slate-500">{request.reference || `#${request.id}`}</div>
                 </div>

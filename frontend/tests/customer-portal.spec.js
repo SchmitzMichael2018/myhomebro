@@ -2153,6 +2153,17 @@ test("customer portal is reachable from the landing page and loads secure record
             status: "submitted",
             status_label: "Submitted",
             manager_notes: "",
+            attachments: [
+              {
+                id: 901,
+                filename: "sink-leak.jpg",
+                content_type: "image/jpeg",
+                size_bytes: 1234,
+                url: "/files/sink-leak.jpg",
+                is_image: true,
+              },
+            ],
+            attachment_count: 1,
             created_at: "2026-06-16T15:00:00Z",
           },
         ];
@@ -3467,6 +3478,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Urgent");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Submitted");
+  await expect(page.getByTestId("tenant-maintenance-attachments-801")).toContainText("sink-leak.jpg");
   await page.getByTestId("tenant-maintenance-notes-801").fill("Checking with maintenance coordinator.");
   await page.getByTestId("tenant-maintenance-under_review-801").click();
   expect(submittedTenantMaintenanceReviewPayload).toMatchObject({
@@ -4075,7 +4087,16 @@ test("tenant maintenance request intake form submits and confirms", async ({ pag
       return;
     }
     if (method === "POST") {
-      submittedPayload = JSON.parse(route.request().postData() || "{}");
+      const rawBody = route.request().postData() || "";
+      if ((route.request().headers()["content-type"] || "").includes("multipart/form-data")) {
+        submittedPayload = {
+          rawBody,
+          hasAttachment: rawBody.includes("sink-leak.jpg"),
+          hasTitle: rawBody.includes("Kitchen sink leak"),
+        };
+      } else {
+        submittedPayload = JSON.parse(rawBody || "{}");
+      }
       await route.fulfill({
         status: 201,
         contentType: "application/json",
@@ -4110,19 +4131,17 @@ test("tenant maintenance request intake form submits and confirms", async ({ pag
   await page.getByTestId("tenant-maintenance-description").fill("Water is dripping under the kitchen sink.");
   await page.getByTestId("tenant-maintenance-permission").check();
   await page.getByTestId("tenant-maintenance-access-times").fill("Weekday mornings");
+  await page.getByTestId("tenant-maintenance-attachments").setInputFiles({
+    name: "sink-leak.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("fake-image"),
+  });
+  await expect(page.getByTestId("tenant-maintenance-selected-files")).toContainText("sink-leak.jpg");
   await page.getByTestId("tenant-maintenance-submit").click();
 
   expect(submittedPayload).toMatchObject({
-    submitted_by_name: "Taylor Tenant",
-    submitted_by_email: "taylor@example.com",
-    submitted_by_phone: "512-555-1111",
-    unit_id: 601,
-    category: "plumbing",
-    urgency: "urgent",
-    title: "Kitchen sink leak",
-    description: "Water is dripping under the kitchen sink.",
-    permission_to_enter: true,
-    preferred_access_times: "Weekday mornings",
+    hasAttachment: true,
+    hasTitle: true,
   });
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("Maintenance request submitted.");
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000901");

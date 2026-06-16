@@ -2765,6 +2765,7 @@ from .models_customer_portal import (  # noqa: E402,F401
     SmartNotification,
     SmartNotificationEvent,
     Tenant,
+    TenantMaintenanceRequestAttachment,
     TenantMaintenanceRequest,
     Tenancy,
 )

@@ -25,6 +25,7 @@ export default function TenantMaintenanceRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
+  const [attachments, setAttachments] = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -74,10 +75,23 @@ export default function TenantMaintenanceRequestPage() {
     setSubmitting(true);
     setError("");
     try {
-      const payload = {
-        ...form,
-        unit_id: form.unit_id ? Number(form.unit_id) : null,
-      };
+      let payload;
+      if (attachments.length) {
+        payload = new FormData();
+        Object.entries(form).forEach(([key, value]) => {
+          if (key === "unit_id") {
+            if (value) payload.append(key, value);
+            return;
+          }
+          payload.append(key, value ?? "");
+        });
+        attachments.forEach((file) => payload.append("attachments", file));
+      } else {
+        payload = {
+          ...form,
+          unit_id: form.unit_id ? Number(form.unit_id) : null,
+        };
+      }
       const { data } = await api.post(`/projects/maintenance-request/${encodeURIComponent(token)}/`, payload);
       setConfirmation(data?.request || {});
     } catch (err) {
@@ -253,6 +267,28 @@ export default function TenantMaintenanceRequestPage() {
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
                 />
               </label>
+
+              <label className="block text-sm font-medium text-slate-200">
+                Photos or files
+                <input
+                  data-testid="tenant-maintenance-attachments"
+                  type="file"
+                  multiple
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={(event) => setAttachments(Array.from(event.target.files || []))}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-300 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-slate-950"
+                />
+              </label>
+              {attachments.length ? (
+                <div data-testid="tenant-maintenance-selected-files" className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-xs text-slate-300">
+                  <div className="font-semibold text-white">Selected files</div>
+                  <ul className="mt-2 space-y-1">
+                    {attachments.map((file) => (
+                      <li key={`${file.name}-${file.size}`}>{file.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {error ? (
                 <div data-testid="tenant-maintenance-submit-error" className="rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">

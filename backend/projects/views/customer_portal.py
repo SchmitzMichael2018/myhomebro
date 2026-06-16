@@ -21,7 +21,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import serializers, status
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -63,6 +63,7 @@ from projects.models_customer_portal import (
     SmartNotificationEvent,
     Tenant,
     TenantMaintenanceRequest,
+    TenantMaintenanceRequestAttachment,
     Tenancy,
 )
 from projects.services.customer_notification_cleanup import (
@@ -120,6 +121,16 @@ from projects.services.ai.project_understanding import understand_project_reques
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 TENANT_MAINTENANCE_TOKEN_SALT = "myhomebro.tenant-maintenance-request"
+TENANT_MAINTENANCE_ATTACHMENT_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+TENANT_MAINTENANCE_ATTACHMENT_ALLOWED_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+    "application/octet-stream",
+}
+TENANT_MAINTENANCE_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+TENANT_MAINTENANCE_ATTACHMENT_MAX_COUNT = 5
 HOME_SYSTEM_SCAN_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
 HOME_SYSTEM_SCAN_DOCUMENT_TYPES = {
     "Equipment Label",
@@ -543,6 +554,64 @@ def _tenant_maintenance_request_token(property_profile: PropertyProfile, unit: P
     return signing.dumps(payload, salt=TENANT_MAINTENANCE_TOKEN_SALT)
 
 
+def _tenant_maintenance_uploaded_files(request) -> list:
+    files = []
+    for key in ["attachments", "files", "file"]:
+        files.extend(request.FILES.getlist(key))
+    if not files:
+        files = list(request.FILES.values())
+    unique = []
+    seen = set()
+    for uploaded_file in files:
+        identity = id(uploaded_file)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(uploaded_file)
+    return unique
+
+
+def _validate_tenant_maintenance_attachment(uploaded_file) -> None:
+    filename = _safe_text(getattr(uploaded_file, "name", ""))
+    extension = f".{filename.rsplit('.', 1)[-1].lower()}" if "." in filename else ""
+    content_type = _safe_text(getattr(uploaded_file, "content_type", "")).lower()
+    size = int(getattr(uploaded_file, "size", 0) or 0)
+    max_bytes = int(getattr(settings, "TENANT_MAINTENANCE_ATTACHMENT_MAX_BYTES", TENANT_MAINTENANCE_ATTACHMENT_MAX_BYTES))
+    if extension not in TENANT_MAINTENANCE_ATTACHMENT_ALLOWED_EXTENSIONS:
+        raise serializers.ValidationError("Unsupported file type. Upload JPG, PNG, WEBP, or PDF.")
+    if content_type and content_type not in TENANT_MAINTENANCE_ATTACHMENT_ALLOWED_CONTENT_TYPES:
+        raise serializers.ValidationError("Unsupported file type. Upload JPG, PNG, WEBP, or PDF.")
+    if size > max_bytes:
+        raise serializers.ValidationError(f"Attachment is too large. Upload files up to {max_bytes // (1024 * 1024)} MB.")
+
+
+def _validate_tenant_maintenance_attachments(files: list) -> None:
+    max_count = int(getattr(settings, "TENANT_MAINTENANCE_ATTACHMENT_MAX_COUNT", TENANT_MAINTENANCE_ATTACHMENT_MAX_COUNT))
+    if len(files) > max_count:
+        raise serializers.ValidationError(f"Upload up to {max_count} attachments.")
+    for uploaded_file in files:
+        _validate_tenant_maintenance_attachment(uploaded_file)
+
+
+def _tenant_maintenance_attachment_payload(attachment: TenantMaintenanceRequestAttachment) -> dict:
+    file_obj = getattr(attachment, "file", None)
+    url = ""
+    try:
+        url = file_obj.url if file_obj else ""
+    except Exception:
+        url = ""
+    content_type = _safe_text(attachment.content_type)
+    return {
+        "id": attachment.id,
+        "filename": _safe_text(attachment.original_filename) or _safe_text(getattr(file_obj, "name", "")).rsplit("/", 1)[-1],
+        "content_type": content_type,
+        "size_bytes": int(attachment.size_bytes or 0),
+        "url": url,
+        "is_image": content_type.startswith("image/"),
+        "created_at": _safe_dt(attachment.created_at),
+    }
+
+
 def _resolve_tenant_maintenance_token(token: str):
     try:
         payload = signing.loads(token, salt=TENANT_MAINTENANCE_TOKEN_SALT, max_age=PORTAL_TOKEN_MAX_AGE_SECONDS)
@@ -592,6 +661,8 @@ def _tenant_maintenance_request_payload(row: TenantMaintenanceRequest) -> dict:
         "manager_notes": _safe_text(row.manager_notes),
         "reviewed_by": _safe_text(row.reviewed_by),
         "reviewed_at": _safe_dt(row.reviewed_at),
+        "attachments": [_tenant_maintenance_attachment_payload(attachment) for attachment in row.attachments.all()],
+        "attachment_count": row.attachments.count(),
         "created_at": _safe_dt(row.created_at),
         "updated_at": _safe_dt(row.updated_at),
     }
@@ -602,6 +673,7 @@ def _tenant_maintenance_requests_for_property(property_profile: PropertyProfile 
         return []
     rows = (
         TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant")
+        .prefetch_related("attachments")
         .filter(property_profile=property_profile)
         .order_by("-created_at", "-id")
     )
@@ -619,6 +691,7 @@ def _tenant_maintenance_requests_for_email(email: str) -> list[dict]:
         return []
     rows = (
         TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant")
+        .prefetch_related("attachments")
         .filter(property_profile_id__in=property_ids)
         .order_by("-created_at", "-id")
     )
@@ -5477,6 +5550,7 @@ class CustomerPortalTenantView(APIView):
 
 class TenantMaintenanceRequestPublicView(APIView):
     permission_classes = [AllowAny]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get(self, request, token: str):
         property_profile, token_unit, error = _resolve_tenant_maintenance_token(token)
@@ -5509,6 +5583,11 @@ class TenantMaintenanceRequestPublicView(APIView):
         serializer = TenantMaintenanceRequestPublicSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        files = _tenant_maintenance_uploaded_files(request)
+        try:
+            _validate_tenant_maintenance_attachments(files)
+        except serializers.ValidationError as exc:
+            return Response({"detail": exc.detail[0] if isinstance(exc.detail, list) else exc.detail}, status=status.HTTP_400_BAD_REQUEST)
         unit = token_unit
         if unit is None and data.get("unit_id"):
             unit = get_object_or_404(
@@ -5534,6 +5613,16 @@ class TenantMaintenanceRequestPublicView(APIView):
             pets_present=bool(data.get("pets_present", False)),
             preferred_access_times=_safe_text(data.get("preferred_access_times")),
         )
+        for uploaded_file in files:
+            TenantMaintenanceRequestAttachment.objects.create(
+                tenant_request=row,
+                file=uploaded_file,
+                original_filename=_safe_text(getattr(uploaded_file, "name", "")),
+                content_type=_safe_text(getattr(uploaded_file, "content_type", "")),
+                size_bytes=int(getattr(uploaded_file, "size", 0) or 0),
+                uploaded_by_name=_safe_text(data.get("submitted_by_name")),
+                uploaded_by_email=_safe_text(data.get("submitted_by_email")).lower(),
+            )
         return Response(
             {
                 "ok": True,
@@ -5591,7 +5680,7 @@ class CustomerPortalTenantMaintenanceRequestView(APIView):
         serializer = TenantMaintenanceRequestReviewSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         row = get_object_or_404(
-            TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant"),
+            TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant").prefetch_related("attachments"),
             pk=request_id,
             property_profile=property_profile,
         )

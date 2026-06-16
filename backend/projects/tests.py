@@ -98,6 +98,7 @@ from projects.models import (
     PropertyUnit,
     Tenant,
     TenantMaintenanceRequest,
+    TenantMaintenanceRequestAttachment,
     Tenancy,
     ProjectBenchmarkAggregate,
     RegionalBenchmarkAggregate,
@@ -20687,6 +20688,111 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(row.status, TenantMaintenanceRequest.STATUS_SUBMITTED)
         self.assertTrue(row.permission_to_enter)
         self.assertEqual(response.data["request"]["reference"], f"TMR-{row.id:06d}")
+
+    def test_tenant_maintenance_request_can_be_submitted_with_image_attachment(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+        uploaded_file = SimpleUploadedFile("sink-leak.jpg", b"fake-image-bytes", content_type="image/jpeg")
+
+        response = self.client.post(
+            f"/api/projects/maintenance-request/{public_token}/",
+            {
+                "submitted_by_name": "Taylor Tenant",
+                "submitted_by_email": "taylor@example.com",
+                "category": TenantMaintenanceRequest.CATEGORY_PLUMBING,
+                "title": "Kitchen sink leak",
+                "description": "Water is dripping under the kitchen sink.",
+                "attachments": uploaded_file,
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        row = TenantMaintenanceRequest.objects.get()
+        attachment = TenantMaintenanceRequestAttachment.objects.get(tenant_request=row)
+        self.assertEqual(attachment.original_filename, "sink-leak.jpg")
+        self.assertEqual(attachment.content_type, "image/jpeg")
+        self.assertGreater(attachment.size_bytes, 0)
+        self.assertEqual(response.data["request"]["attachment_count"], 1)
+        self.assertEqual(response.data["request"]["attachments"][0]["filename"], "sink-leak.jpg")
+
+        review_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/")
+        self.assertEqual(review_response.status_code, 200, review_response.data)
+        payload = review_response.data["tenant_maintenance_requests"][0]
+        self.assertEqual(payload["attachment_count"], 1)
+        self.assertEqual(payload["attachments"][0]["filename"], "sink-leak.jpg")
+        self.assertTrue(payload["attachments"][0]["is_image"])
+
+    def test_tenant_maintenance_request_rejects_invalid_attachment_type(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+
+        response = self.client.post(
+            f"/api/projects/maintenance-request/{public_token}/",
+            {
+                "submitted_by_name": "Taylor Tenant",
+                "category": TenantMaintenanceRequest.CATEGORY_OTHER,
+                "title": "Bad file",
+                "description": "Testing invalid file upload.",
+                "attachments": SimpleUploadedFile("notes.exe", b"bad", content_type="application/x-msdownload"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported file type", str(response.data["detail"]))
+        self.assertEqual(TenantMaintenanceRequest.objects.count(), 0)
+        self.assertEqual(TenantMaintenanceRequestAttachment.objects.count(), 0)
+
+    @override_settings(TENANT_MAINTENANCE_ATTACHMENT_MAX_BYTES=4)
+    def test_tenant_maintenance_request_rejects_oversized_attachment(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+
+        response = self.client.post(
+            f"/api/projects/maintenance-request/{public_token}/",
+            {
+                "submitted_by_name": "Taylor Tenant",
+                "category": TenantMaintenanceRequest.CATEGORY_OTHER,
+                "title": "Large file",
+                "description": "Testing large file upload.",
+                "attachments": SimpleUploadedFile("large.jpg", b"12345", content_type="image/jpeg"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("too large", str(response.data["detail"]))
+        self.assertEqual(TenantMaintenanceRequest.objects.count(), 0)
+        self.assertEqual(TenantMaintenanceRequestAttachment.objects.count(), 0)
 
     def test_tenant_maintenance_request_supports_property_without_unit_and_rejects_invalid_token(self):
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY

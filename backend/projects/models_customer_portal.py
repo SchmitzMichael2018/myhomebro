@@ -475,6 +475,43 @@ class TenantMaintenanceRequest(models.Model):
         return f"{self.title} ({self.get_status_display()})"
 
 
+def tenant_maintenance_request_attachment_upload_path(instance, filename):
+    base, _dot, ext = filename.rpartition(".")
+    ext = (ext or "").lower()
+    safe = slugify(base or "attachment")
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
+    request_id = instance.tenant_request_id or "pending"
+    return (
+        f"tenant_maintenance_requests/{request_id}/attachments/{ts}_{safe}.{ext}"
+        if ext
+        else f"tenant_maintenance_requests/{request_id}/attachments/{ts}_{safe}"
+    )
+
+
+class TenantMaintenanceRequestAttachment(models.Model):
+    tenant_request = models.ForeignKey(
+        TenantMaintenanceRequest,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    file = models.FileField(upload_to=tenant_maintenance_request_attachment_upload_path)
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    content_type = models.CharField(max_length=120, blank=True, default="")
+    size_bytes = models.PositiveIntegerField(default=0)
+    uploaded_by_name = models.CharField(max_length=255, blank=True, default="")
+    uploaded_by_email = models.EmailField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["tenant_request", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.tenant_request_id}: {self.original_filename or 'Attachment'}"
+
+
 def property_document_upload_path(instance, filename):
     base, _dot, ext = filename.rpartition(".")
     safe = slugify(base or "document")
