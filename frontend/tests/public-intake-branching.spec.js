@@ -276,14 +276,14 @@ test("landing page drives into intake and public intake shows branching choices 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("landing-hero-heading")).toContainText("Everything you need to plan, hire, and manage your project.");
   await expect(page.getByTestId("landing-start-project-intake-button")).toContainText("Start a Project");
-  await expect(page.getByTestId("landing-customer-portal-button")).toContainText("View Your Project");
+  await expect(page.getByTestId("landing-customer-portal-button")).toContainText("Customer Log In");
   await expect(page.getByRole("button", { name: "For Contractors" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Contractor Sign Up" })).toBeVisible();
   await expect(page.getByTestId("landing-sign-in-button")).toHaveText("Log In");
   await page.getByTestId("landing-sign-in-button").click();
   const loginMenu = page.getByRole("menu", { name: "Log in options" });
   await expect(loginMenu).toBeVisible();
-  await expect(loginMenu.getByRole("button", { name: "Homeowner Log In" })).toBeVisible();
+  await expect(loginMenu.getByRole("button", { name: "Customer Log In" })).toBeVisible();
   await expect(loginMenu.getByRole("button", { name: "Contractor Log In" })).toBeVisible();
   await expect(loginMenu.getByRole("button", { name: "Contractors: Sign Up" })).toBeVisible();
 

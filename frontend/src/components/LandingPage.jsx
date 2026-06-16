@@ -126,7 +126,7 @@ export default function LandingPage() {
               How It Works
             </button>
             <button type="button" onClick={() => scrollTo("for-homeowners")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
-              For Homeowners
+              For Customers
             </button>
             <button type="button" onClick={() => scrollTo("for-contractors")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
               For Contractors
@@ -260,10 +260,10 @@ function LoginDropdown({ navigate, onLoginSelect }) {
 
       <div className="space-y-4 p-4">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Homeowners</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Customers</div>
           <div className="mt-2 text-sm font-semibold text-white">View Your Project</div>
           <p className="mt-1 text-sm leading-6 text-sky-50/72">
-            Check updates, progress, documents, and messages from your contractor.
+            Check updates, progress, documents, maintenance, and messages from your contractor or property team.
           </p>
           <button
             type="button"
@@ -273,7 +273,7 @@ function LoginDropdown({ navigate, onLoginSelect }) {
             }}
             className="mt-3 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/22 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
           >
-            Homeowner Log In
+            Customer Log In
           </button>
         </div>
 
@@ -441,7 +441,7 @@ function AudienceCards({ navigate }) {
     <section className="mx-auto grid max-w-6xl gap-4 px-4 pb-8 sm:px-6 lg:grid-cols-2 lg:px-8">
       <AudienceCard
         id="for-homeowners"
-        eyebrow="For Homeowners"
+        eyebrow="For Customers"
         title="Plan with confidence. Get it done right."
         bullets={[
           "Organize your project the smart way",
@@ -450,7 +450,7 @@ function AudienceCards({ navigate }) {
           "It's free, secure, and commitment-free",
         ]}
         primaryLabel="Start a Project"
-        secondaryLabel="View Your Project / Log In"
+        secondaryLabel="Customer Log In"
         onPrimary={() => navigate("/start-project")}
         onSecondary={() => navigate("/portal")}
         tone="homeowner"

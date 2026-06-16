@@ -12,12 +12,12 @@ test('landing page smoke renders core entry points', async ({ page }) => {
     'Everything you need to plan, hire, and manage your project.'
   );
   await expect(page.getByRole('button', { name: 'How It Works' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'For Homeowners' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'For Customers' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'For Contractors' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Resources' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'About Us' })).toHaveCount(0);
 
-  await page.getByRole('button', { name: 'For Homeowners' }).click();
+  await page.getByRole('button', { name: 'For Customers' }).click();
   await expect(page.getByTestId('landing-homeowner-card')).toBeInViewport();
   await page.getByRole('button', { name: 'For Contractors' }).click();
   await expect(page.getByTestId('landing-contractor-card')).toBeInViewport();
@@ -27,7 +27,7 @@ test('landing page smoke renders core entry points', async ({ page }) => {
   await page.getByTestId('landing-sign-in-button').click();
   const loginMenu = page.getByRole('menu', { name: 'Log in options' });
   await expect(loginMenu).toBeVisible();
-  await expect(loginMenu.getByRole('button', { name: 'Homeowner Log In' })).toBeVisible();
+  await expect(loginMenu.getByRole('button', { name: 'Customer Log In' })).toBeVisible();
   await expect(loginMenu.getByRole('button', { name: 'Contractor Log In' })).toBeVisible();
   await expect(loginMenu.getByRole('button', { name: 'Contractors: Sign Up' })).toBeVisible();
   await expect(page.getByTestId('landing-homeowner-card')).toBeVisible();
@@ -64,12 +64,15 @@ test('landing page mobile layout does not horizontally overflow', async ({ page 
   expect(hasHorizontalOverflow).toBe(false);
 });
 
-test('landing homeowner login routes directly to the customer portal', async ({
+test('landing customer login routes directly to the customer portal', async ({
   page,
 }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('landing-sign-in-button').click();
-  await page.getByRole('button', { name: 'Homeowner Log In' }).click();
+  await page
+    .getByRole('menu', { name: 'Log in options' })
+    .getByRole('button', { name: 'Customer Log In' })
+    .click();
 
   await expect(page).toHaveURL(/\/portal$/);
   await expect(page.getByTestId('login-modal')).toHaveCount(0);
