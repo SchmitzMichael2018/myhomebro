@@ -2982,8 +2982,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-home-systems")).toContainText("Laundry Dryer");
   await expect(page.getByTestId("property-home-systems")).not.toContainText("Main HVAC");
   await page.getByTestId("property-home-system-search").fill("");
-  await page.getByTestId("property-home-system-filter").selectOption("needs_attention");
+  await page.getByTestId("property-home-system-filter").selectOption("service_requested");
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Service Requested");
   await expect(page.getByTestId("property-home-systems")).not.toContainText("Laundry Dryer");
   await page.getByTestId("property-home-system-filter").selectOption("all");
   await page.getByTestId("property-home-system-view-grid").click();
@@ -3057,9 +3058,15 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-help-mode")).toContainText("Full service");
   await page.getByTestId("customer-dashboard-tab-property").click();
   await page.getByTestId("property-supply-ignore").first().click();
+  await expect(page.getByTestId("property-home-systems")).not.toContainText("Ignored");
+  await expect(page.getByTestId("property-home-systems")).toContainText("Service Requested");
+  await expect(page.getByTestId("property-home-system-filter")).toContainText("Current");
+  await expect(page.getByTestId("property-home-system-filter")).toContainText("Maintenance Past Due");
+  await expect(page.getByTestId("property-home-system-filter")).not.toContainText("Ignored/Archived");
   await expect(page.getByTestId("property-suggested-supplies-empty")).toContainText("No active recommendations");
   await page.getByTestId("property-supply-filter-ignored").click();
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
+  await expect(page.getByTestId("property-suggested-supplies")).toContainText("Ignored");
   await page.getByTestId("property-supply-restore").first().click();
   await page.getByTestId("property-supply-filter-active").click();
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");

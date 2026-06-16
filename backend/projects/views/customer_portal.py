@@ -677,7 +677,7 @@ def _home_system_lifecycle_payload(*, system: PropertyHomeSystem, reminder, link
         key, label = "service_requested", "Service Requested"
     elif reminder.maintenance_status in {"overdue", "due_soon", "warranty_expired", "warranty_expiring", "lifespan_attention"}:
         reminder_labels = {
-            "overdue": "Overdue",
+            "overdue": "Maintenance Past Due",
             "due_soon": "Due Soon",
             "warranty_expired": "Warranty Attention",
             "warranty_expiring": "Warranty Expiring",

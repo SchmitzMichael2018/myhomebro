@@ -644,25 +644,29 @@ function requestDraftFromSystemRecommendation(system = {}, recommendation = {}) 
 
 function homeSystemStatus(system) {
   const lifecycleState = system.lifecycle?.state || "";
-  if (system.isArchived) return { key: "ignored", label: "Archived" };
-  if (system.supplyRecommendations?.some((recommendation) => recommendation.isIgnored)) return { key: "ignored", label: "Ignored" };
-  if (["overdue", "warranty_expired", "lifespan_attention"].includes(system.maintenanceStatus) || system.priority === "high") {
-    return { key: "needs_attention", label: "Needs Attention" };
-  }
-  if (["due_soon", "warranty_expiring"].includes(system.maintenanceStatus) || lifecycleState === "scheduled") {
-    return { key: "due_soon", label: "Due Soon" };
-  }
-  if (["completed", "resolved", "current"].includes(lifecycleState) || system.reminderDeliveryStatus === "resolved") {
+  if (system.isArchived) return { key: "archived", label: "Archived" };
+  if (lifecycleState === "service_requested") return { key: "service_requested", label: "Service Requested" };
+  if (lifecycleState === "sent_to_contractors") return { key: "sent_to_contractors", label: "Sent to Contractors" };
+  if (lifecycleState === "scheduled") return { key: "scheduled", label: "Scheduled" };
+  if (lifecycleState === "in_progress") return { key: "in_progress", label: "In Progress" };
+  if (["completed", "resolved"].includes(lifecycleState) || system.reminderDeliveryStatus === "resolved") {
     return { key: "completed", label: "Completed" };
   }
-  return { key: "good", label: system.conditionLabel && system.conditionLabel !== "Unknown" ? system.conditionLabel : "Good" };
+  if (["overdue", "warranty_expired", "lifespan_attention"].includes(system.maintenanceStatus)) {
+    return { key: "maintenance_past_due", label: "Maintenance Past Due" };
+  }
+  if (["due_soon", "warranty_expiring"].includes(system.maintenanceStatus)) {
+    return { key: "due_soon", label: "Due Soon" };
+  }
+  return { key: "current", label: "Current" };
 }
 
 function homeSystemStatusClass(key) {
-  if (key === "needs_attention") return "border-rose-300/50 bg-rose-400/15 text-rose-100";
+  if (key === "maintenance_past_due") return "border-rose-300/50 bg-rose-400/15 text-rose-100";
   if (key === "due_soon") return "border-amber-300/50 bg-amber-300/15 text-amber-100";
-  if (key === "completed" || key === "good") return "border-emerald-300/45 bg-emerald-400/10 text-emerald-100";
-  if (key === "ignored") return "border-slate-600 bg-slate-900 text-slate-300";
+  if (["service_requested", "sent_to_contractors", "scheduled", "in_progress"].includes(key)) return "border-sky-300/45 bg-sky-400/10 text-sky-100";
+  if (key === "completed" || key === "current") return "border-emerald-300/45 bg-emerald-400/10 text-emerald-100";
+  if (key === "archived") return "border-slate-600 bg-slate-900 text-slate-300";
   return "border-slate-600 bg-slate-950 text-slate-300";
 }
 
@@ -771,10 +775,15 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
   });
   const counts = {
     all: systems.length,
-    needs_attention: rows.filter((system) => system.status.key === "needs_attention").length,
+    current: rows.filter((system) => system.status.key === "current").length,
     due_soon: rows.filter((system) => system.status.key === "due_soon").length,
+    maintenance_past_due: rows.filter((system) => system.status.key === "maintenance_past_due").length,
+    service_requested: rows.filter((system) => system.status.key === "service_requested").length,
+    sent_to_contractors: rows.filter((system) => system.status.key === "sent_to_contractors").length,
+    scheduled: rows.filter((system) => system.status.key === "scheduled").length,
+    in_progress: rows.filter((system) => system.status.key === "in_progress").length,
     completed: rows.filter((system) => system.status.key === "completed").length,
-    ignored: rows.filter((system) => system.status.key === "ignored").length,
+    archived: rows.filter((system) => system.status.key === "archived").length,
   };
   const renderGridCard = (system) => (
     <article key={system.id || system.name} data-testid={`property-home-system-${String(system.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
@@ -831,10 +840,15 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
                 className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-sky-400"
               >
                 <option value="all">All Systems ({counts.all})</option>
-                <option value="needs_attention">Needs Attention ({counts.needs_attention})</option>
+                <option value="current">Current ({counts.current})</option>
                 <option value="due_soon">Due Soon ({counts.due_soon})</option>
+                <option value="maintenance_past_due">Maintenance Past Due ({counts.maintenance_past_due})</option>
+                <option value="service_requested">Service Requested ({counts.service_requested})</option>
+                <option value="sent_to_contractors">Sent to Contractors ({counts.sent_to_contractors})</option>
+                <option value="scheduled">Scheduled ({counts.scheduled})</option>
+                <option value="in_progress">In Progress ({counts.in_progress})</option>
                 <option value="completed">Completed ({counts.completed})</option>
-                <option value="ignored">Ignored/Archived ({counts.ignored})</option>
+                <option value="archived">Archived ({counts.archived})</option>
               </select>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -908,7 +922,7 @@ function HomeSystemsSection({ systems = [], onAdd, onEdit, onArchive, onViewReco
 }
 
 const MAINTENANCE_STATUS_LABELS = {
-  overdue: "Overdue",
+  overdue: "Maintenance Past Due",
   due_soon: "Due Soon",
   warranty_expiring: "Warranty Expiring",
   warranty_expired: "Warranty Attention",

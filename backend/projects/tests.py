@@ -22466,6 +22466,8 @@ class CustomerPortalAccessTests(TestCase):
         ignored_rows = {row["id"]: row for row in ignore_response.data["portal"]["property_profile"]["home_systems"]}
         self.assertTrue(ignored_rows[hvac.id]["supply_recommendations"][0]["is_ignored"])
         self.assertFalse(ignored_rows[second_hvac.id]["supply_recommendations"][0]["is_ignored"])
+        self.assertNotEqual(ignored_rows[hvac.id]["lifecycle"]["label"], "Ignored")
+        self.assertEqual(ignored_rows[hvac.id]["lifecycle"]["label"], "Current")
 
         restore_response = self.client.post(
             f"/api/projects/customer-portal/{token}/property/systems/recommendations/{recommendation_key}/restore/",
