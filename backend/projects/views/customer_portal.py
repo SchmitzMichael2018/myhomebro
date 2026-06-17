@@ -57,6 +57,8 @@ from projects.models_customer_portal import (
     PropertyHomeSystemRecommendationPreference,
     PropertyManagementCompany,
     PropertyManagementStaffMembership,
+    PropertyWorkOrderActivity,
+    PropertyWorkOrderAttachment,
     PropertyWorkOrder,
     PropertyUnit,
     PropertyPhoto,
@@ -576,6 +578,23 @@ def _tenant_maintenance_uploaded_files(request) -> list:
     return unique
 
 
+def _property_work_order_uploaded_files(request) -> list:
+    files = []
+    for key in ["completion_attachments", "attachments", "files", "file"]:
+        files.extend(request.FILES.getlist(key))
+    if not files:
+        files = list(request.FILES.values())
+    unique = []
+    seen = set()
+    for uploaded_file in files:
+        identity = id(uploaded_file)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(uploaded_file)
+    return unique
+
+
 def _validate_tenant_maintenance_attachment(uploaded_file) -> None:
     filename = _safe_text(getattr(uploaded_file, "name", ""))
     extension = f".{filename.rsplit('.', 1)[-1].lower()}" if "." in filename else ""
@@ -596,6 +615,10 @@ def _validate_tenant_maintenance_attachments(files: list) -> None:
         raise serializers.ValidationError(f"Upload up to {max_count} attachments.")
     for uploaded_file in files:
         _validate_tenant_maintenance_attachment(uploaded_file)
+
+
+def _validate_property_work_order_attachments(files: list) -> None:
+    _validate_tenant_maintenance_attachments(files)
 
 
 def _tenant_maintenance_attachment_payload(attachment: TenantMaintenanceRequestAttachment) -> dict:
@@ -691,6 +714,8 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
     source_attachments = []
     if source_request is not None:
         source_attachments = [_tenant_maintenance_attachment_payload(attachment) for attachment in source_request.attachments.all()]
+    completion_attachments = [_property_work_order_attachment_payload(attachment) for attachment in row.attachments.all()]
+    activities = [_property_work_order_activity_payload(activity) for activity in row.activities.all()]
     return {
         "id": row.id,
         "work_order_number": _safe_text(row.work_order_number) or f"PWO-{row.id:06d}",
@@ -723,10 +748,92 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
         "completion_notes": _safe_text(row.completion_notes),
         "created_by": _safe_text(row.created_by),
         "source_attachments": source_attachments,
-        "attachment_count": len(source_attachments),
+        "completion_attachments": completion_attachments,
+        "activities": activities,
+        "timeline": activities,
+        "attachment_count": len(source_attachments) + len(completion_attachments),
+        "completion_attachment_count": len(completion_attachments),
         "created_at": _safe_dt(row.created_at),
         "updated_at": _safe_dt(row.updated_at),
     }
+
+
+def _property_work_order_activity_payload(activity: PropertyWorkOrderActivity) -> dict:
+    return {
+        "id": activity.id,
+        "activity_type": _safe_text(activity.activity_type),
+        "activity_type_label": activity.get_activity_type_display(),
+        "message": _safe_text(activity.message),
+        "actor": _safe_text(activity.actor),
+        "created_at": _safe_dt(activity.created_at),
+    }
+
+
+def _property_work_order_attachment_payload(attachment: PropertyWorkOrderAttachment) -> dict:
+    file_obj = getattr(attachment, "file", None)
+    url = ""
+    try:
+        url = file_obj.url if file_obj else ""
+    except Exception:
+        url = ""
+    content_type = _safe_text(attachment.content_type)
+    return {
+        "id": attachment.id,
+        "filename": _safe_text(attachment.original_filename) or _safe_text(getattr(file_obj, "name", "")).rsplit("/", 1)[-1],
+        "content_type": content_type,
+        "size_bytes": int(attachment.size_bytes or 0),
+        "uploaded_by": _safe_text(attachment.uploaded_by),
+        "attachment_type": _safe_text(attachment.attachment_type),
+        "attachment_type_label": attachment.get_attachment_type_display(),
+        "url": url,
+        "is_image": content_type.startswith("image/"),
+        "created_at": _safe_dt(attachment.created_at),
+    }
+
+
+def _property_work_order_add_activity(row: PropertyWorkOrder, activity_type: str, message: str, actor: str = "") -> PropertyWorkOrderActivity:
+    return PropertyWorkOrderActivity.objects.create(
+        work_order=row,
+        activity_type=activity_type,
+        message=_safe_text(message),
+        actor=_safe_text(actor).lower(),
+    )
+
+
+PROPERTY_WORK_ORDER_ALLOWED_TRANSITIONS = {
+    PropertyWorkOrder.STATUS_OPEN: {
+        PropertyWorkOrder.STATUS_OPEN,
+        PropertyWorkOrder.STATUS_SCHEDULED,
+        PropertyWorkOrder.STATUS_IN_PROGRESS,
+        PropertyWorkOrder.STATUS_WAITING,
+        PropertyWorkOrder.STATUS_CANCELLED,
+    },
+    PropertyWorkOrder.STATUS_SCHEDULED: {
+        PropertyWorkOrder.STATUS_SCHEDULED,
+        PropertyWorkOrder.STATUS_IN_PROGRESS,
+        PropertyWorkOrder.STATUS_WAITING,
+        PropertyWorkOrder.STATUS_COMPLETED,
+        PropertyWorkOrder.STATUS_CANCELLED,
+    },
+    PropertyWorkOrder.STATUS_IN_PROGRESS: {
+        PropertyWorkOrder.STATUS_IN_PROGRESS,
+        PropertyWorkOrder.STATUS_WAITING,
+        PropertyWorkOrder.STATUS_COMPLETED,
+        PropertyWorkOrder.STATUS_CANCELLED,
+    },
+    PropertyWorkOrder.STATUS_WAITING: {
+        PropertyWorkOrder.STATUS_WAITING,
+        PropertyWorkOrder.STATUS_SCHEDULED,
+        PropertyWorkOrder.STATUS_IN_PROGRESS,
+        PropertyWorkOrder.STATUS_CANCELLED,
+    },
+    PropertyWorkOrder.STATUS_COMPLETED: {
+        PropertyWorkOrder.STATUS_COMPLETED,
+        PropertyWorkOrder.STATUS_CLOSED,
+    },
+    PropertyWorkOrder.STATUS_CLOSED: {PropertyWorkOrder.STATUS_CLOSED},
+    PropertyWorkOrder.STATUS_CANCELLED: {PropertyWorkOrder.STATUS_CANCELLED},
+}
 
 
 def _property_work_orders_for_property(property_profile: PropertyProfile | None) -> list[dict]:
@@ -741,7 +848,7 @@ def _property_work_orders_for_property(property_profile: PropertyProfile | None)
             "assigned_staff_member",
             "source_tenant_request",
         )
-        .prefetch_related("source_tenant_request__attachments")
+        .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
         .filter(property_profile=property_profile)
         .order_by("-created_at", "-id")
     )
@@ -766,7 +873,7 @@ def _property_work_orders_for_email(email: str) -> list[dict]:
             "assigned_staff_member",
             "source_tenant_request",
         )
-        .prefetch_related("source_tenant_request__attachments")
+        .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
         .filter(property_profile_id__in=property_ids)
         .order_by("-created_at", "-id")
     )
@@ -5313,6 +5420,10 @@ class CustomerPortalPropertyWorkOrderSerializer(serializers.Serializer):
     closed_at = serializers.CharField(required=False, allow_blank=True)
     internal_notes = serializers.CharField(required=False, allow_blank=True)
     completion_notes = serializers.CharField(required=False, allow_blank=True)
+    attachment_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyWorkOrderAttachment.TYPE_CHOICES],
+        required=False,
+    )
 
     def validate(self, attrs):
         for field in ("title", "description", "internal_notes", "completion_notes"):
@@ -5979,6 +6090,7 @@ class TenantMaintenanceRequestVerifiedSubmitView(APIView):
 
 class CustomerPortalPropertyWorkOrderView(APIView):
     permission_classes = [AllowAny]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def _email_from_token(self, token: str):
         try:
@@ -6040,6 +6152,38 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             queryset = queryset.exclude(id=work_order_id)
         return queryset.exists()
 
+    def _status_transition_error(self, current_status: str, next_status: str):
+        allowed = PROPERTY_WORK_ORDER_ALLOWED_TRANSITIONS.get(current_status, {current_status})
+        if next_status not in allowed:
+            return Response(
+                {"detail": f"Cannot change work order from {current_status} to {next_status}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
+
+    def _save_completion_attachments(self, row: PropertyWorkOrder, files, data: dict, actor: str):
+        attachment_type = data.get("attachment_type") or PropertyWorkOrderAttachment.TYPE_COMPLETION_PHOTO
+        created = []
+        for uploaded_file in files:
+            attachment = PropertyWorkOrderAttachment.objects.create(
+                work_order=row,
+                file=uploaded_file,
+                original_filename=_safe_text(getattr(uploaded_file, "name", "")),
+                content_type=_safe_text(getattr(uploaded_file, "content_type", "")),
+                size_bytes=int(getattr(uploaded_file, "size", 0) or 0),
+                uploaded_by=actor,
+                attachment_type=attachment_type,
+            )
+            created.append(attachment)
+        if created:
+            _property_work_order_add_activity(
+                row,
+                PropertyWorkOrderActivity.TYPE_ATTACHMENT_ADDED,
+                f"Added {len(created)} completion attachment{'s' if len(created) != 1 else ''}.",
+                actor,
+            )
+        return None
+
     def get(self, request, token: str, property_id: int):
         _email, _company, property_profile, error = self._property_from_token(token, property_id)
         if error is not None:
@@ -6085,6 +6229,11 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             completion_notes=_safe_text(data.get("completion_notes")),
             created_by=email.lower().strip(),
         )
+        _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_CREATED, "Work order created.", email)
+        if row.assigned_staff_member_id:
+            _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_ASSIGNED, f"Assigned to {row.assigned_staff_member.name or row.assigned_staff_member.email}.", email)
+        if row.scheduled_for:
+            _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_SCHEDULED, "Work order scheduled.", email)
         return Response(
             {"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)},
             status=status.HTTP_201_CREATED,
@@ -6096,13 +6245,25 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             return error
         row = get_object_or_404(
             PropertyWorkOrder.objects.select_related("property_profile", "unit", "tenant", "assigned_staff_member", "source_tenant_request")
-            .prefetch_related("source_tenant_request__attachments")
+            .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
             .filter(property_profile=property_profile, property_management_company=company),
             pk=work_order_id,
         )
         serializer = CustomerPortalPropertyWorkOrderSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        next_status = data.get("status", row.status)
+        transition_error = self._status_transition_error(row.status, next_status)
+        if transition_error is not None:
+            return transition_error
+        if next_status == PropertyWorkOrder.STATUS_COMPLETED and not _safe_text(data.get("completion_notes", row.completion_notes)):
+            return Response({"completion_notes": ["Completion notes are required to complete a work order."]}, status=status.HTTP_400_BAD_REQUEST)
+        files = _property_work_order_uploaded_files(request)
+        try:
+            _validate_property_work_order_attachments(files)
+        except serializers.ValidationError as exc:
+            return Response({"detail": exc.detail[0] if isinstance(exc.detail, list) else exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+
         field_values = {}
         for field in ("title", "description", "category", "priority", "status", "scheduled_for", "started_at", "completed_at", "closed_at", "internal_notes", "completion_notes"):
             if field in data:
@@ -6115,12 +6276,48 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             field_values["assigned_staff_member"] = self._staff_for_company_or_none(company, data.get("assigned_staff_member_id"))
 
         update_fields = []
+        activity_messages = []
+        previous_status = row.status
+        previous_staff_id = row.assigned_staff_member_id
+        previous_scheduled_for = row.scheduled_for
         for field, value in field_values.items():
             if getattr(row, field) != value:
                 setattr(row, field, value)
                 update_fields.append(field)
+        now = timezone.now()
+        if "status" in field_values and previous_status != row.status:
+            if row.status == PropertyWorkOrder.STATUS_IN_PROGRESS and row.started_at is None:
+                row.started_at = now
+                update_fields.append("started_at")
+            if row.status == PropertyWorkOrder.STATUS_COMPLETED and row.completed_at is None:
+                row.completed_at = now
+                update_fields.append("completed_at")
+            if row.status == PropertyWorkOrder.STATUS_CLOSED and row.closed_at is None:
+                row.closed_at = now
+                update_fields.append("closed_at")
+            activity_type = PropertyWorkOrderActivity.TYPE_STATUS_CHANGED
+            if row.status == PropertyWorkOrder.STATUS_IN_PROGRESS:
+                activity_type = PropertyWorkOrderActivity.TYPE_STARTED
+            elif row.status == PropertyWorkOrder.STATUS_COMPLETED:
+                activity_type = PropertyWorkOrderActivity.TYPE_COMPLETED
+            elif row.status == PropertyWorkOrder.STATUS_CLOSED:
+                activity_type = PropertyWorkOrderActivity.TYPE_CLOSED
+            activity_messages.append((activity_type, f"Status changed to {row.get_status_display()}."))
+        if "assigned_staff_member" in field_values and previous_staff_id != getattr(row.assigned_staff_member, "id", None):
+            label = row.assigned_staff_member.name or row.assigned_staff_member.email if row.assigned_staff_member else "Unassigned"
+            activity_messages.append((PropertyWorkOrderActivity.TYPE_ASSIGNED, f"Assigned to {label}."))
+        if "scheduled_for" in field_values and previous_scheduled_for != row.scheduled_for:
+            activity_messages.append((PropertyWorkOrderActivity.TYPE_SCHEDULED, "Work order schedule updated."))
+        if "internal_notes" in field_values or "completion_notes" in field_values:
+            activity_messages.append((PropertyWorkOrderActivity.TYPE_NOTE_ADDED, "Work order notes updated."))
         if update_fields:
             row.save(update_fields=[*update_fields, "updated_at"])
+        self._save_completion_attachments(row, files, data, email.lower().strip())
+        for activity_type, message in activity_messages:
+            _property_work_order_add_activity(row, activity_type, message, email)
+        if hasattr(row, "_prefetched_objects_cache"):
+            row._prefetched_objects_cache.pop("attachments", None)
+            row._prefetched_objects_cache.pop("activities", None)
         return Response(
             {"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)},
             status=status.HTTP_200_OK,
@@ -6194,6 +6391,7 @@ class CustomerPortalTenantMaintenanceRequestView(APIView):
             internal_notes=_safe_text(source_request.manager_notes),
             created_by=email.lower().strip(),
         )
+        _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_CREATED, "Work order created from tenant maintenance request.", email)
         return Response(
             {
                 "work_order": _property_work_order_payload(row),

@@ -92,6 +92,8 @@ from projects.models import (
     PropertyManagementStaffMembership,
     PropertyOwnerContact,
     PropertyOwnership,
+    PropertyWorkOrderActivity,
+    PropertyWorkOrderAttachment,
     PropertyWorkOrder,
     PropertyPhoto,
     SmartNotification,
@@ -20985,6 +20987,119 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(PropertyWorkOrder.objects.count(), 1)
+
+    def test_property_work_order_execution_creates_activity_timeline(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair sink.",
+        )
+
+        assign_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"assigned_staff_member_id": staff.id},
+            content_type="application/json",
+        )
+        schedule_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_SCHEDULED, "scheduled_for": "2026-06-20T15:00:00Z"},
+            content_type="application/json",
+        )
+        start_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_IN_PROGRESS},
+            content_type="application/json",
+        )
+        waiting_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_WAITING, "internal_notes": "Waiting on parts."},
+            content_type="application/json",
+        )
+        restart_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_IN_PROGRESS},
+            content_type="application/json",
+        )
+        complete_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {
+                "status": PropertyWorkOrder.STATUS_COMPLETED,
+                "completion_notes": "Leak repaired and area cleaned.",
+                "attachments": SimpleUploadedFile("completed.jpg", b"fake-image-bytes", content_type="image/jpeg"),
+            },
+            format="multipart",
+        )
+        close_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_CLOSED},
+            content_type="application/json",
+        )
+
+        for response in [assign_response, schedule_response, start_response, waiting_response, restart_response, complete_response, close_response]:
+            self.assertEqual(response.status_code, 200, response.data)
+        row.refresh_from_db()
+        self.assertEqual(row.assigned_staff_member, staff)
+        self.assertEqual(row.status, PropertyWorkOrder.STATUS_CLOSED)
+        self.assertIsNotNone(row.scheduled_for)
+        self.assertIsNotNone(row.started_at)
+        self.assertIsNotNone(row.completed_at)
+        self.assertIsNotNone(row.closed_at)
+        self.assertEqual(PropertyWorkOrderAttachment.objects.count(), 1)
+        attachment = PropertyWorkOrderAttachment.objects.get()
+        self.assertEqual(attachment.original_filename, "completed.jpg")
+        self.assertEqual(attachment.attachment_type, PropertyWorkOrderAttachment.TYPE_COMPLETION_PHOTO)
+        activity_types = list(PropertyWorkOrderActivity.objects.filter(work_order=row).values_list("activity_type", flat=True))
+        self.assertIn(PropertyWorkOrderActivity.TYPE_ASSIGNED, activity_types)
+        self.assertIn(PropertyWorkOrderActivity.TYPE_SCHEDULED, activity_types)
+        self.assertIn(PropertyWorkOrderActivity.TYPE_STARTED, activity_types)
+        self.assertIn(PropertyWorkOrderActivity.TYPE_COMPLETED, activity_types)
+        self.assertIn(PropertyWorkOrderActivity.TYPE_CLOSED, activity_types)
+        self.assertIn(PropertyWorkOrderActivity.TYPE_ATTACHMENT_ADDED, activity_types)
+        self.assertEqual(complete_response.data["work_order"]["completion_attachment_count"], 1)
+        self.assertTrue(complete_response.data["work_order"]["activities"])
+        self.assertEqual(MaintenanceWorkOrder.objects.count(), 0)
+
+    def test_property_work_order_completion_requires_notes_and_blocks_invalid_transition(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair sink.",
+            status=PropertyWorkOrder.STATUS_IN_PROGRESS,
+        )
+
+        missing_notes = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_COMPLETED},
+            content_type="application/json",
+        )
+        cancelled = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_CANCELLED},
+            content_type="application/json",
+        )
+        invalid = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"status": PropertyWorkOrder.STATUS_IN_PROGRESS},
+            content_type="application/json",
+        )
+
+        self.assertEqual(missing_notes.status_code, 400)
+        self.assertIn("Completion notes", str(missing_notes.data))
+        self.assertEqual(cancelled.status_code, 200, cancelled.data)
+        self.assertEqual(invalid.status_code, 400)
+        row.refresh_from_db()
+        self.assertEqual(row.status, PropertyWorkOrder.STATUS_CANCELLED)
+        self.assertEqual(PropertyWorkOrderAttachment.objects.count(), 0)
 
     def test_tenant_maintenance_request_can_be_submitted_via_public_token(self):
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY

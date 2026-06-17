@@ -107,6 +107,8 @@ try:
         PropertyManagementStaffMembership,
         PropertyOwnerContact,
         PropertyOwnership,
+        PropertyWorkOrderActivity,
+        PropertyWorkOrderAttachment,
         PropertyWorkOrder,
         PropertyPhoto,
         PropertyProfile,
@@ -119,7 +121,7 @@ try:
     )
 except Exception:  # pragma: no cover
     CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyHomeSystem = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
-    PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyWorkOrder = PropertyUnit = None  # type: ignore
+    PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyWorkOrder = PropertyWorkOrderActivity = PropertyWorkOrderAttachment = PropertyUnit = None  # type: ignore
     Tenant = TenantMaintenanceRequest = TenantMaintenanceRequestAttachment = Tenancy = None  # type: ignore
 
 try:
@@ -545,6 +547,24 @@ if PropertyWorkOrder is not None:
         search_fields = ("work_order_number", "title", "description", "property_profile__display_name", "tenant__first_name", "tenant__last_name")
         list_filter = ("status", "priority", "category", "created_at")
         readonly_fields = ("work_order_number", "created_at", "updated_at")
+
+
+if PropertyWorkOrderActivity is not None:
+    @admin.register(PropertyWorkOrderActivity)
+    class PropertyWorkOrderActivityAdmin(admin.ModelAdmin):
+        list_display = ("id", "work_order", "activity_type", "actor", "created_at")
+        search_fields = ("work_order__work_order_number", "work_order__title", "message", "actor")
+        list_filter = ("activity_type", "created_at")
+        readonly_fields = ("created_at",)
+
+
+if PropertyWorkOrderAttachment is not None:
+    @admin.register(PropertyWorkOrderAttachment)
+    class PropertyWorkOrderAttachmentAdmin(admin.ModelAdmin):
+        list_display = ("id", "work_order", "original_filename", "attachment_type", "content_type", "size_bytes", "created_at")
+        search_fields = ("work_order__work_order_number", "work_order__title", "original_filename", "uploaded_by")
+        list_filter = ("attachment_type", "content_type", "created_at")
+        readonly_fields = ("created_at",)
 
 
 if CustomerRequest is not None:

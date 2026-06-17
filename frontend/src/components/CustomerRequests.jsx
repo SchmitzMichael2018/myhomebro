@@ -336,23 +336,26 @@ function PropertyWorkOrdersSection({
 }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(DEFAULT_WORK_ORDER_FORM);
+  const [completionFiles, setCompletionFiles] = useState([]);
   const [error, setError] = useState("");
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const activePropertyId = editing?.property_profile_id || form.property_id || propertyProfile?.id || propertyOptions[0]?.id || "";
   const activeProperty = propertyOptions.find((property) => String(property.id) === String(activePropertyId)) || propertyProfile || {};
   const units = activeProperty?.units || propertyProfile?.units || [];
   const tenants = activeProperty?.tenants || propertyProfile?.tenants || [];
-  const activeStaff = teamMembers.filter((member) => member.status !== "disabled");
+  const activeStaff = teamMembers.filter((member) => member.status === "active");
 
   const openCreate = () => {
     setEditing({ mode: "create" });
     setForm({ ...DEFAULT_WORK_ORDER_FORM, property_id: activePropertyId || "" });
+    setCompletionFiles([]);
     setError("");
   };
 
-  const openEdit = (row) => {
+  const openEdit = (row, overrides = {}) => {
     setEditing(row);
-    setForm({ ...workOrderFormFromRow(row), property_id: row.property_profile_id || activePropertyId || "" });
+    setForm({ ...workOrderFormFromRow(row), ...overrides, property_id: row.property_profile_id || activePropertyId || "" });
+    setCompletionFiles([]);
     setError("");
   };
 
@@ -360,6 +363,7 @@ function PropertyWorkOrdersSection({
     if (saving) return;
     setEditing(null);
     setForm(DEFAULT_WORK_ORDER_FORM);
+    setCompletionFiles([]);
     setError("");
   };
 
@@ -371,7 +375,11 @@ function PropertyWorkOrdersSection({
   const submit = async (event) => {
     event.preventDefault();
     if (!form.title.trim() || !form.description.trim()) return;
-    const payload = {
+    if (form.status === "completed" && !form.completion_notes.trim()) {
+      setError("Completion notes are required before marking a work order completed.");
+      return;
+    }
+    const payloadObject = {
       title: form.title,
       description: form.description,
       category: form.category,
@@ -384,6 +392,15 @@ function PropertyWorkOrdersSection({
       internal_notes: form.internal_notes,
       completion_notes: form.completion_notes,
     };
+    let payload = payloadObject;
+    if (completionFiles.length) {
+      payload = new FormData();
+      Object.entries(payloadObject).forEach(([key, value]) => {
+        payload.append(key, value ?? "");
+      });
+      payload.append("attachment_type", "completion_photo");
+      completionFiles.forEach((file) => payload.append("completion_attachments", file));
+    }
     try {
       if (editing?.mode === "create") {
         await onCreate?.(form.property_id || activePropertyId, payload);
@@ -393,6 +410,15 @@ function PropertyWorkOrdersSection({
       close();
     } catch (err) {
       setError(err?.response?.data?.detail || "Could not save that work order.");
+    }
+  };
+
+  const quickStatus = async (row, status) => {
+    if (!row?.id) return;
+    try {
+      await onUpdate?.(row.property_profile_id || activePropertyId, row.id, { status });
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Could not update that work order.");
     }
   };
 
@@ -452,9 +478,83 @@ function PropertyWorkOrdersSection({
                       ))}
                     </div>
                   ) : null}
+                  {(row.completion_attachments || []).length ? (
+                    <div data-testid={`property-work-order-completion-attachments-${row.id}`} className="mt-3">
+                      <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Completion Evidence</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {row.completion_attachments.map((attachment) => (
+                          <a
+                            key={attachment.id || attachment.filename}
+                            href={attachment.url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-2.5 py-2 text-xs font-semibold text-emerald-100 hover:border-emerald-200/60"
+                          >
+                            {attachment.filename || "Attachment"}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {(row.timeline || row.activities || []).length ? (
+                    <div data-testid={`property-work-order-timeline-${row.id}`} className="mt-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                      <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Activity Timeline</div>
+                      <div className="mt-2 space-y-1">
+                        {(row.timeline || row.activities || []).map((activity) => (
+                          <div key={activity.id || `${activity.activity_type}-${activity.created_at}`} className="text-xs leading-5 text-slate-300">
+                            <strong className="text-slate-100">{activity.activity_type_label || activity.activity_type}</strong>
+                            {activity.message ? ` - ${activity.message}` : ""}
+                            {activity.created_at ? <span className="text-slate-500"> ({formatDateTime(activity.created_at)})</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-col items-start gap-2 lg:items-end">
                   <div className="text-xs text-slate-500">{row.work_order_number || `#${row.id}`}</div>
+                  <div className="flex flex-wrap gap-2 lg:justify-end" data-testid={`property-work-order-actions-${row.id}`}>
+                    {row.status !== "in_progress" && row.status !== "completed" && row.status !== "closed" && row.status !== "cancelled" ? (
+                      <button
+                        type="button"
+                        data-testid={`property-work-order-start-${row.id}`}
+                        onClick={() => quickStatus(row, "in_progress")}
+                        className="rounded-lg border border-sky-300/40 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/10"
+                      >
+                        Start Work
+                      </button>
+                    ) : null}
+                    {row.status !== "waiting" && row.status !== "completed" && row.status !== "closed" && row.status !== "cancelled" ? (
+                      <button
+                        type="button"
+                        data-testid={`property-work-order-waiting-${row.id}`}
+                        onClick={() => quickStatus(row, "waiting")}
+                        className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800"
+                      >
+                        Mark Waiting
+                      </button>
+                    ) : null}
+                    {row.status === "in_progress" ? (
+                      <button
+                        type="button"
+                        data-testid={`property-work-order-complete-${row.id}`}
+                        onClick={() => openEdit(row, { status: "completed" })}
+                        className="rounded-lg border border-emerald-300/45 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20"
+                      >
+                        Complete Work
+                      </button>
+                    ) : null}
+                    {row.status === "completed" ? (
+                      <button
+                        type="button"
+                        data-testid={`property-work-order-close-${row.id}`}
+                        onClick={() => quickStatus(row, "closed")}
+                        className="rounded-lg border border-amber-300/45 bg-amber-300/10 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-300/20"
+                      >
+                        Close Work
+                      </button>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     data-testid={`property-work-order-edit-${row.id}`}
@@ -557,9 +657,30 @@ function PropertyWorkOrdersSection({
                 Completion Notes
                 <textarea data-testid="property-work-order-completion-notes" rows={3} value={form.completion_notes} onChange={(event) => update("completion_notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
               </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Completion Photos or Files
+                <input
+                  data-testid="property-work-order-completion-files"
+                  type="file"
+                  multiple
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={(event) => setCompletionFiles(Array.from(event.target.files || []))}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-300 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-slate-950"
+                />
+              </label>
+              {completionFiles.length ? (
+                <div data-testid="property-work-order-selected-files" className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-xs text-slate-300 sm:col-span-2">
+                  <div className="font-semibold text-white">Selected files</div>
+                  <ul className="mt-2 space-y-1">
+                    {completionFiles.map((file) => (
+                      <li key={`${file.name}-${file.size}`}>{file.name}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
-            {error ? <div className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</div> : null}
+            {error ? <div data-testid="property-work-order-error" className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</div> : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
               <button type="submit" data-testid="property-work-order-save" disabled={saving || !form.title.trim() || !form.description.trim()} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">

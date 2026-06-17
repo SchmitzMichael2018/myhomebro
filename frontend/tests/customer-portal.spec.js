@@ -2299,6 +2299,21 @@ test("customer portal is reachable from the landing page and loads secure record
             }
           : member
       );
+      if (!teamMembers.some((member) => member.id === 502)) {
+        teamMembers = [
+          ...teamMembers,
+          {
+            id: 502,
+            name: "Sam Supervisor",
+            email: "sam@austinrentals.example",
+            phone: "512-555-9090",
+            role: "maintenance_coordinator",
+            role_label: "Maintenance Coordinator",
+            status: "active",
+            status_label: "Active",
+          },
+        ];
+      }
       currentPortalPayload = {
         ...currentPortalPayload,
         account: {
@@ -2643,7 +2658,29 @@ test("customer portal is reachable from the landing page and loads secure record
         internal_notes: sourceRequest?.manager_notes || "",
         completion_notes: "",
         source_attachments: sourceRequest?.attachments || [],
+        completion_attachments: [],
+        activities: [
+          {
+            id: 1,
+            activity_type: "created",
+            activity_type_label: "Created",
+            message: "Work order created from tenant maintenance request.",
+            actor: "customer@example.com",
+            created_at: "2026-06-16T16:30:00Z",
+          },
+        ],
+        timeline: [
+          {
+            id: 1,
+            activity_type: "created",
+            activity_type_label: "Created",
+            message: "Work order created from tenant maintenance request.",
+            actor: "customer@example.com",
+            created_at: "2026-06-16T16:30:00Z",
+          },
+        ],
         attachment_count: sourceRequest?.attachment_count || 0,
+        completion_attachment_count: 0,
         created_at: "2026-06-16T16:30:00Z",
       };
       propertyWorkOrders = [convertedWorkOrder, ...propertyWorkOrders];
@@ -2699,15 +2736,30 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/") && method === "PATCH") {
-      submittedWorkOrderEditPayload = JSON.parse(route.request().postData() || "{}");
+      const rawBody = route.request().postData() || "";
+      const isMultipart = (route.request().headers()["content-type"] || "").includes("multipart/form-data");
+      submittedWorkOrderEditPayload = isMultipart
+        ? {
+            status: rawBody.includes("completed") ? "completed" : rawBody.includes("in_progress") ? "in_progress" : rawBody.includes("waiting") ? "waiting" : "",
+            priority: rawBody.includes("normal") ? "normal" : "",
+            completion_notes: rawBody.includes("Leak repaired and tested.") ? "Leak repaired and tested." : "",
+            hasAttachment: rawBody.includes("completion.jpg"),
+          }
+        : JSON.parse(rawBody || "{}");
       propertyWorkOrders = propertyWorkOrders.map((row) =>
         row.id === 901
           ? {
               ...row,
               ...submittedWorkOrderEditPayload,
               status_label:
-                submittedWorkOrderEditPayload.status === "in_progress"
+                submittedWorkOrderEditPayload.status === "completed"
+                  ? "Completed"
+                  : submittedWorkOrderEditPayload.status === "in_progress"
                   ? "In Progress"
+                  : submittedWorkOrderEditPayload.status === "waiting"
+                    ? "Waiting"
+                    : submittedWorkOrderEditPayload.status === "closed"
+                      ? "Closed"
                   : submittedWorkOrderEditPayload.status === "scheduled"
                     ? "Scheduled"
                     : row.status_label,
@@ -2717,10 +2769,39 @@ test("customer portal is reachable from the landing page and loads secure record
                   : submittedWorkOrderEditPayload.priority === "low"
                     ? "Low"
                     : row.priority_label,
-              assigned_staff_member_name: submittedWorkOrderEditPayload.assigned_staff_member_id ? "Morgan Manager" : row.assigned_staff_member_name,
+              assigned_staff_member_name: submittedWorkOrderEditPayload.assigned_staff_member_id ? "Sam Supervisor" : row.assigned_staff_member_name,
+              completed_at: submittedWorkOrderEditPayload.status === "completed" ? "2026-06-16T17:30:00Z" : row.completed_at,
+              closed_at: submittedWorkOrderEditPayload.status === "closed" ? "2026-06-16T18:00:00Z" : row.closed_at,
+              completion_attachments: submittedWorkOrderEditPayload.hasAttachment
+                ? [
+                    {
+                      id: 991,
+                      filename: "completion.jpg",
+                      content_type: "image/jpeg",
+                      size_bytes: 123,
+                      url: "/files/completion.jpg",
+                      is_image: true,
+                      attachment_type: "completion_photo",
+                      attachment_type_label: "Completion Photo",
+                    },
+                  ]
+                : row.completion_attachments || [],
+              completion_attachment_count: submittedWorkOrderEditPayload.hasAttachment ? 1 : row.completion_attachment_count || 0,
+              activities: [
+                ...(row.activities || []),
+                {
+                  id: (row.activities || []).length + 2,
+                  activity_type: submittedWorkOrderEditPayload.status === "completed" ? "completed" : "status_changed",
+                  activity_type_label: submittedWorkOrderEditPayload.status === "completed" ? "Completed" : "Status Changed",
+                  message: submittedWorkOrderEditPayload.status === "completed" ? "Status changed to Completed." : "Work order updated.",
+                  actor: "customer@example.com",
+                  created_at: "2026-06-16T17:30:00Z",
+                },
+              ],
             }
           : row
       );
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
       currentPortalPayload = {
         ...currentPortalPayload,
         property_work_orders: propertyWorkOrders,
@@ -2765,14 +2846,41 @@ test("customer portal is reachable from the landing page and loads secure record
         priority: submittedWorkOrderPayload.priority,
         priority_label: "Normal",
         status: submittedWorkOrderPayload.status,
-        status_label: "Open",
+        status_label:
+          submittedWorkOrderPayload.status === "scheduled"
+            ? "Scheduled"
+            : submittedWorkOrderPayload.status === "in_progress"
+              ? "In Progress"
+              : "Open",
         assigned_staff_member_id: submittedWorkOrderPayload.assigned_staff_member_id,
-        assigned_staff_member_name: submittedWorkOrderPayload.assigned_staff_member_id ? "Morgan Manager" : "",
+        assigned_staff_member_name: submittedWorkOrderPayload.assigned_staff_member_id ? "Sam Supervisor" : "",
         scheduled_for: submittedWorkOrderPayload.scheduled_for,
         internal_notes: submittedWorkOrderPayload.internal_notes,
         completion_notes: submittedWorkOrderPayload.completion_notes,
         source_attachments: [],
+        completion_attachments: [],
         attachment_count: 0,
+        completion_attachment_count: 0,
+        activities: [
+          {
+            id: 9902,
+            activity_type: "created",
+            activity_type_label: "Created",
+            message: "Work order created.",
+            actor: "customer@example.com",
+            created_at: "2026-06-16T17:00:00Z",
+          },
+        ],
+        timeline: [
+          {
+            id: 9902,
+            activity_type: "created",
+            activity_type_label: "Created",
+            message: "Work order created.",
+            actor: "customer@example.com",
+            created_at: "2026-06-16T17:00:00Z",
+          },
+        ],
         created_at: "2026-06-16T17:00:00Z",
       };
       propertyWorkOrders = [manualWorkOrder, ...propertyWorkOrders];
@@ -3702,6 +3810,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-901")).toContainText("PWO-000901");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Open");
   await expect(page.getByTestId("property-work-order-attachments-901")).toContainText("sink-leak.jpg");
+  await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Created");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Work Order PWO-000901");
   await expect(page.getByTestId("tenant-maintenance-create-work-order-801")).toHaveCount(0);
 
@@ -3719,6 +3828,34 @@ test("customer portal is reachable from the landing page and loads secure record
   });
   await expect(page.getByTestId("property-work-order-901")).toContainText("In Progress");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Normal");
+  await expect(page.getByTestId("property-work-order-actions-901")).toContainText("Complete Work");
+
+  await page.getByTestId("property-work-order-complete-901").click();
+  await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-status")).toHaveValue("completed");
+  await page.getByTestId("property-work-order-completion-notes").fill("");
+  await page.getByTestId("property-work-order-save").click();
+  await expect(page.getByTestId("property-work-order-error")).toContainText("Completion notes are required");
+  await page.getByTestId("property-work-order-completion-notes").fill("Leak repaired and tested.");
+  await page.getByTestId("property-work-order-completion-files").setInputFiles({
+    name: "completion.jpg",
+    mimeType: "image/jpeg",
+    buffer: Buffer.from("fake completion image"),
+  });
+  await expect(page.getByTestId("property-work-order-selected-files")).toContainText("completion.jpg");
+  await page.getByTestId("property-work-order-save").click();
+  await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
+  expect(submittedWorkOrderEditPayload).toMatchObject({
+    status: "completed",
+    priority: "normal",
+    completion_notes: "Leak repaired and tested.",
+    hasAttachment: true,
+  });
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Completed");
+  await expect(page.getByTestId("property-work-order-completion-attachments-901")).toContainText("completion.jpg");
+  await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Completed");
+  await page.getByTestId("property-work-order-close-901").click();
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Closed");
 
   await page.getByTestId("property-work-order-add").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
@@ -3729,9 +3866,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-description").fill("Schedule HVAC service for the rental unit.");
   await page.getByTestId("property-work-order-category").selectOption("hvac");
   await page.getByTestId("property-work-order-priority").selectOption("normal");
-  await page.getByTestId("property-work-order-status").selectOption("open");
+  await page.getByTestId("property-work-order-status").selectOption("scheduled");
   await page.getByTestId("property-work-order-unit").selectOption("601");
   await page.getByTestId("property-work-order-tenant").selectOption("801");
+  await page.getByTestId("property-work-order-staff").selectOption("502");
+  await page.getByTestId("property-work-order-scheduled").fill("2026-06-20T10:30");
   await page.getByTestId("property-work-order-internal-notes").fill("Use tenant text thread for scheduling.");
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
@@ -3740,13 +3879,17 @@ test("customer portal is reachable from the landing page and loads secure record
     description: "Schedule HVAC service for the rental unit.",
     category: "hvac",
     priority: "normal",
-    status: "open",
+    status: "scheduled",
     unit_id: 601,
     tenant_id: 801,
+    assigned_staff_member_id: 502,
+    scheduled_for: "2026-06-20T10:30",
     internal_notes: "Use tenant text thread for scheduling.",
   });
   await expect(page.getByTestId("property-work-order-902")).toContainText("Seasonal HVAC follow-up");
   await expect(page.getByTestId("property-work-order-902")).toContainText("Unit 101");
+  await expect(page.getByTestId("property-work-order-902")).toContainText("Sam Supervisor");
+  await expect(page.getByTestId("property-work-order-902")).toContainText("Scheduled");
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
   await expect(page.getByTestId("customer-request-create-panel")).toContainText("Tell us what you need help with next");

@@ -632,8 +632,118 @@ class PropertyWorkOrder(models.Model):
             type(self).objects.filter(pk=self.pk, work_order_number="").update(work_order_number=number)
             self.work_order_number = number
 
+    def assign(self, staff_member):
+        self.assigned_staff_member = staff_member
+
+    def schedule(self, scheduled_for):
+        self.scheduled_for = scheduled_for
+        self.status = self.STATUS_SCHEDULED
+
+    def start_work(self, started_at=None):
+        self.started_at = started_at or timezone.now()
+        self.status = self.STATUS_IN_PROGRESS
+
+    def complete_work(self, completion_notes="", completed_at=None):
+        self.completion_notes = completion_notes
+        self.completed_at = completed_at or timezone.now()
+        self.status = self.STATUS_COMPLETED
+
+    def close_work(self, closed_at=None):
+        self.closed_at = closed_at or timezone.now()
+        self.status = self.STATUS_CLOSED
+
     def __str__(self):
         return f"{self.work_order_number or 'PWO'} - {self.title}"
+
+
+class PropertyWorkOrderActivity(models.Model):
+    TYPE_CREATED = "created"
+    TYPE_ASSIGNED = "assigned"
+    TYPE_SCHEDULED = "scheduled"
+    TYPE_STARTED = "started"
+    TYPE_COMPLETED = "completed"
+    TYPE_CLOSED = "closed"
+    TYPE_STATUS_CHANGED = "status_changed"
+    TYPE_NOTE_ADDED = "note_added"
+    TYPE_ATTACHMENT_ADDED = "attachment_added"
+    TYPE_CHOICES = [
+        (TYPE_CREATED, "Created"),
+        (TYPE_ASSIGNED, "Assigned"),
+        (TYPE_SCHEDULED, "Scheduled"),
+        (TYPE_STARTED, "Started"),
+        (TYPE_COMPLETED, "Completed"),
+        (TYPE_CLOSED, "Closed"),
+        (TYPE_STATUS_CHANGED, "Status Changed"),
+        (TYPE_NOTE_ADDED, "Note Added"),
+        (TYPE_ATTACHMENT_ADDED, "Attachment Added"),
+    ]
+
+    work_order = models.ForeignKey(
+        PropertyWorkOrder,
+        on_delete=models.CASCADE,
+        related_name="activities",
+    )
+    activity_type = models.CharField(max_length=32, choices=TYPE_CHOICES, db_index=True)
+    message = models.TextField(blank=True, default="")
+    actor = models.EmailField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["work_order", "created_at"]),
+            models.Index(fields=["activity_type", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.work_order_id}: {self.get_activity_type_display()}"
+
+
+def property_work_order_attachment_upload_path(instance, filename):
+    base, _dot, ext = filename.rpartition(".")
+    ext = (ext or "").lower()
+    safe = slugify(base or "attachment")
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
+    work_order_id = instance.work_order_id or "pending"
+    return (
+        f"property_work_orders/{work_order_id}/attachments/{ts}_{safe}.{ext}"
+        if ext
+        else f"property_work_orders/{work_order_id}/attachments/{ts}_{safe}"
+    )
+
+
+class PropertyWorkOrderAttachment(models.Model):
+    TYPE_GENERAL = "general"
+    TYPE_COMPLETION_PHOTO = "completion_photo"
+    TYPE_COMPLETION_DOCUMENT = "completion_document"
+    TYPE_CHOICES = [
+        (TYPE_GENERAL, "General"),
+        (TYPE_COMPLETION_PHOTO, "Completion Photo"),
+        (TYPE_COMPLETION_DOCUMENT, "Completion Document"),
+    ]
+
+    work_order = models.ForeignKey(
+        PropertyWorkOrder,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    file = models.FileField(upload_to=property_work_order_attachment_upload_path)
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    content_type = models.CharField(max_length=120, blank=True, default="")
+    size_bytes = models.PositiveIntegerField(default=0)
+    uploaded_by = models.EmailField(blank=True, default="")
+    attachment_type = models.CharField(max_length=32, choices=TYPE_CHOICES, default=TYPE_GENERAL)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["work_order", "created_at"]),
+            models.Index(fields=["attachment_type", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.work_order_id}: {self.original_filename or 'Attachment'}"
 
 
 def property_document_upload_path(instance, filename):
