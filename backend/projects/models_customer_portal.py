@@ -513,6 +513,40 @@ class TenantMaintenanceRequestAttachment(models.Model):
         return f"{self.tenant_request_id}: {self.original_filename or 'Attachment'}"
 
 
+class PropertyVendor(models.Model):
+    STATUS_ACTIVE = "active"
+    STATUS_INACTIVE = "inactive"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_INACTIVE, "Inactive"),
+    ]
+
+    property_management_company = models.ForeignKey(
+        PropertyManagementCompany,
+        on_delete=models.CASCADE,
+        related_name="vendors",
+    )
+    name = models.CharField(max_length=255)
+    trade_category = models.CharField(max_length=120, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    website = models.CharField(max_length=255, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        indexes = [
+            models.Index(fields=["property_management_company", "status"]),
+            models.Index(fields=["trade_category", "status"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class PropertyWorkOrder(models.Model):
     CATEGORY_PLUMBING = "plumbing"
     CATEGORY_ELECTRICAL = "electrical"
@@ -553,6 +587,15 @@ class PropertyWorkOrder(models.Model):
         (STATUS_CANCELLED, "Cancelled"),
     ]
     ACTIVE_STATUSES = [STATUS_OPEN, STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_WAITING, STATUS_COMPLETED]
+
+    ASSIGNMENT_INTERNAL_STAFF = "internal_staff"
+    ASSIGNMENT_VENDOR = "vendor"
+    ASSIGNMENT_MARKETPLACE_CONTRACTOR = "marketplace_contractor"
+    ASSIGNMENT_TYPE_CHOICES = [
+        (ASSIGNMENT_INTERNAL_STAFF, "Internal Staff"),
+        (ASSIGNMENT_VENDOR, "Vendor"),
+        (ASSIGNMENT_MARKETPLACE_CONTRACTOR, "Marketplace Contractor"),
+    ]
 
     property_management_company = models.ForeignKey(
         PropertyManagementCompany,
@@ -598,6 +641,26 @@ class PropertyWorkOrder(models.Model):
         blank=True,
         related_name="assigned_property_work_orders",
     )
+    assigned_vendor = models.ForeignKey(
+        PropertyVendor,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_property_work_orders",
+    )
+    assigned_contractor = models.ForeignKey(
+        "Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_property_work_orders",
+    )
+    assignment_type = models.CharField(
+        max_length=32,
+        choices=ASSIGNMENT_TYPE_CHOICES,
+        default=ASSIGNMENT_INTERNAL_STAFF,
+        db_index=True,
+    )
     scheduled_for = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -616,6 +679,9 @@ class PropertyWorkOrder(models.Model):
             models.Index(fields=["unit", "status"]),
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["source_tenant_request", "status"]),
+            models.Index(fields=["assignment_type", "status"]),
+            models.Index(fields=["assigned_vendor", "status"]),
+            models.Index(fields=["assigned_contractor", "status"]),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -634,6 +700,21 @@ class PropertyWorkOrder(models.Model):
 
     def assign(self, staff_member):
         self.assigned_staff_member = staff_member
+        self.assigned_vendor = None
+        self.assigned_contractor = None
+        self.assignment_type = self.ASSIGNMENT_INTERNAL_STAFF
+
+    def assign_vendor(self, vendor):
+        self.assigned_vendor = vendor
+        self.assigned_staff_member = None
+        self.assigned_contractor = None
+        self.assignment_type = self.ASSIGNMENT_VENDOR
+
+    def assign_marketplace(self, contractor=None):
+        self.assigned_contractor = contractor
+        self.assigned_staff_member = None
+        self.assigned_vendor = None
+        self.assignment_type = self.ASSIGNMENT_MARKETPLACE_CONTRACTOR
 
     def schedule(self, scheduled_for):
         self.scheduled_for = scheduled_for

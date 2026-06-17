@@ -107,6 +107,7 @@ try:
         PropertyManagementStaffMembership,
         PropertyOwnerContact,
         PropertyOwnership,
+        PropertyVendor,
         PropertyWorkOrderActivity,
         PropertyWorkOrderAttachment,
         PropertyWorkOrder,
@@ -121,7 +122,7 @@ try:
     )
 except Exception:  # pragma: no cover
     CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyHomeSystem = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
-    PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyWorkOrder = PropertyWorkOrderActivity = PropertyWorkOrderAttachment = PropertyUnit = None  # type: ignore
+    PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyVendor = PropertyWorkOrder = PropertyWorkOrderActivity = PropertyWorkOrderAttachment = PropertyUnit = None  # type: ignore
     Tenant = TenantMaintenanceRequest = TenantMaintenanceRequestAttachment = Tenancy = None  # type: ignore
 
 try:
@@ -477,6 +478,15 @@ if PropertyManagementStaffMembership is not None:
         readonly_fields = ("created_at", "updated_at")
 
 
+if PropertyVendor is not None:
+    @admin.register(PropertyVendor)
+    class PropertyVendorAdmin(admin.ModelAdmin):
+        list_display = ("id", "property_management_company", "name", "trade_category", "email", "phone", "status", "updated_at")
+        search_fields = ("property_management_company__name", "name", "trade_category", "email", "phone", "website")
+        list_filter = ("status", "trade_category", "property_management_company")
+        readonly_fields = ("created_at", "updated_at")
+
+
 if PropertyOwnerContact is not None:
     @admin.register(PropertyOwnerContact)
     class PropertyOwnerContactAdmin(admin.ModelAdmin):
@@ -543,9 +553,9 @@ if TenantMaintenanceRequestAttachment is not None:
 if PropertyWorkOrder is not None:
     @admin.register(PropertyWorkOrder)
     class PropertyWorkOrderAdmin(admin.ModelAdmin):
-        list_display = ("id", "work_order_number", "title", "property_management_company", "property_profile", "unit", "priority", "status", "scheduled_for", "created_at")
-        search_fields = ("work_order_number", "title", "description", "property_profile__display_name", "tenant__first_name", "tenant__last_name")
-        list_filter = ("status", "priority", "category", "created_at")
+        list_display = ("id", "work_order_number", "title", "property_management_company", "property_profile", "unit", "assignment_type", "assigned_staff_member", "assigned_vendor", "priority", "status", "scheduled_for", "created_at")
+        search_fields = ("work_order_number", "title", "description", "property_profile__display_name", "tenant__first_name", "tenant__last_name", "assigned_vendor__name")
+        list_filter = ("status", "priority", "category", "assignment_type", "created_at")
         readonly_fields = ("work_order_number", "created_at", "updated_at")
 
 

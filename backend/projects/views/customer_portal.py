@@ -57,6 +57,7 @@ from projects.models_customer_portal import (
     PropertyHomeSystemRecommendationPreference,
     PropertyManagementCompany,
     PropertyManagementStaffMembership,
+    PropertyVendor,
     PropertyWorkOrderActivity,
     PropertyWorkOrderAttachment,
     PropertyWorkOrder,
@@ -710,6 +711,8 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
     unit = getattr(row, "unit", None)
     tenant = getattr(row, "tenant", None)
     assigned = getattr(row, "assigned_staff_member", None)
+    assigned_vendor = getattr(row, "assigned_vendor", None)
+    assigned_contractor = getattr(row, "assigned_contractor", None)
     source_request = getattr(row, "source_tenant_request", None)
     source_attachments = []
     if source_request is not None:
@@ -737,9 +740,18 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
         "priority_label": row.get_priority_display(),
         "status": _safe_text(row.status),
         "status_label": row.get_status_display(),
+        "assignment_type": _safe_text(row.assignment_type),
+        "assignment_type_label": row.get_assignment_type_display(),
         "assigned_staff_member_id": row.assigned_staff_member_id,
         "assigned_staff_member_name": _safe_text(getattr(assigned, "name", "")) if assigned else "",
         "assigned_staff_member_email": _safe_text(getattr(assigned, "email", "")) if assigned else "",
+        "assigned_vendor_id": row.assigned_vendor_id,
+        "assigned_vendor_name": _safe_text(getattr(assigned_vendor, "name", "")) if assigned_vendor else "",
+        "assigned_vendor_trade_category": _safe_text(getattr(assigned_vendor, "trade_category", "")) if assigned_vendor else "",
+        "assigned_vendor_email": _safe_text(getattr(assigned_vendor, "email", "")) if assigned_vendor else "",
+        "assigned_vendor_phone": _safe_text(getattr(assigned_vendor, "phone", "")) if assigned_vendor else "",
+        "assigned_contractor_id": row.assigned_contractor_id,
+        "assigned_contractor_name": _safe_text(getattr(assigned_contractor, "business_name", "")) or _safe_text(getattr(assigned_contractor, "company_name", "")) if assigned_contractor else "",
         "scheduled_for": _safe_dt(row.scheduled_for),
         "started_at": _safe_dt(row.started_at),
         "completed_at": _safe_dt(row.completed_at),
@@ -846,6 +858,8 @@ def _property_work_orders_for_property(property_profile: PropertyProfile | None)
             "unit",
             "tenant",
             "assigned_staff_member",
+            "assigned_vendor",
+            "assigned_contractor",
             "source_tenant_request",
         )
         .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
@@ -871,6 +885,8 @@ def _property_work_orders_for_email(email: str) -> list[dict]:
             "unit",
             "tenant",
             "assigned_staff_member",
+            "assigned_vendor",
+            "assigned_contractor",
             "source_tenant_request",
         )
         .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
@@ -1100,6 +1116,29 @@ def _property_management_team_payload(company: PropertyManagementCompany | None)
         return []
     rows = PropertyManagementStaffMembership.objects.filter(company=company).order_by("name", "email", "id")
     return [_property_management_staff_payload(member) for member in rows]
+
+
+def _property_vendor_payload(vendor: PropertyVendor) -> dict:
+    return {
+        "id": vendor.id,
+        "name": _safe_text(vendor.name),
+        "trade_category": _safe_text(vendor.trade_category),
+        "email": _safe_text(vendor.email),
+        "phone": _safe_text(vendor.phone),
+        "website": _safe_text(vendor.website),
+        "notes": _safe_text(vendor.notes),
+        "status": _safe_text(vendor.status),
+        "status_label": vendor.get_status_display(),
+        "created_at": _safe_dt(vendor.created_at),
+        "updated_at": _safe_dt(vendor.updated_at),
+    }
+
+
+def _property_vendor_rows(company: PropertyManagementCompany | None) -> list[dict]:
+    if company is None:
+        return []
+    rows = PropertyVendor.objects.filter(property_management_company=company).order_by("name", "id")
+    return [_property_vendor_payload(vendor) for vendor in rows]
 
 
 def _property_management_company_for_email_or_response(email: str):
@@ -3501,6 +3540,7 @@ def _customer_account_payload(email: str) -> dict:
         "is_property_management_company": is_property_management_company,
         "company": company_payload(company),
         "team_members": _property_management_team_payload(company),
+        "vendors": _property_vendor_rows(company),
         "managed_property_count": managed_properties_for_company(company).count() if company else 0,
         "company_name": profile["company_name"],
         "company_phone": profile["company_phone"],
@@ -5413,7 +5453,13 @@ class CustomerPortalPropertyWorkOrderSerializer(serializers.Serializer):
     )
     unit_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     tenant_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    assignment_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyWorkOrder.ASSIGNMENT_TYPE_CHOICES],
+        required=False,
+    )
     assigned_staff_member_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    assigned_vendor_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    assigned_contractor_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     scheduled_for = serializers.CharField(required=False, allow_blank=True)
     started_at = serializers.CharField(required=False, allow_blank=True)
     completed_at = serializers.CharField(required=False, allow_blank=True)
@@ -5523,6 +5569,19 @@ class CustomerPortalTeamMemberSerializer(serializers.Serializer):
     )
     status = serializers.ChoiceField(
         choices=[choice[0] for choice in PropertyManagementStaffMembership.STATUS_CHOICES],
+        required=False,
+    )
+
+
+class CustomerPortalVendorSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    trade_category = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    website = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    status = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyVendor.STATUS_CHOICES],
         required=False,
     )
 
@@ -5662,6 +5721,85 @@ class CustomerPortalTeamMemberView(APIView):
         if member.status != PropertyManagementStaffMembership.STATUS_DISABLED:
             member.status = PropertyManagementStaffMembership.STATUS_DISABLED
             member.save(update_fields=["status", "updated_at"])
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalVendorView(APIView):
+    permission_classes = [AllowAny]
+
+    def _email_from_token(self, token: str):
+        try:
+            return _unsign_portal_token(token), None
+        except signing.SignatureExpired:
+            return None, Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return None, Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def _company_from_token(self, token: str):
+        email, error = self._email_from_token(token)
+        if error is not None:
+            return None, None, error
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return email, None, error
+        return email, company, None
+
+    def get(self, request, token: str):
+        _email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+        return Response({"vendors": _property_vendor_rows(company)}, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str):
+        email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+        serializer = CustomerPortalVendorSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        name = _safe_text(data.get("name"))
+        if not name:
+            return Response({"name": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        PropertyVendor.objects.create(
+            property_management_company=company,
+            name=name,
+            trade_category=_safe_text(data.get("trade_category")),
+            email=_safe_text(data.get("email")).lower(),
+            phone=_safe_text(data.get("phone")),
+            website=_safe_text(data.get("website")),
+            notes=_safe_text(data.get("notes")),
+            status=data.get("status") or PropertyVendor.STATUS_ACTIVE,
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+    def patch(self, request, token: str, vendor_id: int):
+        email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+        vendor = get_object_or_404(PropertyVendor, pk=vendor_id, property_management_company=company)
+        serializer = CustomerPortalVendorSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        update_fields = []
+        for field in ("name", "trade_category", "email", "phone", "website", "notes", "status"):
+            if field not in data:
+                continue
+            value = _safe_text(data[field]).lower() if field == "email" else (_safe_text(data[field]) if field != "status" else data[field])
+            if getattr(vendor, field) != value:
+                setattr(vendor, field, value)
+                update_fields.append(field)
+        if update_fields:
+            vendor.save(update_fields=[*update_fields, "updated_at"])
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+    def delete(self, request, token: str, vendor_id: int):
+        email, company, error = self._company_from_token(token)
+        if error is not None:
+            return error
+        vendor = get_object_or_404(PropertyVendor, pk=vendor_id, property_management_company=company)
+        if vendor.status != PropertyVendor.STATUS_INACTIVE:
+            vendor.status = PropertyVendor.STATUS_INACTIVE
+            vendor.save(update_fields=["status", "updated_at"])
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 
@@ -6137,6 +6275,62 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             pk=staff_id,
         )
 
+    def _vendor_for_company_or_none(self, company: PropertyManagementCompany, vendor_id):
+        if not vendor_id:
+            return None
+        return get_object_or_404(
+            PropertyVendor.objects.filter(property_management_company=company, status=PropertyVendor.STATUS_ACTIVE),
+            pk=vendor_id,
+        )
+
+    def _contractor_or_none(self, contractor_id):
+        if not contractor_id:
+            return None
+        return get_object_or_404(Contractor.objects.filter(pk=contractor_id), pk=contractor_id)
+
+    def _assignment_values(self, company: PropertyManagementCompany, data: dict, current: PropertyWorkOrder | None = None) -> dict:
+        assignment_type = data.get("assignment_type")
+        if not assignment_type:
+            if "assigned_vendor_id" in data and data.get("assigned_vendor_id"):
+                assignment_type = PropertyWorkOrder.ASSIGNMENT_VENDOR
+            elif "assigned_contractor_id" in data and data.get("assigned_contractor_id"):
+                assignment_type = PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR
+            elif "assigned_staff_member_id" in data:
+                assignment_type = PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF
+            else:
+                assignment_type = getattr(current, "assignment_type", PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF)
+
+        if assignment_type == PropertyWorkOrder.ASSIGNMENT_VENDOR:
+            return {
+                "assignment_type": assignment_type,
+                "assigned_staff_member": None,
+                "assigned_vendor": self._vendor_for_company_or_none(company, data.get("assigned_vendor_id") if "assigned_vendor_id" in data else getattr(current, "assigned_vendor_id", None)),
+                "assigned_contractor": None,
+            }
+        if assignment_type == PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR:
+            return {
+                "assignment_type": assignment_type,
+                "assigned_staff_member": None,
+                "assigned_vendor": None,
+                "assigned_contractor": self._contractor_or_none(data.get("assigned_contractor_id") if "assigned_contractor_id" in data else getattr(current, "assigned_contractor_id", None)),
+            }
+        return {
+            "assignment_type": PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF,
+            "assigned_staff_member": self._staff_for_company_or_none(company, data.get("assigned_staff_member_id") if "assigned_staff_member_id" in data else getattr(current, "assigned_staff_member_id", None)),
+            "assigned_vendor": None,
+            "assigned_contractor": None,
+        }
+
+    def _assignment_activity_message(self, row: PropertyWorkOrder) -> str:
+        if row.assignment_type == PropertyWorkOrder.ASSIGNMENT_VENDOR:
+            label = _safe_text(getattr(row.assigned_vendor, "name", "")) if row.assigned_vendor else "Unassigned vendor"
+            return f"Assigned to vendor {label}."
+        if row.assignment_type == PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR:
+            label = _safe_text(getattr(row.assigned_contractor, "business_name", "")) or _safe_text(getattr(row.assigned_contractor, "company_name", "")) if row.assigned_contractor else "Marketplace contractor"
+            return f"Assigned to {label}."
+        label = row.assigned_staff_member.name or row.assigned_staff_member.email if row.assigned_staff_member else "Unassigned staff"
+        return f"Assigned to {label}."
+
     def _duplicate_active_source_response(self):
         return Response(
             {"detail": "An active work order already exists for this maintenance request."},
@@ -6209,7 +6403,7 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             return Response({"description": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
         unit = self._unit_for_property_or_none(property_profile, data.get("unit_id"))
         tenant = self._tenant_for_property_or_none(company, property_profile, data.get("tenant_id"))
-        assigned = self._staff_for_company_or_none(company, data.get("assigned_staff_member_id"))
+        assignment_values = self._assignment_values(company, data)
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
@@ -6220,7 +6414,10 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             category=data.get("category") or PropertyWorkOrder.CATEGORY_GENERAL_REPAIR,
             priority=data.get("priority") or PropertyWorkOrder.PRIORITY_NORMAL,
             status=data.get("status") or PropertyWorkOrder.STATUS_OPEN,
-            assigned_staff_member=assigned,
+            assignment_type=assignment_values["assignment_type"],
+            assigned_staff_member=assignment_values["assigned_staff_member"],
+            assigned_vendor=assignment_values["assigned_vendor"],
+            assigned_contractor=assignment_values["assigned_contractor"],
             scheduled_for=data.get("scheduled_for"),
             started_at=data.get("started_at"),
             completed_at=data.get("completed_at"),
@@ -6230,8 +6427,8 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             created_by=email.lower().strip(),
         )
         _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_CREATED, "Work order created.", email)
-        if row.assigned_staff_member_id:
-            _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_ASSIGNED, f"Assigned to {row.assigned_staff_member.name or row.assigned_staff_member.email}.", email)
+        if row.assigned_staff_member_id or row.assigned_vendor_id or row.assignment_type == PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR:
+            _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_ASSIGNED, self._assignment_activity_message(row), email)
         if row.scheduled_for:
             _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_SCHEDULED, "Work order scheduled.", email)
         return Response(
@@ -6244,7 +6441,7 @@ class CustomerPortalPropertyWorkOrderView(APIView):
         if error is not None:
             return error
         row = get_object_or_404(
-            PropertyWorkOrder.objects.select_related("property_profile", "unit", "tenant", "assigned_staff_member", "source_tenant_request")
+            PropertyWorkOrder.objects.select_related("property_profile", "unit", "tenant", "assigned_staff_member", "assigned_vendor", "assigned_contractor", "source_tenant_request")
             .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
             .filter(property_profile=property_profile, property_management_company=company),
             pk=work_order_id,
@@ -6272,12 +6469,14 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             field_values["unit"] = self._unit_for_property_or_none(property_profile, data.get("unit_id"))
         if "tenant_id" in data:
             field_values["tenant"] = self._tenant_for_property_or_none(company, property_profile, data.get("tenant_id"))
-        if "assigned_staff_member_id" in data:
-            field_values["assigned_staff_member"] = self._staff_for_company_or_none(company, data.get("assigned_staff_member_id"))
+        assignment_keys = {"assignment_type", "assigned_staff_member_id", "assigned_vendor_id", "assigned_contractor_id"}
+        if assignment_keys.intersection(data.keys()):
+            field_values.update(self._assignment_values(company, data, current=row))
 
         update_fields = []
         activity_messages = []
         previous_status = row.status
+        previous_assignment = (row.assignment_type, row.assigned_staff_member_id, row.assigned_vendor_id, row.assigned_contractor_id)
         previous_staff_id = row.assigned_staff_member_id
         previous_scheduled_for = row.scheduled_for
         for field, value in field_values.items():
@@ -6303,9 +6502,9 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             elif row.status == PropertyWorkOrder.STATUS_CLOSED:
                 activity_type = PropertyWorkOrderActivity.TYPE_CLOSED
             activity_messages.append((activity_type, f"Status changed to {row.get_status_display()}."))
-        if "assigned_staff_member" in field_values and previous_staff_id != getattr(row.assigned_staff_member, "id", None):
-            label = row.assigned_staff_member.name or row.assigned_staff_member.email if row.assigned_staff_member else "Unassigned"
-            activity_messages.append((PropertyWorkOrderActivity.TYPE_ASSIGNED, f"Assigned to {label}."))
+        current_assignment = (row.assignment_type, row.assigned_staff_member_id, row.assigned_vendor_id, row.assigned_contractor_id)
+        if assignment_keys.intersection(data.keys()) and previous_assignment != current_assignment:
+            activity_messages.append((PropertyWorkOrderActivity.TYPE_ASSIGNED, self._assignment_activity_message(row)))
         if "scheduled_for" in field_values and previous_scheduled_for != row.scheduled_for:
             activity_messages.append((PropertyWorkOrderActivity.TYPE_SCHEDULED, "Work order schedule updated."))
         if "internal_notes" in field_values or "completion_notes" in field_values:

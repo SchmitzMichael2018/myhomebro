@@ -1991,6 +1991,7 @@ test("customer portal is reachable from the landing page and loads secure record
   let convertedWorkOrderCalled = false;
   let currentPortalPayload = portalPayload;
   let teamMembers = [];
+  let vendors = [];
   let propertyUnits = [];
   let propertyTenants = [];
   let tenantMaintenanceRequests = [];
@@ -2219,6 +2220,7 @@ test("customer portal is reachable from the landing page and loads secure record
           company_license_number: savedProfilePayload.company_license_number,
           company_notes: savedProfilePayload.company_notes,
           team_members: teamMembers,
+          vendors,
         },
       };
       await route.fulfill({
@@ -2319,6 +2321,94 @@ test("customer portal is reachable from the landing page and loads secure record
         account: {
           ...currentPortalPayload.account,
           team_members: teamMembers,
+        },
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/vendors/") && method === "POST") {
+      const submittedVendorPayload = JSON.parse(route.request().postData() || "{}");
+      vendors = [
+        ...vendors,
+        {
+          id: 701,
+          name: submittedVendorPayload.name,
+          trade_category: submittedVendorPayload.trade_category,
+          email: submittedVendorPayload.email,
+          phone: submittedVendorPayload.phone,
+          website: submittedVendorPayload.website,
+          notes: submittedVendorPayload.notes,
+          status: "active",
+          status_label: "Active",
+        },
+      ];
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        account: {
+          ...currentPortalPayload.account,
+          vendors,
+        },
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/vendors/701/") && method === "PATCH") {
+      const editPayload = JSON.parse(route.request().postData() || "{}");
+      vendors = vendors.map((vendor) =>
+        vendor.id === 701
+          ? {
+              ...vendor,
+              name: editPayload.name ?? vendor.name,
+              trade_category: editPayload.trade_category ?? vendor.trade_category,
+              email: editPayload.email ?? vendor.email,
+              phone: editPayload.phone ?? vendor.phone,
+              website: editPayload.website ?? vendor.website,
+              notes: editPayload.notes ?? vendor.notes,
+              status: editPayload.status ?? vendor.status,
+              status_label: editPayload.status === "inactive" ? "Inactive" : editPayload.status === "active" ? "Active" : vendor.status_label,
+            }
+          : vendor
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        account: {
+          ...currentPortalPayload.account,
+          vendors,
+        },
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/vendors/701/") && method === "DELETE") {
+      vendors = vendors.map((vendor) =>
+        vendor.id === 701
+          ? {
+              ...vendor,
+              status: "inactive",
+              status_label: "Inactive",
+            }
+          : vendor
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        account: {
+          ...currentPortalPayload.account,
+          vendors,
         },
       };
       await route.fulfill({
@@ -2652,8 +2742,15 @@ test("customer portal is reachable from the landing page and loads secure record
         priority_label: sourceRequest?.urgency_label || "Urgent",
         status: "open",
         status_label: "Open",
+        assignment_type: "internal_staff",
+        assignment_type_label: "Internal Staff",
         assigned_staff_member_id: null,
         assigned_staff_member_name: "",
+        assigned_vendor_id: null,
+        assigned_vendor_name: "",
+        assigned_vendor_trade_category: "",
+        assigned_contractor_id: null,
+        assigned_contractor_name: "",
         scheduled_for: "",
         internal_notes: sourceRequest?.manager_notes || "",
         completion_notes: "",
@@ -2769,7 +2866,27 @@ test("customer portal is reachable from the landing page and loads secure record
                   : submittedWorkOrderEditPayload.priority === "low"
                     ? "Low"
                     : row.priority_label,
-              assigned_staff_member_name: submittedWorkOrderEditPayload.assigned_staff_member_id ? "Sam Supervisor" : row.assigned_staff_member_name,
+              assignment_type: submittedWorkOrderEditPayload.assignment_type || row.assignment_type || "internal_staff",
+              assignment_type_label:
+                submittedWorkOrderEditPayload.assignment_type === "vendor"
+                  ? "Vendor"
+                  : submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor"
+                    ? "Marketplace Contractor"
+                    : submittedWorkOrderEditPayload.assignment_type === "internal_staff"
+                      ? "Internal Staff"
+                      : row.assignment_type_label || "Internal Staff",
+              assigned_staff_member_id: submittedWorkOrderEditPayload.assignment_type === "internal_staff" ? submittedWorkOrderEditPayload.assigned_staff_member_id : row.assigned_staff_member_id,
+              assigned_staff_member_name:
+                submittedWorkOrderEditPayload.assignment_type === "internal_staff" && submittedWorkOrderEditPayload.assigned_staff_member_id
+                  ? "Sam Supervisor"
+                  : submittedWorkOrderEditPayload.assignment_type === "vendor" || submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor"
+                    ? ""
+                    : row.assigned_staff_member_name,
+              assigned_vendor_id: submittedWorkOrderEditPayload.assignment_type === "vendor" ? submittedWorkOrderEditPayload.assigned_vendor_id : submittedWorkOrderEditPayload.assignment_type ? null : row.assigned_vendor_id,
+              assigned_vendor_name: submittedWorkOrderEditPayload.assignment_type === "vendor" && submittedWorkOrderEditPayload.assigned_vendor_id ? "Pipe Pros" : submittedWorkOrderEditPayload.assignment_type ? "" : row.assigned_vendor_name,
+              assigned_vendor_trade_category: submittedWorkOrderEditPayload.assignment_type === "vendor" && submittedWorkOrderEditPayload.assigned_vendor_id ? "Plumbing" : submittedWorkOrderEditPayload.assignment_type ? "" : row.assigned_vendor_trade_category,
+              assigned_contractor_id: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? submittedWorkOrderEditPayload.assigned_contractor_id || null : submittedWorkOrderEditPayload.assignment_type ? null : row.assigned_contractor_id,
+              assigned_contractor_name: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "" : row.assigned_contractor_name,
               completed_at: submittedWorkOrderEditPayload.status === "completed" ? "2026-06-16T17:30:00Z" : row.completed_at,
               closed_at: submittedWorkOrderEditPayload.status === "closed" ? "2026-06-16T18:00:00Z" : row.closed_at,
               completion_attachments: submittedWorkOrderEditPayload.hasAttachment
@@ -2852,8 +2969,20 @@ test("customer portal is reachable from the landing page and loads secure record
             : submittedWorkOrderPayload.status === "in_progress"
               ? "In Progress"
               : "Open",
+        assignment_type: submittedWorkOrderPayload.assignment_type || "internal_staff",
+        assignment_type_label:
+          submittedWorkOrderPayload.assignment_type === "vendor"
+            ? "Vendor"
+            : submittedWorkOrderPayload.assignment_type === "marketplace_contractor"
+              ? "Marketplace Contractor"
+              : "Internal Staff",
         assigned_staff_member_id: submittedWorkOrderPayload.assigned_staff_member_id,
         assigned_staff_member_name: submittedWorkOrderPayload.assigned_staff_member_id ? "Sam Supervisor" : "",
+        assigned_vendor_id: submittedWorkOrderPayload.assigned_vendor_id,
+        assigned_vendor_name: submittedWorkOrderPayload.assigned_vendor_id ? "Pipe Pros" : "",
+        assigned_vendor_trade_category: submittedWorkOrderPayload.assigned_vendor_id ? "Plumbing" : "",
+        assigned_contractor_id: submittedWorkOrderPayload.assigned_contractor_id,
+        assigned_contractor_name: "",
         scheduled_for: submittedWorkOrderPayload.scheduled_for,
         internal_notes: submittedWorkOrderPayload.internal_notes,
         completion_notes: submittedWorkOrderPayload.completion_notes,
@@ -3620,6 +3749,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-account-type-individual")).toBeChecked();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
   await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
+  await expect(page.getByTestId("pm-vendors-section")).toHaveCount(0);
   await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-account-linked-properties")).toContainText("Lake House");
   await expect(page.getByTestId("customer-account-logout")).toContainText("Log out");
@@ -3630,6 +3760,8 @@ test("customer portal is reachable from the landing page and loads secure record
     "Team members help manage properties, maintenance requests, tenants, vendors, and operations."
   );
   await expect(page.getByTestId("pm-team-members-empty")).toContainText("Add team members");
+  await expect(page.getByTestId("pm-vendors-section")).toContainText("Vendors");
+  await expect(page.getByTestId("pm-vendors-empty")).toContainText("Add preferred vendors");
   await page.getByTestId("customer-company-name").fill("Austin Rentals Group");
   await page.getByTestId("customer-company-phone").fill("512-555-3434");
   await page.getByTestId("customer-company-email").fill("ops@austinrentals.example");
@@ -3656,6 +3788,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-account-type-individual").check();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
   await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
+  await expect(page.getByTestId("pm-vendors-section")).toHaveCount(0);
   await page.getByTestId("customer-account-type-property_management_company").check();
   await expect(page.getByTestId("customer-company-name")).toHaveValue("Austin Rentals Group");
   await page.getByTestId("pm-team-add-button").click();
@@ -3688,6 +3821,32 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("pm-team-disable-501").click();
   await expect(page.getByTestId("pm-team-member-501")).toContainText("Disabled");
   await expect(page.getByTestId("pm-team-disable-501")).toHaveCount(0);
+  await page.getByTestId("pm-vendor-add-button").click();
+  await expect(page.getByTestId("pm-vendor-add-modal")).toBeVisible();
+  await page.getByTestId("pm-vendor-name").fill("Pipe Pros");
+  await page.getByTestId("pm-vendor-trade").fill("Plumbing");
+  await page.getByTestId("pm-vendor-email").fill("dispatch@pipepros.example");
+  await page.getByTestId("pm-vendor-phone").fill("512-555-0101");
+  await page.getByTestId("pm-vendor-website").fill("https://pipepros.example");
+  await page.getByTestId("pm-vendor-notes").fill("Preferred plumbing vendor.");
+  await page.getByTestId("pm-vendor-save-add").click();
+  await expect(page.getByTestId("pm-vendor-add-modal")).toHaveCount(0);
+  await expect(page.getByTestId("pm-vendor-701")).toContainText("Pipe Pros");
+  await expect(page.getByTestId("pm-vendor-701")).toContainText("Plumbing");
+  await expect(page.getByTestId("pm-vendor-701")).toContainText("Active");
+  await page.getByTestId("pm-vendor-edit-701").click();
+  await expect(page.getByTestId("pm-vendor-edit-modal")).toBeVisible();
+  await page.getByTestId("pm-vendor-phone").fill("512-555-0199");
+  await page.getByTestId("pm-vendor-save-edit").click();
+  await expect(page.getByTestId("pm-vendor-edit-modal")).toHaveCount(0);
+  await expect(page.getByTestId("pm-vendor-701")).toContainText("512-555-0199");
+  await page.getByTestId("pm-vendor-disable-701").click();
+  await expect(page.getByTestId("pm-vendor-701")).toContainText("Inactive");
+  await expect(page.getByTestId("pm-vendor-disable-701")).toHaveCount(0);
+  await page.getByTestId("pm-vendor-edit-701").click();
+  await page.getByTestId("pm-vendor-status").selectOption("active");
+  await page.getByTestId("pm-vendor-save-edit").click();
+  await expect(page.getByTestId("pm-vendor-701")).toContainText("Active");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
@@ -3856,12 +4015,35 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Completed");
   await page.getByTestId("property-work-order-close-901").click();
   await expect(page.getByTestId("property-work-order-901")).toContainText("Closed");
+  await page.getByTestId("property-work-order-edit-901").click();
+  await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
+  await page.getByTestId("property-work-order-assignment-type").selectOption("vendor");
+  await page.getByTestId("property-work-order-vendor").selectOption("701");
+  await page.getByTestId("property-work-order-save").click();
+  await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
+  expect(submittedWorkOrderEditPayload).toMatchObject({
+    assignment_type: "vendor",
+    assigned_vendor_id: 701,
+  });
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Vendor");
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Pipe Pros");
+  await page.getByTestId("property-work-order-edit-901").click();
+  await page.getByTestId("property-work-order-assignment-type").selectOption("marketplace_contractor");
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Marketplace contractor assignment coming next.");
+  await page.getByTestId("property-work-order-save").click();
+  await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
+  expect(submittedWorkOrderEditPayload).toMatchObject({
+    assignment_type: "marketplace_contractor",
+  });
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace Contractor");
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace contractor assignment coming next.");
 
   await page.getByTestId("property-work-order-add").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
   await expect(page.getByTestId("property-work-order-unit")).toContainText("Unit 101");
   await expect(page.getByTestId("property-work-order-tenant")).toContainText("Taylor Resident");
   await expect(page.getByTestId("property-work-order-staff")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-assignment-type")).toHaveValue("internal_staff");
   await page.getByTestId("property-work-order-title").fill("Seasonal HVAC follow-up");
   await page.getByTestId("property-work-order-description").fill("Schedule HVAC service for the rental unit.");
   await page.getByTestId("property-work-order-category").selectOption("hvac");
@@ -3880,6 +4062,7 @@ test("customer portal is reachable from the landing page and loads secure record
     category: "hvac",
     priority: "normal",
     status: "scheduled",
+    assignment_type: "internal_staff",
     unit_id: 601,
     tenant_id: 801,
     assigned_staff_member_id: 502,

@@ -1873,6 +1873,11 @@ const PM_TEAM_STATUSES = [
   ["disabled", "Disabled"],
 ];
 
+const PM_VENDOR_STATUSES = [
+  ["active", "Active"],
+  ["inactive", "Inactive"],
+];
+
 const emptyTeamMemberForm = {
   name: "",
   email: "",
@@ -1881,12 +1886,26 @@ const emptyTeamMemberForm = {
   status: "invited",
 };
 
+const emptyVendorForm = {
+  name: "",
+  trade_category: "",
+  email: "",
+  phone: "",
+  website: "",
+  notes: "",
+  status: "active",
+};
+
 function roleLabel(value) {
   return PM_TEAM_ROLES.find(([key]) => key === value)?.[1] || value || "Viewer";
 }
 
 function statusLabel(value) {
   return PM_TEAM_STATUSES.find(([key]) => key === value)?.[1] || value || "Invited";
+}
+
+function vendorStatusLabel(value) {
+  return PM_VENDOR_STATUSES.find(([key]) => key === value)?.[1] || value || "Active";
 }
 
 function TeamMemberModal({ mode = "add", member = null, saving = false, onClose, onSubmit }) {
@@ -2014,7 +2033,144 @@ function TeamMemberModal({ mode = "add", member = null, saving = false, onClose,
   );
 }
 
-function AccountPanel({ portal, saving = false, teamSaving = false, onSave, onAddTeamMember, onEditTeamMember, onDisableTeamMember }) {
+function VendorModal({ mode = "add", vendor = null, saving = false, onClose, onSubmit }) {
+  const [form, setForm] = useState(() => ({
+    ...emptyVendorForm,
+    ...(vendor || {}),
+    status: vendor?.status || "active",
+  }));
+
+  useEffect(() => {
+    setForm({
+      ...emptyVendorForm,
+      ...(vendor || {}),
+      status: vendor?.status || "active",
+    });
+  }, [vendor]);
+
+  const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const isEdit = mode === "edit";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
+      <form
+        data-testid={isEdit ? "pm-vendor-edit-modal" : "pm-vendor-add-modal"}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit?.(form);
+        }}
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Vendors</div>
+            <h3 className="mt-1 text-lg font-semibold text-white">{isEdit ? "Edit Vendor" : "Add Vendor"}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500"
+          >
+            Close
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-slate-200">
+            Vendor Name
+            <input
+              data-testid="pm-vendor-name"
+              required
+              value={form.name || ""}
+              onChange={(event) => update("name", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Trade
+            <input
+              data-testid="pm-vendor-trade"
+              value={form.trade_category || ""}
+              onChange={(event) => update("trade_category", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Email
+            <input
+              data-testid="pm-vendor-email"
+              type="email"
+              value={form.email || ""}
+              onChange={(event) => update("email", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200">
+            Phone
+            <input
+              data-testid="pm-vendor-phone"
+              value={form.phone || ""}
+              onChange={(event) => update("phone", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Website
+            <input
+              data-testid="pm-vendor-website"
+              value={form.website || ""}
+              onChange={(event) => update("website", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Notes
+            <textarea
+              data-testid="pm-vendor-notes"
+              rows={3}
+              value={form.notes || ""}
+              onChange={(event) => update("notes", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            />
+          </label>
+          {isEdit ? (
+            <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+              Status
+              <select
+                data-testid="pm-vendor-status"
+                value={form.status || "active"}
+                onChange={(event) => update("status", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+              >
+                {PM_VENDOR_STATUSES.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !form.name?.trim()}
+            data-testid={isEdit ? "pm-vendor-save-edit" : "pm-vendor-save-add"}
+            className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+          >
+            {saving ? "Saving..." : isEdit ? "Save changes" : "Add Vendor"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AccountPanel({ portal, saving = false, teamSaving = false, vendorSaving = false, onSave, onAddTeamMember, onEditTeamMember, onDisableTeamMember, onAddVendor, onEditVendor, onDisableVendor }) {
   const customer = portal?.customer || {};
   const account = portal?.account || {};
   const accountType = customer.account_type || account.account_type || "individual";
@@ -2047,6 +2203,8 @@ function AccountPanel({ portal, saving = false, teamSaving = false, onSave, onAd
   const [form, setForm] = useState(profileForm);
   const [teamModalMode, setTeamModalMode] = useState("");
   const [editingTeamMember, setEditingTeamMember] = useState(null);
+  const [vendorModalMode, setVendorModalMode] = useState("");
+  const [editingVendor, setEditingVendor] = useState(null);
 
   useEffect(() => {
     setForm(profileForm);
@@ -2088,6 +2246,7 @@ function AccountPanel({ portal, saving = false, teamSaving = false, onSave, onAd
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
   const isCompanyAccount = form.account_type === "property_management_company";
   const teamMembers = Array.isArray(account.team_members) ? account.team_members : [];
+  const vendors = Array.isArray(account.vendors) ? account.vendors : [];
 
   return (
     <section data-testid="customer-account-panel" className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -2108,6 +2267,26 @@ function AccountPanel({ portal, saving = false, teamSaving = false, onSave, onAd
             }
             setTeamModalMode("");
             setEditingTeamMember(null);
+          }}
+        />
+      ) : null}
+      {vendorModalMode ? (
+        <VendorModal
+          mode={vendorModalMode}
+          vendor={editingVendor}
+          saving={vendorSaving}
+          onClose={() => {
+            setVendorModalMode("");
+            setEditingVendor(null);
+          }}
+          onSubmit={async (payload) => {
+            if (vendorModalMode === "edit" && editingVendor) {
+              await onEditVendor?.(editingVendor, payload);
+            } else {
+              await onAddVendor?.(payload);
+            }
+            setVendorModalMode("");
+            setEditingVendor(null);
           }}
         />
       ) : null}
@@ -2454,6 +2633,84 @@ function AccountPanel({ portal, saving = false, teamSaving = false, onSave, onAd
                 )}
               </div>
             </div>
+
+            <div data-testid="pm-vendors-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-white">Vendors</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-300">
+                    Track preferred vendors for maintenance work without requiring a MyHomeBro contractor account.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid="pm-vendor-add-button"
+                  onClick={() => {
+                    setEditingVendor(null);
+                    setVendorModalMode("add");
+                  }}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-200"
+                >
+                  <Users size={16} />
+                  Add Vendor
+                </button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {vendors.length ? vendors.map((vendor) => (
+                  <article
+                    key={vendor.id || vendor.name}
+                    data-testid={`pm-vendor-${vendor.id}`}
+                    className="rounded-xl border border-slate-700 bg-slate-950/70 p-3"
+                  >
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-sm font-semibold text-white">{vendor.name || "Vendor"}</div>
+                          <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
+                            {vendor.trade_category || "General"}
+                          </span>
+                          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                            {vendor.status_label || vendorStatusLabel(vendor.status)}
+                          </span>
+                        </div>
+                        <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+                          <div>{vendor.email || "No email"}</div>
+                          <div>{vendor.phone || "No phone"}</div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          data-testid={`pm-vendor-edit-${vendor.id}`}
+                          onClick={() => {
+                            setEditingVendor(vendor);
+                            setVendorModalMode("edit");
+                          }}
+                          className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
+                        >
+                          <Pencil size={13} />
+                          Edit
+                        </button>
+                        {vendor.status !== "inactive" ? (
+                          <button
+                            type="button"
+                            data-testid={`pm-vendor-disable-${vendor.id}`}
+                            onClick={() => onDisableVendor?.(vendor)}
+                            className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
+                          >
+                            Disable
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                )) : (
+                  <div data-testid="pm-vendors-empty" className="rounded-xl border border-dashed border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-400">
+                    Add preferred vendors for recurring maintenance and repairs.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -2535,6 +2792,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [notificationPreferenceError, setNotificationPreferenceError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingTeamMember, setSavingTeamMember] = useState(false);
+  const [savingVendor, setSavingVendor] = useState(false);
   const [focusedRequestId, setFocusedRequestId] = useState("");
   const [requestDraft, setRequestDraft] = useState(null);
 
@@ -2651,6 +2909,57 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       toast.error(error?.response?.data?.detail || "Could not disable that team member.");
     } finally {
       setSavingTeamMember(false);
+    }
+  };
+
+  const addVendor = async (payload) => {
+    setSavingVendor(true);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/vendors/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Vendor added.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.name?.[0] || "Could not add that vendor.");
+      throw error;
+    } finally {
+      setSavingVendor(false);
+    }
+  };
+
+  const editVendor = async (vendor, payload) => {
+    if (!vendor?.id) return;
+    setSavingVendor(true);
+    try {
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/vendors/${vendor.id}/`, {
+        name: payload.name,
+        trade_category: payload.trade_category,
+        email: payload.email,
+        phone: payload.phone,
+        website: payload.website,
+        notes: payload.notes,
+        status: payload.status,
+      });
+      onPortalUpdate?.(data);
+      toast.success("Vendor updated.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that vendor.");
+      throw error;
+    } finally {
+      setSavingVendor(false);
+    }
+  };
+
+  const disableVendor = async (vendor) => {
+    if (!vendor?.id) return;
+    setSavingVendor(true);
+    try {
+      const { data } = await api.delete(`/projects/customer-portal/${encodeURIComponent(token)}/vendors/${vendor.id}/`);
+      onPortalUpdate?.(data);
+      toast.success("Vendor disabled.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not disable that vendor.");
+    } finally {
+      setSavingVendor(false);
     }
   };
 
@@ -3095,6 +3404,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           tenantMaintenanceRequests={portal?.tenant_maintenance_requests || []}
           propertyWorkOrders={portal?.property_work_orders || []}
           teamMembers={portal?.account?.team_members || []}
+          vendors={portal?.account?.vendors || []}
           propertyProfile={portal?.property_profile || {}}
           propertyProfiles={portal?.property_profiles || []}
           isPropertyManagementCompany={Boolean(portal?.account?.is_property_management_company || portal?.account?.account_type === "property_management_company" || portal?.customer?.account_type === "property_management_company")}
@@ -3303,6 +3613,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           portal={portal}
           saving={savingProfile}
           teamSaving={savingTeamMember}
+          vendorSaving={savingVendor}
           onSave={async (payload) => {
             setSavingProfile(true);
             try {
@@ -3318,6 +3629,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onAddTeamMember={addTeamMember}
           onEditTeamMember={editTeamMember}
           onDisableTeamMember={disableTeamMember}
+          onAddVendor={addVendor}
+          onEditVendor={editVendor}
+          onDisableVendor={disableVendor}
         />
       );
     }
@@ -3330,7 +3644,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">

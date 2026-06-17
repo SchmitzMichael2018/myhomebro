@@ -92,6 +92,7 @@ from projects.models import (
     PropertyManagementStaffMembership,
     PropertyOwnerContact,
     PropertyOwnership,
+    PropertyVendor,
     PropertyWorkOrderActivity,
     PropertyWorkOrderAttachment,
     PropertyWorkOrder,
@@ -20833,15 +20834,158 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(row.property_profile, property_profile)
         self.assertEqual(row.unit, unit)
         self.assertEqual(row.tenant, tenant)
+        self.assertEqual(row.assignment_type, PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF)
         self.assertEqual(row.assigned_staff_member, staff)
+        self.assertIsNone(row.assigned_vendor)
         self.assertEqual(list_response.status_code, 200, list_response.data)
         self.assertEqual(list_response.data["work_orders"][0]["title"], "Repair sink leak")
+        self.assertEqual(list_response.data["work_orders"][0]["assignment_type"], PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF)
         self.assertEqual(edit_response.status_code, 200, edit_response.data)
         row.refresh_from_db()
         self.assertEqual(row.status, PropertyWorkOrder.STATUS_IN_PROGRESS)
         self.assertEqual(row.priority, PropertyWorkOrder.PRIORITY_NORMAL)
         self.assertEqual(row.completion_notes, "Parts ordered.")
         self.assertEqual(MaintenanceWorkOrder.objects.count(), 0)
+
+    def test_property_management_company_can_manage_vendors(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, _property_profile, _unit, _tenant, _staff = self._create_property_work_order_context()
+
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/vendors/",
+            {
+                "name": "Pipe Pros",
+                "trade_category": "Plumbing",
+                "email": "dispatch@pipepros.example",
+                "phone": "512-555-0101",
+                "website": "https://pipepros.example",
+                "notes": "Preferred emergency vendor.",
+            },
+            content_type="application/json",
+        )
+        vendor = PropertyVendor.objects.get()
+        edit_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/vendors/{vendor.id}/",
+            {"phone": "512-555-0199", "status": PropertyVendor.STATUS_ACTIVE},
+            content_type="application/json",
+        )
+        disable_response = self.client.delete(f"/api/projects/customer-portal/{token}/vendors/{vendor.id}/")
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/vendors/")
+
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        self.assertEqual(vendor.property_management_company, company)
+        self.assertEqual(create_response.data["account"]["vendors"][0]["name"], "Pipe Pros")
+        self.assertEqual(edit_response.status_code, 200, edit_response.data)
+        vendor.refresh_from_db()
+        self.assertEqual(vendor.phone, "512-555-0199")
+        self.assertEqual(disable_response.status_code, 200, disable_response.data)
+        vendor.refresh_from_db()
+        self.assertEqual(vendor.status, PropertyVendor.STATUS_INACTIVE)
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertEqual(list_response.data["vendors"][0]["status"], PropertyVendor.STATUS_INACTIVE)
+
+    def test_individual_customer_cannot_manage_vendors(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/vendors/",
+            {"name": "Pipe Pros"},
+            content_type="application/json",
+        )
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/vendors/")
+
+        self.assertEqual(create_response.status_code, 403)
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(PropertyVendor.objects.count(), 0)
+
+    def test_property_work_order_assignment_type_switching_records_activity(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
+        vendor = PropertyVendor.objects.create(
+            property_management_company=company,
+            name="Pipe Pros",
+            trade_category="Plumbing",
+            email="dispatch@pipepros.example",
+            status=PropertyVendor.STATUS_ACTIVE,
+        )
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair sink.",
+            assigned_staff_member=staff,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF,
+        )
+
+        vendor_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {
+                "assignment_type": PropertyWorkOrder.ASSIGNMENT_VENDOR,
+                "assigned_vendor_id": vendor.id,
+            },
+            content_type="application/json",
+        )
+        marketplace_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {"assignment_type": PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR},
+            content_type="application/json",
+        )
+        staff_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {
+                "assignment_type": PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF,
+                "assigned_staff_member_id": staff.id,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(vendor_response.status_code, 200, vendor_response.data)
+        self.assertEqual(vendor_response.data["work_order"]["assignment_type"], PropertyWorkOrder.ASSIGNMENT_VENDOR)
+        self.assertEqual(vendor_response.data["work_order"]["assigned_vendor_name"], "Pipe Pros")
+        self.assertIsNone(vendor_response.data["work_order"]["assigned_staff_member_id"])
+        self.assertEqual(marketplace_response.status_code, 200, marketplace_response.data)
+        self.assertEqual(marketplace_response.data["work_order"]["assignment_type"], PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR)
+        self.assertIsNone(marketplace_response.data["work_order"]["assigned_vendor_id"])
+        self.assertEqual(staff_response.status_code, 200, staff_response.data)
+        row.refresh_from_db()
+        self.assertEqual(row.assignment_type, PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF)
+        self.assertEqual(row.assigned_staff_member, staff)
+        self.assertIsNone(row.assigned_vendor)
+        activity_messages = list(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_ASSIGNED).values_list("message", flat=True))
+        self.assertTrue(any("vendor Pipe Pros" in message for message in activity_messages))
+        self.assertTrue(any("Marketplace contractor" in message for message in activity_messages))
+        self.assertTrue(any("Morgan Manager" in message for message in activity_messages))
+
+    def test_property_work_order_vendor_assignment_is_scoped_to_company(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        other_homeowner = Homeowner.objects.create(email="pm-other@example.com", account_type=Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY)
+        other_company = PropertyManagementCompany.objects.create(homeowner=other_homeowner, name="Other PM")
+        other_vendor = PropertyVendor.objects.create(property_management_company=other_company, name="Other Vendor")
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair sink.",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {
+                "assignment_type": PropertyWorkOrder.ASSIGNMENT_VENDOR,
+                "assigned_vendor_id": other_vendor.id,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        row.refresh_from_db()
+        self.assertEqual(row.assignment_type, PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF)
+        self.assertIsNone(row.assigned_vendor)
 
     def test_individual_customer_cannot_manage_property_work_orders(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
