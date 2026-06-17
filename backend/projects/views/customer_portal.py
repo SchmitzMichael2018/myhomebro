@@ -13,6 +13,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core import signing
+from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -121,6 +122,9 @@ from projects.services.ai.project_understanding import understand_project_reques
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 TENANT_MAINTENANCE_TOKEN_SALT = "myhomebro.tenant-maintenance-request"
+TENANT_MAINTENANCE_VERIFICATION_SALT = "myhomebro.tenant-maintenance-verification"
+TENANT_MAINTENANCE_VERIFICATION_MAX_AGE_SECONDS = 60 * 30
+TENANT_MAINTENANCE_VERIFICATION_FAILURE_DETAIL = "We could not verify those details. Check the information and try again."
 TENANT_MAINTENANCE_ATTACHMENT_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
 TENANT_MAINTENANCE_ATTACHMENT_ALLOWED_CONTENT_TYPES = {
     "image/jpeg",
@@ -698,6 +702,61 @@ def _tenant_maintenance_requests_for_email(email: str) -> list[dict]:
     return [_tenant_maintenance_request_payload(row) for row in rows]
 
 
+def _tenant_maintenance_context_payload(property_profile: PropertyProfile, unit: PropertyUnit | None = None, *, include_units: bool = False) -> dict:
+    units = []
+    if include_units:
+        units = [
+            _property_unit_payload(row)
+            for row in PropertyUnit.objects.filter(property_profile=property_profile).exclude(status=PropertyUnit.STATUS_INACTIVE).order_by("unit_label", "id")
+        ]
+    return {
+        "property": {
+            "id": property_profile.id,
+            "display_name": _safe_text(property_profile.display_name) or "Managed property",
+        },
+        "unit": _property_unit_payload(unit) if unit else None,
+        "units": units,
+        "categories": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.CATEGORY_CHOICES],
+        "urgencies": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.URGENCY_CHOICES],
+    }
+
+
+def _tenant_maintenance_save_request(
+    *,
+    property_profile: PropertyProfile,
+    unit: PropertyUnit | None,
+    tenant: Tenant | None,
+    data: dict,
+    files: list,
+) -> TenantMaintenanceRequest:
+    row = TenantMaintenanceRequest.objects.create(
+        property_profile=property_profile,
+        unit=unit,
+        tenant=tenant,
+        submitted_by_name=_safe_text(data.get("submitted_by_name")),
+        submitted_by_email=_safe_text(data.get("submitted_by_email")).lower(),
+        submitted_by_phone=_safe_text(data.get("submitted_by_phone")),
+        category=data["category"],
+        urgency=data.get("urgency") or TenantMaintenanceRequest.URGENCY_NORMAL,
+        title=data["title"],
+        description=data["description"],
+        permission_to_enter=bool(data.get("permission_to_enter", False)),
+        pets_present=bool(data.get("pets_present", False)),
+        preferred_access_times=_safe_text(data.get("preferred_access_times")),
+    )
+    for uploaded_file in files:
+        TenantMaintenanceRequestAttachment.objects.create(
+            tenant_request=row,
+            file=uploaded_file,
+            original_filename=_safe_text(getattr(uploaded_file, "name", "")),
+            content_type=_safe_text(getattr(uploaded_file, "content_type", "")),
+            size_bytes=int(getattr(uploaded_file, "size", 0) or 0),
+            uploaded_by_name=_safe_text(data.get("submitted_by_name")),
+            uploaded_by_email=_safe_text(data.get("submitted_by_email")).lower(),
+        )
+    return row
+
+
 def _tenant_for_maintenance_submission(property_profile: PropertyProfile, unit: PropertyUnit | None, email: str) -> Tenant | None:
     normalized = _safe_text(email).lower()
     if not normalized:
@@ -710,6 +769,107 @@ def _tenant_for_maintenance_submission(property_profile: PropertyProfile, unit: 
     if unit is not None:
         queryset = queryset.filter(Q(unit=unit) | Q(unit__isnull=True))
     return getattr(queryset.order_by("-updated_at", "-id").first(), "tenant", None)
+
+
+def _digits_only(value: str) -> str:
+    return re.sub(r"\D+", "", _safe_text(value))
+
+
+def _generic_tenant_maintenance_verification_failure() -> Response:
+    return Response({"detail": TENANT_MAINTENANCE_VERIFICATION_FAILURE_DETAIL}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _tenant_maintenance_verification_rate_limited(request) -> bool:
+    ident = _safe_text(request.META.get("REMOTE_ADDR")) or "unknown"
+    key = f"tenant-maintenance-verify:{ident}"
+    attempts = int(cache.get(key, 0) or 0)
+    if attempts >= 10:
+        return True
+    cache.set(key, attempts + 1, 5 * 60)
+    return False
+
+
+def _property_verification_candidates(query: str):
+    normalized = _safe_text(query)
+    if not normalized:
+        return PropertyProfile.objects.none()
+    return (
+        PropertyProfile.objects.select_related("managed_by_company")
+        .filter(managed_by_company__isnull=False, managed_by_company__is_active=True)
+        .filter(
+            Q(display_name__icontains=normalized)
+            | Q(address_line1__icontains=normalized)
+            | Q(address_line2__icontains=normalized)
+            | Q(city__icontains=normalized)
+            | Q(state__icontains=normalized)
+            | Q(postal_code__icontains=normalized)
+        )
+    )
+
+
+def _tenant_contact_matches(tenant: Tenant, contact: str) -> bool:
+    normalized = _safe_text(contact)
+    if not normalized:
+        return False
+    if "@" in normalized and _safe_text(tenant.email).lower() == normalized.lower():
+        return True
+    contact_digits = _digits_only(normalized)
+    return bool(contact_digits and _digits_only(tenant.phone) == contact_digits)
+
+
+def _verify_tenant_maintenance_identity(*, property_query: str, unit_label: str, tenant_last_name: str, contact: str) -> Tenancy | None:
+    if not all([_safe_text(property_query), _safe_text(unit_label), _safe_text(tenant_last_name), _safe_text(contact)]):
+        return None
+    property_profiles = _property_verification_candidates(property_query)
+    rows = (
+        Tenancy.objects.select_related("tenant", "property_profile", "unit", "property_profile__managed_by_company")
+        .filter(
+            property_profile__in=property_profiles,
+            unit__unit_label__iexact=_safe_text(unit_label),
+            unit__status=PropertyUnit.STATUS_ACTIVE,
+            status=Tenancy.STATUS_ACTIVE,
+            tenant__status=Tenant.STATUS_ACTIVE,
+            tenant__last_name__iexact=_safe_text(tenant_last_name),
+            tenant__maintenance_access_enabled=True,
+            property_profile__managed_by_company__is_active=True,
+        )
+        .order_by("id")
+    )
+    matches = [row for row in rows if _tenant_contact_matches(row.tenant, contact)]
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _resolve_verified_tenant_maintenance_token(token: str):
+    try:
+        payload = signing.loads(
+            token,
+            salt=TENANT_MAINTENANCE_VERIFICATION_SALT,
+            max_age=TENANT_MAINTENANCE_VERIFICATION_MAX_AGE_SECONDS,
+        )
+    except signing.SignatureExpired:
+        return None, Response({"detail": "This verification has expired. Please verify your unit again."}, status=status.HTTP_403_FORBIDDEN)
+    except signing.BadSignature:
+        return None, _generic_tenant_maintenance_verification_failure()
+    tenancy_id = payload.get("tenancy_id") if isinstance(payload, dict) else None
+    tenancy = (
+        Tenancy.objects.select_related("tenant", "property_profile", "unit", "property_profile__managed_by_company")
+        .filter(
+            pk=tenancy_id,
+            status=Tenancy.STATUS_ACTIVE,
+            tenant__status=Tenant.STATUS_ACTIVE,
+            tenant__maintenance_access_enabled=True,
+            unit__status=PropertyUnit.STATUS_ACTIVE,
+            property_profile__managed_by_company__isnull=False,
+            property_profile__managed_by_company__is_active=True,
+        )
+        .first()
+    )
+    if tenancy is None:
+        return None, _generic_tenant_maintenance_verification_failure()
+    return tenancy, None
+
 
 
 def _property_management_staff_payload(member: PropertyManagementStaffMembership) -> dict:
@@ -4983,6 +5143,31 @@ class TenantMaintenanceRequestPublicSerializer(serializers.Serializer):
         return attrs
 
 
+class TenantMaintenanceRequestVerifySerializer(serializers.Serializer):
+    property_query = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    unit_label = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    tenant_last_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    contact = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        aliases = {
+            "property_query": self.initial_data.get("property_query") or self.initial_data.get("property_name_or_address") or self.initial_data.get("property"),
+            "tenant_last_name": self.initial_data.get("tenant_last_name") or self.initial_data.get("last_name"),
+        }
+        for field, value in aliases.items():
+            if value and not attrs.get(field):
+                attrs[field] = value
+        for field in ("property_query", "unit_label", "tenant_last_name", "contact"):
+            attrs[field] = _safe_text(attrs.get(field))
+            if not attrs[field]:
+                raise serializers.ValidationError({field: "This field is required."})
+        return attrs
+
+
+class TenantMaintenanceRequestVerifiedSubmitSerializer(TenantMaintenanceRequestPublicSerializer):
+    verification_token = serializers.CharField(max_length=1000)
+
+
 class TenantMaintenanceRequestReviewSerializer(serializers.Serializer):
     status = serializers.ChoiceField(
         choices=[
@@ -5556,25 +5741,7 @@ class TenantMaintenanceRequestPublicView(APIView):
         property_profile, token_unit, error = _resolve_tenant_maintenance_token(token)
         if error is not None:
             return error
-        units = []
-        if token_unit is None:
-            units = [
-                _property_unit_payload(unit)
-                for unit in PropertyUnit.objects.filter(property_profile=property_profile).exclude(status=PropertyUnit.STATUS_INACTIVE).order_by("unit_label", "id")
-            ]
-        return Response(
-            {
-                "property": {
-                    "id": property_profile.id,
-                    "display_name": _safe_text(property_profile.display_name) or "Managed property",
-                },
-                "unit": _property_unit_payload(token_unit) if token_unit else None,
-                "units": units,
-                "categories": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.CATEGORY_CHOICES],
-                "urgencies": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.URGENCY_CHOICES],
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response(_tenant_maintenance_context_payload(property_profile, token_unit, include_units=token_unit is None), status=status.HTTP_200_OK)
 
     def post(self, request, token: str):
         property_profile, token_unit, error = _resolve_tenant_maintenance_token(token)
@@ -5598,31 +5765,58 @@ class TenantMaintenanceRequestPublicView(APIView):
             return Response({"detail": "This request link is for a specific unit."}, status=status.HTTP_400_BAD_REQUEST)
 
         tenant = _tenant_for_maintenance_submission(property_profile, unit, data.get("submitted_by_email", ""))
-        row = TenantMaintenanceRequest.objects.create(
-            property_profile=property_profile,
-            unit=unit,
-            tenant=tenant,
-            submitted_by_name=_safe_text(data.get("submitted_by_name")),
-            submitted_by_email=_safe_text(data.get("submitted_by_email")).lower(),
-            submitted_by_phone=_safe_text(data.get("submitted_by_phone")),
-            category=data["category"],
-            urgency=data.get("urgency") or TenantMaintenanceRequest.URGENCY_NORMAL,
-            title=data["title"],
-            description=data["description"],
-            permission_to_enter=bool(data.get("permission_to_enter", False)),
-            pets_present=bool(data.get("pets_present", False)),
-            preferred_access_times=_safe_text(data.get("preferred_access_times")),
+        row = _tenant_maintenance_save_request(property_profile=property_profile, unit=unit, tenant=tenant, data=data, files=files)
+        return Response(
+            {
+                "ok": True,
+                "detail": "Maintenance request submitted.",
+                "request": _tenant_maintenance_request_payload(row),
+            },
+            status=status.HTTP_201_CREATED,
         )
-        for uploaded_file in files:
-            TenantMaintenanceRequestAttachment.objects.create(
-                tenant_request=row,
-                file=uploaded_file,
-                original_filename=_safe_text(getattr(uploaded_file, "name", "")),
-                content_type=_safe_text(getattr(uploaded_file, "content_type", "")),
-                size_bytes=int(getattr(uploaded_file, "size", 0) or 0),
-                uploaded_by_name=_safe_text(data.get("submitted_by_name")),
-                uploaded_by_email=_safe_text(data.get("submitted_by_email")).lower(),
-            )
+
+
+class TenantMaintenanceRequestVerifyView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if _tenant_maintenance_verification_rate_limited(request):
+            return Response({"detail": "Please wait a few minutes before trying again."}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        serializer = TenantMaintenanceRequestVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        tenancy = _verify_tenant_maintenance_identity(**serializer.validated_data)
+        if tenancy is None:
+            return _generic_tenant_maintenance_verification_failure()
+        verification_token = signing.dumps({"tenancy_id": tenancy.id}, salt=TENANT_MAINTENANCE_VERIFICATION_SALT)
+        payload = _tenant_maintenance_context_payload(tenancy.property_profile, tenancy.unit)
+        payload["ok"] = True
+        payload["verification_token"] = verification_token
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class TenantMaintenanceRequestVerifiedSubmitView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def post(self, request):
+        serializer = TenantMaintenanceRequestVerifiedSubmitSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        tenancy, error = _resolve_verified_tenant_maintenance_token(data.get("verification_token"))
+        if error is not None:
+            return error
+        files = _tenant_maintenance_uploaded_files(request)
+        try:
+            _validate_tenant_maintenance_attachments(files)
+        except serializers.ValidationError as exc:
+            return Response({"detail": exc.detail[0] if isinstance(exc.detail, list) else exc.detail}, status=status.HTTP_400_BAD_REQUEST)
+        row = _tenant_maintenance_save_request(
+            property_profile=tenancy.property_profile,
+            unit=tenancy.unit,
+            tenant=tenancy.tenant,
+            data=data,
+            files=files,
+        )
         return Response(
             {
                 "ok": True,

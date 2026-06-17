@@ -64,6 +64,7 @@ export default function PublicRoutes() {
       <Route path="/my-records/:token" element={<PortalTokenRedirect />} />
 
       {/* Tenant maintenance intake */}
+      <Route path="/maintenance-request" element={<TenantMaintenanceRequestPage />} />
       <Route path="/maintenance-request/:token" element={<TenantMaintenanceRequestPage />} />
 
       {/* Public intake */}

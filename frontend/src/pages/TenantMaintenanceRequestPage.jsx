@@ -17,10 +17,21 @@ const DEFAULT_FORM = {
   preferred_access_times: "",
 };
 
+const DEFAULT_VERIFICATION_FORM = {
+  property_query: "",
+  unit_label: "",
+  tenant_last_name: "",
+  contact: "",
+};
+
 export default function TenantMaintenanceRequestPage() {
   const { token = "" } = useParams();
   const [context, setContext] = useState(null);
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [verificationForm, setVerificationForm] = useState(DEFAULT_VERIFICATION_FORM);
+  const [verificationToken, setVerificationToken] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -31,6 +42,18 @@ export default function TenantMaintenanceRequestPage() {
     let alive = true;
     setLoading(true);
     setError("");
+    setConfirmation(null);
+    setAttachments([]);
+    if (!token) {
+      setContext(null);
+      setForm(DEFAULT_FORM);
+      setVerificationToken("");
+      setVerificationError("");
+      setLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
     api
       .get(`/projects/maintenance-request/${encodeURIComponent(token)}/`)
       .then(({ data }) => {
@@ -64,9 +87,47 @@ export default function TenantMaintenanceRequestPage() {
     );
   }, [form]);
 
+  const canVerify = useMemo(() => {
+    return Boolean(
+      verificationForm.property_query.trim() &&
+        verificationForm.unit_label.trim() &&
+        verificationForm.tenant_last_name.trim() &&
+        verificationForm.contact.trim()
+    );
+  }, [verificationForm]);
+
   const update = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setError("");
+  };
+
+  const updateVerification = (field, value) => {
+    setVerificationForm((prev) => ({ ...prev, [field]: value }));
+    setVerificationError("");
+  };
+
+  const verifyTenant = async (event) => {
+    event.preventDefault();
+    if (!canVerify) return;
+    setVerifying(true);
+    setVerificationError("");
+    setError("");
+    try {
+      const { data } = await api.post("/projects/maintenance-request/verify/", verificationForm);
+      setContext(data);
+      setVerificationToken(data?.verification_token || "");
+      setForm((prev) => ({
+        ...prev,
+        submitted_by_name: verificationForm.tenant_last_name,
+        submitted_by_email: verificationForm.contact.includes("@") ? verificationForm.contact : prev.submitted_by_email,
+        submitted_by_phone: verificationForm.contact.includes("@") ? prev.submitted_by_phone : verificationForm.contact,
+        unit_id: data?.unit?.id ? String(data.unit.id) : prev.unit_id,
+      }));
+    } catch (err) {
+      setVerificationError(err?.response?.data?.detail || "We could not verify those details. Check the information and try again.");
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const submit = async (event) => {
@@ -85,14 +146,19 @@ export default function TenantMaintenanceRequestPage() {
           }
           payload.append(key, value ?? "");
         });
+        if (!token) payload.append("verification_token", verificationToken);
         attachments.forEach((file) => payload.append("attachments", file));
       } else {
         payload = {
           ...form,
           unit_id: form.unit_id ? Number(form.unit_id) : null,
         };
+        if (!token) payload.verification_token = verificationToken;
       }
-      const { data } = await api.post(`/projects/maintenance-request/${encodeURIComponent(token)}/`, payload);
+      const endpoint = token
+        ? `/projects/maintenance-request/${encodeURIComponent(token)}/`
+        : "/projects/maintenance-request/verified-submit/";
+      const { data } = await api.post(endpoint, payload);
       setConfirmation(data?.request || {});
     } catch (err) {
       setError(err?.response?.data?.detail || "We could not submit this request right now.");
@@ -122,6 +188,72 @@ export default function TenantMaintenanceRequestPage() {
             <div data-testid="tenant-maintenance-loading" className="mt-5 rounded-xl border border-slate-700 bg-slate-950 p-4 text-sm text-slate-300">
               Loading request form...
             </div>
+          ) : !token && !verificationToken && !context && !confirmation ? (
+            <form data-testid="tenant-maintenance-verify-form" onSubmit={verifyTenant} className="mt-5 space-y-4">
+              <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-300">
+                Enter your property, unit, and contact details so we can route your request to the right property manager.
+              </div>
+
+              <label className="block text-sm font-medium text-slate-200">
+                Property name or address
+                <input
+                  data-testid="tenant-maintenance-property"
+                  value={verificationForm.property_query}
+                  onChange={(event) => updateVerification("property_query", event.target.value)}
+                  autoComplete="street-address"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-200">
+                  Unit / apartment
+                  <input
+                    data-testid="tenant-maintenance-unit-label"
+                    value={verificationForm.unit_label}
+                    onChange={(event) => updateVerification("unit_label", event.target.value)}
+                    autoComplete="address-line2"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-200">
+                  Last name
+                  <input
+                    data-testid="tenant-maintenance-last-name"
+                    value={verificationForm.tenant_last_name}
+                    onChange={(event) => updateVerification("tenant_last_name", event.target.value)}
+                    autoComplete="family-name"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-sm font-medium text-slate-200">
+                Email or phone
+                <input
+                  data-testid="tenant-maintenance-contact"
+                  value={verificationForm.contact}
+                  onChange={(event) => updateVerification("contact", event.target.value)}
+                  autoComplete="email"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                />
+              </label>
+
+              {verificationError ? (
+                <div data-testid="tenant-maintenance-verify-error" className="rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">
+                  {verificationError}
+                </div>
+              ) : null}
+
+              <button
+                type="submit"
+                data-testid="tenant-maintenance-verify-submit"
+                disabled={!canVerify || verifying}
+                className="w-full rounded-xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              >
+                {verifying ? "Verifying..." : "Continue"}
+              </button>
+            </form>
           ) : error && !context ? (
             <div data-testid="tenant-maintenance-error" className="mt-5 rounded-xl border border-rose-300/35 bg-rose-400/10 p-4 text-sm text-rose-100">
               {error}

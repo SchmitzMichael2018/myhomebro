@@ -201,6 +201,15 @@ export default function LandingPage() {
             </button>
             <button
               type="button"
+              data-testid="landing-maintenance-request-button"
+              onClick={() => navigate("/maintenance-request")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200/40 bg-amber-300 px-6 py-4 text-base font-semibold text-slate-950 shadow-lg shadow-amber-950/20 transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+            >
+              <Wrench className="h-5 w-5" aria-hidden="true" />
+              Submit Maintenance Request
+            </button>
+            <button
+              type="button"
               onClick={() => scrollTo("how-it-works")}
               className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/18 bg-white/[0.04] px-6 py-4 text-base font-semibold text-white transition hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
             >
