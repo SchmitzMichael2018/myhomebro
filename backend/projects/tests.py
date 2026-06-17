@@ -20630,7 +20630,18 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(Tenant.objects.count(), 0)
 
-    def _create_verifiable_tenant_maintenance_context(self, *, tenancy_status=None, maintenance_access_enabled=True):
+    def _create_verifiable_tenant_maintenance_context(
+        self,
+        *,
+        tenancy_status=None,
+        maintenance_access_enabled=True,
+        unit_label="Unit A",
+        unit_type=None,
+        with_unit=True,
+        tenant_email="taylor@example.com",
+        tenant_phone="512-555-1111",
+        tenant_last_name="Tenant",
+    ):
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
         self.customer_homeowner.company_name = "Austin Rentals Group"
         self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
@@ -20645,18 +20656,20 @@ class CustomerPortalAccessTests(TestCase):
             state="TX",
             postal_code="78701",
         )
-        unit = PropertyUnit.objects.create(
-            property_profile=property_profile,
-            unit_label="Unit A",
-            unit_type=PropertyUnit.UNIT_APARTMENT,
-            status=PropertyUnit.STATUS_ACTIVE,
-        )
+        unit = None
+        if with_unit:
+            unit = PropertyUnit.objects.create(
+                property_profile=property_profile,
+                unit_label=unit_label,
+                unit_type=unit_type or PropertyUnit.UNIT_APARTMENT,
+                status=PropertyUnit.STATUS_ACTIVE,
+            )
         tenant = Tenant.objects.create(
             company=company,
             first_name="Taylor",
-            last_name="Tenant",
-            email="taylor@example.com",
-            phone="512-555-1111",
+            last_name=tenant_last_name,
+            email=tenant_email,
+            phone=tenant_phone,
             status=Tenant.STATUS_ACTIVE,
             maintenance_access_enabled=maintenance_access_enabled,
         )
@@ -20693,6 +20706,78 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.data["unit"]["unit_label"], "Unit A")
         self.assertNotIn("tenant", response.data)
         self.assertNotIn("company", response.data)
+
+    def test_tenant_maintenance_verification_succeeds_for_whole_property_unit_without_unit_label(self):
+        _company, _property_profile, unit, _tenant, _tenancy = self._create_verifiable_tenant_maintenance_context(
+            unit_label="Whole Property",
+            unit_type=PropertyUnit.UNIT_WHOLE_PROPERTY,
+        )
+
+        response = self.client.post(
+            "/api/projects/maintenance-request/verify/",
+            self._verification_payload(unit_label=""),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["verification_token"])
+        self.assertEqual(response.data["unit"]["id"], unit.id)
+        self.assertEqual(response.data["unit"]["unit_type"], PropertyUnit.UNIT_WHOLE_PROPERTY)
+        self.assertNotIn("tenant", response.data)
+
+    def test_tenant_maintenance_verification_succeeds_for_unitless_tenancy_without_unit_label(self):
+        _company, _property_profile, _unit, _tenant, _tenancy = self._create_verifiable_tenant_maintenance_context(with_unit=False)
+
+        response = self.client.post(
+            "/api/projects/maintenance-request/verify/",
+            self._verification_payload(unit_label=""),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["verification_token"])
+        self.assertIsNone(response.data.get("unit"))
+        self.assertNotIn("tenant", response.data)
+
+    def test_tenant_maintenance_verification_fails_generically_for_multiple_blank_unit_matches(self):
+        company, property_profile, unit, tenant, _tenancy = self._create_verifiable_tenant_maintenance_context(
+            unit_label="Whole Property",
+            unit_type=PropertyUnit.UNIT_WHOLE_PROPERTY,
+        )
+        Tenancy.objects.create(
+            tenant=tenant,
+            property_profile=property_profile,
+            unit=None,
+            status=Tenancy.STATUS_ACTIVE,
+        )
+
+        response = self.client.post(
+            "/api/projects/maintenance-request/verify/",
+            self._verification_payload(unit_label=""),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "We could not verify those details. Check the information and try again.")
+        self.assertEqual(set(response.data.keys()), {"detail"})
+
+    def test_tenant_maintenance_verification_blank_unit_fails_for_multi_unit_property(self):
+        _company, property_profile, _unit, _tenant, _tenancy = self._create_verifiable_tenant_maintenance_context()
+        PropertyUnit.objects.create(
+            property_profile=property_profile,
+            unit_label="Unit B",
+            unit_type=PropertyUnit.UNIT_APARTMENT,
+            status=PropertyUnit.STATUS_ACTIVE,
+        )
+
+        response = self.client.post(
+            "/api/projects/maintenance-request/verify/",
+            self._verification_payload(unit_label=""),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "We could not verify those details. Check the information and try again.")
 
     def test_tenant_maintenance_verification_fails_generically_for_invalid_details(self):
         self._create_verifiable_tenant_maintenance_context()
@@ -20767,6 +20852,37 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(row.status, TenantMaintenanceRequest.STATUS_SUBMITTED)
         self.assertEqual(row.attachments.count(), 1)
         self.assertEqual(response.data["request"]["reference"], f"TMR-{row.id:06d}")
+
+    def test_verified_tenant_maintenance_submit_links_unitless_property_request(self):
+        _company, property_profile, _unit, tenant, _tenancy = self._create_verifiable_tenant_maintenance_context(with_unit=False)
+        verify_response = self.client.post(
+            "/api/projects/maintenance-request/verify/",
+            self._verification_payload(unit_label="", contact="taylor@example.com"),
+            content_type="application/json",
+        )
+        self.assertEqual(verify_response.status_code, 200, verify_response.data)
+
+        response = self.client.post(
+            "/api/projects/maintenance-request/verified-submit/",
+            {
+                "verification_token": verify_response.data["verification_token"],
+                "submitted_by_name": "Taylor Tenant",
+                "submitted_by_email": "taylor@example.com",
+                "submitted_by_phone": "512-555-1111",
+                "category": TenantMaintenanceRequest.CATEGORY_PLUMBING,
+                "urgency": TenantMaintenanceRequest.URGENCY_URGENT,
+                "title": "Water heater issue",
+                "description": "The water heater is not producing hot water.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        row = TenantMaintenanceRequest.objects.get()
+        self.assertEqual(row.property_profile, property_profile)
+        self.assertIsNone(row.unit)
+        self.assertEqual(row.tenant, tenant)
+        self.assertEqual(response.data["request"]["unit_label"], "")
 
     def _create_property_work_order_context(self):
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY

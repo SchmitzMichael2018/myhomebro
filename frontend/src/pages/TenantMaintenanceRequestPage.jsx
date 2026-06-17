@@ -90,7 +90,6 @@ export default function TenantMaintenanceRequestPage() {
   const canVerify = useMemo(() => {
     return Boolean(
       verificationForm.property_query.trim() &&
-        verificationForm.unit_label.trim() &&
         verificationForm.tenant_last_name.trim() &&
         verificationForm.contact.trim()
     );
@@ -207,7 +206,7 @@ export default function TenantMaintenanceRequestPage() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm font-medium text-slate-200">
-                  Unit / apartment
+                  Unit / apartment <span className="text-slate-400">(optional for single-family homes)</span>
                   <input
                     data-testid="tenant-maintenance-unit-label"
                     value={verificationForm.unit_label}
@@ -215,6 +214,9 @@ export default function TenantMaintenanceRequestPage() {
                     autoComplete="address-line2"
                     className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
                   />
+                  <span className="mt-1 block text-xs leading-5 text-slate-400">
+                    Leave blank if this is a single-family rental or whole-property residence.
+                  </span>
                 </label>
                 <label className="block text-sm font-medium text-slate-200">
                   Last name

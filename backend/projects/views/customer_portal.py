@@ -16,7 +16,7 @@ from django.core import signing
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -1061,22 +1061,47 @@ def _tenant_contact_matches(tenant: Tenant, contact: str) -> bool:
 
 
 def _verify_tenant_maintenance_identity(*, property_query: str, unit_label: str, tenant_last_name: str, contact: str) -> Tenancy | None:
-    if not all([_safe_text(property_query), _safe_text(unit_label), _safe_text(tenant_last_name), _safe_text(contact)]):
+    if not all([_safe_text(property_query), _safe_text(tenant_last_name), _safe_text(contact)]):
         return None
     property_profiles = _property_verification_candidates(property_query)
-    rows = (
-        Tenancy.objects.select_related("tenant", "property_profile", "unit", "property_profile__managed_by_company")
-        .filter(
-            property_profile__in=property_profiles,
-            unit__unit_label__iexact=_safe_text(unit_label),
+    unit_label = _safe_text(unit_label)
+    rows = Tenancy.objects.select_related("tenant", "property_profile", "unit", "property_profile__managed_by_company").filter(
+        property_profile__in=property_profiles,
+        status=Tenancy.STATUS_ACTIVE,
+        tenant__status=Tenant.STATUS_ACTIVE,
+        tenant__last_name__iexact=_safe_text(tenant_last_name),
+        tenant__maintenance_access_enabled=True,
+        property_profile__managed_by_company__is_active=True,
+    )
+    if unit_label:
+        rows = rows.filter(
+            unit__unit_label__iexact=unit_label,
             unit__status=PropertyUnit.STATUS_ACTIVE,
-            status=Tenancy.STATUS_ACTIVE,
-            tenant__status=Tenant.STATUS_ACTIVE,
-            tenant__last_name__iexact=_safe_text(tenant_last_name),
-            tenant__maintenance_access_enabled=True,
-            property_profile__managed_by_company__is_active=True,
         )
-        .order_by("id")
+    else:
+        rows = rows.filter(
+            Q(unit__isnull=True)
+            | Q(unit__unit_type=PropertyUnit.UNIT_WHOLE_PROPERTY, unit__status=PropertyUnit.STATUS_ACTIVE)
+        )
+        property_ids = [row.property_profile_id for row in rows]
+        active_unit_counts = {
+            row["property_profile_id"]: row["count"]
+            for row in PropertyUnit.objects.filter(
+                property_profile_id__in=property_ids,
+                status=PropertyUnit.STATUS_ACTIVE,
+            )
+            .values("property_profile_id")
+            .annotate(count=Count("id"))
+        }
+        rows = [
+            row
+            for row in rows
+            if active_unit_counts.get(row.property_profile_id, 0) <= 1
+        ]
+    rows = (
+        rows
+        if isinstance(rows, list)
+        else rows.order_by("id")
     )
     matches = [row for row in rows if _tenant_contact_matches(row.tenant, contact)]
     if len(matches) != 1:
@@ -1099,11 +1124,11 @@ def _resolve_verified_tenant_maintenance_token(token: str):
     tenancy = (
         Tenancy.objects.select_related("tenant", "property_profile", "unit", "property_profile__managed_by_company")
         .filter(
+            Q(unit__isnull=True) | Q(unit__status=PropertyUnit.STATUS_ACTIVE),
             pk=tenancy_id,
             status=Tenancy.STATUS_ACTIVE,
             tenant__status=Tenant.STATUS_ACTIVE,
             tenant__maintenance_access_enabled=True,
-            unit__status=PropertyUnit.STATUS_ACTIVE,
             property_profile__managed_by_company__isnull=False,
             property_profile__managed_by_company__is_active=True,
         )
@@ -5430,10 +5455,11 @@ class TenantMaintenanceRequestVerifySerializer(serializers.Serializer):
         for field, value in aliases.items():
             if value and not attrs.get(field):
                 attrs[field] = value
-        for field in ("property_query", "unit_label", "tenant_last_name", "contact"):
+        for field in ("property_query", "tenant_last_name", "contact"):
             attrs[field] = _safe_text(attrs.get(field))
             if not attrs[field]:
                 raise serializers.ValidationError({field: "This field is required."})
+        attrs["unit_label"] = _safe_text(attrs.get("unit_label"))
         return attrs
 
 

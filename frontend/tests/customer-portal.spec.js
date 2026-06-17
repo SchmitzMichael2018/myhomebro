@@ -5073,6 +5073,99 @@ test("tenant maintenance request verification flow starts from landing and submi
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000902");
 });
 
+test("tenant maintenance request verification supports whole-property rentals without unit", async ({ page }) => {
+  let verifyPayload = null;
+  let submittedPayload = null;
+
+  await page.route("**/api/projects/maintenance-request/verify/", async (route) => {
+    verifyPayload = JSON.parse(route.request().postData() || "{}");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        verification_token: "whole-property-token",
+        property: {
+          id: 7,
+          display_name: "Single Family Rental",
+        },
+        unit: null,
+        units: [],
+        categories: [
+          { value: "plumbing", label: "Plumbing" },
+          { value: "general_repair", label: "General Repair" },
+        ],
+        urgencies: [
+          { value: "urgent", label: "Urgent" },
+          { value: "normal", label: "Normal" },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/maintenance-request/verified-submit/", async (route) => {
+    const rawBody = route.request().postData() || "";
+    submittedPayload = {
+      rawBody,
+      hasVerificationToken: rawBody.includes("whole-property-token"),
+      hasTitle: rawBody.includes("Water heater issue"),
+    };
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        detail: "Maintenance request submitted.",
+        request: {
+          id: 903,
+          reference: "TMR-000903",
+          status: "submitted",
+          status_label: "Submitted",
+          title: "Water heater issue",
+        },
+      }),
+    });
+  });
+
+  await page.goto("/maintenance-request", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("tenant-maintenance-verify-form")).toBeVisible();
+  await expect(page.getByText("Leave blank if this is a single-family rental or whole-property residence.")).toBeVisible();
+
+  await page.getByTestId("tenant-maintenance-property").fill("789 Oak St");
+  await page.getByTestId("tenant-maintenance-last-name").fill("Tenant");
+  await page.getByTestId("tenant-maintenance-contact").fill("taylor@example.com");
+  await expect(page.getByTestId("tenant-maintenance-verify-submit")).toBeEnabled();
+  await page.getByTestId("tenant-maintenance-verify-submit").click();
+
+  expect(verifyPayload).toMatchObject({
+    property_query: "789 Oak St",
+    unit_label: "",
+    tenant_last_name: "Tenant",
+    contact: "taylor@example.com",
+  });
+  await expect(page.getByTestId("tenant-maintenance-form")).toBeVisible();
+  await expect(page.getByText("Single Family Rental")).toBeVisible();
+  await expect(page.getByText("Unit:")).toHaveCount(0);
+
+  await page.getByTestId("tenant-maintenance-name").fill("Taylor Tenant");
+  await page.getByTestId("tenant-maintenance-category").selectOption("plumbing");
+  await page.getByTestId("tenant-maintenance-title").fill("Water heater issue");
+  await page.getByTestId("tenant-maintenance-description").fill("The water heater is not producing hot water.");
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().includes("/api/projects/maintenance-request/verified-submit/") &&
+      response.request().method() === "POST"
+    ),
+    page.getByTestId("tenant-maintenance-submit").click(),
+  ]);
+
+  expect(submittedPayload).toMatchObject({
+    hasVerificationToken: true,
+    hasTitle: true,
+  });
+  await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000903");
+});
+
 test("tenant maintenance verification failure is generic", async ({ page }) => {
   await page.route("**/api/projects/maintenance-request/verify/", async (route) => {
     await route.fulfill({
@@ -5091,6 +5184,37 @@ test("tenant maintenance verification failure is generic", async ({ page }) => {
   await page.getByTestId("tenant-maintenance-contact").fill("wrong@example.com");
   await page.getByTestId("tenant-maintenance-verify-submit").click();
 
+  await expect(page.getByTestId("tenant-maintenance-verify-error")).toContainText(
+    "We could not verify those details. Check the information and try again.",
+  );
+  await expect(page.getByTestId("tenant-maintenance-form")).toHaveCount(0);
+});
+
+test("tenant maintenance blank-unit verification failure is generic", async ({ page }) => {
+  let verifyPayload = null;
+  await page.route("**/api/projects/maintenance-request/verify/", async (route) => {
+    verifyPayload = JSON.parse(route.request().postData() || "{}");
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "We could not verify those details. Check the information and try again.",
+      }),
+    });
+  });
+
+  await page.goto("/maintenance-request", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("tenant-maintenance-property").fill("Duplex on Main");
+  await page.getByTestId("tenant-maintenance-last-name").fill("Tenant");
+  await page.getByTestId("tenant-maintenance-contact").fill("taylor@example.com");
+  await page.getByTestId("tenant-maintenance-verify-submit").click();
+
+  expect(verifyPayload).toMatchObject({
+    property_query: "Duplex on Main",
+    unit_label: "",
+    tenant_last_name: "Tenant",
+    contact: "taylor@example.com",
+  });
   await expect(page.getByTestId("tenant-maintenance-verify-error")).toContainText(
     "We could not verify those details. Check the information and try again.",
   );
