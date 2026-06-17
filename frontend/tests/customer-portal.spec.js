@@ -2751,6 +2751,11 @@ test("customer portal is reachable from the landing page and loads secure record
         assigned_vendor_trade_category: "",
         assigned_contractor_id: null,
         assigned_contractor_name: "",
+        marketplace_status: "not_sent",
+        marketplace_status_label: "Not Sent",
+        marketplace_sent_at: "",
+        marketplace_response_at: "",
+        marketplace_opportunity_count: 0,
         scheduled_for: "",
         internal_notes: sourceRequest?.manager_notes || "",
         completion_notes: "",
@@ -2887,6 +2892,10 @@ test("customer portal is reachable from the landing page and loads secure record
               assigned_vendor_trade_category: submittedWorkOrderEditPayload.assignment_type === "vendor" && submittedWorkOrderEditPayload.assigned_vendor_id ? "Plumbing" : submittedWorkOrderEditPayload.assignment_type ? "" : row.assigned_vendor_trade_category,
               assigned_contractor_id: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? submittedWorkOrderEditPayload.assigned_contractor_id || null : submittedWorkOrderEditPayload.assignment_type ? null : row.assigned_contractor_id,
               assigned_contractor_name: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "" : row.assigned_contractor_name,
+              marketplace_status: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "not_sent" : row.marketplace_status,
+              marketplace_status_label: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "Not Sent" : row.marketplace_status_label,
+              marketplace_sent_at: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "" : row.marketplace_sent_at,
+              marketplace_response_at: submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "" : row.marketplace_response_at,
               completed_at: submittedWorkOrderEditPayload.status === "completed" ? "2026-06-16T17:30:00Z" : row.completed_at,
               closed_at: submittedWorkOrderEditPayload.status === "closed" ? "2026-06-16T18:00:00Z" : row.closed_at,
               completion_attachments: submittedWorkOrderEditPayload.hasAttachment
@@ -2913,6 +2922,102 @@ test("customer portal is reachable from the landing page and loads secure record
                   message: submittedWorkOrderEditPayload.status === "completed" ? "Status changed to Completed." : "Work order updated.",
                   actor: "customer@example.com",
                   created_at: "2026-06-16T17:30:00Z",
+                },
+              ],
+            }
+          : row
+      );
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_work_orders: propertyWorkOrders,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          work_orders: propertyWorkOrders,
+          work_order_count: propertyWorkOrders.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          work_order: propertyWorkOrders.find((row) => row.id === 901),
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/send-to-marketplace/") && method === "POST") {
+      propertyWorkOrders = propertyWorkOrders.map((row) =>
+        row.id === 901
+          ? {
+              ...row,
+              marketplace_status: "sent",
+              marketplace_status_label: "Sent",
+              marketplace_sent_at: "2026-06-16T18:15:00Z",
+              marketplace_response_at: "",
+              marketplace_opportunity_count: 2,
+              activities: [
+                ...(row.activities || []),
+                {
+                  id: 9903,
+                  activity_type: "marketplace_sent",
+                  activity_type_label: "Marketplace Sent",
+                  message: "Sent to 2 marketplace contractors.",
+                  actor: "customer@example.com",
+                  created_at: "2026-06-16T18:15:00Z",
+                },
+              ],
+            }
+          : row
+      );
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_work_orders: propertyWorkOrders,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          work_orders: propertyWorkOrders,
+          work_order_count: propertyWorkOrders.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          work_order: propertyWorkOrders.find((row) => row.id === 901),
+          opportunity_count: 2,
+          created_opportunity_count: 2,
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/withdraw-marketplace/") && method === "POST") {
+      propertyWorkOrders = propertyWorkOrders.map((row) =>
+        row.id === 901
+          ? {
+              ...row,
+              marketplace_status: "withdrawn",
+              marketplace_status_label: "Withdrawn",
+              marketplace_response_at: "2026-06-16T18:30:00Z",
+              activities: [
+                ...(row.activities || []),
+                {
+                  id: 9904,
+                  activity_type: "marketplace_withdrawn",
+                  activity_type_label: "Marketplace Withdrawn",
+                  message: "Marketplace opportunity withdrawn.",
+                  actor: "customer@example.com",
+                  created_at: "2026-06-16T18:30:00Z",
                 },
               ],
             }
@@ -2983,6 +3088,11 @@ test("customer portal is reachable from the landing page and loads secure record
         assigned_vendor_trade_category: submittedWorkOrderPayload.assigned_vendor_id ? "Plumbing" : "",
         assigned_contractor_id: submittedWorkOrderPayload.assigned_contractor_id,
         assigned_contractor_name: "",
+        marketplace_status: "not_sent",
+        marketplace_status_label: "Not Sent",
+        marketplace_sent_at: "",
+        marketplace_response_at: "",
+        marketplace_opportunity_count: 0,
         scheduled_for: submittedWorkOrderPayload.scheduled_for,
         internal_notes: submittedWorkOrderPayload.internal_notes,
         completion_notes: submittedWorkOrderPayload.completion_notes,
@@ -4029,7 +4139,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-901")).toContainText("Pipe Pros");
   await page.getByTestId("property-work-order-edit-901").click();
   await page.getByTestId("property-work-order-assignment-type").selectOption("marketplace_contractor");
-  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Marketplace contractor assignment coming next.");
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Save this work order");
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
   expect(submittedWorkOrderEditPayload).toMatchObject({
@@ -4037,6 +4147,13 @@ test("customer portal is reachable from the landing page and loads secure record
   });
   await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace Contractor");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace contractor assignment coming next.");
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Not Sent");
+  await page.getByTestId("property-work-order-send-marketplace-901").click();
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Sent");
+  await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Marketplace Sent");
+  await page.getByTestId("property-work-order-withdraw-marketplace-901").click();
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Withdrawn");
+  await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Marketplace Withdrawn");
 
   await page.getByTestId("property-work-order-add").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();

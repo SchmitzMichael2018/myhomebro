@@ -530,6 +530,13 @@ class ContractorOpportunity(models.Model):
         blank=True,
         related_name="contractor_opportunities",
     )
+    property_work_order = models.ForeignKey(
+        "projects.PropertyWorkOrder",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_opportunities",
+    )
     homeowner_name = models.CharField(max_length=255, null=True, blank=True)
     homeowner_email = models.EmailField(null=True, blank=True)
     homeowner_phone = models.CharField(max_length=50, null=True, blank=True)
@@ -582,6 +589,7 @@ class ContractorOpportunity(models.Model):
             models.Index(fields=["directory_entry", "status"], name="projects_co_directo_6c6181_idx"),
             models.Index(fields=["intake_request", "status"], name="projects_co_intake__6af8e5_idx"),
             models.Index(fields=["project", "status"], name="projects_co_project_c3ba09_idx"),
+            models.Index(fields=["property_work_order", "status"], name="projects_co_propwo__8d3a91_idx"),
             models.Index(fields=["status", "created_at"], name="projects_co_status_05f037_idx"),
         ]
         constraints = [
@@ -589,6 +597,11 @@ class ContractorOpportunity(models.Model):
                 fields=["directory_entry", "intake_request"],
                 condition=models.Q(intake_request__isnull=False),
                 name="uniq_opportunity_directory_entry_intake",
+            ),
+            models.UniqueConstraint(
+                fields=["directory_entry", "property_work_order"],
+                condition=models.Q(property_work_order__isnull=False),
+                name="uniq_opportunity_directory_entry_property_work_order",
             )
         ]
 

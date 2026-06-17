@@ -76,7 +76,7 @@ from projects.services.customer_notification_cleanup import (
     cleanup_preferences_payload,
     next_cleanup_run_at,
 )
-from projects.models_contractor_discovery import ContractorDiscoveryInvite, ContractorOpportunity
+from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.models_customer_refund_request import CustomerRefundRequest
@@ -752,6 +752,11 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
         "assigned_vendor_phone": _safe_text(getattr(assigned_vendor, "phone", "")) if assigned_vendor else "",
         "assigned_contractor_id": row.assigned_contractor_id,
         "assigned_contractor_name": _safe_text(getattr(assigned_contractor, "business_name", "")) or _safe_text(getattr(assigned_contractor, "company_name", "")) if assigned_contractor else "",
+        "marketplace_status": _safe_text(row.marketplace_status),
+        "marketplace_status_label": row.get_marketplace_status_display(),
+        "marketplace_sent_at": _safe_dt(row.marketplace_sent_at),
+        "marketplace_response_at": _safe_dt(row.marketplace_response_at),
+        "marketplace_opportunity_count": row.contractor_opportunities.count() if getattr(row, "pk", None) else 0,
         "scheduled_for": _safe_dt(row.scheduled_for),
         "started_at": _safe_dt(row.started_at),
         "completed_at": _safe_dt(row.completed_at),
@@ -6519,6 +6524,157 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             row._prefetched_objects_cache.pop("activities", None)
         return Response(
             {"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)},
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkOrderView):
+    action = "send"
+
+    def _work_order_for_marketplace(self, company: PropertyManagementCompany, property_profile: PropertyProfile, work_order_id: int):
+        return get_object_or_404(
+            PropertyWorkOrder.objects.select_related(
+                "property_management_company",
+                "property_profile",
+                "unit",
+                "tenant",
+                "assigned_staff_member",
+                "assigned_vendor",
+                "assigned_contractor",
+                "source_tenant_request",
+            )
+            .prefetch_related("source_tenant_request__attachments", "attachments", "activities", "contractor_opportunities")
+            .filter(property_profile=property_profile, property_management_company=company),
+            pk=work_order_id,
+        )
+
+    def _property_work_order_photos(self, row: PropertyWorkOrder) -> list[dict]:
+        photos = []
+        source_request = getattr(row, "source_tenant_request", None)
+        if source_request is not None:
+            for attachment in source_request.attachments.all():
+                payload = _tenant_maintenance_attachment_payload(attachment)
+                photos.append(
+                    {
+                        "id": payload.get("id"),
+                        "url": payload.get("url"),
+                        "caption": payload.get("filename"),
+                        "original_name": payload.get("filename"),
+                        "source": "tenant_request",
+                    }
+                )
+        for attachment in row.attachments.all():
+            payload = _property_work_order_attachment_payload(attachment)
+            photos.append(
+                {
+                    "id": payload.get("id"),
+                    "url": payload.get("url"),
+                    "caption": payload.get("filename"),
+                    "original_name": payload.get("filename"),
+                    "source": "work_order",
+                }
+            )
+        return [photo for photo in photos if photo.get("url") or photo.get("original_name")]
+
+    def _eligible_directory_entries(self, row: PropertyWorkOrder):
+        qs = ContractorDirectoryEntry.objects.select_related("claimed_by_contractor", "claimed_by_contractor__user").filter(
+            claimed=True,
+            claimed_by_contractor__isnull=False,
+            claimed_by_contractor__marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
+        )
+        property_profile = row.property_profile
+        state = _safe_text(getattr(property_profile, "state", ""))
+        if state:
+            qs = qs.filter(Q(state__iexact=state) | Q(service_state__iexact=state) | Q(state__isnull=True, service_state__isnull=True))
+        category_label = _safe_text(row.get_category_display()).lower()
+        category_key = _safe_text(row.category).lower().replace("_", " ")
+        if category_key and row.category != PropertyWorkOrder.CATEGORY_OTHER:
+            qs = qs.filter(
+                Q(primary_service__icontains=category_key)
+                | Q(primary_service__icontains=category_label)
+                | Q(services__icontains=category_key)
+                | Q(services__icontains=category_label)
+                | Q(normalized_services__icontains=category_key)
+                | Q(normalized_services__icontains=category_label)
+            )
+        return qs.order_by("-claimed_by_contractor__marketplace_preferred", "business_name", "id")[:10]
+
+    def post(self, request, token: str, property_id: int, work_order_id: int):
+        email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        row = self._work_order_for_marketplace(company, property_profile, work_order_id)
+        action = getattr(self, "action", "send")
+        if action == "withdraw":
+            if row.marketplace_status not in {PropertyWorkOrder.MARKETPLACE_SENT, PropertyWorkOrder.MARKETPLACE_DECLINED}:
+                return Response({"detail": "Only sent marketplace work orders can be withdrawn."}, status=status.HTTP_400_BAD_REQUEST)
+            now = timezone.now()
+            row.marketplace_status = PropertyWorkOrder.MARKETPLACE_WITHDRAWN
+            row.marketplace_response_at = now
+            row.save(update_fields=["marketplace_status", "marketplace_response_at", "updated_at"])
+            ContractorOpportunity.objects.filter(property_work_order=row, status=ContractorOpportunity.STATUS_PENDING).update(status=ContractorOpportunity.STATUS_EXPIRED, updated_at=now)
+            _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_MARKETPLACE_WITHDRAWN, "Marketplace opportunity withdrawn.", email)
+            if hasattr(row, "_prefetched_objects_cache"):
+                row._prefetched_objects_cache.clear()
+            return Response({"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)}, status=status.HTTP_200_OK)
+
+        if row.assignment_type != PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR:
+            return Response({"detail": "Set assignment type to Marketplace Contractor before sending."}, status=status.HTTP_400_BAD_REQUEST)
+        if row.marketplace_status in {PropertyWorkOrder.MARKETPLACE_SENT, PropertyWorkOrder.MARKETPLACE_ACCEPTED}:
+            return Response({"detail": "This work order has already been sent to the marketplace."}, status=status.HTTP_400_BAD_REQUEST)
+        active_exists = ContractorOpportunity.objects.filter(property_work_order=row, status__in=[ContractorOpportunity.STATUS_PENDING, ContractorOpportunity.STATUS_ACCEPTED]).exists()
+        if active_exists:
+            return Response({"detail": "This work order already has active marketplace opportunities."}, status=status.HTTP_400_BAD_REQUEST)
+
+        entries = list(self._eligible_directory_entries(row))
+        if not entries:
+            return Response({"detail": "No eligible marketplace contractors are available for this work order yet."}, status=status.HTTP_400_BAD_REQUEST)
+        property_profile = row.property_profile
+        address = ", ".join(part for part in [_safe_text(property_profile.address_line1), _safe_text(property_profile.city), _safe_text(property_profile.state), _safe_text(property_profile.postal_code)] if part)
+        now = timezone.now()
+        created = []
+        for entry in entries:
+            opportunity, was_created = ContractorOpportunity.objects.update_or_create(
+                directory_entry=entry,
+                property_work_order=row,
+                defaults={
+                    "homeowner_name": "Property Management Company",
+                    "homeowner_email": None,
+                    "homeowner_phone": None,
+                    "project_address": _safe_text(property_profile.address_line1),
+                    "project_city": _safe_text(property_profile.city),
+                    "project_state": _safe_text(property_profile.state),
+                    "project_zip": _safe_text(property_profile.postal_code),
+                    "project_type": row.get_category_display(),
+                    "project_subtype": row.get_priority_display(),
+                    "project_title": f"{row.work_order_number or f'PWO-{row.id:06d}'} - {row.title}",
+                    "project_description": row.description,
+                    "refined_description": f"{row.description}\n\nLocation: {address or 'Managed property'}\nPriority: {row.get_priority_display()}",
+                    "timeline": _safe_dt(row.scheduled_for) or "Requested by property manager",
+                    "photos": self._property_work_order_photos(row),
+                    "status": ContractorOpportunity.STATUS_PENDING,
+                    "selected_by_homeowner": True,
+                },
+            )
+            if was_created:
+                created.append(opportunity)
+        row.marketplace_status = PropertyWorkOrder.MARKETPLACE_SENT
+        row.marketplace_sent_at = now
+        row.marketplace_response_at = None
+        row.assigned_contractor = None
+        row.assigned_staff_member = None
+        row.assigned_vendor = None
+        row.save(update_fields=["marketplace_status", "marketplace_sent_at", "marketplace_response_at", "assigned_contractor", "assigned_staff_member", "assigned_vendor", "updated_at"])
+        _property_work_order_add_activity(row, PropertyWorkOrderActivity.TYPE_MARKETPLACE_SENT, f"Sent to {len(entries)} marketplace contractor{'s' if len(entries) != 1 else ''}.", email)
+        if hasattr(row, "_prefetched_objects_cache"):
+            row._prefetched_objects_cache.clear()
+        return Response(
+            {
+                "work_order": _property_work_order_payload(row),
+                "created_opportunity_count": len(created),
+                "opportunity_count": len(entries),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
             status=status.HTTP_200_OK,
         )
 

@@ -13,6 +13,7 @@ from projects.models_contractor_discovery import (
     ContractorDirectoryListing,
     ContractorOpportunity,
 )
+from projects.models_customer_portal import PropertyWorkOrder, PropertyWorkOrderActivity
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
 from projects.services.customer_lifecycle import sync_customer_request_agreement_links
@@ -296,6 +297,68 @@ def _find_or_create_customer(opportunity: ContractorOpportunity, contractor: Con
     )
 
 
+def _add_property_work_order_activity(work_order: PropertyWorkOrder, activity_type: str, message: str, actor: str = "") -> None:
+    PropertyWorkOrderActivity.objects.create(
+        work_order=work_order,
+        activity_type=activity_type,
+        message=_safe_text(message),
+        actor=_safe_text(actor).lower(),
+    )
+
+
+@transaction.atomic
+def accept_property_work_order_opportunity(opportunity: ContractorOpportunity, contractor: Contractor) -> dict[str, Any]:
+    opportunity = ContractorOpportunity.objects.select_for_update().select_related("directory_entry", "property_work_order").get(pk=opportunity.pk)
+    linked = opportunity.directory_entry.claimed_by_contractor_id == contractor.id
+    if not linked:
+        raise PermissionError("This opportunity is not linked to your contractor profile.")
+
+    block_reason = contractor_marketplace_action_block_reason(contractor)
+    if block_reason:
+        raise PermissionError(block_reason)
+
+    work_order = opportunity.property_work_order
+    if work_order is None:
+        raise PermissionError("This work order opportunity is no longer available.")
+    if work_order.marketplace_status == PropertyWorkOrder.MARKETPLACE_WITHDRAWN:
+        raise PermissionError("This work order opportunity has been withdrawn.")
+    if work_order.marketplace_status == PropertyWorkOrder.MARKETPLACE_ACCEPTED and work_order.assigned_contractor_id not in {None, contractor.id}:
+        raise PermissionError("This work order opportunity has already been accepted.")
+
+    now = timezone.now()
+    if opportunity.accepted_at is None:
+        opportunity.accepted_at = now
+    opportunity.accepted_by_contractor = contractor
+    opportunity.status = ContractorOpportunity.STATUS_ACCEPTED
+    opportunity.save(update_fields=["accepted_at", "accepted_by_contractor", "status", "updated_at"])
+
+    work_order.assignment_type = PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR
+    work_order.assigned_contractor = contractor
+    work_order.assigned_staff_member = None
+    work_order.assigned_vendor = None
+    work_order.marketplace_status = PropertyWorkOrder.MARKETPLACE_ACCEPTED
+    work_order.marketplace_response_at = now
+    work_order.save(
+        update_fields=[
+            "assignment_type",
+            "assigned_contractor",
+            "assigned_staff_member",
+            "assigned_vendor",
+            "marketplace_status",
+            "marketplace_response_at",
+            "updated_at",
+        ]
+    )
+    ContractorOpportunity.objects.filter(property_work_order=work_order, status=ContractorOpportunity.STATUS_PENDING).exclude(pk=opportunity.pk).update(status=ContractorOpportunity.STATUS_EXPIRED, updated_at=now)
+    _add_property_work_order_activity(
+        work_order,
+        PropertyWorkOrderActivity.TYPE_MARKETPLACE_ACCEPTED,
+        f"Marketplace opportunity accepted by {contractor.business_name or contractor.name}.",
+        getattr(contractor.user, "email", ""),
+    )
+    return {"opportunity": opportunity, "work_order": work_order, "created": False}
+
+
 @transaction.atomic
 def convert_opportunity_to_customer_and_draft_agreement(opportunity: ContractorOpportunity, contractor: Contractor) -> dict[str, Any]:
     opportunity = ContractorOpportunity.objects.select_for_update().get(pk=opportunity.pk)
@@ -384,6 +447,8 @@ def convert_opportunity_to_customer_and_draft_agreement(opportunity: ContractorO
 @transaction.atomic
 def accept_contractor_opportunity(opportunity: ContractorOpportunity, contractor: Contractor) -> dict[str, Any]:
     opportunity = ContractorOpportunity.objects.select_for_update().select_related("directory_entry").get(pk=opportunity.pk)
+    if opportunity.property_work_order_id:
+        return accept_property_work_order_opportunity(opportunity, contractor)
     linked = opportunity.directory_entry.claimed_by_contractor_id == contractor.id
     if not linked:
         raise PermissionError("This opportunity is not linked to your contractor profile.")

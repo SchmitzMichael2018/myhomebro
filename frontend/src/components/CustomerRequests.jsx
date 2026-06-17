@@ -345,6 +345,8 @@ function PropertyWorkOrdersSection({
   vendors = [],
   onCreate,
   onUpdate,
+  onSendToMarketplace,
+  onWithdrawMarketplace,
   saving = false,
 }) {
   const [editing, setEditing] = useState(null);
@@ -450,6 +452,24 @@ function PropertyWorkOrdersSection({
     }
   };
 
+  const sendToMarketplace = async (row) => {
+    if (!row?.id) return;
+    try {
+      await onSendToMarketplace?.(row.property_profile_id || activePropertyId, row.id);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Could not send that work order to the marketplace.");
+    }
+  };
+
+  const withdrawMarketplace = async (row) => {
+    if (!row?.id) return;
+    try {
+      await onWithdrawMarketplace?.(row.property_profile_id || activePropertyId, row.id);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Could not withdraw that marketplace work order.");
+    }
+  };
+
   return (
     <section data-testid="property-work-orders-section" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -498,6 +518,13 @@ function PropertyWorkOrdersSection({
                     </span>
                     <span><strong className="text-slate-200">Scheduled:</strong> {formatDateTime(row.scheduled_for) || "-"}</span>
                     <span><strong className="text-slate-200">Source:</strong> {row.source_tenant_request_reference || "Manual"}</span>
+                    {row.assignment_type === "marketplace_contractor" ? (
+                      <>
+                        <span><strong className="text-slate-200">Marketplace:</strong> {row.marketplace_status_label || "Not Sent"}</span>
+                        <span><strong className="text-slate-200">Sent:</strong> {formatDateTime(row.marketplace_sent_at) || "-"}</span>
+                        <span><strong className="text-slate-200">Response:</strong> {formatDateTime(row.marketplace_response_at) || "-"}</span>
+                      </>
+                    ) : null}
                   </div>
                   {(row.source_attachments || []).length ? (
                     <div data-testid={`property-work-order-attachments-${row.id}`} className="mt-3 flex flex-wrap gap-2">
@@ -588,6 +615,26 @@ function PropertyWorkOrdersSection({
                         className="rounded-lg border border-amber-300/45 bg-amber-300/10 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-300/20"
                       >
                         Close Work
+                      </button>
+                    ) : null}
+                    {row.assignment_type === "marketplace_contractor" && (!row.marketplace_status || row.marketplace_status === "not_sent" || row.marketplace_status === "withdrawn" || row.marketplace_status === "declined") ? (
+                      <button
+                        type="button"
+                        data-testid={`property-work-order-send-marketplace-${row.id}`}
+                        onClick={() => sendToMarketplace(row)}
+                        className="rounded-lg border border-amber-300/45 bg-amber-300/10 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-300/20"
+                      >
+                        Send To Marketplace
+                      </button>
+                    ) : null}
+                    {row.assignment_type === "marketplace_contractor" && row.marketplace_status === "sent" ? (
+                      <button
+                        type="button"
+                        data-testid={`property-work-order-withdraw-marketplace-${row.id}`}
+                        onClick={() => withdrawMarketplace(row)}
+                        className="rounded-lg border border-rose-300/45 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
+                      >
+                        Withdraw
                       </button>
                     ) : null}
                   </div>
@@ -700,7 +747,7 @@ function PropertyWorkOrdersSection({
               ) : null}
               {form.assignment_type === "marketplace_contractor" ? (
                 <div data-testid="property-work-order-marketplace-placeholder" className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3 text-sm text-amber-100">
-                  Marketplace contractor assignment coming next.
+                  Save this work order, then send it to the contractor marketplace from the work order card.
                 </div>
               ) : null}
               <label className="block text-sm font-medium text-slate-200">
@@ -984,6 +1031,8 @@ export default function CustomerRequests({
   onReviewTenantMaintenanceRequest,
   onCreatePropertyWorkOrder,
   onUpdatePropertyWorkOrder,
+  onSendPropertyWorkOrderToMarketplace,
+  onWithdrawPropertyWorkOrderMarketplace,
   onCreateWorkOrderFromTenantRequest,
   onImproveRequest,
   onStartContractorSearch,
@@ -1782,6 +1831,8 @@ I need help installing shelves and patching drywall.`}
             vendors={vendors}
             onCreate={createPropertyWorkOrder}
             onUpdate={updatePropertyWorkOrder}
+            onSendToMarketplace={onSendPropertyWorkOrderToMarketplace}
+            onWithdrawMarketplace={onWithdrawPropertyWorkOrderMarketplace}
             saving={savingPropertyWorkOrder}
           />
           <TenantMaintenanceReviewQueue

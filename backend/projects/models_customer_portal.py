@@ -588,6 +588,19 @@ class PropertyWorkOrder(models.Model):
     ]
     ACTIVE_STATUSES = [STATUS_OPEN, STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_WAITING, STATUS_COMPLETED]
 
+    MARKETPLACE_NOT_SENT = "not_sent"
+    MARKETPLACE_SENT = "sent"
+    MARKETPLACE_ACCEPTED = "accepted"
+    MARKETPLACE_DECLINED = "declined"
+    MARKETPLACE_WITHDRAWN = "withdrawn"
+    MARKETPLACE_STATUS_CHOICES = [
+        (MARKETPLACE_NOT_SENT, "Not Sent"),
+        (MARKETPLACE_SENT, "Sent"),
+        (MARKETPLACE_ACCEPTED, "Accepted"),
+        (MARKETPLACE_DECLINED, "Declined"),
+        (MARKETPLACE_WITHDRAWN, "Withdrawn"),
+    ]
+
     ASSIGNMENT_INTERNAL_STAFF = "internal_staff"
     ASSIGNMENT_VENDOR = "vendor"
     ASSIGNMENT_MARKETPLACE_CONTRACTOR = "marketplace_contractor"
@@ -661,6 +674,14 @@ class PropertyWorkOrder(models.Model):
         default=ASSIGNMENT_INTERNAL_STAFF,
         db_index=True,
     )
+    marketplace_status = models.CharField(
+        max_length=24,
+        choices=MARKETPLACE_STATUS_CHOICES,
+        default=MARKETPLACE_NOT_SENT,
+        db_index=True,
+    )
+    marketplace_sent_at = models.DateTimeField(null=True, blank=True)
+    marketplace_response_at = models.DateTimeField(null=True, blank=True)
     scheduled_for = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
@@ -680,6 +701,7 @@ class PropertyWorkOrder(models.Model):
             models.Index(fields=["tenant", "status"]),
             models.Index(fields=["source_tenant_request", "status"]),
             models.Index(fields=["assignment_type", "status"]),
+            models.Index(fields=["marketplace_status", "created_at"]),
             models.Index(fields=["assigned_vendor", "status"]),
             models.Index(fields=["assigned_contractor", "status"]),
         ]
@@ -747,6 +769,10 @@ class PropertyWorkOrderActivity(models.Model):
     TYPE_STATUS_CHANGED = "status_changed"
     TYPE_NOTE_ADDED = "note_added"
     TYPE_ATTACHMENT_ADDED = "attachment_added"
+    TYPE_MARKETPLACE_SENT = "marketplace_sent"
+    TYPE_MARKETPLACE_ACCEPTED = "marketplace_accepted"
+    TYPE_MARKETPLACE_DECLINED = "marketplace_declined"
+    TYPE_MARKETPLACE_WITHDRAWN = "marketplace_withdrawn"
     TYPE_CHOICES = [
         (TYPE_CREATED, "Created"),
         (TYPE_ASSIGNED, "Assigned"),
@@ -757,6 +783,10 @@ class PropertyWorkOrderActivity(models.Model):
         (TYPE_STATUS_CHANGED, "Status Changed"),
         (TYPE_NOTE_ADDED, "Note Added"),
         (TYPE_ATTACHMENT_ADDED, "Attachment Added"),
+        (TYPE_MARKETPLACE_SENT, "Marketplace Sent"),
+        (TYPE_MARKETPLACE_ACCEPTED, "Marketplace Accepted"),
+        (TYPE_MARKETPLACE_DECLINED, "Marketplace Declined"),
+        (TYPE_MARKETPLACE_WITHDRAWN, "Marketplace Withdrawn"),
     ]
 
     work_order = models.ForeignKey(

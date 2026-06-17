@@ -1827,6 +1827,7 @@ export default function ContractorDashboard() {
 
   const [agreements, setAgreements] = useState([]);
   const [publicLeads, setPublicLeads] = useState([]);
+  const [marketplaceActionId, setMarketplaceActionId] = useState("");
   const [milestones, setMilestones] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [drawRequests, setDrawRequests] = useState([]);
@@ -2034,6 +2035,33 @@ export default function ContractorDashboard() {
     } catch (err) {
       console.error(err);
       toast.error("Could not dismiss activation guidance.");
+    }
+  }
+
+  async function respondToMarketplaceWorkOrder(opportunity, action) {
+    const opportunityId = opportunity?.opportunity_id || opportunity?.id;
+    if (!opportunityId) return;
+    const actionLabel = action === "accept" ? "accepted" : "declined";
+    setMarketplaceActionId(`${action}-${opportunityId}`);
+    try {
+      const { data } = await api.post(`/projects/contractor-opportunities/${opportunityId}/${action}/`);
+      setPublicLeads((current) => {
+        const rows = Array.isArray(current) ? current : [];
+        let replaced = false;
+        const nextRows = rows.map((row) => {
+          const rowId = row?.opportunity_id || row?.id;
+          if (String(rowId) !== String(opportunityId)) return row;
+          replaced = true;
+          return { ...row, ...data };
+        });
+        return replaced ? nextRows : [data, ...rows];
+      });
+      toast.success(`Marketplace work order ${actionLabel}.`);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || `Could not ${action} that marketplace work order.`);
+      throw err;
+    } finally {
+      setMarketplaceActionId("");
     }
   }
 
@@ -2970,6 +2998,12 @@ export default function ContractorDashboard() {
       counts,
     };
   }, [publicLeads]);
+  const marketplaceWorkOrders = useMemo(() => {
+    const rows = Array.isArray(publicLeads) ? publicLeads : [];
+    return rows
+      .filter((row) => row?.source === "property_work_order" || row?.property_work_order_id || row?.work_order_id)
+      .sort((left, right) => String(right.selected_at || right.created_at || "").localeCompare(String(left.selected_at || left.created_at || "")));
+  }, [publicLeads]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
   const workPipelineRows = [
     {
@@ -3291,6 +3325,93 @@ export default function ContractorDashboard() {
               </div>
             </DashboardCard>
           </DashboardSection>
+
+          {marketplaceWorkOrders.length ? (
+            <DashboardSection
+              title="Marketplace Work Orders"
+              subtitle="Property management work orders routed through MyHomeBro."
+              variant="premium"
+              testId="contractor-marketplace-work-orders"
+            >
+              <DashboardCard
+                testId="contractor-marketplace-work-orders-card"
+                tone="premium"
+                className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
+              >
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {marketplaceWorkOrders.slice(0, 4).map((row) => {
+                    const opportunityId = row.opportunity_id || row.id;
+                    const isPending = String(row.status || "").toLowerCase() === "pending";
+                    return (
+                      <article
+                        key={opportunityId}
+                        data-testid={`contractor-marketplace-work-order-${opportunityId}`}
+                        className="rounded-2xl border border-white/12 bg-white/8 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Wrench className="h-4 w-4 text-amber-200" aria-hidden="true" />
+                              <h3 className="truncate text-sm font-bold text-white">
+                                {row.work_order_number || row.project_title || "Marketplace work order"}
+                              </h3>
+                              <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-bold uppercase text-sky-100">
+                                {row.status_label || row.status || "Pending"}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-sky-100/78">
+                              {row.refined_description || row.project_description || "No description provided."}
+                            </p>
+                            <div className="mt-3 grid gap-1 text-xs text-sky-100/65 sm:grid-cols-2">
+                              <span><strong className="text-sky-50">Location:</strong> {[row.project_city, row.project_state].filter(Boolean).join(", ") || row.project_address || "Managed property"}</span>
+                              <span><strong className="text-sky-50">Category:</strong> {row.category_label || row.project_type || "General repair"}</span>
+                              <span><strong className="text-sky-50">Priority:</strong> {row.priority_label || row.project_subtype || "Normal"}</span>
+                              <span><strong className="text-sky-50">Requested:</strong> {formatActivityTimestamp(row.requested_date || row.selected_at || row.created_at) || "-"}</span>
+                            </div>
+                            {Array.isArray(row.photos) && row.photos.length ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {row.photos.slice(0, 3).map((photo) => (
+                                  <a
+                                    key={photo.id || photo.url || photo.original_name}
+                                    href={photo.url || "#"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="rounded-xl border border-white/15 bg-white/10 px-2.5 py-2 text-xs font-semibold text-white hover:bg-white/15"
+                                  >
+                                    {photo.original_name || photo.caption || "Attachment"}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            data-testid={`contractor-marketplace-work-order-accept-${opportunityId}`}
+                            disabled={!isPending || marketplaceActionId === `accept-${opportunityId}`}
+                            onClick={() => respondToMarketplaceWorkOrder(row, "accept")}
+                            className="rounded-xl bg-emerald-300 px-3 py-2 text-xs font-black text-emerald-950 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {marketplaceActionId === `accept-${opportunityId}` ? "Accepting..." : "Accept"}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`contractor-marketplace-work-order-decline-${opportunityId}`}
+                            disabled={!isPending || marketplaceActionId === `decline-${opportunityId}`}
+                            onClick={() => respondToMarketplaceWorkOrder(row, "decline")}
+                            className="rounded-xl border border-white/18 px-3 py-2 text-xs font-bold text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {marketplaceActionId === `decline-${opportunityId}` ? "Declining..." : "Decline"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </DashboardCard>
+            </DashboardSection>
+          ) : null}
 
           <div
             data-testid="dashboard-priority-schedule-grid"

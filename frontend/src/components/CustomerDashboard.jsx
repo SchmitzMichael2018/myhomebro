@@ -3349,6 +3349,34 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       throw error;
     }
   };
+  const sendPropertyWorkOrderToMarketplace = async (propertyId, workOrderId) => {
+    if (!propertyId || !workOrderId) return false;
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/send-to-marketplace/`
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success("Work order sent to marketplace contractors.");
+      return data;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not send that work order to the marketplace.");
+      throw error;
+    }
+  };
+  const withdrawPropertyWorkOrderMarketplace = async (propertyId, workOrderId) => {
+    if (!propertyId || !workOrderId) return false;
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/withdraw-marketplace/`
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success("Marketplace work order withdrawn.");
+      return data;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not withdraw that marketplace work order.");
+      throw error;
+    }
+  };
   const createWorkOrderFromTenantRequest = async (propertyId, requestId) => {
     if (!propertyId || !requestId) return false;
     try {
@@ -3458,6 +3486,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onReviewTenantMaintenanceRequest={reviewTenantMaintenanceRequest}
           onCreatePropertyWorkOrder={createPropertyWorkOrder}
           onUpdatePropertyWorkOrder={updatePropertyWorkOrder}
+          onSendPropertyWorkOrderToMarketplace={sendPropertyWorkOrderToMarketplace}
+          onWithdrawPropertyWorkOrderMarketplace={withdrawPropertyWorkOrderMarketplace}
           onCreateWorkOrderFromTenantRequest={createWorkOrderFromTenantRequest}
           onImproveRequest={async (payload) => {
             const { data } = await api.post(

@@ -140,6 +140,7 @@ from projects.models_dispute import Dispute, DisputeWorkOrder
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.services.project_activity import create_project_activity_event
 from projects.models_customer_refund_request import CustomerRefundRequest
+from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.project_learning import (
     capture_agreement_outcome_snapshot,
@@ -20797,6 +20798,33 @@ class CustomerPortalAccessTests(TestCase):
         )
         return company, property_profile, unit, tenant, staff
 
+    def _create_marketplace_contractor_entry(self, *, email="contractor-marketplace@example.com", business_name="ABC Plumbing"):
+        user = get_user_model().objects.create_user(email=email, password="testpass123")
+        contractor = Contractor.objects.create(
+            user=user,
+            business_name=business_name,
+            city="Austin",
+            state="TX",
+            charges_enabled=True,
+            payouts_enabled=True,
+            details_submitted=True,
+            marketplace_verification_status=Contractor.MARKETPLACE_VERIFIED,
+        )
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name=business_name,
+            normalized_name=business_name.lower(),
+            city="Austin",
+            state="TX",
+            service_city="Austin",
+            service_state="TX",
+            primary_service="plumbing",
+            normalized_services=["plumbing"],
+            services=["Plumbing"],
+            claimed=True,
+            claimed_by_contractor=contractor,
+        )
+        return user, contractor, entry
+
     def test_property_management_company_can_create_list_and_edit_work_orders(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
@@ -20957,6 +20985,173 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(any("vendor Pipe Pros" in message for message in activity_messages))
         self.assertTrue(any("Marketplace contractor" in message for message in activity_messages))
         self.assertTrue(any("Morgan Manager" in message for message in activity_messages))
+
+    def test_property_work_order_can_be_sent_to_marketplace_and_duplicate_is_blocked(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        self._create_marketplace_contractor_entry()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            priority=PropertyWorkOrder.PRIORITY_URGENT,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        duplicate = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row.refresh_from_db()
+        self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_SENT)
+        self.assertIsNotNone(row.marketplace_sent_at)
+        self.assertEqual(response.data["work_order"]["marketplace_status"], PropertyWorkOrder.MARKETPLACE_SENT)
+        self.assertEqual(ContractorOpportunity.objects.filter(property_work_order=row).count(), 1)
+        opportunity = ContractorOpportunity.objects.get(property_work_order=row)
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_PENDING)
+        self.assertEqual(opportunity.project_title, f"{row.work_order_number} - Repair sink leak")
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertTrue(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_MARKETPLACE_SENT).exists())
+
+    def test_property_work_order_marketplace_accept_assigns_contractor_without_agreement(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        contractor_user, contractor, _entry = self._create_marketplace_contractor_entry()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        send_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(send_response.status_code, 200, send_response.data)
+        opportunity = ContractorOpportunity.objects.get(property_work_order=row)
+        agreement_count = Agreement.objects.count()
+
+        self.client.force_authenticate(user=contractor_user)
+        response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row.refresh_from_db()
+        opportunity.refresh_from_db()
+        self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_ACCEPTED)
+        self.assertEqual(row.assigned_contractor, contractor)
+        self.assertEqual(row.assignment_type, PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR)
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_ACCEPTED)
+        self.assertIsNotNone(row.marketplace_response_at)
+        self.assertIsNone(response.data["agreement_id"])
+        self.assertEqual(Agreement.objects.count(), agreement_count)
+        self.assertTrue(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_MARKETPLACE_ACCEPTED).exists())
+
+    def test_property_work_order_marketplace_decline_and_withdraw_record_status(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        contractor_user, _contractor, _entry = self._create_marketplace_contractor_entry()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        send_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(send_response.status_code, 200, send_response.data)
+        opportunity = ContractorOpportunity.objects.get(property_work_order=row)
+
+        self.client.force_authenticate(user=contractor_user)
+        decline_response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/decline/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(decline_response.status_code, 200, decline_response.data)
+        row.refresh_from_db()
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_DECLINED)
+        self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_DECLINED)
+        self.assertTrue(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_MARKETPLACE_DECLINED).exists())
+
+        withdraw_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/withdraw-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(withdraw_response.status_code, 200, withdraw_response.data)
+        row.refresh_from_db()
+        self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_WITHDRAWN)
+        self.assertTrue(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_MARKETPLACE_WITHDRAWN).exists())
+
+    def test_property_work_order_marketplace_enforces_pm_and_contractor_scoping(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        self._create_marketplace_contractor_entry(email="linked-contractor@example.com", business_name="Linked Plumbing")
+        other_user, _other_contractor, _other_entry = self._create_marketplace_contractor_entry(email="other-contractor@example.com", business_name="Other Plumbing")
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        other_company = PropertyManagementCompany.objects.create(homeowner=self.other_homeowner, name="Other PM")
+        other_property = PropertyProfile.objects.create(
+            homeowner=self.other_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=other_company,
+            display_name="Other Managed Property",
+        )
+        scoped_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{other_property.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(scoped_response.status_code, 404)
+
+        send_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(send_response.status_code, 200, send_response.data)
+        opportunity = ContractorOpportunity.objects.filter(property_work_order=row, directory_entry__business_name="Linked Plumbing").get()
+
+        self.client.force_authenticate(user=other_user)
+        accept_response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(accept_response.status_code, 403)
+        row.refresh_from_db()
+        self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_SENT)
+        self.assertIsNone(row.assigned_contractor)
 
     def test_property_work_order_vendor_assignment_is_scoped_to_company(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

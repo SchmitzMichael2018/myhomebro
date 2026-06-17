@@ -22,6 +22,7 @@ from projects.models_contractor_discovery import (
     ContractorOpportunity,
 )
 from projects.models import Contractor
+from projects.models_customer_portal import PropertyWorkOrder, PropertyWorkOrderActivity
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_directory import (
     normalize_business_name,
@@ -223,6 +224,7 @@ class PublicIntakeSendContractorInvitesView(APIView):
 
 def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
     directory_entry = getattr(opportunity, "directory_entry", None)
+    work_order = getattr(opportunity, "property_work_order", None)
     project_description = opportunity.project_description or ""
     refined_description = opportunity.refined_description or ""
     next_url = (
@@ -230,7 +232,7 @@ def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
         if opportunity.converted_agreement_id
         else ""
     )
-    return {
+    payload = {
         "id": opportunity.id,
         "opportunity_id": opportunity.id,
         "directory_entry_id": opportunity.directory_entry_id,
@@ -274,6 +276,23 @@ def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
         "agreement_id": opportunity.converted_agreement_id,
         "next_url": next_url,
     }
+    if work_order is not None:
+        payload.update(
+            {
+                "source": "property_work_order",
+                "property_work_order_id": work_order.id,
+                "work_order_id": work_order.id,
+                "work_order_number": work_order.work_order_number or f"PWO-{work_order.id:06d}",
+                "marketplace_status": work_order.marketplace_status,
+                "marketplace_status_label": work_order.get_marketplace_status_display(),
+                "requested_date": work_order.scheduled_for or work_order.created_at,
+                "priority": work_order.priority,
+                "priority_label": work_order.get_priority_display(),
+                "category": work_order.category,
+                "category_label": work_order.get_category_display(),
+            }
+        )
+    return payload
 
 
 class PublicIntakeSelectContractorView(APIView):
@@ -1353,7 +1372,7 @@ class ContractorOpportunityAcceptView(APIView):
         contractor = getattr(request.user, "contractor_profile", None)
         if contractor is None:
             return Response({"detail": "Only contractors can accept opportunities."}, status=status.HTTP_403_FORBIDDEN)
-        opportunity = ContractorOpportunity.objects.select_related("directory_entry").filter(pk=opportunity_id).first()
+        opportunity = ContractorOpportunity.objects.select_related("directory_entry", "property_work_order").filter(pk=opportunity_id).first()
         if opportunity is None:
             return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
         try:
@@ -1384,9 +1403,9 @@ class ContractorOpportunityListView(APIView):
         contractor = getattr(request.user, "contractor_profile", None)
         if contractor is None:
             return Response({"detail": "Only contractors can view opportunities."}, status=status.HTTP_403_FORBIDDEN)
-        qs = ContractorOpportunity.objects.select_related("directory_entry").filter(
+        qs = ContractorOpportunity.objects.select_related("directory_entry", "property_work_order").filter(
             directory_entry__claimed_by_contractor=contractor
-        ) | ContractorOpportunity.objects.select_related("directory_entry").filter(
+        ) | ContractorOpportunity.objects.select_related("directory_entry", "property_work_order").filter(
             accepted_by_contractor=contractor
         )
         qs = qs.distinct().order_by("-selected_at", "-id")
@@ -1411,7 +1430,7 @@ class ContractorOpportunityDeclineView(APIView):
         contractor = getattr(request.user, "contractor_profile", None)
         if contractor is None:
             return Response({"detail": "Only contractors can decline opportunities."}, status=status.HTTP_403_FORBIDDEN)
-        opportunity = ContractorOpportunity.objects.select_related("directory_entry").filter(pk=opportunity_id).first()
+        opportunity = ContractorOpportunity.objects.select_related("directory_entry", "property_work_order").filter(pk=opportunity_id).first()
         if opportunity is None:
             return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
         linked = opportunity.directory_entry.claimed_by_contractor_id == contractor.id or opportunity.accepted_by_contractor_id == contractor.id
@@ -1421,6 +1440,20 @@ class ContractorOpportunityDeclineView(APIView):
             return Response({"detail": "Converted opportunities cannot be declined."}, status=status.HTTP_400_BAD_REQUEST)
         opportunity.status = ContractorOpportunity.STATUS_DECLINED
         opportunity.save(update_fields=["status", "updated_at"])
+        work_order = opportunity.property_work_order
+        if work_order is not None:
+            now = timezone.now()
+            pending_exists = ContractorOpportunity.objects.filter(property_work_order=work_order, status=ContractorOpportunity.STATUS_PENDING).exclude(pk=opportunity.pk).exists()
+            if not pending_exists and work_order.marketplace_status == PropertyWorkOrder.MARKETPLACE_SENT:
+                work_order.marketplace_status = PropertyWorkOrder.MARKETPLACE_DECLINED
+                work_order.marketplace_response_at = now
+                work_order.save(update_fields=["marketplace_status", "marketplace_response_at", "updated_at"])
+            PropertyWorkOrderActivity.objects.create(
+                work_order=work_order,
+                activity_type=PropertyWorkOrderActivity.TYPE_MARKETPLACE_DECLINED,
+                message=f"Marketplace opportunity declined by {contractor.business_name or contractor.name}.",
+                actor=_safe_text(getattr(contractor.user, "email", "")).lower(),
+            )
         return Response(_opportunity_payload(opportunity), status=status.HTTP_200_OK)
 
 
@@ -1428,7 +1461,7 @@ class AdminContractorOpportunityListView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        qs = ContractorOpportunity.objects.select_related("directory_entry", "converted_customer", "converted_agreement").order_by("-selected_at")
+        qs = ContractorOpportunity.objects.select_related("directory_entry", "converted_customer", "converted_agreement", "property_work_order").order_by("-selected_at")
         for param, field in [
             ("status", "status"),
             ("directory_entry", "directory_entry_id"),
