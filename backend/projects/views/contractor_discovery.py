@@ -48,6 +48,7 @@ from projects.services.contractor_contactability import refresh_contactability
 from projects.services.contractor_service_taxonomy import clean_raw_services
 from projects.services.contractor_opportunities import (
     accept_contractor_opportunity,
+    create_property_work_order_agreement_draft,
     create_or_update_opportunity_from_selection,
 )
 from projects.services.contractor_discovery import (
@@ -285,6 +286,11 @@ def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
                 "work_order_number": work_order.work_order_number or f"PWO-{work_order.id:06d}",
                 "marketplace_status": work_order.marketplace_status,
                 "marketplace_status_label": work_order.get_marketplace_status_display(),
+                "linked_project_id": work_order.linked_project_id,
+                "linked_agreement_id": work_order.linked_agreement_id,
+                "agreement_id": work_order.linked_agreement_id or opportunity.converted_agreement_id,
+                "converted_agreement_id": work_order.linked_agreement_id or opportunity.converted_agreement_id,
+                "next_url": f"/app/agreements/{work_order.linked_agreement_id}/wizard?step=1" if work_order.linked_agreement_id else next_url,
                 "requested_date": work_order.scheduled_for or work_order.created_at,
                 "priority": work_order.priority,
                 "priority_label": work_order.get_priority_display(),
@@ -1391,6 +1397,47 @@ class ContractorOpportunityAcceptView(APIView):
                 "agreement_id": getattr(agreement, "id", None),
                 "next_url": f"/app/agreements/{agreement.id}/wizard?step=1" if agreement is not None else "",
                 **_opportunity_payload(converted_opportunity),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ContractorOpportunityAgreementDraftView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, opportunity_id: int, *args, **kwargs):
+        contractor = getattr(request.user, "contractor_profile", None)
+        if contractor is None:
+            return Response({"detail": "Only contractors can create agreement drafts."}, status=status.HTTP_403_FORBIDDEN)
+        opportunity = ContractorOpportunity.objects.select_related("directory_entry", "property_work_order").filter(pk=opportunity_id).first()
+        if opportunity is None:
+            return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
+        work_order = opportunity.property_work_order
+        if work_order is None:
+            return Response({"detail": "This opportunity is not linked to a property work order."}, status=status.HTTP_400_BAD_REQUEST)
+        if opportunity.directory_entry.claimed_by_contractor_id != contractor.id and opportunity.accepted_by_contractor_id != contractor.id:
+            return Response({"detail": "This opportunity is not linked to your contractor profile."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            result = create_property_work_order_agreement_draft(
+                work_order,
+                contractor=contractor,
+                actor=_safe_text(getattr(request.user, "email", "")),
+            )
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        opportunity.refresh_from_db()
+        agreement = result["agreement"]
+        project = result["project"]
+        return Response(
+            {
+                "created": bool(result.get("created")),
+                "linked_project_id": getattr(project, "id", None),
+                "linked_agreement_id": getattr(agreement, "id", None),
+                "agreement_id": getattr(agreement, "id", None),
+                "next_url": f"/app/agreements/{agreement.id}/wizard?step=1" if agreement else "",
+                **_opportunity_payload(opportunity),
             },
             status=status.HTTP_200_OK,
         )

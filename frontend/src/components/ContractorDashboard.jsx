@@ -2065,6 +2065,29 @@ export default function ContractorDashboard() {
     }
   }
 
+  async function prepareMarketplaceAgreementDraft(opportunity) {
+    const opportunityId = opportunity?.opportunity_id || opportunity?.id;
+    if (!opportunityId) return;
+    setMarketplaceActionId(`draft-${opportunityId}`);
+    try {
+      const { data } = await api.post(`/projects/contractor-opportunities/${opportunityId}/create-agreement-draft/`);
+      setPublicLeads((current) => {
+        const rows = Array.isArray(current) ? current : [];
+        return rows.map((row) => {
+          const rowId = row?.opportunity_id || row?.id;
+          return String(rowId) === String(opportunityId) ? { ...row, ...data } : row;
+        });
+      });
+      toast.success(data?.created ? "Agreement draft created." : "Agreement draft already exists.");
+      if (data?.next_url) navigate(data.next_url);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Could not create that agreement draft.");
+      throw err;
+    } finally {
+      setMarketplaceActionId("");
+    }
+  }
+
   useEffect(() => {
     let mounted = true;
 
@@ -3342,6 +3365,8 @@ export default function ContractorDashboard() {
                   {marketplaceWorkOrders.slice(0, 4).map((row) => {
                     const opportunityId = row.opportunity_id || row.id;
                     const isPending = String(row.status || "").toLowerCase() === "pending";
+                    const isAccepted = ["accepted", "converted"].includes(String(row.status || "").toLowerCase()) || String(row.marketplace_status || "").toLowerCase() === "accepted";
+                    const agreementUrl = row.next_url || (row.linked_agreement_id || row.agreement_id ? `/app/agreements/${row.linked_agreement_id || row.agreement_id}/wizard?step=1` : "");
                     return (
                       <article
                         key={opportunityId}
@@ -3404,6 +3429,27 @@ export default function ContractorDashboard() {
                           >
                             {marketplaceActionId === `decline-${opportunityId}` ? "Declining..." : "Decline"}
                           </button>
+                          {isAccepted && agreementUrl ? (
+                            <button
+                              type="button"
+                              data-testid={`contractor-marketplace-work-order-open-agreement-${opportunityId}`}
+                              onClick={() => navigate(agreementUrl)}
+                              className="rounded-xl border border-emerald-200/45 bg-emerald-300/10 px-3 py-2 text-xs font-bold text-emerald-50 hover:bg-emerald-300/20"
+                            >
+                              Open Agreement Draft
+                            </button>
+                          ) : null}
+                          {isAccepted && !agreementUrl ? (
+                            <button
+                              type="button"
+                              data-testid={`contractor-marketplace-work-order-draft-${opportunityId}`}
+                              disabled={marketplaceActionId === `draft-${opportunityId}`}
+                              onClick={() => prepareMarketplaceAgreementDraft(row)}
+                              className="rounded-xl border border-emerald-200/45 bg-emerald-300/10 px-3 py-2 text-xs font-bold text-emerald-50 hover:bg-emerald-300/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {marketplaceActionId === `draft-${opportunityId}` ? "Preparing..." : "Prepare Agreement Draft"}
+                            </button>
+                          ) : null}
                         </div>
                       </article>
                     );

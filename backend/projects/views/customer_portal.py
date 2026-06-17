@@ -94,6 +94,7 @@ from projects.services.bid_workflow import (
     project_class_label,
     promote_public_lead_to_agreement,
 )
+from projects.services.contractor_opportunities import create_property_work_order_agreement_draft
 from projects.services.bid_notifications import create_bid_outcome_notifications
 from projects.services.escrow_reimbursements import approve_reimbursement, deny_reimbursement, escrow_ledger, serialize_ledger
 from projects.services.contractor_reviews import review_eligibility, serialize_review, submit_customer_review
@@ -713,6 +714,8 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
     assigned = getattr(row, "assigned_staff_member", None)
     assigned_vendor = getattr(row, "assigned_vendor", None)
     assigned_contractor = getattr(row, "assigned_contractor", None)
+    linked_project = getattr(row, "linked_project", None)
+    linked_agreement = getattr(row, "linked_agreement", None)
     source_request = getattr(row, "source_tenant_request", None)
     source_attachments = []
     if source_request is not None:
@@ -757,6 +760,13 @@ def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
         "marketplace_sent_at": _safe_dt(row.marketplace_sent_at),
         "marketplace_response_at": _safe_dt(row.marketplace_response_at),
         "marketplace_opportunity_count": row.contractor_opportunities.count() if getattr(row, "pk", None) else 0,
+        "linked_project_id": getattr(linked_project, "id", None) or row.linked_project_id,
+        "linked_project_number": _safe_text(getattr(linked_project, "number", "")) if linked_project else "",
+        "linked_agreement_id": getattr(linked_agreement, "id", None) or row.linked_agreement_id,
+        "linked_agreement_status": _safe_text(getattr(linked_agreement, "status", "")) if linked_agreement else "",
+        "linked_agreement_status_label": _safe_text(getattr(linked_agreement, "status", "")).replace("_", " ").title() if linked_agreement else "",
+        "linked_agreement_token": _safe_text(getattr(linked_agreement, "homeowner_access_token", "")) if linked_agreement else "",
+        "linked_agreement_wizard_url": f"/app/agreements/{linked_agreement.id}/wizard?step=1" if linked_agreement else "",
         "scheduled_for": _safe_dt(row.scheduled_for),
         "started_at": _safe_dt(row.started_at),
         "completed_at": _safe_dt(row.completed_at),
@@ -865,6 +875,8 @@ def _property_work_orders_for_property(property_profile: PropertyProfile | None)
             "assigned_staff_member",
             "assigned_vendor",
             "assigned_contractor",
+            "linked_project",
+            "linked_agreement",
             "source_tenant_request",
         )
         .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
@@ -892,6 +904,8 @@ def _property_work_orders_for_email(email: str) -> list[dict]:
             "assigned_staff_member",
             "assigned_vendor",
             "assigned_contractor",
+            "linked_project",
+            "linked_agreement",
             "source_tenant_request",
         )
         .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
@@ -6446,7 +6460,7 @@ class CustomerPortalPropertyWorkOrderView(APIView):
         if error is not None:
             return error
         row = get_object_or_404(
-            PropertyWorkOrder.objects.select_related("property_profile", "unit", "tenant", "assigned_staff_member", "assigned_vendor", "assigned_contractor", "source_tenant_request")
+            PropertyWorkOrder.objects.select_related("property_profile", "unit", "tenant", "assigned_staff_member", "assigned_vendor", "assigned_contractor", "linked_project", "linked_agreement", "source_tenant_request")
             .prefetch_related("source_tenant_request__attachments", "attachments", "activities")
             .filter(property_profile=property_profile, property_management_company=company),
             pk=work_order_id,
@@ -6541,6 +6555,8 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 "assigned_staff_member",
                 "assigned_vendor",
                 "assigned_contractor",
+                "linked_project",
+                "linked_agreement",
                 "source_tenant_request",
             )
             .prefetch_related("source_tenant_request__attachments", "attachments", "activities", "contractor_opportunities")
@@ -6673,6 +6689,36 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 "work_order": _property_work_order_payload(row),
                 "created_opportunity_count": len(created),
                 "opportunity_count": len(entries),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalPropertyWorkOrderAgreementDraftView(CustomerPortalPropertyWorkOrderMarketplaceView):
+    def post(self, request, token: str, property_id: int, work_order_id: int):
+        email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        row = self._work_order_for_marketplace(company, property_profile, work_order_id)
+        try:
+            result = create_property_work_order_agreement_draft(row, actor=email)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        row = result["work_order"]
+        if hasattr(row, "_prefetched_objects_cache"):
+            row._prefetched_objects_cache.clear()
+        agreement = result["agreement"]
+        project = result["project"]
+        return Response(
+            {
+                "created": bool(result.get("created")),
+                "linked_project_id": getattr(project, "id", None),
+                "linked_agreement_id": getattr(agreement, "id", None),
+                "next_url": f"/app/agreements/{agreement.id}/wizard?step=1" if agreement else "",
+                "work_order": _property_work_order_payload(row),
                 "portal": _build_customer_portal_payload(email, request=request),
             },
             status=status.HTTP_200_OK,

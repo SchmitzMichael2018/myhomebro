@@ -347,6 +347,7 @@ function PropertyWorkOrdersSection({
   onUpdate,
   onSendToMarketplace,
   onWithdrawMarketplace,
+  onCreateAgreementDraft,
   saving = false,
 }) {
   const [editing, setEditing] = useState(null);
@@ -470,6 +471,15 @@ function PropertyWorkOrdersSection({
     }
   };
 
+  const createAgreementDraft = async (row) => {
+    if (!row?.id) return;
+    try {
+      await onCreateAgreementDraft?.(row.property_profile_id || activePropertyId, row.id);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Could not create that agreement draft.");
+    }
+  };
+
   return (
     <section data-testid="property-work-orders-section" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -523,6 +533,7 @@ function PropertyWorkOrdersSection({
                         <span><strong className="text-slate-200">Marketplace:</strong> {row.marketplace_status_label || "Not Sent"}</span>
                         <span><strong className="text-slate-200">Sent:</strong> {formatDateTime(row.marketplace_sent_at) || "-"}</span>
                         <span><strong className="text-slate-200">Response:</strong> {formatDateTime(row.marketplace_response_at) || "-"}</span>
+                        <span><strong className="text-slate-200">Agreement:</strong> {row.linked_agreement_id ? `Draft #${row.linked_agreement_id}` : "Not created"}</span>
                       </>
                     ) : null}
                   </div>
@@ -635,6 +646,25 @@ function PropertyWorkOrdersSection({
                         className="rounded-lg border border-rose-300/45 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
                       >
                         Withdraw
+                      </button>
+                    ) : null}
+                    {row.assignment_type === "marketplace_contractor" && row.marketplace_status === "accepted" && row.linked_agreement_wizard_url ? (
+                      <a
+                        data-testid={`property-work-order-open-agreement-${row.id}`}
+                        href={row.linked_agreement_wizard_url}
+                        className="rounded-lg border border-emerald-300/45 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20"
+                      >
+                        Open Agreement Draft
+                      </a>
+                    ) : null}
+                    {row.assignment_type === "marketplace_contractor" && row.marketplace_status === "accepted" && !row.linked_agreement_wizard_url ? (
+                      <button
+                        type="button"
+                        data-testid={`property-work-order-create-agreement-${row.id}`}
+                        onClick={() => createAgreementDraft(row)}
+                        className="rounded-lg border border-emerald-300/45 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20"
+                      >
+                        Create Agreement Draft
                       </button>
                     ) : null}
                   </div>
@@ -1033,6 +1063,7 @@ export default function CustomerRequests({
   onUpdatePropertyWorkOrder,
   onSendPropertyWorkOrderToMarketplace,
   onWithdrawPropertyWorkOrderMarketplace,
+  onCreatePropertyWorkOrderAgreementDraft,
   onCreateWorkOrderFromTenantRequest,
   onImproveRequest,
   onStartContractorSearch,
@@ -1833,6 +1864,7 @@ I need help installing shelves and patching drywall.`}
             onUpdate={updatePropertyWorkOrder}
             onSendToMarketplace={onSendPropertyWorkOrderToMarketplace}
             onWithdrawMarketplace={onWithdrawPropertyWorkOrderMarketplace}
+            onCreateAgreementDraft={onCreatePropertyWorkOrderAgreementDraft}
             saving={savingPropertyWorkOrder}
           />
           <TenantMaintenanceReviewQueue

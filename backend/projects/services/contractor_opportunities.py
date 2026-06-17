@@ -306,6 +306,170 @@ def _add_property_work_order_activity(work_order: PropertyWorkOrder, activity_ty
     )
 
 
+def _work_order_agreement_description(work_order: PropertyWorkOrder) -> str:
+    property_profile = work_order.property_profile
+    unit = getattr(work_order, "unit", None)
+    source_request = getattr(work_order, "source_tenant_request", None)
+    lines = [
+        _safe_text(work_order.description),
+        "",
+        f"Source work order: {work_order.work_order_number or f'PWO-{work_order.id:06d}'}",
+        f"Priority: {work_order.get_priority_display()}",
+    ]
+    if property_profile is not None:
+        address = ", ".join(
+            part
+            for part in [
+                _safe_text(getattr(property_profile, "address_line1", "")),
+                _safe_text(getattr(property_profile, "city", "")),
+                _safe_text(getattr(property_profile, "state", "")),
+                _safe_text(getattr(property_profile, "postal_code", "")),
+            ]
+            if part
+        )
+        if address:
+            lines.append(f"Property: {address}")
+    if unit is not None:
+        lines.append(f"Unit: {_safe_text(getattr(unit, 'unit_label', ''))}")
+    if source_request is not None:
+        lines.append(f"Tenant request: TMR-{source_request.id:06d}")
+        submitted_by = _safe_text(getattr(source_request, "submitted_by_name", ""))
+        if submitted_by:
+            lines.append(f"Resident contact: {submitted_by}")
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
+@transaction.atomic
+def create_property_work_order_agreement_draft(
+    work_order: PropertyWorkOrder,
+    *,
+    actor: str = "",
+    contractor: Contractor | None = None,
+) -> dict[str, Any]:
+    work_order = (
+        PropertyWorkOrder.objects.select_for_update()
+        .select_related(
+            "property_management_company",
+            "property_management_company__homeowner",
+            "property_profile",
+            "unit",
+            "tenant",
+            "source_tenant_request",
+            "assigned_contractor",
+            "linked_project",
+            "linked_agreement",
+        )
+        .get(pk=work_order.pk)
+    )
+    if work_order.assignment_type != PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR:
+        raise ValueError("Only marketplace contractor work orders can create agreement drafts.")
+    if work_order.marketplace_status != PropertyWorkOrder.MARKETPLACE_ACCEPTED:
+        raise ValueError("The marketplace contractor must accept this work order before creating an agreement draft.")
+    assigned_contractor = contractor or work_order.assigned_contractor
+    if assigned_contractor is None or work_order.assigned_contractor_id is None:
+        raise ValueError("This work order does not have an assigned marketplace contractor.")
+    if contractor is not None and work_order.assigned_contractor_id != contractor.id:
+        raise PermissionError("Only the assigned contractor can create this agreement draft.")
+    if work_order.linked_agreement_id:
+        return {
+            "project": work_order.linked_project or getattr(work_order.linked_agreement, "project", None),
+            "agreement": work_order.linked_agreement,
+            "created": False,
+            "work_order": work_order,
+        }
+
+    company = work_order.property_management_company
+    customer = getattr(company, "homeowner", None)
+    if customer is None:
+        raise ValueError("This property management company is missing a customer account.")
+    property_profile = work_order.property_profile
+    title = _safe_text(work_order.title) or f"Work order {work_order.work_order_number or work_order.id}"
+    description = _work_order_agreement_description(work_order)
+    project = work_order.linked_project
+    if project is None:
+        project = Project.objects.create(
+            contractor=assigned_contractor,
+            homeowner=customer,
+            title=title,
+            description=description,
+            project_street_address=_safe_text(getattr(property_profile, "address_line1", "")),
+            project_city=_safe_text(getattr(property_profile, "city", "")),
+            project_state=_safe_text(getattr(property_profile, "state", "")),
+            project_zip_code=_safe_text(getattr(property_profile, "postal_code", "")),
+            status="draft",
+        )
+
+    terms = _load_legal_text_safe("terms_of_service.txt")
+    privacy = _load_legal_text_safe("privacy_policy.txt")
+    agreement = Agreement.objects.create(
+        project=project,
+        contractor=assigned_contractor,
+        homeowner=customer,
+        description=description,
+        project_type=work_order.get_category_display(),
+        project_subtype=work_order.get_priority_display(),
+        standardized_category=categorize_project(work_order.get_category_display(), work_order.get_priority_display()),
+        project_address_line1=_safe_text(getattr(property_profile, "address_line1", "")),
+        project_address_city=_safe_text(getattr(property_profile, "city", "")),
+        project_address_state=_safe_text(getattr(property_profile, "state", "")),
+        project_postal_code=_safe_text(getattr(property_profile, "postal_code", "")),
+        status="draft",
+        step_status="property_work_order_draft",
+        terms_text=terms,
+        privacy_text=privacy,
+        collaboration_summary_snapshot={
+            "source": "property_work_order",
+            "source_label": "Property work order",
+            "property_work_order_id": work_order.id,
+            "work_order_number": work_order.work_order_number,
+            "property_profile_id": work_order.property_profile_id,
+            "property_name": _safe_text(getattr(property_profile, "display_name", "")),
+            "unit_id": work_order.unit_id,
+            "unit_label": _safe_text(getattr(getattr(work_order, "unit", None), "unit_label", "")),
+            "tenant_id": work_order.tenant_id,
+            "source_tenant_request_id": work_order.source_tenant_request_id,
+            "category": work_order.category,
+            "priority": work_order.priority,
+        },
+    )
+
+    accepted_opportunity = (
+        ContractorOpportunity.objects.filter(
+            property_work_order=work_order,
+            accepted_by_contractor=assigned_contractor,
+        )
+        .order_by("-accepted_at", "-id")
+        .first()
+    )
+    if accepted_opportunity is not None:
+        accepted_opportunity.project = project
+        accepted_opportunity.converted_customer = customer
+        accepted_opportunity.converted_agreement = agreement
+        accepted_opportunity.status = ContractorOpportunity.STATUS_CONVERTED
+        accepted_opportunity.conversion_notes = "Converted property work order to draft agreement workspace."
+        accepted_opportunity.save(
+            update_fields=[
+                "project",
+                "converted_customer",
+                "converted_agreement",
+                "status",
+                "conversion_notes",
+                "updated_at",
+            ]
+        )
+
+    work_order.linked_project = project
+    work_order.linked_agreement = agreement
+    work_order.save(update_fields=["linked_project", "linked_agreement", "updated_at"])
+    _add_property_work_order_activity(
+        work_order,
+        PropertyWorkOrderActivity.TYPE_AGREEMENT_DRAFT_CREATED,
+        f"Agreement draft created for {assigned_contractor.business_name or assigned_contractor.name}.",
+        actor,
+    )
+    return {"project": project, "agreement": agreement, "created": True, "work_order": work_order}
+
+
 @transaction.atomic
 def accept_property_work_order_opportunity(opportunity: ContractorOpportunity, contractor: Contractor) -> dict[str, Any]:
     opportunity = ContractorOpportunity.objects.select_for_update().select_related("directory_entry", "property_work_order").get(pk=opportunity.pk)

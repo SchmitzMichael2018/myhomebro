@@ -2785,7 +2785,58 @@ test("customer portal is reachable from the landing page and loads secure record
         completion_attachment_count: 0,
         created_at: "2026-06-16T16:30:00Z",
       };
-      propertyWorkOrders = [convertedWorkOrder, ...propertyWorkOrders];
+      const acceptedMarketplaceWorkOrder = {
+        ...convertedWorkOrder,
+        id: 903,
+        work_order_number: "PWO-000903",
+        reference: "PWO-000903",
+        source_tenant_request_id: null,
+        source_tenant_request_reference: "",
+        title: "Accepted marketplace repair",
+        description: "Contractor accepted this marketplace work order.",
+        assignment_type: "marketplace_contractor",
+        assignment_type_label: "Marketplace Contractor",
+        assigned_contractor_id: 77,
+        assigned_contractor_name: "ABC Plumbing",
+        assigned_staff_member_id: null,
+        assigned_staff_member_name: "",
+        assigned_vendor_id: null,
+        assigned_vendor_name: "",
+        assigned_vendor_trade_category: "",
+        marketplace_status: "accepted",
+        marketplace_status_label: "Accepted",
+        marketplace_sent_at: "2026-06-16T18:00:00Z",
+        marketplace_response_at: "2026-06-16T18:05:00Z",
+        marketplace_opportunity_count: 1,
+        linked_project_id: null,
+        linked_project_number: "",
+        linked_agreement_id: null,
+        linked_agreement_status: "",
+        linked_agreement_status_label: "",
+        linked_agreement_token: "",
+        linked_agreement_wizard_url: "",
+        activities: [
+          {
+            id: 9905,
+            activity_type: "marketplace_accepted",
+            activity_type_label: "Marketplace Accepted",
+            message: "Marketplace opportunity accepted by ABC Plumbing.",
+            actor: "contractor@example.com",
+            created_at: "2026-06-16T18:05:00Z",
+          },
+        ],
+        timeline: [
+          {
+            id: 9905,
+            activity_type: "marketplace_accepted",
+            activity_type_label: "Marketplace Accepted",
+            message: "Marketplace opportunity accepted by ABC Plumbing.",
+            actor: "contractor@example.com",
+            created_at: "2026-06-16T18:05:00Z",
+          },
+        ],
+      };
+      propertyWorkOrders = [acceptedMarketplaceWorkOrder, convertedWorkOrder, ...propertyWorkOrders];
       tenantMaintenanceRequests = tenantMaintenanceRequests.map((request) =>
         request.id === 801
           ? {
@@ -2831,6 +2882,59 @@ test("customer portal is reachable from the landing page and loads secure record
         body: JSON.stringify({
           work_order: convertedWorkOrder,
           request: tenantMaintenanceRequests.find((request) => request.id === 801),
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/903/create-agreement-draft/") && method === "POST") {
+      propertyWorkOrders = propertyWorkOrders.map((row) =>
+        row.id === 903
+          ? {
+              ...row,
+              linked_project_id: 1203,
+              linked_project_number: "PRJ-20260617-0001",
+              linked_agreement_id: 3303,
+              linked_agreement_status: "draft",
+              linked_agreement_status_label: "Draft",
+              linked_agreement_wizard_url: "/app/agreements/3303/wizard?step=1",
+              activities: [
+                ...(row.activities || []),
+                {
+                  id: 9906,
+                  activity_type: "agreement_draft_created",
+                  activity_type_label: "Agreement Draft Created",
+                  message: "Agreement draft created for ABC Plumbing.",
+                  actor: "customer@example.com",
+                  created_at: "2026-06-16T18:45:00Z",
+                },
+              ],
+            }
+          : row
+      );
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_work_orders: propertyWorkOrders,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          work_orders: propertyWorkOrders,
+          work_order_count: propertyWorkOrders.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          created: true,
+          linked_project_id: 1203,
+          linked_agreement_id: 3303,
+          next_url: "/app/agreements/3303/wizard?step=1",
+          work_order: propertyWorkOrders.find((row) => row.id === 903),
           portal: currentPortalPayload,
         }),
       });
@@ -4154,6 +4258,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-withdraw-marketplace-901").click();
   await expect(page.getByTestId("property-work-order-901")).toContainText("Withdrawn");
   await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Marketplace Withdrawn");
+  await expect(page.getByTestId("property-work-order-903")).toContainText("Accepted marketplace repair");
+  await expect(page.getByTestId("property-work-order-903")).toContainText("ABC Plumbing");
+  await expect(page.getByTestId("property-work-order-903")).toContainText("Agreement:");
+  await expect(page.getByTestId("property-work-order-actions-903")).toContainText("Create Agreement Draft");
+  await page.getByTestId("property-work-order-create-agreement-903").click();
+  await expect(page.getByTestId("property-work-order-actions-903")).toContainText("Open Agreement Draft");
+  await expect(page.getByTestId("property-work-order-open-agreement-903")).toHaveAttribute("href", "/app/agreements/3303/wizard?step=1");
+  await expect(page.getByTestId("property-work-order-timeline-903")).toContainText("Agreement Draft Created");
 
   await page.getByTestId("property-work-order-add").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();

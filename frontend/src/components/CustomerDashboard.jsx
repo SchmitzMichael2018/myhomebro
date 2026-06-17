@@ -3377,6 +3377,20 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       throw error;
     }
   };
+  const createPropertyWorkOrderAgreementDraft = async (propertyId, workOrderId) => {
+    if (!propertyId || !workOrderId) return false;
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/create-agreement-draft/`
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success(data?.created ? "Agreement draft created." : "Agreement draft already exists.");
+      return data;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not create that agreement draft.");
+      throw error;
+    }
+  };
   const createWorkOrderFromTenantRequest = async (propertyId, requestId) => {
     if (!propertyId || !requestId) return false;
     try {
@@ -3488,6 +3502,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onUpdatePropertyWorkOrder={updatePropertyWorkOrder}
           onSendPropertyWorkOrderToMarketplace={sendPropertyWorkOrderToMarketplace}
           onWithdrawPropertyWorkOrderMarketplace={withdrawPropertyWorkOrderMarketplace}
+          onCreatePropertyWorkOrderAgreementDraft={createPropertyWorkOrderAgreementDraft}
           onCreateWorkOrderFromTenantRequest={createWorkOrderFromTenantRequest}
           onImproveRequest={async (payload) => {
             const { data } = await api.post(

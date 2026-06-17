@@ -668,6 +668,20 @@ class PropertyWorkOrder(models.Model):
         blank=True,
         related_name="assigned_property_work_orders",
     )
+    linked_project = models.ForeignKey(
+        "Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_property_work_orders",
+    )
+    linked_agreement = models.ForeignKey(
+        "Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_property_work_orders",
+    )
     assignment_type = models.CharField(
         max_length=32,
         choices=ASSIGNMENT_TYPE_CHOICES,
@@ -704,6 +718,7 @@ class PropertyWorkOrder(models.Model):
             models.Index(fields=["marketplace_status", "created_at"]),
             models.Index(fields=["assigned_vendor", "status"]),
             models.Index(fields=["assigned_contractor", "status"]),
+            models.Index(fields=["linked_agreement", "status"]),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -773,6 +788,7 @@ class PropertyWorkOrderActivity(models.Model):
     TYPE_MARKETPLACE_ACCEPTED = "marketplace_accepted"
     TYPE_MARKETPLACE_DECLINED = "marketplace_declined"
     TYPE_MARKETPLACE_WITHDRAWN = "marketplace_withdrawn"
+    TYPE_AGREEMENT_DRAFT_CREATED = "agreement_draft_created"
     TYPE_CHOICES = [
         (TYPE_CREATED, "Created"),
         (TYPE_ASSIGNED, "Assigned"),
@@ -787,6 +803,7 @@ class PropertyWorkOrderActivity(models.Model):
         (TYPE_MARKETPLACE_ACCEPTED, "Marketplace Accepted"),
         (TYPE_MARKETPLACE_DECLINED, "Marketplace Declined"),
         (TYPE_MARKETPLACE_WITHDRAWN, "Marketplace Withdrawn"),
+        (TYPE_AGREEMENT_DRAFT_CREATED, "Agreement Draft Created"),
     ]
 
     work_order = models.ForeignKey(

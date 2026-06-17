@@ -20825,6 +20825,36 @@ class CustomerPortalAccessTests(TestCase):
         )
         return user, contractor, entry
 
+    def _create_accepted_marketplace_work_order(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        contractor_user, contractor, _entry = self._create_marketplace_contractor_entry()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            priority=PropertyWorkOrder.PRIORITY_URGENT,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        send_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(send_response.status_code, 200, send_response.data)
+        opportunity = ContractorOpportunity.objects.get(property_work_order=row)
+        self.client.force_authenticate(user=contractor_user)
+        accept_response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/")
+        self.client.force_authenticate(user=None)
+        self.assertEqual(accept_response.status_code, 200, accept_response.data)
+        row.refresh_from_db()
+        opportunity.refresh_from_db()
+        return token, company, property_profile, unit, tenant, contractor_user, contractor, opportunity, row
+
     def test_property_management_company_can_create_list_and_edit_work_orders(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
@@ -21152,6 +21182,123 @@ class CustomerPortalAccessTests(TestCase):
         row.refresh_from_db()
         self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_SENT)
         self.assertIsNone(row.assigned_contractor)
+
+    def test_pm_can_create_agreement_draft_from_accepted_property_work_order(self):
+        token, _company, property_profile, unit, _tenant, _contractor_user, contractor, opportunity, row = self._create_accepted_marketplace_work_order()
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/create-agreement-draft/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row.refresh_from_db()
+        opportunity.refresh_from_db()
+        self.assertTrue(response.data["created"])
+        self.assertEqual(row.linked_project_id, response.data["linked_project_id"])
+        self.assertEqual(row.linked_agreement_id, response.data["linked_agreement_id"])
+        self.assertIn(f"/app/agreements/{row.linked_agreement_id}/wizard?step=1", response.data["next_url"])
+        agreement = Agreement.objects.get(pk=row.linked_agreement_id)
+        project = Project.objects.get(pk=row.linked_project_id)
+        self.assertEqual(agreement.project, project)
+        self.assertEqual(agreement.contractor, contractor)
+        self.assertEqual(agreement.homeowner, row.property_management_company.homeowner)
+        self.assertEqual(agreement.status, "draft")
+        self.assertEqual(agreement.step_status, "property_work_order_draft")
+        self.assertIn("Source work order", agreement.description)
+        self.assertIn(unit.unit_label, agreement.description)
+        self.assertEqual(agreement.collaboration_summary_snapshot["source"], "property_work_order")
+        self.assertEqual(opportunity.converted_agreement, agreement)
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_CONVERTED)
+        self.assertTrue(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_AGREEMENT_DRAFT_CREATED).exists())
+
+    def test_contractor_can_create_agreement_draft_for_assigned_accepted_property_work_order(self):
+        _token, _company, _property_profile, _unit, _tenant, contractor_user, _contractor, opportunity, row = self._create_accepted_marketplace_work_order()
+
+        self.client.force_authenticate(user=contractor_user)
+        response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/create-agreement-draft/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row.refresh_from_db()
+        self.assertTrue(response.data["created"])
+        self.assertEqual(row.linked_agreement_id, response.data["linked_agreement_id"])
+        self.assertEqual(response.data["agreement_id"], row.linked_agreement_id)
+        self.assertIn(f"/app/agreements/{row.linked_agreement_id}/wizard?step=1", response.data["next_url"])
+
+    def test_property_work_order_agreement_draft_creation_is_idempotent(self):
+        token, _company, property_profile, _unit, _tenant, _contractor_user, _contractor, _opportunity, row = self._create_accepted_marketplace_work_order()
+
+        first = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/create-agreement-draft/",
+            {},
+            content_type="application/json",
+        )
+        second = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/create-agreement-draft/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertTrue(first.data["created"])
+        self.assertFalse(second.data["created"])
+        self.assertEqual(first.data["linked_agreement_id"], second.data["linked_agreement_id"])
+        self.assertEqual(Agreement.objects.filter(id=first.data["linked_agreement_id"]).count(), 1)
+
+    def test_property_work_order_agreement_draft_blocks_invalid_assignment_or_status(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
+        internal_row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Internal task",
+            description="Do not convert.",
+            assigned_staff_member=staff,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF,
+        )
+        sent_row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Marketplace sent task",
+            description="Not accepted yet.",
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+            marketplace_status=PropertyWorkOrder.MARKETPLACE_SENT,
+        )
+        agreement_count = Agreement.objects.count()
+
+        internal_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{internal_row.id}/create-agreement-draft/",
+            {},
+            content_type="application/json",
+        )
+        sent_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{sent_row.id}/create-agreement-draft/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(internal_response.status_code, 400)
+        self.assertEqual(sent_response.status_code, 400)
+        self.assertEqual(Agreement.objects.count(), agreement_count)
+
+    def test_unassigned_contractor_cannot_create_property_work_order_agreement_draft(self):
+        _token, _company, _property_profile, _unit, _tenant, _contractor_user, _contractor, opportunity, row = self._create_accepted_marketplace_work_order()
+        other_user, _other_contractor, _entry = self._create_marketplace_contractor_entry(email="wrong-draft@example.com", business_name="Wrong Draft Co")
+
+        self.client.force_authenticate(user=other_user)
+        response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/create-agreement-draft/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(response.status_code, 403)
+        row.refresh_from_db()
+        self.assertIsNone(row.linked_agreement)
 
     def test_property_work_order_vendor_assignment_is_scoped_to_company(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
