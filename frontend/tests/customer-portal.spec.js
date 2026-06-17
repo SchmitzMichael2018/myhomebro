@@ -1986,11 +1986,15 @@ test("customer portal is reachable from the landing page and loads secure record
   let submittedUnitPayload = null;
   let submittedTenantPayload = null;
   let submittedTenantMaintenanceReviewPayload = null;
+  let submittedWorkOrderPayload = null;
+  let submittedWorkOrderEditPayload = null;
+  let convertedWorkOrderCalled = false;
   let currentPortalPayload = portalPayload;
   let teamMembers = [];
   let propertyUnits = [];
   let propertyTenants = [];
   let tenantMaintenanceRequests = [];
+  let propertyWorkOrders = [];
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "customer-portal-token");
     window.__mhbPlacePredictionInputs = [];
@@ -2171,9 +2175,11 @@ test("customer portal is reachable from the landing page and loads secure record
       currentPortalPayload = {
         ...currentPortalPayload,
         tenant_maintenance_requests: tenantMaintenanceRequests,
+        property_work_orders: propertyWorkOrders,
         summary: {
           ...currentPortalPayload.summary,
           tenant_maintenance_requests: tenantMaintenanceRequests.length,
+          property_work_orders: propertyWorkOrders.length,
         },
         customer: {
           ...currentPortalPayload.customer,
@@ -2183,6 +2189,8 @@ test("customer portal is reachable from the landing page and loads secure record
           ...currentPortalPayload.property_profile,
           tenant_maintenance_requests: tenantMaintenanceRequests,
           tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+          work_orders: propertyWorkOrders,
+          work_order_count: propertyWorkOrders.length,
         },
         property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
           property.id === 1
@@ -2190,6 +2198,8 @@ test("customer portal is reachable from the landing page and loads secure record
                 ...property,
                 tenant_maintenance_requests: tenantMaintenanceRequests,
                 tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+                work_orders: propertyWorkOrders,
+                work_order_count: propertyWorkOrders.length,
               }
             : property
         ),
@@ -2570,6 +2580,8 @@ test("customer portal is reachable from the landing page and loads secure record
                           : request.status_label,
               reviewed_by: "customer@example.com",
               reviewed_at: "2026-06-16T16:00:00Z",
+              can_create_work_order: submittedTenantMaintenanceReviewPayload.status === "approved",
+              converted_to_work_order: false,
             }
           : request
       );
@@ -2596,6 +2608,195 @@ test("customer portal is reachable from the landing page and loads secure record
         contentType: "application/json",
         body: JSON.stringify({
           request: tenantMaintenanceRequests.find((request) => request.id === 801),
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/tenant-maintenance-requests/801/create-work-order/") && method === "POST") {
+      convertedWorkOrderCalled = true;
+      const sourceRequest = tenantMaintenanceRequests.find((request) => request.id === 801);
+      const convertedWorkOrder = {
+        id: 901,
+        work_order_number: "PWO-000901",
+        reference: "PWO-000901",
+        property_profile_id: 1,
+        property_name: "Kitchen Remodel",
+        unit_id: sourceRequest?.unit_id || null,
+        unit_label: sourceRequest?.unit_label || "",
+        tenant_id: sourceRequest?.tenant_id || null,
+        tenant_name: sourceRequest?.tenant_name || "Taylor Tenant",
+        source_tenant_request_id: 801,
+        source_tenant_request_reference: "TMR-000801",
+        title: sourceRequest?.title || "Kitchen sink leak",
+        description: sourceRequest?.description || "Water is dripping under the kitchen sink.",
+        category: sourceRequest?.category || "plumbing",
+        category_label: sourceRequest?.category_label || "Plumbing",
+        priority: sourceRequest?.urgency || "urgent",
+        priority_label: sourceRequest?.urgency_label || "Urgent",
+        status: "open",
+        status_label: "Open",
+        assigned_staff_member_id: null,
+        assigned_staff_member_name: "",
+        scheduled_for: "",
+        internal_notes: sourceRequest?.manager_notes || "",
+        completion_notes: "",
+        source_attachments: sourceRequest?.attachments || [],
+        attachment_count: sourceRequest?.attachment_count || 0,
+        created_at: "2026-06-16T16:30:00Z",
+      };
+      propertyWorkOrders = [convertedWorkOrder, ...propertyWorkOrders];
+      tenantMaintenanceRequests = tenantMaintenanceRequests.map((request) =>
+        request.id === 801
+          ? {
+              ...request,
+              converted_to_work_order: true,
+              can_create_work_order: false,
+              work_order_id: 901,
+              work_order_number: "PWO-000901",
+            }
+          : request
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        tenant_maintenance_requests: tenantMaintenanceRequests,
+        property_work_orders: propertyWorkOrders,
+        summary: {
+          ...currentPortalPayload.summary,
+          tenant_maintenance_requests: tenantMaintenanceRequests.length,
+          property_work_orders: propertyWorkOrders.length,
+        },
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          tenant_maintenance_requests: tenantMaintenanceRequests,
+          tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+          work_orders: propertyWorkOrders,
+          work_order_count: propertyWorkOrders.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                tenant_maintenance_requests: tenantMaintenanceRequests,
+                tenant_maintenance_request_count: tenantMaintenanceRequests.length,
+                work_orders: propertyWorkOrders,
+                work_order_count: propertyWorkOrders.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          work_order: convertedWorkOrder,
+          request: tenantMaintenanceRequests.find((request) => request.id === 801),
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/") && method === "PATCH") {
+      submittedWorkOrderEditPayload = JSON.parse(route.request().postData() || "{}");
+      propertyWorkOrders = propertyWorkOrders.map((row) =>
+        row.id === 901
+          ? {
+              ...row,
+              ...submittedWorkOrderEditPayload,
+              status_label:
+                submittedWorkOrderEditPayload.status === "in_progress"
+                  ? "In Progress"
+                  : submittedWorkOrderEditPayload.status === "scheduled"
+                    ? "Scheduled"
+                    : row.status_label,
+              priority_label:
+                submittedWorkOrderEditPayload.priority === "normal"
+                  ? "Normal"
+                  : submittedWorkOrderEditPayload.priority === "low"
+                    ? "Low"
+                    : row.priority_label,
+              assigned_staff_member_name: submittedWorkOrderEditPayload.assigned_staff_member_id ? "Morgan Manager" : row.assigned_staff_member_name,
+            }
+          : row
+      );
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_work_orders: propertyWorkOrders,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          work_orders: propertyWorkOrders,
+          work_order_count: propertyWorkOrders.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          work_order: propertyWorkOrders.find((row) => row.id === 901),
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/") && method === "POST") {
+      submittedWorkOrderPayload = JSON.parse(route.request().postData() || "{}");
+      const manualWorkOrder = {
+        id: 902,
+        work_order_number: "PWO-000902",
+        reference: "PWO-000902",
+        property_profile_id: 1,
+        property_name: "Kitchen Remodel",
+        unit_id: submittedWorkOrderPayload.unit_id,
+        unit_label: submittedWorkOrderPayload.unit_id ? "Unit 101" : "",
+        tenant_id: submittedWorkOrderPayload.tenant_id,
+        tenant_name: submittedWorkOrderPayload.tenant_id ? "Taylor Resident" : "",
+        source_tenant_request_id: null,
+        source_tenant_request_reference: "",
+        title: submittedWorkOrderPayload.title,
+        description: submittedWorkOrderPayload.description,
+        category: submittedWorkOrderPayload.category,
+        category_label: "HVAC",
+        priority: submittedWorkOrderPayload.priority,
+        priority_label: "Normal",
+        status: submittedWorkOrderPayload.status,
+        status_label: "Open",
+        assigned_staff_member_id: submittedWorkOrderPayload.assigned_staff_member_id,
+        assigned_staff_member_name: submittedWorkOrderPayload.assigned_staff_member_id ? "Morgan Manager" : "",
+        scheduled_for: submittedWorkOrderPayload.scheduled_for,
+        internal_notes: submittedWorkOrderPayload.internal_notes,
+        completion_notes: submittedWorkOrderPayload.completion_notes,
+        source_attachments: [],
+        attachment_count: 0,
+        created_at: "2026-06-16T17:00:00Z",
+      };
+      propertyWorkOrders = [manualWorkOrder, ...propertyWorkOrders];
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_work_orders: propertyWorkOrders,
+        summary: {
+          ...currentPortalPayload.summary,
+          property_work_orders: propertyWorkOrders.length,
+        },
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          work_orders: propertyWorkOrders,
+          work_order_count: propertyWorkOrders.length,
+        },
+        property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
+          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+        ),
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          work_order: manualWorkOrder,
           portal: currentPortalPayload,
         }),
       });
@@ -3474,6 +3675,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-tenant-former-701")).toHaveCount(0);
 
   await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("property-work-orders-section")).toContainText("Work Orders");
+  await expect(page.getByTestId("property-work-orders-empty")).toContainText("No work orders yet");
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toContainText("Maintenance Requests");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Urgent");
@@ -3493,6 +3696,57 @@ test("customer portal is reachable from the landing page and loads secure record
     manager_notes: "Approved for maintenance follow-up.",
   });
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Approved");
+  await page.getByTestId("tenant-maintenance-create-work-order-801").click();
+  await expect.poll(() => convertedWorkOrderCalled).toBe(true);
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Kitchen sink leak");
+  await expect(page.getByTestId("property-work-order-901")).toContainText("PWO-000901");
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Open");
+  await expect(page.getByTestId("property-work-order-attachments-901")).toContainText("sink-leak.jpg");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Work Order PWO-000901");
+  await expect(page.getByTestId("tenant-maintenance-create-work-order-801")).toHaveCount(0);
+
+  await page.getByTestId("property-work-order-edit-901").click();
+  await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
+  await page.getByTestId("property-work-order-status").selectOption("in_progress");
+  await page.getByTestId("property-work-order-priority").selectOption("normal");
+  await page.getByTestId("property-work-order-completion-notes").fill("Parts ordered.");
+  await page.getByTestId("property-work-order-save").click();
+  await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
+  expect(submittedWorkOrderEditPayload).toMatchObject({
+    status: "in_progress",
+    priority: "normal",
+    completion_notes: "Parts ordered.",
+  });
+  await expect(page.getByTestId("property-work-order-901")).toContainText("In Progress");
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Normal");
+
+  await page.getByTestId("property-work-order-add").click();
+  await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-unit")).toContainText("Unit 101");
+  await expect(page.getByTestId("property-work-order-tenant")).toContainText("Taylor Resident");
+  await expect(page.getByTestId("property-work-order-staff")).toBeVisible();
+  await page.getByTestId("property-work-order-title").fill("Seasonal HVAC follow-up");
+  await page.getByTestId("property-work-order-description").fill("Schedule HVAC service for the rental unit.");
+  await page.getByTestId("property-work-order-category").selectOption("hvac");
+  await page.getByTestId("property-work-order-priority").selectOption("normal");
+  await page.getByTestId("property-work-order-status").selectOption("open");
+  await page.getByTestId("property-work-order-unit").selectOption("601");
+  await page.getByTestId("property-work-order-tenant").selectOption("801");
+  await page.getByTestId("property-work-order-internal-notes").fill("Use tenant text thread for scheduling.");
+  await page.getByTestId("property-work-order-save").click();
+  await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
+  expect(submittedWorkOrderPayload).toMatchObject({
+    title: "Seasonal HVAC follow-up",
+    description: "Schedule HVAC service for the rental unit.",
+    category: "hvac",
+    priority: "normal",
+    status: "open",
+    unit_id: 601,
+    tenant_id: 801,
+    internal_notes: "Use tenant text thread for scheduling.",
+  });
+  await expect(page.getByTestId("property-work-order-902")).toContainText("Seasonal HVAC follow-up");
+  await expect(page.getByTestId("property-work-order-902")).toContainText("Unit 101");
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
   await expect(page.getByTestId("customer-request-create-panel")).toContainText("Tell us what you need help with next");

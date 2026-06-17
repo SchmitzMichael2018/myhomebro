@@ -20,7 +20,7 @@ from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import serializers, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -57,6 +57,7 @@ from projects.models_customer_portal import (
     PropertyHomeSystemRecommendationPreference,
     PropertyManagementCompany,
     PropertyManagementStaffMembership,
+    PropertyWorkOrder,
     PropertyUnit,
     PropertyPhoto,
     PropertyProfile,
@@ -639,6 +640,11 @@ def _tenant_maintenance_request_payload(row: TenantMaintenanceRequest) -> dict:
     unit = getattr(row, "unit", None)
     tenant = getattr(row, "tenant", None)
     submitted_name = _safe_text(row.submitted_by_name) or _safe_text(getattr(tenant, "display_name", ""))
+    active_work_order = (
+        PropertyWorkOrder.objects.filter(source_tenant_request=row, status__in=PropertyWorkOrder.ACTIVE_STATUSES)
+        .order_by("-created_at", "-id")
+        .first()
+    )
     return {
         "id": row.id,
         "reference": f"TMR-{row.id:06d}",
@@ -665,11 +671,106 @@ def _tenant_maintenance_request_payload(row: TenantMaintenanceRequest) -> dict:
         "manager_notes": _safe_text(row.manager_notes),
         "reviewed_by": _safe_text(row.reviewed_by),
         "reviewed_at": _safe_dt(row.reviewed_at),
+        "work_order_id": getattr(active_work_order, "id", None),
+        "work_order_number": _safe_text(getattr(active_work_order, "work_order_number", "")),
+        "converted_to_work_order": active_work_order is not None,
+        "can_create_work_order": row.status == TenantMaintenanceRequest.STATUS_APPROVED and active_work_order is None,
         "attachments": [_tenant_maintenance_attachment_payload(attachment) for attachment in row.attachments.all()],
         "attachment_count": row.attachments.count(),
         "created_at": _safe_dt(row.created_at),
         "updated_at": _safe_dt(row.updated_at),
     }
+
+
+def _property_work_order_payload(row: PropertyWorkOrder) -> dict:
+    property_profile = getattr(row, "property_profile", None)
+    unit = getattr(row, "unit", None)
+    tenant = getattr(row, "tenant", None)
+    assigned = getattr(row, "assigned_staff_member", None)
+    source_request = getattr(row, "source_tenant_request", None)
+    source_attachments = []
+    if source_request is not None:
+        source_attachments = [_tenant_maintenance_attachment_payload(attachment) for attachment in source_request.attachments.all()]
+    return {
+        "id": row.id,
+        "work_order_number": _safe_text(row.work_order_number) or f"PWO-{row.id:06d}",
+        "reference": _safe_text(row.work_order_number) or f"PWO-{row.id:06d}",
+        "property_management_company_id": row.property_management_company_id,
+        "property_profile_id": row.property_profile_id,
+        "property_name": _safe_text(getattr(property_profile, "display_name", "")),
+        "unit_id": row.unit_id,
+        "unit_label": _safe_text(getattr(unit, "unit_label", "")) if unit else "",
+        "tenant_id": row.tenant_id,
+        "tenant_name": _safe_text(getattr(tenant, "display_name", "")) if tenant else "",
+        "source_tenant_request_id": row.source_tenant_request_id,
+        "source_tenant_request_reference": f"TMR-{source_request.id:06d}" if source_request else "",
+        "title": _safe_text(row.title),
+        "description": _safe_text(row.description),
+        "category": _safe_text(row.category),
+        "category_label": row.get_category_display(),
+        "priority": _safe_text(row.priority),
+        "priority_label": row.get_priority_display(),
+        "status": _safe_text(row.status),
+        "status_label": row.get_status_display(),
+        "assigned_staff_member_id": row.assigned_staff_member_id,
+        "assigned_staff_member_name": _safe_text(getattr(assigned, "name", "")) if assigned else "",
+        "assigned_staff_member_email": _safe_text(getattr(assigned, "email", "")) if assigned else "",
+        "scheduled_for": _safe_dt(row.scheduled_for),
+        "started_at": _safe_dt(row.started_at),
+        "completed_at": _safe_dt(row.completed_at),
+        "closed_at": _safe_dt(row.closed_at),
+        "internal_notes": _safe_text(row.internal_notes),
+        "completion_notes": _safe_text(row.completion_notes),
+        "created_by": _safe_text(row.created_by),
+        "source_attachments": source_attachments,
+        "attachment_count": len(source_attachments),
+        "created_at": _safe_dt(row.created_at),
+        "updated_at": _safe_dt(row.updated_at),
+    }
+
+
+def _property_work_orders_for_property(property_profile: PropertyProfile | None) -> list[dict]:
+    if property_profile is None:
+        return []
+    rows = (
+        PropertyWorkOrder.objects.select_related(
+            "property_management_company",
+            "property_profile",
+            "unit",
+            "tenant",
+            "assigned_staff_member",
+            "source_tenant_request",
+        )
+        .prefetch_related("source_tenant_request__attachments")
+        .filter(property_profile=property_profile)
+        .order_by("-created_at", "-id")
+    )
+    return [_property_work_order_payload(row) for row in rows]
+
+
+def _property_work_orders_for_email(email: str) -> list[dict]:
+    company = create_or_sync_company_from_homeowner(_primary_homeowner_for_email(email))
+    if company is None:
+        return []
+    property_ids = list(
+        PropertyProfile.objects.filter(customer_email__iexact=email.lower().strip(), managed_by_company=company).values_list("id", flat=True)
+    )
+    if not property_ids:
+        return []
+    rows = (
+        PropertyWorkOrder.objects.select_related(
+            "property_management_company",
+            "property_profile",
+            "unit",
+            "tenant",
+            "assigned_staff_member",
+            "source_tenant_request",
+        )
+        .prefetch_related("source_tenant_request__attachments")
+        .filter(property_profile_id__in=property_ids)
+        .order_by("-created_at", "-id")
+    )
+    return [_property_work_order_payload(row) for row in rows]
 
 
 def _tenant_maintenance_requests_for_property(property_profile: PropertyProfile | None) -> list[dict]:
@@ -953,6 +1054,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         units.append(unit_payload)
     tenants = _tenant_payloads_for_property(profile)
     tenant_maintenance_requests = _tenant_maintenance_requests_for_property(profile)
+    property_work_orders = _property_work_orders_for_property(profile)
     managed_by_company = _property_management_company_ref(getattr(profile, "managed_by_company", None))
     return {
         "id": profile.id,
@@ -984,6 +1086,8 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "tenant_count": len(tenants),
         "tenant_maintenance_requests": tenant_maintenance_requests,
         "tenant_maintenance_request_count": len(tenant_maintenance_requests),
+        "work_orders": property_work_orders,
+        "work_order_count": len(property_work_orders),
         "updated_at": _safe_dt(profile.updated_at),
     }
 
@@ -3030,6 +3134,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     property_profile = _property_profile_payload(email)
     property_profiles = _property_profiles_payload(email)
     tenant_maintenance_request_rows = _tenant_maintenance_requests_for_email(email)
+    property_work_order_rows = _property_work_orders_for_email(email)
     property_intelligence = build_property_intelligence(email)
     recommendations = build_customer_recommendations(email, property_intelligence=property_intelligence)
 
@@ -3042,6 +3147,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "documents": len(document_rows),
         "maintenance_work_orders": len(maintenance_work_order_rows),
         "tenant_maintenance_requests": len(tenant_maintenance_request_rows),
+        "property_work_orders": len(property_work_order_rows),
     }
 
     return {
@@ -3060,6 +3166,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "payments": payment_rows,
         "maintenance_work_orders": maintenance_work_order_rows,
         "tenant_maintenance_requests": tenant_maintenance_request_rows,
+        "property_work_orders": property_work_order_rows,
         "documents": document_rows,
         "property_profile": property_profile,
         "property_profiles": property_profiles,
@@ -5182,6 +5289,49 @@ class TenantMaintenanceRequestReviewSerializer(serializers.Serializer):
     manager_notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class CustomerPortalPropertyWorkOrderSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    category = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyWorkOrder.CATEGORY_CHOICES],
+        required=False,
+    )
+    priority = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyWorkOrder.PRIORITY_CHOICES],
+        required=False,
+    )
+    status = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyWorkOrder.STATUS_CHOICES],
+        required=False,
+    )
+    unit_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    tenant_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    assigned_staff_member_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    scheduled_for = serializers.CharField(required=False, allow_blank=True)
+    started_at = serializers.CharField(required=False, allow_blank=True)
+    completed_at = serializers.CharField(required=False, allow_blank=True)
+    closed_at = serializers.CharField(required=False, allow_blank=True)
+    internal_notes = serializers.CharField(required=False, allow_blank=True)
+    completion_notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        for field in ("title", "description", "internal_notes", "completion_notes"):
+            if field in attrs:
+                attrs[field] = _safe_text(attrs.get(field))
+        for field in ("scheduled_for", "started_at", "completed_at", "closed_at"):
+            if field not in attrs:
+                continue
+            value = _safe_text(attrs.get(field))
+            if not value:
+                attrs[field] = None
+                continue
+            parsed = parse_datetime(value)
+            if parsed is None:
+                raise serializers.ValidationError({field: "Enter a valid date/time."})
+            attrs[field] = parsed
+        return attrs
+
+
 class CustomerPortalHomeSystemSerializer(serializers.Serializer):
     property_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     system_type = serializers.ChoiceField(
@@ -5827,6 +5977,156 @@ class TenantMaintenanceRequestVerifiedSubmitView(APIView):
         )
 
 
+class CustomerPortalPropertyWorkOrderView(APIView):
+    permission_classes = [AllowAny]
+
+    def _email_from_token(self, token: str):
+        try:
+            return _unsign_portal_token(token), None
+        except signing.SignatureExpired:
+            return None, Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return None, Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def _property_from_token(self, token: str, property_id: int):
+        email, error = self._email_from_token(token)
+        if error is not None:
+            return None, None, None, error
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return email, None, None, error
+        property_profile = get_object_or_404(
+            PropertyProfile.objects.filter(
+                id=property_id,
+                customer_email__iexact=email.lower().strip(),
+                managed_by_company=company,
+            )
+        )
+        return email, company, property_profile, None
+
+    def _unit_for_property_or_none(self, property_profile: PropertyProfile, unit_id):
+        if not unit_id:
+            return None
+        return get_object_or_404(PropertyUnit.objects.filter(property_profile=property_profile), pk=unit_id)
+
+    def _tenant_for_property_or_none(self, company: PropertyManagementCompany, property_profile: PropertyProfile, tenant_id):
+        if not tenant_id:
+            return None
+        tenant = get_object_or_404(Tenant.objects.filter(company=company), pk=tenant_id)
+        if not Tenancy.objects.filter(tenant=tenant, property_profile=property_profile).exists():
+            raise Http404
+        return tenant
+
+    def _staff_for_company_or_none(self, company: PropertyManagementCompany, staff_id):
+        if not staff_id:
+            return None
+        return get_object_or_404(
+            PropertyManagementStaffMembership.objects.filter(company=company).exclude(status=PropertyManagementStaffMembership.STATUS_DISABLED),
+            pk=staff_id,
+        )
+
+    def _duplicate_active_source_response(self):
+        return Response(
+            {"detail": "An active work order already exists for this maintenance request."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def _active_source_work_order_exists(self, source_request: TenantMaintenanceRequest, work_order_id=None) -> bool:
+        queryset = PropertyWorkOrder.objects.filter(
+            source_tenant_request=source_request,
+            status__in=PropertyWorkOrder.ACTIVE_STATUSES,
+        )
+        if work_order_id:
+            queryset = queryset.exclude(id=work_order_id)
+        return queryset.exists()
+
+    def get(self, request, token: str, property_id: int):
+        _email, _company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        rows = _property_work_orders_for_property(property_profile)
+        status_filter = _safe_text(request.query_params.get("status"))
+        if status_filter:
+            rows = [row for row in rows if row.get("status") == status_filter]
+        return Response({"work_orders": rows}, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str, property_id: int):
+        email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        serializer = CustomerPortalPropertyWorkOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        title = _safe_text(data.get("title"))
+        description = _safe_text(data.get("description"))
+        if not title:
+            return Response({"title": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        if not description:
+            return Response({"description": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        unit = self._unit_for_property_or_none(property_profile, data.get("unit_id"))
+        tenant = self._tenant_for_property_or_none(company, property_profile, data.get("tenant_id"))
+        assigned = self._staff_for_company_or_none(company, data.get("assigned_staff_member_id"))
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title=title,
+            description=description,
+            category=data.get("category") or PropertyWorkOrder.CATEGORY_GENERAL_REPAIR,
+            priority=data.get("priority") or PropertyWorkOrder.PRIORITY_NORMAL,
+            status=data.get("status") or PropertyWorkOrder.STATUS_OPEN,
+            assigned_staff_member=assigned,
+            scheduled_for=data.get("scheduled_for"),
+            started_at=data.get("started_at"),
+            completed_at=data.get("completed_at"),
+            closed_at=data.get("closed_at"),
+            internal_notes=_safe_text(data.get("internal_notes")),
+            completion_notes=_safe_text(data.get("completion_notes")),
+            created_by=email.lower().strip(),
+        )
+        return Response(
+            {"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)},
+            status=status.HTTP_201_CREATED,
+        )
+
+    def patch(self, request, token: str, property_id: int, work_order_id: int):
+        email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        row = get_object_or_404(
+            PropertyWorkOrder.objects.select_related("property_profile", "unit", "tenant", "assigned_staff_member", "source_tenant_request")
+            .prefetch_related("source_tenant_request__attachments")
+            .filter(property_profile=property_profile, property_management_company=company),
+            pk=work_order_id,
+        )
+        serializer = CustomerPortalPropertyWorkOrderSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        field_values = {}
+        for field in ("title", "description", "category", "priority", "status", "scheduled_for", "started_at", "completed_at", "closed_at", "internal_notes", "completion_notes"):
+            if field in data:
+                field_values[field] = data[field]
+        if "unit_id" in data:
+            field_values["unit"] = self._unit_for_property_or_none(property_profile, data.get("unit_id"))
+        if "tenant_id" in data:
+            field_values["tenant"] = self._tenant_for_property_or_none(company, property_profile, data.get("tenant_id"))
+        if "assigned_staff_member_id" in data:
+            field_values["assigned_staff_member"] = self._staff_for_company_or_none(company, data.get("assigned_staff_member_id"))
+
+        update_fields = []
+        for field, value in field_values.items():
+            if getattr(row, field) != value:
+                setattr(row, field, value)
+                update_fields.append(field)
+        if update_fields:
+            row.save(update_fields=[*update_fields, "updated_at"])
+        return Response(
+            {"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)},
+            status=status.HTTP_200_OK,
+        )
+
+
 class CustomerPortalTenantMaintenanceRequestView(APIView):
     permission_classes = [AllowAny]
 
@@ -5866,6 +6166,42 @@ class CustomerPortalTenantMaintenanceRequestView(APIView):
         if unit_id:
             rows = [row for row in rows if str(row.get("unit_id") or "") == unit_id]
         return Response({"tenant_maintenance_requests": rows}, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str, property_id: int, request_id: int):
+        email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        source_request = get_object_or_404(
+            TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant").prefetch_related("attachments"),
+            pk=request_id,
+            property_profile=property_profile,
+        )
+        if source_request.status != TenantMaintenanceRequest.STATUS_APPROVED:
+            return Response({"detail": "Only approved tenant maintenance requests can be converted to work orders."}, status=status.HTTP_400_BAD_REQUEST)
+        if PropertyWorkOrder.objects.filter(source_tenant_request=source_request, status__in=PropertyWorkOrder.ACTIVE_STATUSES).exists():
+            return Response({"detail": "An active work order already exists for this maintenance request."}, status=status.HTTP_400_BAD_REQUEST)
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=source_request.unit,
+            tenant=source_request.tenant,
+            source_tenant_request=source_request,
+            title=_safe_text(source_request.title) or "Tenant maintenance request",
+            description=_safe_text(source_request.description),
+            category=source_request.category or PropertyWorkOrder.CATEGORY_GENERAL_REPAIR,
+            priority=source_request.urgency or PropertyWorkOrder.PRIORITY_NORMAL,
+            status=PropertyWorkOrder.STATUS_OPEN,
+            internal_notes=_safe_text(source_request.manager_notes),
+            created_by=email.lower().strip(),
+        )
+        return Response(
+            {
+                "work_order": _property_work_order_payload(row),
+                "request": _tenant_maintenance_request_payload(source_request),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     def patch(self, request, token: str, property_id: int, request_id: int):
         email, _company, property_profile, error = self._property_from_token(token, property_id)

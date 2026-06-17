@@ -42,6 +42,49 @@ const TENANT_MAINTENANCE_STATUS_ACTIONS = [
   ["closed", "Close"],
 ];
 
+const WORK_ORDER_CATEGORIES = [
+  ["general_repair", "General Repair"],
+  ["plumbing", "Plumbing"],
+  ["electrical", "Electrical"],
+  ["hvac", "HVAC"],
+  ["appliance", "Appliance"],
+  ["pest", "Pest"],
+  ["access_lock", "Access / Lock"],
+  ["safety", "Safety"],
+  ["other", "Other"],
+];
+
+const WORK_ORDER_PRIORITIES = [
+  ["emergency", "Emergency"],
+  ["urgent", "Urgent"],
+  ["normal", "Normal"],
+  ["low", "Low"],
+];
+
+const WORK_ORDER_STATUSES = [
+  ["open", "Open"],
+  ["scheduled", "Scheduled"],
+  ["in_progress", "In Progress"],
+  ["waiting", "Waiting"],
+  ["completed", "Completed"],
+  ["closed", "Closed"],
+  ["cancelled", "Cancelled"],
+];
+
+const DEFAULT_WORK_ORDER_FORM = {
+  title: "",
+  description: "",
+  category: "general_repair",
+  priority: "normal",
+  status: "open",
+  unit_id: "",
+  tenant_id: "",
+  assigned_staff_member_id: "",
+  scheduled_for: "",
+  internal_notes: "",
+  completion_notes: "",
+};
+
 function Badge({ children }) {
   return (
     <span className="inline-flex rounded-full border border-slate-600 bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-200">
@@ -113,7 +156,9 @@ function formatDateTime(value) {
 function TenantMaintenanceReviewQueue({
   requests = [],
   onReview,
+  onCreateWorkOrder,
   updatingId = "",
+  convertingId = "",
 }) {
   const [notesById, setNotesById] = useState({});
 
@@ -234,6 +279,20 @@ function TenantMaintenanceReviewQueue({
                   >
                     Save Notes
                   </button>
+                  {request.can_create_work_order || (request.status === "approved" && !request.converted_to_work_order) ? (
+                    <button
+                      type="button"
+                      data-testid={`tenant-maintenance-create-work-order-${request.id}`}
+                      disabled={busy || String(convertingId) === String(request.id)}
+                      onClick={() => onCreateWorkOrder?.(request)}
+                      className="rounded-lg border border-emerald-300/45 bg-emerald-400/10 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-50"
+                    >
+                      {String(convertingId) === String(request.id) ? "Creating..." : "Create Work Order"}
+                    </button>
+                  ) : null}
+                  {request.converted_to_work_order ? (
+                    <PassiveBadge tone="sky">Work Order {request.work_order_number || "Created"}</PassiveBadge>
+                  ) : null}
                 </div>
               </article>
             );
@@ -244,6 +303,275 @@ function TenantMaintenanceReviewQueue({
           </EmptyState>
         )}
       </div>
+    </section>
+  );
+}
+
+function workOrderFormFromRow(row = {}) {
+  if (!row?.id) return DEFAULT_WORK_ORDER_FORM;
+  const scheduled = row.scheduled_for ? String(row.scheduled_for).slice(0, 16) : "";
+  return {
+    title: row.title || "",
+    description: row.description || "",
+    category: row.category || "general_repair",
+    priority: row.priority || "normal",
+    status: row.status || "open",
+    unit_id: row.unit_id || "",
+    tenant_id: row.tenant_id || "",
+    assigned_staff_member_id: row.assigned_staff_member_id || "",
+    scheduled_for: scheduled,
+    internal_notes: row.internal_notes || "",
+    completion_notes: row.completion_notes || "",
+  };
+}
+
+function PropertyWorkOrdersSection({
+  workOrders = [],
+  propertyProfile = {},
+  propertyProfiles = [],
+  teamMembers = [],
+  onCreate,
+  onUpdate,
+  saving = false,
+}) {
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(DEFAULT_WORK_ORDER_FORM);
+  const [error, setError] = useState("");
+  const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
+  const activePropertyId = editing?.property_profile_id || form.property_id || propertyProfile?.id || propertyOptions[0]?.id || "";
+  const activeProperty = propertyOptions.find((property) => String(property.id) === String(activePropertyId)) || propertyProfile || {};
+  const units = activeProperty?.units || propertyProfile?.units || [];
+  const tenants = activeProperty?.tenants || propertyProfile?.tenants || [];
+  const activeStaff = teamMembers.filter((member) => member.status !== "disabled");
+
+  const openCreate = () => {
+    setEditing({ mode: "create" });
+    setForm({ ...DEFAULT_WORK_ORDER_FORM, property_id: activePropertyId || "" });
+    setError("");
+  };
+
+  const openEdit = (row) => {
+    setEditing(row);
+    setForm({ ...workOrderFormFromRow(row), property_id: row.property_profile_id || activePropertyId || "" });
+    setError("");
+  };
+
+  const close = () => {
+    if (saving) return;
+    setEditing(null);
+    setForm(DEFAULT_WORK_ORDER_FORM);
+    setError("");
+  };
+
+  const update = (field, value) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setError("");
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!form.title.trim() || !form.description.trim()) return;
+    const payload = {
+      title: form.title,
+      description: form.description,
+      category: form.category,
+      priority: form.priority,
+      status: form.status,
+      unit_id: form.unit_id ? Number(form.unit_id) : null,
+      tenant_id: form.tenant_id ? Number(form.tenant_id) : null,
+      assigned_staff_member_id: form.assigned_staff_member_id ? Number(form.assigned_staff_member_id) : null,
+      scheduled_for: form.scheduled_for || "",
+      internal_notes: form.internal_notes,
+      completion_notes: form.completion_notes,
+    };
+    try {
+      if (editing?.mode === "create") {
+        await onCreate?.(form.property_id || activePropertyId, payload);
+      } else {
+        await onUpdate?.(editing.property_profile_id || activePropertyId, editing.id, payload);
+      }
+      close();
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Could not save that work order.");
+    }
+  };
+
+  return (
+    <section data-testid="property-work-orders-section" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Work Orders</h2>
+          <p className="mt-1 text-sm text-slate-300">
+            Track approved maintenance follow-up, staff ownership, schedule, and completion notes.
+          </p>
+        </div>
+        <button
+          type="button"
+          data-testid="property-work-order-add"
+          onClick={openCreate}
+          className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200"
+        >
+          Create Work Order
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {workOrders.length ? (
+          workOrders.map((row) => (
+            <article key={row.id} data-testid={`property-work-order-${row.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-white">{row.title || "Work order"}</h3>
+                    <PassiveBadge tone={row.priority === "emergency" || row.priority === "urgent" ? "rose" : "amber"}>
+                      {row.priority_label || row.priority || "Normal"}
+                    </PassiveBadge>
+                    <PassiveBadge tone="sky">{row.status_label || row.status || "Open"}</PassiveBadge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{row.description || "No description provided."}</p>
+                  <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
+                    <span><strong className="text-slate-200">Property:</strong> {row.property_name || "Property"}</span>
+                    <span><strong className="text-slate-200">Unit:</strong> {row.unit_label || "Whole property"}</span>
+                    <span><strong className="text-slate-200">Tenant:</strong> {row.tenant_name || "-"}</span>
+                    <span><strong className="text-slate-200">Assigned:</strong> {row.assigned_staff_member_name || "-"}</span>
+                    <span><strong className="text-slate-200">Scheduled:</strong> {formatDateTime(row.scheduled_for) || "-"}</span>
+                    <span><strong className="text-slate-200">Source:</strong> {row.source_tenant_request_reference || "Manual"}</span>
+                  </div>
+                  {(row.source_attachments || []).length ? (
+                    <div data-testid={`property-work-order-attachments-${row.id}`} className="mt-3 flex flex-wrap gap-2">
+                      {row.source_attachments.map((attachment) => (
+                        <a
+                          key={attachment.id || attachment.filename}
+                          href={attachment.url || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs font-semibold text-slate-200 hover:border-sky-300/50"
+                        >
+                          {attachment.filename || "Attachment"}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex flex-col items-start gap-2 lg:items-end">
+                  <div className="text-xs text-slate-500">{row.work_order_number || `#${row.id}`}</div>
+                  <button
+                    type="button"
+                    data-testid={`property-work-order-edit-${row.id}`}
+                    onClick={() => openEdit(row)}
+                    className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-300/60 hover:bg-amber-300/10"
+                  >
+                    Edit
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))
+        ) : (
+          <EmptyState title="No work orders yet" testId="property-work-orders-empty">
+            Create work orders manually or convert approved tenant maintenance requests into actionable follow-up.
+          </EmptyState>
+        )}
+      </div>
+
+      {editing ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
+          <form data-testid="property-work-order-modal" onSubmit={submit} className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-white">{editing.mode === "create" ? "Create Work Order" : "Edit Work Order"}</h3>
+                <p className="mt-1 text-sm text-slate-400">Staff assignment is internal only; contractor assignment comes later.</p>
+              </div>
+              <button type="button" onClick={close} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800">
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {editing.mode === "create" && propertyOptions.length > 1 ? (
+                <label className="block text-sm font-medium text-slate-200">
+                  Property
+                  <select data-testid="property-work-order-property" value={form.property_id || activePropertyId} onChange={(event) => update("property_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                    {propertyOptions.map((property) => (
+                      <option key={property.id} value={property.id}>{property.display_name || property.address || "Property"}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Title
+                <input data-testid="property-work-order-title" value={form.title} onChange={(event) => update("title", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+              </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Description
+                <textarea data-testid="property-work-order-description" rows={4} value={form.description} onChange={(event) => update("description", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Category
+                <select data-testid="property-work-order-category" value={form.category} onChange={(event) => update("category", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                  {WORK_ORDER_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Priority
+                <select data-testid="property-work-order-priority" value={form.priority} onChange={(event) => update("priority", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                  {WORK_ORDER_PRIORITIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Status
+                <select data-testid="property-work-order-status" value={form.status} onChange={(event) => update("status", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                  {WORK_ORDER_STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Unit
+                <select data-testid="property-work-order-unit" value={form.unit_id} onChange={(event) => update("unit_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                  <option value="">Whole property</option>
+                  {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.unit_label}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Tenant
+                <select data-testid="property-work-order-tenant" value={form.tenant_id} onChange={(event) => update("tenant_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                  <option value="">No tenant</option>
+                  {tenants.map((tenant) => <option key={tenant.tenant_id || tenant.id} value={tenant.tenant_id || tenant.id}>{tenant.name || `${tenant.first_name || ""} ${tenant.last_name || ""}`.trim() || tenant.email}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Assigned Staff Member
+                <select data-testid="property-work-order-staff" value={form.assigned_staff_member_id} onChange={(event) => update("assigned_staff_member_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                  <option value="">Unassigned</option>
+                  {activeStaff.map((member) => <option key={member.id} value={member.id}>{member.name || member.email}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Scheduled Date
+                <input data-testid="property-work-order-scheduled" type="datetime-local" value={form.scheduled_for} onChange={(event) => update("scheduled_for", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+              </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Internal Notes
+                <textarea data-testid="property-work-order-internal-notes" rows={3} value={form.internal_notes} onChange={(event) => update("internal_notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+              </label>
+              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                Completion Notes
+                <textarea data-testid="property-work-order-completion-notes" rows={3} value={form.completion_notes} onChange={(event) => update("completion_notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+              </label>
+            </div>
+
+            {error ? <div className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</div> : null}
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button type="submit" data-testid="property-work-order-save" disabled={saving || !form.title.trim() || !form.description.trim()} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
+                {saving ? "Saving..." : "Save Work Order"}
+              </button>
+              <button type="button" onClick={close} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -466,12 +794,17 @@ export default function CustomerRequests({
   requests = [],
   bids = [],
   tenantMaintenanceRequests = [],
+  propertyWorkOrders = [],
+  teamMembers = [],
   propertyProfile = {},
   propertyProfiles = [],
   isPropertyManagementCompany = false,
   onCreateRequest,
   onUpdateRequest,
   onReviewTenantMaintenanceRequest,
+  onCreatePropertyWorkOrder,
+  onUpdatePropertyWorkOrder,
+  onCreateWorkOrderFromTenantRequest,
   onImproveRequest,
   onStartContractorSearch,
   onRouteRequestContractors,
@@ -502,6 +835,8 @@ export default function CustomerRequests({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [updatingTenantMaintenanceRequestId, setUpdatingTenantMaintenanceRequestId] = useState("");
+  const [convertingTenantMaintenanceRequestId, setConvertingTenantMaintenanceRequestId] = useState("");
+  const [savingPropertyWorkOrder, setSavingPropertyWorkOrder] = useState(false);
   const [improvingRequest, setImprovingRequest] = useState(false);
   const [improveError, setImproveError] = useState("");
   const [requestSuggestion, setRequestSuggestion] = useState(null);
@@ -536,6 +871,36 @@ export default function CustomerRequests({
       await onReviewTenantMaintenanceRequest(propertyId, requestId, payload);
     } finally {
       setUpdatingTenantMaintenanceRequestId("");
+    }
+  };
+
+  const convertTenantRequestToWorkOrder = async (request) => {
+    if (!request?.id || !request?.property_profile_id || !onCreateWorkOrderFromTenantRequest) return;
+    setConvertingTenantMaintenanceRequestId(String(request.id));
+    try {
+      await onCreateWorkOrderFromTenantRequest(request.property_profile_id, request.id);
+    } finally {
+      setConvertingTenantMaintenanceRequestId("");
+    }
+  };
+
+  const createPropertyWorkOrder = async (propertyId, payload) => {
+    if (!onCreatePropertyWorkOrder) return;
+    setSavingPropertyWorkOrder(true);
+    try {
+      await onCreatePropertyWorkOrder(propertyId, payload);
+    } finally {
+      setSavingPropertyWorkOrder(false);
+    }
+  };
+
+  const updatePropertyWorkOrder = async (propertyId, workOrderId, payload) => {
+    if (!onUpdatePropertyWorkOrder) return;
+    setSavingPropertyWorkOrder(true);
+    try {
+      await onUpdatePropertyWorkOrder(propertyId, workOrderId, payload);
+    } finally {
+      setSavingPropertyWorkOrder(false);
     }
   };
 
@@ -1228,11 +1593,24 @@ I need help installing shelves and patching drywall.`}
       </form>
 
       {isPropertyManagementCompany ? (
-        <TenantMaintenanceReviewQueue
-          requests={tenantMaintenanceRequests}
-          onReview={reviewTenantMaintenanceRequest}
-          updatingId={updatingTenantMaintenanceRequestId}
-        />
+        <>
+          <PropertyWorkOrdersSection
+            workOrders={propertyWorkOrders}
+            propertyProfile={propertyProfile}
+            propertyProfiles={propertyProfiles}
+            teamMembers={teamMembers}
+            onCreate={createPropertyWorkOrder}
+            onUpdate={updatePropertyWorkOrder}
+            saving={savingPropertyWorkOrder}
+          />
+          <TenantMaintenanceReviewQueue
+            requests={tenantMaintenanceRequests}
+            onReview={reviewTenantMaintenanceRequest}
+            onCreateWorkOrder={convertTenantRequestToWorkOrder}
+            updatingId={updatingTenantMaintenanceRequestId}
+            convertingId={convertingTenantMaintenanceRequestId}
+          />
+        </>
       ) : null}
 
       <section data-testid="customer-portal-requests" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">

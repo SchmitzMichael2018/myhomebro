@@ -2759,6 +2759,7 @@ from .models_customer_portal import (  # noqa: E402,F401
     PropertyManagementStaffMembership,
     PropertyOwnerContact,
     PropertyOwnership,
+    PropertyWorkOrder,
     PropertyPhoto,
     PropertyProfile,
     PropertyUnit,

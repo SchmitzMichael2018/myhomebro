@@ -3010,6 +3010,50 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       throw error;
     }
   };
+  const createPropertyWorkOrder = async (propertyId, payload) => {
+    if (!propertyId) return false;
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/`,
+        payload
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success("Work order created.");
+      return data;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not create that work order.");
+      throw error;
+    }
+  };
+  const updatePropertyWorkOrder = async (propertyId, workOrderId, payload) => {
+    if (!propertyId || !workOrderId) return false;
+    try {
+      const { data } = await api.patch(
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/`,
+        payload
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success("Work order updated.");
+      return data;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not update that work order.");
+      throw error;
+    }
+  };
+  const createWorkOrderFromTenantRequest = async (propertyId, requestId) => {
+    if (!propertyId || !requestId) return false;
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenant-maintenance-requests/${requestId}/create-work-order/`
+      );
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      toast.success("Work order created from request.");
+      return data;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not create a work order from that request.");
+      throw error;
+    }
+  };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") {
       return (
@@ -3049,6 +3093,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           requests={portal?.requests || []}
           bids={portal?.bids || []}
           tenantMaintenanceRequests={portal?.tenant_maintenance_requests || []}
+          propertyWorkOrders={portal?.property_work_orders || []}
+          teamMembers={portal?.account?.team_members || []}
           propertyProfile={portal?.property_profile || {}}
           propertyProfiles={portal?.property_profiles || []}
           isPropertyManagementCompany={Boolean(portal?.account?.is_property_management_company || portal?.account?.account_type === "property_management_company" || portal?.customer?.account_type === "property_management_company")}
@@ -3100,6 +3146,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             }
           }}
           onReviewTenantMaintenanceRequest={reviewTenantMaintenanceRequest}
+          onCreatePropertyWorkOrder={createPropertyWorkOrder}
+          onUpdatePropertyWorkOrder={updatePropertyWorkOrder}
+          onCreateWorkOrderFromTenantRequest={createWorkOrderFromTenantRequest}
           onImproveRequest={async (payload) => {
             const { data } = await api.post(
               `/projects/customer-portal/${encodeURIComponent(token)}/requests/improve/`,

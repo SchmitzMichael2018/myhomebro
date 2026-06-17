@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -510,6 +511,129 @@ class TenantMaintenanceRequestAttachment(models.Model):
 
     def __str__(self):
         return f"{self.tenant_request_id}: {self.original_filename or 'Attachment'}"
+
+
+class PropertyWorkOrder(models.Model):
+    CATEGORY_PLUMBING = "plumbing"
+    CATEGORY_ELECTRICAL = "electrical"
+    CATEGORY_HVAC = "hvac"
+    CATEGORY_APPLIANCE = "appliance"
+    CATEGORY_PEST = "pest"
+    CATEGORY_ACCESS_LOCK = "access_lock"
+    CATEGORY_SAFETY = "safety"
+    CATEGORY_GENERAL_REPAIR = "general_repair"
+    CATEGORY_OTHER = "other"
+    CATEGORY_CHOICES = TenantMaintenanceRequest.CATEGORY_CHOICES
+
+    PRIORITY_EMERGENCY = "emergency"
+    PRIORITY_URGENT = "urgent"
+    PRIORITY_NORMAL = "normal"
+    PRIORITY_LOW = "low"
+    PRIORITY_CHOICES = [
+        (PRIORITY_EMERGENCY, "Emergency"),
+        (PRIORITY_URGENT, "Urgent"),
+        (PRIORITY_NORMAL, "Normal"),
+        (PRIORITY_LOW, "Low"),
+    ]
+
+    STATUS_OPEN = "open"
+    STATUS_SCHEDULED = "scheduled"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_WAITING = "waiting"
+    STATUS_COMPLETED = "completed"
+    STATUS_CLOSED = "closed"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Open"),
+        (STATUS_SCHEDULED, "Scheduled"),
+        (STATUS_IN_PROGRESS, "In Progress"),
+        (STATUS_WAITING, "Waiting"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_CLOSED, "Closed"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+    ACTIVE_STATUSES = [STATUS_OPEN, STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_WAITING, STATUS_COMPLETED]
+
+    property_management_company = models.ForeignKey(
+        PropertyManagementCompany,
+        on_delete=models.CASCADE,
+        related_name="property_work_orders",
+    )
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="property_work_orders",
+    )
+    unit = models.ForeignKey(
+        PropertyUnit,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_work_orders",
+    )
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_work_orders",
+    )
+    source_tenant_request = models.ForeignKey(
+        TenantMaintenanceRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_work_orders",
+    )
+    work_order_number = models.CharField(max_length=32, unique=True, blank=True, default="")
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    category = models.CharField(max_length=32, choices=CATEGORY_CHOICES, default=CATEGORY_GENERAL_REPAIR)
+    priority = models.CharField(max_length=24, choices=PRIORITY_CHOICES, default=PRIORITY_NORMAL)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)
+    assigned_staff_member = models.ForeignKey(
+        PropertyManagementStaffMembership,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_property_work_orders",
+    )
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    internal_notes = models.TextField(blank=True, default="")
+    completion_notes = models.TextField(blank=True, default="")
+    created_by = models.EmailField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["property_management_company", "status"]),
+            models.Index(fields=["property_profile", "status"]),
+            models.Index(fields=["unit", "status"]),
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["source_tenant_request", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_tenant_request"],
+                condition=Q(source_tenant_request__isnull=False, status__in=["open", "scheduled", "in_progress", "waiting", "completed"]),
+                name="unique_active_property_work_order_per_tenant_request",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.work_order_number:
+            number = f"PWO-{self.pk:06d}"
+            type(self).objects.filter(pk=self.pk, work_order_number="").update(work_order_number=number)
+            self.work_order_number = number
+
+    def __str__(self):
+        return f"{self.work_order_number or 'PWO'} - {self.title}"
 
 
 def property_document_upload_path(instance, filename):

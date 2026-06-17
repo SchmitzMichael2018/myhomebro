@@ -107,6 +107,7 @@ try:
         PropertyManagementStaffMembership,
         PropertyOwnerContact,
         PropertyOwnership,
+        PropertyWorkOrder,
         PropertyPhoto,
         PropertyProfile,
         PropertyUnit,
@@ -118,7 +119,7 @@ try:
     )
 except Exception:  # pragma: no cover
     CustomerRequest = NotificationLog = NotificationRule = PropertyDocument = PropertyHomeSystem = PropertyPhoto = PropertyProfile = SmartNotification = None  # type: ignore
-    PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyUnit = None  # type: ignore
+    PropertyManagementCompany = PropertyManagementStaffMembership = PropertyOwnerContact = PropertyOwnership = PropertyWorkOrder = PropertyUnit = None  # type: ignore
     Tenant = TenantMaintenanceRequest = TenantMaintenanceRequestAttachment = Tenancy = None  # type: ignore
 
 try:
@@ -535,6 +536,15 @@ if TenantMaintenanceRequestAttachment is not None:
         search_fields = ("original_filename", "content_type", "uploaded_by_name", "uploaded_by_email", "tenant_request__title")
         list_filter = ("content_type",)
         readonly_fields = ("created_at",)
+
+
+if PropertyWorkOrder is not None:
+    @admin.register(PropertyWorkOrder)
+    class PropertyWorkOrderAdmin(admin.ModelAdmin):
+        list_display = ("id", "work_order_number", "title", "property_management_company", "property_profile", "unit", "priority", "status", "scheduled_for", "created_at")
+        search_fields = ("work_order_number", "title", "description", "property_profile__display_name", "tenant__first_name", "tenant__last_name")
+        list_filter = ("status", "priority", "category", "created_at")
+        readonly_fields = ("work_order_number", "created_at", "updated_at")
 
 
 if CustomerRequest is not None:

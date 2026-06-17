@@ -92,6 +92,7 @@ from projects.models import (
     PropertyManagementStaffMembership,
     PropertyOwnerContact,
     PropertyOwnership,
+    PropertyWorkOrder,
     PropertyPhoto,
     SmartNotification,
     SmartNotificationEvent,
@@ -20762,6 +20763,228 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(row.status, TenantMaintenanceRequest.STATUS_SUBMITTED)
         self.assertEqual(row.attachments.count(), 1)
         self.assertEqual(response.data["request"]["reference"], f"TMR-{row.id:06d}")
+
+    def _create_property_work_order_context(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        unit = PropertyUnit.objects.create(property_profile=property_profile, unit_label="Unit A", status=PropertyUnit.STATUS_ACTIVE)
+        tenant = Tenant.objects.create(
+            company=company,
+            first_name="Taylor",
+            last_name="Tenant",
+            email="taylor@example.com",
+            status=Tenant.STATUS_ACTIVE,
+            maintenance_access_enabled=True,
+        )
+        Tenancy.objects.create(tenant=tenant, property_profile=property_profile, unit=unit, status=Tenancy.STATUS_ACTIVE)
+        staff = PropertyManagementStaffMembership.objects.create(
+            company=company,
+            name="Morgan Manager",
+            email="morgan@example.com",
+            role=PropertyManagementStaffMembership.ROLE_MANAGER,
+            status=PropertyManagementStaffMembership.STATUS_ACTIVE,
+        )
+        return company, property_profile, unit, tenant, staff
+
+    def test_property_management_company_can_create_list_and_edit_work_orders(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
+
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/",
+            {
+                "title": "Repair sink leak",
+                "description": "Inspect and repair the kitchen sink.",
+                "category": PropertyWorkOrder.CATEGORY_PLUMBING,
+                "priority": PropertyWorkOrder.PRIORITY_URGENT,
+                "unit_id": unit.id,
+                "tenant_id": tenant.id,
+                "assigned_staff_member_id": staff.id,
+                "scheduled_for": "2026-06-20T15:00:00Z",
+                "internal_notes": "Coordinate with resident first.",
+            },
+            content_type="application/json",
+        )
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/")
+        row = PropertyWorkOrder.objects.get()
+        edit_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/",
+            {
+                "status": PropertyWorkOrder.STATUS_IN_PROGRESS,
+                "priority": PropertyWorkOrder.PRIORITY_NORMAL,
+                "completion_notes": "Parts ordered.",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(create_response.status_code, 201, create_response.data)
+        self.assertEqual(create_response.data["work_order"]["work_order_number"], f"PWO-{row.id:06d}")
+        self.assertEqual(row.property_management_company, company)
+        self.assertEqual(row.property_profile, property_profile)
+        self.assertEqual(row.unit, unit)
+        self.assertEqual(row.tenant, tenant)
+        self.assertEqual(row.assigned_staff_member, staff)
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertEqual(list_response.data["work_orders"][0]["title"], "Repair sink leak")
+        self.assertEqual(edit_response.status_code, 200, edit_response.data)
+        row.refresh_from_db()
+        self.assertEqual(row.status, PropertyWorkOrder.STATUS_IN_PROGRESS)
+        self.assertEqual(row.priority, PropertyWorkOrder.PRIORITY_NORMAL)
+        self.assertEqual(row.completion_notes, "Parts ordered.")
+        self.assertEqual(MaintenanceWorkOrder.objects.count(), 0)
+
+    def test_individual_customer_cannot_manage_property_work_orders(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Individual Home",
+        )
+
+        list_response = self.client.get(f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/")
+        create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/",
+            {"title": "Fix issue", "description": "Work order"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(create_response.status_code, 403)
+        self.assertEqual(PropertyWorkOrder.objects.count(), 0)
+
+    def test_property_work_orders_are_scoped_to_managed_properties(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        other_company = PropertyManagementCompany.objects.create(homeowner=self.other_homeowner, name="Other PM")
+        other_property = PropertyProfile.objects.create(
+            homeowner=self.other_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=other_company,
+            display_name="Other Managed Property",
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{other_property.id}/work-orders/",
+            {"title": "Fix issue", "description": "Work order"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(PropertyWorkOrder.objects.count(), 0)
+
+    def test_approved_tenant_request_converts_to_work_order_with_attachments(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        _company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        source_request = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            submitted_by_name="Taylor Tenant",
+            submitted_by_email="taylor@example.com",
+            category=TenantMaintenanceRequest.CATEGORY_PLUMBING,
+            urgency=TenantMaintenanceRequest.URGENCY_URGENT,
+            title="Kitchen sink leak",
+            description="Water is dripping under the sink.",
+            status=TenantMaintenanceRequest.STATUS_APPROVED,
+            manager_notes="Approved for maintenance follow-up.",
+        )
+        TenantMaintenanceRequestAttachment.objects.create(
+            tenant_request=source_request,
+            file=SimpleUploadedFile("sink-leak.jpg", b"fake-image-bytes", content_type="image/jpeg"),
+            original_filename="sink-leak.jpg",
+            content_type="image/jpeg",
+            size_bytes=16,
+        )
+        customer_request_count = CustomerRequest.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/{source_request.id}/create-work-order/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        row = PropertyWorkOrder.objects.get()
+        self.assertEqual(row.source_tenant_request, source_request)
+        self.assertEqual(row.property_profile, property_profile)
+        self.assertEqual(row.unit, unit)
+        self.assertEqual(row.tenant, tenant)
+        self.assertEqual(row.title, "Kitchen sink leak")
+        self.assertEqual(row.priority, PropertyWorkOrder.PRIORITY_URGENT)
+        self.assertEqual(response.data["work_order"]["attachment_count"], 1)
+        self.assertEqual(response.data["work_order"]["source_attachments"][0]["filename"], "sink-leak.jpg")
+        self.assertTrue(response.data["request"]["converted_to_work_order"])
+        self.assertEqual(TenantMaintenanceRequestAttachment.objects.count(), 1)
+        self.assertEqual(CustomerRequest.objects.count(), customer_request_count)
+        self.assertEqual(MaintenanceWorkOrder.objects.count(), 0)
+
+    def test_rejected_tenant_request_cannot_convert_to_work_order(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        _company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        source_request = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            submitted_by_name="Taylor Tenant",
+            category=TenantMaintenanceRequest.CATEGORY_PLUMBING,
+            urgency=TenantMaintenanceRequest.URGENCY_NORMAL,
+            title="Rejected request",
+            description="No work order should be created.",
+            status=TenantMaintenanceRequest.STATUS_REJECTED,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/{source_request.id}/create-work-order/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(PropertyWorkOrder.objects.count(), 0)
+
+    def test_duplicate_tenant_request_work_order_conversion_is_prevented(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        source_request = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            submitted_by_name="Taylor Tenant",
+            category=TenantMaintenanceRequest.CATEGORY_PLUMBING,
+            urgency=TenantMaintenanceRequest.URGENCY_NORMAL,
+            title="Approved request",
+            description="Convert once only.",
+            status=TenantMaintenanceRequest.STATUS_APPROVED,
+        )
+        PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            source_tenant_request=source_request,
+            title="Existing work order",
+            description="Already active.",
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenant-maintenance-requests/{source_request.id}/create-work-order/",
+            {},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(PropertyWorkOrder.objects.count(), 1)
 
     def test_tenant_maintenance_request_can_be_submitted_via_public_token(self):
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
