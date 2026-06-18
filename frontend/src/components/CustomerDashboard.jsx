@@ -191,7 +191,7 @@ function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Recommendations</div>
-          <h2 className="mt-1 text-xl font-semibold text-white">What may need attention</h2>
+          <h2 className="mt-1 text-xl font-semibold text-white">Recommended for you</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
             Advisory suggestions from your property records, documents, warranties, and service history.
           </p>

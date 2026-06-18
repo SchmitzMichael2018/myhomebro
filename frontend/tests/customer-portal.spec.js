@@ -3869,7 +3869,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Draw for Kitchen Remodel");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Main HVAC may need attention");
   await expect(page.getByTestId("customer-unified-recommendations")).toBeVisible();
-  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("What may need attention");
+  await expect(page.getByTestId("customer-unified-recommendations")).toContainText("Recommended for you");
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("HVAC Maintenance");
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("No recent completed HVAC service record was found");
   await expect(page.getByTestId("customer-unified-recommendations")).toContainText("Cooling systems work hardest in summer");
