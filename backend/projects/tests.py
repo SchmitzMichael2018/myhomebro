@@ -21151,6 +21151,76 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(list_response.status_code, 200, list_response.data)
         self.assertEqual(list_response.data["vendors"][0]["status"], PropertyVendor.STATUS_INACTIVE)
 
+    def test_property_management_company_can_search_and_import_vendors(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, _property_profile, _unit, _tenant, _staff = self._create_property_work_order_context()
+        _user, contractor, _entry = self._create_marketplace_contractor_entry(
+            email="vendor-contractor@example.com",
+            business_name="Verified Pipe Pros",
+        )
+        ContractorDirectoryEntry.objects.create(
+            business_name="Local Pipe Shop",
+            normalized_name="local pipe shop",
+            city="Austin",
+            state="TX",
+            phone="512-555-0190",
+            website="https://localpipes.example",
+            primary_service="plumbing",
+            normalized_services=["plumbing"],
+            services=["Plumbing"],
+            claimed=False,
+        )
+
+        contractor_search = self.client.get(
+            f"/api/projects/customer-portal/{token}/vendor-search/contractors/?search=Verified&trade_category=plumbing&location=Austin"
+        )
+        business_search = self.client.get(
+            f"/api/projects/customer-portal/{token}/vendor-search/businesses/?search=Local&trade_category=plumbing&location=Austin"
+        )
+        contractor_import = self.client.post(
+            f"/api/projects/customer-portal/{token}/vendors/import/",
+            {
+                "import_type": PropertyVendor.SOURCE_MYHOMEBRO_CONTRACTOR,
+                "contractor_id": contractor.id,
+            },
+            content_type="application/json",
+        )
+        duplicate_import = self.client.post(
+            f"/api/projects/customer-portal/{token}/vendors/import/",
+            {
+                "import_type": PropertyVendor.SOURCE_MYHOMEBRO_CONTRACTOR,
+                "contractor_id": contractor.id,
+            },
+            content_type="application/json",
+        )
+        business_import = self.client.post(
+            f"/api/projects/customer-portal/{token}/vendors/import/",
+            {
+                "import_type": PropertyVendor.SOURCE_LOCAL_BUSINESS,
+                "business_id": "directory-local-pipe-shop",
+                "name": "Local Pipe Shop",
+                "trade_category": "plumbing",
+                "phone": "512-555-0190",
+                "website": "https://localpipes.example",
+                "address": "Austin, TX",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(contractor_search.status_code, 200, contractor_search.data)
+        self.assertEqual(contractor_search.data["results"][0]["business_name"], "Verified Pipe Pros")
+        self.assertEqual(business_search.status_code, 200, business_search.data)
+        self.assertEqual(business_search.data["results"][0]["business_name"], "Local Pipe Shop")
+        self.assertEqual(contractor_import.status_code, 201, contractor_import.data)
+        linked_vendor = PropertyVendor.objects.get(linked_contractor=contractor)
+        self.assertEqual(linked_vendor.property_management_company, company)
+        self.assertEqual(linked_vendor.vendor_source, PropertyVendor.SOURCE_MYHOMEBRO_CONTRACTOR)
+        self.assertEqual(duplicate_import.status_code, 400)
+        self.assertEqual(business_import.status_code, 201, business_import.data)
+        local_vendor = PropertyVendor.objects.get(name="Local Pipe Shop")
+        self.assertEqual(local_vendor.vendor_source, PropertyVendor.SOURCE_LOCAL_BUSINESS)
+        self.assertEqual(local_vendor.phone, "512-555-0190")
+
     def test_individual_customer_cannot_manage_vendors(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
 
@@ -21160,9 +21230,19 @@ class CustomerPortalAccessTests(TestCase):
             content_type="application/json",
         )
         list_response = self.client.get(f"/api/projects/customer-portal/{token}/vendors/")
+        contractor_search = self.client.get(f"/api/projects/customer-portal/{token}/vendor-search/contractors/")
+        business_search = self.client.get(f"/api/projects/customer-portal/{token}/vendor-search/businesses/")
+        import_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/vendors/import/",
+            {"import_type": PropertyVendor.SOURCE_LOCAL_BUSINESS, "name": "Pipe Pros"},
+            content_type="application/json",
+        )
 
         self.assertEqual(create_response.status_code, 403)
         self.assertEqual(list_response.status_code, 403)
+        self.assertEqual(contractor_search.status_code, 403)
+        self.assertEqual(business_search.status_code, 403)
+        self.assertEqual(import_response.status_code, 403)
         self.assertEqual(PropertyVendor.objects.count(), 0)
 
     def test_property_work_order_assignment_type_switching_records_activity(self):

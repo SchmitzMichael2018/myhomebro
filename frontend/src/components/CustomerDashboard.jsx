@@ -2033,12 +2033,18 @@ function TeamMemberModal({ mode = "add", member = null, saving = false, onClose,
   );
 }
 
-function VendorModal({ mode = "add", vendor = null, saving = false, onClose, onSubmit }) {
+function VendorModal({ mode = "add", vendor = null, saving = false, token = "", onClose, onSubmit, onImportVendor }) {
   const [form, setForm] = useState(() => ({
     ...emptyVendorForm,
     ...(vendor || {}),
     status: vendor?.status || "active",
   }));
+  const [activeSource, setActiveSource] = useState("myhomebro_contractor");
+  const [searchForm, setSearchForm] = useState({ trade_category: "", location: "", search: "" });
+  const [contractorResults, setContractorResults] = useState([]);
+  const [businessResults, setBusinessResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [importingKey, setImportingKey] = useState("");
 
   useEffect(() => {
     setForm({
@@ -2049,7 +2055,142 @@ function VendorModal({ mode = "add", vendor = null, saving = false, onClose, onS
   }, [vendor]);
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+  const updateSearch = (field, value) => setSearchForm((prev) => ({ ...prev, [field]: value }));
   const isEdit = mode === "edit";
+  const isManual = isEdit || activeSource === "manual";
+
+  async function runVendorSearch(source = activeSource) {
+    if (!token || source === "manual") return;
+    setSearching(true);
+    try {
+      const params = new URLSearchParams();
+      Object.entries(searchForm).forEach(([key, value]) => {
+        if (String(value || "").trim()) params.set(key, value);
+      });
+      const path =
+        source === "local_business"
+          ? `/projects/customer-portal/${encodeURIComponent(token)}/vendor-search/businesses/`
+          : `/projects/customer-portal/${encodeURIComponent(token)}/vendor-search/contractors/`;
+      const { data } = await api.get(`${path}?${params.toString()}`);
+      if (source === "local_business") {
+        setBusinessResults(Array.isArray(data?.results) ? data.results : []);
+      } else {
+        setContractorResults(Array.isArray(data?.results) ? data.results : []);
+      }
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not search vendors.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function importVendor(payload, key) {
+    setImportingKey(key);
+    try {
+      await onImportVendor?.(payload);
+      onClose?.();
+    } finally {
+      setImportingKey("");
+    }
+  }
+
+  const manualForm = (
+    <>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        <label className="block text-sm font-medium text-slate-200">
+          Vendor Name
+          <input
+            data-testid="pm-vendor-name"
+            required
+            value={form.name || ""}
+            onChange={(event) => update("name", event.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-200">
+          Trade
+          <input
+            data-testid="pm-vendor-trade"
+            value={form.trade_category || ""}
+            onChange={(event) => update("trade_category", event.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-200">
+          Email
+          <input
+            data-testid="pm-vendor-email"
+            type="email"
+            value={form.email || ""}
+            onChange={(event) => update("email", event.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-200">
+          Phone
+          <input
+            data-testid="pm-vendor-phone"
+            value={form.phone || ""}
+            onChange={(event) => update("phone", event.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+          Website
+          <input
+            data-testid="pm-vendor-website"
+            value={form.website || ""}
+            onChange={(event) => update("website", event.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+          Notes
+          <textarea
+            data-testid="pm-vendor-notes"
+            rows={3}
+            value={form.notes || ""}
+            onChange={(event) => update("notes", event.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+          />
+        </label>
+        {isEdit ? (
+          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+            Status
+            <select
+              data-testid="pm-vendor-status"
+              value={form.status || "active"}
+              onChange={(event) => update("status", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+            >
+              {PM_VENDOR_STATUSES.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={saving || !form.name?.trim()}
+          data-testid={isEdit ? "pm-vendor-save-edit" : "pm-vendor-save-add"}
+          className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+        >
+          {saving ? "Saving..." : isEdit ? "Save changes" : "Add Vendor"}
+        </button>
+      </div>
+    </>
+  );
+
+  const results = activeSource === "local_business" ? businessResults : contractorResults;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
@@ -2057,9 +2198,9 @@ function VendorModal({ mode = "add", vendor = null, saving = false, onClose, onS
         data-testid={isEdit ? "pm-vendor-edit-modal" : "pm-vendor-add-modal"}
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit?.(form);
+          if (isManual) onSubmit?.(form);
         }}
-        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl"
+        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -2074,103 +2215,159 @@ function VendorModal({ mode = "add", vendor = null, saving = false, onClose, onS
             Close
           </button>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-medium text-slate-200">
-            Vendor Name
-            <input
-              data-testid="pm-vendor-name"
-              required
-              value={form.name || ""}
-              onChange={(event) => update("name", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-200">
-            Trade
-            <input
-              data-testid="pm-vendor-trade"
-              value={form.trade_category || ""}
-              onChange={(event) => update("trade_category", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-200">
-            Email
-            <input
-              data-testid="pm-vendor-email"
-              type="email"
-              value={form.email || ""}
-              onChange={(event) => update("email", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-200">
-            Phone
-            <input
-              data-testid="pm-vendor-phone"
-              value={form.phone || ""}
-              onChange={(event) => update("phone", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
-            Website
-            <input
-              data-testid="pm-vendor-website"
-              value={form.website || ""}
-              onChange={(event) => update("website", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
-            Notes
-            <textarea
-              data-testid="pm-vendor-notes"
-              rows={3}
-              value={form.notes || ""}
-              onChange={(event) => update("notes", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
-          </label>
-          {isEdit ? (
-            <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
-              Status
-              <select
-                data-testid="pm-vendor-status"
-                value={form.status || "active"}
-                onChange={(event) => update("status", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+        {!isEdit ? (
+          <div className="mt-5 grid gap-2 sm:grid-cols-3" role="tablist" aria-label="Vendor add options">
+            {[
+              ["myhomebro_contractor", "MyHomeBro Contractors"],
+              ["local_business", "Local Businesses"],
+              ["manual", "Manual Entry"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                data-testid={`pm-vendor-source-${value}`}
+                onClick={() => setActiveSource(value)}
+                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                  activeSource === value
+                    ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
+                    : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
+                }`}
               >
-                {PM_VENDOR_STATUSES.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
-        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving || !form.name?.trim()}
-            data-testid={isEdit ? "pm-vendor-save-edit" : "pm-vendor-save-add"}
-            className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-          >
-            {saving ? "Saving..." : isEdit ? "Save changes" : "Add Vendor"}
-          </button>
-        </div>
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {isManual ? manualForm : (
+          <div className="mt-5 space-y-4" data-testid={`pm-vendor-search-${activeSource}`}>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-sm font-medium text-slate-200">
+                Trade
+                <input
+                  data-testid="pm-vendor-search-trade"
+                  value={searchForm.trade_category}
+                  onChange={(event) => updateSearch("trade_category", event.target.value)}
+                  placeholder="Plumbing"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Location
+                <input
+                  data-testid="pm-vendor-search-location"
+                  value={searchForm.location}
+                  onChange={(event) => updateSearch("location", event.target.value)}
+                  placeholder="San Antonio, TX"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Search
+                <input
+                  data-testid="pm-vendor-search-text"
+                  value={searchForm.search}
+                  onChange={(event) => updateSearch("search", event.target.value)}
+                  placeholder="Company name"
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                />
+              </label>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-5 text-slate-400">
+                {activeSource === "local_business"
+                  ? "Search local businesses and import them as preferred vendors without creating contractor accounts."
+                  : "Search existing MyHomeBro contractor profiles and import them as preferred vendors."}
+              </p>
+              <button
+                type="button"
+                data-testid={`pm-vendor-run-search-${activeSource}`}
+                onClick={() => runVendorSearch(activeSource)}
+                disabled={searching}
+                className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+              >
+                {searching ? "Searching..." : "Search"}
+              </button>
+            </div>
+            <div className="space-y-2" data-testid={`pm-vendor-results-${activeSource}`}>
+              {results.length ? results.map((row) => {
+                const key = activeSource === "local_business" ? row.business_id : row.contractor_id;
+                const name = row.business_name || row.name || "Vendor";
+                return (
+                  <article key={`${activeSource}-${key}-${name}`} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-sm font-semibold text-white">{name}</div>
+                          {activeSource === "local_business" ? (
+                            <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">Local Business</span>
+                          ) : (
+                            <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-100">
+                              {row.verification_status_label || "MyHomeBro Contractor"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+                          <div>{row.primary_trade || row.trade_category || row.trade_categories?.join?.(", ") || "General"}</div>
+                          <div>{row.location || "No location"}</div>
+                          <div>{row.phone || "No phone"}</div>
+                          <div>{row.website || "No website"}</div>
+                          {row.rating ? <div>Rating: {row.rating}</div> : null}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid={`pm-vendor-import-${activeSource}-${key}`}
+                        disabled={saving || importingKey === String(key)}
+                        onClick={() =>
+                          importVendor(
+                            activeSource === "local_business"
+                              ? {
+                                  import_type: "local_business",
+                                  business_id: row.business_id,
+                                  name,
+                                  trade_category: row.trade_category || row.primary_trade || "",
+                                  phone: row.phone || "",
+                                  website: row.website || "",
+                                  address: row.address || "",
+                                  city: row.city || "",
+                                  state: row.state || "",
+                                  rating: row.rating || undefined,
+                                  source_metadata: row.source_metadata || row,
+                                }
+                              : {
+                                  import_type: "myhomebro_contractor",
+                                  contractor_id: row.contractor_id,
+                                  name,
+                                  trade_category: row.primary_trade || row.trade_categories?.[0] || "",
+                                  phone: row.phone || "",
+                                  website: row.website || "",
+                                  source_metadata: row,
+                                },
+                            String(key)
+                          )
+                        }
+                        className="rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-200 disabled:opacity-50"
+                      >
+                        {importingKey === String(key) ? "Importing..." : "Import Vendor"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              }) : (
+                <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
+                  Search for vendors to import, or use Manual Entry as a fallback.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );
 }
 
-function AccountPanel({ portal, saving = false, teamSaving = false, vendorSaving = false, onSave, onAddTeamMember, onEditTeamMember, onDisableTeamMember, onAddVendor, onEditVendor, onDisableVendor }) {
+function AccountPanel({ portal, token = "", saving = false, teamSaving = false, vendorSaving = false, onSave, onAddTeamMember, onEditTeamMember, onDisableTeamMember, onAddVendor, onImportVendor, onEditVendor, onDisableVendor }) {
   const customer = portal?.customer || {};
   const account = portal?.account || {};
   const accountType = customer.account_type || account.account_type || "individual";
@@ -2275,6 +2472,7 @@ function AccountPanel({ portal, saving = false, teamSaving = false, vendorSaving
           mode={vendorModalMode}
           vendor={editingVendor}
           saving={vendorSaving}
+          token={token}
           onClose={() => {
             setVendorModalMode("");
             setEditingVendor(null);
@@ -2288,6 +2486,7 @@ function AccountPanel({ portal, saving = false, teamSaving = false, vendorSaving
             setVendorModalMode("");
             setEditingVendor(null);
           }}
+          onImportVendor={onImportVendor}
         />
       ) : null}
       <form
@@ -2672,6 +2871,9 @@ function AccountPanel({ portal, saving = false, teamSaving = false, vendorSaving
                           <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
                             {vendor.status_label || vendorStatusLabel(vendor.status)}
                           </span>
+                          <span className="rounded-full border border-sky-300/35 bg-sky-400/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
+                            {vendor.vendor_source_label || "Manual Vendor"}
+                          </span>
                         </div>
                         <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
                           <div>{vendor.email || "No email"}</div>
@@ -2920,6 +3122,20 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       toast.success("Vendor added.");
     } catch (error) {
       toast.error(error?.response?.data?.detail || error?.response?.data?.name?.[0] || "Could not add that vendor.");
+      throw error;
+    } finally {
+      setSavingVendor(false);
+    }
+  };
+
+  const importVendor = async (payload) => {
+    setSavingVendor(true);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/vendors/import/`, payload);
+      onPortalUpdate?.(data);
+      toast.success("Vendor imported.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.name?.[0] || "Could not import that vendor.");
       throw error;
     } finally {
       setSavingVendor(false);
@@ -3656,6 +3872,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       return (
         <AccountPanel
           portal={portal}
+          token={token}
           saving={savingProfile}
           teamSaving={savingTeamMember}
           vendorSaving={savingVendor}
@@ -3675,6 +3892,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onEditTeamMember={editTeamMember}
           onDisableTeamMember={disableTeamMember}
           onAddVendor={addVendor}
+          onImportVendor={importVendor}
           onEditVendor={editVendor}
           onDisableVendor={disableVendor}
         />

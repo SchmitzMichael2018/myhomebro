@@ -111,6 +111,7 @@ from projects.services.customer_portal_supplies import (
     build_home_system_supply_recommendations,
     build_project_material_recommendations,
 )
+from projects.services.google_places_contractors import search_google_places_contractors
 from projects.services.property_management import (
     company_payload,
     create_or_sync_company_from_homeowner,
@@ -1163,6 +1164,7 @@ def _property_management_team_payload(company: PropertyManagementCompany | None)
 
 
 def _property_vendor_payload(vendor: PropertyVendor) -> dict:
+    source_metadata = vendor.source_metadata if isinstance(vendor.source_metadata, dict) else {}
     return {
         "id": vendor.id,
         "name": _safe_text(vendor.name),
@@ -1171,6 +1173,10 @@ def _property_vendor_payload(vendor: PropertyVendor) -> dict:
         "phone": _safe_text(vendor.phone),
         "website": _safe_text(vendor.website),
         "notes": _safe_text(vendor.notes),
+        "vendor_source": _safe_text(vendor.vendor_source),
+        "vendor_source_label": vendor.get_vendor_source_display(),
+        "linked_contractor_id": vendor.linked_contractor_id,
+        "source_metadata": source_metadata,
         "status": _safe_text(vendor.status),
         "status_label": vendor.get_status_display(),
         "created_at": _safe_dt(vendor.created_at),
@@ -5631,6 +5637,87 @@ class CustomerPortalVendorSerializer(serializers.Serializer):
     )
 
 
+class CustomerPortalVendorImportSerializer(serializers.Serializer):
+    import_type = serializers.ChoiceField(
+        choices=[
+            PropertyVendor.SOURCE_MYHOMEBRO_CONTRACTOR,
+            PropertyVendor.SOURCE_LOCAL_BUSINESS,
+        ]
+    )
+    contractor_id = serializers.IntegerField(required=False)
+    business_id = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    trade_category = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    website = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    address = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    city = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    state = serializers.CharField(max_length=60, required=False, allow_blank=True)
+    rating = serializers.FloatField(required=False)
+    source_metadata = serializers.JSONField(required=False)
+
+
+def _normalize_vendor_name(value: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", " ", _safe_text(value).lower())
+    return " ".join(part for part in text.split() if part)
+
+
+def _vendor_duplicate_response(company: PropertyManagementCompany, *, contractor_id=None, email="", name=""):
+    qs = PropertyVendor.objects.filter(property_management_company=company).exclude(status=PropertyVendor.STATUS_INACTIVE)
+    if contractor_id and qs.filter(linked_contractor_id=contractor_id).exists():
+        return Response({"detail": "That contractor is already in your vendor list."}, status=status.HTTP_400_BAD_REQUEST)
+    email = _safe_text(email).lower()
+    if email and qs.filter(email__iexact=email).exists():
+        return Response({"detail": "A vendor with that email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    normalized_name = _normalize_vendor_name(name)
+    if normalized_name:
+        for vendor in qs.only("name"):
+            if _normalize_vendor_name(vendor.name) == normalized_name:
+                return Response({"detail": "A vendor with that name already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    return None
+
+
+def _contractor_search_payload(contractor: Contractor, directory_entry: ContractorDirectoryEntry | None = None) -> dict:
+    skills = [skill.name for skill in contractor.skills.all()] if hasattr(contractor, "skills") else []
+    city = _safe_text(getattr(contractor, "city", "")) or _safe_text(getattr(directory_entry, "city", ""))
+    state = _safe_text(getattr(contractor, "state", "")) or _safe_text(getattr(directory_entry, "state", ""))
+    website = _safe_text(getattr(contractor, "website", "")) or _safe_text(getattr(directory_entry, "website", ""))
+    return {
+        "contractor_id": contractor.id,
+        "business_name": _safe_text(contractor.business_name) or _safe_text(getattr(directory_entry, "business_name", "")),
+        "trade_categories": skills or list(getattr(directory_entry, "normalized_services", None) or getattr(directory_entry, "services", None) or []),
+        "primary_trade": skills[0] if skills else _safe_text(getattr(directory_entry, "primary_service", "")),
+        "city": city,
+        "state": state,
+        "location": ", ".join(part for part in [city, state] if part),
+        "phone": _safe_text(getattr(contractor, "phone", "")) or _safe_text(getattr(directory_entry, "phone", "")),
+        "website": website,
+        "profile_image": "",
+        "verification_status": _safe_text(getattr(contractor, "marketplace_verification_status", "")) or Contractor.MARKETPLACE_UNVERIFIED,
+        "verification_status_label": getattr(contractor, "get_marketplace_verification_status_display", lambda: "Unverified")(),
+    }
+
+
+def _local_business_search_payload(row: dict) -> dict:
+    business_name = _safe_text(row.get("business_name") or row.get("name"))
+    city = _safe_text(row.get("city"))
+    state = _safe_text(row.get("state"))
+    return {
+        "business_id": _safe_text(row.get("google_place_id") or row.get("id") or _comparison_key(business_name, city, state, row.get("phone_number") or row.get("phone"))),
+        "business_name": business_name,
+        "trade_category": _safe_text(row.get("primary_trade") or row.get("trade_category")),
+        "address": _safe_text(row.get("formatted_address") or row.get("address") or row.get("address_line1")),
+        "city": city,
+        "state": state,
+        "location": ", ".join(part for part in [city, state] if part),
+        "phone": _safe_text(row.get("phone_number") or row.get("phone")),
+        "website": _safe_text(row.get("website_url") or row.get("website")),
+        "rating": row.get("google_rating") if row.get("google_rating") is not None else row.get("rating"),
+        "source_metadata": row,
+    }
+
+
 class CustomerPortalProfileView(APIView):
     permission_classes = [AllowAny]
 
@@ -5846,6 +5933,181 @@ class CustomerPortalVendorView(APIView):
             vendor.status = PropertyVendor.STATUS_INACTIVE
             vendor.save(update_fields=["status", "updated_at"])
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalVendorContractorSearchView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return error
+
+        search_text = _safe_text(request.query_params.get("search"))
+        trade = _safe_text(request.query_params.get("trade_category") or request.query_params.get("trade"))
+        location = _safe_text(request.query_params.get("location"))
+        query = Q()
+        if search_text:
+            query &= (
+                Q(business_name__icontains=search_text)
+                | Q(city__icontains=search_text)
+                | Q(state__icontains=search_text)
+                | Q(skills__name__icontains=search_text)
+            )
+        if trade:
+            query &= (Q(skills__name__icontains=trade) | Q(directory_entries__primary_service__icontains=trade))
+        if location:
+            query &= (
+                Q(city__icontains=location)
+                | Q(state__icontains=location)
+                | Q(zip__icontains=location)
+                | Q(directory_entries__city__icontains=location)
+                | Q(directory_entries__state__icontains=location)
+            )
+        rows = (
+            Contractor.objects.filter(query)
+            .exclude(business_name="")
+            .prefetch_related("skills")
+            .distinct()
+            .order_by("business_name", "id")[:20]
+        )
+        return Response({"results": [_contractor_search_payload(contractor) for contractor in rows]}, status=status.HTTP_200_OK)
+
+
+class CustomerPortalVendorBusinessSearchView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return error
+
+        search_text = _safe_text(request.query_params.get("search"))
+        trade = _safe_text(request.query_params.get("trade_category") or request.query_params.get("trade"))
+        location = _safe_text(request.query_params.get("location"))
+        query_text = " ".join(part for part in [trade, search_text, location] if part)
+        cached_q = Q(claimed=False) | Q(claimed_by_contractor__isnull=True)
+        if search_text:
+            cached_q &= Q(business_name__icontains=search_text)
+        if trade:
+            cached_q &= (Q(primary_service__icontains=trade) | Q(normalized_services__icontains=trade) | Q(services__icontains=trade))
+        if location:
+            cached_q &= Q(city__icontains=location) | Q(state__icontains=location) | Q(zip_code__icontains=location)
+        cached_rows = [
+            _local_business_search_payload(
+                {
+                    "id": f"directory-{entry.id}",
+                    "business_name": entry.business_name,
+                    "primary_trade": entry.primary_service,
+                    "formatted_address": ", ".join(part for part in [entry.address_line1, entry.city, entry.state, entry.zip_code] if part),
+                    "city": entry.city,
+                    "state": entry.state,
+                    "phone": entry.phone,
+                    "website": entry.website,
+                    "rating": entry.rating,
+                    "review_count": entry.review_count,
+                    "google_place_id": entry.google_place_id,
+                    "directory_entry_id": entry.id,
+                }
+            )
+            for entry in ContractorDirectoryEntry.objects.filter(cached_q, is_archived=False).order_by("business_name", "id")[:10]
+        ]
+        live_rows = []
+        if query_text:
+            for row in search_google_places_contractors(query=query_text, limit=10, enforce_radius=False):
+                live_rows.append(_local_business_search_payload(row))
+        seen = set()
+        results = []
+        for row in [*cached_rows, *live_rows]:
+            key = _safe_text(row.get("business_id")) or _comparison_key(row.get("business_name"), row.get("phone"), row.get("location"))
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            results.append(row)
+            if len(results) >= 20:
+                break
+        return Response({"results": results}, status=status.HTTP_200_OK)
+
+
+class CustomerPortalVendorImportView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+        company, error = _property_management_company_for_email_or_response(email)
+        if error is not None:
+            return error
+
+        serializer = CustomerPortalVendorImportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        import_type = data["import_type"]
+        linked_contractor = None
+        source_metadata = data.get("source_metadata") if isinstance(data.get("source_metadata"), dict) else {}
+
+        if import_type == PropertyVendor.SOURCE_MYHOMEBRO_CONTRACTOR:
+            contractor_id = data.get("contractor_id")
+            if not contractor_id:
+                return Response({"contractor_id": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+            linked_contractor = get_object_or_404(Contractor.objects.prefetch_related("skills"), pk=contractor_id)
+            contractor_payload = _contractor_search_payload(linked_contractor)
+            name = _safe_text(data.get("name")) or contractor_payload["business_name"]
+            trade_category = _safe_text(data.get("trade_category")) or contractor_payload["primary_trade"]
+            phone = _safe_text(data.get("phone")) or contractor_payload["phone"]
+            website = _safe_text(data.get("website")) or contractor_payload["website"]
+            email_value = _safe_text(data.get("email")).lower()
+            source_metadata = {**contractor_payload, **source_metadata}
+        else:
+            name = _safe_text(data.get("name"))
+            trade_category = _safe_text(data.get("trade_category"))
+            phone = _safe_text(data.get("phone"))
+            website = _safe_text(data.get("website"))
+            email_value = _safe_text(data.get("email")).lower()
+            if data.get("business_id"):
+                source_metadata = {**source_metadata, "business_id": _safe_text(data.get("business_id"))}
+
+        if not name:
+            return Response({"name": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+        duplicate = _vendor_duplicate_response(
+            company,
+            contractor_id=getattr(linked_contractor, "id", None),
+            email=email_value,
+            name=name,
+        )
+        if duplicate is not None:
+            return duplicate
+        PropertyVendor.objects.create(
+            property_management_company=company,
+            name=name,
+            trade_category=trade_category,
+            email=email_value,
+            phone=phone,
+            website=website,
+            notes=_safe_text(data.get("address")) if import_type == PropertyVendor.SOURCE_LOCAL_BUSINESS else "",
+            vendor_source=import_type,
+            linked_contractor=linked_contractor,
+            source_metadata=source_metadata,
+            status=PropertyVendor.STATUS_ACTIVE,
+        )
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
 
 
 class CustomerPortalPropertyUnitView(APIView):

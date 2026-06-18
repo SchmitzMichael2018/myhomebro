@@ -514,6 +514,15 @@ class TenantMaintenanceRequestAttachment(models.Model):
 
 
 class PropertyVendor(models.Model):
+    SOURCE_MANUAL = "manual"
+    SOURCE_MYHOMEBRO_CONTRACTOR = "myhomebro_contractor"
+    SOURCE_LOCAL_BUSINESS = "local_business"
+    SOURCE_CHOICES = [
+        (SOURCE_MYHOMEBRO_CONTRACTOR, "MyHomeBro Contractor"),
+        (SOURCE_LOCAL_BUSINESS, "Local Business"),
+        (SOURCE_MANUAL, "Manual Vendor"),
+    ]
+
     STATUS_ACTIVE = "active"
     STATUS_INACTIVE = "inactive"
     STATUS_CHOICES = [
@@ -532,6 +541,15 @@ class PropertyVendor(models.Model):
     phone = models.CharField(max_length=40, blank=True, default="")
     website = models.CharField(max_length=255, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    vendor_source = models.CharField(max_length=32, choices=SOURCE_CHOICES, default=SOURCE_MANUAL, db_index=True)
+    linked_contractor = models.ForeignKey(
+        "Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_vendor_links",
+    )
+    source_metadata = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -540,6 +558,7 @@ class PropertyVendor(models.Model):
         ordering = ["name", "id"]
         indexes = [
             models.Index(fields=["property_management_company", "status"]),
+            models.Index(fields=["property_management_company", "vendor_source"]),
             models.Index(fields=["trade_category", "status"]),
         ]
 

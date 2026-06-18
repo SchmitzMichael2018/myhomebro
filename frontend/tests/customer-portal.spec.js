@@ -2086,6 +2086,55 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/vendor-search/contractors/") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          results: [
+            {
+              contractor_id: 910,
+              business_name: "Verified HVAC Co",
+              trade_categories: ["HVAC"],
+              primary_trade: "HVAC",
+              city: "San Antonio",
+              state: "TX",
+              location: "San Antonio, TX",
+              phone: "210-555-0110",
+              website: "https://verifiedhvac.example",
+              verification_status_label: "Verified",
+            },
+          ],
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/vendor-search/businesses/") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          results: [
+            {
+              business_id: "local-joe-plumbing",
+              business_name: "Joe's Plumbing",
+              trade_category: "Plumbing",
+              address: "800 Pipe Rd, San Antonio, TX",
+              city: "San Antonio",
+              state: "TX",
+              location: "San Antonio, TX",
+              phone: "210-555-0220",
+              website: "https://joesplumbing.example",
+              rating: 4.8,
+              source_metadata: { business_id: "local-joe-plumbing" },
+            },
+          ],
+        }),
+      });
+      return;
+    }
+
     if (method === "GET" && requestUrl.includes("/customer-portal/customer-token/")) {
       await route.fulfill({
         status: 200,
@@ -2331,6 +2380,41 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/vendors/import/") && method === "POST") {
+      const importPayload = JSON.parse(route.request().postData() || "{}");
+      const isContractor = importPayload.import_type === "myhomebro_contractor";
+      vendors = [
+        ...vendors,
+        {
+          id: isContractor ? 702 : 703,
+          name: importPayload.name || (isContractor ? "Verified HVAC Co" : "Joe's Plumbing"),
+          trade_category: importPayload.trade_category || (isContractor ? "HVAC" : "Plumbing"),
+          email: importPayload.email || "",
+          phone: importPayload.phone || (isContractor ? "210-555-0110" : "210-555-0220"),
+          website: importPayload.website || (isContractor ? "https://verifiedhvac.example" : "https://joesplumbing.example"),
+          notes: importPayload.address || "",
+          vendor_source: importPayload.import_type,
+          vendor_source_label: isContractor ? "MyHomeBro Contractor" : "Local Business",
+          linked_contractor_id: importPayload.contractor_id || null,
+          status: "active",
+          status_label: "Active",
+        },
+      ];
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        account: {
+          ...currentPortalPayload.account,
+          vendors,
+        },
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/vendors/") && method === "POST") {
       const submittedVendorPayload = JSON.parse(route.request().postData() || "{}");
       vendors = [
@@ -2343,6 +2427,8 @@ test("customer portal is reachable from the landing page and loads secure record
           phone: submittedVendorPayload.phone,
           website: submittedVendorPayload.website,
           notes: submittedVendorPayload.notes,
+          vendor_source: "manual",
+          vendor_source_label: "Manual Vendor",
           status: "active",
           status_label: "Active",
         },
@@ -4038,6 +4124,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("pm-team-disable-501")).toHaveCount(0);
   await page.getByTestId("pm-vendor-add-button").click();
   await expect(page.getByTestId("pm-vendor-add-modal")).toBeVisible();
+  await expect(page.getByTestId("pm-vendor-source-myhomebro_contractor")).toBeVisible();
+  await expect(page.getByTestId("pm-vendor-source-local_business")).toBeVisible();
+  await expect(page.getByTestId("pm-vendor-source-manual")).toBeVisible();
+  await expect(page.getByTestId("pm-vendor-search-myhomebro_contractor")).toBeVisible();
+  await page.getByTestId("pm-vendor-source-manual").click();
   await page.getByTestId("pm-vendor-name").fill("Pipe Pros");
   await page.getByTestId("pm-vendor-trade").fill("Plumbing");
   await page.getByTestId("pm-vendor-email").fill("dispatch@pipepros.example");
@@ -4049,6 +4140,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Pipe Pros");
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Plumbing");
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Active");
+  await expect(page.getByTestId("pm-vendor-701")).toContainText("Manual Vendor");
   await page.getByTestId("pm-vendor-edit-701").click();
   await expect(page.getByTestId("pm-vendor-edit-modal")).toBeVisible();
   await page.getByTestId("pm-vendor-phone").fill("512-555-0199");
@@ -4062,6 +4154,27 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("pm-vendor-status").selectOption("active");
   await page.getByTestId("pm-vendor-save-edit").click();
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Active");
+  await page.getByTestId("pm-vendor-add-button").click();
+  await page.getByTestId("pm-vendor-search-trade").fill("HVAC");
+  await page.getByTestId("pm-vendor-search-location").fill("San Antonio");
+  await page.getByTestId("pm-vendor-search-text").fill("Verified");
+  await page.getByTestId("pm-vendor-run-search-myhomebro_contractor").click();
+  await expect(page.getByTestId("pm-vendor-results-myhomebro_contractor")).toContainText("Verified HVAC Co");
+  await page.getByTestId("pm-vendor-import-myhomebro_contractor-910").click();
+  await expect(page.getByTestId("pm-vendor-add-modal")).toHaveCount(0);
+  await expect(page.getByTestId("pm-vendor-702")).toContainText("Verified HVAC Co");
+  await expect(page.getByTestId("pm-vendor-702")).toContainText("MyHomeBro Contractor");
+  await page.getByTestId("pm-vendor-add-button").click();
+  await page.getByTestId("pm-vendor-source-local_business").click();
+  await page.getByTestId("pm-vendor-search-trade").fill("Plumbing");
+  await page.getByTestId("pm-vendor-search-location").fill("San Antonio");
+  await page.getByTestId("pm-vendor-search-text").fill("Joe");
+  await page.getByTestId("pm-vendor-run-search-local_business").click();
+  await expect(page.getByTestId("pm-vendor-results-local_business")).toContainText("Joe's Plumbing");
+  await page.getByTestId("pm-vendor-import-local_business-local-joe-plumbing").click();
+  await expect(page.getByTestId("pm-vendor-add-modal")).toHaveCount(0);
+  await expect(page.getByTestId("pm-vendor-703")).toContainText("Joe's Plumbing");
+  await expect(page.getByTestId("pm-vendor-703")).toContainText("Local Business");
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
