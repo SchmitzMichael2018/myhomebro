@@ -20565,6 +20565,77 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(row.property_management_company, company)
         self.assertEqual(row.assigned_vendor, vendor)
 
+    def test_property_management_company_can_bulk_add_units(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Apartment Building",
+        )
+        PropertyUnit.objects.create(property_profile=property_profile, unit_label="101", unit_type=PropertyUnit.UNIT_APARTMENT)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/bulk/",
+            {
+                "unit_labels": ["101", "102", "103"],
+                "unit_type": PropertyUnit.UNIT_APARTMENT,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["created_count"], 2)
+        self.assertEqual(response.data["skipped_count"], 1)
+        self.assertEqual(sorted(PropertyUnit.objects.filter(property_profile=property_profile).values_list("unit_label", flat=True)), ["101", "102", "103"])
+
+    def test_individual_rental_property_can_bulk_add_units(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Rental Building",
+            is_rental_property=True,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/bulk/",
+            {
+                "unit_labels": ["A1", "A2", "A3"],
+                "unit_type": PropertyUnit.UNIT_APARTMENT,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        property_profile.refresh_from_db()
+        self.assertIsNotNone(property_profile.managed_by_company)
+        self.assertEqual(response.data["created_count"], 3)
+        self.assertEqual(PropertyUnit.objects.filter(property_profile=property_profile).count(), 3)
+        self.assertEqual(self.customer_homeowner.account_type, Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
+
+    def test_individual_non_rental_property_cannot_bulk_add_units(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Primary Home",
+            is_rental_property=False,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/bulk/",
+            {"unit_labels": ["A1", "A2"]},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(PropertyUnit.objects.count(), 0)
+
     def test_property_management_company_can_list_create_edit_and_mark_former_tenants(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY

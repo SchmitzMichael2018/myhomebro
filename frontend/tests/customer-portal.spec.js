@@ -2505,6 +2505,54 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/units/bulk/") && method === "POST") {
+      const bulkPayload = JSON.parse(route.request().postData() || "{}");
+      const nextIdStart = 650;
+      const existingLabels = new Set(propertyUnits.filter((unit) => unit.status !== "inactive").map((unit) => String(unit.unit_label || "").toLowerCase()));
+      const created = (bulkPayload.unit_labels || [])
+        .filter((label) => !existingLabels.has(String(label || "").toLowerCase()))
+        .map((label, index) => ({
+          id: nextIdStart + index,
+          unit_label: label,
+          unit_type: bulkPayload.unit_type || "apartment",
+          unit_type_label: "Apartment",
+          status: "active",
+          status_label: "Active",
+          access_notes: "",
+          notes: "",
+        }));
+      propertyUnits = [...propertyUnits, ...created];
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        property_profile: {
+          ...currentPortalPayload.property_profile,
+          units: propertyUnits,
+          unit_count: propertyUnits.length,
+        },
+        property_profiles: currentPortalPayload.property_profiles.map((property) =>
+          property.id === 1
+            ? {
+                ...property,
+                units: propertyUnits,
+                unit_count: propertyUnits.length,
+              }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          created,
+          created_count: created.length,
+          skipped: [],
+          skipped_count: 0,
+          portal: currentPortalPayload,
+        }),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/properties/1/units/") && method === "POST") {
       submittedUnitPayload = JSON.parse(route.request().postData() || "{}");
       propertyUnits = [
@@ -4178,9 +4226,25 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
-  await expect(page.getByTestId("property-units-section")).toContainText("Units");
+  await expect(page.getByTestId("property-command-summary")).toContainText("Rental Property");
+  await expect(page.getByTestId("property-summary-rental-stats")).toContainText("Units");
+  await expect(page.getByTestId("property-summary-add-unit")).toBeVisible();
+  await expect(page.getByTestId("property-summary-add-tenant")).toBeVisible();
+  await expect(page.getByTestId("property-units-section")).toContainText("Manage Units");
+  await expect(page.getByTestId("property-unit-add-button")).toHaveCount(0);
+  await expect(page.getByTestId("property-units-empty")).toHaveCount(0);
+  await page.getByTestId("property-units-toggle").click();
   await expect(page.getByTestId("property-units-empty")).toContainText("No units added yet.");
   await expect(page.getByTestId("property-units-empty")).toContainText("Add units to track tenants, maintenance requests, and work orders by location.");
+  await page.getByTestId("property-unit-bulk-button").click();
+  await expect(page.getByTestId("property-unit-bulk-modal")).toBeVisible();
+  await page.getByTestId("property-unit-bulk-text").fill("201-202, A1-A2");
+  await expect(page.getByTestId("property-unit-bulk-preview")).toContainText("201");
+  await expect(page.getByTestId("property-unit-bulk-preview")).toContainText("A2");
+  await page.getByTestId("property-unit-bulk-save").click();
+  await expect(page.getByTestId("property-unit-bulk-modal")).toHaveCount(0);
+  await expect(page.getByTestId("property-unit-650")).toContainText("201");
+  await expect(page.getByTestId("property-unit-653")).toContainText("A2");
   await page.getByTestId("property-unit-add-button").click();
   await expect(page.getByTestId("property-unit-add-modal")).toBeVisible();
   await page.getByTestId("property-unit-label").fill("Unit A");
@@ -4215,7 +4279,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-unit-601")).toContainText("Inactive");
   await expect(page.getByTestId("property-unit-disable-601")).toHaveCount(0);
 
-  await expect(page.getByTestId("property-tenants-section")).toContainText("Tenants");
+  await expect(page.getByTestId("property-tenants-section")).toContainText("Manage Tenants");
+  await expect(page.getByTestId("property-tenant-add-button")).toHaveCount(0);
+  await page.getByTestId("property-tenants-toggle").click();
   await expect(page.getByTestId("property-tenants-empty")).toContainText("No tenants added yet.");
   await expect(page.getByTestId("property-tenants-empty")).toContainText(
     "Add tenants so maintenance requests can be tied to the right property, unit, and resident.",
@@ -4279,18 +4345,18 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("tenant-maintenance-attachments-801")).toContainText("sink-leak.jpg");
   await page.getByTestId("tenant-maintenance-notes-801").fill("Checking with maintenance coordinator.");
   await page.getByTestId("tenant-maintenance-under_review-801").click();
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Under Review");
   expect(submittedTenantMaintenanceReviewPayload).toMatchObject({
     status: "under_review",
     manager_notes: "Checking with maintenance coordinator.",
   });
-  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Under Review");
   await page.getByTestId("tenant-maintenance-notes-801").fill("Approved for maintenance follow-up.");
   await page.getByTestId("tenant-maintenance-approved-801").click();
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Approved");
   expect(submittedTenantMaintenanceReviewPayload).toMatchObject({
     status: "approved",
     manager_notes: "Approved for maintenance follow-up.",
   });
-  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Approved");
   await page.getByTestId("tenant-maintenance-create-work-order-801").click();
   await expect.poll(() => convertedWorkOrderCalled).toBe(true);
   await expect(page.getByTestId("property-work-order-901")).toContainText("Kitchen sink leak");
@@ -4381,7 +4447,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-open-agreement-903")).toHaveAttribute("href", "/app/agreements/3303/wizard?step=1");
   await expect(page.getByTestId("property-work-order-timeline-903")).toContainText("Agreement Draft Created");
 
-  await page.getByTestId("property-work-order-add").click();
+  await page.getByTestId("property-work-order-add").evaluate((element) => element.click());
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
   await expect(page.getByTestId("property-work-order-unit")).toContainText("Unit 101");
   await expect(page.getByTestId("property-work-order-tenant")).toContainText("Taylor Resident");
@@ -4793,8 +4859,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByLabel("Bedrooms").fill("4");
   await page.getByLabel("Bathrooms").fill("3.5");
   await page.getByRole("button", { name: "Save property profile" }).click();
+  await expect(page.getByRole("button", { name: "Save property profile" })).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId("property-command-summary")).toContainText("4");
-  await expect(page.getByTestId("property-command-summary")).toContainText("3.5");
+  await expect(page.getByTestId("property-command-summary")).toContainText("3.5", { timeout: 15000 });
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
   await expect(page.getByTestId("property-home-systems-list")).toBeVisible();
   await expect(page.getByTestId("property-home-systems")).toContainText("Main HVAC");

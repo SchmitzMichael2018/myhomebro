@@ -3286,6 +3286,28 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
   };
 
+  const bulkCreatePropertyUnits = async (propertyId, payload) => {
+    if (!propertyId) return false;
+    setSavingUnit(true);
+    try {
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/units/bulk/`, payload);
+      if (data?.portal) onPortalUpdate?.(data.portal);
+      const createdCount = Number(data?.created_count || 0);
+      const skippedCount = Number(data?.skipped_count || 0);
+      toast.success(
+        skippedCount
+          ? `${createdCount} unit${createdCount === 1 ? "" : "s"} added; ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"} skipped.`
+          : `${createdCount} unit${createdCount === 1 ? "" : "s"} added.`
+      );
+      return true;
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.unit_labels?.[0] || "Could not bulk add units.");
+      throw error;
+    } finally {
+      setSavingUnit(false);
+    }
+  };
+
   const updatePropertyUnit = async (propertyId, unitId, payload) => {
     if (!propertyId || !unitId) return false;
     setSavingUnit(true);
@@ -3845,6 +3867,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           }}
           onUpload={uploadPropertyFile}
           onCreateUnit={createPropertyUnit}
+          onBulkCreateUnits={bulkCreatePropertyUnits}
           onUpdateUnit={updatePropertyUnit}
           onDisableUnit={disablePropertyUnit}
           onCreateTenant={createTenant}

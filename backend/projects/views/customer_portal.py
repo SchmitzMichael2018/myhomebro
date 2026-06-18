@@ -5501,6 +5501,38 @@ class CustomerPortalPropertyUnitSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True)
 
 
+class CustomerPortalPropertyUnitBulkSerializer(serializers.Serializer):
+    unit_labels = serializers.ListField(
+        child=serializers.CharField(max_length=120, allow_blank=False),
+        allow_empty=False,
+        required=True,
+    )
+    unit_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyUnit.UNIT_TYPE_CHOICES],
+        required=False,
+    )
+    status = serializers.ChoiceField(
+        choices=[choice[0] for choice in PropertyUnit.STATUS_CHOICES],
+        required=False,
+    )
+
+    def validate_unit_labels(self, value):
+        labels = []
+        seen = set()
+        for label in value:
+            normalized = _safe_text(label)
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            labels.append(normalized)
+        if not labels:
+            raise serializers.ValidationError("Add at least one unit label.")
+        return labels
+
+
 class CustomerPortalTenantSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -6323,6 +6355,46 @@ class CustomerPortalPropertyUnitView(APIView):
             unit.status = PropertyUnit.STATUS_INACTIVE
             unit.save(update_fields=["status", "updated_at"])
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalPropertyUnitBulkView(CustomerPortalPropertyUnitView):
+    def post(self, request, token: str, property_id: int):
+        email, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+
+        serializer = CustomerPortalPropertyUnitBulkSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        unit_type = data.get("unit_type") or PropertyUnit.UNIT_APARTMENT
+        unit_status = data.get("status") or PropertyUnit.STATUS_ACTIVE
+        created = []
+        skipped = []
+        for unit_label in data["unit_labels"]:
+            if self._duplicate_label_exists(property_profile, unit_label):
+                skipped.append({"unit_label": unit_label, "reason": "duplicate"})
+                continue
+            try:
+                unit = PropertyUnit.objects.create(
+                    property_profile=property_profile,
+                    unit_label=unit_label,
+                    unit_type=unit_type,
+                    status=unit_status,
+                )
+            except IntegrityError:
+                skipped.append({"unit_label": unit_label, "reason": "duplicate"})
+                continue
+            created.append(_property_unit_payload(unit))
+        return Response(
+            {
+                "created": created,
+                "created_count": len(created),
+                "skipped": skipped,
+                "skipped_count": len(skipped),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalTenantView(APIView):

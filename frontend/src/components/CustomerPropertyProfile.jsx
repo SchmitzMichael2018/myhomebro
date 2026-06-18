@@ -537,13 +537,22 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
   );
 }
 
-function PropertySummarySection({ profile, profileOptions, onSelectProperty, onEdit, onAdd }) {
+function PropertySummarySection({ profile, profileOptions, rentalToolsEnabled = false, onSelectProperty, onEdit, onAdd, onAddUnit, onAddTenant }) {
   const details = [
     ["Property Type", profile?.property_type_label],
     ["Year Built", profile?.year_built],
     ["Square Feet", profile?.square_feet ? Number(profile.square_feet).toLocaleString() : ""],
     ["Bedrooms", profile?.bedrooms],
     ["Bathrooms", profile?.bathrooms],
+  ];
+  const activeTenantCount = (profile?.tenants || []).filter((tenant) => tenant?.status === "active").length;
+  const openMaintenanceCount = (profile?.tenant_maintenance_requests || []).filter(
+    (request) => !["closed", "rejected"].includes(request?.status)
+  ).length;
+  const rentalStats = [
+    ["Units", profile?.unit_count ?? (profile?.units || []).length],
+    ["Active Tenants", activeTenantCount],
+    ["Open Maintenance", openMaintenanceCount],
   ];
   return (
     <section data-testid="property-command-summary" className="rounded-3xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.18),transparent_34%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.5))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
@@ -557,16 +566,44 @@ function PropertySummarySection({ profile, profileOptions, onSelectProperty, onE
               Primary Property
             </span>
           ) : null}
+          {profile?.is_rental_property || rentalToolsEnabled ? (
+            <span
+              data-testid="property-summary-rental-badge"
+              className="ml-2 mt-3 inline-flex rounded-full border border-sky-300/45 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100"
+            >
+              Rental Property
+            </span>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" data-testid="property-summary-edit" onClick={onEdit} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
             Edit Property
           </button>
+          {rentalToolsEnabled ? (
+            <>
+              <button type="button" data-testid="property-summary-add-unit" onClick={onAddUnit} className="rounded-xl border border-slate-500 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-100 hover:border-sky-300/50">
+                Add Unit
+              </button>
+              <button type="button" data-testid="property-summary-add-tenant" onClick={onAddTenant} className="rounded-xl border border-slate-500 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-100 hover:border-sky-300/50">
+                Add Tenant
+              </button>
+            </>
+          ) : null}
           <button type="button" data-testid="property-summary-add" onClick={onAdd} className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
             Add Property
           </button>
         </div>
       </div>
+      {rentalToolsEnabled ? (
+        <dl data-testid="property-summary-rental-stats" className="mt-5 grid gap-2 sm:grid-cols-3">
+          {rentalStats.map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-sky-300/15 bg-slate-950/45 p-3">
+              <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
+              <dd className="mt-1 text-lg font-bold text-white">{Number(value || 0).toLocaleString()}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       {profileOptions.length > 1 ? (
         <label className="mt-5 block text-sm font-semibold text-slate-200">
           Switch property
@@ -709,48 +746,195 @@ function PropertyUnitModal({ mode = "add", unit = null, saving = false, onClose,
   );
 }
 
-function PropertyUnitsSection({ units = [], saving = false, onAdd, onEdit, onDisable }) {
+function expandUnitLabelToken(token) {
+  const text = String(token || "").trim();
+  if (!text) return [];
+  const numeric = text.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (numeric) {
+    const start = Number(numeric[1]);
+    const end = Number(numeric[2]);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end < start || end - start > 300) return [text];
+    const width = numeric[1].length;
+    return Array.from({ length: end - start + 1 }, (_, index) => String(start + index).padStart(width, "0"));
+  }
+  const alphaNumeric = text.match(/^([A-Za-z]+)(\d+)\s*-\s*([A-Za-z]+)(\d+)$/);
+  if (alphaNumeric && alphaNumeric[1].toLowerCase() === alphaNumeric[3].toLowerCase()) {
+    const prefix = alphaNumeric[1];
+    const start = Number(alphaNumeric[2]);
+    const end = Number(alphaNumeric[4]);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end < start || end - start > 300) return [text];
+    const width = alphaNumeric[2].length;
+    return Array.from({ length: end - start + 1 }, (_, index) => `${prefix}${String(start + index).padStart(width, "0")}`);
+  }
+  return [text];
+}
+
+function parseBulkUnitLabels(value) {
+  const seen = new Set();
+  const labels = [];
+  String(value || "")
+    .split(/[\n,]+/)
+    .flatMap(expandUnitLabelToken)
+    .forEach((label) => {
+      const trimmed = String(label || "").trim();
+      const key = trimmed.toLowerCase();
+      if (!trimmed || seen.has(key)) return;
+      seen.add(key);
+      labels.push(trimmed);
+    });
+  return labels;
+}
+
+function BulkUnitModal({ units = [], saving = false, onClose, onSubmit }) {
+  const [text, setText] = useState("");
+  const [unitType, setUnitType] = useState("apartment");
+  const labels = useMemo(() => parseBulkUnitLabels(text), [text]);
+  const existing = useMemo(
+    () => new Set((units || []).filter((unit) => unit.status !== "inactive").map((unit) => String(unit.unit_label || "").trim().toLowerCase()).filter(Boolean)),
+    [units]
+  );
+  const newLabels = labels.filter((label) => !existing.has(label.toLowerCase()));
+  const duplicateLabels = labels.filter((label) => existing.has(label.toLowerCase()));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
+      <form
+        data-testid="property-unit-bulk-modal"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!newLabels.length) return;
+          onSubmit?.({ unit_labels: newLabels, unit_type: unitType, status: "active" });
+        }}
+        className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Property Units</div>
+            <h3 className="mt-1 text-lg font-semibold text-white">Bulk Add Units</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500">
+            Close
+          </button>
+        </div>
+        <label className="mt-5 block text-sm font-medium text-slate-200">
+          Unit labels
+          <textarea
+            data-testid="property-unit-bulk-text"
+            rows={6}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Paste or type unit labels, one per line or comma separated"
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-sky-400"
+          />
+        </label>
+        <p className="mt-2 text-xs leading-5 text-slate-400">Ranges like 101-112 and A1-A12 are supported.</p>
+        <label className="mt-4 block text-sm font-medium text-slate-200">
+          Default unit type
+          <select
+            data-testid="property-unit-bulk-type"
+            value={unitType}
+            onChange={(event) => setUnitType(event.target.value)}
+            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400 sm:max-w-xs"
+          >
+            {PROPERTY_UNIT_TYPE_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <div className="mt-4 rounded-xl border border-slate-700 bg-slate-900/60 p-3">
+          <div className="text-sm font-semibold text-white">Preview</div>
+          <div data-testid="property-unit-bulk-preview" className="mt-2 flex flex-wrap gap-2">
+            {newLabels.length ? newLabels.slice(0, 60).map((label) => (
+              <span key={label} className="rounded-full border border-sky-300/35 bg-sky-400/10 px-2 py-1 text-xs font-semibold text-sky-100">{label}</span>
+            )) : <span className="text-xs text-slate-400">No new units ready yet.</span>}
+          </div>
+          {newLabels.length > 60 ? <div className="mt-2 text-xs text-slate-400">And {newLabels.length - 60} more.</div> : null}
+          {duplicateLabels.length ? <div data-testid="property-unit-bulk-duplicates" className="mt-2 text-xs text-amber-100">Skipping existing active units: {duplicateLabels.join(", ")}</div> : null}
+        </div>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500">Cancel</button>
+          <button type="submit" disabled={saving || !newLabels.length} data-testid="property-unit-bulk-save" className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
+            {saving ? "Saving..." : `Create ${newLabels.length || ""} Units`.trim()}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PropertyUnitsSection({ units = [], saving = false, expanded = false, onToggle, openAddSignal = 0, onAdd, onBulkAdd, onEdit, onDisable }) {
   const [modalMode, setModalMode] = useState("");
   const [editingUnit, setEditingUnit] = useState(null);
 
+  useEffect(() => {
+    if (!openAddSignal) return;
+    setEditingUnit(null);
+    setModalMode("add");
+  }, [openAddSignal]);
+
   return (
-    <Section title="Units" eyebrow="Property Management" testId="property-units-section">
+    <section data-testid="property-units-section" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4 shadow-xl shadow-slate-950/20">
       {modalMode ? (
-        <PropertyUnitModal
-          mode={modalMode}
-          unit={editingUnit}
-          saving={saving}
-          onClose={() => {
-            setModalMode("");
-            setEditingUnit(null);
-          }}
-          onSubmit={async (payload) => {
-            if (modalMode === "edit" && editingUnit) {
-              await onEdit?.(editingUnit, payload);
-            } else {
-              await onAdd?.(payload);
-            }
-            setModalMode("");
-            setEditingUnit(null);
-          }}
-        />
+        modalMode === "bulk" ? (
+          <BulkUnitModal
+            units={units}
+            saving={saving}
+            onClose={() => setModalMode("")}
+            onSubmit={async (payload) => {
+              await onBulkAdd?.(payload);
+              setModalMode("");
+            }}
+          />
+        ) : (
+          <PropertyUnitModal
+            mode={modalMode}
+            unit={editingUnit}
+            saving={saving}
+            onClose={() => {
+              setModalMode("");
+              setEditingUnit(null);
+            }}
+            onSubmit={async (payload) => {
+              if (modalMode === "edit" && editingUnit) {
+                await onEdit?.(editingUnit, payload);
+              } else {
+                await onAdd?.(payload);
+              }
+              setModalMode("");
+              setEditingUnit(null);
+            }}
+          />
+        )
       ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p className="max-w-2xl text-sm leading-6 text-slate-300">
-          Track property locations for future tenants, maintenance requests, and work orders.
-        </p>
-        <button
-          type="button"
-          data-testid="property-unit-add-button"
-          onClick={() => {
-            setEditingUnit(null);
-            setModalMode("add");
-          }}
-          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400"
-        >
-          Add Unit
+        <button type="button" data-testid="property-units-toggle" onClick={onToggle} className="flex flex-1 items-center justify-between gap-3 text-left">
+          <span>
+            <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-amber-200/80">Rental Management</span>
+            <span className="mt-1 block text-lg font-semibold text-white">Manage Units</span>
+            <span className="mt-1 block text-sm text-slate-400">{units.length} unit{units.length === 1 ? "" : "s"} tracked</span>
+          </span>
+          <span className="rounded-full border border-slate-600 px-2 py-1 text-xs font-semibold text-slate-200">{expanded ? "Collapse" : "Expand"}</span>
         </button>
+        {expanded ? (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" data-testid="property-unit-bulk-button" onClick={() => setModalMode("bulk")} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-sky-300/50">
+              Bulk Add Units
+            </button>
+            <button
+              type="button"
+              data-testid="property-unit-add-button"
+              onClick={() => {
+                setEditingUnit(null);
+                setModalMode("add");
+              }}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400"
+            >
+              Add Unit
+            </button>
+          </div>
+        ) : null}
       </div>
+      {expanded ? (
       <div className="mt-4 space-y-2">
         {units.length ? units.map((unit) => (
           <article key={unit.id || unit.unit_label} data-testid={`property-unit-${unit.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
@@ -799,7 +983,8 @@ function PropertyUnitsSection({ units = [], saving = false, onAdd, onEdit, onDis
           </EmptyState>
         )}
       </div>
-    </Section>
+      ) : null}
+    </section>
   );
 }
 
@@ -917,12 +1102,18 @@ function TenantModal({ mode = "add", tenant = null, units = [], saving = false, 
   );
 }
 
-function TenantsSection({ tenants = [], units = [], saving = false, onAdd, onEdit, onFormer }) {
+function TenantsSection({ tenants = [], units = [], saving = false, expanded = false, onToggle, openAddSignal = 0, onAdd, onEdit, onFormer }) {
   const [modalMode, setModalMode] = useState("");
   const [editingTenant, setEditingTenant] = useState(null);
 
+  useEffect(() => {
+    if (!openAddSignal) return;
+    setEditingTenant(null);
+    setModalMode("add");
+  }, [openAddSignal]);
+
   return (
-    <Section title="Tenants" eyebrow="Property Management" testId="property-tenants-section">
+    <section data-testid="property-tenants-section" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4 shadow-xl shadow-slate-950/20">
       {modalMode ? (
         <TenantModal
           mode={modalMode}
@@ -945,11 +1136,21 @@ function TenantsSection({ tenants = [], units = [], saving = false, onAdd, onEdi
         />
       ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p className="max-w-2xl text-sm leading-6 text-slate-300">Track resident contacts and occupancy history by property and unit.</p>
-        <button type="button" data-testid="property-tenant-add-button" onClick={() => { setEditingTenant(null); setModalMode("add"); }} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400">
-          Add Tenant
+        <button type="button" data-testid="property-tenants-toggle" onClick={onToggle} className="flex flex-1 items-center justify-between gap-3 text-left">
+          <span>
+            <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-amber-200/80">Rental Management</span>
+            <span className="mt-1 block text-lg font-semibold text-white">Manage Tenants</span>
+            <span className="mt-1 block text-sm text-slate-400">{tenants.length} tenant{tenants.length === 1 ? "" : "s"} tracked</span>
+          </span>
+          <span className="rounded-full border border-slate-600 px-2 py-1 text-xs font-semibold text-slate-200">{expanded ? "Collapse" : "Expand"}</span>
         </button>
+        {expanded ? (
+          <button type="button" data-testid="property-tenant-add-button" onClick={() => { setEditingTenant(null); setModalMode("add"); }} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400">
+            Add Tenant
+          </button>
+        ) : null}
       </div>
+      {expanded ? (
       <div className="mt-4 space-y-2">
         {tenants.length ? tenants.map((tenant) => (
           <article key={tenant.id || tenant.email} data-testid={`property-tenant-${tenant.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
@@ -981,7 +1182,8 @@ function TenantsSection({ tenants = [], units = [], saving = false, onAdd, onEdi
           </EmptyState>
         )}
       </div>
-    </Section>
+      ) : null}
+    </section>
   );
 }
 
@@ -2299,6 +2501,7 @@ export default function CustomerPropertyProfile({
   onArchiveSystem,
   onMarkSystemServiced,
   onCreateUnit,
+  onBulkCreateUnits,
   onUpdateUnit,
   onDisableUnit,
   onCreateTenant,
@@ -2330,6 +2533,9 @@ export default function CustomerPropertyProfile({
   const [scanSystem, setScanSystem] = useState(null);
   const [systemForm, setSystemForm] = useState(emptySystemForm(selectedProfile?.id));
   const [serviceSystem, setServiceSystem] = useState(null);
+  const [expandedRentalPanel, setExpandedRentalPanel] = useState("");
+  const [unitAddSignal, setUnitAddSignal] = useState(0);
+  const [tenantAddSignal, setTenantAddSignal] = useState(0);
   const startAddProperty = () => {
     setAddingProperty(true);
     const next = {
@@ -2369,6 +2575,14 @@ export default function CustomerPropertyProfile({
     setSystemForm(emptySystemForm(selectedProfile?.id));
   };
   const rentalToolsEnabled = Boolean(isPropertyManagementCompany || selectedProfile?.rental_tools_enabled || selectedProfile?.is_rental_property);
+  const openUnitAdd = () => {
+    setExpandedRentalPanel("units");
+    setUnitAddSignal((value) => value + 1);
+  };
+  const openTenantAdd = () => {
+    setExpandedRentalPanel("tenants");
+    setTenantAddSignal((value) => value + 1);
+  };
   const openAddSystem = () => {
     setEditingSystemId(null);
     setSystemForm(emptySystemForm(selectedProfile?.id));
@@ -2409,15 +2623,24 @@ export default function CustomerPropertyProfile({
           document?.querySelector?.("[data-testid='customer-property-manager']")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
         }}
         onAdd={startAddProperty}
+        rentalToolsEnabled={rentalToolsEnabled}
+        onAddUnit={openUnitAdd}
+        onAddTenant={openTenantAdd}
       />
 
       {rentalToolsEnabled ? (
-        <>
+        <div className="grid gap-3 xl:grid-cols-2">
           <PropertyUnitsSection
             units={selectedProfile?.units || []}
             saving={unitSaving}
+            expanded={expandedRentalPanel === "units"}
+            onToggle={() => setExpandedRentalPanel((panel) => (panel === "units" ? "" : "units"))}
+            openAddSignal={unitAddSignal}
             onAdd={async (payload) => {
               await onCreateUnit?.(selectedProfile?.id, payload);
+            }}
+            onBulkAdd={async (payload) => {
+              await onBulkCreateUnits?.(selectedProfile?.id, payload);
             }}
             onEdit={async (unit, payload) => {
               await onUpdateUnit?.(selectedProfile?.id, unit.id, payload);
@@ -2430,6 +2653,9 @@ export default function CustomerPropertyProfile({
             tenants={selectedProfile?.tenants || []}
             units={selectedProfile?.units || []}
             saving={tenantSaving}
+            expanded={expandedRentalPanel === "tenants"}
+            onToggle={() => setExpandedRentalPanel((panel) => (panel === "tenants" ? "" : "tenants"))}
+            openAddSignal={tenantAddSignal}
             onAdd={async (payload) => {
               await onCreateTenant?.(selectedProfile?.id, payload);
             }}
@@ -2440,7 +2666,7 @@ export default function CustomerPropertyProfile({
               await onMarkTenantFormer?.(selectedProfile?.id, tenant.id);
             }}
           />
-        </>
+        </div>
       ) : null}
 
       <HomeRecordsDashboard
