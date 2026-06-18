@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.db.models import Q
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import AgreementProjectClass, PublicContractorLead
+from projects.models_contractor_discovery import ContractorOpportunity
+from projects.models_customer_portal import PropertyWorkOrder
 from projects.models_project_intake import ProjectIntake
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.bid_workflow import (
@@ -342,11 +345,20 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
 
 def _workspace_stage(status: str, source_kind: str) -> str:
     normalized_status = _safe_text(status).lower()
+    normalized_source = _safe_text(source_kind).lower()
+    if normalized_source == "property_work_order":
+        if normalized_status in {"declined", "expired", "withdrawn"}:
+            return "closed"
+        if normalized_status == "accepted":
+            return "follow_up"
+        if normalized_status in {"awarded", "converted"}:
+            return "active_bid"
+        return "new_lead"
     if normalized_status in {"declined", "expired"}:
         return "closed"
     if normalized_status == "follow_up":
         return "follow_up"
-    if _safe_text(source_kind).lower() == "lead" and normalized_status in {"draft", "submitted"}:
+    if normalized_source == "lead" and normalized_status in {"draft", "submitted"}:
         return "new_lead"
     return "active_bid"
 
@@ -574,6 +586,263 @@ def _bid_row_from_intake(intake, request=None) -> dict:
     }
 
 
+def _absolute_file_url(file_field, request=None) -> str:
+    if not file_field:
+        return ""
+    try:
+        url = file_field.url
+    except Exception:
+        return ""
+    if request:
+        try:
+            return request.build_absolute_uri(url)
+        except Exception:
+            return url
+    return url
+
+
+def _property_location(property_profile) -> str:
+    if property_profile is None:
+        return ""
+    line_one = _safe_text(getattr(property_profile, "address_line1", ""))
+    line_two = _safe_text(getattr(property_profile, "address_line2", ""))
+    city_line = ", ".join(
+        part
+        for part in [
+            _safe_text(getattr(property_profile, "city", "")),
+            _safe_text(getattr(property_profile, "state", "")),
+            _safe_text(getattr(property_profile, "postal_code", "")),
+        ]
+        if part
+    )
+    return "\n".join(part for part in [line_one, line_two, city_line] if part)
+
+
+def _property_work_order_photos(work_order, request=None) -> list[dict]:
+    photos: list[dict] = []
+    source_request = getattr(work_order, "source_tenant_request", None)
+    try:
+        request_attachments = list(source_request.attachments.all()) if source_request is not None else []
+    except Exception:
+        request_attachments = []
+    try:
+        work_order_attachments = list(work_order.attachments.all())
+    except Exception:
+        work_order_attachments = []
+
+    for attachment in [*request_attachments, *work_order_attachments][:8]:
+        file_field = getattr(attachment, "file", None)
+        image_url = _absolute_file_url(file_field, request=request)
+        content_type = _safe_text(getattr(attachment, "content_type", ""))
+        original_name = _safe_text(getattr(attachment, "original_filename", ""))
+        photos.append(
+            {
+                "id": getattr(attachment, "id", None),
+                "image_url": image_url if content_type.startswith("image/") else "",
+                "url": image_url,
+                "original_name": original_name or "Attachment",
+                "caption": _safe_text(getattr(attachment, "attachment_type", "")) or "Maintenance request attachment",
+                "content_type": content_type,
+                "uploaded_at": _format_date(getattr(attachment, "created_at", None)),
+            }
+        )
+    return photos
+
+
+def _property_work_order_status(opportunity, work_order) -> str:
+    opportunity_status = _safe_text(getattr(opportunity, "status", "")).lower()
+    marketplace_status = _safe_text(getattr(work_order, "marketplace_status", "")).lower()
+    if getattr(work_order, "linked_agreement_id", None) or getattr(opportunity, "converted_agreement_id", None):
+        return "awarded"
+    if opportunity_status in {ContractorOpportunity.STATUS_DECLINED, ContractorOpportunity.STATUS_EXPIRED}:
+        return "declined" if opportunity_status == ContractorOpportunity.STATUS_DECLINED else "expired"
+    if marketplace_status == PropertyWorkOrder.MARKETPLACE_WITHDRAWN:
+        return "expired"
+    if marketplace_status == PropertyWorkOrder.MARKETPLACE_DECLINED:
+        return "declined"
+    if opportunity_status == ContractorOpportunity.STATUS_ACCEPTED or marketplace_status == PropertyWorkOrder.MARKETPLACE_ACCEPTED:
+        return "accepted"
+    return "submitted"
+
+
+def _property_work_order_status_label(status: str) -> str:
+    normalized = _safe_text(status).lower()
+    return {
+        "submitted": "Needs Response",
+        "accepted": "Accepted",
+        "awarded": "Agreement Draft Ready",
+        "declined": "Declined",
+        "expired": "Closed",
+    }.get(normalized, _contractor_status_label(normalized))
+
+
+def _property_work_order_status_group(status: str) -> str:
+    normalized = _safe_text(status).lower()
+    if normalized == "submitted":
+        return "open"
+    if normalized == "accepted":
+        return "follow_up"
+    if normalized == "awarded":
+        return "awarded"
+    return "declined_expired"
+
+
+def _property_work_order_next_action(status: str, linked_agreement_id: int | None) -> dict:
+    normalized = _safe_text(status).lower()
+    if normalized == "submitted":
+        return {"key": "accept_property_work_order", "label": "Accept Work Order", "target": ""}
+    if normalized == "accepted":
+        return {"key": "prepare_agreement_draft", "label": "Prepare Agreement Draft", "target": ""}
+    if normalized == "awarded" and linked_agreement_id:
+        return {
+            "key": "open_agreement",
+            "label": "Open Agreement Draft",
+            "target": f"/app/agreements/{linked_agreement_id}/wizard?step=1",
+        }
+    return {"key": "view_details", "label": "View Details", "target": ""}
+
+
+def _bid_row_from_property_work_order_opportunity(opportunity, request=None) -> dict:
+    work_order = getattr(opportunity, "property_work_order", None)
+    if work_order is None:
+        return {}
+
+    property_profile = getattr(work_order, "property_profile", None)
+    company = getattr(work_order, "property_management_company", None)
+    unit = getattr(work_order, "unit", None)
+    tenant = getattr(work_order, "tenant", None)
+    linked_agreement = getattr(work_order, "linked_agreement", None) or getattr(opportunity, "converted_agreement", None)
+    linked_agreement_id = getattr(linked_agreement, "id", None)
+    work_order_number = _safe_text(getattr(work_order, "work_order_number", "")) or f"PWO-{work_order.id:06d}"
+    property_label = (
+        _safe_text(getattr(property_profile, "display_name", ""))
+        or _safe_text(getattr(property_profile, "address_line1", ""))
+        or "Managed property"
+    )
+    unit_label = _safe_text(getattr(unit, "unit_label", ""))
+    tenant_name = " ".join(
+        part
+        for part in [
+            _safe_text(getattr(tenant, "first_name", "")),
+            _safe_text(getattr(tenant, "last_name", "")),
+        ]
+        if part
+    )
+    location = _property_location(property_profile) or _safe_text(getattr(opportunity, "project_address", ""))
+    priority_label = work_order.get_priority_display()
+    category_label = work_order.get_category_display()
+    photos = _property_work_order_photos(work_order, request=request)
+    status = _property_work_order_status(opportunity, work_order)
+    workspace_stage = _workspace_stage(status, "property_work_order")
+    source_reference = work_order_number
+    project_title = _safe_text(getattr(work_order, "title", "")) or _safe_text(getattr(opportunity, "project_title", "")) or work_order_number
+    notes = _safe_text(getattr(work_order, "description", "")) or _safe_text(getattr(opportunity, "project_description", ""))
+    request_signals = ["Property Management", priority_label, category_label]
+    if photos:
+        request_signals.append("Photos/Attachments")
+
+    snapshot = {
+        "project_title": project_title,
+        "project_type": category_label,
+        "project_subtype": priority_label,
+        "project_family_key": "property_management_work_order",
+        "project_family_label": "Property Management Work Order",
+        "recommended_setup": {},
+        "refined_description": notes,
+        "project_scope_summary": notes,
+        "location": location,
+        "request_path_label": "Property Management Work Order",
+        "measurement_handling": "",
+        "desired_timing_text": "",
+        "timeline": _safe_text(getattr(opportunity, "timeline", "")),
+        "budget": "",
+        "property_type": _safe_text(getattr(property_profile, "property_type", "")),
+        "budget_range_text": "",
+        "preferred_contact_method": "",
+        "contact_consent": False,
+        "clarification_summary": [
+            {"key": "property", "label": "Property", "value": property_label},
+            {"key": "unit", "label": "Unit", "value": unit_label or "Whole property"},
+            {"key": "tenant", "label": "Tenant", "value": tenant_name or "-"},
+            {"key": "priority", "label": "Priority", "value": priority_label},
+            {"key": "category", "label": "Category", "value": category_label},
+        ],
+        "clarification_count": 5,
+        "photo_count": len(photos),
+        "photos": photos,
+        "milestones": [],
+        "guided_intake_completed": False,
+        "materials_status": "",
+        "property": property_label,
+        "unit": unit_label,
+        "tenant": tenant_name,
+        "priority": priority_label,
+        "category": category_label,
+        "work_order_number": work_order_number,
+    }
+    snapshot["request_signals"] = request_signals
+
+    next_action = _property_work_order_next_action(status, linked_agreement_id)
+    linked_url = (
+        f"/app/agreements/{linked_agreement_id}/wizard?step=1"
+        if linked_agreement_id
+        else ""
+    )
+
+    return {
+        "bid_id": f"opportunity-{opportunity.id}",
+        "record_id": opportunity.id,
+        "source_kind": "property_work_order",
+        "source_kind_label": "Property Management Work Order",
+        "workspace_stage": workspace_stage,
+        "workspace_stage_label": _workspace_stage_label(workspace_stage),
+        "source_id": opportunity.id,
+        "source_reference": source_reference,
+        "project_title": project_title,
+        "customer_name": _safe_text(getattr(company, "name", "")) or _safe_text(getattr(opportunity, "homeowner_name", "")) or "Property Management",
+        "customer_email": _safe_text(getattr(company, "email", "")) or _safe_text(getattr(opportunity, "homeowner_email", "")),
+        "customer_phone": _safe_text(getattr(company, "phone", "")) or _safe_text(getattr(opportunity, "homeowner_phone", "")),
+        "location": location,
+        "project_type": category_label,
+        "project_subtype": priority_label,
+        "property_type": _safe_text(getattr(property_profile, "property_type", "")),
+        "budget_range_text": "",
+        "preferred_contact_method": "",
+        "contact_consent": False,
+        "project_family_key": "property_management_work_order",
+        "project_family_label": "Property Management Work Order",
+        "request_path_label": "Property Management Work Order",
+        "measurement_handling": "",
+        "desired_timing_text": "",
+        "photo_count": len(photos),
+        "request_signals": request_signals,
+        "request_snapshot": snapshot,
+        "project_class": AgreementProjectClass.COMMERCIAL,
+        "project_class_label": project_class_label(AgreementProjectClass.COMMERCIAL),
+        "bid_amount": None,
+        "bid_amount_label": "-",
+        "submitted_at": _format_date(getattr(opportunity, "selected_at", None) or getattr(work_order, "marketplace_sent_at", None) or getattr(work_order, "created_at", None)),
+        "updated_at": _format_date(getattr(opportunity, "updated_at", None) or getattr(work_order, "updated_at", None)),
+        "status": status,
+        "status_label": _property_work_order_status_label(status),
+        "status_group": _property_work_order_status_group(status),
+        "status_note": "Property management work order routed through MyHomeBro.",
+        "linked_agreement_id": linked_agreement_id,
+        "linked_agreement_label": _agreement_label(linked_agreement),
+        "linked_agreement_reference": _agreement_reference(linked_agreement),
+        "linked_agreement_url": linked_url,
+        "notes": notes,
+        "timeline": _safe_text(getattr(opportunity, "timeline", "")),
+        "budget_text": "",
+        "milestone_preview": [],
+        "property_work_order_id": work_order.id,
+        "work_order_number": work_order_number,
+        "marketplace_status": _safe_text(getattr(work_order, "marketplace_status", "")),
+        "marketplace_status_label": work_order.get_marketplace_status_display(),
+        "next_action": next_action,
+    }
+
+
 def _filter_rows(rows: list[dict], *, status_filter: str = "", project_class_filter: str = "", search: str = "") -> list[dict]:
     status_value = _safe_text(status_filter).lower()
     class_value = _safe_text(project_class_filter).lower()
@@ -598,6 +867,8 @@ def _filter_rows(rows: list[dict], *, status_filter: str = "", project_class_fil
                     _safe_text(row.get("status_label")),
                     _safe_text(row.get("source_reference")),
                     _safe_text(row.get("linked_agreement_reference")),
+                    _safe_text(row.get("source_kind_label")),
+                    _safe_text(row.get("work_order_number")),
                     " ".join(_safe_text(signal) for signal in (row.get("request_signals") or [])),
                 ]
             ).lower()
@@ -630,6 +901,31 @@ class ContractorBidsView(APIView):
             .prefetch_related("clarification_photos")
             .order_by("-created_at", "-id")
         )
+        property_work_order_opportunities = list(
+            ContractorOpportunity.objects.filter(
+                property_work_order__isnull=False,
+            )
+            .filter(
+                Q(directory_entry__claimed_by_contractor=contractor)
+                | Q(accepted_by_contractor=contractor)
+            )
+            .select_related(
+                "converted_agreement",
+                "directory_entry",
+                "property_work_order",
+                "property_work_order__linked_agreement",
+                "property_work_order__property_management_company",
+                "property_work_order__property_profile",
+                "property_work_order__unit",
+                "property_work_order__tenant",
+                "property_work_order__source_tenant_request",
+            )
+            .prefetch_related(
+                "property_work_order__attachments",
+                "property_work_order__source_tenant_request__attachments",
+            )
+            .order_by("-selected_at", "-id")
+        )
 
         rows: list[dict] = []
         linked_intake_ids = set()
@@ -644,6 +940,11 @@ class ContractorBidsView(APIView):
             if intake.id in linked_intake_ids or getattr(intake, "public_lead_id", None):
                 continue
             row = _bid_row_from_intake(intake, request=request)
+            if row:
+                rows.append(row)
+
+        for opportunity in property_work_order_opportunities:
+            row = _bid_row_from_property_work_order_opportunity(opportunity, request=request)
             if row:
                 rows.append(row)
 
@@ -679,6 +980,9 @@ class ContractorBidsView(APIView):
             ),
             "commercial_count": sum(
                 1 for row in filtered_rows if row.get("project_class") == AgreementProjectClass.COMMERCIAL
+            ),
+            "property_work_order_count": sum(
+                1 for row in filtered_rows if row.get("source_kind") == "property_work_order"
             ),
             "marketplace_eligibility": {
                 "verification_status": getattr(contractor, "marketplace_verification_status", "unverified") or "unverified",

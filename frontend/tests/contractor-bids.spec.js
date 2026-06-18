@@ -5,8 +5,8 @@ const bidRows = [
     bid_id: "intake-1",
     source_kind: "intake",
     source_kind_label: "Intake",
-    workspace_stage: "new_lead",
-    workspace_stage_label: "New Lead",
+    workspace_stage: "active_bid",
+    workspace_stage_label: "Active Bid",
     source_id: 1,
     source_reference: "Intake #1",
     project_title: "Draft Customer Kitchen",
@@ -20,7 +20,7 @@ const bidRows = [
     project_subtype: "Cabinet Replacement",
     bid_amount: null,
     bid_amount_label: "-",
-    submitted_at: "2026-04-10T15:20:00Z",
+    submitted_at: "2026-04-01T15:20:00Z",
     status: "draft",
     status_label: "Draft",
     status_group: "open",
@@ -423,6 +423,197 @@ const bidRows = [
   },
 ];
 
+const propertyWorkOrderRows = [
+  {
+    bid_id: "opportunity-31",
+    source_kind: "property_work_order",
+    source_kind_label: "Property Management Work Order",
+    workspace_stage: "new_lead",
+    workspace_stage_label: "New Lead",
+    source_id: 31,
+    source_reference: "PWO-000031",
+    project_title: "Repair sink leak",
+    customer_name: "Oak Tree Property Management",
+    customer_email: "ops@oaktree.example",
+    customer_phone: "512-555-0131",
+    location: "123 Managed Way\nAustin, TX 78701",
+    project_class: "commercial",
+    project_class_label: "Commercial",
+    project_type: "Plumbing",
+    project_subtype: "Urgent",
+    bid_amount: null,
+    bid_amount_label: "-",
+    submitted_at: "2026-04-06T15:20:00Z",
+    status: "submitted",
+    status_label: "Needs Response",
+    status_group: "open",
+    linked_agreement_id: null,
+    linked_agreement_label: "",
+    linked_agreement_reference: "",
+    linked_agreement_url: "",
+    notes: "Kitchen sink is leaking into the cabinet.",
+    timeline: "",
+    budget_text: "",
+    milestone_preview: [],
+    property_work_order_id: 310,
+    work_order_number: "PWO-000031",
+    marketplace_status: "sent",
+    marketplace_status_label: "Sent",
+    request_signals: ["Property Management", "Urgent", "Plumbing", "Photos/Attachments"],
+    request_snapshot: {
+      project_title: "Repair sink leak",
+      project_type: "Plumbing",
+      project_subtype: "Urgent",
+      project_family_label: "Property Management Work Order",
+      refined_description: "Kitchen sink is leaking into the cabinet.",
+      project_scope_summary: "Kitchen sink is leaking into the cabinet.",
+      location: "123 Managed Way\nAustin, TX 78701",
+      request_path_label: "Property Management Work Order",
+      property: "Oak Duplex",
+      unit: "Unit B",
+      tenant: "Taylor Tenant",
+      priority: "Urgent",
+      category: "Plumbing",
+      work_order_number: "PWO-000031",
+      clarification_summary: [
+        { key: "property", label: "Property", value: "Oak Duplex" },
+        { key: "unit", label: "Unit", value: "Unit B" },
+        { key: "tenant", label: "Tenant", value: "Taylor Tenant" },
+        { key: "priority", label: "Priority", value: "Urgent" },
+        { key: "category", label: "Category", value: "Plumbing" },
+      ],
+      clarification_count: 5,
+      photo_count: 1,
+      photos: [
+        { id: 3101, image_url: "https://example.com/leak.jpg", url: "https://example.com/leak.jpg", original_name: "leak.jpg", caption: "Tenant upload", uploaded_at: "2026-04-06T15:00:00Z" },
+      ],
+      milestones: [],
+      request_signals: ["Property Management", "Urgent", "Plumbing", "Photos/Attachments"],
+    },
+    next_action: { key: "accept_property_work_order", label: "Accept Work Order", target: "" },
+  },
+  {
+    bid_id: "opportunity-32",
+    source_kind: "property_work_order",
+    source_kind_label: "Property Management Work Order",
+    workspace_stage: "follow_up",
+    workspace_stage_label: "Follow-Up",
+    source_id: 32,
+    source_reference: "PWO-000032",
+    project_title: "Replace disposal",
+    customer_name: "Oak Tree Property Management",
+    customer_email: "ops@oaktree.example",
+    customer_phone: "512-555-0131",
+    location: "125 Managed Way\nAustin, TX 78701",
+    project_class: "commercial",
+    project_class_label: "Commercial",
+    project_type: "Appliance",
+    project_subtype: "Normal",
+    bid_amount: null,
+    bid_amount_label: "-",
+    submitted_at: "2026-04-05T15:20:00Z",
+    status: "accepted",
+    status_label: "Accepted",
+    status_group: "follow_up",
+    linked_agreement_id: null,
+    linked_agreement_label: "",
+    linked_agreement_reference: "",
+    linked_agreement_url: "",
+    notes: "Accepted disposal replacement work order.",
+    timeline: "",
+    budget_text: "",
+    milestone_preview: [],
+    property_work_order_id: 320,
+    work_order_number: "PWO-000032",
+    marketplace_status: "accepted",
+    marketplace_status_label: "Accepted",
+    request_signals: ["Property Management", "Normal", "Appliance"],
+    request_snapshot: {
+      project_title: "Replace disposal",
+      project_type: "Appliance",
+      project_subtype: "Normal",
+      project_family_label: "Property Management Work Order",
+      refined_description: "Accepted disposal replacement work order.",
+      project_scope_summary: "Accepted disposal replacement work order.",
+      location: "125 Managed Way\nAustin, TX 78701",
+      request_path_label: "Property Management Work Order",
+      property: "Oak Duplex",
+      unit: "Unit A",
+      tenant: "Jamie Resident",
+      priority: "Normal",
+      category: "Appliance",
+      work_order_number: "PWO-000032",
+      clarification_summary: [],
+      clarification_count: 0,
+      photo_count: 0,
+      photos: [],
+      milestones: [],
+      request_signals: ["Property Management", "Normal", "Appliance"],
+    },
+    next_action: { key: "prepare_agreement_draft", label: "Prepare Agreement Draft", target: "" },
+  },
+  {
+    bid_id: "opportunity-33",
+    source_kind: "property_work_order",
+    source_kind_label: "Property Management Work Order",
+    workspace_stage: "active_bid",
+    workspace_stage_label: "Active Bid",
+    source_id: 33,
+    source_reference: "PWO-000033",
+    project_title: "Repair panel issue",
+    customer_name: "Oak Tree Property Management",
+    customer_email: "ops@oaktree.example",
+    customer_phone: "512-555-0131",
+    location: "127 Managed Way\nAustin, TX 78701",
+    project_class: "commercial",
+    project_class_label: "Commercial",
+    project_type: "Electrical",
+    project_subtype: "Urgent",
+    bid_amount: null,
+    bid_amount_label: "-",
+    submitted_at: "2026-04-04T15:20:00Z",
+    status: "awarded",
+    status_label: "Agreement Draft Ready",
+    status_group: "awarded",
+    linked_agreement_id: 933,
+    linked_agreement_label: "Repair panel issue",
+    linked_agreement_reference: "Agreement #933",
+    linked_agreement_url: "/app/agreements/933/wizard?step=1",
+    notes: "Agreement draft is already linked.",
+    timeline: "",
+    budget_text: "",
+    milestone_preview: [],
+    property_work_order_id: 330,
+    work_order_number: "PWO-000033",
+    marketplace_status: "accepted",
+    marketplace_status_label: "Accepted",
+    request_signals: ["Property Management", "Urgent", "Electrical"],
+    request_snapshot: {
+      project_title: "Repair panel issue",
+      project_type: "Electrical",
+      project_subtype: "Urgent",
+      project_family_label: "Property Management Work Order",
+      refined_description: "Agreement draft is already linked.",
+      project_scope_summary: "Agreement draft is already linked.",
+      location: "127 Managed Way\nAustin, TX 78701",
+      request_path_label: "Property Management Work Order",
+      property: "Oak Duplex",
+      unit: "Unit C",
+      tenant: "Morgan Resident",
+      priority: "Urgent",
+      category: "Electrical",
+      work_order_number: "PWO-000033",
+      clarification_summary: [],
+      clarification_count: 0,
+      photo_count: 0,
+      photos: [],
+      milestones: [],
+      request_signals: ["Property Management", "Urgent", "Electrical"],
+    },
+    next_action: { key: "open_agreement", label: "Open Agreement Draft", target: "/app/agreements/933/wizard?step=1" },
+  },
+];
+
 function buildSummary(rows) {
   return {
     total_bids: rows.length,
@@ -436,6 +627,7 @@ function buildSummary(rows) {
     declined_expired_bids: rows.filter((row) => row.status_group === "declined_expired").length,
     residential_count: rows.filter((row) => row.project_class === "residential").length,
     commercial_count: rows.filter((row) => row.project_class === "commercial").length,
+    property_work_order_count: rows.filter((row) => row.source_kind === "property_work_order").length,
   };
 }
 
@@ -687,6 +879,120 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.screenshot({ path: "test-results/contractor-bids.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("Failed to load bids"))).toHaveLength(0);
+});
+
+test("contractor bids workspace renders property management work orders and routes actions", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async () => {},
+      },
+      configurable: true,
+    });
+  });
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+  await page.route("**/api/projects/contractors/me/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ id: 7, public_profile: {} }),
+    });
+  });
+
+  const rows = JSON.parse(JSON.stringify(propertyWorkOrderRows));
+  await page.route(/\/api\/projects\/contractor\/bids\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildPayload(rows)),
+    });
+  });
+  await page.route("**/api/projects/contractor-opportunities/31/accept/**", async (route) => {
+    const row = rows.find((entry) => entry.bid_id === "opportunity-31");
+    row.status = "accepted";
+    row.status_label = "Accepted";
+    row.status_group = "follow_up";
+    row.workspace_stage = "follow_up";
+    row.workspace_stage_label = "Follow-Up";
+    row.marketplace_status = "accepted";
+    row.marketplace_status_label = "Accepted";
+    row.next_action = { key: "prepare_agreement_draft", label: "Prepare Agreement Draft", target: "" };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, status: "accepted" }),
+    });
+  });
+  await page.route("**/api/projects/contractor-opportunities/31/decline/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, status: "declined" }),
+    });
+  });
+  await page.route("**/api/projects/contractor-opportunities/32/create-agreement-draft/**", async (route) => {
+    const row = rows.find((entry) => entry.bid_id === "opportunity-32");
+    row.status = "awarded";
+    row.status_label = "Agreement Draft Ready";
+    row.status_group = "awarded";
+    row.workspace_stage = "active_bid";
+    row.workspace_stage_label = "Active Bid";
+    row.linked_agreement_id = 932;
+    row.linked_agreement_reference = "Agreement #932";
+    row.linked_agreement_url = "/app/agreements/932/wizard?step=1";
+    row.next_action = { key: "open_agreement", label: "Open Agreement Draft", target: "/app/agreements/932/wizard?step=1" };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        linked_agreement_id: 932,
+        agreement_id: 932,
+        next_url: "/app/agreements/932/wizard?step=1",
+      }),
+    });
+  });
+
+  await page.goto("/app/bids?source=property_work_order", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("leads-tab-work-orders")).toContainText("Work Orders");
+  await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Property Management Work Order");
+  await expect(page.getByTestId("lead-source-opportunity-31")).toContainText("Property Management Work Order");
+  await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("PWO-000031");
+  await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Oak Tree Property Management");
+  await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Urgent");
+  await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Plumbing");
+  await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Photos/Attachments");
+  await expect(page.getByTestId("lead-row-action-opportunity-31")).toContainText("Accept");
+
+  await page.getByTestId("lead-row-opportunity-31").click();
+  await expect(page.getByTestId("lead-overview")).toContainText("Work Order");
+  await expect(page.getByTestId("lead-overview")).toContainText("Unit B");
+  await expect(page.getByTestId("photos-section")).toContainText("leak.jpg");
+  await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
+  await page.getByRole("button", { name: "Close bid details" }).click();
+
+  await page.getByTestId("lead-row-action-opportunity-31").click();
+  await expect(page.getByTestId("leads-tab-follow-up")).toContainText("Follow-Up");
+  await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Prepare Agreement Draft");
+
+  await page.getByTestId("lead-row-action-opportunity-32").click();
+  await expect(page).toHaveURL("/app/agreements/932/wizard?step=1");
+
+  await page.goto("/app/bids?source=property_work_order", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("lead-row-action-opportunity-33").click();
+  await expect(page).toHaveURL("/app/agreements/933/wizard?step=1");
 });
 
 test("contractor bids workspace lead helpers support create bid handoff", async ({ page }) => {

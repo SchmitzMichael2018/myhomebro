@@ -3361,6 +3361,19 @@ export default function ContractorDashboard() {
                 tone="premium"
                 className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
               >
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-sky-100">
+                    {marketplaceWorkOrders.length} work order{marketplaceWorkOrders.length === 1 ? "" : "s"} in your opportunity workspace
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="contractor-marketplace-work-orders-open-bids"
+                    onClick={() => navigate("/app/bids?source=property_work_order")}
+                    className="rounded-xl border border-white/18 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15"
+                  >
+                    Open in Leads &amp; Bids
+                  </button>
+                </div>
                 <div className="grid gap-3 lg:grid-cols-2">
                   {marketplaceWorkOrders.slice(0, 4).map((row) => {
                     const opportunityId = row.opportunity_id || row.id;

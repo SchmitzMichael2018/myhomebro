@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, ClipboardList, Copy, ExternalLink, X } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -367,6 +367,7 @@ function buildResponseTemplates({ snapshot, signals }) {
 
 export default function ContractorBidsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const mountedRef = useRef(true);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
@@ -421,11 +422,22 @@ export default function ContractorBidsPage() {
     loadWorkspace();
   }, []);
 
+  useEffect(() => {
+    const source = new URLSearchParams(location.search).get("source");
+    if (normalize(source) === "property_work_order") {
+      setActiveWorkspaceTab("work_order");
+    }
+  }, [location.search]);
+
   const visibleRows = useMemo(() => {
     const q = normalize(search);
     const scopedRows = rows.filter((row) => {
       const workspaceStage = workspaceStageFromRow(row);
-      if (activeWorkspaceTab !== "all" && workspaceStage !== activeWorkspaceTab) return false;
+      if (activeWorkspaceTab === "work_order") {
+        if (normalize(row.source_kind) !== "property_work_order") return false;
+      } else if (activeWorkspaceTab !== "all" && workspaceStage !== activeWorkspaceTab) {
+        return false;
+      }
       if (!requestMatchesFilter(row, requestFilter)) return false;
       if (statusFilter !== "all" && normalize(row.status) !== statusFilter) return false;
       if (projectClassFilter !== "all" && normalize(row.project_class) !== projectClassFilter) return false;
@@ -454,10 +466,12 @@ export default function ContractorBidsPage() {
       follow_up_leads: 0,
       active_bids: 0,
       closed: 0,
+      work_orders: 0,
     };
 
     for (const row of rows) {
       const stage = workspaceStageFromRow(row);
+      if (normalize(row.source_kind) === "property_work_order") counts.work_orders += 1;
       if (stage === "new_lead") counts.new_leads += 1;
       else if (stage === "follow_up") counts.follow_up_leads += 1;
       else if (stage === "closed") counts.closed += 1;
@@ -477,7 +491,9 @@ export default function ContractorBidsPage() {
         ? "Follow-Up"
         : activeWorkspaceTab === "closed"
           ? "Closed / Archived"
-          : "Active Bids";
+          : activeWorkspaceTab === "work_order"
+            ? "Work Orders"
+            : "Active Bids";
   const activeStageNoun =
     activeWorkspaceTab === "new_lead"
       ? "lead"
@@ -485,7 +501,9 @@ export default function ContractorBidsPage() {
         ? "follow-up lead"
         : activeWorkspaceTab === "closed"
           ? "opportunity"
-          : "bid";
+          : activeWorkspaceTab === "work_order"
+            ? "work order"
+            : "bid";
   const sortOptions = useMemo(() => {
     const isLeadView = activeWorkspaceTab === "new_lead";
     const isFollowUpView = activeWorkspaceTab === "follow_up";
@@ -523,9 +541,10 @@ export default function ContractorBidsPage() {
       { key: "new_lead", label: "New Leads", count: summary.new_leads, testId: "leads-tab-new" },
       { key: "follow_up", label: "Follow-Up", count: summary.follow_up_leads, testId: "leads-tab-follow-up" },
       { key: "active_bid", label: "Active Bids", count: summary.active_bids, testId: "leads-tab-active" },
+      { key: "work_order", label: "Work Orders", count: summary.work_orders, testId: "leads-tab-work-orders" },
       { key: "closed", label: "Closed / Archived", count: summary.closed, testId: "leads-tab-closed" },
     ],
-    [summary.active_bids, summary.closed, summary.follow_up_leads, summary.new_leads]
+    [summary.active_bids, summary.closed, summary.follow_up_leads, summary.new_leads, summary.work_orders]
   );
   const activeSortLabel = sortOptions.find((option) => option.key === sortBy)?.label || "Recommended";
   const activeFilterLabel = requestFilterOptions.find((option) => option.key === requestFilter)?.label || "All";
@@ -623,16 +642,28 @@ export default function ContractorBidsPage() {
   );
   const selectedProjectTypeCue = selectedSnapshot.project_family_label || selectedProjectIntelligence?.familyCueLabel || "";
   const selectedCanConvertToAgreement = isConvertToAgreementRow(selectedRow);
+  const selectedIsPropertyWorkOrder = normalize(selectedRow?.source_kind) === "property_work_order";
+  const selectedNextActionKey = normalize(selectedRow?.next_action?.key);
   const selectedPrimaryActionLabel =
-    selectedCanConvertToAgreement
+    selectedIsPropertyWorkOrder
+      ? selectedRow?.next_action?.label || "View Details"
+      : selectedCanConvertToAgreement
       ? "Convert to Agreement"
       : selectedStage === "new_lead" || selectedStage === "follow_up"
       ? "Create Bid"
-      : normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url
+      : selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
         : selectedRow?.next_action?.label || "View Details";
   const selectedPrimaryActionHint =
-    selectedCanConvertToAgreement
+    selectedIsPropertyWorkOrder
+      ? selectedNextActionKey === "accept_property_work_order"
+        ? "Accept this routed work order to let the property manager know you can take it."
+        : selectedNextActionKey === "prepare_agreement_draft"
+          ? "Prepare a draft agreement from the accepted work order, then continue in the existing agreement wizard."
+          : selectedNextActionKey === "open_agreement"
+            ? "Open the draft agreement to continue the existing MyHomeBro agreement workflow."
+            : "Review the property management work order details."
+      : selectedCanConvertToAgreement
       ? "Review the request and adjust the draft before sending the agreement."
       : selectedStage === "new_lead"
       ? "This starts the existing bid workflow for the reviewed request."
@@ -641,8 +672,15 @@ export default function ContractorBidsPage() {
         : selectedStage === "closed"
           ? "This opportunity is closed, but you can still review the history."
           : "Continue the current bid workflow from here.";
-  const selectedCanOpenAgreement = normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url;
+  const selectedCanOpenAgreement = selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url;
   const rowPrimaryActionLabel = (row) => {
+    if (normalize(row?.source_kind) === "property_work_order") {
+      const nextKey = normalize(row?.next_action?.key);
+      if (nextKey === "accept_property_work_order") return "Accept";
+      if (nextKey === "prepare_agreement_draft") return "Prepare Agreement Draft";
+      if (nextKey === "open_agreement") return "Open Agreement Draft";
+      return row?.next_action?.label || "View Details";
+    }
     if (isConvertToAgreementRow(row)) return "Convert to Agreement";
     const stage = workspaceStageFromRow(row);
     if (stage === "new_lead") return "Review Request";
@@ -692,6 +730,52 @@ export default function ContractorBidsPage() {
     }
   };
 
+  const respondToPropertyWorkOrder = async (row, action) => {
+    if (!row?.source_id) return null;
+    const keepSelected = Boolean(selectedRow && String(selectedRow.bid_id) === String(row.bid_id));
+    setActionBusyId(String(row.bid_id));
+    try {
+      await api.post(`/projects/contractor-opportunities/${row.source_id}/${action}/`);
+      toast.success(action === "accept" ? "Work order accepted." : "Work order declined.");
+      await loadWorkspace({ keepSelectedBidId: keepSelected ? String(row.bid_id) : "" });
+      setActiveWorkspaceTab(action === "accept" ? "follow_up" : "closed");
+      return true;
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || `Could not ${action} this work order.`);
+      return null;
+    } finally {
+      setActionBusyId("");
+    }
+  };
+
+  const preparePropertyWorkOrderAgreementDraft = async (row) => {
+    if (!row?.source_id) return null;
+    setActionBusyId(String(row.bid_id));
+    try {
+      const { data } = await api.post(`/projects/contractor-opportunities/${row.source_id}/create-agreement-draft/`);
+      await loadWorkspace({ keepSelectedBidId: String(row.bid_id) });
+      const target =
+        data?.next_url ||
+        data?.wizard_url ||
+        (data?.linked_agreement_id || data?.agreement_id
+          ? `/app/agreements/${data.linked_agreement_id || data.agreement_id}/wizard?step=1`
+          : "");
+      if (target) {
+        navigate(target);
+        return data;
+      }
+      toast.success("Agreement draft prepared.");
+      return data;
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Could not prepare this agreement draft.");
+      return null;
+    } finally {
+      setActionBusyId("");
+    }
+  };
+
   const runAction = async (row) => {
     if (!row) return;
     if (normalize(row.next_action?.key) === "open_agreement" && row.linked_agreement_url) {
@@ -707,6 +791,20 @@ export default function ContractorBidsPage() {
     const sourceKind = normalize(row.source_kind);
     const sourceId = row.source_id || row.bid_id;
     if (!sourceKind || !sourceId) return;
+
+    if (sourceKind === "property_work_order") {
+      const actionKey = normalize(row.next_action?.key);
+      if (actionKey === "accept_property_work_order") {
+        await respondToPropertyWorkOrder(row, "accept");
+        return;
+      }
+      if (actionKey === "prepare_agreement_draft") {
+        await preparePropertyWorkOrderAgreementDraft(row);
+        return;
+      }
+      setSelectedRow(row);
+      return;
+    }
 
     setActionBusyId(String(row.bid_id));
     try {
@@ -744,6 +842,10 @@ export default function ContractorBidsPage() {
 
   const handleRowPrimaryAction = (row) => {
     if (!row) return;
+    if (normalize(row.source_kind) === "property_work_order") {
+      runAction(row);
+      return;
+    }
     if (isConvertToAgreementRow(row)) {
       setSelectedRow(row);
       setConvertPanelOpen(true);
@@ -912,6 +1014,7 @@ export default function ContractorBidsPage() {
                 <option value="draft">Draft</option>
                 <option value="submitted">Submitted</option>
                 <option value="follow_up">Follow-Up</option>
+                <option value="accepted">Accepted</option>
                 <option value="under_review">Under Review</option>
                 <option value="awarded">Awarded</option>
                 <option value="declined">Declined</option>
@@ -959,7 +1062,9 @@ export default function ContractorBidsPage() {
             ? "New leads are requests you can review before you start the bid workflow."
             : activeWorkspaceTab === "active_bid"
               ? "Active bids include opportunities you are already shaping or have already responded to."
-              : "Closed opportunities stay available for reference and follow-up."}
+              : activeWorkspaceTab === "work_order"
+                ? "Work orders are property management opportunities routed through MyHomeBro."
+                : "Closed opportunities stay available for reference and follow-up."}
         </div>
 
         {loading ? (
@@ -1013,6 +1118,14 @@ export default function ContractorBidsPage() {
                       <div className="font-semibold text-slate-900">{row.project_title}</div>
                       <div className="mt-1 text-xs text-slate-500">{row.source_reference}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
+                        {normalize(row.source_kind) === "property_work_order" ? (
+                          <span
+                            data-testid={`lead-source-${row.bid_id}`}
+                            className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800"
+                          >
+                            Property Management Work Order
+                          </span>
+                        ) : null}
                         <span
                           data-testid={`lead-stage-${row.bid_id}`}
                           className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${workspaceStageTone(
@@ -1124,6 +1237,15 @@ export default function ContractorBidsPage() {
                   <DetailField label="Location" value={selectedRow.location || "-"} />
                   <DetailField label="Request Path" value={selectedRow.request_path_label || "Project request"} />
                   <DetailField label="Status" value={selectedRow.status_label} />
+                  {selectedIsPropertyWorkOrder ? (
+                    <>
+                      <DetailField label="Work Order" value={selectedRow.work_order_number || selectedRow.source_reference || "-"} />
+                      <DetailField label="Property" value={selectedSnapshot.property || "-"} />
+                      <DetailField label="Unit" value={selectedSnapshot.unit || "Whole property"} />
+                      <DetailField label="Priority" value={selectedSnapshot.priority || selectedRow.project_subtype || "-"} />
+                      <DetailField label="Category" value={selectedSnapshot.category || selectedRow.project_type || "-"} />
+                    </>
+                  ) : null}
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <DetailField label="Customer" value={selectedRow.customer_name || "-"} />
@@ -1226,7 +1348,7 @@ export default function ContractorBidsPage() {
                 {selectedPhotos.length ? (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {selectedPhotos.map((photo) => (
-                      <div key={photo.id || photo.image_url || photo.original_name} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                      <div key={photo.id || photo.image_url || photo.url || photo.original_name} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                         {photo.image_url ? (
                           <img src={photo.image_url} alt={photo.caption || photo.original_name || "Clarification upload"} className="h-40 w-full object-cover" />
                         ) : (
@@ -1237,6 +1359,11 @@ export default function ContractorBidsPage() {
                         <div className="p-3">
                           <div className="text-sm font-semibold text-slate-900">{photo.original_name || "Uploaded photo"}</div>
                           {photo.caption ? <div className="mt-1 text-xs text-slate-500">{photo.caption}</div> : null}
+                          {photo.url ? (
+                            <a href={photo.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-sky-700 hover:text-sky-900">
+                              Open attachment
+                            </a>
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -1372,7 +1499,13 @@ export default function ContractorBidsPage() {
                 subtitle="Keep the decision simple and move the opportunity forward from here."
               >
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                  {selectedStage === "new_lead"
+                  {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order"
+                    ? "This property management work order needs your response. Accept it if you can take the job, or decline it to close the request for your workspace."
+                    : selectedIsPropertyWorkOrder && selectedNextActionKey === "prepare_agreement_draft"
+                      ? "This work order is accepted. Prepare an agreement draft to continue in the existing MyHomeBro agreement workflow."
+                      : selectedIsPropertyWorkOrder && selectedNextActionKey === "open_agreement"
+                        ? "The draft agreement is ready. Open it to continue scope review, signing, and later funding steps."
+                        : selectedStage === "new_lead"
                     ? "This request is ready for a bid decision. Review the details, then create your bid when you're ready."
                     : selectedStage === "follow_up"
                       ? "This lead is saved for later. Resume it when you are ready or create your bid now."
@@ -1381,8 +1514,10 @@ export default function ContractorBidsPage() {
                       : selectedRow.next_action?.label || "Continue the existing bid workflow."}
                 </div>
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="lead-action-section">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Lead Actions</div>
-                  {(selectedStage === "new_lead" || selectedStage === "follow_up") ? (
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    {selectedIsPropertyWorkOrder ? "Work Order Actions" : "Lead Actions"}
+                  </div>
+                  {(selectedStage === "new_lead" || selectedStage === "follow_up") && !selectedIsPropertyWorkOrder ? (
                     <div
                       className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
                       data-testid="create-bid-context-note"
@@ -1427,7 +1562,18 @@ export default function ContractorBidsPage() {
                         <ExternalLink size={14} />
                       </button>
                     )}
-                    {selectedStage === "new_lead" ? (
+                    {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order" ? (
+                      <button
+                        type="button"
+                        onClick={() => respondToPropertyWorkOrder(selectedRow, "decline")}
+                        disabled={actionBusyId === String(selectedRow.bid_id)}
+                        data-testid="decline-property-work-order-action"
+                        className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+                      >
+                        Decline
+                      </button>
+                    ) : null}
+                    {selectedStage === "new_lead" && !selectedIsPropertyWorkOrder ? (
                       <button
                         type="button"
                         onClick={() => patchLeadStatus(selectedRow, "follow_up", { keepSelected: true, nextWorkspaceTab: "follow_up" })}
@@ -1438,7 +1584,7 @@ export default function ContractorBidsPage() {
                         Save for Later
                       </button>
                     ) : null}
-                    {selectedStage === "follow_up" ? (
+                    {selectedStage === "follow_up" && !selectedIsPropertyWorkOrder ? (
                       <button
                         type="button"
                         onClick={() => patchLeadStatus(selectedRow, "new", { keepSelected: true, nextWorkspaceTab: "new_lead" })}

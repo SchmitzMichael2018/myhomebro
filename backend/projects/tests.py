@@ -20971,6 +20971,99 @@ class CustomerPortalAccessTests(TestCase):
         opportunity.refresh_from_db()
         return token, company, property_profile, unit, tenant, contractor_user, contractor, opportunity, row
 
+    def _create_pending_marketplace_work_order(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        contractor_user, contractor, _entry = self._create_marketplace_contractor_entry()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            priority=PropertyWorkOrder.PRIORITY_URGENT,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        send_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {},
+            content_type="application/json",
+        )
+        self.assertEqual(send_response.status_code, 200, send_response.data)
+        opportunity = ContractorOpportunity.objects.get(property_work_order=row)
+        row.refresh_from_db()
+        return token, company, property_profile, unit, tenant, contractor_user, contractor, opportunity, row
+
+    def test_contractor_bids_workspace_includes_pending_property_work_order_opportunities(self):
+        _token, company, property_profile, unit, tenant, contractor_user, _contractor, opportunity, row = self._create_pending_marketplace_work_order()
+
+        self.client.force_authenticate(user=contractor_user)
+        response = self.client.get("/api/projects/contractor/bids/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        workspace_row = next(item for item in response.data["results"] if item["bid_id"] == f"opportunity-{opportunity.id}")
+        self.assertEqual(workspace_row["source_kind"], "property_work_order")
+        self.assertEqual(workspace_row["source_kind_label"], "Property Management Work Order")
+        self.assertEqual(workspace_row["source_reference"], row.work_order_number)
+        self.assertEqual(workspace_row["project_title"], "Repair sink leak")
+        self.assertEqual(workspace_row["customer_name"], company.name)
+        self.assertEqual(workspace_row["workspace_stage"], "new_lead")
+        self.assertEqual(workspace_row["status_label"], "Needs Response")
+        self.assertEqual(workspace_row["next_action"]["key"], "accept_property_work_order")
+        self.assertIn("Property Management", workspace_row["request_signals"])
+        self.assertEqual(workspace_row["request_snapshot"]["property"], property_profile.display_name)
+        self.assertEqual(workspace_row["request_snapshot"]["unit"], unit.unit_label)
+        self.assertIn(tenant.last_name, workspace_row["request_snapshot"]["tenant"])
+        self.assertEqual(response.data["summary"]["property_work_order_count"], 1)
+
+    def test_contractor_bids_workspace_property_work_order_status_actions(self):
+        _token, _company, _property_profile, _unit, _tenant, contractor_user, _contractor, opportunity, row = self._create_accepted_marketplace_work_order()
+
+        self.client.force_authenticate(user=contractor_user)
+        accepted_response = self.client.get("/api/projects/contractor/bids/")
+        draft_response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/create-agreement-draft/")
+        linked_response = self.client.get("/api/projects/contractor/bids/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(accepted_response.status_code, 200, accepted_response.data)
+        accepted_row = next(item for item in accepted_response.data["results"] if item["bid_id"] == f"opportunity-{opportunity.id}")
+        self.assertEqual(accepted_row["workspace_stage"], "follow_up")
+        self.assertEqual(accepted_row["status"], "accepted")
+        self.assertEqual(accepted_row["next_action"]["key"], "prepare_agreement_draft")
+
+        self.assertEqual(draft_response.status_code, 200, draft_response.data)
+        row.refresh_from_db()
+        self.assertIsNotNone(row.linked_agreement_id)
+        linked_row = next(item for item in linked_response.data["results"] if item["bid_id"] == f"opportunity-{opportunity.id}")
+        self.assertEqual(linked_row["workspace_stage"], "active_bid")
+        self.assertEqual(linked_row["status"], "awarded")
+        self.assertEqual(linked_row["next_action"]["key"], "open_agreement")
+        self.assertIn(f"/app/agreements/{row.linked_agreement_id}/wizard?step=1", linked_row["linked_agreement_url"])
+
+    def test_contractor_bids_workspace_property_work_order_declined_and_scoped(self):
+        _token, _company, _property_profile, _unit, _tenant, contractor_user, _contractor, opportunity, _row = self._create_pending_marketplace_work_order()
+        other_user, _other_contractor, _other_entry = self._create_marketplace_contractor_entry(
+            email="bids-scope-other@example.com",
+            business_name="Other Bids Plumbing",
+        )
+
+        self.client.force_authenticate(user=other_user)
+        scoped_response = self.client.get("/api/projects/contractor/bids/")
+        self.client.force_authenticate(user=contractor_user)
+        decline_response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/decline/")
+        declined_workspace = self.client.get("/api/projects/contractor/bids/")
+        self.client.force_authenticate(user=None)
+
+        self.assertEqual(scoped_response.status_code, 200, scoped_response.data)
+        self.assertFalse(any(item["bid_id"] == f"opportunity-{opportunity.id}" for item in scoped_response.data["results"]))
+        self.assertEqual(decline_response.status_code, 200, decline_response.data)
+        declined_row = next(item for item in declined_workspace.data["results"] if item["bid_id"] == f"opportunity-{opportunity.id}")
+        self.assertEqual(declined_row["workspace_stage"], "closed")
+        self.assertEqual(declined_row["status_group"], "declined_expired")
+
     def test_property_management_company_can_create_list_and_edit_work_orders(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
