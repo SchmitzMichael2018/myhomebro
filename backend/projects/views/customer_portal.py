@@ -946,6 +946,20 @@ def _tenant_maintenance_requests_for_email(email: str) -> list[dict]:
     return [_tenant_maintenance_request_payload(row) for row in rows]
 
 
+def _property_profile_address(property_profile: PropertyProfile) -> str:
+    return ", ".join(
+        part
+        for part in [
+            _safe_text(property_profile.address_line1),
+            _safe_text(property_profile.address_line2),
+            _safe_text(property_profile.city),
+            _safe_text(property_profile.state),
+            _safe_text(property_profile.postal_code),
+        ]
+        if part
+    )
+
+
 def _tenant_maintenance_context_payload(property_profile: PropertyProfile, unit: PropertyUnit | None = None, *, include_units: bool = False) -> dict:
     units = []
     if include_units:
@@ -957,8 +971,10 @@ def _tenant_maintenance_context_payload(property_profile: PropertyProfile, unit:
         "property": {
             "id": property_profile.id,
             "display_name": _safe_text(property_profile.display_name) or "Managed property",
+            "address": _property_profile_address(property_profile),
         },
         "unit": _property_unit_payload(unit) if unit else None,
+        "property_management_company": _property_management_company_ref(property_profile.managed_by_company),
         "units": units,
         "categories": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.CATEGORY_CHOICES],
         "urgencies": [{"value": value, "label": label} for value, label in TenantMaintenanceRequest.URGENCY_CHOICES],
@@ -1061,49 +1077,34 @@ def _tenant_contact_matches(tenant: Tenant, contact: str) -> bool:
     return bool(contact_digits and _digits_only(tenant.phone) == contact_digits)
 
 
-def _verify_tenant_maintenance_identity(*, property_query: str, unit_label: str, tenant_last_name: str, contact: str) -> Tenancy | None:
-    if not all([_safe_text(property_query), _safe_text(tenant_last_name), _safe_text(contact)]):
+def _verify_tenant_maintenance_identity(
+    *,
+    first_name: str,
+    last_name: str,
+    contact: str,
+    property_query: str = "",
+    unit_label: str = "",
+) -> Tenancy | None:
+    if not all([_safe_text(first_name), _safe_text(last_name), _safe_text(contact)]):
         return None
-    property_profiles = _property_verification_candidates(property_query)
+    property_profiles = _property_verification_candidates(property_query) if _safe_text(property_query) else None
     unit_label = _safe_text(unit_label)
     rows = Tenancy.objects.select_related("tenant", "property_profile", "unit", "property_profile__managed_by_company").filter(
-        property_profile__in=property_profiles,
         status=Tenancy.STATUS_ACTIVE,
         tenant__status=Tenant.STATUS_ACTIVE,
-        tenant__last_name__iexact=_safe_text(tenant_last_name),
+        tenant__first_name__iexact=_safe_text(first_name),
+        tenant__last_name__iexact=_safe_text(last_name),
         tenant__maintenance_access_enabled=True,
         property_profile__managed_by_company__is_active=True,
     )
+    if property_profiles is not None:
+        rows = rows.filter(property_profile__in=property_profiles)
     if unit_label:
         rows = rows.filter(
             unit__unit_label__iexact=unit_label,
             unit__status=PropertyUnit.STATUS_ACTIVE,
         )
-    else:
-        rows = rows.filter(
-            Q(unit__isnull=True)
-            | Q(unit__unit_type=PropertyUnit.UNIT_WHOLE_PROPERTY, unit__status=PropertyUnit.STATUS_ACTIVE)
-        )
-        property_ids = [row.property_profile_id for row in rows]
-        active_unit_counts = {
-            row["property_profile_id"]: row["count"]
-            for row in PropertyUnit.objects.filter(
-                property_profile_id__in=property_ids,
-                status=PropertyUnit.STATUS_ACTIVE,
-            )
-            .values("property_profile_id")
-            .annotate(count=Count("id"))
-        }
-        rows = [
-            row
-            for row in rows
-            if active_unit_counts.get(row.property_profile_id, 0) <= 1
-        ]
-    rows = (
-        rows
-        if isinstance(rows, list)
-        else rows.order_by("id")
-    )
+    rows = rows.order_by("id")
     matches = [row for row in rows if _tenant_contact_matches(row.tenant, contact)]
     if len(matches) != 1:
         return None
@@ -5448,6 +5449,8 @@ class TenantMaintenanceRequestPublicSerializer(serializers.Serializer):
 
 
 class TenantMaintenanceRequestVerifySerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
     property_query = serializers.CharField(max_length=255, required=False, allow_blank=True)
     unit_label = serializers.CharField(max_length=120, required=False, allow_blank=True)
     tenant_last_name = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -5456,16 +5459,19 @@ class TenantMaintenanceRequestVerifySerializer(serializers.Serializer):
     def validate(self, attrs):
         aliases = {
             "property_query": self.initial_data.get("property_query") or self.initial_data.get("property_name_or_address") or self.initial_data.get("property"),
-            "tenant_last_name": self.initial_data.get("tenant_last_name") or self.initial_data.get("last_name"),
+            "first_name": self.initial_data.get("first_name") or self.initial_data.get("tenant_first_name"),
+            "last_name": self.initial_data.get("last_name") or self.initial_data.get("tenant_last_name"),
         }
         for field, value in aliases.items():
             if value and not attrs.get(field):
                 attrs[field] = value
-        for field in ("property_query", "tenant_last_name", "contact"):
+        for field in ("first_name", "last_name", "contact"):
             attrs[field] = _safe_text(attrs.get(field))
             if not attrs[field]:
                 raise serializers.ValidationError({field: "This field is required."})
+        attrs["property_query"] = _safe_text(attrs.get("property_query"))
         attrs["unit_label"] = _safe_text(attrs.get("unit_label"))
+        attrs.pop("tenant_last_name", None)
         return attrs
 
 

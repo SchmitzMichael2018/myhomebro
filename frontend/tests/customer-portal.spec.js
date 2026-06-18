@@ -5099,6 +5099,7 @@ test("tenant maintenance request verification flow starts from landing and submi
         property: {
           id: 1,
           display_name: "Duplex on Main",
+          address: "123 Main St, Austin, TX, 78701",
         },
         unit: {
           id: 601,
@@ -5107,6 +5108,11 @@ test("tenant maintenance request verification flow starts from landing and submi
           unit_type_label: "Apartment",
           status: "active",
           status_label: "Active",
+        },
+        property_management_company: {
+          id: 44,
+          name: "Austin Rentals Group",
+          is_active: true,
         },
         units: [],
         categories: [
@@ -5152,18 +5158,21 @@ test("tenant maintenance request verification flow starts from landing and submi
   await expect(page).toHaveURL(/\/maintenance-request$/);
   await expect(page.getByTestId("tenant-maintenance-verify-form")).toBeVisible();
 
-  await page.getByTestId("tenant-maintenance-property").fill("123 Main St");
-  await page.getByTestId("tenant-maintenance-unit-label").fill("Unit A");
+  await page.getByTestId("tenant-maintenance-first-name").fill("Taylor");
   await page.getByTestId("tenant-maintenance-last-name").fill("Tenant");
   await page.getByTestId("tenant-maintenance-contact").fill("taylor@example.com");
   await page.getByTestId("tenant-maintenance-verify-submit").click();
 
   expect(verifyPayload).toMatchObject({
-    property_query: "123 Main St",
-    unit_label: "Unit A",
-    tenant_last_name: "Tenant",
+    first_name: "Taylor",
+    last_name: "Tenant",
     contact: "taylor@example.com",
   });
+  await expect(page.getByTestId("tenant-maintenance-residence-confirmation")).toContainText("Is this your residence?");
+  await expect(page.getByTestId("tenant-maintenance-residence-confirmation")).toContainText("123 Main St, Austin, TX, 78701");
+  await expect(page.getByTestId("tenant-maintenance-residence-confirmation")).toContainText("Unit: Unit A");
+  await expect(page.getByTestId("tenant-maintenance-residence-confirmation")).toContainText("Austin Rentals Group");
+  await page.getByTestId("tenant-maintenance-confirm-residence").click();
   await expect(page.getByTestId("tenant-maintenance-form")).toBeVisible();
   await expect(page.getByText("Duplex on Main")).toBeVisible();
   await expect(page.getByText("Unit: Unit A")).toBeVisible();
@@ -5211,8 +5220,14 @@ test("tenant maintenance request verification supports whole-property rentals wi
         property: {
           id: 7,
           display_name: "Single Family Rental",
+          address: "789 Oak St, Austin, TX, 78704",
         },
         unit: null,
+        property_management_company: {
+          id: 44,
+          name: "Austin Rentals Group",
+          is_active: true,
+        },
         units: [],
         categories: [
           { value: "plumbing", label: "Plumbing" },
@@ -5252,20 +5267,20 @@ test("tenant maintenance request verification supports whole-property rentals wi
 
   await page.goto("/maintenance-request", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("tenant-maintenance-verify-form")).toBeVisible();
-  await expect(page.getByText("Leave blank if this is a single-family rental or whole-property residence.")).toBeVisible();
 
-  await page.getByTestId("tenant-maintenance-property").fill("789 Oak St");
+  await page.getByTestId("tenant-maintenance-first-name").fill("Taylor");
   await page.getByTestId("tenant-maintenance-last-name").fill("Tenant");
   await page.getByTestId("tenant-maintenance-contact").fill("taylor@example.com");
   await expect(page.getByTestId("tenant-maintenance-verify-submit")).toBeEnabled();
   await page.getByTestId("tenant-maintenance-verify-submit").click();
 
   expect(verifyPayload).toMatchObject({
-    property_query: "789 Oak St",
-    unit_label: "",
-    tenant_last_name: "Tenant",
+    first_name: "Taylor",
+    last_name: "Tenant",
     contact: "taylor@example.com",
   });
+  await expect(page.getByTestId("tenant-maintenance-residence-confirmation")).toContainText("Whole property residence");
+  await page.getByTestId("tenant-maintenance-confirm-residence").click();
   await expect(page.getByTestId("tenant-maintenance-form")).toBeVisible();
   await expect(page.getByText("Single Family Rental")).toBeVisible();
   await expect(page.getByText("Unit:")).toHaveCount(0);
@@ -5301,8 +5316,7 @@ test("tenant maintenance verification failure is generic", async ({ page }) => {
   });
 
   await page.goto("/maintenance-request", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("tenant-maintenance-property").fill("Unknown property");
-  await page.getByTestId("tenant-maintenance-unit-label").fill("Unit Z");
+  await page.getByTestId("tenant-maintenance-first-name").fill("Wrong");
   await page.getByTestId("tenant-maintenance-last-name").fill("Wrong");
   await page.getByTestId("tenant-maintenance-contact").fill("wrong@example.com");
   await page.getByTestId("tenant-maintenance-verify-submit").click();
@@ -5327,15 +5341,14 @@ test("tenant maintenance blank-unit verification failure is generic", async ({ p
   });
 
   await page.goto("/maintenance-request", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("tenant-maintenance-property").fill("Duplex on Main");
+  await page.getByTestId("tenant-maintenance-first-name").fill("Taylor");
   await page.getByTestId("tenant-maintenance-last-name").fill("Tenant");
   await page.getByTestId("tenant-maintenance-contact").fill("taylor@example.com");
   await page.getByTestId("tenant-maintenance-verify-submit").click();
 
   expect(verifyPayload).toMatchObject({
-    property_query: "Duplex on Main",
-    unit_label: "",
-    tenant_last_name: "Tenant",
+    first_name: "Taylor",
+    last_name: "Tenant",
     contact: "taylor@example.com",
   });
   await expect(page.getByTestId("tenant-maintenance-verify-error")).toContainText(

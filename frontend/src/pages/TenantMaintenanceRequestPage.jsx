@@ -18,9 +18,10 @@ const DEFAULT_FORM = {
 };
 
 const DEFAULT_VERIFICATION_FORM = {
+  first_name: "",
+  last_name: "",
   property_query: "",
   unit_label: "",
-  tenant_last_name: "",
   contact: "",
 };
 
@@ -30,6 +31,8 @@ export default function TenantMaintenanceRequestPage() {
   const [form, setForm] = useState(DEFAULT_FORM);
   const [verificationForm, setVerificationForm] = useState(DEFAULT_VERIFICATION_FORM);
   const [verificationToken, setVerificationToken] = useState("");
+  const [pendingContext, setPendingContext] = useState(null);
+  const [residenceConfirmed, setResidenceConfirmed] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -46,6 +49,8 @@ export default function TenantMaintenanceRequestPage() {
     setAttachments([]);
     if (!token) {
       setContext(null);
+      setPendingContext(null);
+      setResidenceConfirmed(false);
       setForm(DEFAULT_FORM);
       setVerificationToken("");
       setVerificationError("");
@@ -89,8 +94,8 @@ export default function TenantMaintenanceRequestPage() {
 
   const canVerify = useMemo(() => {
     return Boolean(
-      verificationForm.property_query.trim() &&
-        verificationForm.tenant_last_name.trim() &&
+      verificationForm.first_name.trim() &&
+        verificationForm.last_name.trim() &&
         verificationForm.contact.trim()
     );
   }, [verificationForm]);
@@ -113,11 +118,12 @@ export default function TenantMaintenanceRequestPage() {
     setError("");
     try {
       const { data } = await api.post("/projects/maintenance-request/verify/", verificationForm);
-      setContext(data);
+      setPendingContext(data);
       setVerificationToken(data?.verification_token || "");
+      setResidenceConfirmed(false);
       setForm((prev) => ({
         ...prev,
-        submitted_by_name: verificationForm.tenant_last_name,
+        submitted_by_name: [verificationForm.first_name, verificationForm.last_name].filter(Boolean).join(" "),
         submitted_by_email: verificationForm.contact.includes("@") ? verificationForm.contact : prev.submitted_by_email,
         submitted_by_phone: verificationForm.contact.includes("@") ? prev.submitted_by_phone : verificationForm.contact,
         unit_id: data?.unit?.id ? String(data.unit.id) : prev.unit_id,
@@ -190,40 +196,26 @@ export default function TenantMaintenanceRequestPage() {
           ) : !token && !verificationToken && !context && !confirmation ? (
             <form data-testid="tenant-maintenance-verify-form" onSubmit={verifyTenant} className="mt-5 space-y-4">
               <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-300">
-                Enter your property, unit, and contact details so we can route your request to the right property manager.
+                Start with your name and contact information. We&apos;ll match it against the property manager&apos;s active tenant records before showing the request form.
               </div>
-
-              <label className="block text-sm font-medium text-slate-200">
-                Property name or address
-                <input
-                  data-testid="tenant-maintenance-property"
-                  value={verificationForm.property_query}
-                  onChange={(event) => updateVerification("property_query", event.target.value)}
-                  autoComplete="street-address"
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
-                />
-              </label>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm font-medium text-slate-200">
-                  Unit / apartment <span className="text-slate-400">(optional for single-family homes)</span>
+                  First name
                   <input
-                    data-testid="tenant-maintenance-unit-label"
-                    value={verificationForm.unit_label}
-                    onChange={(event) => updateVerification("unit_label", event.target.value)}
-                    autoComplete="address-line2"
+                    data-testid="tenant-maintenance-first-name"
+                    value={verificationForm.first_name}
+                    onChange={(event) => updateVerification("first_name", event.target.value)}
+                    autoComplete="given-name"
                     className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
                   />
-                  <span className="mt-1 block text-xs leading-5 text-slate-400">
-                    Leave blank if this is a single-family rental or whole-property residence.
-                  </span>
                 </label>
                 <label className="block text-sm font-medium text-slate-200">
                   Last name
                   <input
                     data-testid="tenant-maintenance-last-name"
-                    value={verificationForm.tenant_last_name}
-                    onChange={(event) => updateVerification("tenant_last_name", event.target.value)}
+                    value={verificationForm.last_name}
+                    onChange={(event) => updateVerification("last_name", event.target.value)}
                     autoComplete="family-name"
                     className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
                   />
@@ -241,6 +233,32 @@ export default function TenantMaintenanceRequestPage() {
                 />
               </label>
 
+              <details className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-300">
+                <summary className="cursor-pointer font-semibold text-slate-100">Need to narrow the match?</summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="block text-sm font-medium text-slate-200">
+                    Property name or address
+                    <input
+                      data-testid="tenant-maintenance-property"
+                      value={verificationForm.property_query}
+                      onChange={(event) => updateVerification("property_query", event.target.value)}
+                      autoComplete="street-address"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-slate-200">
+                    Unit / apartment
+                    <input
+                      data-testid="tenant-maintenance-unit-label"
+                      value={verificationForm.unit_label}
+                      onChange={(event) => updateVerification("unit_label", event.target.value)}
+                      autoComplete="address-line2"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                    />
+                  </label>
+                </div>
+              </details>
+
               {verificationError ? (
                 <div data-testid="tenant-maintenance-verify-error" className="rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">
                   {verificationError}
@@ -256,6 +274,31 @@ export default function TenantMaintenanceRequestPage() {
                 {verifying ? "Verifying..." : "Continue"}
               </button>
             </form>
+          ) : !token && verificationToken && pendingContext && !residenceConfirmed && !confirmation ? (
+            <div data-testid="tenant-maintenance-residence-confirmation" className="mt-5 space-y-4">
+              <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-4 text-sm text-slate-300">
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-amber-100">Is this your residence?</div>
+                <div className="mt-3 text-base font-semibold text-white">{pendingContext?.property?.display_name || "Managed property"}</div>
+                {pendingContext?.property?.address ? <div className="mt-1">{pendingContext.property.address}</div> : null}
+                <div className="mt-1">
+                  {pendingContext?.unit?.unit_label ? `Unit: ${pendingContext.unit.unit_label}` : "Whole property residence"}
+                </div>
+                {pendingContext?.property_management_company?.name ? (
+                  <div className="mt-1">Property manager: {pendingContext.property_management_company.name}</div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                data-testid="tenant-maintenance-confirm-residence"
+                onClick={() => {
+                  setContext(pendingContext);
+                  setResidenceConfirmed(true);
+                }}
+                className="w-full rounded-xl bg-amber-300 px-4 py-3 text-sm font-black text-slate-950 hover:bg-amber-200 sm:w-auto"
+              >
+                Yes, continue
+              </button>
+            </div>
           ) : error && !context ? (
             <div data-testid="tenant-maintenance-error" className="mt-5 rounded-xl border border-rose-300/35 bg-rose-400/10 p-4 text-sm text-rose-100">
               {error}
