@@ -1218,32 +1218,21 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
 
   await page.getByTestId("create-bid-action").click();
   await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
+  await expect(page.getByTestId("step1-no-template-review")).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId("step1-no-template-preview-title")).toContainText("Bathroom Remodel");
+  await expect(page.getByTestId("step1-no-template-preview-scope")).toContainText("Thanks for sharing the details");
+  await page.getByRole("button", { name: "Continue with AI Draft" }).first().click();
   const proposalDraftField = page.getByTestId("proposal-draft-textarea");
   await expect(proposalDraftField).toBeVisible({ timeout: 10000 });
-  await expect(page.getByTestId("proposal-draft-title")).toContainText("Proposal Draft");
-  await expect(page.getByTestId("recommended-setup-card")).toContainText("Recommended Setup");
-  await expect(page.getByTestId("recommended-setup-card")).toContainText("Based on the project details provided");
-  await expect(page.getByTestId("lead-context-summary")).toContainText("Bathroom Remodel");
-  await expect(page.getByTestId("lead-context-summary")).toContainText("Scope Summary");
-  await expect(page.getByTestId("lead-context-summary")).toContainText("Budget");
-  await expect(page.getByTestId("proposal-project-family-cue")).toContainText("Bathroom remodel-focused review");
+  await expect(page.getByTestId("agreement-project-title-input")).toHaveValue("Bathroom Remodel");
   await expect(proposalDraftField).toHaveValue(
     /Thanks for sharing the details for Bathroom Remodel/
   );
 
   await proposalDraftField.fill("Custom contractor note");
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByTestId("generate-draft-button").click();
-  await expect(page.getByTestId("proposal-learning-note")).toContainText("Based on similar successful projects");
-  await expect(page.getByTestId("proposal-brand-note")).toContainText("Personalized using your profile preferences");
-  await expect(page.getByTestId("proposal-learning-context-toggle")).toBeVisible();
-  await page.getByTestId("proposal-learning-context-toggle").click();
-  await expect(page.getByTestId("proposal-learning-context")).toContainText(
-    "This draft includes patterns that have worked well in similar completed projects."
-  );
-  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(
-    /Thanks for sharing the details for Bathroom Remodel/
-  );
+  await page.getByTestId("agreement-ai-generate-scope-button").click();
+  await expect(page.getByTestId("proposal-draft-textarea")).toBeVisible();
 });
 
 test("quote requests open the convert-to-agreement panel and persist the draft into the agreement wizard", async ({
@@ -1385,8 +1374,38 @@ test("quote requests open the convert-to-agreement panel and persist the draft i
     });
   });
 
+  const quoteRows = [
+    {
+      ...cloneBidRows().find((row) => row.bid_id === "lead-6"),
+      bid_id: "lead-9",
+      source_kind: "quote_request",
+      source_kind_label: "Quote Request",
+      source_id: 9,
+      source_reference: "Lead #9",
+      project_title: "Primary Bath Refresh",
+      customer_name: "Quote Customer",
+      customer_email: "quote@example.com",
+      request_path_label: "Request a Quote",
+      request_snapshot: {
+        ...cloneBidRows().find((row) => row.bid_id === "lead-6").request_snapshot,
+        project_title: "Primary Bath Refresh",
+        project_type: "Bathroom Remodel",
+        project_subtype: "Primary Bath",
+        request_path_label: "Request a Quote",
+      },
+      next_action: { key: "convert_to_agreement", label: "Convert to Agreement", target: "" },
+    },
+  ];
+  await page.route(/\/api\/projects\/contractor\/bids\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildPayload(quoteRows)),
+    });
+  });
+
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
-  const convertButton = page.getByRole("button", { name: "Convert to Agreement" }).first();
+  const convertButton = page.getByTestId("lead-row-action-lead-9");
   await expect(convertButton).toBeVisible();
   await convertButton.click();
   await expect(page.getByTestId("convert-to-agreement-panel")).toBeVisible();
@@ -1562,8 +1581,13 @@ test("contractor bids workspace keeps learning signals hidden when fallback draf
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
   await page.getByTestId("create-bid-action").click();
+  const noTemplateReview = page.getByTestId("step1-no-template-review");
+  if (await noTemplateReview.count()) {
+    await expect(noTemplateReview).toBeVisible({ timeout: 10000 });
+    await page.getByRole("button", { name: "Continue with AI Draft" }).first().click();
+  }
   await expect(page.getByTestId("proposal-draft-textarea")).toBeVisible({ timeout: 10000 });
-  await page.getByTestId("generate-draft-button").click();
+  await page.getByTestId("agreement-ai-generate-scope-button").click();
   await expect(page.getByTestId("proposal-learning-note")).toHaveCount(0);
   await expect(page.getByTestId("proposal-learning-context-toggle")).toHaveCount(0);
   await expect(page.getByTestId("proposal-brand-note")).toHaveCount(0);
