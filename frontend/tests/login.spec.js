@@ -14,6 +14,9 @@ test('landing page smoke renders core entry points', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'How It Works' }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'For Customers' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'For Contractors' })).toBeVisible();
+  await expect(page.getByTestId('landing-resident-maintenance-link')).toHaveText('Resident Maintenance');
+  await expect(page.getByTestId('landing-resident-maintenance-link')).toHaveAttribute('href', '/maintenance-request');
+  await expect(page.getByTestId('landing-maintenance-request-button')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Resources' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'About Us' })).toHaveCount(0);
 

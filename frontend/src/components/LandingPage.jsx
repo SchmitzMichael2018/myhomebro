@@ -131,6 +131,15 @@ export default function LandingPage() {
             <button type="button" onClick={() => scrollTo("for-contractors")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
               For Contractors
             </button>
+            <a
+              href="/maintenance-request"
+              data-testid="landing-resident-maintenance-link"
+              aria-label="Tenant or resident? Submit a maintenance request"
+              title="Tenant or resident? Submit a maintenance request"
+              className="rounded-full border border-amber-300/35 px-3 py-2 text-amber-200 transition hover:border-amber-200/70 hover:bg-amber-300/10 hover:text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+            >
+              Resident Maintenance
+            </a>
           </div>
 
           <div className="relative order-2 flex items-center gap-3 lg:order-3" ref={menuRef}>
@@ -198,15 +207,6 @@ export default function LandingPage() {
                 <span className="block">Start a Project</span>
                 <span className="block text-xs font-medium text-white/78">It&apos;s free to get started</span>
               </span>
-            </button>
-            <button
-              type="button"
-              data-testid="landing-maintenance-request-button"
-              onClick={() => navigate("/maintenance-request")}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200/40 bg-amber-300 px-6 py-4 text-base font-semibold text-slate-950 shadow-lg shadow-amber-950/20 transition hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
-            >
-              <Wrench className="h-5 w-5" aria-hidden="true" />
-              Submit Maintenance Request
             </button>
             <button
               type="button"

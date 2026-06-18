@@ -5147,7 +5147,8 @@ test("tenant maintenance request verification flow starts from landing and submi
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("landing-maintenance-request-button").click();
+  await expect(page.getByTestId("landing-maintenance-request-button")).toHaveCount(0);
+  await page.getByTestId("landing-resident-maintenance-link").click();
   await expect(page).toHaveURL(/\/maintenance-request$/);
   await expect(page.getByTestId("tenant-maintenance-verify-form")).toBeVisible();
 

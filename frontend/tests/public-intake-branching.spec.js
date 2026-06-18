@@ -278,6 +278,7 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("landing-start-project-intake-button")).toContainText("Start a Project");
   await expect(page.getByTestId("landing-customer-portal-button")).toContainText("Customer Log In");
   await expect(page.getByRole("button", { name: "For Contractors" })).toBeVisible();
+  await expect(page.getByTestId("landing-resident-maintenance-link")).toContainText("Resident Maintenance");
   await expect(page.getByRole("button", { name: "Contractor Sign Up" })).toBeVisible();
   await expect(page.getByTestId("landing-sign-in-button")).toHaveText("Log In");
   await page.getByTestId("landing-sign-in-button").click();
