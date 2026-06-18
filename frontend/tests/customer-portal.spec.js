@@ -3957,6 +3957,7 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("customer-dashboard-tab-account").click();
   await expect(page.getByTestId("customer-account-panel")).toContainText("My Profile");
+  await expect(page.getByTestId("address-autocomplete-suggestions")).toHaveCount(0);
   await expect(page.getByTestId("customer-profile-email")).toHaveValue("customer@example.com");
   await expect(page.getByTestId("customer-profile-phone")).toBeVisible();
   await expect(page.getByTestId("customer-account-type-section")).toContainText("Account Type");
@@ -4641,6 +4642,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Water heater warranty");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("water-heater-warranty.pdf");
 
+  const predictionInputsBeforePropertyTab = await page.evaluate(
+    () => window.__mhbPlacePredictionInputs?.length || 0
+  );
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
   await expect(page.getByTestId("property-command-summary")).toContainText("Kitchen Remodel");
@@ -4654,6 +4658,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-summary-selector")).toBeVisible();
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/text-white/);
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
+  await page.waitForTimeout(350);
+  await expect(page.getByTestId("address-autocomplete-suggestions")).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.__mhbPlacePredictionInputs || []))
+    .toHaveLength(predictionInputsBeforePropertyTab);
   await page.getByTestId("property-summary-edit").click();
   const propertyAddressSearch = page.getByTestId("customer-property-address-autocomplete").locator("input");
   await propertyAddressSearch.fill("1515 South Ellison");

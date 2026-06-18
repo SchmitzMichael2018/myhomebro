@@ -259,6 +259,8 @@ export default function AddressAutocomplete({
   const requestSeqRef = useRef(0);
   const editSeqRef = useRef(0);
   const selectedValuesRef = useRef(new Set());
+  const userSearchActiveRef = useRef(false);
+  const lastUserInputValueRef = useRef(null);
 
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState("");
@@ -313,12 +315,22 @@ export default function AddressAutocomplete({
   }, [apiKey]);
 
   useEffect(() => {
-    setInputValue(value || "");
+    const nextValue = value || "";
+    setInputValue(nextValue);
+    if (lastUserInputValueRef.current === nextValue) {
+      lastUserInputValueRef.current = null;
+      return;
+    }
+    userSearchActiveRef.current = false;
+    requestSeqRef.current += 1;
+    setPredictions([]);
+    setLoadingPredictions(false);
   }, [value]);
 
   useEffect(() => {
-    if (!ready || disabled) {
+    if (!ready || disabled || !userSearchActiveRef.current) {
       setPredictions([]);
+      setLoadingPredictions(false);
       return;
     }
 
@@ -374,6 +386,8 @@ export default function AddressAutocomplete({
   function handleInputChange(event) {
     const next = event.target.value;
     editSeqRef.current += 1;
+    userSearchActiveRef.current = true;
+    lastUserInputValueRef.current = next;
     if (!selectedValuesRef.current.has(String(next || "").trim())) {
       selectedValuesRef.current.clear();
     }
@@ -391,12 +405,22 @@ export default function AddressAutocomplete({
     if (disabled) return;
     editSeqRef.current += 1;
     requestSeqRef.current += 1;
+    userSearchActiveRef.current = false;
     selectedValuesRef.current.clear();
+    lastUserInputValueRef.current = "";
     setInputValue("");
     setPredictions([]);
     setLoadingPredictions(false);
     setErr("");
     onChangeText?.("");
+  }
+
+  function handleInputBlur() {
+    window.setTimeout(() => {
+      requestSeqRef.current += 1;
+      setPredictions([]);
+      setLoadingPredictions(false);
+    }, 120);
   }
 
   async function handleSelectPrediction(prediction) {
@@ -409,6 +433,7 @@ export default function AddressAutocomplete({
 
     if (!detailsService || !placeId) {
       requestSeqRef.current += 1;
+      userSearchActiveRef.current = false;
       selectedValuesRef.current.clear();
       if (predictionText) selectedValuesRef.current.add(predictionText);
       setInputValue(predictionText);
@@ -441,6 +466,7 @@ export default function AddressAutocomplete({
       const selectedValue = formatted_address || parts.line1 || "";
 
       requestSeqRef.current += 1;
+      userSearchActiveRef.current = false;
       selectedValuesRef.current.clear();
       if (selectedValue) selectedValuesRef.current.add(selectedValue);
       if (parts.line1) selectedValuesRef.current.add(parts.line1);
@@ -474,6 +500,7 @@ export default function AddressAutocomplete({
           }
           disabled={disabled}
           onChange={handleInputChange}
+          onBlur={handleInputBlur}
           placeholder={placeholder}
           type="text"
           value={inputValue || ""}
