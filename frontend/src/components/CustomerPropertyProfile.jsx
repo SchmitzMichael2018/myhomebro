@@ -2346,6 +2346,7 @@ export default function CustomerPropertyProfile({
       bathrooms: "",
       notes: "",
       is_primary: !profileOptions.length,
+      is_rental_property: false,
     };
     setSelectedProfileId("");
     setForm(next);
@@ -2367,6 +2368,7 @@ export default function CustomerPropertyProfile({
     setEditingSystemId(null);
     setSystemForm(emptySystemForm(selectedProfile?.id));
   };
+  const rentalToolsEnabled = Boolean(isPropertyManagementCompany || selectedProfile?.rental_tools_enabled || selectedProfile?.is_rental_property);
   const openAddSystem = () => {
     setEditingSystemId(null);
     setSystemForm(emptySystemForm(selectedProfile?.id));
@@ -2409,7 +2411,7 @@ export default function CustomerPropertyProfile({
         onAdd={startAddProperty}
       />
 
-      {isPropertyManagementCompany ? (
+      {rentalToolsEnabled ? (
         <>
           <PropertyUnitsSection
             units={selectedProfile?.units || []}
@@ -2555,6 +2557,11 @@ export default function CustomerPropertyProfile({
                 {property.is_primary ? (
                   <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
                     Primary Property
+                  </span>
+                ) : null}
+                {property.is_rental_property ? (
+                  <span className="rounded-full border border-sky-300/40 bg-sky-400/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
+                    Rental
                   </span>
                 ) : null}
               </div>
@@ -2720,6 +2727,21 @@ export default function CustomerPropertyProfile({
               className="h-4 w-4 rounded border-slate-600 bg-slate-950"
             />
             Make this my Primary Property
+          </label>
+          <label className="flex items-start gap-3 rounded-xl border border-sky-300/25 bg-slate-900/70 px-3 py-3 text-sm font-medium text-slate-200 sm:col-span-2">
+            <input
+              type="checkbox"
+              data-testid="property-rental-toggle"
+              checked={!!form?.is_rental_property}
+              onChange={(event) => update("is_rental_property", event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-950"
+            />
+            <span>
+              <span className="block text-sm font-semibold text-white">Rental Property</span>
+              <span className="mt-1 block text-xs leading-5 text-slate-400">
+                Enable tenant, unit, maintenance request, work order, and vendor tools for this property.
+              </span>
+            </span>
           </label>
           </div>
 

@@ -114,6 +114,7 @@ from projects.services.customer_portal_supplies import (
 from projects.services.google_places_contractors import search_google_places_contractors
 from projects.services.property_management import (
     company_payload,
+    create_or_sync_rental_owner_company_from_homeowner,
     create_or_sync_company_from_homeowner,
     homeowner_is_property_management_company,
     managed_properties_for_company,
@@ -653,7 +654,7 @@ def _resolve_tenant_maintenance_token(token: str):
     property_id = payload.get("property_id") if isinstance(payload, dict) else None
     unit_id = payload.get("unit_id") if isinstance(payload, dict) else None
     property_profile = get_object_or_404(PropertyProfile.objects.select_related("managed_by_company"), pk=property_id)
-    if not getattr(property_profile, "managed_by_company_id", None):
+    if not _property_accepts_tenant_maintenance(property_profile):
         return None, None, Response({"detail": "This property is not accepting tenant maintenance requests yet."}, status=status.HTTP_404_NOT_FOUND)
     unit = None
     if unit_id:
@@ -1095,7 +1096,8 @@ def _verify_tenant_maintenance_identity(
         tenant__first_name__iexact=_safe_text(first_name),
         tenant__last_name__iexact=_safe_text(last_name),
         tenant__maintenance_access_enabled=True,
-        property_profile__managed_by_company__is_active=True,
+    ).filter(
+        Q(property_profile__managed_by_company__is_active=True) | Q(property_profile__is_rental_property=True)
     )
     if property_profiles is not None:
         rows = rows.filter(property_profile__in=property_profiles)
@@ -1131,9 +1133,8 @@ def _resolve_verified_tenant_maintenance_token(token: str):
             status=Tenancy.STATUS_ACTIVE,
             tenant__status=Tenant.STATUS_ACTIVE,
             tenant__maintenance_access_enabled=True,
-            property_profile__managed_by_company__isnull=False,
-            property_profile__managed_by_company__is_active=True,
         )
+        .filter(Q(property_profile__managed_by_company__is_active=True) | Q(property_profile__is_rental_property=True))
         .first()
     )
     if tenancy is None:
@@ -1208,6 +1209,89 @@ def _property_management_company_for_email_or_response(email: str):
     return company, None
 
 
+def _rental_tools_company_for_email_or_response(email: str):
+    normalized_email = email.lower().strip()
+    homeowner = _primary_homeowner_for_email(normalized_email)
+    if homeowner_is_property_management_company(homeowner):
+        return _property_management_company_for_email_or_response(normalized_email)
+    has_rental_property = PropertyProfile.objects.filter(
+        customer_email__iexact=normalized_email,
+        is_rental_property=True,
+    ).exists()
+    if not has_rental_property:
+        return None, Response(
+            {"detail": "This action is available only for property management company accounts or rental properties."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    company = create_or_sync_rental_owner_company_from_homeowner(homeowner)
+    if company is None:
+        return None, Response(
+            {"detail": "This action is available only for property management company accounts or rental properties."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    PropertyProfile.objects.filter(
+        customer_email__iexact=normalized_email,
+        is_rental_property=True,
+        managed_by_company__isnull=True,
+    ).update(managed_by_company=company, updated_at=timezone.now())
+    return company, None
+
+
+def _rental_tools_property_for_email_or_404(email: str, property_id: int):
+    normalized_email = email.lower().strip()
+    homeowner = _primary_homeowner_for_email(normalized_email)
+    if homeowner_is_property_management_company(homeowner):
+        company, error = _property_management_company_for_email_or_response(normalized_email)
+        if error is not None:
+            return None, None, error
+        property_profile = get_object_or_404(
+            PropertyProfile.objects.filter(
+                id=property_id,
+                customer_email__iexact=normalized_email,
+            ).filter(
+                Q(managed_by_company=company) | Q(managed_by_company__isnull=True)
+            )
+        )
+        if property_profile.managed_by_company_id is None:
+            property_profile.managed_by_company = company
+            property_profile.save(update_fields=["managed_by_company", "updated_at"])
+        return company, property_profile, None
+
+    property_profile = get_object_or_404(
+        PropertyProfile.objects.select_related("managed_by_company").filter(
+            id=property_id,
+            customer_email__iexact=normalized_email,
+        )
+    )
+    if not property_profile.is_rental_property:
+        return None, None, Response(
+            {"detail": "This action is available only for property management company accounts or rental properties."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    company = create_or_sync_rental_owner_company_from_homeowner(homeowner)
+    if company is None:
+        return None, None, Response(
+            {"detail": "This action is available only for property management company accounts or rental properties."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if property_profile.managed_by_company_id and property_profile.managed_by_company_id != company.id:
+        raise Http404
+    if property_profile.managed_by_company_id is None:
+        property_profile.managed_by_company = company
+        property_profile.save(update_fields=["managed_by_company", "updated_at"])
+    return company, property_profile, None
+
+
+def _property_accepts_tenant_maintenance(property_profile: PropertyProfile | None) -> bool:
+    if property_profile is None:
+        return False
+    managed_company = getattr(property_profile, "managed_by_company", None)
+    return bool(
+        getattr(property_profile, "is_rental_property", False)
+        or (managed_company and getattr(managed_company, "is_active", False))
+    )
+
+
 def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
     address = ", ".join(
         part
@@ -1271,6 +1355,11 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "bathrooms": str(profile.bathrooms) if profile.bathrooms is not None else None,
         "notes": _safe_text(profile.notes),
         "is_primary": bool(getattr(profile, "is_primary", False)),
+        "is_rental_property": bool(getattr(profile, "is_rental_property", False)),
+        "rental_tools_enabled": bool(
+            getattr(profile, "is_rental_property", False)
+            or (managed_by_company and homeowner_is_property_management_company(getattr(managed_by_company, "homeowner", None)))
+        ),
         "documents": documents,
         "photos": photos,
         "home_systems": home_systems,
@@ -3575,13 +3664,19 @@ def _customer_profile_payload(email: str) -> dict:
 def _customer_account_payload(email: str) -> dict:
     user = User.objects.filter(email__iexact=email).first()
     homeowner = _primary_homeowner_for_email(email)
-    company = create_or_sync_company_from_homeowner(homeowner)
     profile = _customer_profile_payload(email)
     is_property_management_company = profile["account_type"] == getattr(
         Homeowner,
         "ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY",
         "property_management_company",
     )
+    has_rental_properties = PropertyProfile.objects.filter(customer_email__iexact=email, is_rental_property=True).exists()
+    if is_property_management_company:
+        company = create_or_sync_company_from_homeowner(homeowner)
+    elif has_rental_properties:
+        company = create_or_sync_rental_owner_company_from_homeowner(homeowner)
+    else:
+        company = None
     return {
         "email": email,
         "has_user": bool(user),
@@ -3589,6 +3684,7 @@ def _customer_account_payload(email: str) -> dict:
         "portal_token": _portal_token(email),
         "account_type": profile["account_type"],
         "is_property_management_company": is_property_management_company,
+        "has_rental_properties": has_rental_properties,
         "company": company_payload(company),
         "team_members": _property_management_team_payload(company),
         "vendors": _property_vendor_rows(company),
@@ -5388,6 +5484,7 @@ class CustomerPortalPropertyProfileSerializer(serializers.Serializer):
     )
     notes = serializers.CharField(required=False, allow_blank=True)
     is_primary = serializers.BooleanField(required=False)
+    is_rental_property = serializers.BooleanField(required=False)
 
 
 class CustomerPortalPropertyUnitSerializer(serializers.Serializer):
@@ -5877,7 +5974,7 @@ class CustomerPortalVendorView(APIView):
         email, error = self._email_from_token(token)
         if error is not None:
             return None, None, error
-        company, error = _property_management_company_for_email_or_response(email)
+        company, error = _rental_tools_company_for_email_or_response(email)
         if error is not None:
             return email, None, error
         return email, company, None
@@ -5951,7 +6048,7 @@ class CustomerPortalVendorContractorSearchView(APIView):
             return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
         except signing.BadSignature:
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
-        company, error = _property_management_company_for_email_or_response(email)
+        company, error = _rental_tools_company_for_email_or_response(email)
         if error is not None:
             return error
 
@@ -5996,7 +6093,7 @@ class CustomerPortalVendorBusinessSearchView(APIView):
             return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
         except signing.BadSignature:
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
-        company, error = _property_management_company_for_email_or_response(email)
+        company, error = _rental_tools_company_for_email_or_response(email)
         if error is not None:
             return error
 
@@ -6058,7 +6155,7 @@ class CustomerPortalVendorImportView(APIView):
             return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
         except signing.BadSignature:
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
-        company, error = _property_management_company_for_email_or_response(email)
+        company, error = _rental_tools_company_for_email_or_response(email)
         if error is not None:
             return error
 
@@ -6131,20 +6228,9 @@ class CustomerPortalPropertyUnitView(APIView):
         email, error = self._email_from_token(token)
         if error is not None:
             return None, None, error
-        company, error = _property_management_company_for_email_or_response(email)
+        _company, property_profile, error = _rental_tools_property_for_email_or_404(email, property_id)
         if error is not None:
             return email, None, error
-        property_profile = get_object_or_404(
-            PropertyProfile.objects.filter(
-                id=property_id,
-                customer_email__iexact=email.lower().strip(),
-            ).filter(
-                Q(managed_by_company=company) | Q(managed_by_company__isnull=True)
-            )
-        )
-        if property_profile.managed_by_company_id is None:
-            property_profile.managed_by_company = company
-            property_profile.save(update_fields=["managed_by_company", "updated_at"])
         return email, property_profile, None
 
     def _duplicate_response(self):
@@ -6254,20 +6340,9 @@ class CustomerPortalTenantView(APIView):
         email, error = self._email_from_token(token)
         if error is not None:
             return None, None, None, error
-        company, error = _property_management_company_for_email_or_response(email)
+        company, property_profile, error = _rental_tools_property_for_email_or_404(email, property_id)
         if error is not None:
             return email, company, None, error
-        property_profile = get_object_or_404(
-            PropertyProfile.objects.filter(
-                id=property_id,
-                customer_email__iexact=email.lower().strip(),
-            ).filter(
-                Q(managed_by_company=company) | Q(managed_by_company__isnull=True)
-            )
-        )
-        if property_profile.managed_by_company_id is None:
-            property_profile.managed_by_company = company
-            property_profile.save(update_fields=["managed_by_company", "updated_at"])
         return email, company, property_profile, None
 
     def _unit_for_property_or_none(self, property_profile: PropertyProfile, unit_id):
@@ -6555,16 +6630,9 @@ class CustomerPortalPropertyWorkOrderView(APIView):
         email, error = self._email_from_token(token)
         if error is not None:
             return None, None, None, error
-        company, error = _property_management_company_for_email_or_response(email)
+        company, property_profile, error = _rental_tools_property_for_email_or_404(email, property_id)
         if error is not None:
             return email, None, None, error
-        property_profile = get_object_or_404(
-            PropertyProfile.objects.filter(
-                id=property_id,
-                customer_email__iexact=email.lower().strip(),
-                managed_by_company=company,
-            )
-        )
         return email, company, property_profile, None
 
     def _unit_for_property_or_none(self, property_profile: PropertyProfile, unit_id):
@@ -7034,16 +7102,9 @@ class CustomerPortalTenantMaintenanceRequestView(APIView):
         email, error = self._email_from_token(token)
         if error is not None:
             return None, None, None, error
-        company, error = _property_management_company_for_email_or_response(email)
+        company, property_profile, error = _rental_tools_property_for_email_or_404(email, property_id)
         if error is not None:
             return email, company, None, error
-        property_profile = get_object_or_404(
-            PropertyProfile.objects.filter(
-                id=property_id,
-                customer_email__iexact=email.lower().strip(),
-                managed_by_company=company,
-            )
-        )
         return email, company, property_profile, None
 
     def get(self, request, token: str, property_id: int):

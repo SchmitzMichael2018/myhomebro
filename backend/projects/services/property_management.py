@@ -80,6 +80,46 @@ def create_or_sync_company_from_homeowner(homeowner: Homeowner | None) -> Proper
     return company
 
 
+def create_or_sync_rental_owner_company_from_homeowner(homeowner: Homeowner | None) -> PropertyManagementCompany | None:
+    if homeowner is None:
+        return None
+    if homeowner_is_property_management_company(homeowner):
+        return create_or_sync_company_from_homeowner(homeowner)
+
+    name = (
+        _safe_text(getattr(homeowner, "company_name", ""))
+        or _safe_text(getattr(homeowner, "full_name", ""))
+        or _safe_text(getattr(homeowner, "email", ""))
+        or "Rental Properties"
+    )
+    defaults = {
+        "name": name,
+        "phone": _safe_text(getattr(homeowner, "phone_number", "")),
+        "email": _safe_text(getattr(homeowner, "email", "")),
+        "address_line1": _safe_text(getattr(homeowner, "street_address", "")),
+        "address_line2": _safe_text(getattr(homeowner, "address_line_2", "")),
+        "city": _safe_text(getattr(homeowner, "city", "")),
+        "state": _safe_text(getattr(homeowner, "state", "")),
+        "postal_code": _safe_text(getattr(homeowner, "zip_code", "")),
+        "is_active": True,
+    }
+    company, created = PropertyManagementCompany.objects.get_or_create(
+        homeowner=homeowner,
+        defaults=defaults,
+    )
+    if not created:
+        update_fields = []
+        for field, value in defaults.items():
+            if field != "is_active" and not value:
+                continue
+            if getattr(company, field) != value:
+                setattr(company, field, value)
+                update_fields.append(field)
+        if update_fields:
+            company.save(update_fields=[*update_fields, "updated_at"])
+    return company
+
+
 def managed_properties_for_company(company: PropertyManagementCompany | None):
     if company is None:
         return PropertyProfile.objects.none()

@@ -5549,6 +5549,86 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
 });
 
+test("individual customer rental toggle unlocks tenant and unit tools for that property", async ({ page }) => {
+  let currentPayload = {
+    ...emptyPortalPayload,
+    account: {
+      ...emptyPortalPayload.account,
+      has_rental_properties: false,
+    },
+    property_profile: {
+      ...emptyPortalPayload.property_profile,
+      id: 44,
+      display_name: "Rental House",
+      is_rental_property: false,
+      rental_tools_enabled: false,
+    },
+    property_profiles: [
+      {
+        ...emptyPortalPayload.property_profile,
+        id: 44,
+        display_name: "Rental House",
+        is_rental_property: false,
+        rental_tools_enabled: false,
+      },
+    ],
+  };
+
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    if (!requestUrl.includes("/customer-portal/rental-toggle-token/")) {
+      await route.fallback();
+      return;
+    }
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPayload),
+      });
+      return;
+    }
+    if (route.request().method() === "PATCH" && requestUrl.endsWith("/property/")) {
+      const body = route.request().postDataJSON();
+      currentPayload = {
+        ...currentPayload,
+        account: {
+          ...currentPayload.account,
+          has_rental_properties: Boolean(body.is_rental_property),
+        },
+        property_profile: {
+          ...currentPayload.property_profile,
+          ...body,
+          rental_tools_enabled: Boolean(body.is_rental_property),
+        },
+        property_profiles: currentPayload.property_profiles.map((property) =>
+          property.id === body.id
+            ? { ...property, ...body, rental_tools_enabled: Boolean(body.is_rental_property) }
+            : property
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPayload),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/rental-toggle-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-property").click();
+  await expect(page.getByTestId("property-units-section")).toHaveCount(0);
+  await expect(page.getByTestId("property-tenants-section")).toHaveCount(0);
+
+  await page.getByTestId("property-rental-toggle").check();
+  await page.getByRole("button", { name: "Save property profile" }).click();
+
+  await expect(page.getByTestId("property-units-section")).toBeVisible();
+  await expect(page.getByTestId("property-tenants-section")).toBeVisible();
+});
+
 test("customer portal limits long home records, payments, and documents without dead timeline links", async ({ page }) => {
   let amendmentPayload = null;
   await page.route("**/api/projects/customer-portal/**", async (route) => {

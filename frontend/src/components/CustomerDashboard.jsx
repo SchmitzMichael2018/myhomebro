@@ -2442,6 +2442,11 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
   const isCompanyAccount = form.account_type === "property_management_company";
+  const canManageVendors = Boolean(
+    isCompanyAccount ||
+      account.has_rental_properties ||
+      linkedProperties.some((property) => property?.is_rental_property)
+  );
   const teamMembers = Array.isArray(account.team_members) ? account.team_members : [];
   const vendors = Array.isArray(account.vendors) ? account.vendors : [];
 
@@ -2626,8 +2631,10 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
           </label>
         </div>
 
-        {isCompanyAccount ? (
+        {canManageVendors ? (
           <div className="mt-4 space-y-4">
+            {isCompanyAccount ? (
+              <>
             <div data-testid="customer-company-profile-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
               <h3 className="text-base font-semibold text-white">Company Profile</h3>
               <p className="mt-1 text-xs leading-5 text-slate-300">
@@ -2832,6 +2839,8 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
                 )}
               </div>
             </div>
+              </>
+            ) : null}
 
             <div data-testid="pm-vendors-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -3622,6 +3631,17 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
   };
   const tabContent = useMemo(() => {
+    const isPropertyManagementAccount = Boolean(
+      portal?.account?.is_property_management_company ||
+        portal?.account?.account_type === "property_management_company" ||
+        portal?.customer?.account_type === "property_management_company"
+    );
+    const hasRentalTools = Boolean(
+      isPropertyManagementAccount ||
+        portal?.account?.has_rental_properties ||
+        portal?.property_profile?.rental_tools_enabled ||
+        (portal?.property_profiles || []).some((property) => property?.rental_tools_enabled || property?.is_rental_property)
+    );
     if (activeTab === "overview") {
       return (
         <OverviewPanel
@@ -3665,7 +3685,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           vendors={portal?.account?.vendors || []}
           propertyProfile={portal?.property_profile || {}}
           propertyProfiles={portal?.property_profiles || []}
-          isPropertyManagementCompany={Boolean(portal?.account?.is_property_management_company || portal?.account?.account_type === "property_management_company" || portal?.customer?.account_type === "property_management_company")}
+          isPropertyManagementCompany={hasRentalTools}
           creating={creatingRequest}
           acceptingBidId={acceptingBidId}
           focusedRequestId={focusedRequestId}
@@ -3791,7 +3811,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           payments={portal?.payments || []}
           maintenanceWorkOrders={portal?.maintenance_work_orders || []}
           propertyIntelligence={portal?.property_intelligence || {}}
-          isPropertyManagementCompany={Boolean(portal?.account?.is_property_management_company || portal?.account?.account_type === "property_management_company" || portal?.customer?.account_type === "property_management_company")}
+          isPropertyManagementCompany={isPropertyManagementAccount}
           onOpenRequest={openRequestFromPropertyTimeline}
           saving={savingProperty}
           unitSaving={savingUnit}

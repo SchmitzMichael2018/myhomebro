@@ -20473,6 +20473,98 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(create_response.status_code, 403)
         self.assertEqual(PropertyUnit.objects.count(), 0)
 
+    def test_individual_customer_can_mark_property_as_rental(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Rental House",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/property/",
+            {"id": property_profile.id, "is_rental_property": True},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        property_profile.refresh_from_db()
+        self.assertTrue(property_profile.is_rental_property)
+        payload = next(row for row in response.data["property_profiles"] if row["id"] == property_profile.id)
+        self.assertTrue(payload["is_rental_property"])
+        self.assertTrue(payload["rental_tools_enabled"])
+        self.assertEqual(self.customer_homeowner.account_type, Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
+
+    def test_individual_rental_property_can_manage_units_tenants_vendors_and_work_orders(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Rental Duplex",
+            property_type=PropertyProfile.PROPERTY_TYPE_MULTI_FAMILY,
+            is_rental_property=True,
+        )
+
+        unit_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/units/",
+            {
+                "unit_label": "Unit A",
+                "unit_type": PropertyUnit.UNIT_APARTMENT,
+                "status": PropertyUnit.STATUS_ACTIVE,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(unit_response.status_code, 201, unit_response.data)
+        property_profile.refresh_from_db()
+        company = property_profile.managed_by_company
+        self.assertIsNotNone(company)
+        self.assertEqual(company.homeowner, self.customer_homeowner)
+        self.assertEqual(self.customer_homeowner.account_type, Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
+        unit = PropertyUnit.objects.get(property_profile=property_profile)
+
+        tenant_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/tenants/",
+            {
+                "first_name": "Riley",
+                "last_name": "Resident",
+                "email": "riley@example.com",
+                "phone": "512-555-1212",
+                "unit_id": unit.id,
+                "status": Tenancy.STATUS_ACTIVE,
+                "maintenance_access_enabled": True,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(tenant_response.status_code, 201, tenant_response.data)
+        tenancy = Tenancy.objects.select_related("tenant").get(property_profile=property_profile)
+        self.assertEqual(tenancy.tenant.company, company)
+
+        vendor_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/vendors/",
+            {"name": "Rental Pipe Pros", "trade_category": "Plumbing"},
+            content_type="application/json",
+        )
+        self.assertEqual(vendor_response.status_code, 201, vendor_response.data)
+        vendor = PropertyVendor.objects.get(name="Rental Pipe Pros")
+        self.assertEqual(vendor.property_management_company, company)
+
+        work_order_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/",
+            {
+                "title": "Fix sink",
+                "description": "Repair the kitchen sink leak.",
+                "unit_id": unit.id,
+                "tenant_id": tenancy.tenant.id,
+                "assignment_type": PropertyWorkOrder.ASSIGNMENT_VENDOR,
+                "assigned_vendor_id": vendor.id,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(work_order_response.status_code, 201, work_order_response.data)
+        row = PropertyWorkOrder.objects.get(property_profile=property_profile)
+        self.assertEqual(row.property_management_company, company)
+        self.assertEqual(row.assigned_vendor, vendor)
+
     def test_property_management_company_can_list_create_edit_and_mark_former_tenants(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
@@ -20706,6 +20798,48 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.data["unit"]["unit_label"], "Unit A")
         self.assertEqual(response.data["property_management_company"]["name"], "Austin Rentals Group")
         self.assertNotIn("tenant", response.data)
+
+    def test_tenant_maintenance_verification_succeeds_for_individual_rental_property(self):
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Rental House",
+            address_line1="456 Oak St",
+            city="Austin",
+            state="TX",
+            postal_code="78702",
+            is_rental_property=True,
+        )
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Alex Rental Properties")
+        property_profile.managed_by_company = company
+        property_profile.save(update_fields=["managed_by_company", "updated_at"])
+        tenant = Tenant.objects.create(
+            company=company,
+            first_name="Taylor",
+            last_name="Tenant",
+            email="taylor@example.com",
+            phone="512-555-1111",
+            status=Tenant.STATUS_ACTIVE,
+            maintenance_access_enabled=True,
+        )
+        Tenancy.objects.create(
+            tenant=tenant,
+            property_profile=property_profile,
+            unit=None,
+            status=Tenancy.STATUS_ACTIVE,
+        )
+
+        response = self.client.post(
+            "/api/projects/maintenance-request/verify/",
+            self._verification_payload(),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["verification_token"])
+        self.assertEqual(response.data["property"]["display_name"], "Rental House")
+        self.assertIsNone(response.data["unit"])
+        self.assertEqual(self.customer_homeowner.account_type, Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
 
     def test_tenant_maintenance_verification_succeeds_with_optional_property_unit_narrowing(self):
         _company, _property_profile, _unit, _tenant, _tenancy = self._create_verifiable_tenant_maintenance_context()
