@@ -327,6 +327,22 @@ const portalPayload = {
       documents: [],
       photos: [],
     },
+    {
+      id: 3,
+      customer_email: "customer@example.com",
+      display_name: "88 Pine St, Austin, TX, 78704",
+      property_type: "single_family",
+      property_type_label: "Single Family",
+      address_line1: "88 Pine St",
+      city: "Austin",
+      state: "TX",
+      postal_code: "78704",
+      address: "88 Pine St, Austin, TX, 78704",
+      is_primary: false,
+      home_systems: [],
+      documents: [],
+      photos: [],
+    },
   ],
   projects: [
     {
@@ -4518,6 +4534,13 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByText("Tell us what's going on in your own words. MyHomeBro can help organize it before you submit.")).toBeVisible();
   await expect(page.getByText("Choose the property this request is for.")).toBeVisible();
   await expect(page.getByTestId("customer-request-property-selector")).toBeVisible();
+  await page.getByTestId("customer-request-property-selector").selectOption("2");
+  await expect(page.getByTestId("customer-request-property-summary")).toContainText("Lake House");
+  await expect(page.getByTestId("customer-request-property-summary")).toContainText("44 Lake Dr");
+  await page.getByTestId("customer-request-property-selector").selectOption("3");
+  await expect(page.getByTestId("customer-request-property-summary")).toContainText("88 Pine St, Austin, TX, 78704");
+  const duplicateAddressSummaryText = await page.getByTestId("customer-request-property-summary").innerText();
+  expect((duplicateAddressSummaryText.match(/88 Pine St, Austin, TX, 78704/g) || []).length).toBe(1);
   await page.getByTestId("customer-request-property-selector").selectOption("2");
   await expect(page.getByTestId("customer-request-property-summary")).toContainText("Lake House");
   await expect(page.getByTestId("customer-request-property-summary")).toContainText("44 Lake Dr");

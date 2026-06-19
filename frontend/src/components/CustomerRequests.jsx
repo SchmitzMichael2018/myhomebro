@@ -1232,6 +1232,12 @@ export default function CustomerRequests({
     selectedRequestProperty?.state,
     selectedRequestProperty?.postal_code,
   ].filter(Boolean).join(", ") || selectedRequestProperty?.address || "";
+  const selectedRequestPropertyTitle = selectedRequestProperty?.display_name || selectedRequestProperty?.address || "Saved property";
+  const normalizePropertySummaryText = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const selectedRequestPropertyAddressIsDuplicate = Boolean(
+    selectedRequestPropertyAddress &&
+      normalizePropertySummaryText(selectedRequestPropertyAddress) === normalizePropertySummaryText(selectedRequestPropertyTitle)
+  );
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -1692,12 +1698,14 @@ I need help installing shelves and patching drywall.`}
                 <div data-testid="customer-request-property-summary" className="mt-3 rounded-xl border border-amber-200/25 bg-slate-950/55 p-3">
                   <div className="text-xs font-bold uppercase tracking-wide text-amber-100">Selected property</div>
                   <div className="mt-1 text-sm font-semibold text-white">
-                    {selectedRequestProperty.display_name || selectedRequestProperty.address || "Saved property"}
+                    {selectedRequestPropertyTitle}
                   </div>
-                  {selectedRequestPropertyAddress ? (
+                  {selectedRequestPropertyAddress && !selectedRequestPropertyAddressIsDuplicate ? (
                     <div className="mt-1 text-sm text-slate-300">{selectedRequestPropertyAddress}</div>
                   ) : (
-                    <div className="mt-1 text-sm text-slate-400">Address saved on property profile.</div>
+                    !selectedRequestPropertyAddress ? (
+                      <div className="mt-1 text-sm text-slate-400">Address saved on property profile.</div>
+                    ) : null
                   )}
                 </div>
               ) : null}
