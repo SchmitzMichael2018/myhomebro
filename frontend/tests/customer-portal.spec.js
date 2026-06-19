@@ -4160,6 +4160,17 @@ test("customer portal is reachable from the landing page and loads secure record
     company_license_number: "PM-12345",
     company_notes: "Portfolio onboarding account.",
   });
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([
+    /Overview/,
+    /Maintenance/,
+    /Requests/,
+    /Projects/,
+    /Property/,
+    /Payments/,
+    /Documents/,
+    /Notifications/,
+    /Account/,
+  ]);
   await page.getByTestId("customer-account-type-individual").check();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
   await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
@@ -4369,11 +4380,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Maintenance Request");
   await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Review maintenance request");
   await page.getByTestId("home-records-timeline-action-tenant-maintenance-801").click();
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Review maintenance request");
   await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("tenant-maintenance-review-queue")).toHaveCount(0);
+  await expect(page.getByTestId("property-work-orders-section")).toHaveCount(0);
+  await expect(page.getByTestId("customer-portal-requests")).toContainText("Project & Service Requests");
+  await page.getByTestId("customer-dashboard-tab-maintenance").click();
 
   await expect(page.getByTestId("property-work-orders-section")).toContainText("Work Orders");
   await expect(page.getByTestId("property-work-orders-empty")).toContainText("No work orders yet");
@@ -4522,6 +4538,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-902")).toContainText("Sam Supervisor");
   await expect(page.getByTestId("property-work-order-902")).toContainText("Scheduled");
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
+  await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();
   await expect(page.getByTestId("customer-request-create-panel")).toContainText("Tell us what you need help with next");
   await expect(page.getByRole("heading", { name: "Project & Service Requests" })).toBeVisible();
@@ -5634,6 +5651,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
 
   await page.goto("/portal/empty-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveCount(0);
   await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new notifications");
   await expect(page.getByTestId("customer-overview-projects-empty")).toContainText("No active projects yet");
   await expect(page.getByTestId("customer-overview-requests-empty")).toContainText("No requests yet");
@@ -5748,6 +5766,7 @@ test("individual customer rental toggle unlocks tenant and unit tools for that p
   });
 
   await page.goto("/portal/rental-toggle-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveCount(0);
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-units-section")).toHaveCount(0);
   await expect(page.getByTestId("property-tenants-section")).toHaveCount(0);
@@ -5757,6 +5776,9 @@ test("individual customer rental toggle unlocks tenant and unit tools for that p
 
   await expect(page.getByTestId("property-units-section")).toBeVisible();
   await expect(page.getByTestId("property-tenants-section")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toBeVisible();
+  await page.getByTestId("customer-dashboard-tab-maintenance").click();
+  await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
 });
 
 test("customer portal limits long home records, payments, and documents without dead timeline links", async ({ page }) => {

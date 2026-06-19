@@ -1079,6 +1079,7 @@ export default function CustomerRequests({
   onFocusedRequestHandled,
   initialDraft = null,
   onInitialDraftHandled,
+  mode = "requests",
 }) {
   const [pendingAwardBid, setPendingAwardBid] = useState(null);
   const [activeComparisonKey, setActiveComparisonKey] = useState("");
@@ -1523,6 +1524,61 @@ export default function CustomerRequests({
     payment_preference: request.payment_preference,
   });
 
+  if (mode === "maintenance") {
+    return (
+      <div data-testid="customer-maintenance-workspace" className="space-y-5">
+        <section className="rounded-2xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.14),transparent_34%),rgba(15,23,42,0.78)] p-5 shadow-xl shadow-slate-950/20">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Maintenance</div>
+              <h2 className="mt-1 text-xl font-semibold text-white">Resident maintenance review</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
+                Review resident-submitted requests, inspect photos and attachments, update status, and create work orders when approved.
+              </p>
+            </div>
+            <Badge>{tenantMaintenanceRequests.length} request{tenantMaintenanceRequests.length === 1 ? "" : "s"}</Badge>
+          </div>
+          <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status filters</div>
+              <div className="mt-1 text-slate-200">Submitted, under review, approved, closed</div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Property / unit filters</div>
+              <div className="mt-1 text-slate-200">Use property, unit, and resident details on each request</div>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Urgency filters</div>
+              <div className="mt-1 text-slate-200">Emergency, urgent, normal, low</div>
+            </div>
+          </div>
+        </section>
+
+        <TenantMaintenanceReviewQueue
+          requests={tenantMaintenanceRequests}
+          onReview={reviewTenantMaintenanceRequest}
+          onCreateWorkOrder={convertTenantRequestToWorkOrder}
+          updatingId={updatingTenantMaintenanceRequestId}
+          convertingId={convertingTenantMaintenanceRequestId}
+        />
+
+        <PropertyWorkOrdersSection
+          workOrders={propertyWorkOrders}
+          propertyProfile={propertyProfile}
+          propertyProfiles={propertyProfiles}
+          teamMembers={teamMembers}
+          vendors={vendors}
+          onCreate={createPropertyWorkOrder}
+          onUpdate={updatePropertyWorkOrder}
+          onSendToMarketplace={onSendPropertyWorkOrderToMarketplace}
+          onWithdrawMarketplace={onWithdrawPropertyWorkOrderMarketplace}
+          onCreateAgreementDraft={onCreatePropertyWorkOrderAgreementDraft}
+          saving={savingPropertyWorkOrder}
+        />
+      </div>
+    );
+  }
+
   return (
     <div data-testid="customer-requests" className="space-y-5">
       <form onSubmit={submit} data-testid="customer-request-create-panel" className="rounded-2xl border border-amber-300/35 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.14),transparent_34%),rgba(15,23,42,0.78)] p-5 shadow-xl shadow-slate-950/20">
@@ -1898,31 +1954,6 @@ I need help installing shelves and patching drywall.`}
           </button>
         ) : null}
       </form>
-
-      {isPropertyManagementCompany ? (
-        <>
-          <PropertyWorkOrdersSection
-            workOrders={propertyWorkOrders}
-            propertyProfile={propertyProfile}
-            propertyProfiles={propertyProfiles}
-            teamMembers={teamMembers}
-            vendors={vendors}
-            onCreate={createPropertyWorkOrder}
-            onUpdate={updatePropertyWorkOrder}
-            onSendToMarketplace={onSendPropertyWorkOrderToMarketplace}
-            onWithdrawMarketplace={onWithdrawPropertyWorkOrderMarketplace}
-            onCreateAgreementDraft={onCreatePropertyWorkOrderAgreementDraft}
-            saving={savingPropertyWorkOrder}
-          />
-          <TenantMaintenanceReviewQueue
-            requests={tenantMaintenanceRequests}
-            onReview={reviewTenantMaintenanceRequest}
-            onCreateWorkOrder={convertTenantRequestToWorkOrder}
-            updatingId={updatingTenantMaintenanceRequestId}
-            convertingId={convertingTenantMaintenanceRequestId}
-          />
-        </>
-      ) : null}
 
       <section data-testid="customer-portal-requests" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex items-start justify-between gap-3">

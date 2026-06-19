@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, Pencil, UserRound, Users } from "lucide-react";
+import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, Pencil, UserRound, Users, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -10,7 +10,7 @@ import CustomerProjectWorkspace from "./CustomerProjectWorkspace.jsx";
 import CustomerPropertyProfile from "./CustomerPropertyProfile.jsx";
 import CustomerRequests from "./CustomerRequests.jsx";
 
-const TABS = [
+const BASE_TABS = [
   ["overview", "Overview", LayoutDashboard],
   ["requests", "Requests", Inbox],
   ["projects", "Projects", FolderKanban],
@@ -20,6 +20,13 @@ const TABS = [
   ["notifications", "Notifications", Bell],
   ["account", "Account", UserRound],
 ];
+
+const MAINTENANCE_TAB = ["maintenance", "Maintenance", Wrench];
+
+function customerPortalTabs(showMaintenanceTab) {
+  if (!showMaintenanceTab) return BASE_TABS;
+  return [BASE_TABS[0], MAINTENANCE_TAB, ...BASE_TABS.slice(1)];
+}
 
 const PORTAL_ADDRESS_AUTOCOMPLETE_CLASSES = {
   inputClassName:
@@ -1323,7 +1330,7 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
   );
 }
 
-function OverviewPanel({ portal, onOpenTab, markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead }) {
+function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead }) {
   const summary = portal?.summary || {};
   const latestRequests = (portal?.requests || []).slice(0, 3);
   const latestProjects = (portal?.projects || []).slice(0, 3);
@@ -1357,7 +1364,7 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", bulkMarking = false,
       title: request.title || "Maintenance request submitted",
       body: `${request.status_label || "Submitted"}${request.property_name ? ` - ${request.property_name}` : ""}${request.unit_label ? ` - ${request.unit_label}` : ""}`,
       action: "Review maintenance request",
-      tab: "requests",
+      tab: tenantMaintenanceTab,
     })),
     ...openDisputes.slice(0, 2).map((payment) => ({
       id: `dispute-${payment.id}`,
@@ -3020,6 +3027,21 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const customerName = portal?.customer?.name || "Customer";
   const notifications = normalizePortalNotifications(portal?.notifications || []);
   const unreadCount = notifications.filter(isUnreadNotification).length;
+  const isPropertyManagementAccount = Boolean(
+    portal?.account?.is_property_management_company ||
+      portal?.account?.account_type === "property_management_company" ||
+      portal?.customer?.account_type === "property_management_company"
+  );
+  const selectedPropertySupportsRentalMaintenance = Boolean(
+    portal?.property_profile?.rental_tools_enabled || portal?.property_profile?.is_rental_property
+  );
+  const showMaintenanceTab = Boolean(isPropertyManagementAccount || selectedPropertySupportsRentalMaintenance);
+  const visibleTabs = useMemo(() => customerPortalTabs(showMaintenanceTab), [showMaintenanceTab]);
+  useEffect(() => {
+    if (!visibleTabs.some(([key]) => key === activeTab)) {
+      setActiveTab("overview");
+    }
+  }, [activeTab, visibleTabs]);
   const openRequestFromPropertyTimeline = useCallback((requestId) => {
     if (!requestId) return;
     setFocusedRequestId(String(requestId));
@@ -3663,22 +3685,12 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
   };
   const tabContent = useMemo(() => {
-    const isPropertyManagementAccount = Boolean(
-      portal?.account?.is_property_management_company ||
-        portal?.account?.account_type === "property_management_company" ||
-        portal?.customer?.account_type === "property_management_company"
-    );
-    const hasRentalTools = Boolean(
-      isPropertyManagementAccount ||
-        portal?.account?.has_rental_properties ||
-        portal?.property_profile?.rental_tools_enabled ||
-        (portal?.property_profiles || []).some((property) => property?.rental_tools_enabled || property?.is_rental_property)
-    );
     if (activeTab === "overview") {
       return (
         <OverviewPanel
           portal={{ ...portal, notifications }}
           onOpenTab={setActiveTab}
+          tenantMaintenanceTab={showMaintenanceTab ? "maintenance" : "requests"}
           markingId={markingNotificationId}
           bulkMarking={markingAllNotifications}
           onMarkRead={markNotificationRead}
@@ -3706,7 +3718,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         />
       );
     }
-    if (activeTab === "requests") {
+    if (activeTab === "requests" || activeTab === "maintenance") {
       return (
         <CustomerRequests
           requests={portal?.requests || []}
@@ -3717,7 +3729,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           vendors={portal?.account?.vendors || []}
           propertyProfile={portal?.property_profile || {}}
           propertyProfiles={portal?.property_profiles || []}
-          isPropertyManagementCompany={hasRentalTools}
+          isPropertyManagementCompany={showMaintenanceTab}
+          mode={activeTab === "maintenance" ? "maintenance" : "requests"}
           creating={creatingRequest}
           acceptingBidId={acceptingBidId}
           focusedRequestId={focusedRequestId}
@@ -3845,7 +3858,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           propertyIntelligence={portal?.property_intelligence || {}}
           isPropertyManagementCompany={isPropertyManagementAccount}
           onOpenRequest={openRequestFromPropertyTimeline}
-          onReviewTenantMaintenanceRequest={() => setActiveTab("requests")}
+          onReviewTenantMaintenanceRequest={() => setActiveTab(showMaintenanceTab ? "maintenance" : "requests")}
           saving={savingProperty}
           unitSaving={savingUnit}
           tenantSaving={savingTenant}
@@ -3961,7 +3974,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">
@@ -4014,7 +4027,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           </div>
 
           <nav className="mt-6 flex gap-2 overflow-x-auto pb-1" aria-label="Customer workspace tabs">
-            {TABS.map(([key, label, Icon]) => (
+            {visibleTabs.map(([key, label, Icon]) => (
               <button
                 key={key}
                 type="button"
