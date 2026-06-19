@@ -34,6 +34,8 @@ const PAYMENT_PREFERENCES = [
   ["discuss", "Discuss with contractor"],
 ];
 
+const NEW_PROPERTY_VALUE = "__new_property__";
+
 const TENANT_MAINTENANCE_STATUS_ACTIONS = [
   ["under_review", "Mark Under Review"],
   ["approved", "Approve"],
@@ -1221,6 +1223,15 @@ export default function CustomerRequests({
     : [];
   const activeHighlights = useMemo(() => comparisonHighlights(activeComparisonBids), [activeComparisonBids]);
   const awardedBid = activeComparisonBids.find((bid) => bid.is_awarded || bid.linked_agreement_id);
+  const selectedRequestProperty = propertyOptions.find((property) => String(property.id) === String(form.property_id)) || null;
+  const shouldShowRequestAddressFields = !propertyOptions.length || !form.property_id;
+  const selectedRequestPropertyAddress = [
+    selectedRequestProperty?.address_line1,
+    selectedRequestProperty?.address_line2,
+    selectedRequestProperty?.city,
+    selectedRequestProperty?.state,
+    selectedRequestProperty?.postal_code,
+  ].filter(Boolean).join(", ") || selectedRequestProperty?.address || "";
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -1248,6 +1259,18 @@ export default function CustomerRequests({
   });
 
   const applyProperty = (propertyId) => {
+    if (propertyId === NEW_PROPERTY_VALUE) {
+      setForm((prev) => ({
+        ...prev,
+        property_id: "",
+        address_line1: "",
+        address_line2: "",
+        city: "",
+        state: "",
+        postal_code: "",
+      }));
+      return;
+    }
     const selected = propertyOptions.find((property) => String(property.id) === String(propertyId));
     setForm((prev) => ({
       ...prev,
@@ -1508,7 +1531,7 @@ export default function CustomerRequests({
           <Badge>Private until sent to a contractor</Badge>
         </div>
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-3">
+          <div className={`space-y-3 ${shouldShowRequestAddressFields ? "" : "lg:col-span-2"}`}>
             <div className="rounded-2xl border border-amber-300/30 bg-amber-300/10 p-4">
               <label className="block text-sm font-semibold text-amber-50">
                 Describe what you need help with
@@ -1659,11 +1682,25 @@ I need help installing shelves and patching drywall.`}
                         {property.display_name || property.address || "Property"}{property.is_primary ? " - Primary Property" : ""}
                       </option>
                     ))}
+                    <option value={NEW_PROPERTY_VALUE}>New property / unlisted address</option>
                   </select>
                 ) : (
                   <div className="mt-2 text-sm text-amber-50">No saved property yet. Enter the address for this request below.</div>
                 )}
               </label>
+              {selectedRequestProperty && !shouldShowRequestAddressFields ? (
+                <div data-testid="customer-request-property-summary" className="mt-3 rounded-xl border border-amber-200/25 bg-slate-950/55 p-3">
+                  <div className="text-xs font-bold uppercase tracking-wide text-amber-100">Selected property</div>
+                  <div className="mt-1 text-sm font-semibold text-white">
+                    {selectedRequestProperty.display_name || selectedRequestProperty.address || "Saved property"}
+                  </div>
+                  {selectedRequestPropertyAddress ? (
+                    <div className="mt-1 text-sm text-slate-300">{selectedRequestPropertyAddress}</div>
+                  ) : (
+                    <div className="mt-1 text-sm text-slate-400">Address saved on property profile.</div>
+                  )}
+                </div>
+              ) : null}
             </div>
             {form.linked_home_system_id || form.recommendation_key ? (
               <div data-testid="customer-request-recommendation-context" className="rounded-xl border border-sky-300/30 bg-sky-400/10 p-3 text-sm leading-6 text-sky-50">
@@ -1765,7 +1802,8 @@ I need help installing shelves and patching drywall.`}
               </select>
             </label>
           </div>
-          <div className="space-y-3 rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+          {shouldShowRequestAddressFields ? (
+          <div data-testid="customer-request-address-fields" className="space-y-3 rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
             <label className="block text-sm font-medium text-slate-200">
               Address search
               <div className="mt-1">
@@ -1818,6 +1856,7 @@ I need help installing shelves and patching drywall.`}
               />
             </label>
           </div>
+          ) : null}
         </div>
         <button
           type="submit"
