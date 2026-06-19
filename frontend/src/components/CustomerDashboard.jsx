@@ -12,8 +12,8 @@ import CustomerRequests from "./CustomerRequests.jsx";
 
 const TABS = [
   ["overview", "Overview", LayoutDashboard],
-  ["projects", "Projects", FolderKanban],
   ["requests", "Requests", Inbox],
+  ["projects", "Projects", FolderKanban],
   ["property", "Property", Home],
   ["payments", "Payments", CreditCard],
   ["documents", "Documents", FileText],
@@ -1348,7 +1348,17 @@ function OverviewPanel({ portal, onOpenTab, markingId = "", bulkMarking = false,
   const actionableNotifications = notifications.filter((notification) => (
     notification.status !== "read" && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || ""))
   ));
+  const tenantMaintenanceNeedsAttention = (portal?.tenant_maintenance_requests || []).filter((request) =>
+    ["submitted", "under_review", "more_info_requested"].includes(String(request?.status || "").toLowerCase())
+  );
   const needsAttention = [
+    ...tenantMaintenanceNeedsAttention.slice(0, 3).map((request) => ({
+      id: `tenant-maintenance-${request.id}`,
+      title: request.title || "Maintenance request submitted",
+      body: `${request.status_label || "Submitted"}${request.property_name ? ` - ${request.property_name}` : ""}${request.unit_label ? ` - ${request.unit_label}` : ""}`,
+      action: "Review maintenance request",
+      tab: "requests",
+    })),
     ...openDisputes.slice(0, 2).map((payment) => ({
       id: `dispute-${payment.id}`,
       title: `Open issue for ${payment.project_title || "your project"}`,
@@ -3835,6 +3845,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           propertyIntelligence={portal?.property_intelligence || {}}
           isPropertyManagementCompany={isPropertyManagementAccount}
           onOpenRequest={openRequestFromPropertyTimeline}
+          onReviewTenantMaintenanceRequest={() => setActiveTab("requests")}
           saving={savingProperty}
           unitSaving={savingUnit}
           tenantSaving={savingTenant}

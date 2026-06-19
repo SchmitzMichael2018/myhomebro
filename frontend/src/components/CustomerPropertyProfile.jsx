@@ -65,6 +65,8 @@ function ShowMoreControl({ total, visible, expanded, onToggle, noun = "items", t
   );
 }
 
+const NEW_TENANT_MAINTENANCE_STATUSES = new Set(["submitted", "under_review", "more_info_requested"]);
+
 function categoryForDocument(item) {
   const text = `${item?.type_label || ""} ${item?.title || ""} ${item?.filename || ""}`.toLowerCase();
   if (text.includes("agreement") || text.includes("contract")) return "Agreements";
@@ -2233,6 +2235,10 @@ function HomeSystemServiceModal({ system, saving, onClose, onSubmit }) {
 }
 
 
+function isNewTenantMaintenanceRequest(request) {
+  return NEW_TENANT_MAINTENANCE_STATUSES.has(String(request?.status || "").toLowerCase());
+}
+
 function timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems = [] }) {
   const rows = [];
   for (const system of homeSystems) {
@@ -2303,6 +2309,20 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
       });
     }
   }
+  for (const request of profile?.tenant_maintenance_requests || []) {
+    const title = request.title || "Maintenance request submitted";
+    const status = request.status_label || "Submitted";
+    rows.push({
+      id: `tenant-maintenance-${request.id}`,
+      date: request.created_at || request.updated_at,
+      title,
+      type: "Maintenance Request",
+      detail: `${status}${request.unit_label ? ` - ${request.unit_label}` : ""}${request.submitted_by_name ? ` - ${request.submitted_by_name}` : ""}`,
+      actionLabel: "Review maintenance request",
+      actionTarget: request.id ? { kind: "tenant-maintenance", requestId: request.id } : null,
+      isNew: isNewTenantMaintenanceRequest(request),
+    });
+  }
   for (const document of [...(documents || []), ...(profile?.documents || [])]) {
     rows.push({
       id: `document-${document.id}`,
@@ -2364,8 +2384,9 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation, onScanSystem }) {
-  const [timelineExpanded, setTimelineExpanded] = useState(false);
+function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onReviewTenantMaintenanceRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation, onScanSystem }) {
+  const [timelineShowAll, setTimelineShowAll] = useState(false);
+  const [timelineCollapsed, setTimelineCollapsed] = useState(true);
   const [highlightedRecommendationSystemId, setHighlightedRecommendationSystemId] = useState("");
   const maintenance = maintenanceRows(maintenanceWorkOrders);
   const hasStructuredSystems = Array.isArray(profile?.home_systems);
@@ -2374,7 +2395,11 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
     : systemRows({ projects, agreements, documents, requests, maintenanceWorkOrders, propertyIntelligence });
   const timeline = timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
   const timelineDefaultCount = 5;
-  const visibleTimeline = timelineExpanded ? timeline : timeline.slice(0, timelineDefaultCount);
+  const shouldCollapseTimeline = timeline.length > 3;
+  const isTimelineCollapsed = shouldCollapseTimeline && timelineCollapsed;
+  const visibleTimeline = timelineShowAll ? timeline : timeline.slice(0, timelineDefaultCount);
+  const latestTimelineItem = timeline[0];
+  const newTimelineCount = timeline.filter((item) => item.isNew).length;
   const handleViewRecommendations = (system) => {
     setHighlightedRecommendationSystemId(system?.id || "");
     window.requestAnimationFrame(() => {
@@ -2412,17 +2437,55 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         onOpenRequest={onOpenRequest}
       />
 
-      <Section title="Timeline / History" eyebrow="Property records" testId="home-records-timeline">
+      <section data-testid="home-records-timeline" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5 shadow-xl shadow-slate-950/20">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200/80">Property records</div>
+              {newTimelineCount ? (
+                <span data-testid="home-records-timeline-new-badge" className="rounded-full border border-amber-300/40 bg-amber-300/15 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
+                  {newTimelineCount === 1 ? "1 new" : `${newTimelineCount} new`}
+                </span>
+              ) : null}
+            </div>
+            <h3 className="mt-1 text-lg font-semibold text-white">Timeline / History</h3>
+          </div>
+          {shouldCollapseTimeline ? (
+            <button
+              type="button"
+              data-testid="home-records-timeline-toggle"
+              onClick={() => setTimelineCollapsed((value) => !value)}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+            >
+              {isTimelineCollapsed ? "Expand records" : "Collapse records"}
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-4">
         {timeline.length ? (
+          isTimelineCollapsed ? (
+            <div data-testid="home-records-timeline-collapsed-summary" className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+              <div className="text-xs font-semibold text-amber-100">{latestTimelineItem ? formatDate(latestTimelineItem.date) : "Date pending"}</div>
+              <div className="mt-1 text-sm font-semibold text-white">{latestTimelineItem?.title || "Property record"}</div>
+              <div className="mt-1 text-sm text-slate-400">
+                {timeline.length} total record{timeline.length === 1 ? "" : "s"}
+                {newTimelineCount ? ` - ${newTimelineCount} new` : ""}
+              </div>
+            </div>
+          ) : (
           <div className="space-y-3">
             {visibleTimeline.map((item) => {
               const requestTarget = item.actionTarget?.kind === "request" && item.actionTarget.requestId ? item.actionTarget : null;
+              const tenantMaintenanceTarget = item.actionTarget?.kind === "tenant-maintenance" && item.actionTarget.requestId ? item.actionTarget : null;
               const content = (
                 <>
                   <div className="text-xs font-semibold text-amber-100">{formatDate(item.date)}</div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{item.type}</span>
+                      {item.isNew ? (
+                        <span className="rounded-full border border-amber-300/40 bg-amber-300/15 px-2 py-0.5 text-[11px] font-semibold text-amber-100">New</span>
+                      ) : null}
                       <span className="text-sm font-semibold text-white">{item.title}</span>
                     </div>
                     <div className="mt-1 text-sm text-slate-400">{item.detail || item.description}</div>
@@ -2454,6 +2517,17 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
                 >
                   {content}
                 </button>
+              ) : tenantMaintenanceTarget ? (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-testid={`home-records-timeline-action-${item.id}`}
+                  aria-label={`Review maintenance request for ${item.title}`}
+                  onClick={() => onReviewTenantMaintenanceRequest?.(tenantMaintenanceTarget.requestId)}
+                  className="grid w-full gap-3 rounded-2xl border border-slate-700 bg-slate-900/60 p-3 text-left hover:border-amber-300/45 focus:border-amber-300/70 focus:outline-none focus:ring-2 focus:ring-amber-300/30 sm:grid-cols-[110px_minmax(0,1fr)]"
+                >
+                  {content}
+                </button>
               ) : (
                 <div
                   key={item.id}
@@ -2467,18 +2541,20 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
             <ShowMoreControl
               total={timeline.length}
               visible={timelineDefaultCount}
-              expanded={timelineExpanded}
-              onToggle={() => setTimelineExpanded((value) => !value)}
+              expanded={timelineShowAll}
+              onToggle={() => setTimelineShowAll((value) => !value)}
               noun="timeline items"
               testId="home-records-timeline-show-more"
             />
           </div>
+          )
         ) : (
           <EmptyState title="No property timeline yet" testId="home-records-timeline-empty">
             Uploaded records, warranties, receipts, photos, and completed projects will build a timeline here.
           </EmptyState>
         )}
-      </Section>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2508,6 +2584,7 @@ export default function CustomerPropertyProfile({
   onUpdateTenant,
   onMarkTenantFormer,
   onCreateSystemServiceRequest,
+  onReviewTenantMaintenanceRequest,
   onUploadSystemDocument,
   onCreateSystemUploadSession,
   onApplySystemDocumentExtraction,
@@ -2679,6 +2756,7 @@ export default function CustomerPropertyProfile({
         maintenanceWorkOrders={maintenanceWorkOrders}
         propertyIntelligence={propertyIntelligence}
         onOpenRequest={onOpenRequest}
+        onReviewTenantMaintenanceRequest={onReviewTenantMaintenanceRequest}
         onAddSystem={openAddSystem}
         onEditSystem={openEditSystem}
         onArchiveSystem={async (system) => {

@@ -22338,6 +22338,63 @@ class CustomerPortalAccessTests(TestCase):
             self.assertIsNotNone(row.reviewed_at)
             self.assertIn("tenant_maintenance_requests", response.data["portal"])
 
+    def test_rental_owner_portal_payload_includes_scoped_tenant_maintenance_requests(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        rental_property = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Rental Cottage",
+            is_rental_property=True,
+        )
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Pat Customer Rentals")
+        rental_property.managed_by_company = company
+        rental_property.save(update_fields=["managed_by_company", "updated_at"])
+        tenant = Tenant.objects.create(
+            company=company,
+            first_name="Taylor",
+            last_name="Tenant",
+            email="taylor@example.com",
+            status=Tenant.STATUS_ACTIVE,
+            maintenance_access_enabled=True,
+        )
+        Tenancy.objects.create(
+            tenant=tenant,
+            property_profile=rental_property,
+            status=Tenancy.STATUS_ACTIVE,
+        )
+        TenantMaintenanceRequest.objects.create(
+            property_profile=rental_property,
+            tenant=tenant,
+            submitted_by_name="Taylor Tenant",
+            submitted_by_email="taylor@example.com",
+            category=TenantMaintenanceRequest.CATEGORY_PLUMBING,
+            urgency=TenantMaintenanceRequest.URGENCY_URGENT,
+            title="Kitchen sink leak",
+            description="Water is dripping under the kitchen sink.",
+        )
+        other_property = PropertyProfile.objects.create(
+            homeowner=self.other_homeowner,
+            customer_email="other@example.com",
+            display_name="Other Rental",
+            is_rental_property=True,
+        )
+        TenantMaintenanceRequest.objects.create(
+            property_profile=other_property,
+            submitted_by_name="Other Tenant",
+            category=TenantMaintenanceRequest.CATEGORY_OTHER,
+            title="Other issue",
+            description="Should not be visible.",
+        )
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        titles = [row["title"] for row in response.data["tenant_maintenance_requests"]]
+        self.assertIn("Kitchen sink leak", titles)
+        self.assertNotIn("Other issue", titles)
+        self.assertEqual(response.data["summary"]["tenant_maintenance_requests"], 1)
+        self.assertEqual(response.data["property_profile"]["tenant_maintenance_requests"][0]["title"], "Kitchen sink leak")
+
     def test_property_management_company_cannot_review_unmanaged_tenant_maintenance_request(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY

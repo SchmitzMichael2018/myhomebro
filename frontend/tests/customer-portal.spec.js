@@ -3988,6 +3988,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
   await expect(page.getByText("track projects, payments, documents, warranties, and property records in one place.")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([
+    /Overview/,
+    /Requests/,
+    /Projects/,
+    /Property/,
+    /Payments/,
+    /Documents/,
+    /Notifications/,
+    /Account/,
+  ]);
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
@@ -4335,7 +4345,20 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-tenant-701")).toContainText("Former");
   await expect(page.getByTestId("property-tenant-former-701")).toHaveCount(0);
 
+  await expect(page.getByTestId("home-records-timeline-new-badge")).toContainText("1 new");
+  await expect(page.getByTestId("home-records-timeline-collapsed-summary")).toContainText("total records");
+  await expect(page.getByTestId("home-records-timeline-collapsed-summary")).toContainText("1 new");
+  await page.getByTestId("home-records-timeline-toggle").click();
+  await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Kitchen sink leak");
+  await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Maintenance Request");
+  await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Review maintenance request");
+  await page.getByTestId("home-records-timeline-action-tenant-maintenance-801").click();
+  await expect(page.getByTestId("tenant-maintenance-review-queue")).toBeVisible();
+  await page.getByTestId("customer-dashboard-tab-overview").click();
+  await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Kitchen sink leak");
+  await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Review maintenance request");
   await page.getByTestId("customer-dashboard-tab-requests").click();
+
   await expect(page.getByTestId("property-work-orders-section")).toContainText("Work Orders");
   await expect(page.getByTestId("property-work-orders-empty")).toContainText("No work orders yet");
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toContainText("Maintenance Requests");
@@ -4538,6 +4561,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "Reviewing Request" })).toHaveCount(0);
   await expect(page.getByTestId("customer-request-card-customer-request-9").getByRole("button", { name: "Editable until sent" })).toHaveCount(0);
   await page.getByTestId("customer-dashboard-tab-property").click();
+  if ((await page.getByTestId("home-records-timeline-collapsed-summary").count()) > 0) {
+    await page.getByTestId("home-records-timeline-toggle").click();
+  }
   await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toBeVisible();
   await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toContainText("View request");
   await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toHaveAttribute("aria-label", "View request for Seasonal HVAC maintenance");
@@ -4985,6 +5011,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByLabel("Property name")).toHaveValue("Lake House");
   await page.getByTestId("customer-property-add-button").click();
   await expect(page.getByRole("button", { name: "Add property", exact: true })).toBeVisible();
+  if ((await page.getByTestId("home-records-timeline-collapsed-summary").count()) > 0) {
+    await page.getByTestId("home-records-timeline-toggle").click();
+  }
   await expect(page.getByTestId("home-records-timeline")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
   await expect(page.getByTestId("property-photo-gallery")).toHaveCount(0);
@@ -5892,6 +5921,8 @@ test("customer portal limits long home records, payments, and documents without 
 
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-timeline")).toBeVisible();
+  await expect(page.getByTestId("home-records-timeline-collapsed-summary")).toBeVisible();
+  await page.getByTestId("home-records-timeline-toggle").click();
   await expect(page.getByTestId(/home-records-timeline-(action|static)-/)).toHaveCount(5);
   await expect(page.getByTestId("home-records-timeline")).not.toContainText("Older Deck Repair");
   await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");

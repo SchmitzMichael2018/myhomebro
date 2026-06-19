@@ -930,11 +930,21 @@ def _tenant_maintenance_requests_for_property(property_profile: PropertyProfile 
 
 
 def _tenant_maintenance_requests_for_email(email: str) -> list[dict]:
-    company = create_or_sync_company_from_homeowner(_primary_homeowner_for_email(email))
-    if company is None:
-        return []
+    normalized_email = email.lower().strip()
+    homeowner = _primary_homeowner_for_email(normalized_email)
+    if homeowner_is_property_management_company(homeowner):
+        company = create_or_sync_company_from_homeowner(homeowner)
+    elif PropertyProfile.objects.filter(customer_email__iexact=normalized_email, is_rental_property=True).exists():
+        company = create_or_sync_rental_owner_company_from_homeowner(homeowner)
+    else:
+        company = None
+    property_filter = Q(is_rental_property=True)
+    if company is not None:
+        property_filter |= Q(managed_by_company=company)
     property_ids = list(
-        PropertyProfile.objects.filter(customer_email__iexact=email.lower().strip(), managed_by_company=company).values_list("id", flat=True)
+        PropertyProfile.objects.filter(customer_email__iexact=normalized_email)
+        .filter(property_filter)
+        .values_list("id", flat=True)
     )
     if not property_ids:
         return []
