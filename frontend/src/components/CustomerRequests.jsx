@@ -356,6 +356,7 @@ function PropertyWorkOrdersSection({
   const [form, setForm] = useState(DEFAULT_WORK_ORDER_FORM);
   const [completionFiles, setCompletionFiles] = useState([]);
   const [error, setError] = useState("");
+  const [vendorSearch, setVendorSearch] = useState("");
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const activePropertyId = editing?.property_profile_id || form.property_id || propertyProfile?.id || propertyOptions[0]?.id || "";
   const activeProperty = propertyOptions.find((property) => String(property.id) === String(activePropertyId)) || propertyProfile || {};
@@ -363,11 +364,16 @@ function PropertyWorkOrdersSection({
   const tenants = activeProperty?.tenants || propertyProfile?.tenants || [];
   const activeStaff = teamMembers.filter((member) => member.status === "active");
   const activeVendors = vendors.filter((vendor) => vendor.status === "active");
+  const matchingVendors = activeVendors.filter((vendor) => {
+    const text = `${vendor.name || ""} ${vendor.trade_category || ""} ${vendor.email || ""} ${vendor.phone || ""}`.toLowerCase();
+    return !vendorSearch.trim() || text.includes(vendorSearch.trim().toLowerCase());
+  });
 
   const openCreate = () => {
     setEditing({ mode: "create" });
     setForm({ ...DEFAULT_WORK_ORDER_FORM, property_id: activePropertyId || "" });
     setCompletionFiles([]);
+    setVendorSearch("");
     setError("");
   };
 
@@ -375,6 +381,7 @@ function PropertyWorkOrdersSection({
     setEditing(row);
     setForm({ ...workOrderFormFromRow(row), ...overrides, property_id: row.property_profile_id || activePropertyId || "" });
     setCompletionFiles([]);
+    setVendorSearch(row.assigned_vendor_name || row.assigned_vendor_trade_category || "");
     setError("");
   };
 
@@ -383,6 +390,7 @@ function PropertyWorkOrdersSection({
     setEditing(null);
     setForm(DEFAULT_WORK_ORDER_FORM);
     setCompletionFiles([]);
+    setVendorSearch("");
     setError("");
   };
 
@@ -402,7 +410,7 @@ function PropertyWorkOrdersSection({
     setError("");
   };
 
-  const submit = async (event) => {
+  const submit = async (event, options = {}) => {
     event.preventDefault();
     if (!form.title.trim() || !form.description.trim()) return;
     if (form.status === "completed" && !form.completion_notes.trim()) {
@@ -439,6 +447,9 @@ function PropertyWorkOrdersSection({
         await onCreate?.(form.property_id || activePropertyId, payload);
       } else {
         await onUpdate?.(editing.property_profile_id || activePropertyId, editing.id, payload);
+        if (options.sendToMarketplace && form.assignment_type === "marketplace_contractor") {
+          await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id);
+        }
       }
       close();
     } catch (err) {
@@ -525,7 +536,7 @@ function PropertyWorkOrdersSection({
                       {row.assignment_type === "vendor"
                         ? row.assigned_vendor_name || "Unassigned vendor"
                         : row.assignment_type === "marketplace_contractor"
-                          ? row.assigned_contractor_name || "Marketplace contractor assignment coming next."
+                          ? row.assigned_contractor_name || "Ready to send to marketplace contractors"
                           : row.assigned_staff_member_name || "-"}
                     </span>
                     <span><strong className="text-slate-200">Scheduled:</strong> {formatDateTime(row.scheduled_for) || "-"}</span>
@@ -760,26 +771,59 @@ function PropertyWorkOrdersSection({
                 </select>
               </label>
               {form.assignment_type === "internal_staff" ? (
-                <label className="block text-sm font-medium text-slate-200">
-                  Assigned Staff Member
-                  <select data-testid="property-work-order-staff" value={form.assigned_staff_member_id} onChange={(event) => update("assigned_staff_member_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
-                    <option value="">Unassigned</option>
-                    {activeStaff.map((member) => <option key={member.id} value={member.id}>{member.name || member.email}</option>)}
-                  </select>
-                </label>
+                <div data-testid="property-work-order-staff-panel" className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-3 sm:col-span-2">
+                  <label className="block text-sm font-medium text-sky-50">
+                    Internal staff owner
+                    <select data-testid="property-work-order-staff" value={form.assigned_staff_member_id} onChange={(event) => update("assigned_staff_member_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
+                      <option value="">Choose staff member</option>
+                      {activeStaff.map((member) => <option key={member.id} value={member.id}>{member.name || member.email}{member.role_label || member.role ? ` - ${member.role_label || member.role}` : ""}</option>)}
+                    </select>
+                  </label>
+                  <p className="mt-2 text-xs leading-5 text-sky-100/80">
+                    This staff member owns scheduling, follow-up, and completion updates for the work order.
+                  </p>
+                </div>
               ) : null}
               {form.assignment_type === "vendor" ? (
-                <label className="block text-sm font-medium text-slate-200">
-                  Assigned Vendor
-                  <select data-testid="property-work-order-vendor" value={form.assigned_vendor_id} onChange={(event) => update("assigned_vendor_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
-                    <option value="">Unassigned vendor</option>
-                    {activeVendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}{vendor.trade_category ? ` - ${vendor.trade_category}` : ""}</option>)}
-                  </select>
-                </label>
+                <div data-testid="property-work-order-vendor-panel" className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-3 sm:col-span-2">
+                  <label className="block text-sm font-medium text-amber-50">
+                    Search preferred vendors
+                    <input
+                      data-testid="property-work-order-vendor-search"
+                      value={vendorSearch}
+                      onChange={(event) => setVendorSearch(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                      placeholder="Search by vendor name, trade, email, or phone"
+                    />
+                  </label>
+                  <label className="mt-3 block text-sm font-medium text-amber-50">
+                    Vendor who will receive this work order
+                    <select data-testid="property-work-order-vendor" value={form.assigned_vendor_id} onChange={(event) => update("assigned_vendor_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300">
+                      <option value="">Choose vendor</option>
+                      {matchingVendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}{vendor.trade_category ? ` - ${vendor.trade_category}` : ""}</option>)}
+                    </select>
+                  </label>
+                  <p className="mt-2 text-xs leading-5 text-amber-100/80">
+                    Vendor assignment records your preferred outside company. It does not create a contractor account or start payment steps.
+                  </p>
+                </div>
               ) : null}
               {form.assignment_type === "marketplace_contractor" ? (
-                <div data-testid="property-work-order-marketplace-placeholder" className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3 text-sm text-amber-100">
-                  Save this work order, then send it to the contractor marketplace from the work order card.
+                <div data-testid="property-work-order-marketplace-placeholder" className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-3 text-sm leading-6 text-emerald-50 sm:col-span-2">
+                  <div className="font-semibold text-white">Marketplace contractor routing</div>
+                  <p className="mt-1">
+                    Send this work order to eligible MyHomeBro contractors. Contractors can accept or decline; an accepted contractor becomes assigned to the work order.
+                  </p>
+                  <div className="mt-3 grid gap-2 text-xs text-emerald-100 sm:grid-cols-3">
+                    <span><strong className="text-white">Trade:</strong> {WORK_ORDER_CATEGORIES.find(([value]) => value === form.category)?.[1] || "General Repair"}</span>
+                    <span><strong className="text-white">Priority:</strong> {WORK_ORDER_PRIORITIES.find(([value]) => value === form.priority)?.[1] || "Normal"}</span>
+                    <span><strong className="text-white">Location:</strong> {activeProperty?.address || activeProperty?.display_name || "Selected property"}</span>
+                  </div>
+                  {editing?.mode === "create" ? (
+                    <p className="mt-2 text-xs text-emerald-100/80">Create the work order first, then send it to marketplace contractors from the work order card.</p>
+                  ) : (
+                    <p className="mt-2 text-xs text-emerald-100/80">Use Save & Send To Marketplace when the scope is ready for contractor review.</p>
+                  )}
                 </div>
               ) : null}
               <label className="block text-sm font-medium text-slate-200">
@@ -820,6 +864,17 @@ function PropertyWorkOrdersSection({
             {error ? <div data-testid="property-work-order-error" className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</div> : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
+              {form.assignment_type === "marketplace_contractor" && editing?.mode !== "create" && (!editing.marketplace_status || editing.marketplace_status === "not_sent" || editing.marketplace_status === "withdrawn" || editing.marketplace_status === "declined") ? (
+                <button
+                  type="button"
+                  data-testid="property-work-order-save-send-marketplace"
+                  disabled={saving || !form.title.trim() || !form.description.trim()}
+                  onClick={(event) => submit(event, { sendToMarketplace: true })}
+                  className="rounded-xl border border-emerald-300/50 bg-emerald-400/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-400/25 disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save & Send To Marketplace"}
+                </button>
+              ) : null}
               <button type="submit" data-testid="property-work-order-save" disabled={saving || !form.title.trim() || !form.description.trim()} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
                 {saving ? "Saving..." : "Save Work Order"}
               </button>

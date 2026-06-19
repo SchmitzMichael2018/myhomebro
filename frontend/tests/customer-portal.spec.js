@@ -4467,6 +4467,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-edit-901").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
   await page.getByTestId("property-work-order-assignment-type").selectOption("vendor");
+  await expect(page.getByTestId("property-work-order-vendor-panel")).toContainText("Search preferred vendors");
+  await page.getByTestId("property-work-order-vendor-search").fill("Pipe");
   await page.getByTestId("property-work-order-vendor").selectOption("701");
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
@@ -4478,16 +4480,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-901")).toContainText("Pipe Pros");
   await page.getByTestId("property-work-order-edit-901").click();
   await page.getByTestId("property-work-order-assignment-type").selectOption("marketplace_contractor");
-  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Save this work order");
-  await page.getByTestId("property-work-order-save").click();
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Marketplace contractor routing");
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Trade:");
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Use Save & Send To Marketplace");
+  await page.getByTestId("property-work-order-save-send-marketplace").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
   expect(submittedWorkOrderEditPayload).toMatchObject({
     assignment_type: "marketplace_contractor",
   });
   await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace Contractor");
-  await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace contractor assignment coming next.");
-  await expect(page.getByTestId("property-work-order-901")).toContainText("Not Sent");
-  await page.getByTestId("property-work-order-send-marketplace-901").click();
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Ready to send to marketplace contractors");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Sent");
   await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Marketplace Sent");
   await page.getByTestId("property-work-order-withdraw-marketplace-901").click();
