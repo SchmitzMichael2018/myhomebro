@@ -1356,7 +1356,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
     notification.status !== "read" && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || ""))
   ));
   const tenantMaintenanceNeedsAttention = (portal?.tenant_maintenance_requests || []).filter((request) =>
-    ["submitted", "under_review", "more_info_requested"].includes(String(request?.status || "").toLowerCase())
+    ["submitted", "under_review", "more_info_requested", "approved"].includes(String(request?.status || "").toLowerCase())
   );
   const needsAttention = [
     ...tenantMaintenanceNeedsAttention.slice(0, 3).map((request) => ({

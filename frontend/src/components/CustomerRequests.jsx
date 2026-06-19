@@ -79,6 +79,17 @@ const WORK_ORDER_ASSIGNMENT_TYPES = [
   ["marketplace_contractor", "Marketplace Contractor"],
 ];
 
+const MAINTENANCE_FILTERS = [
+  ["active", "Active"],
+  ["archived", "Archived"],
+  ["all", "All"],
+];
+
+const TENANT_MAINTENANCE_ACTIVE_STATUSES = new Set(["submitted", "under_review", "more_info_requested", "approved"]);
+const TENANT_MAINTENANCE_ARCHIVED_STATUSES = new Set(["rejected", "closed"]);
+const WORK_ORDER_ACTIVE_STATUSES = new Set(["open", "scheduled", "in_progress", "waiting"]);
+const WORK_ORDER_ARCHIVED_STATUSES = new Set(["completed", "closed", "cancelled"]);
+
 const DEFAULT_WORK_ORDER_FORM = {
   title: "",
   description: "",
@@ -135,6 +146,50 @@ function EmptyState({ title, children, testId }) {
   );
 }
 
+function statusMatchesFilter(status, filter, activeStatuses, archivedStatuses) {
+  const normalized = String(status || "").toLowerCase();
+  if (filter === "all") return true;
+  if (filter === "archived") return archivedStatuses.has(normalized);
+  return activeStatuses.has(normalized);
+}
+
+function MaintenanceFilterControls({ value, onChange, testIdPrefix, label }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label={label}>
+      {MAINTENANCE_FILTERS.map(([filterValue, filterLabel]) => {
+        const active = value === filterValue;
+        return (
+          <button
+            key={filterValue}
+            type="button"
+            data-testid={`${testIdPrefix}-${filterValue}`}
+            onClick={() => onChange(filterValue)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+              active
+                ? "border-amber-200 bg-amber-300 text-slate-950"
+                : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-amber-300/50 hover:text-white"
+            }`}
+          >
+            {filterLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function tenantMaintenanceEmptyTitle(filter) {
+  if (filter === "active") return "No active maintenance requests.";
+  if (filter === "archived") return "No archived maintenance requests yet.";
+  return "No maintenance requests yet.";
+}
+
+function workOrderEmptyTitle(filter) {
+  if (filter === "active") return "No active work orders.";
+  if (filter === "archived") return "No archived work orders yet.";
+  return "No work orders yet.";
+}
+
 function parseMoney(value) {
   const cleaned = String(value || "").replace(/[^0-9.]/g, "");
   const number = Number(cleaned);
@@ -172,6 +227,10 @@ function TenantMaintenanceReviewQueue({
   convertingId = "",
 }) {
   const [notesById, setNotesById] = useState({});
+  const [requestFilter, setRequestFilter] = useState("active");
+  const filteredRequests = requests.filter((request) =>
+    statusMatchesFilter(request.status, requestFilter, TENANT_MAINTENANCE_ACTIVE_STATUSES, TENANT_MAINTENANCE_ARCHIVED_STATUSES)
+  );
 
   const noteFor = (request) => {
     const key = String(request.id || "");
@@ -197,12 +256,20 @@ function TenantMaintenanceReviewQueue({
             Review resident-submitted maintenance requests before converting them into work orders later.
           </p>
         </div>
-        <Badge>{requests.length} tenant request{requests.length === 1 ? "" : "s"}</Badge>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <Badge>{filteredRequests.length} tenant request{filteredRequests.length === 1 ? "" : "s"}</Badge>
+          <MaintenanceFilterControls
+            value={requestFilter}
+            onChange={setRequestFilter}
+            testIdPrefix="tenant-maintenance-filter"
+            label="Filter maintenance requests"
+          />
+        </div>
       </div>
 
       <div className="mt-4 space-y-3">
-        {requests.length ? (
-          requests.map((request) => {
+        {filteredRequests.length ? (
+          filteredRequests.map((request) => {
             const busy = String(updatingId) === String(request.id);
             return (
               <article
@@ -309,8 +376,10 @@ function TenantMaintenanceReviewQueue({
             );
           })
         ) : (
-          <EmptyState title="No tenant maintenance requests yet" testId="tenant-maintenance-requests-empty">
-            Resident-submitted maintenance requests will appear here for manager review.
+          <EmptyState title={tenantMaintenanceEmptyTitle(requestFilter)} testId="tenant-maintenance-requests-empty">
+            {requestFilter === "archived"
+              ? "Closed or rejected resident maintenance requests will remain available here as history."
+              : "Resident-submitted maintenance requests will appear here for manager review."}
           </EmptyState>
         )}
       </div>
@@ -357,6 +426,7 @@ function PropertyWorkOrdersSection({
   const [completionFiles, setCompletionFiles] = useState([]);
   const [error, setError] = useState("");
   const [vendorSearch, setVendorSearch] = useState("");
+  const [workOrderFilter, setWorkOrderFilter] = useState("active");
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const activePropertyId = editing?.property_profile_id || form.property_id || propertyProfile?.id || propertyOptions[0]?.id || "";
   const activeProperty = propertyOptions.find((property) => String(property.id) === String(activePropertyId)) || propertyProfile || {};
@@ -368,6 +438,9 @@ function PropertyWorkOrdersSection({
     const text = `${vendor.name || ""} ${vendor.trade_category || ""} ${vendor.email || ""} ${vendor.phone || ""}`.toLowerCase();
     return !vendorSearch.trim() || text.includes(vendorSearch.trim().toLowerCase());
   });
+  const filteredWorkOrders = workOrders.filter((row) =>
+    statusMatchesFilter(row.status, workOrderFilter, WORK_ORDER_ACTIVE_STATUSES, WORK_ORDER_ARCHIVED_STATUSES)
+  );
 
   const openCreate = () => {
     setEditing({ mode: "create" });
@@ -502,19 +575,28 @@ function PropertyWorkOrdersSection({
             Track approved maintenance follow-up, staff ownership, schedule, and completion notes.
           </p>
         </div>
-        <button
-          type="button"
-          data-testid="property-work-order-add"
-          onClick={openCreate}
-          className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200"
-        >
-          Create Work Order
-        </button>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <Badge>{filteredWorkOrders.length} work order{filteredWorkOrders.length === 1 ? "" : "s"}</Badge>
+          <MaintenanceFilterControls
+            value={workOrderFilter}
+            onChange={setWorkOrderFilter}
+            testIdPrefix="property-work-order-filter"
+            label="Filter work orders"
+          />
+          <button
+            type="button"
+            data-testid="property-work-order-add"
+            onClick={openCreate}
+            className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200"
+          >
+            Create Work Order
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 space-y-3">
-        {workOrders.length ? (
-          workOrders.map((row) => (
+        {filteredWorkOrders.length ? (
+          filteredWorkOrders.map((row) => (
             <article key={row.id} data-testid={`property-work-order-${row.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
@@ -694,8 +776,10 @@ function PropertyWorkOrdersSection({
             </article>
           ))
         ) : (
-          <EmptyState title="No work orders yet" testId="property-work-orders-empty">
-            Create work orders manually or convert approved tenant maintenance requests into actionable follow-up.
+          <EmptyState title={workOrderEmptyTitle(workOrderFilter)} testId="property-work-orders-empty">
+            {workOrderFilter === "archived"
+              ? "Completed, closed, and cancelled work orders will remain available here as history."
+              : "Create work orders manually or convert approved tenant maintenance requests into actionable follow-up."}
           </EmptyState>
         )}
       </div>

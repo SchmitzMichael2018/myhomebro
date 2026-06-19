@@ -2236,6 +2236,32 @@ test("customer portal is reachable from the landing page and loads secure record
             attachment_count: 1,
             created_at: "2026-06-16T15:00:00Z",
           },
+          {
+            id: 802,
+            reference: "TMR-000802",
+            property_profile_id: 1,
+            property_name: "Kitchen Remodel",
+            unit_id: null,
+            unit_label: "",
+            submitted_by_name: "Jordan Resident",
+            submitted_by_email: "jordan@example.com",
+            submitted_by_phone: "512-555-2222",
+            category: "appliance",
+            category_label: "Appliance",
+            urgency: "normal",
+            urgency_label: "Normal",
+            title: "Old dishwasher leak",
+            description: "Archived maintenance request for history.",
+            permission_to_enter: false,
+            pets_present: false,
+            preferred_access_times: "",
+            status: "closed",
+            status_label: "Closed",
+            manager_notes: "Closed after repair.",
+            attachments: [],
+            attachment_count: 0,
+            created_at: "2026-06-10T15:00:00Z",
+          },
         ];
       }
       currentPortalPayload = {
@@ -4379,12 +4405,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Maintenance Request");
   await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Review maintenance request");
+  await expect(page.getByTestId("home-records-timeline")).toContainText("Old dishwasher leak");
   await page.getByTestId("home-records-timeline-action-tenant-maintenance-801").click();
   await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Review maintenance request");
+  await expect(page.getByTestId("customer-overview-needs-attention")).not.toContainText("Old dishwasher leak");
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toHaveCount(0);
   await expect(page.getByTestId("property-work-orders-section")).toHaveCount(0);
@@ -4392,12 +4420,21 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-dashboard-tab-maintenance").click();
 
   await expect(page.getByTestId("property-work-orders-section")).toContainText("Work Orders");
-  await expect(page.getByTestId("property-work-orders-empty")).toContainText("No work orders yet");
+  await expect(page.getByTestId("property-work-orders-empty")).toContainText("No active work orders.");
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toContainText("Maintenance Requests");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Urgent");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Submitted");
   await expect(page.getByTestId("tenant-maintenance-attachments-801")).toContainText("sink-leak.jpg");
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toHaveCount(0);
+  await page.getByTestId("tenant-maintenance-filter-archived").click();
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Old dishwasher leak");
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Closed");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toHaveCount(0);
+  await page.getByTestId("tenant-maintenance-filter-all").click();
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Old dishwasher leak");
+  await page.getByTestId("tenant-maintenance-filter-active").click();
   await page.getByTestId("tenant-maintenance-notes-801").fill("Checking with maintenance coordinator.");
   await page.getByTestId("tenant-maintenance-under_review-801").click();
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Under Review");
@@ -4459,6 +4496,8 @@ test("customer portal is reachable from the landing page and loads secure record
     completion_notes: "Leak repaired and tested.",
     hasAttachment: true,
   });
+  await expect(page.getByTestId("property-work-order-901")).toHaveCount(0);
+  await page.getByTestId("property-work-order-filter-archived").click();
   await expect(page.getByTestId("property-work-order-901")).toContainText("Completed");
   await expect(page.getByTestId("property-work-order-completion-attachments-901")).toContainText("completion.jpg");
   await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Completed");
@@ -4495,6 +4534,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-withdraw-marketplace-901").click();
   await expect(page.getByTestId("property-work-order-901")).toContainText("Withdrawn");
   await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Marketplace Withdrawn");
+  await page.getByTestId("property-work-order-filter-all").click();
+  await expect(page.getByTestId("property-work-order-901")).toContainText("Closed");
   await expect(page.getByTestId("property-work-order-903")).toContainText("Accepted marketplace repair");
   await expect(page.getByTestId("property-work-order-903")).toContainText("ABC Plumbing");
   await expect(page.getByTestId("property-work-order-903")).toContainText("Agreement:");
@@ -5781,6 +5822,8 @@ test("individual customer rental toggle unlocks tenant and unit tools for that p
   await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-maintenance").click();
   await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
+  await expect(page.getByTestId("tenant-maintenance-requests-empty")).toContainText("No active maintenance requests.");
+  await expect(page.getByTestId("property-work-orders-empty")).toContainText("No active work orders.");
 });
 
 test("customer portal limits long home records, payments, and documents without dead timeline links", async ({ page }) => {
