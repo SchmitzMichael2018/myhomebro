@@ -21554,6 +21554,93 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(duplicate.status_code, 400)
         self.assertTrue(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_MARKETPLACE_SENT).exists())
 
+    def test_property_work_order_contractor_matches_preview_marketplace_and_local_results(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        self._create_marketplace_contractor_entry(business_name="Verified Pipe Pros")
+        ContractorDirectoryEntry.objects.create(
+            business_name="Local Pipe Shop",
+            normalized_name="local pipe shop",
+            city="Austin",
+            state="TX",
+            primary_service="plumbing",
+            normalized_services=["plumbing"],
+            services=["Plumbing"],
+            phone="512-555-0190",
+            website="https://localpipe.example",
+            claimed=False,
+        )
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            priority=PropertyWorkOrder.PRIORITY_URGENT,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+
+        response = self.client.get(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/contractor-matches/?location=Austin&search=Pipe"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["eligible_marketplace_count"], 1)
+        self.assertEqual(response.data["myhomebro_contractors"][0]["business_name"], "Verified Pipe Pros")
+        self.assertEqual(response.data["myhomebro_contractors"][0]["source_label"], "MyHomeBro Contractor")
+        self.assertEqual(response.data["local_businesses"][0]["business_name"], "Local Pipe Shop")
+        self.assertEqual(response.data["local_businesses"][0]["source_label"], "Local Business")
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row).exists())
+
+    def test_property_work_order_contractor_matches_can_return_no_eligible_contractors(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        ContractorDirectoryEntry.objects.create(
+            business_name="Local Pipe Shop",
+            normalized_name="local pipe shop",
+            city="Austin",
+            state="TX",
+            primary_service="plumbing",
+            normalized_services=["plumbing"],
+            services=["Plumbing"],
+            claimed=False,
+        )
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+
+        response = self.client.get(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/contractor-matches/?location=Austin"
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["eligible_marketplace_count"], 0)
+        self.assertEqual(response.data["myhomebro_contractors"], [])
+        self.assertEqual(response.data["local_businesses"][0]["business_name"], "Local Pipe Shop")
+
+    def test_individual_non_rental_cannot_preview_work_order_contractor_matches(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Primary Home",
+        )
+
+        response = self.client.get(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/1/contractor-matches/"
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_property_work_order_marketplace_accept_assigns_contractor_without_agreement(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()

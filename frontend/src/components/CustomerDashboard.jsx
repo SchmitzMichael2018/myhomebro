@@ -3784,6 +3784,16 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onSendPropertyWorkOrderToMarketplace={sendPropertyWorkOrderToMarketplace}
           onWithdrawPropertyWorkOrderMarketplace={withdrawPropertyWorkOrderMarketplace}
           onCreatePropertyWorkOrderAgreementDraft={createPropertyWorkOrderAgreementDraft}
+          onPreviewPropertyWorkOrderContractorMatches={async (propertyId, workOrderId, params = {}) => {
+            const search = new URLSearchParams();
+            if (String(params.location || "").trim()) search.set("location", params.location);
+            if (String(params.search || "").trim()) search.set("search", params.search);
+            const { data } = await api.get(
+              `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/contractor-matches/${search.toString() ? `?${search.toString()}` : ""}`
+            );
+            return data;
+          }}
+          onImportVendor={importVendor}
           onCreateWorkOrderFromTenantRequest={createWorkOrderFromTenantRequest}
           onImproveRequest={async (payload) => {
             const { data } = await api.post(

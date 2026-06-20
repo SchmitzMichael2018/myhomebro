@@ -419,6 +419,8 @@ function PropertyWorkOrdersSection({
   onSendToMarketplace,
   onWithdrawMarketplace,
   onCreateAgreementDraft,
+  onPreviewContractorMatches,
+  onImportVendor,
   saving = false,
 }) {
   const [editing, setEditing] = useState(null);
@@ -426,6 +428,10 @@ function PropertyWorkOrdersSection({
   const [completionFiles, setCompletionFiles] = useState([]);
   const [error, setError] = useState("");
   const [vendorSearch, setVendorSearch] = useState("");
+  const [marketplaceSearch, setMarketplaceSearch] = useState({ location: "", search: "" });
+  const [marketplaceMatches, setMarketplaceMatches] = useState(null);
+  const [marketplaceSearching, setMarketplaceSearching] = useState(false);
+  const [marketplaceImportingKey, setMarketplaceImportingKey] = useState("");
   const [workOrderFilter, setWorkOrderFilter] = useState("active");
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const activePropertyId = editing?.property_profile_id || form.property_id || propertyProfile?.id || propertyOptions[0]?.id || "";
@@ -441,12 +447,22 @@ function PropertyWorkOrdersSection({
   const filteredWorkOrders = workOrders.filter((row) =>
     statusMatchesFilter(row.status, workOrderFilter, WORK_ORDER_ACTIVE_STATUSES, WORK_ORDER_ARCHIVED_STATUSES)
   );
+  const marketplaceEligibleCount = Number(marketplaceMatches?.eligible_marketplace_count || 0);
+  const canSendToMarketplace = form.assignment_type === "marketplace_contractor" && marketplaceEligibleCount > 0;
+
+  const resetMarketplacePreview = () => {
+    setMarketplaceMatches(null);
+    setMarketplaceSearching(false);
+    setMarketplaceImportingKey("");
+  };
 
   const openCreate = () => {
     setEditing({ mode: "create" });
     setForm({ ...DEFAULT_WORK_ORDER_FORM, property_id: activePropertyId || "" });
     setCompletionFiles([]);
     setVendorSearch("");
+    setMarketplaceSearch({ location: activeProperty?.address || activeProperty?.display_name || "", search: "" });
+    resetMarketplacePreview();
     setError("");
   };
 
@@ -455,6 +471,12 @@ function PropertyWorkOrdersSection({
     setForm({ ...workOrderFormFromRow(row), ...overrides, property_id: row.property_profile_id || activePropertyId || "" });
     setCompletionFiles([]);
     setVendorSearch(row.assigned_vendor_name || row.assigned_vendor_trade_category || "");
+    const propertyForRow = propertyOptions.find((property) => String(property.id) === String(row.property_profile_id || activePropertyId)) || activeProperty || propertyProfile || {};
+    setMarketplaceSearch({
+      location: propertyForRow.address || propertyForRow.display_name || row.property_name || "",
+      search: "",
+    });
+    resetMarketplacePreview();
     setError("");
   };
 
@@ -464,12 +486,15 @@ function PropertyWorkOrdersSection({
     setForm(DEFAULT_WORK_ORDER_FORM);
     setCompletionFiles([]);
     setVendorSearch("");
+    setMarketplaceSearch({ location: "", search: "" });
+    resetMarketplacePreview();
     setError("");
   };
 
   const update = (field, value) => {
     setForm((prev) => {
       if (field === "assignment_type") {
+        resetMarketplacePreview();
         return {
           ...prev,
           assignment_type: value,
@@ -477,6 +502,9 @@ function PropertyWorkOrdersSection({
           assigned_vendor_id: value === "vendor" ? prev.assigned_vendor_id : "",
           assigned_contractor_id: value === "marketplace_contractor" ? prev.assigned_contractor_id : "",
         };
+      }
+      if (["category", "priority", "unit_id", "tenant_id"].includes(field)) {
+        resetMarketplacePreview();
       }
       return { ...prev, [field]: value };
     });
@@ -563,6 +591,46 @@ function PropertyWorkOrdersSection({
       await onCreateAgreementDraft?.(row.property_profile_id || activePropertyId, row.id);
     } catch (err) {
       setError(err?.response?.data?.detail || "Could not create that agreement draft.");
+    }
+  };
+
+  const previewMarketplaceMatches = async () => {
+    if (!editing?.id || editing?.mode === "create") return;
+    setMarketplaceSearching(true);
+    setError("");
+    try {
+      const data = await onPreviewContractorMatches?.(editing.property_profile_id || activePropertyId, editing.id, marketplaceSearch);
+      setMarketplaceMatches(data || { myhomebro_contractors: [], local_businesses: [], eligible_marketplace_count: 0 });
+    } catch (err) {
+      setMarketplaceMatches(null);
+      setError(err?.response?.data?.detail || "Could not preview contractor matches.");
+    } finally {
+      setMarketplaceSearching(false);
+    }
+  };
+
+  const importLocalBusinessVendor = async (row) => {
+    const key = row.business_id || row.business_name || row.name;
+    setMarketplaceImportingKey(String(key || ""));
+    setError("");
+    try {
+      await onImportVendor?.({
+        import_type: "local_business",
+        business_id: row.business_id,
+        name: row.business_name || row.name || "",
+        trade_category: row.trade_category || row.primary_trade || marketplaceMatches?.trade || "",
+        phone: row.phone || "",
+        website: row.website || "",
+        address: row.address || "",
+        city: row.city || "",
+        state: row.state || "",
+        rating: row.rating || undefined,
+        source_metadata: row.source_metadata || row,
+      });
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Could not import that local business as a vendor.");
+    } finally {
+      setMarketplaceImportingKey("");
     }
   };
 
@@ -893,20 +961,176 @@ function PropertyWorkOrdersSection({
                 </div>
               ) : null}
               {form.assignment_type === "marketplace_contractor" ? (
-                <div data-testid="property-work-order-marketplace-placeholder" className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-3 text-sm leading-6 text-emerald-50 sm:col-span-2">
-                  <div className="font-semibold text-white">Marketplace contractor routing</div>
-                  <p className="mt-1">
-                    Send this work order to eligible MyHomeBro contractors. Contractors can accept or decline; an accepted contractor becomes assigned to the work order.
-                  </p>
-                  <div className="mt-3 grid gap-2 text-xs text-emerald-100 sm:grid-cols-3">
-                    <span><strong className="text-white">Trade:</strong> {WORK_ORDER_CATEGORIES.find(([value]) => value === form.category)?.[1] || "General Repair"}</span>
-                    <span><strong className="text-white">Priority:</strong> {WORK_ORDER_PRIORITIES.find(([value]) => value === form.priority)?.[1] || "Normal"}</span>
-                    <span><strong className="text-white">Location:</strong> {activeProperty?.address || activeProperty?.display_name || "Selected property"}</span>
+                <div data-testid="property-work-order-marketplace-placeholder" className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-50 sm:col-span-2">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-100">Contractor Search</div>
+                      <div className="mt-1 text-base font-semibold text-white">Find marketplace matches</div>
+                      <p className="mt-1 text-sm text-emerald-50">
+                        Find MyHomeBro contractors and local businesses for this work order before sending it.
+                      </p>
+                    </div>
+                    {marketplaceMatches ? (
+                      <Badge>{marketplaceEligibleCount} eligible contractor{marketplaceEligibleCount === 1 ? "" : "s"}</Badge>
+                    ) : null}
                   </div>
-                  {editing?.mode === "create" ? (
-                    <p className="mt-2 text-xs text-emerald-100/80">Create the work order first, then send it to marketplace contractors from the work order card.</p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <label className="block text-sm font-medium text-emerald-50">
+                      Trade/category
+                      <select
+                        data-testid="property-work-order-marketplace-trade"
+                        value={form.category}
+                        onChange={(event) => update("category", event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-300"
+                      >
+                        {WORK_ORDER_CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </label>
+                    <label className="block text-sm font-medium text-emerald-50">
+                      Location/service area
+                      <input
+                        data-testid="property-work-order-marketplace-location"
+                        value={marketplaceSearch.location}
+                        onChange={(event) => {
+                          setMarketplaceSearch((prev) => ({ ...prev, location: event.target.value }));
+                          resetMarketplacePreview();
+                        }}
+                        placeholder="San Antonio, TX"
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-300"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-emerald-50">
+                      Search
+                      <input
+                        data-testid="property-work-order-marketplace-search"
+                        value={marketplaceSearch.search}
+                        onChange={(event) => {
+                          setMarketplaceSearch((prev) => ({ ...prev, search: event.target.value }));
+                          resetMarketplacePreview();
+                        }}
+                        placeholder="Optional company or specialty"
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-300"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="property-work-order-preview-matches"
+                      disabled={marketplaceSearching || editing?.mode === "create"}
+                      onClick={previewMarketplaceMatches}
+                      className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-emerald-200 disabled:opacity-50"
+                    >
+                      {marketplaceSearching ? "Searching..." : "Preview Matches"}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="property-work-order-add-vendor-manually"
+                      onClick={() => update("assignment_type", "vendor")}
+                      className="rounded-xl border border-amber-300/45 bg-amber-300/10 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/20"
+                    >
+                      Add Vendor Manually
+                    </button>
+                    {editing?.mode === "create" ? (
+                      <span className="text-xs text-emerald-100/80">Save the work order first, then preview marketplace matches.</span>
+                    ) : null}
+                  </div>
+
+                  {marketplaceMatches ? (
+                    <div className="mt-4 space-y-4" data-testid="property-work-order-marketplace-results">
+                      {marketplaceEligibleCount > 0 ? (
+                        <div data-testid="property-work-order-marketplace-eligible" className="rounded-xl border border-emerald-300/30 bg-slate-950/60 p-3">
+                          <div className="font-semibold text-white">
+                            {marketplaceEligibleCount} approved MyHomeBro contractor{marketplaceEligibleCount === 1 ? "" : "s"} found
+                          </div>
+                          <div className="mt-2 grid gap-2">
+                            {(marketplaceMatches.myhomebro_contractors || []).map((contractor) => (
+                              <article key={contractor.contractor_id || contractor.directory_entry_id} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-semibold text-white">{contractor.business_name || "MyHomeBro Contractor"}</span>
+                                      <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-100">
+                                        MyHomeBro Contractor
+                                      </span>
+                                      <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
+                                        {contractor.verification_status_label || "Verified"}
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 grid gap-1 text-xs text-slate-300 sm:grid-cols-2">
+                                      <span>{contractor.primary_trade || contractor.trade_categories?.join?.(", ") || marketplaceMatches.trade || "General"}</span>
+                                      <span>{contractor.location || "Service area available"}</span>
+                                      <span>{contractor.phone || "No phone listed"}</span>
+                                      <span>{contractor.website || "No website listed"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div data-testid="property-work-order-marketplace-no-eligible" className="rounded-xl border border-amber-300/35 bg-amber-300/10 p-3 text-amber-50">
+                          <div className="font-semibold">No approved MyHomeBro contractors found for this trade/location yet.</div>
+                          <p className="mt-1 text-xs leading-5 text-amber-100/85">
+                            You can import a local business as a preferred vendor or add a vendor manually. Marketplace sending stays unavailable until an eligible contractor exists.
+                          </p>
+                        </div>
+                      )}
+
+                      <div data-testid="property-work-order-local-business-results" className="rounded-xl border border-slate-700 bg-slate-950/60 p-3">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="font-semibold text-white">Local business results</div>
+                            <div className="text-xs text-slate-400">Import a local business as a preferred vendor without creating a contractor account.</div>
+                          </div>
+                          <Badge>{(marketplaceMatches.local_businesses || []).length} local</Badge>
+                        </div>
+                        <div className="mt-3 grid gap-2">
+                          {(marketplaceMatches.local_businesses || []).length ? (
+                            marketplaceMatches.local_businesses.map((business) => {
+                              const key = business.business_id || business.business_name;
+                              return (
+                                <article key={key} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-semibold text-white">{business.business_name || "Local Business"}</span>
+                                        <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">Local Business</span>
+                                      </div>
+                                      <div className="mt-2 grid gap-1 text-xs text-slate-300 sm:grid-cols-2">
+                                        <span>{business.trade_category || marketplaceMatches.trade || "General"}</span>
+                                        <span>{business.location || business.address || "Location unavailable"}</span>
+                                        <span>{business.phone || "No phone listed"}</span>
+                                        <span>{business.website || "No website listed"}</span>
+                                        {business.rating ? <span>Rating: {business.rating}</span> : null}
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      data-testid={`property-work-order-import-local-business-${key}`}
+                                      disabled={saving || marketplaceImportingKey === String(key)}
+                                      onClick={() => importLocalBusinessVendor(business)}
+                                      className="rounded-xl border border-amber-300/45 bg-amber-300/10 px-3 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/20 disabled:opacity-50"
+                                    >
+                                      {marketplaceImportingKey === String(key) ? "Importing..." : "Import as Vendor"}
+                                    </button>
+                                  </div>
+                                </article>
+                              );
+                            })
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
+                              No local businesses returned for this search yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   ) : (
-                    <p className="mt-2 text-xs text-emerald-100/80">Use Save & Send To Marketplace when the scope is ready for contractor review.</p>
+                    <div data-testid="property-work-order-marketplace-empty" className="mt-4 rounded-xl border border-dashed border-emerald-300/25 bg-slate-950/50 p-3 text-sm text-emerald-100/80">
+                      Preview matches to see who can receive this work order before sending.
+                    </div>
                   )}
                 </div>
               ) : null}
@@ -952,7 +1176,7 @@ function PropertyWorkOrdersSection({
                 <button
                   type="button"
                   data-testid="property-work-order-save-send-marketplace"
-                  disabled={saving || !form.title.trim() || !form.description.trim()}
+                  disabled={saving || !form.title.trim() || !form.description.trim() || !canSendToMarketplace}
                   onClick={(event) => submit(event, { sendToMarketplace: true })}
                   className="rounded-xl border border-emerald-300/50 bg-emerald-400/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-400/25 disabled:opacity-50"
                 >
@@ -1205,6 +1429,8 @@ export default function CustomerRequests({
   onSendPropertyWorkOrderToMarketplace,
   onWithdrawPropertyWorkOrderMarketplace,
   onCreatePropertyWorkOrderAgreementDraft,
+  onPreviewPropertyWorkOrderContractorMatches,
+  onImportVendor,
   onCreateWorkOrderFromTenantRequest,
   onImproveRequest,
   onStartContractorSearch,
@@ -1712,6 +1938,8 @@ export default function CustomerRequests({
           onSendToMarketplace={onSendPropertyWorkOrderToMarketplace}
           onWithdrawMarketplace={onWithdrawPropertyWorkOrderMarketplace}
           onCreateAgreementDraft={onCreatePropertyWorkOrderAgreementDraft}
+          onPreviewContractorMatches={onPreviewPropertyWorkOrderContractorMatches}
+          onImportVendor={onImportVendor}
           saving={savingPropertyWorkOrder}
         />
       </div>

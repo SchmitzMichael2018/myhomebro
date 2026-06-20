@@ -2151,6 +2151,55 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/contractor-matches/") && method === "GET") {
+      const parsedUrl = new URL(requestUrl);
+      const searchText = parsedUrl.searchParams.get("search") || "";
+      const noEligible = searchText.toLowerCase().includes("nomatch");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          eligible_marketplace_count: noEligible ? 0 : 1,
+          trade: "Plumbing",
+          category: "plumbing",
+          location: parsedUrl.searchParams.get("location") || "San Antonio, TX",
+          myhomebro_contractors: noEligible
+            ? []
+            : [
+                {
+                  contractor_id: 77,
+                  directory_entry_id: 7701,
+                  business_name: "ABC Plumbing",
+                  primary_trade: "Plumbing",
+                  trade_categories: ["Plumbing"],
+                  location: "San Antonio, TX",
+                  phone: "210-555-0770",
+                  website: "https://abcplumbing.example",
+                  verification_status_label: "Verified",
+                  source_label: "MyHomeBro Contractor",
+                },
+              ],
+          local_businesses: [
+            {
+              business_id: "local-joe-plumbing",
+              business_name: "Joe's Plumbing",
+              trade_category: "Plumbing",
+              address: "800 Pipe Rd, San Antonio, TX",
+              city: "San Antonio",
+              state: "TX",
+              location: "San Antonio, TX",
+              phone: "210-555-0220",
+              website: "https://joesplumbing.example",
+              rating: 4.8,
+              source_label: "Local Business",
+              source_metadata: { business_id: "local-joe-plumbing" },
+            },
+          ],
+        }),
+      });
+      return;
+    }
+
     if (method === "GET" && requestUrl.includes("/customer-portal/customer-token/")) {
       await route.fulfill({
         status: 200,
@@ -4519,9 +4568,21 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-901")).toContainText("Pipe Pros");
   await page.getByTestId("property-work-order-edit-901").click();
   await page.getByTestId("property-work-order-assignment-type").selectOption("marketplace_contractor");
-  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Marketplace contractor routing");
-  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Trade:");
-  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Use Save & Send To Marketplace");
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Contractor Search");
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Find MyHomeBro contractors and local businesses");
+  await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeDisabled();
+  await page.getByTestId("property-work-order-marketplace-search").fill("NoMatch");
+  await page.getByTestId("property-work-order-preview-matches").click();
+  await expect(page.getByTestId("property-work-order-marketplace-no-eligible")).toContainText("No approved MyHomeBro contractors found");
+  await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("Joe's Plumbing");
+  await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeDisabled();
+  await page.getByTestId("property-work-order-import-local-business-local-joe-plumbing").click();
+  await expect(page.getByTestId("property-work-order-vendor-panel")).toHaveCount(0);
+  await page.getByTestId("property-work-order-marketplace-search").fill("Pipe");
+  await page.getByTestId("property-work-order-preview-matches").click();
+  await expect(page.getByTestId("property-work-order-marketplace-eligible")).toContainText("1 approved MyHomeBro contractor");
+  await expect(page.getByTestId("property-work-order-marketplace-results")).toContainText("ABC Plumbing");
+  await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeEnabled();
   await page.getByTestId("property-work-order-save-send-marketplace").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
   expect(submittedWorkOrderEditPayload).toMatchObject({

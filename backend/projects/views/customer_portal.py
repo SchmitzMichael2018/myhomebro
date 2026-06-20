@@ -7059,6 +7059,88 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             )
         return qs.order_by("-claimed_by_contractor__marketplace_preferred", "business_name", "id")[:10]
 
+    def _eligible_contractor_payload(self, entry: ContractorDirectoryEntry) -> dict:
+        contractor = entry.claimed_by_contractor
+        payload = _contractor_search_payload(contractor, entry)
+        payload.update(
+            {
+                "directory_entry_id": entry.id,
+                "source": "myhomebro_contractor",
+                "source_label": "MyHomeBro Contractor",
+                "business_name": payload.get("business_name") or _safe_text(entry.business_name),
+                "primary_trade": payload.get("primary_trade") or _safe_text(entry.primary_service),
+                "location": payload.get("location") or ", ".join(part for part in [_safe_text(entry.city), _safe_text(entry.state)] if part),
+            }
+        )
+        return payload
+
+    def _local_business_matches(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "") -> list[dict]:
+        property_profile = row.property_profile
+        trade = _safe_text(row.get_category_display() if row.category != PropertyWorkOrder.CATEGORY_OTHER else row.category).replace("_", " ")
+        location = location or ", ".join(
+            part for part in [_safe_text(property_profile.city), _safe_text(property_profile.state), _safe_text(property_profile.postal_code)] if part
+        )
+        query_text = " ".join(part for part in [trade, search_text, location] if part)
+        cached_q = Q(claimed=False) | Q(claimed_by_contractor__isnull=True)
+        if search_text:
+            cached_q &= Q(business_name__icontains=search_text)
+        if trade:
+            cached_q &= (Q(primary_service__icontains=trade) | Q(normalized_services__icontains=trade) | Q(services__icontains=trade))
+        if location:
+            cached_q &= Q(city__icontains=location) | Q(state__icontains=location) | Q(zip_code__icontains=location)
+        cached_rows = [
+            _local_business_search_payload(
+                {
+                    "id": f"directory-{entry.id}",
+                    "business_name": entry.business_name,
+                    "primary_trade": entry.primary_service,
+                    "formatted_address": ", ".join(part for part in [entry.address_line1, entry.city, entry.state, entry.zip_code] if part),
+                    "city": entry.city,
+                    "state": entry.state,
+                    "phone": entry.phone,
+                    "website": entry.website,
+                    "rating": entry.rating,
+                    "review_count": entry.review_count,
+                    "google_place_id": entry.google_place_id,
+                    "directory_entry_id": entry.id,
+                }
+            )
+            for entry in ContractorDirectoryEntry.objects.filter(cached_q, is_archived=False).order_by("business_name", "id")[:10]
+        ]
+        live_rows = []
+        if query_text:
+            for match in search_google_places_contractors(query=query_text, limit=10, enforce_radius=False):
+                live_rows.append(_local_business_search_payload(match))
+        seen = set()
+        results = []
+        for match in [*cached_rows, *live_rows]:
+            key = _safe_text(match.get("business_id")) or _comparison_key(match.get("business_name"), match.get("phone"), match.get("location"))
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            match["source"] = "local_business"
+            match["source_label"] = "Local Business"
+            results.append(match)
+            if len(results) >= 20:
+                break
+        return results
+
+    def _match_payload(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "") -> dict:
+        entries = list(self._eligible_directory_entries(row))
+        property_profile = row.property_profile
+        default_location = ", ".join(
+            part for part in [_safe_text(property_profile.address_line1), _safe_text(property_profile.city), _safe_text(property_profile.state), _safe_text(property_profile.postal_code)] if part
+        )
+        return {
+            "myhomebro_contractors": [self._eligible_contractor_payload(entry) for entry in entries],
+            "local_businesses": self._local_business_matches(row, search_text=search_text, location=location),
+            "eligible_marketplace_count": len(entries),
+            "trade": _safe_text(row.get_category_display()),
+            "category": _safe_text(row.category),
+            "location": location or default_location,
+        }
+
     def post(self, request, token: str, property_id: int, work_order_id: int):
         email, company, property_profile, error = self._property_from_token(token, property_id)
         if error is not None:
@@ -7137,6 +7219,17 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             },
             status=status.HTTP_200_OK,
         )
+
+
+class CustomerPortalPropertyWorkOrderContractorMatchView(CustomerPortalPropertyWorkOrderMarketplaceView):
+    def get(self, request, token: str, property_id: int, work_order_id: int):
+        _email, company, property_profile, error = self._property_from_token(token, property_id)
+        if error is not None:
+            return error
+        row = self._work_order_for_marketplace(company, property_profile, work_order_id)
+        search_text = _safe_text(request.query_params.get("search"))
+        location = _safe_text(request.query_params.get("location"))
+        return Response(self._match_payload(row, search_text=search_text, location=location), status=status.HTTP_200_OK)
 
 
 class CustomerPortalPropertyWorkOrderAgreementDraftView(CustomerPortalPropertyWorkOrderMarketplaceView):
