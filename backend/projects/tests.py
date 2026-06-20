@@ -21382,10 +21382,16 @@ class CustomerPortalAccessTests(TestCase):
         )
 
         contractor_search = self.client.get(
-            f"/api/projects/customer-portal/{token}/vendor-search/contractors/?search=Verified&trade_category=plumbing&location=Austin"
+            f"/api/projects/customer-portal/{token}/vendor-search/contractors/?search=Verified&trade_category=plumbing&location=Austin&radius_miles=50"
         )
         business_search = self.client.get(
-            f"/api/projects/customer-portal/{token}/vendor-search/businesses/?search=Local&trade_category=plumbing&location=Austin"
+            f"/api/projects/customer-portal/{token}/vendor-search/businesses/?search=Local&trade_category=plumbing&location=Austin&radius_miles=100"
+        )
+        default_radius_search = self.client.get(
+            f"/api/projects/customer-portal/{token}/vendor-search/contractors/?search=Verified&trade_category=plumbing&location=Austin"
+        )
+        invalid_radius_search = self.client.get(
+            f"/api/projects/customer-portal/{token}/vendor-search/businesses/?search=Local&trade_category=plumbing&location=Austin&radius_miles=17"
         )
         contractor_import = self.client.post(
             f"/api/projects/customer-portal/{token}/vendors/import/",
@@ -21419,8 +21425,12 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(contractor_search.status_code, 200, contractor_search.data)
         self.assertEqual(contractor_search.data["results"][0]["business_name"], "Verified Pipe Pros")
+        self.assertEqual(contractor_search.data["radius_miles"], 50)
         self.assertEqual(business_search.status_code, 200, business_search.data)
         self.assertEqual(business_search.data["results"][0]["business_name"], "Local Pipe Shop")
+        self.assertEqual(business_search.data["radius_miles"], 100)
+        self.assertEqual(default_radius_search.data["radius_miles"], 25)
+        self.assertEqual(invalid_radius_search.data["radius_miles"], 25)
         self.assertEqual(contractor_import.status_code, 201, contractor_import.data)
         linked_vendor = PropertyVendor.objects.get(linked_contractor=contractor)
         self.assertEqual(linked_vendor.property_management_company, company)
@@ -21583,10 +21593,11 @@ class CustomerPortalAccessTests(TestCase):
         )
 
         response = self.client.get(
-            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/contractor-matches/?location=Austin&search=Pipe"
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/contractor-matches/?location=Austin&search=Pipe&radius_miles=50"
         )
 
         self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["radius_miles"], 50)
         self.assertEqual(response.data["eligible_marketplace_count"], 1)
         self.assertEqual(response.data["myhomebro_contractors"][0]["business_name"], "Verified Pipe Pros")
         self.assertEqual(response.data["myhomebro_contractors"][0]["source_label"], "MyHomeBro Contractor")
@@ -21619,10 +21630,11 @@ class CustomerPortalAccessTests(TestCase):
         )
 
         response = self.client.get(
-            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/contractor-matches/?location=Austin"
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/contractor-matches/?location=Austin&radius_miles=17"
         )
 
         self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["radius_miles"], 25)
         self.assertEqual(response.data["eligible_marketplace_count"], 0)
         self.assertEqual(response.data["myhomebro_contractors"], [])
         self.assertEqual(response.data["local_businesses"][0]["business_name"], "Local Pipe Shop")

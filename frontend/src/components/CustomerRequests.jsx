@@ -85,6 +85,8 @@ const MAINTENANCE_FILTERS = [
   ["all", "All"],
 ];
 
+const SEARCH_RADIUS_OPTIONS = [5, 10, 25, 50, 100];
+
 const TENANT_MAINTENANCE_ACTIVE_STATUSES = new Set(["submitted", "under_review", "more_info_requested", "approved"]);
 const TENANT_MAINTENANCE_ARCHIVED_STATUSES = new Set(["rejected", "closed"]);
 const WORK_ORDER_ACTIVE_STATUSES = new Set(["open", "scheduled", "in_progress", "waiting"]);
@@ -428,7 +430,7 @@ function PropertyWorkOrdersSection({
   const [completionFiles, setCompletionFiles] = useState([]);
   const [error, setError] = useState("");
   const [vendorSearch, setVendorSearch] = useState("");
-  const [marketplaceSearch, setMarketplaceSearch] = useState({ location: "", search: "" });
+  const [marketplaceSearch, setMarketplaceSearch] = useState({ location: "", search: "", radius_miles: "25" });
   const [marketplaceMatches, setMarketplaceMatches] = useState(null);
   const [marketplaceSearching, setMarketplaceSearching] = useState(false);
   const [marketplaceImportingKey, setMarketplaceImportingKey] = useState("");
@@ -461,7 +463,7 @@ function PropertyWorkOrdersSection({
     setForm({ ...DEFAULT_WORK_ORDER_FORM, property_id: activePropertyId || "" });
     setCompletionFiles([]);
     setVendorSearch("");
-    setMarketplaceSearch({ location: activeProperty?.address || activeProperty?.display_name || "", search: "" });
+    setMarketplaceSearch({ location: activeProperty?.address || activeProperty?.display_name || "", search: "", radius_miles: "25" });
     resetMarketplacePreview();
     setError("");
   };
@@ -475,6 +477,7 @@ function PropertyWorkOrdersSection({
     setMarketplaceSearch({
       location: propertyForRow.address || propertyForRow.display_name || row.property_name || "",
       search: "",
+      radius_miles: "25",
     });
     resetMarketplacePreview();
     setError("");
@@ -486,7 +489,7 @@ function PropertyWorkOrdersSection({
     setForm(DEFAULT_WORK_ORDER_FORM);
     setCompletionFiles([]);
     setVendorSearch("");
-    setMarketplaceSearch({ location: "", search: "" });
+    setMarketplaceSearch({ location: "", search: "", radius_miles: "25" });
     resetMarketplacePreview();
     setError("");
   };
@@ -974,7 +977,7 @@ function PropertyWorkOrdersSection({
                       <Badge>{marketplaceEligibleCount} eligible contractor{marketplaceEligibleCount === 1 ? "" : "s"}</Badge>
                     ) : null}
                   </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                  <div className="mt-4 grid gap-3 md:grid-cols-4">
                     <label className="block text-sm font-medium text-emerald-50">
                       Trade/category
                       <select
@@ -1012,6 +1015,22 @@ function PropertyWorkOrdersSection({
                         className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-300"
                       />
                     </label>
+                    <label className="block text-sm font-medium text-emerald-50">
+                      Radius
+                      <select
+                        data-testid="property-work-order-marketplace-radius"
+                        value={marketplaceSearch.radius_miles}
+                        onChange={(event) => {
+                          setMarketplaceSearch((prev) => ({ ...prev, radius_miles: event.target.value }));
+                          resetMarketplacePreview();
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-300"
+                      >
+                        {SEARCH_RADIUS_OPTIONS.map((radius) => (
+                          <option key={radius} value={String(radius)}>{radius} miles</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <button
@@ -1041,7 +1060,7 @@ function PropertyWorkOrdersSection({
                       {marketplaceEligibleCount > 0 ? (
                         <div data-testid="property-work-order-marketplace-eligible" className="rounded-xl border border-emerald-300/30 bg-slate-950/60 p-3">
                           <div className="font-semibold text-white">
-                            {marketplaceEligibleCount} approved MyHomeBro contractor{marketplaceEligibleCount === 1 ? "" : "s"} found
+                            {marketplaceEligibleCount} approved MyHomeBro contractor{marketplaceEligibleCount === 1 ? "" : "s"} within {marketplaceMatches.radius_miles || marketplaceSearch.radius_miles || 25} miles
                           </div>
                           <div className="mt-2 grid gap-2">
                             {(marketplaceMatches.myhomebro_contractors || []).map((contractor) => (
@@ -1073,7 +1092,7 @@ function PropertyWorkOrdersSection({
                         <div data-testid="property-work-order-marketplace-no-eligible" className="rounded-xl border border-amber-300/35 bg-amber-300/10 p-3 text-amber-50">
                           <div className="font-semibold">No approved MyHomeBro contractors found for this trade/location yet.</div>
                           <p className="mt-1 text-xs leading-5 text-amber-100/85">
-                            You can import a local business as a preferred vendor or add a vendor manually. Marketplace sending stays unavailable until an eligible contractor exists.
+                            You can import a local business as a preferred vendor or add a vendor manually. Try increasing the radius to 50 or 100 miles.
                           </p>
                         </div>
                       )}
@@ -1082,7 +1101,9 @@ function PropertyWorkOrdersSection({
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <div className="font-semibold text-white">Local business results</div>
-                            <div className="text-xs text-slate-400">Import a local business as a preferred vendor without creating a contractor account.</div>
+                            <div className="text-xs text-slate-400">
+                              {(marketplaceMatches.local_businesses || []).length} local business{(marketplaceMatches.local_businesses || []).length === 1 ? "" : "es"} within {marketplaceMatches.radius_miles || marketplaceSearch.radius_miles || 25} miles
+                            </div>
                           </div>
                           <Badge>{(marketplaceMatches.local_businesses || []).length} local</Badge>
                         </div>

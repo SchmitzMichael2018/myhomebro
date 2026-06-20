@@ -2103,10 +2103,12 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/vendor-search/contractors/") && method === "GET") {
+      const parsedUrl = new URL(requestUrl);
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+          radius_miles: Number(parsedUrl.searchParams.get("radius_miles") || 25),
           results: [
             {
               contractor_id: 910,
@@ -2127,10 +2129,12 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/vendor-search/businesses/") && method === "GET") {
+      const parsedUrl = new URL(requestUrl);
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+          radius_miles: Number(parsedUrl.searchParams.get("radius_miles") || 25),
           results: [
             {
               business_id: "local-joe-plumbing",
@@ -2155,10 +2159,12 @@ test("customer portal is reachable from the landing page and loads secure record
       const parsedUrl = new URL(requestUrl);
       const searchText = parsedUrl.searchParams.get("search") || "";
       const noEligible = searchText.toLowerCase().includes("nomatch");
+      const radiusMiles = Number(parsedUrl.searchParams.get("radius_miles") || 25);
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
+          radius_miles: radiusMiles,
           eligible_marketplace_count: noEligible ? 0 : 1,
           trade: "Plumbing",
           category: "plumbing",
@@ -4318,8 +4324,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("pm-vendor-search-trade").fill("HVAC");
   await page.getByTestId("pm-vendor-search-location").fill("San Antonio");
   await page.getByTestId("pm-vendor-search-text").fill("Verified");
+  await expect(page.getByTestId("pm-vendor-search-radius")).toHaveValue("25");
+  await page.getByTestId("pm-vendor-search-radius").selectOption("50");
   await page.getByTestId("pm-vendor-run-search-myhomebro_contractor").click();
   await expect(page.getByTestId("pm-vendor-results-myhomebro_contractor")).toContainText("Verified HVAC Co");
+  await expect(page.getByTestId("pm-vendor-results-myhomebro_contractor")).toContainText("1 MyHomeBro contractor within 50 miles");
   await page.getByTestId("pm-vendor-import-myhomebro_contractor-910").click();
   await expect(page.getByTestId("pm-vendor-add-modal")).toHaveCount(0);
   await expect(page.getByTestId("pm-vendor-702")).toContainText("Verified HVAC Co");
@@ -4329,8 +4338,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("pm-vendor-search-trade").fill("Plumbing");
   await page.getByTestId("pm-vendor-search-location").fill("San Antonio");
   await page.getByTestId("pm-vendor-search-text").fill("Joe");
+  await page.getByTestId("pm-vendor-search-radius").selectOption("100");
   await page.getByTestId("pm-vendor-run-search-local_business").click();
   await expect(page.getByTestId("pm-vendor-results-local_business")).toContainText("Joe's Plumbing");
+  await expect(page.getByTestId("pm-vendor-results-local_business")).toContainText("1 local business within 100 miles");
   await page.getByTestId("pm-vendor-import-local_business-local-joe-plumbing").click();
   await expect(page.getByTestId("pm-vendor-add-modal")).toHaveCount(0);
   await expect(page.getByTestId("pm-vendor-703")).toContainText("Joe's Plumbing");
@@ -4571,17 +4582,21 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Contractor Search");
   await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Find MyHomeBro contractors and local businesses");
   await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeDisabled();
+  await expect(page.getByTestId("property-work-order-marketplace-radius")).toHaveValue("25");
   await page.getByTestId("property-work-order-marketplace-search").fill("NoMatch");
   await page.getByTestId("property-work-order-preview-matches").click();
   await expect(page.getByTestId("property-work-order-marketplace-no-eligible")).toContainText("No approved MyHomeBro contractors found");
+  await expect(page.getByTestId("property-work-order-marketplace-no-eligible")).toContainText("Try increasing the radius to 50 or 100 miles");
   await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("Joe's Plumbing");
   await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeDisabled();
   await page.getByTestId("property-work-order-import-local-business-local-joe-plumbing").click();
   await expect(page.getByTestId("property-work-order-vendor-panel")).toHaveCount(0);
   await page.getByTestId("property-work-order-marketplace-search").fill("Pipe");
+  await page.getByTestId("property-work-order-marketplace-radius").selectOption("50");
   await page.getByTestId("property-work-order-preview-matches").click();
-  await expect(page.getByTestId("property-work-order-marketplace-eligible")).toContainText("1 approved MyHomeBro contractor");
+  await expect(page.getByTestId("property-work-order-marketplace-eligible")).toContainText("1 approved MyHomeBro contractor within 50 miles");
   await expect(page.getByTestId("property-work-order-marketplace-results")).toContainText("ABC Plumbing");
+  await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("1 local business within 50 miles");
   await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeEnabled();
   await page.getByTestId("property-work-order-save-send-marketplace").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);

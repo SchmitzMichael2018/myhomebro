@@ -22,6 +22,7 @@ const BASE_TABS = [
 ];
 
 const MAINTENANCE_TAB = ["maintenance", "Maintenance", Wrench];
+const SEARCH_RADIUS_OPTIONS = [5, 10, 25, 50, 100];
 
 function customerPortalTabs(showMaintenanceTab) {
   if (!showMaintenanceTab) return BASE_TABS;
@@ -2057,7 +2058,7 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
     status: vendor?.status || "active",
   }));
   const [activeSource, setActiveSource] = useState("myhomebro_contractor");
-  const [searchForm, setSearchForm] = useState({ trade_category: "", location: "", search: "" });
+  const [searchForm, setSearchForm] = useState({ trade_category: "", location: "", search: "", radius_miles: "25" });
   const [contractorResults, setContractorResults] = useState([]);
   const [businessResults, setBusinessResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -2258,7 +2259,7 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
 
         {isManual ? manualForm : (
           <div className="mt-5 space-y-4" data-testid={`pm-vendor-search-${activeSource}`}>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <label className="block text-sm font-medium text-slate-200">
                 Trade
                 <input
@@ -2289,6 +2290,19 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                 />
               </label>
+              <label className="block text-sm font-medium text-slate-200">
+                Radius
+                <select
+                  data-testid="pm-vendor-search-radius"
+                  value={searchForm.radius_miles}
+                  onChange={(event) => updateSearch("radius_miles", event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                >
+                  {SEARCH_RADIUS_OPTIONS.map((radius) => (
+                    <option key={radius} value={String(radius)}>{radius} miles</option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs leading-5 text-slate-400">
@@ -2307,6 +2321,10 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
               </button>
             </div>
             <div className="space-y-2" data-testid={`pm-vendor-results-${activeSource}`}>
+              <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-xs font-semibold text-slate-300">
+                {results.length} {activeSource === "local_business" ? "local business" : "MyHomeBro contractor"}{results.length === 1 ? "" : activeSource === "local_business" ? "es" : "s"} within {searchForm.radius_miles || 25} miles
+                {results.length <= 1 ? <span className="ml-2 font-normal text-slate-400">Try increasing the radius to 50 or 100 miles.</span> : null}
+              </div>
               {results.length ? results.map((row) => {
                 const key = activeSource === "local_business" ? row.business_id : row.contractor_id;
                 const name = row.business_name || row.name || "Vendor";
@@ -3788,6 +3806,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             const search = new URLSearchParams();
             if (String(params.location || "").trim()) search.set("location", params.location);
             if (String(params.search || "").trim()) search.set("search", params.search);
+            if (String(params.radius_miles || "").trim()) search.set("radius_miles", params.radius_miles);
             const { data } = await api.get(
               `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/contractor-matches/${search.toString() ? `?${search.toString()}` : ""}`
             );

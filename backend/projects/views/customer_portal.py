@@ -5863,6 +5863,18 @@ def _local_business_search_payload(row: dict) -> dict:
     }
 
 
+CUSTOMER_PORTAL_SEARCH_RADII = {5, 10, 25, 50, 100}
+CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES = 25
+
+
+def _customer_portal_radius_miles(value) -> int:
+    try:
+        radius = int(float(value or CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES))
+    except (TypeError, ValueError):
+        radius = CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES
+    return radius if radius in CUSTOMER_PORTAL_SEARCH_RADII else CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES
+
+
 class CustomerPortalProfileView(APIView):
     permission_classes = [AllowAny]
 
@@ -6097,6 +6109,7 @@ class CustomerPortalVendorContractorSearchView(APIView):
         search_text = _safe_text(request.query_params.get("search"))
         trade = _safe_text(request.query_params.get("trade_category") or request.query_params.get("trade"))
         location = _safe_text(request.query_params.get("location"))
+        radius_miles = _customer_portal_radius_miles(request.query_params.get("radius_miles"))
         query = Q()
         if search_text:
             query &= (
@@ -6122,7 +6135,14 @@ class CustomerPortalVendorContractorSearchView(APIView):
             .distinct()
             .order_by("business_name", "id")[:20]
         )
-        return Response({"results": [_contractor_search_payload(contractor) for contractor in rows]}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "results": [_contractor_search_payload(contractor) for contractor in rows],
+                "count": rows.count() if hasattr(rows, "count") else len(rows),
+                "radius_miles": radius_miles,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalVendorBusinessSearchView(APIView):
@@ -6142,6 +6162,7 @@ class CustomerPortalVendorBusinessSearchView(APIView):
         search_text = _safe_text(request.query_params.get("search"))
         trade = _safe_text(request.query_params.get("trade_category") or request.query_params.get("trade"))
         location = _safe_text(request.query_params.get("location"))
+        radius_miles = _customer_portal_radius_miles(request.query_params.get("radius_miles"))
         query_text = " ".join(part for part in [trade, search_text, location] if part)
         cached_q = Q(claimed=False) | Q(claimed_by_contractor__isnull=True)
         if search_text:
@@ -6171,7 +6192,7 @@ class CustomerPortalVendorBusinessSearchView(APIView):
         ]
         live_rows = []
         if query_text:
-            for row in search_google_places_contractors(query=query_text, limit=10, enforce_radius=False):
+            for row in search_google_places_contractors(query=query_text, limit=10, radius_miles=radius_miles, enforce_radius=True):
                 live_rows.append(_local_business_search_payload(row))
         seen = set()
         results = []
@@ -6184,7 +6205,7 @@ class CustomerPortalVendorBusinessSearchView(APIView):
             results.append(row)
             if len(results) >= 20:
                 break
-        return Response({"results": results}, status=status.HTTP_200_OK)
+        return Response({"results": results, "count": len(results), "radius_miles": radius_miles}, status=status.HTTP_200_OK)
 
 
 class CustomerPortalVendorImportView(APIView):
@@ -7074,7 +7095,7 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         )
         return payload
 
-    def _local_business_matches(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "") -> list[dict]:
+    def _local_business_matches(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "", radius_miles: int = CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES) -> list[dict]:
         property_profile = row.property_profile
         trade = _safe_text(row.get_category_display() if row.category != PropertyWorkOrder.CATEGORY_OTHER else row.category).replace("_", " ")
         location = location or ", ".join(
@@ -7109,7 +7130,7 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         ]
         live_rows = []
         if query_text:
-            for match in search_google_places_contractors(query=query_text, limit=10, enforce_radius=False):
+            for match in search_google_places_contractors(query=query_text, limit=10, radius_miles=radius_miles, enforce_radius=True):
                 live_rows.append(_local_business_search_payload(match))
         seen = set()
         results = []
@@ -7126,7 +7147,7 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 break
         return results
 
-    def _match_payload(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "") -> dict:
+    def _match_payload(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "", radius_miles: int = CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES) -> dict:
         entries = list(self._eligible_directory_entries(row))
         property_profile = row.property_profile
         default_location = ", ".join(
@@ -7134,11 +7155,12 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         )
         return {
             "myhomebro_contractors": [self._eligible_contractor_payload(entry) for entry in entries],
-            "local_businesses": self._local_business_matches(row, search_text=search_text, location=location),
+            "local_businesses": self._local_business_matches(row, search_text=search_text, location=location, radius_miles=radius_miles),
             "eligible_marketplace_count": len(entries),
             "trade": _safe_text(row.get_category_display()),
             "category": _safe_text(row.category),
             "location": location or default_location,
+            "radius_miles": radius_miles,
         }
 
     def post(self, request, token: str, property_id: int, work_order_id: int):
@@ -7229,7 +7251,8 @@ class CustomerPortalPropertyWorkOrderContractorMatchView(CustomerPortalPropertyW
         row = self._work_order_for_marketplace(company, property_profile, work_order_id)
         search_text = _safe_text(request.query_params.get("search"))
         location = _safe_text(request.query_params.get("location"))
-        return Response(self._match_payload(row, search_text=search_text, location=location), status=status.HTTP_200_OK)
+        radius_miles = _customer_portal_radius_miles(request.query_params.get("radius_miles"))
+        return Response(self._match_payload(row, search_text=search_text, location=location, radius_miles=radius_miles), status=status.HTTP_200_OK)
 
 
 class CustomerPortalPropertyWorkOrderAgreementDraftView(CustomerPortalPropertyWorkOrderMarketplaceView):
