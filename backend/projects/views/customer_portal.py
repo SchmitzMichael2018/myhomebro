@@ -111,7 +111,7 @@ from projects.services.customer_portal_supplies import (
     build_home_system_supply_recommendations,
     build_project_material_recommendations,
 )
-from projects.services.google_places_contractors import search_google_places_contractors
+from projects.services.google_places_contractors import geocode_project_location, search_google_places_contractors_with_diagnostics
 from projects.services.property_management import (
     company_payload,
     create_or_sync_rental_owner_company_from_homeowner,
@@ -5875,6 +5875,123 @@ def _customer_portal_radius_miles(value) -> int:
     return radius if radius in CUSTOMER_PORTAL_SEARCH_RADII else CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES
 
 
+def _normalize_state(value: str) -> str:
+    return _safe_text(value).upper()
+
+
+def normalize_vendor_search_location(location_text="", property_profile=None) -> dict:
+    raw_location = _safe_text(location_text)
+    address_line1 = _safe_text(getattr(property_profile, "address_line1", "")) if property_profile else ""
+    city = _safe_text(getattr(property_profile, "city", "")) if property_profile else ""
+    state = _normalize_state(getattr(property_profile, "state", "")) if property_profile else ""
+    postal_code = _safe_text(getattr(property_profile, "postal_code", "")) if property_profile else ""
+    diagnostics = {
+        "input": raw_location,
+        "source": "property_profile" if property_profile and not raw_location else "input",
+        "geocoded": False,
+        "geocode_error": "",
+        "geocode_status": "",
+    }
+
+    if raw_location:
+        normalized = re.sub(r"\s+", " ", raw_location).strip(" ,")
+        zip_match = re.search(r"\b\d{5}(?:-\d{4})?\b", normalized)
+        if zip_match:
+            postal_code = zip_match.group(0)
+
+        parts = [part.strip() for part in normalized.split(",") if part.strip()]
+        if len(parts) >= 3:
+            address_line1 = parts[0]
+            city = parts[-2]
+            state_part = parts[-1]
+            state_tokens = state_part.split()
+            if state_tokens:
+                state = _normalize_state(state_tokens[0])
+            if len(state_tokens) > 1 and not postal_code:
+                postal_code = state_tokens[1]
+        elif len(parts) == 2:
+            first, second = parts
+            state_tokens = second.split()
+            city = first
+            if state_tokens:
+                state = _normalize_state(state_tokens[0])
+            if len(state_tokens) > 1 and not postal_code:
+                postal_code = state_tokens[1]
+        elif len(parts) == 1:
+            tokens = parts[0].split()
+            if len(tokens) == 2 and len(tokens[1]) == 2:
+                city = tokens[0]
+                state = _normalize_state(tokens[1])
+            elif zip_match and len(tokens) == 1:
+                city = ""
+            else:
+                city = parts[0]
+
+    full_address = ", ".join(part for part in [address_line1, city, state, postal_code] if part)
+    display_location = ", ".join(part for part in [city, state] if part) or postal_code or full_address or raw_location
+    latitude = None
+    longitude = None
+
+    geocode = geocode_project_location(
+        address_line1=address_line1,
+        city=city,
+        state=state,
+        postal_code=postal_code,
+    )
+    latitude = geocode.get("latitude")
+    longitude = geocode.get("longitude")
+    geocode_diagnostic = geocode.get("diagnostic") if isinstance(geocode.get("diagnostic"), dict) else {}
+    diagnostics["geocoded"] = latitude is not None and longitude is not None
+    diagnostics["geocode_error"] = _safe_text(geocode_diagnostic.get("error"))
+    diagnostics["geocode_status"] = _safe_text(geocode_diagnostic.get("status"))
+
+    return {
+        "city": city,
+        "state": state,
+        "postal_code": postal_code,
+        "address_line1": address_line1,
+        "full_address": full_address,
+        "display_location": display_location,
+        "latitude": latitude,
+        "longitude": longitude,
+        "diagnostics": diagnostics,
+    }
+
+
+def _apply_directory_location_filter(query, normalized_location: dict):
+    city = _safe_text(normalized_location.get("city"))
+    state = _safe_text(normalized_location.get("state"))
+    postal_code = _safe_text(normalized_location.get("postal_code"))
+    location_filter = Q()
+    if city:
+        location_filter |= Q(city__icontains=city)
+    if state:
+        location_filter |= Q(state__iexact=state)
+    if postal_code:
+        location_filter |= Q(zip_code__icontains=postal_code)
+    return query & location_filter if location_filter else query
+
+
+def _local_search_diagnostics(*, query_text: str, normalized_location: dict, radius_miles: int, cached_count: int, live_payload: dict) -> dict:
+    google_diagnostic = live_payload.get("diagnostic") if isinstance(live_payload, dict) else {}
+    if not isinstance(google_diagnostic, dict):
+        google_diagnostic = {}
+    geocode_diagnostic = normalized_location.get("diagnostics") if isinstance(normalized_location.get("diagnostics"), dict) else {}
+    return {
+        "query_text": query_text,
+        "display_location": normalized_location.get("display_location") or "",
+        "radius_miles": radius_miles,
+        "cached_count": cached_count,
+        "live_count": len(live_payload.get("results") or []) if isinstance(live_payload, dict) else 0,
+        "google_status": google_diagnostic.get("text_status") or google_diagnostic.get("nearby_status"),
+        "google_error": _safe_text(google_diagnostic.get("error")),
+        "google_empty_reason": _safe_text(google_diagnostic.get("empty_reason")),
+        "geocoded": bool(geocode_diagnostic.get("geocoded")),
+        "geocode_error": _safe_text(geocode_diagnostic.get("geocode_error")),
+        "geocode_status": _safe_text(geocode_diagnostic.get("geocode_status")),
+    }
+
+
 class CustomerPortalProfileView(APIView):
     permission_classes = [AllowAny]
 
@@ -6163,14 +6280,20 @@ class CustomerPortalVendorBusinessSearchView(APIView):
         trade = _safe_text(request.query_params.get("trade_category") or request.query_params.get("trade"))
         location = _safe_text(request.query_params.get("location"))
         radius_miles = _customer_portal_radius_miles(request.query_params.get("radius_miles"))
-        query_text = " ".join(part for part in [trade, search_text, location] if part)
+        property_profile = None
+        property_id = _safe_text(request.query_params.get("property_id"))
+        if property_id:
+            property_profile = PropertyProfile.objects.filter(pk=property_id, managed_by_company=company).first()
+        if property_profile is None and not location:
+            property_profile = PropertyProfile.objects.filter(managed_by_company=company).order_by("id").first()
+        normalized_location = normalize_vendor_search_location(location, property_profile=property_profile)
+        query_text = " ".join(part for part in [trade, search_text, normalized_location.get("display_location")] if part)
         cached_q = Q(claimed=False) | Q(claimed_by_contractor__isnull=True)
         if search_text:
             cached_q &= Q(business_name__icontains=search_text)
         if trade:
             cached_q &= (Q(primary_service__icontains=trade) | Q(normalized_services__icontains=trade) | Q(services__icontains=trade))
-        if location:
-            cached_q &= Q(city__icontains=location) | Q(state__icontains=location) | Q(zip_code__icontains=location)
+        cached_q = _apply_directory_location_filter(cached_q, normalized_location)
         cached_rows = [
             _local_business_search_payload(
                 {
@@ -6190,9 +6313,18 @@ class CustomerPortalVendorBusinessSearchView(APIView):
             )
             for entry in ContractorDirectoryEntry.objects.filter(cached_q, is_archived=False).order_by("business_name", "id")[:10]
         ]
+        live_payload = {"results": [], "diagnostic": {}}
         live_rows = []
         if query_text:
-            for row in search_google_places_contractors(query=query_text, limit=10, radius_miles=radius_miles, enforce_radius=True):
+            live_payload = search_google_places_contractors_with_diagnostics(
+                query=query_text,
+                latitude=normalized_location.get("latitude"),
+                longitude=normalized_location.get("longitude"),
+                limit=10,
+                radius_miles=radius_miles,
+                enforce_radius=True,
+            )
+            for row in live_payload.get("results") or []:
                 live_rows.append(_local_business_search_payload(row))
         seen = set()
         results = []
@@ -6205,7 +6337,24 @@ class CustomerPortalVendorBusinessSearchView(APIView):
             results.append(row)
             if len(results) >= 20:
                 break
-        return Response({"results": results, "count": len(results), "radius_miles": radius_miles}, status=status.HTTP_200_OK)
+        diagnostics = _local_search_diagnostics(
+            query_text=query_text,
+            normalized_location=normalized_location,
+            radius_miles=radius_miles,
+            cached_count=len(cached_rows),
+            live_payload=live_payload,
+        )
+        return Response(
+            {
+                "results": results,
+                "count": len(results),
+                "radius_miles": radius_miles,
+                "query_text": query_text,
+                "display_location": normalized_location.get("display_location") or "",
+                "diagnostics": diagnostics,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalVendorImportView(APIView):
@@ -7095,20 +7244,17 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         )
         return payload
 
-    def _local_business_matches(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "", radius_miles: int = CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES) -> list[dict]:
+    def _local_business_match_payload(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "", radius_miles: int = CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES) -> dict:
         property_profile = row.property_profile
         trade = _safe_text(row.get_category_display() if row.category != PropertyWorkOrder.CATEGORY_OTHER else row.category).replace("_", " ")
-        location = location or ", ".join(
-            part for part in [_safe_text(property_profile.city), _safe_text(property_profile.state), _safe_text(property_profile.postal_code)] if part
-        )
-        query_text = " ".join(part for part in [trade, search_text, location] if part)
+        normalized_location = normalize_vendor_search_location(location, property_profile=property_profile)
+        query_text = " ".join(part for part in [trade, search_text, normalized_location.get("display_location")] if part)
         cached_q = Q(claimed=False) | Q(claimed_by_contractor__isnull=True)
         if search_text:
             cached_q &= Q(business_name__icontains=search_text)
         if trade:
             cached_q &= (Q(primary_service__icontains=trade) | Q(normalized_services__icontains=trade) | Q(services__icontains=trade))
-        if location:
-            cached_q &= Q(city__icontains=location) | Q(state__icontains=location) | Q(zip_code__icontains=location)
+        cached_q = _apply_directory_location_filter(cached_q, normalized_location)
         cached_rows = [
             _local_business_search_payload(
                 {
@@ -7128,9 +7274,18 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             )
             for entry in ContractorDirectoryEntry.objects.filter(cached_q, is_archived=False).order_by("business_name", "id")[:10]
         ]
+        live_payload = {"results": [], "diagnostic": {}}
         live_rows = []
         if query_text:
-            for match in search_google_places_contractors(query=query_text, limit=10, radius_miles=radius_miles, enforce_radius=True):
+            live_payload = search_google_places_contractors_with_diagnostics(
+                query=query_text,
+                latitude=normalized_location.get("latitude"),
+                longitude=normalized_location.get("longitude"),
+                limit=10,
+                radius_miles=radius_miles,
+                enforce_radius=True,
+            )
+            for match in live_payload.get("results") or []:
                 live_rows.append(_local_business_search_payload(match))
         seen = set()
         results = []
@@ -7145,22 +7300,31 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             results.append(match)
             if len(results) >= 20:
                 break
-        return results
+        diagnostics = _local_search_diagnostics(
+            query_text=query_text,
+            normalized_location=normalized_location,
+            radius_miles=radius_miles,
+            cached_count=len(cached_rows),
+            live_payload=live_payload,
+        )
+        return {"results": results, "diagnostics": diagnostics, "normalized_location": normalized_location}
 
     def _match_payload(self, row: PropertyWorkOrder, *, search_text: str = "", location: str = "", radius_miles: int = CUSTOMER_PORTAL_DEFAULT_RADIUS_MILES) -> dict:
         entries = list(self._eligible_directory_entries(row))
-        property_profile = row.property_profile
-        default_location = ", ".join(
-            part for part in [_safe_text(property_profile.address_line1), _safe_text(property_profile.city), _safe_text(property_profile.state), _safe_text(property_profile.postal_code)] if part
-        )
+        local_payload = self._local_business_match_payload(row, search_text=search_text, location=location, radius_miles=radius_miles)
+        normalized_location = local_payload["normalized_location"]
+        diagnostics = local_payload["diagnostics"]
         return {
             "myhomebro_contractors": [self._eligible_contractor_payload(entry) for entry in entries],
-            "local_businesses": self._local_business_matches(row, search_text=search_text, location=location, radius_miles=radius_miles),
+            "local_businesses": local_payload["results"],
             "eligible_marketplace_count": len(entries),
             "trade": _safe_text(row.get_category_display()),
             "category": _safe_text(row.category),
-            "location": location or default_location,
+            "location": normalized_location.get("full_address") or normalized_location.get("display_location") or location,
+            "display_location": normalized_location.get("display_location") or "",
             "radius_miles": radius_miles,
+            "query_text": diagnostics.get("query_text") or "",
+            "diagnostics": diagnostics,
         }
 
     def post(self, request, token: str, property_id: int, work_order_id: int):

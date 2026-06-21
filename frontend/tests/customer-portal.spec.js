@@ -2135,6 +2135,14 @@ test("customer portal is reachable from the landing page and loads secure record
         contentType: "application/json",
         body: JSON.stringify({
           radius_miles: Number(parsedUrl.searchParams.get("radius_miles") || 25),
+          display_location: "San Antonio, TX",
+          diagnostics: {
+            query_text: "Plumbing Joe San Antonio, TX",
+            display_location: "San Antonio, TX",
+            cached_count: 1,
+            live_count: 0,
+            geocoded: true,
+          },
           results: [
             {
               business_id: "local-joe-plumbing",
@@ -2169,6 +2177,15 @@ test("customer portal is reachable from the landing page and loads secure record
           trade: "Plumbing",
           category: "plumbing",
           location: parsedUrl.searchParams.get("location") || "San Antonio, TX",
+          display_location: "San Antonio, TX",
+          query_text: `Plumbing ${searchText ? `${searchText} ` : ""}San Antonio, TX`,
+          diagnostics: {
+            query_text: `Plumbing ${searchText ? `${searchText} ` : ""}San Antonio, TX`,
+            display_location: "San Antonio, TX",
+            cached_count: 1,
+            live_count: 0,
+            geocoded: true,
+          },
           myhomebro_contractors: noEligible
             ? []
             : [
@@ -4341,7 +4358,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("pm-vendor-search-radius").selectOption("100");
   await page.getByTestId("pm-vendor-run-search-local_business").click();
   await expect(page.getByTestId("pm-vendor-results-local_business")).toContainText("Joe's Plumbing");
-  await expect(page.getByTestId("pm-vendor-results-local_business")).toContainText("1 local business within 100 miles");
+  await expect(page.getByTestId("pm-vendor-results-local_business")).toContainText("1 local business within 100 miles of San Antonio, TX");
   await page.getByTestId("pm-vendor-import-local_business-local-joe-plumbing").click();
   await expect(page.getByTestId("pm-vendor-add-modal")).toHaveCount(0);
   await expect(page.getByTestId("pm-vendor-703")).toContainText("Joe's Plumbing");
@@ -4596,7 +4613,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-preview-matches").click();
   await expect(page.getByTestId("property-work-order-marketplace-eligible")).toContainText("1 approved MyHomeBro contractor within 50 miles");
   await expect(page.getByTestId("property-work-order-marketplace-results")).toContainText("ABC Plumbing");
-  await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("1 local business within 50 miles");
+  await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("1 local business within 50 miles of San Antonio, TX");
+  await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("Searching Plumbing near San Antonio, TX within 50 miles");
   await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeEnabled();
   await page.getByTestId("property-work-order-save-send-marketplace").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);

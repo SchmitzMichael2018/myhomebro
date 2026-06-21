@@ -2061,6 +2061,7 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
   const [searchForm, setSearchForm] = useState({ trade_category: "", location: "", search: "", radius_miles: "25" });
   const [contractorResults, setContractorResults] = useState([]);
   const [businessResults, setBusinessResults] = useState([]);
+  const [searchMeta, setSearchMeta] = useState({});
   const [searching, setSearching] = useState(false);
   const [importingKey, setImportingKey] = useState("");
 
@@ -2095,6 +2096,7 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
       } else {
         setContractorResults(Array.isArray(data?.results) ? data.results : []);
       }
+      setSearchMeta((prev) => ({ ...prev, [source]: data || {} }));
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Could not search vendors.");
     } finally {
@@ -2209,6 +2211,15 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
   );
 
   const results = activeSource === "local_business" ? businessResults : contractorResults;
+  const activeSearchMeta = searchMeta[activeSource] || {};
+  const searchDisplayLocation = activeSearchMeta.display_location || searchForm.location || "the selected area";
+  const searchRadius = activeSearchMeta.radius_miles || searchForm.radius_miles || 25;
+  const localBusinessGeocodeFailed = Boolean(
+    activeSource === "local_business" &&
+      activeSearchMeta?.diagnostics?.geocode_error &&
+      activeSearchMeta?.diagnostics?.geocode_error !== "google_geocode_api_key_missing" &&
+      !activeSearchMeta?.diagnostics?.geocoded
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
@@ -2322,8 +2333,13 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
             </div>
             <div className="space-y-2" data-testid={`pm-vendor-results-${activeSource}`}>
               <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-xs font-semibold text-slate-300">
-                {results.length} {activeSource === "local_business" ? "local business" : "MyHomeBro contractor"}{results.length === 1 ? "" : activeSource === "local_business" ? "es" : "s"} within {searchForm.radius_miles || 25} miles
+                {results.length} {activeSource === "local_business" ? "local business" : "MyHomeBro contractor"}{results.length === 1 ? "" : activeSource === "local_business" ? "es" : "s"} within {searchRadius} miles{activeSource === "local_business" ? ` of ${searchDisplayLocation}` : ""}
                 {results.length <= 1 ? <span className="ml-2 font-normal text-slate-400">Try increasing the radius to 50 or 100 miles.</span> : null}
+                {localBusinessGeocodeFailed ? (
+                  <div className="mt-1 font-semibold text-amber-100">
+                    We could not verify that location. Try city/state or a ZIP code.
+                  </div>
+                ) : null}
               </div>
               {results.length ? results.map((row) => {
                 const key = activeSource === "local_business" ? row.business_id : row.contractor_id;

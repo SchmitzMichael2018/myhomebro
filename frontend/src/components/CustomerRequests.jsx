@@ -451,6 +451,13 @@ function PropertyWorkOrdersSection({
   );
   const marketplaceEligibleCount = Number(marketplaceMatches?.eligible_marketplace_count || 0);
   const canSendToMarketplace = form.assignment_type === "marketplace_contractor" && marketplaceEligibleCount > 0;
+  const marketplaceDisplayLocation = marketplaceMatches?.display_location || marketplaceMatches?.location || marketplaceSearch.location || "this property";
+  const marketplaceRadius = marketplaceMatches?.radius_miles || marketplaceSearch.radius_miles || 25;
+  const marketplaceGeocodeFailed = Boolean(
+    marketplaceMatches?.diagnostics?.geocode_error &&
+      marketplaceMatches?.diagnostics?.geocode_error !== "google_geocode_api_key_missing" &&
+      !marketplaceMatches?.diagnostics?.geocoded
+  );
 
   const resetMarketplacePreview = () => {
     setMarketplaceMatches(null);
@@ -1094,6 +1101,11 @@ function PropertyWorkOrdersSection({
                           <p className="mt-1 text-xs leading-5 text-amber-100/85">
                             You can import a local business as a preferred vendor or add a vendor manually. Try increasing the radius to 50 or 100 miles.
                           </p>
+                          {marketplaceGeocodeFailed ? (
+                            <p className="mt-2 text-xs font-semibold text-amber-100">
+                              We could not verify that location. Try city/state or a ZIP code.
+                            </p>
+                          ) : null}
                         </div>
                       )}
 
@@ -1102,8 +1114,16 @@ function PropertyWorkOrdersSection({
                           <div>
                             <div className="font-semibold text-white">Local business results</div>
                             <div className="text-xs text-slate-400">
-                              {(marketplaceMatches.local_businesses || []).length} local business{(marketplaceMatches.local_businesses || []).length === 1 ? "" : "es"} within {marketplaceMatches.radius_miles || marketplaceSearch.radius_miles || 25} miles
+                              {(marketplaceMatches.local_businesses || []).length} local business{(marketplaceMatches.local_businesses || []).length === 1 ? "" : "es"} within {marketplaceRadius} miles of {marketplaceDisplayLocation}
                             </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              Searching {marketplaceMatches.trade || "contractors"} near {marketplaceDisplayLocation} within {marketplaceRadius} miles
+                            </div>
+                            {marketplaceGeocodeFailed ? (
+                              <div className="mt-1 text-xs font-semibold text-amber-100">
+                                We could not verify that location. Try city/state or a ZIP code.
+                              </div>
+                            ) : null}
                           </div>
                           <Badge>{(marketplaceMatches.local_businesses || []).length} local</Badge>
                         </div>

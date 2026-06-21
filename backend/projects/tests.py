@@ -21441,6 +21441,59 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(local_vendor.vendor_source, PropertyVendor.SOURCE_LOCAL_BUSINESS)
         self.assertEqual(local_vendor.phone, "512-555-0190")
 
+    def test_property_management_vendor_local_search_normalizes_location_and_geocodes(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self._create_property_work_order_context()
+        ContractorDirectoryEntry.objects.create(
+            business_name="San Antonio Pipe Shop",
+            normalized_name="san antonio pipe shop",
+            city="San Antonio",
+            state="TX",
+            phone="210-555-0190",
+            primary_service="plumbing",
+            normalized_services=["plumbing"],
+            services=["Plumbing"],
+            claimed=False,
+        )
+        with patch(
+            "projects.views.customer_portal.geocode_project_location",
+            return_value={"latitude": 29.4241, "longitude": -98.4936, "diagnostic": {"status": "OK"}},
+        ) as geocode_mock, patch(
+            "projects.views.customer_portal.search_google_places_contractors_with_diagnostics",
+            return_value={
+                "results": [
+                    {
+                        "id": "places/live-pipe",
+                        "business_name": "Live San Antonio Plumbing",
+                        "formatted_address": "100 Market St, San Antonio, TX",
+                        "city": "San Antonio",
+                        "state": "TX",
+                        "phone_number": "210-555-0191",
+                        "primary_trade": "plumbing",
+                        "latitude": 29.43,
+                        "longitude": -98.49,
+                    }
+                ],
+                "diagnostic": {"text_status": 200, "results_count": 1},
+            },
+        ) as google_mock:
+            response = self.client.get(
+                f"/api/projects/customer-portal/{token}/vendor-search/businesses/?search=Pipe&trade_category=plumbing&location=San%20Antonio,%20TX&radius_miles=50"
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["display_location"], "San Antonio, TX")
+        self.assertEqual(response.data["diagnostics"]["query_text"], "plumbing Pipe San Antonio, TX")
+        self.assertEqual(response.data["diagnostics"]["cached_count"], 1)
+        self.assertEqual(response.data["diagnostics"]["live_count"], 1)
+        self.assertTrue(response.data["diagnostics"]["geocoded"])
+        self.assertEqual(response.data["results"][0]["business_name"], "San Antonio Pipe Shop")
+        geocode_mock.assert_called_once()
+        google_mock.assert_called_once()
+        self.assertEqual(google_mock.call_args.kwargs["latitude"], 29.4241)
+        self.assertEqual(google_mock.call_args.kwargs["longitude"], -98.4936)
+        self.assertEqual(google_mock.call_args.kwargs["radius_miles"], 50)
+
     def test_individual_customer_cannot_manage_vendors(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
 
@@ -21604,6 +21657,73 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.data["local_businesses"][0]["business_name"], "Local Pipe Shop")
         self.assertEqual(response.data["local_businesses"][0]["source_label"], "Local Business")
         self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row).exists())
+
+    def test_property_work_order_contractor_matches_uses_property_location_and_geocoding(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        property_profile.address_line1 = "123 Main St"
+        property_profile.city = "San Antonio"
+        property_profile.state = "TX"
+        property_profile.postal_code = "78205"
+        property_profile.save(update_fields=["address_line1", "city", "state", "postal_code", "updated_at"])
+        ContractorDirectoryEntry.objects.create(
+            business_name="San Antonio Pipe Shop",
+            normalized_name="san antonio pipe shop",
+            city="San Antonio",
+            state="TX",
+            primary_service="plumbing",
+            normalized_services=["plumbing"],
+            services=["Plumbing"],
+            claimed=False,
+        )
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+
+        with patch(
+            "projects.views.customer_portal.geocode_project_location",
+            return_value={"latitude": 29.4241, "longitude": -98.4936, "diagnostic": {"status": "OK"}},
+        ) as geocode_mock, patch(
+            "projects.views.customer_portal.search_google_places_contractors_with_diagnostics",
+            return_value={
+                "results": [
+                    {
+                        "id": "places/live-pipe",
+                        "business_name": "Live San Antonio Plumbing",
+                        "formatted_address": "100 Market St, San Antonio, TX",
+                        "city": "San Antonio",
+                        "state": "TX",
+                        "primary_trade": "plumbing",
+                        "latitude": 29.43,
+                        "longitude": -98.49,
+                    }
+                ],
+                "diagnostic": {"text_status": 200},
+            },
+        ) as google_mock:
+            response = self.client.get(
+                f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/contractor-matches/?radius_miles=50"
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["display_location"], "San Antonio, TX")
+        self.assertEqual(response.data["query_text"], "Plumbing San Antonio, TX")
+        self.assertEqual(response.data["diagnostics"]["cached_count"], 1)
+        self.assertEqual(response.data["diagnostics"]["live_count"], 1)
+        self.assertTrue(response.data["diagnostics"]["geocoded"])
+        self.assertEqual(response.data["local_businesses"][0]["business_name"], "San Antonio Pipe Shop")
+        geocode_mock.assert_called_once_with(address_line1="123 Main St", city="San Antonio", state="TX", postal_code="78205")
+        google_mock.assert_called_once()
+        self.assertEqual(google_mock.call_args.kwargs["latitude"], 29.4241)
+        self.assertEqual(google_mock.call_args.kwargs["longitude"], -98.4936)
+        self.assertEqual(google_mock.call_args.kwargs["radius_miles"], 50)
 
     def test_property_work_order_contractor_matches_can_return_no_eligible_contractors(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
