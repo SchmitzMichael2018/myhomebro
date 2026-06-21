@@ -7355,6 +7355,19 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             return Response({"detail": "This work order already has active marketplace opportunities."}, status=status.HTTP_400_BAD_REQUEST)
 
         entries = list(self._eligible_directory_entries(row))
+        selected_entry_ids = request.data.get("directory_entry_ids") if isinstance(request.data, dict) else None
+        if selected_entry_ids is None and isinstance(request.data, dict):
+            selected_entry_ids = request.data.get("selected_directory_entry_ids")
+        if selected_entry_ids:
+            try:
+                selected_ids = {int(value) for value in selected_entry_ids}
+            except (TypeError, ValueError):
+                return Response({"detail": "Selected contractors could not be read."}, status=status.HTTP_400_BAD_REQUEST)
+            if len(selected_ids) > 5:
+                return Response({"detail": "Select up to 5 marketplace contractors."}, status=status.HTTP_400_BAD_REQUEST)
+            entries = [entry for entry in entries if entry.id in selected_ids]
+            if not entries:
+                return Response({"detail": "Selected contractors are not eligible for this work order."}, status=status.HTTP_400_BAD_REQUEST)
         if not entries:
             return Response({"detail": "No eligible marketplace contractors are available for this work order yet."}, status=status.HTTP_400_BAD_REQUEST)
         property_profile = row.property_profile

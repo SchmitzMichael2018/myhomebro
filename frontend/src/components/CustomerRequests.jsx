@@ -435,6 +435,8 @@ function PropertyWorkOrdersSection({
   const [marketplaceSearching, setMarketplaceSearching] = useState(false);
   const [marketplaceImportingKey, setMarketplaceImportingKey] = useState("");
   const [workOrderFilter, setWorkOrderFilter] = useState("active");
+  const [workflowStep, setWorkflowStep] = useState(1);
+  const [selectedRecipients, setSelectedRecipients] = useState([]);
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const activePropertyId = editing?.property_profile_id || form.property_id || propertyProfile?.id || propertyOptions[0]?.id || "";
   const activeProperty = propertyOptions.find((property) => String(property.id) === String(activePropertyId)) || propertyProfile || {};
@@ -450,7 +452,16 @@ function PropertyWorkOrdersSection({
     statusMatchesFilter(row.status, workOrderFilter, WORK_ORDER_ACTIVE_STATUSES, WORK_ORDER_ARCHIVED_STATUSES)
   );
   const marketplaceEligibleCount = Number(marketplaceMatches?.eligible_marketplace_count || 0);
-  const canSendToMarketplace = form.assignment_type === "marketplace_contractor" && marketplaceEligibleCount > 0;
+  const selectedMarketplaceContractorIds = selectedRecipients
+    .filter((recipient) => recipient.source === "myhomebro_contractor" && recipient.directory_entry_id)
+    .map((recipient) => Number(recipient.directory_entry_id));
+  const selectedMarketplaceCount = selectedMarketplaceContractorIds.length;
+  const selectedRecipientCount = selectedRecipients.length;
+  const canSendToMarketplace =
+    form.assignment_type === "marketplace_contractor" &&
+    selectedMarketplaceCount >= 3 &&
+    selectedMarketplaceCount <= 5 &&
+    marketplaceEligibleCount > 0;
   const marketplaceDisplayLocation = marketplaceMatches?.display_location || marketplaceMatches?.location || marketplaceSearch.location || "this property";
   const marketplaceRadius = marketplaceMatches?.radius_miles || marketplaceSearch.radius_miles || 25;
   const marketplaceGeocodeFailed = Boolean(
@@ -463,6 +474,7 @@ function PropertyWorkOrdersSection({
     setMarketplaceMatches(null);
     setMarketplaceSearching(false);
     setMarketplaceImportingKey("");
+    setSelectedRecipients([]);
   };
 
   const openCreate = () => {
@@ -472,6 +484,7 @@ function PropertyWorkOrdersSection({
     setVendorSearch("");
     setMarketplaceSearch({ location: activeProperty?.address || activeProperty?.display_name || "", search: "", radius_miles: "25" });
     resetMarketplacePreview();
+    setWorkflowStep(1);
     setError("");
   };
 
@@ -487,6 +500,7 @@ function PropertyWorkOrdersSection({
       radius_miles: "25",
     });
     resetMarketplacePreview();
+    setWorkflowStep(1);
     setError("");
   };
 
@@ -498,6 +512,7 @@ function PropertyWorkOrdersSection({
     setVendorSearch("");
     setMarketplaceSearch({ location: "", search: "", radius_miles: "25" });
     resetMarketplacePreview();
+    setWorkflowStep(1);
     setError("");
   };
 
@@ -519,6 +534,69 @@ function PropertyWorkOrdersSection({
       return { ...prev, [field]: value };
     });
     setError("");
+  };
+
+  const recipientKey = (recipient) => `${recipient.source}:${recipient.directory_entry_id || recipient.vendor_id || recipient.business_id || recipient.name}`;
+  const recipientFromContractor = (contractor) => ({
+    source: "myhomebro_contractor",
+    source_label: "MyHomeBro Contractor",
+    directory_entry_id: contractor.directory_entry_id,
+    contractor_id: contractor.contractor_id,
+    name: contractor.business_name || "MyHomeBro Contractor",
+    trade: contractor.primary_trade || contractor.trade_categories?.join?.(", ") || marketplaceMatches?.trade || "",
+    location: contractor.location || "",
+  });
+  const recipientFromVendor = (vendor) => ({
+    source: "preferred_vendor",
+    source_label: "Preferred Vendor",
+    vendor_id: vendor.id,
+    name: vendor.name || "Vendor",
+    trade: vendor.trade_category || "",
+    location: vendor.email || vendor.phone || "",
+  });
+  const recipientFromBusiness = (business) => ({
+    source: "local_business",
+    source_label: "Local Business",
+    business_id: business.business_id || business.business_name,
+    name: business.business_name || "Local Business",
+    trade: business.trade_category || marketplaceMatches?.trade || "",
+    location: business.location || business.address || "",
+  });
+  const recipientSelected = (recipient) => {
+    const key = recipientKey(recipient);
+    return selectedRecipients.some((item) => recipientKey(item) === key);
+  };
+  const toggleRecipient = (recipient) => {
+    const key = recipientKey(recipient);
+    setSelectedRecipients((prev) => {
+      if (prev.some((item) => recipientKey(item) === key)) {
+        return prev.filter((item) => recipientKey(item) !== key);
+      }
+      if (recipient.source === "myhomebro_contractor" && selectedMarketplaceCount >= 5) return prev;
+      return [...prev, recipient];
+    });
+  };
+
+  const continueFromDetails = () => {
+    if (!form.title.trim() || !form.description.trim()) {
+      setError("Add a title and description before continuing.");
+      return;
+    }
+    setError("");
+    setWorkflowStep(form.assignment_type === "internal_staff" ? 3 : 2);
+  };
+
+  const continueFromContractors = () => {
+    if (form.assignment_type === "vendor" && !form.assigned_vendor_id && !selectedRecipients.some((recipient) => recipient.source === "preferred_vendor")) {
+      setError("Choose a preferred vendor before continuing.");
+      return;
+    }
+    if (form.assignment_type === "marketplace_contractor" && selectedMarketplaceCount < 3) {
+      setError("Select at least 3 MyHomeBro contractors before sending to marketplace.");
+      return;
+    }
+    setError("");
+    setWorkflowStep(3);
   };
 
   const submit = async (event, options = {}) => {
@@ -555,11 +633,14 @@ function PropertyWorkOrdersSection({
     }
     try {
       if (editing?.mode === "create") {
-        await onCreate?.(form.property_id || activePropertyId, payload);
+          const created = await onCreate?.(form.property_id || activePropertyId, payload);
+          if (options.sendToMarketplace && form.assignment_type === "marketplace_contractor" && created?.work_order?.id) {
+            await onSendToMarketplace?.(form.property_id || activePropertyId, created.work_order.id, { directory_entry_ids: selectedMarketplaceContractorIds });
+          }
       } else {
         await onUpdate?.(editing.property_profile_id || activePropertyId, editing.id, payload);
         if (options.sendToMarketplace && form.assignment_type === "marketplace_contractor") {
-          await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id);
+          await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id, { directory_entry_ids: selectedMarketplaceContractorIds });
         }
       }
       close();
@@ -868,14 +949,39 @@ function PropertyWorkOrdersSection({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-white">{editing.mode === "create" ? "Create Work Order" : "Edit Work Order"}</h3>
-                <p className="mt-1 text-sm text-slate-400">Assign work to internal staff, a preferred vendor, or prepare it for marketplace contractor routing.</p>
+                <p className="mt-1 text-sm text-slate-400">Create the work order, find the right recipients, then finalize scheduling and notes.</p>
               </div>
               <button type="button" onClick={close} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800">
                 Close
               </button>
             </div>
 
+            <div data-testid="property-work-order-stepper" className="mt-5 grid gap-2 sm:grid-cols-3">
+              {[
+                [1, "Work Order"],
+                [2, "Contractors"],
+                [3, "Finalize"],
+              ].map(([step, label]) => (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => setWorkflowStep(step)}
+                  className={`rounded-xl border px-3 py-2 text-left text-sm font-semibold ${
+                    workflowStep === step
+                      ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
+                      : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                  }`}
+                  data-testid={`property-work-order-step-${step}`}
+                >
+                  <span className="mr-2 inline-flex h-5 w-5 items-center justify-center rounded-full border border-current text-[11px]">{step}</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {workflowStep === 1 ? (
+                <>
               {editing.mode === "create" && propertyOptions.length > 1 ? (
                 <label className="block text-sm font-medium text-slate-200">
                   Property
@@ -932,7 +1038,9 @@ function PropertyWorkOrdersSection({
                   {WORK_ORDER_ASSIGNMENT_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </label>
-              {form.assignment_type === "internal_staff" ? (
+                </>
+              ) : null}
+              {workflowStep === 3 && form.assignment_type === "internal_staff" ? (
                 <div data-testid="property-work-order-staff-panel" className="rounded-2xl border border-sky-300/25 bg-sky-400/10 p-3 sm:col-span-2">
                   <label className="block text-sm font-medium text-sky-50">
                     Internal staff owner
@@ -946,7 +1054,7 @@ function PropertyWorkOrdersSection({
                   </p>
                 </div>
               ) : null}
-              {form.assignment_type === "vendor" ? (
+              {workflowStep === 2 && form.assignment_type === "vendor" ? (
                 <div data-testid="property-work-order-vendor-panel" className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-3 sm:col-span-2">
                   <label className="block text-sm font-medium text-amber-50">
                     Search preferred vendors
@@ -970,7 +1078,7 @@ function PropertyWorkOrdersSection({
                   </p>
                 </div>
               ) : null}
-              {form.assignment_type === "marketplace_contractor" ? (
+              {workflowStep === 2 && form.assignment_type === "marketplace_contractor" ? (
                 <div data-testid="property-work-order-marketplace-placeholder" className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-50 sm:col-span-2">
                   <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div>
@@ -1061,6 +1169,12 @@ function PropertyWorkOrdersSection({
                       <span className="text-xs text-emerald-100/80">Save the work order first, then preview marketplace matches.</span>
                     ) : null}
                   </div>
+                  <div data-testid="property-work-order-recipient-summary" className="mt-3 rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-xs text-slate-300">
+                    <strong className="text-white">{selectedRecipientCount}</strong> selected recipient{selectedRecipientCount === 1 ? "" : "s"}.
+                    <span className="ml-2 text-slate-400">
+                      Select 3-5 MyHomeBro contractors to send marketplace opportunities. Preferred vendors and local businesses stay visible here for review/import.
+                    </span>
+                  </div>
 
                   {marketplaceMatches ? (
                     <div className="mt-4 space-y-4" data-testid="property-work-order-marketplace-results">
@@ -1090,6 +1204,16 @@ function PropertyWorkOrdersSection({
                                       <span>{contractor.website || "No website listed"}</span>
                                     </div>
                                   </div>
+                                  <label className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2 text-xs font-bold text-emerald-100">
+                                    <input
+                                      type="checkbox"
+                                      data-testid={`property-work-order-select-contractor-${contractor.directory_entry_id || contractor.contractor_id}`}
+                                      checked={recipientSelected(recipientFromContractor(contractor))}
+                                      onChange={() => toggleRecipient(recipientFromContractor(contractor))}
+                                      className="h-4 w-4 accent-emerald-300"
+                                    />
+                                    Select
+                                  </label>
                                 </div>
                               </article>
                             ))}
@@ -1108,6 +1232,36 @@ function PropertyWorkOrdersSection({
                           ) : null}
                         </div>
                       )}
+
+                      <div data-testid="property-work-order-preferred-vendor-results" className="rounded-xl border border-amber-300/25 bg-slate-950/60 p-3">
+                        <div className="font-semibold text-white">Preferred vendors</div>
+                        <div className="mt-2 grid gap-2">
+                          {activeVendors.length ? activeVendors.map((vendor) => (
+                            <article key={vendor.id} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <div className="font-semibold text-white">{vendor.name}</div>
+                                  <div className="mt-1 text-xs text-slate-300">{vendor.trade_category || "General"} · {vendor.email || vendor.phone || "No contact listed"}</div>
+                                </div>
+                                <label className="inline-flex items-center gap-2 rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100">
+                                  <input
+                                    type="checkbox"
+                                    data-testid={`property-work-order-select-vendor-${vendor.id}`}
+                                    checked={recipientSelected(recipientFromVendor(vendor))}
+                                    onChange={() => toggleRecipient(recipientFromVendor(vendor))}
+                                    className="h-4 w-4 accent-amber-300"
+                                  />
+                                  Select
+                                </label>
+                              </div>
+                            </article>
+                          )) : (
+                            <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
+                              No preferred vendors saved yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
 
                       <div data-testid="property-work-order-local-business-results" className="rounded-xl border border-slate-700 bg-slate-950/60 p-3">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -1156,6 +1310,16 @@ function PropertyWorkOrdersSection({
                                     >
                                       {marketplaceImportingKey === String(key) ? "Importing..." : "Import as Vendor"}
                                     </button>
+                                    <label className="inline-flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-xs font-bold text-slate-200">
+                                      <input
+                                        type="checkbox"
+                                        data-testid={`property-work-order-select-local-business-${key}`}
+                                        checked={recipientSelected(recipientFromBusiness(business))}
+                                        onChange={() => toggleRecipient(recipientFromBusiness(business))}
+                                        className="h-4 w-4 accent-slate-300"
+                                      />
+                                      Select
+                                    </label>
                                   </div>
                                 </article>
                               );
@@ -1173,6 +1337,22 @@ function PropertyWorkOrdersSection({
                       Preview matches to see who can receive this work order before sending.
                     </div>
                   )}
+                </div>
+              ) : null}
+              {workflowStep === 3 ? (
+                <>
+              {selectedRecipients.length ? (
+                <div data-testid="property-work-order-selected-recipients" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-3 sm:col-span-2">
+                  <div className="text-sm font-semibold text-white">Selected recipients</div>
+                  <div className="mt-2 grid gap-2">
+                    {selectedRecipients.map((recipient) => (
+                      <div key={recipientKey(recipient)} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-300">
+                        <span className="font-semibold text-white">{recipient.name}</span>
+                        <span className="ml-2 rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] text-slate-200">{recipient.source_label}</span>
+                        <span className="ml-2">{recipient.trade || "General"}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : null}
               <label className="block text-sm font-medium text-slate-200">
@@ -1208,12 +1388,46 @@ function PropertyWorkOrdersSection({
                   </ul>
                 </div>
               ) : null}
+                </>
+              ) : null}
             </div>
 
             {error ? <div data-testid="property-work-order-error" className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</div> : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
-              {form.assignment_type === "marketplace_contractor" && editing?.mode !== "create" && (!editing.marketplace_status || editing.marketplace_status === "not_sent" || editing.marketplace_status === "withdrawn" || editing.marketplace_status === "declined") ? (
+              {workflowStep > 1 ? (
+                <button
+                  type="button"
+                  data-testid="property-work-order-back"
+                  onClick={() => setWorkflowStep(workflowStep === 3 && form.assignment_type === "internal_staff" ? 1 : workflowStep - 1)}
+                  className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+                >
+                  Back
+                </button>
+              ) : null}
+              {workflowStep === 1 ? (
+                <button
+                  type="button"
+                  data-testid="property-work-order-continue-contractors"
+                  disabled={!form.title.trim() || !form.description.trim()}
+                  onClick={continueFromDetails}
+                  className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50"
+                >
+                  {form.assignment_type === "internal_staff" ? "Continue to Finalize" : "Continue to Contractor Search"}
+                </button>
+              ) : null}
+              {workflowStep === 2 ? (
+                <button
+                  type="button"
+                  data-testid="property-work-order-continue-finalize"
+                  disabled={form.assignment_type === "marketplace_contractor" && selectedMarketplaceCount < 3}
+                  onClick={continueFromContractors}
+                  className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50"
+                >
+                  Continue to Finalize
+                </button>
+              ) : null}
+              {workflowStep === 3 && form.assignment_type === "marketplace_contractor" && editing?.mode !== "create" && (!editing.marketplace_status || editing.marketplace_status === "not_sent" || editing.marketplace_status === "withdrawn" || editing.marketplace_status === "declined") ? (
                 <button
                   type="button"
                   data-testid="property-work-order-save-send-marketplace"
@@ -1221,12 +1435,14 @@ function PropertyWorkOrdersSection({
                   onClick={(event) => submit(event, { sendToMarketplace: true })}
                   className="rounded-xl border border-emerald-300/50 bg-emerald-400/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-400/25 disabled:opacity-50"
                 >
-                  {saving ? "Saving..." : "Save & Send To Marketplace"}
+                  {saving ? "Saving..." : "Send Work Order to Selected Contractors"}
                 </button>
               ) : null}
+              {workflowStep === 3 ? (
               <button type="submit" data-testid="property-work-order-save" disabled={saving || !form.title.trim() || !form.description.trim()} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
                 {saving ? "Saving..." : "Save Work Order"}
               </button>
+              ) : null}
               <button type="button" onClick={close} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800">
                 Cancel
               </button>

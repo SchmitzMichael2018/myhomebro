@@ -21617,6 +21617,40 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(duplicate.status_code, 400)
         self.assertTrue(PropertyWorkOrderActivity.objects.filter(work_order=row, activity_type=PropertyWorkOrderActivity.TYPE_MARKETPLACE_SENT).exists())
 
+    def test_property_work_order_marketplace_send_can_target_selected_contractors(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        _user_one, _contractor_one, entry_one = self._create_marketplace_contractor_entry(
+            email="selected-one@example.com",
+            business_name="Selected Pipe Pros",
+        )
+        _user_two, _contractor_two, entry_two = self._create_marketplace_contractor_entry(
+            email="selected-two@example.com",
+            business_name="Second Pipe Pros",
+        )
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            priority=PropertyWorkOrder.PRIORITY_URGENT,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {"directory_entry_ids": [entry_two.id]},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["opportunity_count"], 1)
+        self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row, directory_entry=entry_one).exists())
+        self.assertTrue(ContractorOpportunity.objects.filter(property_work_order=row, directory_entry=entry_two).exists())
+
     def test_property_work_order_contractor_matches_preview_marketplace_and_local_results(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()

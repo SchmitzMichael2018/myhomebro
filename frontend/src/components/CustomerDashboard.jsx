@@ -3662,11 +3662,12 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       throw error;
     }
   };
-  const sendPropertyWorkOrderToMarketplace = async (propertyId, workOrderId) => {
+  const sendPropertyWorkOrderToMarketplace = async (propertyId, workOrderId, payload = {}) => {
     if (!propertyId || !workOrderId) return false;
     try {
       const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/send-to-marketplace/`
+        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/send-to-marketplace/`,
+        payload
       );
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success("Work order sent to marketplace contractors.");

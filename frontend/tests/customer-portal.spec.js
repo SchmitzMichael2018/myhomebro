@@ -2004,6 +2004,7 @@ test("customer portal is reachable from the landing page and loads secure record
   let submittedTenantMaintenanceReviewPayload = null;
   let submittedWorkOrderPayload = null;
   let submittedWorkOrderEditPayload = null;
+  let submittedMarketplacePayload = null;
   let convertedWorkOrderCalled = false;
   let currentPortalPayload = portalPayload;
   let teamMembers = [];
@@ -2173,7 +2174,7 @@ test("customer portal is reachable from the landing page and loads secure record
         contentType: "application/json",
         body: JSON.stringify({
           radius_miles: radiusMiles,
-          eligible_marketplace_count: noEligible ? 0 : 1,
+          eligible_marketplace_count: noEligible ? 0 : 3,
           trade: "Plumbing",
           category: "plumbing",
           location: parsedUrl.searchParams.get("location") || "San Antonio, TX",
@@ -2198,6 +2199,30 @@ test("customer portal is reachable from the landing page and loads secure record
                   location: "San Antonio, TX",
                   phone: "210-555-0770",
                   website: "https://abcplumbing.example",
+                  verification_status_label: "Verified",
+                  source_label: "MyHomeBro Contractor",
+                },
+                {
+                  contractor_id: 78,
+                  directory_entry_id: 7702,
+                  business_name: "River City Plumbing",
+                  primary_trade: "Plumbing",
+                  trade_categories: ["Plumbing"],
+                  location: "San Antonio, TX",
+                  phone: "210-555-0778",
+                  website: "https://rivercityplumbing.example",
+                  verification_status_label: "Verified",
+                  source_label: "MyHomeBro Contractor",
+                },
+                {
+                  contractor_id: 79,
+                  directory_entry_id: 7703,
+                  business_name: "Alamo Pipe Repair",
+                  primary_trade: "Plumbing",
+                  trade_categories: ["Plumbing"],
+                  location: "San Antonio, TX",
+                  phone: "210-555-0779",
+                  website: "https://alamopipe.example",
                   verification_status_label: "Verified",
                   source_label: "MyHomeBro Contractor",
                 },
@@ -3304,6 +3329,7 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/send-to-marketplace/") && method === "POST") {
+      submittedMarketplacePayload = JSON.parse(route.request().postData() || "{}");
       propertyWorkOrders = propertyWorkOrders.map((row) =>
         row.id === 901
           ? {
@@ -4538,8 +4564,11 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.getByTestId("property-work-order-edit-901").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
+  await expect(page.getByTestId("property-work-order-stepper")).toContainText("Work Order");
+  await expect(page.getByTestId("property-work-order-stepper")).toContainText("Contractors");
   await page.getByTestId("property-work-order-status").selectOption("in_progress");
   await page.getByTestId("property-work-order-priority").selectOption("normal");
+  await page.getByTestId("property-work-order-continue-contractors").click();
   await page.getByTestId("property-work-order-completion-notes").fill("Parts ordered.");
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
@@ -4555,6 +4584,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-complete-901").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
   await expect(page.getByTestId("property-work-order-status")).toHaveValue("completed");
+  await page.getByTestId("property-work-order-continue-contractors").click();
   await page.getByTestId("property-work-order-completion-notes").fill("");
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-error")).toContainText("Completion notes are required");
@@ -4583,9 +4613,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-edit-901").click();
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
   await page.getByTestId("property-work-order-assignment-type").selectOption("vendor");
+  await page.getByTestId("property-work-order-continue-contractors").click();
   await expect(page.getByTestId("property-work-order-vendor-panel")).toContainText("Search preferred vendors");
   await page.getByTestId("property-work-order-vendor-search").fill("Pipe");
   await page.getByTestId("property-work-order-vendor").selectOption("701");
+  await page.getByTestId("property-work-order-continue-finalize").click();
   await page.getByTestId("property-work-order-save").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
   expect(submittedWorkOrderEditPayload).toMatchObject({
@@ -4596,30 +4628,40 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-901")).toContainText("Pipe Pros");
   await page.getByTestId("property-work-order-edit-901").click();
   await page.getByTestId("property-work-order-assignment-type").selectOption("marketplace_contractor");
+  await page.getByTestId("property-work-order-continue-contractors").click();
   await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Contractor Search");
   await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Find MyHomeBro contractors and local businesses");
-  await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeDisabled();
+  await expect(page.getByTestId("property-work-order-continue-finalize")).toBeDisabled();
   await expect(page.getByTestId("property-work-order-marketplace-radius")).toHaveValue("25");
   await page.getByTestId("property-work-order-marketplace-search").fill("NoMatch");
   await page.getByTestId("property-work-order-preview-matches").click();
   await expect(page.getByTestId("property-work-order-marketplace-no-eligible")).toContainText("No approved MyHomeBro contractors found");
   await expect(page.getByTestId("property-work-order-marketplace-no-eligible")).toContainText("Try increasing the radius to 50 or 100 miles");
   await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("Joe's Plumbing");
-  await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeDisabled();
+  await expect(page.getByTestId("property-work-order-continue-finalize")).toBeDisabled();
   await page.getByTestId("property-work-order-import-local-business-local-joe-plumbing").click();
-  await expect(page.getByTestId("property-work-order-vendor-panel")).toHaveCount(0);
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toBeVisible();
   await page.getByTestId("property-work-order-marketplace-search").fill("Pipe");
   await page.getByTestId("property-work-order-marketplace-radius").selectOption("50");
   await page.getByTestId("property-work-order-preview-matches").click();
-  await expect(page.getByTestId("property-work-order-marketplace-eligible")).toContainText("1 approved MyHomeBro contractor within 50 miles");
+  await expect(page.getByTestId("property-work-order-marketplace-eligible")).toContainText("3 approved MyHomeBro contractors within 50 miles");
   await expect(page.getByTestId("property-work-order-marketplace-results")).toContainText("ABC Plumbing");
   await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("1 local business within 50 miles of San Antonio, TX");
   await expect(page.getByTestId("property-work-order-local-business-results")).toContainText("Searching Plumbing near San Antonio, TX within 50 miles");
+  await page.getByTestId("property-work-order-select-contractor-7701").check();
+  await page.getByTestId("property-work-order-select-contractor-7702").check();
+  await page.getByTestId("property-work-order-select-contractor-7703").check();
+  await expect(page.getByTestId("property-work-order-recipient-summary")).toContainText("3 selected recipients");
+  await page.getByTestId("property-work-order-continue-finalize").click();
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("ABC Plumbing");
   await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeEnabled();
   await page.getByTestId("property-work-order-save-send-marketplace").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
   expect(submittedWorkOrderEditPayload).toMatchObject({
     assignment_type: "marketplace_contractor",
+  });
+  expect(submittedMarketplacePayload).toMatchObject({
+    directory_entry_ids: [7701, 7702, 7703],
   });
   await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace Contractor");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Ready to send to marketplace contractors");
@@ -4643,7 +4685,6 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
   await expect(page.getByTestId("property-work-order-unit")).toContainText("Unit 101");
   await expect(page.getByTestId("property-work-order-tenant")).toContainText("Taylor Resident");
-  await expect(page.getByTestId("property-work-order-staff")).toBeVisible();
   await expect(page.getByTestId("property-work-order-assignment-type")).toHaveValue("internal_staff");
   await page.getByTestId("property-work-order-title").fill("Seasonal HVAC follow-up");
   await page.getByTestId("property-work-order-description").fill("Schedule HVAC service for the rental unit.");
@@ -4652,6 +4693,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-status").selectOption("scheduled");
   await page.getByTestId("property-work-order-unit").selectOption("601");
   await page.getByTestId("property-work-order-tenant").selectOption("801");
+  await page.getByTestId("property-work-order-continue-contractors").click();
+  await expect(page.getByTestId("property-work-order-staff")).toBeVisible();
   await page.getByTestId("property-work-order-staff").selectOption("502");
   await page.getByTestId("property-work-order-scheduled").fill("2026-06-20T10:30");
   await page.getByTestId("property-work-order-internal-notes").fill("Use tenant text thread for scheduling.");
