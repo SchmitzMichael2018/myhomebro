@@ -457,11 +457,18 @@ function PropertyWorkOrdersSection({
     .map((recipient) => Number(recipient.directory_entry_id));
   const selectedMarketplaceCount = selectedMarketplaceContractorIds.length;
   const selectedRecipientCount = selectedRecipients.length;
+  const selectedRecipientCountValid = selectedRecipientCount >= 3 && selectedRecipientCount <= 5;
   const canSendToMarketplace =
     form.assignment_type === "marketplace_contractor" &&
     selectedMarketplaceCount >= 3 &&
     selectedMarketplaceCount <= 5 &&
     marketplaceEligibleCount > 0;
+  const marketplaceSendHelper =
+    selectedRecipientCount && !canSendToMarketplace
+      ? selectedMarketplaceCount > 0
+        ? "Only MyHomeBro contractors can receive marketplace opportunities right now. Select at least 3 MyHomeBro contractors to send, or save this work order for review."
+        : "Selected preferred vendors and local businesses are review-only for now. Import/save local businesses as vendors or select at least 3 MyHomeBro contractors to send marketplace opportunities."
+      : "";
   const marketplaceDisplayLocation = marketplaceMatches?.display_location || marketplaceMatches?.location || marketplaceSearch.location || "this property";
   const marketplaceRadius = marketplaceMatches?.radius_miles || marketplaceSearch.radius_miles || 25;
   const marketplaceGeocodeFailed = Boolean(
@@ -572,7 +579,7 @@ function PropertyWorkOrdersSection({
       if (prev.some((item) => recipientKey(item) === key)) {
         return prev.filter((item) => recipientKey(item) !== key);
       }
-      if (recipient.source === "myhomebro_contractor" && selectedMarketplaceCount >= 5) return prev;
+      if (prev.length >= 5) return prev;
       return [...prev, recipient];
     });
   };
@@ -591,8 +598,8 @@ function PropertyWorkOrdersSection({
       setError("Choose a preferred vendor before continuing.");
       return;
     }
-    if (form.assignment_type === "marketplace_contractor" && selectedMarketplaceCount < 3) {
-      setError("Select at least 3 MyHomeBro contractors before sending to marketplace.");
+    if (form.assignment_type === "marketplace_contractor" && !selectedRecipientCountValid) {
+      setError("Select 3-5 total recipients before continuing.");
       return;
     }
     setError("");
@@ -1172,7 +1179,7 @@ function PropertyWorkOrdersSection({
                   <div data-testid="property-work-order-recipient-summary" className="mt-3 rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-xs text-slate-300">
                     <strong className="text-white">{selectedRecipientCount}</strong> selected recipient{selectedRecipientCount === 1 ? "" : "s"}.
                     <span className="ml-2 text-slate-400">
-                      Select 3-5 MyHomeBro contractors to send marketplace opportunities. Preferred vendors and local businesses stay visible here for review/import.
+                      Select 3-5 total recipients to review. MyHomeBro contractors can receive marketplace opportunities today; vendors and local businesses are review-only here.
                     </span>
                   </div>
 
@@ -1241,7 +1248,7 @@ function PropertyWorkOrdersSection({
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                 <div>
                                   <div className="font-semibold text-white">{vendor.name}</div>
-                                  <div className="mt-1 text-xs text-slate-300">{vendor.trade_category || "General"} · {vendor.email || vendor.phone || "No contact listed"}</div>
+                                  <div className="mt-1 text-xs text-slate-300">{vendor.trade_category || "General"} - {vendor.email || vendor.phone || "No contact listed"}</div>
                                 </div>
                                 <label className="inline-flex items-center gap-2 rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100">
                                   <input
@@ -1342,14 +1349,24 @@ function PropertyWorkOrdersSection({
               {workflowStep === 3 ? (
                 <>
               {selectedRecipients.length ? (
-                <div data-testid="property-work-order-selected-recipients" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-3 sm:col-span-2">
+                      <div data-testid="property-work-order-selected-recipients" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-3 sm:col-span-2">
                   <div className="text-sm font-semibold text-white">Selected recipients</div>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    MyHomeBro contractors can receive marketplace opportunities now. Preferred vendors and local businesses are included for manager review; invitation sending for those recipients is not enabled yet.
+                  </p>
                   <div className="mt-2 grid gap-2">
                     {selectedRecipients.map((recipient) => (
                       <div key={recipientKey(recipient)} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-300">
                         <span className="font-semibold text-white">{recipient.name}</span>
                         <span className="ml-2 rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] text-slate-200">{recipient.source_label}</span>
                         <span className="ml-2">{recipient.trade || "General"}</span>
+                        <span className="ml-2 text-slate-400">
+                          {recipient.source === "myhomebro_contractor"
+                            ? "Can receive marketplace opportunity"
+                            : recipient.source === "preferred_vendor"
+                              ? "Review-only until vendor invitations are enabled"
+                              : "Import/save as vendor before sending"}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1420,7 +1437,7 @@ function PropertyWorkOrdersSection({
                 <button
                   type="button"
                   data-testid="property-work-order-continue-finalize"
-                  disabled={form.assignment_type === "marketplace_contractor" && selectedMarketplaceCount < 3}
+                  disabled={form.assignment_type === "marketplace_contractor" && !selectedRecipientCountValid}
                   onClick={continueFromContractors}
                   className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50"
                 >
@@ -1437,6 +1454,11 @@ function PropertyWorkOrdersSection({
                 >
                   {saving ? "Saving..." : "Send Work Order to Selected Contractors"}
                 </button>
+              ) : null}
+              {workflowStep === 3 && form.assignment_type === "marketplace_contractor" && marketplaceSendHelper ? (
+                <div data-testid="property-work-order-send-helper" className="w-full rounded-xl border border-amber-300/35 bg-amber-300/10 p-3 text-xs font-semibold leading-5 text-amber-100">
+                  {marketplaceSendHelper}
+                </div>
               ) : null}
               {workflowStep === 3 ? (
               <button type="submit" data-testid="property-work-order-save" disabled={saving || !form.title.trim() || !form.description.trim()} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
