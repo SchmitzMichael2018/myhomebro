@@ -1,4 +1,5 @@
 from django.conf import settings
+import uuid
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
@@ -845,6 +846,98 @@ class PropertyWorkOrderActivity(models.Model):
 
     def __str__(self):
         return f"{self.work_order_id}: {self.get_activity_type_display()}"
+
+
+class PropertyWorkOrderRecipientInvitation(models.Model):
+    TYPE_MYHOMEBRO_CONTRACTOR = "myhomebro_contractor"
+    TYPE_PREFERRED_VENDOR = "preferred_vendor"
+    TYPE_LOCAL_BUSINESS = "local_business"
+    RECIPIENT_TYPE_CHOICES = [
+        (TYPE_MYHOMEBRO_CONTRACTOR, "MyHomeBro Contractor"),
+        (TYPE_PREFERRED_VENDOR, "Preferred Vendor"),
+        (TYPE_LOCAL_BUSINESS, "Local Business"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_SENT = "sent"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_DECLINED = "declined"
+    STATUS_NO_CONTACT = "no_contact"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_SENT, "Sent"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_DECLINED, "Declined"),
+        (STATUS_NO_CONTACT, "No Contact Info"),
+    ]
+
+    work_order = models.ForeignKey(
+        PropertyWorkOrder,
+        on_delete=models.CASCADE,
+        related_name="recipient_invitations",
+    )
+    property_management_company = models.ForeignKey(
+        PropertyManagementCompany,
+        on_delete=models.CASCADE,
+        related_name="work_order_recipient_invitations",
+    )
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="work_order_recipient_invitations",
+    )
+    recipient_type = models.CharField(max_length=32, choices=RECIPIENT_TYPE_CHOICES, db_index=True)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
+    name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    trade_category = models.CharField(max_length=120, blank=True, default="")
+    location = models.CharField(max_length=255, blank=True, default="")
+    linked_vendor = models.ForeignKey(
+        PropertyVendor,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="work_order_recipient_invitations",
+    )
+    directory_entry = models.ForeignKey(
+        "projects.ContractorDirectoryEntry",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_work_order_recipient_invitations",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_work_order_recipient_invitations",
+    )
+    source_metadata = models.JSONField(default=dict, blank=True)
+    email_status = models.CharField(max_length=40, blank=True, default="")
+    sms_status = models.CharField(max_length=40, blank=True, default="")
+    delivery_error = models.TextField(blank=True, default="")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    response_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["work_order", "status"]),
+            models.Index(fields=["property_management_company", "status"]),
+            models.Index(fields=["recipient_type", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.work_order_id}: {self.name} ({self.get_status_display()})"
+
+    @property
+    def has_contact_info(self) -> bool:
+        return bool((self.email or "").strip() or (self.phone or "").strip())
 
 
 def property_work_order_attachment_upload_path(instance, filename):

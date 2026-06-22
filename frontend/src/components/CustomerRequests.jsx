@@ -457,17 +457,20 @@ function PropertyWorkOrdersSection({
     .map((recipient) => Number(recipient.directory_entry_id));
   const selectedMarketplaceCount = selectedMarketplaceContractorIds.length;
   const selectedRecipientCount = selectedRecipients.length;
-  const selectedRecipientCountValid = selectedRecipientCount >= 3 && selectedRecipientCount <= 5;
+  const recipientHasContactPath = (recipient) =>
+    recipient.source === "myhomebro_contractor" || Boolean((recipient.email || "").trim() || (recipient.phone || "").trim());
+  const sendableRecipientCount = selectedRecipients.filter(recipientHasContactPath).length;
+  const missingContactRecipients = selectedRecipients.filter((recipient) => !recipientHasContactPath(recipient));
+  const selectedRecipientCountValid = selectedRecipientCount >= 1 && selectedRecipientCount <= 5;
   const canSendToMarketplace =
     form.assignment_type === "marketplace_contractor" &&
-    selectedMarketplaceCount >= 3 &&
-    selectedMarketplaceCount <= 5 &&
-    marketplaceEligibleCount > 0;
+    selectedRecipientCountValid &&
+    sendableRecipientCount >= 1;
   const marketplaceSendHelper =
     selectedRecipientCount && !canSendToMarketplace
-      ? selectedMarketplaceCount > 0
-        ? "Only MyHomeBro contractors can receive marketplace opportunities right now. Select at least 3 MyHomeBro contractors to send, or save this work order for review."
-        : "Selected preferred vendors and local businesses are review-only for now. Import/save local businesses as vendors or select at least 3 MyHomeBro contractors to send marketplace opportunities."
+      ? missingContactRecipients.length
+        ? `${missingContactRecipients.map((recipient) => recipient.name).join(", ")} need email or phone before they can receive this work order.`
+        : "Select 1 to 5 recipients before sending."
       : "";
   const marketplaceDisplayLocation = marketplaceMatches?.display_location || marketplaceMatches?.location || marketplaceSearch.location || "this property";
   const marketplaceRadius = marketplaceMatches?.radius_miles || marketplaceSearch.radius_miles || 25;
@@ -552,6 +555,8 @@ function PropertyWorkOrdersSection({
     name: contractor.business_name || "MyHomeBro Contractor",
     trade: contractor.primary_trade || contractor.trade_categories?.join?.(", ") || marketplaceMatches?.trade || "",
     location: contractor.location || "",
+    email: contractor.email || "",
+    phone: contractor.phone || "",
   });
   const recipientFromVendor = (vendor) => ({
     source: "preferred_vendor",
@@ -559,6 +564,8 @@ function PropertyWorkOrdersSection({
     vendor_id: vendor.id,
     name: vendor.name || "Vendor",
     trade: vendor.trade_category || "",
+    email: vendor.email || "",
+    phone: vendor.phone || "",
     location: vendor.email || vendor.phone || "",
   });
   const recipientFromBusiness = (business) => ({
@@ -567,6 +574,8 @@ function PropertyWorkOrdersSection({
     business_id: business.business_id || business.business_name,
     name: business.business_name || "Local Business",
     trade: business.trade_category || marketplaceMatches?.trade || "",
+    email: business.email || "",
+    phone: business.phone || "",
     location: business.location || business.address || "",
   });
   const recipientSelected = (recipient) => {
@@ -582,6 +591,13 @@ function PropertyWorkOrdersSection({
       if (prev.length >= 5) return prev;
       return [...prev, recipient];
     });
+  };
+  const recipientDeliveryText = (recipient) => {
+    if (recipient.source === "myhomebro_contractor") return "Marketplace opportunity";
+    const channels = [];
+    if ((recipient.email || "").trim()) channels.push("Email available");
+    if ((recipient.phone || "").trim()) channels.push("SMS available");
+    return channels.length ? channels.join(" / ") : "Missing email/phone";
   };
 
   const continueFromDetails = () => {
@@ -599,7 +615,7 @@ function PropertyWorkOrdersSection({
       return;
     }
     if (form.assignment_type === "marketplace_contractor" && !selectedRecipientCountValid) {
-      setError("Select 3-5 total recipients before continuing.");
+      setError("Select 1 to 5 recipients before continuing.");
       return;
     }
     setError("");
@@ -642,12 +658,18 @@ function PropertyWorkOrdersSection({
       if (editing?.mode === "create") {
           const created = await onCreate?.(form.property_id || activePropertyId, payload);
           if (options.sendToMarketplace && form.assignment_type === "marketplace_contractor" && created?.work_order?.id) {
-            await onSendToMarketplace?.(form.property_id || activePropertyId, created.work_order.id, { directory_entry_ids: selectedMarketplaceContractorIds });
+            await onSendToMarketplace?.(form.property_id || activePropertyId, created.work_order.id, {
+              directory_entry_ids: selectedMarketplaceContractorIds,
+              recipients: selectedRecipientPayload(),
+            });
           }
       } else {
         await onUpdate?.(editing.property_profile_id || activePropertyId, editing.id, payload);
         if (options.sendToMarketplace && form.assignment_type === "marketplace_contractor") {
-          await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id, { directory_entry_ids: selectedMarketplaceContractorIds });
+          await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id, {
+            directory_entry_ids: selectedMarketplaceContractorIds,
+            recipients: selectedRecipientPayload(),
+          });
         }
       }
       close();
@@ -732,6 +754,20 @@ function PropertyWorkOrdersSection({
     }
   };
 
+  const selectedRecipientPayload = () =>
+    selectedRecipients.map((recipient) => ({
+      source: recipient.source,
+      directory_entry_id: recipient.directory_entry_id || null,
+      contractor_id: recipient.contractor_id || null,
+      vendor_id: recipient.vendor_id || null,
+      business_id: recipient.business_id || null,
+      name: recipient.name || "",
+      email: recipient.email || "",
+      phone: recipient.phone || "",
+      trade: recipient.trade || "",
+      location: recipient.location || "",
+    }));
+
   return (
     <section data-testid="property-work-orders-section" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -795,9 +831,34 @@ function PropertyWorkOrdersSection({
                         <span><strong className="text-slate-200">Sent:</strong> {formatDateTime(row.marketplace_sent_at) || "-"}</span>
                         <span><strong className="text-slate-200">Response:</strong> {formatDateTime(row.marketplace_response_at) || "-"}</span>
                         <span><strong className="text-slate-200">Agreement:</strong> {row.linked_agreement_id ? `Draft #${row.linked_agreement_id}` : "Not created"}</span>
+                        {row.recipient_summary?.total ? (
+                          <span data-testid={`property-work-order-recipient-summary-${row.id}`}>
+                            <strong className="text-slate-200">Recipients:</strong>{" "}
+                            {row.recipient_summary.total} sent
+                            {row.recipient_summary.accepted ? `, ${row.recipient_summary.accepted} accepted` : ""}
+                            {row.recipient_summary.declined ? `, ${row.recipient_summary.declined} declined` : ""}
+                            {row.recipient_summary.no_contact ? `, ${row.recipient_summary.no_contact} no contact info` : ""}
+                          </span>
+                        ) : null}
                       </>
                     ) : null}
                   </div>
+                  {(row.recipient_invitations || []).length ? (
+                    <div data-testid={`property-work-order-recipient-list-${row.id}`} className="mt-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                      <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Selected Recipients</div>
+                      <div className="mt-2 grid gap-2 md:grid-cols-2">
+                        {row.recipient_invitations.map((invitation) => (
+                          <div key={invitation.id || `${invitation.name}-${invitation.recipient_type}`} className="rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300">
+                            <span className="font-semibold text-white">{invitation.name}</span>
+                            <span className="ml-2 rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] text-slate-200">
+                              {invitation.recipient_type_label || invitation.recipient_type}
+                            </span>
+                            <span className="ml-2">{invitation.status_label || invitation.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {(row.source_attachments || []).length ? (
                     <div data-testid={`property-work-order-attachments-${row.id}`} className="mt-3 flex flex-wrap gap-2">
                       {row.source_attachments.map((attachment) => (
@@ -1179,7 +1240,7 @@ function PropertyWorkOrdersSection({
                   <div data-testid="property-work-order-recipient-summary" className="mt-3 rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-xs text-slate-300">
                     <strong className="text-white">{selectedRecipientCount}</strong> selected recipient{selectedRecipientCount === 1 ? "" : "s"}.
                     <span className="ml-2 text-slate-400">
-                      Select 3-5 total recipients to review. MyHomeBro contractors can receive marketplace opportunities today; vendors and local businesses are review-only here.
+                      Select up to 5 recipients. At least one recipient is required to continue.
                     </span>
                   </div>
 
@@ -1352,7 +1413,7 @@ function PropertyWorkOrdersSection({
                       <div data-testid="property-work-order-selected-recipients" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-3 sm:col-span-2">
                   <div className="text-sm font-semibold text-white">Selected recipients</div>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
-                    MyHomeBro contractors can receive marketplace opportunities now. Preferred vendors and local businesses are included for manager review; invitation sending for those recipients is not enabled yet.
+                    MyHomeBro contractors receive marketplace opportunities. Preferred vendors and local businesses receive secure work-order invitations when email or phone is available.
                   </p>
                   <div className="mt-2 grid gap-2">
                     {selectedRecipients.map((recipient) => (
@@ -1361,11 +1422,7 @@ function PropertyWorkOrdersSection({
                         <span className="ml-2 rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] text-slate-200">{recipient.source_label}</span>
                         <span className="ml-2">{recipient.trade || "General"}</span>
                         <span className="ml-2 text-slate-400">
-                          {recipient.source === "myhomebro_contractor"
-                            ? "Can receive marketplace opportunity"
-                            : recipient.source === "preferred_vendor"
-                              ? "Review-only until vendor invitations are enabled"
-                              : "Import/save as vendor before sending"}
+                          {recipientDeliveryText(recipient)}
                         </span>
                       </div>
                     ))}
@@ -1452,7 +1509,7 @@ function PropertyWorkOrdersSection({
                   onClick={(event) => submit(event, { sendToMarketplace: true })}
                   className="rounded-xl border border-emerald-300/50 bg-emerald-400/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-400/25 disabled:opacity-50"
                 >
-                  {saving ? "Saving..." : "Send Work Order to Selected Contractors"}
+                  {saving ? "Saving..." : "Send Work Order to Selected Recipients"}
                 </button>
               ) : null}
               {workflowStep === 3 && form.assignment_type === "marketplace_contractor" && marketplaceSendHelper ? (

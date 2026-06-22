@@ -2760,6 +2760,7 @@ from .models_customer_portal import (  # noqa: E402,F401
     PropertyOwnerContact,
     PropertyOwnership,
     PropertyVendor,
+    PropertyWorkOrderRecipientInvitation,
     PropertyWorkOrderActivity,
     PropertyWorkOrderAttachment,
     PropertyWorkOrder,

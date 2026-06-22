@@ -3330,6 +3330,23 @@ test("customer portal is reachable from the landing page and loads secure record
 
     if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/send-to-marketplace/") && method === "POST") {
       submittedMarketplacePayload = JSON.parse(route.request().postData() || "{}");
+      const recipientInvitations = (submittedMarketplacePayload.recipients || []).map((recipient, index) => ({
+        id: 9900 + index,
+        recipient_type: recipient.source,
+        recipient_type_label:
+          recipient.source === "myhomebro_contractor"
+            ? "MyHomeBro Contractor"
+            : recipient.source === "preferred_vendor"
+              ? "Preferred Vendor"
+              : "Local Business",
+        status: recipient.email || recipient.phone || recipient.source === "myhomebro_contractor" ? "sent" : "no_contact",
+        status_label: recipient.email || recipient.phone || recipient.source === "myhomebro_contractor" ? "Sent" : "No Contact Info",
+        name: recipient.name,
+        email: recipient.email || "",
+        phone: recipient.phone || "",
+        trade_category: recipient.trade || "",
+        location: recipient.location || "",
+      }));
       propertyWorkOrders = propertyWorkOrders.map((row) =>
         row.id === 901
           ? {
@@ -3338,14 +3355,22 @@ test("customer portal is reachable from the landing page and loads secure record
               marketplace_status_label: "Sent",
               marketplace_sent_at: "2026-06-16T18:15:00Z",
               marketplace_response_at: "",
-              marketplace_opportunity_count: 2,
+              marketplace_opportunity_count: (submittedMarketplacePayload.directory_entry_ids || []).length,
+              recipient_invitations: recipientInvitations,
+              recipient_summary: {
+                total: recipientInvitations.length,
+                sent: recipientInvitations.filter((recipient) => recipient.status === "sent").length,
+                accepted: 0,
+                declined: 0,
+                no_contact: recipientInvitations.filter((recipient) => recipient.status === "no_contact").length,
+              },
               activities: [
                 ...(row.activities || []),
                 {
                   id: 9903,
                   activity_type: "marketplace_sent",
                   activity_type_label: "Marketplace Sent",
-                  message: "Sent to 2 marketplace contractors.",
+                  message: `Sent to ${recipientInvitations.length} selected recipient${recipientInvitations.length === 1 ? "" : "s"}.`,
                   actor: "customer@example.com",
                   created_at: "2026-06-16T18:15:00Z",
                 },
@@ -3371,8 +3396,9 @@ test("customer portal is reachable from the landing page and loads secure record
         contentType: "application/json",
         body: JSON.stringify({
           work_order: propertyWorkOrders.find((row) => row.id === 901),
-          opportunity_count: 2,
-          created_opportunity_count: 2,
+          opportunity_count: (submittedMarketplacePayload.directory_entry_ids || []).length,
+          created_opportunity_count: (submittedMarketplacePayload.directory_entry_ids || []).length,
+          invitation_count: recipientInvitations.length - (submittedMarketplacePayload.directory_entry_ids || []).length,
           portal: currentPortalPayload,
         }),
       });
@@ -4655,16 +4681,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("property-work-order-continue-finalize").click();
   await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Pipe Pros");
   await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Joe's Plumbing");
-  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Review-only");
-  await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeDisabled();
-  await expect(page.getByTestId("property-work-order-send-helper")).toContainText("Only MyHomeBro contractors can receive marketplace opportunities right now");
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("SMS available");
+  await expect(page.getByTestId("property-work-order-selected-recipients")).not.toContainText("invitation sending for those recipients is not enabled yet");
+  await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeEnabled();
   await page.getByTestId("property-work-order-back").click();
-  await page.getByTestId("property-work-order-select-contractor-7702").check();
-  await page.getByTestId("property-work-order-select-contractor-7703").check();
-  await expect(page.getByTestId("property-work-order-recipient-summary")).toContainText("5 selected recipients");
+  await page.getByTestId("property-work-order-select-vendor-701").uncheck();
+  await page.getByTestId("property-work-order-select-local-business-local-joe-plumbing").uncheck();
+  await expect(page.getByTestId("property-work-order-recipient-summary")).toContainText("1 selected recipient");
   await page.getByTestId("property-work-order-continue-finalize").click();
   await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("ABC Plumbing");
-  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Can receive marketplace opportunity");
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Marketplace opportunity");
   await expect(page.getByTestId("property-work-order-save-send-marketplace")).toBeEnabled();
   await page.getByTestId("property-work-order-save-send-marketplace").click();
   await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
@@ -4672,11 +4698,19 @@ test("customer portal is reachable from the landing page and loads secure record
     assignment_type: "marketplace_contractor",
   });
   expect(submittedMarketplacePayload).toMatchObject({
-    directory_entry_ids: [7701, 7702, 7703],
+    directory_entry_ids: [7701],
+    recipients: [
+      expect.objectContaining({
+        source: "myhomebro_contractor",
+        directory_entry_id: 7701,
+      }),
+    ],
   });
   await expect(page.getByTestId("property-work-order-901")).toContainText("Marketplace Contractor");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Ready to send to marketplace contractors");
   await expect(page.getByTestId("property-work-order-901")).toContainText("Sent");
+  await expect(page.getByTestId("property-work-order-recipient-summary-901")).toContainText("1 sent");
+  await expect(page.getByTestId("property-work-order-recipient-list-901")).toContainText("ABC Plumbing");
   await expect(page.getByTestId("property-work-order-timeline-901")).toContainText("Marketplace Sent");
   await page.getByTestId("property-work-order-withdraw-marketplace-901").click();
   await expect(page.getByTestId("property-work-order-901")).toContainText("Withdrawn");
