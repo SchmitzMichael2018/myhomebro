@@ -91,6 +91,27 @@ const TENANT_MAINTENANCE_ACTIVE_STATUSES = new Set(["submitted", "under_review",
 const TENANT_MAINTENANCE_ARCHIVED_STATUSES = new Set(["rejected", "closed"]);
 const WORK_ORDER_ACTIVE_STATUSES = new Set(["open", "scheduled", "in_progress", "waiting"]);
 const WORK_ORDER_ARCHIVED_STATUSES = new Set(["completed", "closed", "cancelled"]);
+const TENANT_MAINTENANCE_STATUS_OPTIONS = [
+  ["all", "All statuses"],
+  ["submitted", "Submitted"],
+  ["under_review", "Under Review"],
+  ["more_info_requested", "More Info Requested"],
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+  ["closed", "Closed"],
+];
+const TENANT_MAINTENANCE_URGENCY_OPTIONS = [
+  ["all", "All urgency"],
+  ["emergency", "Emergency"],
+  ["urgent", "Urgent"],
+  ["normal", "Normal"],
+  ["low", "Low"],
+];
+const DEFAULT_TENANT_MAINTENANCE_FILTERS = {
+  status: "all",
+  location: "all",
+  urgency: "all",
+};
 
 const DEFAULT_WORK_ORDER_FORM = {
   title: "",
@@ -153,6 +174,29 @@ function statusMatchesFilter(status, filter, activeStatuses, archivedStatuses) {
   if (filter === "all") return true;
   if (filter === "archived") return archivedStatuses.has(normalized);
   return activeStatuses.has(normalized);
+}
+
+function tenantMaintenanceMatchesAdvancedFilters(request, filters = DEFAULT_TENANT_MAINTENANCE_FILTERS) {
+  if (filters.status && filters.status !== "all" && request.status !== filters.status) return false;
+  if (filters.urgency && filters.urgency !== "all" && request.urgency !== filters.urgency) return false;
+  if (filters.location && filters.location !== "all") {
+    if (filters.location.startsWith("property:")) {
+      const propertyId = filters.location.split(":")[1];
+      if (String(request.property_profile_id || "") !== String(propertyId || "")) return false;
+    } else if (filters.location.startsWith("unit:")) {
+      const unitId = filters.location.split(":")[1];
+      if (String(request.unit_id || "") !== String(unitId || "")) return false;
+    }
+  }
+  return true;
+}
+
+function filterTenantMaintenanceRequests(requests, activeArchiveFilter, advancedFilters) {
+  return requests.filter(
+    (request) =>
+      statusMatchesFilter(request.status, activeArchiveFilter, TENANT_MAINTENANCE_ACTIVE_STATUSES, TENANT_MAINTENANCE_ARCHIVED_STATUSES) &&
+      tenantMaintenanceMatchesAdvancedFilters(request, advancedFilters)
+  );
 }
 
 function MaintenanceFilterControls({ value, onChange, testIdPrefix, label }) {
@@ -223,16 +267,16 @@ function formatDateTime(value) {
 
 function TenantMaintenanceReviewQueue({
   requests = [],
+  requestFilter = "active",
+  onRequestFilterChange = () => {},
+  advancedFilters = DEFAULT_TENANT_MAINTENANCE_FILTERS,
   onReview,
   onCreateWorkOrder,
   updatingId = "",
   convertingId = "",
 }) {
   const [notesById, setNotesById] = useState({});
-  const [requestFilter, setRequestFilter] = useState("active");
-  const filteredRequests = requests.filter((request) =>
-    statusMatchesFilter(request.status, requestFilter, TENANT_MAINTENANCE_ACTIVE_STATUSES, TENANT_MAINTENANCE_ARCHIVED_STATUSES)
-  );
+  const filteredRequests = filterTenantMaintenanceRequests(requests, requestFilter, advancedFilters);
 
   const noteFor = (request) => {
     const key = String(request.id || "");
@@ -262,7 +306,7 @@ function TenantMaintenanceReviewQueue({
           <Badge>{filteredRequests.length} tenant request{filteredRequests.length === 1 ? "" : "s"}</Badge>
           <MaintenanceFilterControls
             value={requestFilter}
-            onChange={setRequestFilter}
+            onChange={onRequestFilterChange}
             testIdPrefix="tenant-maintenance-filter"
             label="Filter maintenance requests"
           />
@@ -1929,6 +1973,8 @@ export default function CustomerRequests({
   const [deleteError, setDeleteError] = useState("");
   const [updatingTenantMaintenanceRequestId, setUpdatingTenantMaintenanceRequestId] = useState("");
   const [convertingTenantMaintenanceRequestId, setConvertingTenantMaintenanceRequestId] = useState("");
+  const [tenantMaintenanceListFilter, setTenantMaintenanceListFilter] = useState("active");
+  const [tenantMaintenanceFilters, setTenantMaintenanceFilters] = useState(DEFAULT_TENANT_MAINTENANCE_FILTERS);
   const [savingPropertyWorkOrder, setSavingPropertyWorkOrder] = useState(false);
   const [improvingRequest, setImprovingRequest] = useState(false);
   const [improveError, setImproveError] = useState("");
@@ -2001,6 +2047,42 @@ export default function CustomerRequests({
     () => requests.filter((row) => row.source_kind === "customer_request"),
     [requests]
   );
+  const tenantMaintenanceLocationOptions = useMemo(() => {
+    const options = [["all", "All properties/units"]];
+    const seen = new Set(["all"]);
+    const addOption = (value, label) => {
+      if (!value || seen.has(value)) return;
+      seen.add(value);
+      options.push([value, label]);
+    };
+    (propertyProfiles || []).forEach((property) => {
+      const propertyLabel = property.display_name || property.address || property.property_name || "Selected property";
+      addOption(`property:${property.id}`, propertyLabel);
+      (property.units || []).forEach((unit) => {
+        addOption(`unit:${unit.id}`, `${propertyLabel} - ${unit.unit_label || "Unit"}`);
+      });
+    });
+    (tenantMaintenanceRequests || []).forEach((request) => {
+      addOption(`property:${request.property_profile_id}`, request.property_name || "Selected property");
+      if (request.unit_id) {
+        addOption(`unit:${request.unit_id}`, `${request.property_name || "Property"} - ${request.unit_label || "Unit"}`);
+      }
+    });
+    return options;
+  }, [propertyProfiles, tenantMaintenanceRequests]);
+  const visibleTenantMaintenanceRequests = useMemo(
+    () => filterTenantMaintenanceRequests(tenantMaintenanceRequests, tenantMaintenanceListFilter, tenantMaintenanceFilters),
+    [tenantMaintenanceRequests, tenantMaintenanceListFilter, tenantMaintenanceFilters]
+  );
+  const tenantMaintenanceFiltersActive =
+    tenantMaintenanceFilters.status !== "all" ||
+    tenantMaintenanceFilters.location !== "all" ||
+    tenantMaintenanceFilters.urgency !== "all";
+  const updateTenantMaintenanceFilter = (field, value) => setTenantMaintenanceFilters((prev) => ({ ...prev, [field]: value }));
+  const resetTenantMaintenanceFilters = () => {
+    setTenantMaintenanceFilters(DEFAULT_TENANT_MAINTENANCE_FILTERS);
+    setTenantMaintenanceListFilter("active");
+  };
   useEffect(() => {
     if (!focusedRequestId) return;
     const request = requests.find((row) => String(row.id) === String(focusedRequestId));
@@ -2366,26 +2448,80 @@ export default function CustomerRequests({
                 Review resident-submitted requests, inspect photos and attachments, update status, and create work orders when approved.
               </p>
             </div>
-            <Badge>{tenantMaintenanceRequests.length} request{tenantMaintenanceRequests.length === 1 ? "" : "s"}</Badge>
+            <Badge>{visibleTenantMaintenanceRequests.length} request{visibleTenantMaintenanceRequests.length === 1 ? "" : "s"}</Badge>
           </div>
-          <div className="mt-4 grid gap-3 text-sm text-slate-300 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 text-sm text-slate-300 lg:grid-cols-4">
             <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status filters</div>
-              <div className="mt-1 text-slate-200">Submitted, under review, approved, closed</div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="maintenance-status-filter">
+                Status filter
+              </label>
+              <select
+                id="maintenance-status-filter"
+                data-testid="maintenance-status-filter"
+                value={tenantMaintenanceFilters.status}
+                onChange={(event) => updateTenantMaintenanceFilter("status", event.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+              >
+                {TENANT_MAINTENANCE_STATUS_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
             <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Property / unit filters</div>
-              <div className="mt-1 text-slate-200">Use property, unit, and resident details on each request</div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="maintenance-location-filter">
+                Property / unit filter
+              </label>
+              <select
+                id="maintenance-location-filter"
+                data-testid="maintenance-location-filter"
+                value={tenantMaintenanceFilters.location}
+                onChange={(event) => updateTenantMaintenanceFilter("location", event.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+              >
+                {tenantMaintenanceLocationOptions.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
             </div>
             <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Urgency filters</div>
-              <div className="mt-1 text-slate-200">Emergency, urgent, normal, low</div>
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="maintenance-urgency-filter">
+                Urgency filter
+              </label>
+              <select
+                id="maintenance-urgency-filter"
+                data-testid="maintenance-urgency-filter"
+                value={tenantMaintenanceFilters.urgency}
+                onChange={(event) => updateTenantMaintenanceFilter("urgency", event.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+              >
+                {TENANT_MAINTENANCE_URGENCY_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="rounded-xl border border-slate-700 bg-slate-950/55 p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Visible results</div>
+              <div data-testid="maintenance-filter-count" className="mt-2 text-sm font-semibold text-slate-100">
+                {visibleTenantMaintenanceRequests.length} of {tenantMaintenanceRequests.length} requests
+              </div>
+              <button
+                type="button"
+                data-testid="maintenance-reset-filters"
+                disabled={!tenantMaintenanceFiltersActive && tenantMaintenanceListFilter === "active"}
+                onClick={resetTenantMaintenanceFilters}
+                className="mt-3 rounded-xl border border-amber-300/40 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Clear filters
+              </button>
             </div>
           </div>
         </section>
 
         <TenantMaintenanceReviewQueue
           requests={tenantMaintenanceRequests}
+          requestFilter={tenantMaintenanceListFilter}
+          onRequestFilterChange={setTenantMaintenanceListFilter}
+          advancedFilters={tenantMaintenanceFilters}
           onReview={reviewTenantMaintenanceRequest}
           onCreateWorkOrder={convertTenantRequestToWorkOrder}
           updatingId={updatingTenantMaintenanceRequestId}

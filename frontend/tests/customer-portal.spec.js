@@ -2338,8 +2338,8 @@ test("customer portal is reachable from the landing page and loads secure record
             reference: "TMR-000802",
             property_profile_id: 1,
             property_name: "Kitchen Remodel",
-            unit_id: null,
-            unit_label: "",
+            unit_id: 601,
+            unit_label: "Unit 101",
             submitted_by_name: "Jordan Resident",
             submitted_by_email: "jordan@example.com",
             submitted_by_phone: "512-555-2222",
@@ -4561,6 +4561,27 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Urgent");
   await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Submitted");
   await expect(page.getByTestId("tenant-maintenance-attachments-801")).toContainText("sink-leak.jpg");
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toHaveCount(0);
+  await expect(page.getByTestId("maintenance-filter-count")).toContainText("1 of 2 requests");
+  await page.getByTestId("maintenance-status-filter").selectOption("submitted");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toHaveCount(0);
+  await expect(page.getByTestId("maintenance-filter-count")).toContainText("1 of 2 requests");
+  await page.getByTestId("maintenance-urgency-filter").selectOption("normal");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toHaveCount(0);
+  await expect(page.getByTestId("tenant-maintenance-requests-empty")).toContainText("No active maintenance requests.");
+  await expect(page.getByTestId("maintenance-filter-count")).toContainText("0 of 2 requests");
+  await page.getByTestId("maintenance-reset-filters").click();
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
+  await page.getByTestId("tenant-maintenance-filter-archived").click();
+  await page.getByTestId("maintenance-status-filter").selectOption("closed");
+  await page.getByTestId("maintenance-location-filter").selectOption("unit:601");
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Old dishwasher leak");
+  await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Unit 101");
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toHaveCount(0);
+  await expect(page.getByTestId("maintenance-filter-count")).toContainText("1 of 2 requests");
+  await page.getByTestId("maintenance-reset-filters").click();
+  await expect(page.getByTestId("tenant-maintenance-request-801")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("tenant-maintenance-request-802")).toHaveCount(0);
   await page.getByTestId("tenant-maintenance-filter-archived").click();
   await expect(page.getByTestId("tenant-maintenance-request-802")).toContainText("Old dishwasher leak");
