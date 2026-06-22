@@ -437,6 +437,17 @@ function PropertyWorkOrdersSection({
   const [workOrderFilter, setWorkOrderFilter] = useState("active");
   const [workflowStep, setWorkflowStep] = useState(1);
   const [selectedRecipients, setSelectedRecipients] = useState([]);
+  const [vendorEntryMode, setVendorEntryMode] = useState("saved");
+  const [manualVendor, setManualVendor] = useState({
+    name: "",
+    trade: "",
+    contact_name: "",
+    email: "",
+    phone: "",
+    website: "",
+    notes: "",
+    save_as_vendor: true,
+  });
   const propertyOptions = propertyProfiles.length ? propertyProfiles : propertyProfile?.id ? [propertyProfile] : [];
   const activePropertyId = editing?.property_profile_id || form.property_id || propertyProfile?.id || propertyOptions[0]?.id || "";
   const activeProperty = propertyOptions.find((property) => String(property.id) === String(activePropertyId)) || propertyProfile || {};
@@ -457,6 +468,25 @@ function PropertyWorkOrdersSection({
     .map((recipient) => Number(recipient.directory_entry_id));
   const selectedMarketplaceCount = selectedMarketplaceContractorIds.length;
   const selectedRecipientCount = selectedRecipients.length;
+  const manualVendorReady = Boolean(manualVendor.name.trim() && (manualVendor.email.trim() || manualVendor.phone.trim()));
+  const manualVendorRecipient = {
+    source: "manual_vendor",
+    source_label: "Manual Vendor",
+    business_id: `manual-${manualVendor.name.trim().toLowerCase() || "vendor"}`,
+    name: manualVendor.name.trim(),
+    trade: manualVendor.trade.trim() || form.category,
+    contact_name: manualVendor.contact_name.trim(),
+    email: manualVendor.email.trim(),
+    phone: manualVendor.phone.trim(),
+    website: manualVendor.website.trim(),
+    notes: manualVendor.notes.trim(),
+    save_as_vendor: Boolean(manualVendor.save_as_vendor),
+    location: activeProperty?.address || activeProperty?.display_name || "",
+  };
+  const finalizeRecipients =
+    form.assignment_type === "vendor" && vendorEntryMode === "manual" && manualVendor.name.trim()
+      ? [manualVendorRecipient]
+      : selectedRecipients;
   const recipientHasContactPath = (recipient) =>
     recipient.source === "myhomebro_contractor" || Boolean((recipient.email || "").trim() || (recipient.phone || "").trim());
   const sendableRecipientCount = selectedRecipients.filter(recipientHasContactPath).length;
@@ -492,6 +522,8 @@ function PropertyWorkOrdersSection({
     setForm({ ...DEFAULT_WORK_ORDER_FORM, property_id: activePropertyId || "" });
     setCompletionFiles([]);
     setVendorSearch("");
+    setVendorEntryMode("saved");
+    setManualVendor({ name: "", trade: "", contact_name: "", email: "", phone: "", website: "", notes: "", save_as_vendor: true });
     setMarketplaceSearch({ location: activeProperty?.address || activeProperty?.display_name || "", search: "", radius_miles: "25" });
     resetMarketplacePreview();
     setWorkflowStep(1);
@@ -503,6 +535,8 @@ function PropertyWorkOrdersSection({
     setForm({ ...workOrderFormFromRow(row), ...overrides, property_id: row.property_profile_id || activePropertyId || "" });
     setCompletionFiles([]);
     setVendorSearch(row.assigned_vendor_name || row.assigned_vendor_trade_category || "");
+    setVendorEntryMode("saved");
+    setManualVendor({ name: "", trade: row.assigned_vendor_trade_category || row.category || "", contact_name: "", email: "", phone: "", website: "", notes: "", save_as_vendor: true });
     const propertyForRow = propertyOptions.find((property) => String(property.id) === String(row.property_profile_id || activePropertyId)) || activeProperty || propertyProfile || {};
     setMarketplaceSearch({
       location: propertyForRow.address || propertyForRow.display_name || row.property_name || "",
@@ -520,6 +554,8 @@ function PropertyWorkOrdersSection({
     setForm(DEFAULT_WORK_ORDER_FORM);
     setCompletionFiles([]);
     setVendorSearch("");
+    setVendorEntryMode("saved");
+    setManualVendor({ name: "", trade: "", contact_name: "", email: "", phone: "", website: "", notes: "", save_as_vendor: true });
     setMarketplaceSearch({ location: "", search: "", radius_miles: "25" });
     resetMarketplacePreview();
     setWorkflowStep(1);
@@ -599,6 +635,10 @@ function PropertyWorkOrdersSection({
     if ((recipient.phone || "").trim()) channels.push("SMS available");
     return channels.length ? channels.join(" / ") : "Missing email/phone";
   };
+  const updateManualVendor = (field, value) => {
+    setManualVendor((prev) => ({ ...prev, [field]: value }));
+    setError("");
+  };
 
   const continueFromDetails = () => {
     if (!form.title.trim() || !form.description.trim()) {
@@ -610,8 +650,12 @@ function PropertyWorkOrdersSection({
   };
 
   const continueFromContractors = () => {
-    if (form.assignment_type === "vendor" && !form.assigned_vendor_id && !selectedRecipients.some((recipient) => recipient.source === "preferred_vendor")) {
+    if (form.assignment_type === "vendor" && vendorEntryMode === "saved" && !form.assigned_vendor_id) {
       setError("Choose a preferred vendor before continuing.");
+      return;
+    }
+    if (form.assignment_type === "vendor" && vendorEntryMode === "manual" && !manualVendorReady) {
+      setError("Enter a vendor name and either email or phone before continuing.");
       return;
     }
     if (form.assignment_type === "marketplace_contractor" && !selectedRecipientCountValid) {
@@ -662,12 +706,20 @@ function PropertyWorkOrdersSection({
               directory_entry_ids: selectedMarketplaceContractorIds,
               recipients: selectedRecipientPayload(),
             });
+          } else if (options.sendToMarketplace && form.assignment_type === "vendor" && vendorEntryMode === "manual" && created?.work_order?.id) {
+            await onSendToMarketplace?.(form.property_id || activePropertyId, created.work_order.id, {
+              recipients: selectedRecipientPayload(),
+            });
           }
       } else {
         await onUpdate?.(editing.property_profile_id || activePropertyId, editing.id, payload);
         if (options.sendToMarketplace && form.assignment_type === "marketplace_contractor") {
           await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id, {
             directory_entry_ids: selectedMarketplaceContractorIds,
+            recipients: selectedRecipientPayload(),
+          });
+        } else if (options.sendToMarketplace && form.assignment_type === "vendor" && vendorEntryMode === "manual") {
+          await onSendToMarketplace?.(editing.property_profile_id || activePropertyId, editing.id, {
             recipients: selectedRecipientPayload(),
           });
         }
@@ -755,7 +807,7 @@ function PropertyWorkOrdersSection({
   };
 
   const selectedRecipientPayload = () =>
-    selectedRecipients.map((recipient) => ({
+    finalizeRecipients.map((recipient) => ({
       source: recipient.source,
       directory_entry_id: recipient.directory_entry_id || null,
       contractor_id: recipient.contractor_id || null,
@@ -765,6 +817,10 @@ function PropertyWorkOrdersSection({
       email: recipient.email || "",
       phone: recipient.phone || "",
       trade: recipient.trade || "",
+      contact_name: recipient.contact_name || "",
+      website: recipient.website || "",
+      notes: recipient.notes || "",
+      save_as_vendor: Boolean(recipient.save_as_vendor),
       location: recipient.location || "",
     }));
 
@@ -1124,25 +1180,87 @@ function PropertyWorkOrdersSection({
               ) : null}
               {workflowStep === 2 && form.assignment_type === "vendor" ? (
                 <div data-testid="property-work-order-vendor-panel" className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-3 sm:col-span-2">
-                  <label className="block text-sm font-medium text-amber-50">
-                    Search preferred vendors
-                    <input
-                      data-testid="property-work-order-vendor-search"
-                      value={vendorSearch}
-                      onChange={(event) => setVendorSearch(event.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
-                      placeholder="Search by vendor name, trade, email, or phone"
-                    />
-                  </label>
-                  <label className="mt-3 block text-sm font-medium text-amber-50">
-                    Vendor who will receive this work order
-                    <select data-testid="property-work-order-vendor" value={form.assigned_vendor_id} onChange={(event) => update("assigned_vendor_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300">
-                      <option value="">Choose vendor</option>
-                      {matchingVendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}{vendor.trade_category ? ` - ${vendor.trade_category}` : ""}</option>)}
-                    </select>
-                  </label>
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Vendor entry method">
+                    {[
+                      ["saved", "Select Saved Vendor"],
+                      ["manual", "Enter Vendor Manually"],
+                    ].map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        data-testid={`property-work-order-vendor-mode-${value}`}
+                        onClick={() => {
+                          setVendorEntryMode(value);
+                          if (value === "manual") update("assigned_vendor_id", "");
+                        }}
+                        className={`rounded-xl border px-3 py-2 text-sm font-bold ${
+                          vendorEntryMode === value
+                            ? "border-amber-300 bg-amber-300 text-slate-950"
+                            : "border-amber-300/40 bg-slate-950/60 text-amber-100 hover:bg-amber-300/10"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {vendorEntryMode === "saved" ? (
+                    <>
+                      <label className="mt-3 block text-sm font-medium text-amber-50">
+                        Search preferred vendors
+                        <input
+                          data-testid="property-work-order-vendor-search"
+                          value={vendorSearch}
+                          onChange={(event) => setVendorSearch(event.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300"
+                          placeholder="Search by vendor name, trade, email, or phone"
+                        />
+                      </label>
+                      <label className="mt-3 block text-sm font-medium text-amber-50">
+                        Vendor who will receive this work order
+                        <select data-testid="property-work-order-vendor" value={form.assigned_vendor_id} onChange={(event) => update("assigned_vendor_id", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300">
+                          <option value="">Choose vendor</option>
+                          {matchingVendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}{vendor.trade_category ? ` - ${vendor.trade_category}` : ""}</option>)}
+                        </select>
+                      </label>
+                    </>
+                  ) : (
+                    <div data-testid="property-work-order-manual-vendor-form" className="mt-3 grid gap-3 md:grid-cols-2">
+                      <label className="block text-sm font-medium text-amber-50">
+                        Vendor/company name
+                        <input data-testid="property-work-order-manual-vendor-name" value={manualVendor.name} onChange={(event) => updateManualVendor("name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" />
+                      </label>
+                      <label className="block text-sm font-medium text-amber-50">
+                        Trade/category
+                        <input data-testid="property-work-order-manual-vendor-trade" value={manualVendor.trade} onChange={(event) => updateManualVendor("trade", event.target.value)} placeholder={WORK_ORDER_CATEGORIES.find(([value]) => value === form.category)?.[1] || "General"} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" />
+                      </label>
+                      <label className="block text-sm font-medium text-amber-50">
+                        Contact name
+                        <input data-testid="property-work-order-manual-vendor-contact" value={manualVendor.contact_name} onChange={(event) => updateManualVendor("contact_name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" />
+                      </label>
+                      <label className="block text-sm font-medium text-amber-50">
+                        Email
+                        <input data-testid="property-work-order-manual-vendor-email" type="email" value={manualVendor.email} onChange={(event) => updateManualVendor("email", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" />
+                      </label>
+                      <label className="block text-sm font-medium text-amber-50">
+                        Phone
+                        <input data-testid="property-work-order-manual-vendor-phone" value={manualVendor.phone} onChange={(event) => updateManualVendor("phone", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" />
+                      </label>
+                      <label className="block text-sm font-medium text-amber-50">
+                        Website
+                        <input data-testid="property-work-order-manual-vendor-website" value={manualVendor.website} onChange={(event) => updateManualVendor("website", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" />
+                      </label>
+                      <label className="block text-sm font-medium text-amber-50 md:col-span-2">
+                        Notes
+                        <textarea data-testid="property-work-order-manual-vendor-notes" rows={2} value={manualVendor.notes} onChange={(event) => updateManualVendor("notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-amber-300" />
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-sm font-semibold text-amber-50 md:col-span-2">
+                        <input data-testid="property-work-order-manual-vendor-save" type="checkbox" checked={manualVendor.save_as_vendor} onChange={(event) => updateManualVendor("save_as_vendor", event.target.checked)} className="h-4 w-4 accent-amber-300" />
+                        Save as preferred vendor
+                      </label>
+                    </div>
+                  )}
                   <p className="mt-2 text-xs leading-5 text-amber-100/80">
-                    Vendor assignment records your preferred outside company. It does not create a contractor account or start payment steps.
+                    Vendor assignment records an outside company and can send a secure work-order invitation when contact info is available. It does not create a contractor account or start payment steps.
                   </p>
                 </div>
               ) : null}
@@ -1409,14 +1527,14 @@ function PropertyWorkOrdersSection({
               ) : null}
               {workflowStep === 3 ? (
                 <>
-              {selectedRecipients.length ? (
+              {finalizeRecipients.length ? (
                       <div data-testid="property-work-order-selected-recipients" className="rounded-2xl border border-slate-700 bg-slate-950/70 p-3 sm:col-span-2">
                   <div className="text-sm font-semibold text-white">Selected recipients</div>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
                     MyHomeBro contractors receive marketplace opportunities. Preferred vendors and local businesses receive secure work-order invitations when email or phone is available.
                   </p>
                   <div className="mt-2 grid gap-2">
-                    {selectedRecipients.map((recipient) => (
+                    {finalizeRecipients.map((recipient) => (
                       <div key={recipientKey(recipient)} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-300">
                         <span className="font-semibold text-white">{recipient.name}</span>
                         <span className="ml-2 rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] text-slate-200">{recipient.source_label}</span>
@@ -1510,6 +1628,17 @@ function PropertyWorkOrdersSection({
                   className="rounded-xl border border-emerald-300/50 bg-emerald-400/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-400/25 disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Send Work Order to Selected Recipients"}
+                </button>
+              ) : null}
+              {workflowStep === 3 && form.assignment_type === "vendor" && vendorEntryMode === "manual" && (!editing.marketplace_status || editing.marketplace_status === "not_sent" || editing.marketplace_status === "withdrawn" || editing.marketplace_status === "declined") ? (
+                <button
+                  type="button"
+                  data-testid="property-work-order-send-manual-vendor"
+                  disabled={saving || !form.title.trim() || !form.description.trim() || !manualVendorReady}
+                  onClick={(event) => submit(event, { sendToMarketplace: true })}
+                  className="rounded-xl border border-amber-300/50 bg-amber-300/15 px-4 py-2 text-sm font-extrabold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Send Work Order to Vendor"}
                 </button>
               ) : null}
               {workflowStep === 3 && form.assignment_type === "marketplace_contractor" && marketplaceSendHelper ? (

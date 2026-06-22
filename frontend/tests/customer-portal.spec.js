@@ -3214,7 +3214,9 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
-    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/") && method === "PATCH") {
+    const workOrderPatchMatch = requestUrl.match(/\/customer-portal\/customer-token\/properties\/1\/work-orders\/(\d+)\//);
+    if (workOrderPatchMatch && method === "PATCH") {
+      const patchedWorkOrderId = Number(workOrderPatchMatch[1]);
       const rawBody = route.request().postData() || "";
       const isMultipart = (route.request().headers()["content-type"] || "").includes("multipart/form-data");
       submittedWorkOrderEditPayload = isMultipart
@@ -3226,7 +3228,7 @@ test("customer portal is reachable from the landing page and loads secure record
           }
         : JSON.parse(rawBody || "{}");
       propertyWorkOrders = propertyWorkOrders.map((row) =>
-        row.id === 901
+        row.id === patchedWorkOrderId
           ? {
               ...row,
               ...submittedWorkOrderEditPayload,
@@ -3328,7 +3330,9 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
-    if (requestUrl.includes("/customer-portal/customer-token/properties/1/work-orders/901/send-to-marketplace/") && method === "POST") {
+    const sendMatch = requestUrl.match(/\/customer-portal\/customer-token\/properties\/1\/work-orders\/(\d+)\/send-to-marketplace\//);
+    if (sendMatch && method === "POST") {
+      const sentWorkOrderId = Number(sendMatch[1]);
       submittedMarketplacePayload = JSON.parse(route.request().postData() || "{}");
       const recipientInvitations = (submittedMarketplacePayload.recipients || []).map((recipient, index) => ({
         id: 9900 + index,
@@ -3338,7 +3342,9 @@ test("customer portal is reachable from the landing page and loads secure record
             ? "MyHomeBro Contractor"
             : recipient.source === "preferred_vendor"
               ? "Preferred Vendor"
-              : "Local Business",
+              : recipient.source === "manual_vendor"
+                ? "Manual Vendor"
+                : "Local Business",
         status: recipient.email || recipient.phone || recipient.source === "myhomebro_contractor" ? "sent" : "no_contact",
         status_label: recipient.email || recipient.phone || recipient.source === "myhomebro_contractor" ? "Sent" : "No Contact Info",
         name: recipient.name,
@@ -3348,7 +3354,7 @@ test("customer portal is reachable from the landing page and loads secure record
         location: recipient.location || "",
       }));
       propertyWorkOrders = propertyWorkOrders.map((row) =>
-        row.id === 901
+        row.id === sentWorkOrderId
           ? {
               ...row,
               marketplace_status: "sent",
@@ -3395,7 +3401,7 @@ test("customer portal is reachable from the landing page and loads secure record
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          work_order: propertyWorkOrders.find((row) => row.id === 901),
+          work_order: propertyWorkOrders.find((row) => row.id === sentWorkOrderId),
           opportunity_count: (submittedMarketplacePayload.directory_entry_ids || []).length,
           created_opportunity_count: (submittedMarketplacePayload.directory_entry_ids || []).length,
           invitation_count: recipientInvitations.length - (submittedMarketplacePayload.directory_entry_ids || []).length,
@@ -4762,6 +4768,42 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-work-order-902")).toContainText("Unit 101");
   await expect(page.getByTestId("property-work-order-902")).toContainText("Sam Supervisor");
   await expect(page.getByTestId("property-work-order-902")).toContainText("Scheduled");
+  await page.getByTestId("property-work-order-edit-902").click();
+  await expect(page.getByTestId("property-work-order-modal")).toBeVisible();
+  await page.getByTestId("property-work-order-assignment-type").selectOption("vendor");
+  await page.getByTestId("property-work-order-continue-contractors").click();
+  await expect(page.getByTestId("property-work-order-vendor-panel")).toContainText("Select Saved Vendor");
+  await expect(page.getByTestId("property-work-order-vendor-panel")).toContainText("Enter Vendor Manually");
+  await page.getByTestId("property-work-order-vendor-mode-manual").click();
+  await expect(page.getByTestId("property-work-order-manual-vendor-form")).toBeVisible();
+  await page.getByTestId("property-work-order-manual-vendor-name").fill("Rapid Rooter");
+  await page.getByTestId("property-work-order-manual-vendor-trade").fill("Plumbing");
+  await page.getByTestId("property-work-order-manual-vendor-contact").fill("Riley Dispatcher");
+  await page.getByTestId("property-work-order-manual-vendor-email").fill("dispatch@rapidrooter.example");
+  await page.getByTestId("property-work-order-manual-vendor-phone").fill("210-555-9191");
+  await page.getByTestId("property-work-order-manual-vendor-website").fill("https://rapidrooter.example");
+  await page.getByTestId("property-work-order-manual-vendor-notes").fill("Available after hours.");
+  await expect(page.getByTestId("property-work-order-continue-finalize")).toBeEnabled();
+  await page.getByTestId("property-work-order-continue-finalize").click();
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Rapid Rooter");
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("Email available");
+  await expect(page.getByTestId("property-work-order-selected-recipients")).toContainText("SMS available");
+  await expect(page.getByTestId("property-work-order-send-manual-vendor")).toBeEnabled();
+  await page.getByTestId("property-work-order-send-manual-vendor").click();
+  await expect(page.getByTestId("property-work-order-modal")).toHaveCount(0);
+  expect(submittedMarketplacePayload).toMatchObject({
+    recipients: [
+      expect.objectContaining({
+        source: "manual_vendor",
+        name: "Rapid Rooter",
+        email: "dispatch@rapidrooter.example",
+        phone: "210-555-9191",
+        save_as_vendor: true,
+      }),
+    ],
+  });
+  await expect(page.getByTestId("property-work-order-recipient-list-902")).toContainText("Rapid Rooter");
+  await expect(page.getByTestId("property-work-order-recipient-list-902")).toContainText("Manual Vendor");
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-request-create-panel")).toBeVisible();

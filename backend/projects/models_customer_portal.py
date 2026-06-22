@@ -852,10 +852,12 @@ class PropertyWorkOrderRecipientInvitation(models.Model):
     TYPE_MYHOMEBRO_CONTRACTOR = "myhomebro_contractor"
     TYPE_PREFERRED_VENDOR = "preferred_vendor"
     TYPE_LOCAL_BUSINESS = "local_business"
+    TYPE_MANUAL_VENDOR = "manual_vendor"
     RECIPIENT_TYPE_CHOICES = [
         (TYPE_MYHOMEBRO_CONTRACTOR, "MyHomeBro Contractor"),
         (TYPE_PREFERRED_VENDOR, "Preferred Vendor"),
         (TYPE_LOCAL_BUSINESS, "Local Business"),
+        (TYPE_MANUAL_VENDOR, "Manual Vendor"),
     ]
 
     STATUS_PENDING = "pending"

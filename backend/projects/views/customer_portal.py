@@ -7417,6 +7417,16 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 return [], True, Response({"detail": "Selected contractors could not be read."}, status=status.HTTP_400_BAD_REQUEST)
         if explicit and not 1 <= len(recipients) <= 5:
             return [], True, Response({"detail": "Select 1 to 5 recipients."}, status=status.HTTP_400_BAD_REQUEST)
+        for recipient in recipients:
+            source = _safe_text(recipient.get("source"))
+            if source == PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR:
+                name = _safe_text(recipient.get("name"))
+                email = _safe_text(recipient.get("email"))
+                phone = _safe_text(recipient.get("phone"))
+                if not name:
+                    return [], True, Response({"detail": "Manual vendor name is required."}, status=status.HTTP_400_BAD_REQUEST)
+                if not (email or phone):
+                    return [], True, Response({"detail": "Manual vendor email or phone is required."}, status=status.HTTP_400_BAD_REQUEST)
         return recipients, explicit, None
 
     def _invite_url(self, request, invitation: PropertyWorkOrderRecipientInvitation, action: str) -> str:
@@ -7506,6 +7516,36 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         invitation.save(update_fields=["email_status", "sms_status", "status", "sent_at", "delivery_error", "updated_at"])
         return invitation
 
+    def _manual_vendor_from_recipient(self, company: PropertyManagementCompany, recipient: dict) -> PropertyVendor:
+        email = _safe_text(recipient.get("email")).lower()
+        phone = _safe_text(recipient.get("phone"))
+        name = _safe_text(recipient.get("name"))
+        qs = PropertyVendor.objects.filter(property_management_company=company, status=PropertyVendor.STATUS_ACTIVE)
+        existing = None
+        if email:
+            existing = qs.filter(email__iexact=email).first()
+        if existing is None and phone:
+            existing = qs.filter(phone__iexact=phone).first()
+        if existing is None and name:
+            existing = qs.filter(name__iexact=name).first()
+        if existing is not None:
+            return existing
+        return PropertyVendor.objects.create(
+            property_management_company=company,
+            name=name,
+            trade_category=_safe_text(recipient.get("trade")) or _safe_text(recipient.get("trade_category")),
+            email=email,
+            phone=phone,
+            website=_safe_text(recipient.get("website")),
+            notes=_safe_text(recipient.get("notes")),
+            vendor_source=PropertyVendor.SOURCE_MANUAL,
+            status=PropertyVendor.STATUS_ACTIVE,
+            source_metadata={
+                "source": "work_order_manual_vendor",
+                "contact_name": _safe_text(recipient.get("contact_name")),
+            },
+        )
+
     def post(self, request, token: str, property_id: int, work_order_id: int):
         email, company, property_profile, error = self._property_from_token(token, property_id)
         if error is not None:
@@ -7525,10 +7565,10 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 row._prefetched_objects_cache.clear()
             return Response({"work_order": _property_work_order_payload(row), "portal": _build_customer_portal_payload(email, request=request)}, status=status.HTTP_200_OK)
 
-        if row.assignment_type != PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR:
-            return Response({"detail": "Set assignment type to Marketplace Contractor before sending."}, status=status.HTTP_400_BAD_REQUEST)
+        if row.assignment_type not in {PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR, PropertyWorkOrder.ASSIGNMENT_VENDOR}:
+            return Response({"detail": "Set assignment type to Vendor or Marketplace Contractor before sending."}, status=status.HTTP_400_BAD_REQUEST)
         if row.marketplace_status in {PropertyWorkOrder.MARKETPLACE_SENT, PropertyWorkOrder.MARKETPLACE_ACCEPTED}:
-            return Response({"detail": "This work order has already been sent to the marketplace."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "This work order has already been sent to selected recipients."}, status=status.HTTP_400_BAD_REQUEST)
         active_exists = ContractorOpportunity.objects.filter(property_work_order=row, status__in=[ContractorOpportunity.STATUS_PENDING, ContractorOpportunity.STATUS_ACCEPTED]).exists()
         if active_exists:
             return Response({"detail": "This work order already has active marketplace opportunities."}, status=status.HTTP_400_BAD_REQUEST)
@@ -7536,7 +7576,7 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
         selected_recipients, explicit_selection, selection_error = self._selected_recipient_rows(request, row)
         if selection_error is not None:
             return selection_error
-        entries = list(self._eligible_directory_entries(row))
+        entries = list(self._eligible_directory_entries(row)) if row.assignment_type == PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR else []
         external_invitations = []
         if explicit_selection:
             selected_entry_ids = {
@@ -7549,7 +7589,11 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                 return Response({"detail": "Selected contractors are not eligible for this work order."}, status=status.HTTP_400_BAD_REQUEST)
         if not entries:
             has_external_contact = any(
-                _safe_text(item.get("source")) in {PropertyWorkOrderRecipientInvitation.TYPE_PREFERRED_VENDOR, PropertyWorkOrderRecipientInvitation.TYPE_LOCAL_BUSINESS}
+                _safe_text(item.get("source")) in {
+                    PropertyWorkOrderRecipientInvitation.TYPE_PREFERRED_VENDOR,
+                    PropertyWorkOrderRecipientInvitation.TYPE_LOCAL_BUSINESS,
+                    PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR,
+                }
                 for item in selected_recipients
             )
             if not explicit_selection or not has_external_contact:
@@ -7641,12 +7685,31 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
                             source_metadata=recipient,
                         )
                     )
+                elif source == PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR:
+                    linked_vendor = self._manual_vendor_from_recipient(company, recipient) if bool(recipient.get("save_as_vendor")) else None
+                    external_invitations.append(
+                        self._create_external_invitation(
+                            request=request,
+                            row=row,
+                            recipient_type=PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR,
+                            name=_safe_text(recipient.get("name")),
+                            email=_safe_text(recipient.get("email")),
+                            phone=_safe_text(recipient.get("phone")),
+                            trade_category=_safe_text(recipient.get("trade")) or _safe_text(recipient.get("trade_category")),
+                            location=_safe_text(recipient.get("location")),
+                            linked_vendor=linked_vendor,
+                            source_metadata=recipient,
+                        )
+                    )
+                    if linked_vendor is not None and row.assignment_type == PropertyWorkOrder.ASSIGNMENT_VENDOR:
+                        row.assigned_vendor = linked_vendor
         row.marketplace_status = PropertyWorkOrder.MARKETPLACE_SENT
         row.marketplace_sent_at = now
         row.marketplace_response_at = None
         row.assigned_contractor = None
         row.assigned_staff_member = None
-        row.assigned_vendor = None
+        if row.assignment_type == PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR:
+            row.assigned_vendor = None
         row.save(update_fields=["marketplace_status", "marketplace_sent_at", "marketplace_response_at", "assigned_contractor", "assigned_staff_member", "assigned_vendor", "updated_at"])
         recipient_total = len(entries) + len(external_invitations)
         _property_work_order_add_activity(

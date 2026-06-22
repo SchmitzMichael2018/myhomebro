@@ -21751,6 +21751,135 @@ class CustomerPortalAccessTests(TestCase):
         row.refresh_from_db()
         self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_SENT)
 
+    def test_property_work_order_manual_vendor_recipient_can_be_invited_and_saved(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_VENDOR,
+        )
+
+        with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")) as email_mock, patch(
+            "projects.views.customer_portal.send_twilio_sms",
+            return_value=(True, "sent"),
+        ) as sms_mock:
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+                {
+                    "recipients": [
+                        {
+                            "source": PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR,
+                            "name": "Rapid Rooter",
+                            "trade": "Plumbing",
+                            "contact_name": "Riley Dispatcher",
+                            "email": "dispatch@rapidrooter.example",
+                            "phone": "512-555-9191",
+                            "website": "https://rapidrooter.example",
+                            "notes": "After-hours plumber.",
+                            "save_as_vendor": True,
+                        }
+                    ]
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["invitation_count"], 1)
+        vendor = PropertyVendor.objects.get(name="Rapid Rooter")
+        self.assertEqual(vendor.vendor_source, PropertyVendor.SOURCE_MANUAL)
+        self.assertEqual(vendor.email, "dispatch@rapidrooter.example")
+        invitation = PropertyWorkOrderRecipientInvitation.objects.get(work_order=row)
+        self.assertEqual(invitation.recipient_type, PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR)
+        self.assertEqual(invitation.linked_vendor, vendor)
+        self.assertEqual(invitation.status, PropertyWorkOrderRecipientInvitation.STATUS_SENT)
+        row.refresh_from_db()
+        self.assertEqual(row.assignment_type, PropertyWorkOrder.ASSIGNMENT_VENDOR)
+        self.assertEqual(row.assigned_vendor, vendor)
+        self.assertEqual(row.marketplace_status, PropertyWorkOrder.MARKETPLACE_SENT)
+        email_mock.assert_called_once()
+        sms_mock.assert_called_once()
+
+    def test_property_work_order_manual_vendor_requires_name_and_contact(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_VENDOR,
+        )
+
+        missing_name = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {"recipients": [{"source": PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR, "email": "dispatch@example.com"}]},
+            content_type="application/json",
+        )
+        missing_contact = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+            {"recipients": [{"source": PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR, "name": "Rapid Rooter"}]},
+            content_type="application/json",
+        )
+
+        self.assertEqual(missing_name.status_code, 400)
+        self.assertIn("name is required", missing_name.data["detail"])
+        self.assertEqual(missing_contact.status_code, 400)
+        self.assertIn("email or phone is required", missing_contact.data["detail"])
+        self.assertEqual(PropertyWorkOrderRecipientInvitation.objects.count(), 0)
+        self.assertEqual(PropertyVendor.objects.count(), 0)
+
+    def test_property_work_order_manual_vendor_save_reuses_obvious_duplicate(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
+        existing = PropertyVendor.objects.create(
+            property_management_company=company,
+            name="Rapid Rooter",
+            trade_category="Plumbing",
+            email="dispatch@rapidrooter.example",
+            status=PropertyVendor.STATUS_ACTIVE,
+        )
+        row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Repair sink leak",
+            description="Inspect and repair the kitchen sink.",
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_VENDOR,
+        )
+
+        with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")), patch(
+            "projects.views.customer_portal.send_twilio_sms",
+            return_value=(False, "no phone"),
+        ):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{row.id}/send-to-marketplace/",
+                {
+                    "recipients": [
+                        {
+                            "source": PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR,
+                            "name": "Rapid Rooter",
+                            "email": "dispatch@rapidrooter.example",
+                            "save_as_vendor": True,
+                        }
+                    ]
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(PropertyVendor.objects.filter(property_management_company=company).count(), 1)
+        invitation = PropertyWorkOrderRecipientInvitation.objects.get(work_order=row)
+        self.assertEqual(invitation.linked_vendor, existing)
+
     def test_property_work_order_external_invitation_accept_and_decline_tokens_update_status(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         company, property_profile, unit, tenant, _staff = self._create_property_work_order_context()
