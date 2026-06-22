@@ -540,6 +540,7 @@ function SuggestedSuppliesSection({ systems = [], onCreateServiceRequest, highli
 }
 
 function PropertySummarySection({ profile, profileOptions, rentalToolsEnabled = false, onSelectProperty, onEdit, onAdd, onAddUnit, onAddTenant }) {
+  const [detailsExpanded, setDetailsExpanded] = useState(true);
   const details = [
     ["Property Type", profile?.property_type_label],
     ["Year Built", profile?.year_built],
@@ -578,6 +579,14 @@ function PropertySummarySection({ profile, profileOptions, rentalToolsEnabled = 
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-testid="property-summary-details-toggle"
+            onClick={() => setDetailsExpanded((value) => !value)}
+            className="rounded-xl border border-slate-500 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-slate-100 hover:border-amber-300/50"
+          >
+            {detailsExpanded ? "Collapse Details" : "Expand Details"}
+          </button>
           <button type="button" data-testid="property-summary-edit" onClick={onEdit} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
             Edit Property
           </button>
@@ -621,14 +630,20 @@ function PropertySummarySection({ profile, profileOptions, rentalToolsEnabled = 
           </select>
         </label>
       ) : null}
-      <dl className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {details.map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
-            <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
-            <dd className="mt-1 text-sm font-semibold text-white">{value || "Not recorded yet"}</dd>
-          </div>
-        ))}
-      </dl>
+      {detailsExpanded ? (
+        <dl data-testid="property-summary-details" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {details.map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+              <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
+              <dd className="mt-1 text-sm font-semibold text-white">{value || "Not recorded yet"}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <div data-testid="property-summary-details-collapsed" className="mt-5 rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-sm text-slate-300">
+          {profile?.property_type_label || "Property type not recorded"} · Details hidden
+        </div>
+      )}
     </section>
   );
 }

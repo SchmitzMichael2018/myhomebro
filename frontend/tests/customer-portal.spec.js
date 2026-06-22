@@ -5143,6 +5143,16 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(drawPaymentCard.getByTestId("customer-payment-dispute-status-draw-2")).toContainText("Funds tied to this issue remain paused");
   await expect(drawPaymentCard.getByTestId("customer-payment-track-dispute-draw-2")).toHaveAttribute("href", "/disputes/7702?token=draw-dispute-token");
   await expect(page.getByTestId("customer-payment-history").getByTestId("customer-payment-action-invoice-1")).toContainText("View Record");
+  await page.getByTestId("customer-payments-history-toggle").click();
+  await expect(page.getByTestId("customer-payment-history-collapsed-summary")).toContainText("records hidden");
+  await expect(page.getByTestId("customer-payment-history")).toHaveCount(0);
+  await page.getByTestId("customer-payments-history-toggle").click();
+  await expect(page.getByTestId("customer-payment-history").getByTestId("customer-payment-action-invoice-1")).toContainText("View Record");
+  await page.getByTestId("customer-escrow-history-toggle").click();
+  await expect(page.getByTestId("customer-escrow-history-collapsed-summary")).toContainText("escrow records hidden");
+  await expect(page.getByTestId("customer-escrow-history")).toHaveCount(0);
+  await page.getByTestId("customer-escrow-history-toggle").click();
+  await expect(page.getByTestId("customer-escrow-history")).toBeVisible();
   await expect(page.getByTestId("customer-payment-action-invoice-zero")).toHaveCount(0);
   await expect(page.getByTestId("customer-portal-payments")).not.toContainText("$0.00");
   await expect(page.getByTestId("customer-portal-payments")).not.toContainText("No payment required");
@@ -5199,6 +5209,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-command-summary")).toContainText("2.5");
   await expect(page.getByTestId("property-command-summary")).not.toContainText("Lot Size");
   await expect(page.getByTestId("property-command-summary")).not.toContainText("Occupancy");
+  await expect(page.getByTestId("property-summary-details")).toBeVisible();
+  await page.getByTestId("property-summary-details-toggle").click();
+  await expect(page.getByTestId("property-summary-details-collapsed")).toContainText("Single Family");
+  await expect(page.getByTestId("property-summary-details")).toHaveCount(0);
+  await expect(page.getByTestId("property-command-summary")).toContainText("Kitchen Remodel");
+  await expect(page.getByTestId("property-summary-edit")).toBeVisible();
+  await page.getByTestId("property-summary-details-toggle").click();
+  await expect(page.getByTestId("property-summary-details")).toContainText("1998");
   await expect(page.getByTestId("property-summary-selector")).toBeVisible();
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/text-white/);
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
@@ -5985,6 +6003,113 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
 });
 
+test("customer portal paginates projects and requests", async ({ page }) => {
+  const paginationProjects = Array.from({ length: 12 }, (_, index) => ({
+    id: 1000 + index,
+    project_number: `PRJ-PAGE-${index + 1}`,
+    title: `Pagination Project ${index + 1}`,
+    description: `Pagination project ${index + 1}`,
+    status: "in_progress",
+    status_label: "In Progress",
+    address: "123 Main St, Austin, TX 78701",
+    property_id: 1,
+    contractor_name: "Builder Co",
+    agreement_id: null,
+    agreement_token: "",
+    agreement_url: "",
+    total_cost: "1000.00",
+    created_at: `2026-04-${String(index + 1).padStart(2, "0")}T10:00:00Z`,
+    updated_at: `2026-04-${String(index + 1).padStart(2, "0")}T11:00:00Z`,
+    project_type: "maintenance",
+    milestones: [],
+    suggested_materials: [],
+    updates: [],
+  }));
+  const paginationRequests = Array.from({ length: 12 }, (_, index) => ({
+    id: `pagination-request-${index + 1}`,
+    request_id: 2000 + index,
+    source_kind: "customer_request",
+    source_kind_label: "Customer Portal",
+    request_source_label: "Customer Portal",
+    project_title: `Pagination Request ${index + 1}`,
+    project_scope: `Pagination request ${index + 1}`,
+    notes: `Pagination request ${index + 1}`,
+    project_category: "Maintenance",
+    project_type: "Maintenance",
+    status: "submitted",
+    status_label: "Submitted",
+    workflow_status: "reviewing_request",
+    can_edit: true,
+    property_name: "Kitchen Remodel",
+    project_address: "123 Main St, Austin, TX, 78701",
+    current_next_action: "Review request details.",
+    urgency: "normal",
+    preferred_timeline: "Within the next month",
+    latest_activity: `2026-04-${String(index + 1).padStart(2, "0")}T12:00:00Z`,
+  }));
+  const paginationPayload = {
+    ...portalPayload,
+    summary: {
+      ...portalPayload.summary,
+      active_projects: paginationProjects.length,
+      active_requests: paginationRequests.length,
+      bids_received: 0,
+      active_agreements: 0,
+      payments: 0,
+      documents: 0,
+    },
+    projects: paginationProjects,
+    requests: paginationRequests,
+    bids: [],
+    bid_comparisons: [],
+    agreements: [],
+    payments: [],
+    documents: [],
+    maintenance_work_orders: [],
+    property_profile: {
+      ...portalPayload.property_profile,
+      tenant_maintenance_requests: [],
+    },
+    tenant_maintenance_requests: [],
+  };
+
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    if (route.request().method() === "GET" && requestUrl.includes("/customer-portal/pagination-token/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(paginationPayload),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/pagination-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard")).toBeVisible();
+
+  await page.getByTestId("customer-dashboard-tab-projects").click();
+  await expect(page.getByTestId("customer-project-result-count")).toContainText("Showing 1-10 of 12 projects");
+  await expect(page.getByTestId("customer-project-card-1011")).toContainText("Pagination Project 12");
+  await expect(page.getByText("Pagination Project 2")).toHaveCount(0);
+  await page.getByTestId("customer-project-load-more").click();
+  await expect(page.getByTestId("customer-project-result-count")).toContainText("Showing 1-12 of 12 projects");
+  await expect(page.getByTestId("customer-project-card-1001")).toContainText("Pagination Project 2");
+  await page.getByTestId("customer-project-filter-closed").click();
+  await expect(page.getByTestId("customer-project-closed-empty")).toContainText("No completed projects yet.");
+  await page.getByTestId("customer-project-filter-open").click();
+  await expect(page.getByTestId("customer-project-result-count")).toContainText("Showing 1-10 of 12 projects");
+
+  await page.getByTestId("customer-dashboard-tab-requests").click();
+  await expect(page.getByTestId("customer-request-result-count")).toContainText("Showing 1-10 of 12 requests");
+  await expect(page.getByTestId("customer-request-card-pagination-request-1")).toContainText("Pagination Request 1");
+  await expect(page.getByText("Pagination Request 11")).toHaveCount(0);
+  await page.getByTestId("customer-request-load-more").click();
+  await expect(page.getByTestId("customer-request-result-count")).toContainText("Showing 1-12 of 12 requests");
+  await expect(page.getByTestId("customer-request-card-pagination-request-11")).toContainText("Pagination Request 11");
+});
+
 test("individual customer rental toggle unlocks tenant and unit tools for that property", async ({ page }) => {
   let currentPayload = {
     ...emptyPortalPayload,
@@ -6290,8 +6415,9 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-property-profile")).not.toContainText("Document library");
 
   await page.getByTestId("customer-dashboard-tab-payments").click();
-  await expect(page.getByTestId("customer-payment-history")).not.toContainText("Paid receipt 6");
-  await page.getByTestId("customer-payments-history-show-more").click();
+  await expect(page.getByTestId("customer-payment-history-collapsed-summary")).toContainText("records hidden");
+  await expect(page.getByTestId("customer-payment-history")).toHaveCount(0);
+  await page.getByTestId("customer-payments-history-toggle").click();
   await expect(page.getByTestId("customer-payment-history")).toContainText("Paid receipt 6");
 
   await page.getByTestId("customer-dashboard-tab-documents").click();

@@ -35,6 +35,7 @@ const PAYMENT_PREFERENCES = [
 ];
 
 const NEW_PROPERTY_VALUE = "__new_property__";
+const CUSTOMER_REQUEST_PAGE_SIZE = 10;
 
 const TENANT_MAINTENANCE_STATUS_ACTIONS = [
   ["under_review", "Mark Under Review"],
@@ -1975,6 +1976,7 @@ export default function CustomerRequests({
   const [convertingTenantMaintenanceRequestId, setConvertingTenantMaintenanceRequestId] = useState("");
   const [tenantMaintenanceListFilter, setTenantMaintenanceListFilter] = useState("active");
   const [tenantMaintenanceFilters, setTenantMaintenanceFilters] = useState(DEFAULT_TENANT_MAINTENANCE_FILTERS);
+  const [customerRequestVisibleCount, setCustomerRequestVisibleCount] = useState(CUSTOMER_REQUEST_PAGE_SIZE);
   const [savingPropertyWorkOrder, setSavingPropertyWorkOrder] = useState(false);
   const [improvingRequest, setImprovingRequest] = useState(false);
   const [improveError, setImproveError] = useState("");
@@ -2047,6 +2049,9 @@ export default function CustomerRequests({
     () => requests.filter((row) => row.source_kind === "customer_request"),
     [requests]
   );
+  const visibleCustomerRequests = requests.slice(0, customerRequestVisibleCount);
+  const customerRequestRangeStart = requests.length ? 1 : 0;
+  const customerRequestRangeEnd = Math.min(customerRequestVisibleCount, requests.length);
   const tenantMaintenanceLocationOptions = useMemo(() => {
     const options = [["all", "All properties/units"]];
     const seen = new Set(["all"]);
@@ -2939,7 +2944,11 @@ I need help installing shelves and patching drywall.`}
 
         <div className="mt-4 space-y-3">
           {requests.length ? (
-            requests.map((request) => (
+            <>
+            <div data-testid="customer-request-result-count" className="rounded-2xl border border-slate-700 bg-slate-900/55 px-4 py-3 text-sm text-slate-300">
+              Showing {customerRequestRangeStart}-{customerRequestRangeEnd} of {requests.length} requests
+            </div>
+            {visibleCustomerRequests.map((request) => (
               <div key={request.id} data-testid={`customer-request-card-${request.id}`} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -3036,7 +3045,18 @@ I need help installing shelves and patching drywall.`}
                   </div>
                 </div>
               </div>
-            ))
+            ))}
+            {requests.length > visibleCustomerRequests.length ? (
+              <button
+                type="button"
+                data-testid="customer-request-load-more"
+                onClick={() => setCustomerRequestVisibleCount((current) => current + CUSTOMER_REQUEST_PAGE_SIZE)}
+                className="w-full rounded-2xl border border-amber-200/40 bg-amber-300/10 px-4 py-3 text-sm font-semibold text-amber-100 hover:bg-amber-300/20"
+              >
+                Load more requests
+              </button>
+            ) : null}
+            </>
           ) : (
             <EmptyState title="No saved requests yet" testId="customer-requests-empty">
               Start with a repair, maintenance task, inspection, DIY help request, emergency, or new project idea. It stays private in your workspace until routing is needed.

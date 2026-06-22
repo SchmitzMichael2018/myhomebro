@@ -854,19 +854,21 @@ export default function CustomerProjectWorkspace({
   };
 
   const workTypeForRow = (project = {}, agreement = {}) => {
+    const safeProject = project || {};
+    const safeAgreement = agreement || {};
     const haystack = [
-      project.project_mode,
-      project.mode,
-      project.project_type,
-      project.project_subtype,
-      project.type,
-      project.subtype,
-      project.title,
-      project.description,
-      agreement.project_mode,
-      agreement.project_type,
-      agreement.project_subtype,
-      agreement.description,
+      safeProject.project_mode,
+      safeProject.mode,
+      safeProject.project_type,
+      safeProject.project_subtype,
+      safeProject.type,
+      safeProject.subtype,
+      safeProject.title,
+      safeProject.description,
+      safeAgreement.project_mode,
+      safeAgreement.project_type,
+      safeAgreement.project_subtype,
+      safeAgreement.description,
     ].join(" ").toLowerCase();
     if (haystack.includes("diy") || haystack.includes("assistance")) return "diy_assistance";
     if (haystack.includes("maintenance") || haystack.includes("service visit") || haystack.includes("recurring")) return "maintenance";

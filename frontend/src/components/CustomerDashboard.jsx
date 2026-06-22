@@ -581,8 +581,8 @@ function normalizeInvoiceMagicUrl(actionTarget = "") {
 }
 
 function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpdate }) {
-  const [historyExpanded, setHistoryExpanded] = useState(false);
-  const [escrowHistoryExpanded, setEscrowHistoryExpanded] = useState(false);
+  const [paymentHistoryCollapsed, setPaymentHistoryCollapsed] = useState(() => payments.filter(isPaymentHistoryRecord).length > 3);
+  const [escrowHistoryCollapsed, setEscrowHistoryCollapsed] = useState(() => payments.filter(isEscrowHistoryRecord).length > 3);
   const [selectedAgreementId, setSelectedAgreementId] = useState("");
   const attention = payments.filter((payment) => {
     return isActionablePayment(payment);
@@ -594,9 +594,11 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
   if (!escrowTotals.remaining && escrowTotals.funded) {
     escrowTotals.remaining = Math.max(0, escrowTotals.funded - escrowTotals.released - escrowTotals.refunds);
   }
-  const historyDefaultCount = 5;
-  const visiblePaymentHistory = historyExpanded ? paymentHistory : paymentHistory.slice(0, historyDefaultCount);
-  const visibleEscrowHistory = escrowHistoryExpanded ? escrowHistory : escrowHistory.slice(0, historyDefaultCount);
+  const paymentHistoryTotal = paymentHistory.reduce((sum, payment) => {
+    if (isEscrowReleasePayment(payment) || isCustomerPaidPayment(payment)) return sum + Math.max(0, paymentAmountValue(payment));
+    return sum;
+  }, 0);
+  const escrowEventTotal = escrowHistory.reduce((sum, payment) => sum + Math.abs(escrowSignedAmount(payment)), 0);
   const agreementRows = (agreements || []).map((agreement) => {
     const agreementTitle = String(agreement.project_title || agreement.title || "").trim().toLowerCase();
     const related = payments.filter((payment) => {
@@ -785,74 +787,90 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
 
       <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-lg font-semibold text-white">Invoice & Payment History</h3>
-          <Badge>{paymentHistory.length} records</Badge>
-        </div>
-        <div data-testid="customer-payment-history" className="mt-4 space-y-3">
-          {paymentHistory.length ? (
-            visiblePaymentHistory.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
-            ))
-          ) : payments.length ? null : (
-            <EmptyState title="No payment records yet" testId="customer-payments-empty">
-              Contractor releases, direct payments, refunds, and adjustments will appear here when they are connected to this secure customer record.
-            </EmptyState>
-          )}
-        </div>
-        {paymentHistory.length > historyDefaultCount ? (
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-xs font-semibold text-slate-400">
-              Showing {historyExpanded ? paymentHistory.length : historyDefaultCount} of {paymentHistory.length} payment records
-            </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Invoice & Payment History</h3>
+            <p className="mt-1 text-sm text-slate-400">
+              {paymentHistory.length} payment record{paymentHistory.length === 1 ? "" : "s"} · {moneyLabel(paymentHistoryTotal)} paid or released
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge>{paymentHistory.length} records</Badge>
             <button
               type="button"
-              data-testid="customer-payments-history-show-more"
-              onClick={() => setHistoryExpanded((value) => !value)}
-              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+              data-testid="customer-payments-history-toggle"
+              onClick={() => setPaymentHistoryCollapsed((value) => !value)}
+              className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
             >
-              {historyExpanded ? "Show less" : "Show more"}
+              {paymentHistoryCollapsed ? "Expand" : "Collapse"}
             </button>
           </div>
-        ) : null}
+        </div>
+        {paymentHistoryCollapsed ? (
+          <div data-testid="customer-payment-history-collapsed-summary" className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/55 p-4 text-sm text-slate-300">
+            {paymentHistory.length
+              ? `${paymentHistory.length} records hidden. Total paid or released: ${moneyLabel(paymentHistoryTotal)}.`
+              : "No invoice or payment history records yet."}
+          </div>
+        ) : (
+          <div data-testid="customer-payment-history" className="mt-4 space-y-3">
+            {paymentHistory.length ? (
+              paymentHistory.map((payment) => (
+                <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
+              ))
+            ) : payments.length ? null : (
+              <EmptyState title="No payment records yet" testId="customer-payments-empty">
+                Contractor releases, direct payments, refunds, and adjustments will appear here when they are connected to this secure customer record.
+              </EmptyState>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-lg font-semibold text-white">Escrow history</h3>
-          <Badge>{escrowHistory.length} records</Badge>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Escrow History</h3>
+            <p className="mt-1 text-sm text-slate-400">
+              {escrowHistory.length} escrow event{escrowHistory.length === 1 ? "" : "s"} · Current balance {moneyLabel(escrowTotals.remaining)}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge>{escrowHistory.length} records</Badge>
+            <button
+              type="button"
+              data-testid="customer-escrow-history-toggle"
+              onClick={() => setEscrowHistoryCollapsed((value) => !value)}
+              className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+            >
+              {escrowHistoryCollapsed ? "Expand" : "Collapse"}
+            </button>
+          </div>
         </div>
         <p className="mt-1 text-sm leading-6 text-slate-400">
           This ledger shows escrow balance movement. Invoice & Payment History shows which invoice or contractor payout was paid.
         </p>
-        <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
-          {escrowHistory.length ? (
-            visibleEscrowHistory.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-escrow-action-${payment.id}`} />
-            ))
-          ) : (
-            <EmptyState title="No escrow records yet" testId="customer-escrow-history-empty">
-              Escrow deposits, holds, refunds, reversals, and adjustments will appear here when this project uses milestone holds.
-            </EmptyState>
-          )}
-        </div>
+        {escrowHistoryCollapsed ? (
+          <div data-testid="customer-escrow-history-collapsed-summary" className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/55 p-4 text-sm text-slate-300">
+            {escrowHistory.length
+              ? `${escrowHistory.length} escrow records hidden. Recorded escrow movement: ${moneyLabel(escrowEventTotal)}.`
+              : "No escrow history records yet."}
+          </div>
+        ) : (
+          <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
+            {escrowHistory.length ? (
+              escrowHistory.map((payment) => (
+                <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-escrow-action-${payment.id}`} />
+              ))
+            ) : (
+              <EmptyState title="No escrow records yet" testId="customer-escrow-history-empty">
+                Escrow deposits, holds, refunds, reversals, and adjustments will appear here when this project uses milestone holds.
+              </EmptyState>
+            )}
+          </div>
+        )}
         <div data-testid="customer-current-escrow-balance" className="mt-4 rounded-xl border border-sky-300/30 bg-sky-400/10 p-3 text-sm text-sky-100">
           Current Escrow Balance: <strong>{moneyLabel(escrowTotals.remaining)}</strong>
         </div>
-        {escrowHistory.length > historyDefaultCount ? (
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-xs font-semibold text-slate-400">
-              Showing {escrowHistoryExpanded ? escrowHistory.length : historyDefaultCount} of {escrowHistory.length} escrow records
-            </div>
-            <button
-              type="button"
-              data-testid="customer-escrow-history-show-more"
-              onClick={() => setEscrowHistoryExpanded((value) => !value)}
-              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
-            >
-              {escrowHistoryExpanded ? "Show less" : "Show more"}
-            </button>
-          </div>
-        ) : null}
       </section>
     </div>
   );
