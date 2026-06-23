@@ -22885,6 +22885,151 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(row.status, TenantMaintenanceRequest.STATUS_SUBMITTED)
         self.assertTrue(row.permission_to_enter)
         self.assertEqual(response.data["request"]["reference"], f"TMR-{row.id:06d}")
+        self.assertTrue(response.data["request"]["status_token"])
+        self.assertIn("/maintenance-request/status/", response.data["request"]["status_url"])
+
+    def test_tenant_maintenance_submit_sends_confirmation_and_pm_notifications(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        PropertyManagementStaffMembership.objects.create(
+            company=company,
+            name="Morgan Manager",
+            email="morgan@example.com",
+            role=PropertyManagementStaffMembership.ROLE_MANAGER,
+            status=PropertyManagementStaffMembership.STATUS_ACTIVE,
+        )
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+            address_line1="123 Main St",
+            city="Austin",
+            state="TX",
+            postal_code="78701",
+        )
+        unit = PropertyUnit.objects.create(property_profile=property_profile, unit_label="Unit A")
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+
+        with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")) as email_mock:
+            response = self.client.post(
+                f"/api/projects/maintenance-request/{public_token}/",
+                {
+                    "submitted_by_name": "Taylor Tenant",
+                    "submitted_by_email": "taylor@example.com",
+                    "unit_id": unit.id,
+                    "category": TenantMaintenanceRequest.CATEGORY_PLUMBING,
+                    "urgency": TenantMaintenanceRequest.URGENCY_URGENT,
+                    "title": "Kitchen sink leak",
+                    "description": "Water is dripping under the kitchen sink.",
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        row = TenantMaintenanceRequest.objects.get()
+        self.assertEqual(email_mock.call_count, 3)
+        subjects = [call.kwargs["subject"] for call in email_mock.call_args_list]
+        self.assertIn(f"Maintenance request received: TMR-{row.id:06d}", subjects)
+        self.assertEqual(
+            SmartNotification.objects.filter(
+                event_type=SmartNotificationEvent.TENANT_MAINTENANCE_REQUEST_SUBMITTED,
+                recipient_email__in=[self.customer_email, "morgan@example.com"],
+            ).count(),
+            2,
+        )
+        self.assertFalse(
+            SmartNotification.objects.filter(
+                event_type=SmartNotificationEvent.TENANT_MAINTENANCE_REQUEST_SUBMITTED,
+                recipient_email="other@example.com",
+            ).exists()
+        )
+
+        from projects.views.customer_portal import _notify_tenant_maintenance_submitted
+
+        _notify_tenant_maintenance_submitted(row)
+        self.assertEqual(
+            SmartNotification.objects.filter(event_type=SmartNotificationEvent.TENANT_MAINTENANCE_REQUEST_SUBMITTED).count(),
+            2,
+        )
+
+    def test_tenant_maintenance_submit_still_succeeds_when_email_fails(self):
+        self.customer_homeowner.account_type = Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY
+        self.customer_homeowner.company_name = "Austin Rentals Group"
+        self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
+        company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            managed_by_company=company,
+            display_name="Duplex",
+        )
+        public_token = signing.dumps({"property_id": property_profile.id}, salt="myhomebro.tenant-maintenance-request")
+
+        with patch("projects.views.customer_portal.send_postmark_email", side_effect=RuntimeError("postmark unavailable")):
+            response = self.client.post(
+                f"/api/projects/maintenance-request/{public_token}/",
+                {
+                    "submitted_by_name": "Taylor Tenant",
+                    "submitted_by_email": "taylor@example.com",
+                    "category": TenantMaintenanceRequest.CATEGORY_OTHER,
+                    "title": "Door issue",
+                    "description": "The door is sticking.",
+                },
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(TenantMaintenanceRequest.objects.count(), 1)
+        self.assertFalse(response.data["notification_delivery"]["tenant_email"]["ok"])
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                event_type=SmartNotificationEvent.TENANT_MAINTENANCE_REQUEST_SUBMITTED,
+                recipient_email=self.customer_email,
+            ).exists()
+        )
+
+    def test_tenant_maintenance_status_token_endpoint_returns_safe_data(self):
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer_homeowner,
+            customer_email=self.customer_email,
+            display_name="Rental Cottage",
+            address_line1="9 Oak Lane",
+            city="Austin",
+            state="TX",
+            postal_code="78702",
+            is_rental_property=True,
+        )
+        unit = PropertyUnit.objects.create(property_profile=property_profile, unit_label="A")
+        row = TenantMaintenanceRequest.objects.create(
+            property_profile=property_profile,
+            unit=unit,
+            submitted_by_name="Taylor Tenant",
+            submitted_by_email="taylor@example.com",
+            category=TenantMaintenanceRequest.CATEGORY_HVAC,
+            urgency=TenantMaintenanceRequest.URGENCY_URGENT,
+            title="AC issue",
+            description="The AC is not cooling.",
+            status=TenantMaintenanceRequest.STATUS_UNDER_REVIEW,
+            manager_notes="Private manager notes.",
+            reviewed_at=timezone.now(),
+        )
+
+        response = self.client.get(f"/api/projects/maintenance-request/status/{row.status_token}/")
+        invalid_response = self.client.get("/api/projects/maintenance-request/status/not-a-token/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["reference"], f"TMR-{row.id:06d}")
+        self.assertEqual(response.data["status"], TenantMaintenanceRequest.STATUS_UNDER_REVIEW)
+        self.assertEqual(response.data["property"]["address"], "9 Oak Lane, Austin, TX, 78702")
+        self.assertEqual(response.data["unit"]["display"], "A")
+        self.assertGreaterEqual(len(response.data["timeline"]), 2)
+        self.assertNotIn("manager_notes", response.data)
+        self.assertNotIn("description", response.data)
+        self.assertNotIn("submitted_by_email", response.data)
+        self.assertEqual(invalid_response.status_code, 404)
 
     def test_tenant_maintenance_request_can_be_submitted_with_image_attachment(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

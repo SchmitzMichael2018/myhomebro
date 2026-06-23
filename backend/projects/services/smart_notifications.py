@@ -112,6 +112,10 @@ DEFAULT_TEMPLATES = {
         title="{system_name} needs attention",
         message="{reminder_reason} {recommended_action}",
     ),
+    SmartNotificationEvent.TENANT_MAINTENANCE_REQUEST_SUBMITTED: SmartNotificationTemplate(
+        title="New tenant maintenance request",
+        message="{request_reference} was submitted for {property_name}.",
+    ),
 }
 
 

@@ -32,6 +32,7 @@ import SubcontractorInvitationAcceptPage from "../pages/SubcontractorInvitationA
 import CustomerPortalPage from "../pages/CustomerPortalPage.jsx"; // /portal
 import ContractorClaimPage from "../pages/ContractorClaimPage.jsx";
 import TenantMaintenanceRequestPage from "../pages/TenantMaintenanceRequestPage.jsx";
+import TenantMaintenanceStatusPage from "../pages/TenantMaintenanceStatusPage.jsx";
 
 function PortalTokenRedirect() {
   const { token = "" } = useParams();
@@ -65,6 +66,7 @@ export default function PublicRoutes() {
 
       {/* Tenant maintenance intake */}
       <Route path="/maintenance-request" element={<TenantMaintenanceRequestPage />} />
+      <Route path="/maintenance-request/status/:token" element={<TenantMaintenanceStatusPage />} />
       <Route path="/maintenance-request/:token" element={<TenantMaintenanceRequestPage />} />
 
       {/* Public intake */}

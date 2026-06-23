@@ -5505,6 +5505,7 @@ test("tenant maintenance request intake form submits and confirms", async ({ pag
           request: {
             id: 901,
             reference: "TMR-000901",
+            status_url: "/maintenance-request/status/status-token-901",
             status: "submitted",
             status_label: "Submitted",
             title: submittedPayload.title,
@@ -5550,6 +5551,10 @@ test("tenant maintenance request intake form submits and confirms", async ({ pag
   });
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("Maintenance request submitted.");
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000901");
+  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute(
+    "href",
+    "/maintenance-request/status/status-token-901"
+  );
 });
 
 test("tenant maintenance request verification flow starts from landing and submits with attachment", async ({ page }) => {
@@ -5612,10 +5617,46 @@ test("tenant maintenance request verification flow starts from landing and submi
         request: {
           id: 902,
           reference: "TMR-000902",
+          status_url: "/maintenance-request/status/status-token-902",
           status: "submitted",
           status_label: "Submitted",
           title: "Kitchen sink leak",
         },
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/maintenance-request/status/status-token-902/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        reference: "TMR-000902",
+        submitted_at: "2026-06-22T15:00:00Z",
+        current_status: "submitted",
+        status: "submitted",
+        status_label: "Submitted",
+        title: "Kitchen sink leak",
+        category: "plumbing",
+        category_label: "Plumbing",
+        urgency: "urgent",
+        urgency_label: "Urgent",
+        property: {
+          display_name: "Duplex on Main",
+          address: "123 Main St, Austin, TX, 78701",
+        },
+        unit: {
+          unit_label: "Unit A",
+          display: "Unit A",
+        },
+        timeline: [
+          {
+            label: "Submitted",
+            status: "submitted",
+            description: "Your request was received.",
+            created_at: "2026-06-22T15:00:00Z",
+          },
+        ],
       }),
     });
   });
@@ -5671,6 +5712,15 @@ test("tenant maintenance request verification flow starts from landing and submi
   });
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("Maintenance request submitted.");
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000902");
+  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute(
+    "href",
+    "/maintenance-request/status/status-token-902"
+  );
+  await page.getByTestId("tenant-maintenance-status-link").click();
+  await expect(page).toHaveURL(/\/maintenance-request\/status\/status-token-902$/);
+  await expect(page.getByTestId("tenant-maintenance-status-page")).toContainText("TMR-000902");
+  await expect(page.getByTestId("tenant-maintenance-status-label")).toContainText("Submitted");
+  await expect(page.getByTestId("tenant-maintenance-status-page")).toContainText("Duplex on Main");
 });
 
 test("tenant maintenance request verification supports whole-property rentals without unit", async ({ page }) => {
@@ -5725,6 +5775,7 @@ test("tenant maintenance request verification supports whole-property rentals wi
         request: {
           id: 903,
           reference: "TMR-000903",
+          status_url: "/maintenance-request/status/status-token-903",
           status: "submitted",
           status_label: "Submitted",
           title: "Water heater issue",
@@ -5770,6 +5821,10 @@ test("tenant maintenance request verification supports whole-property rentals wi
     hasTitle: true,
   });
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000903");
+  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute(
+    "href",
+    "/maintenance-request/status/status-token-903"
+  );
 });
 
 test("tenant maintenance verification failure is generic", async ({ page }) => {
@@ -6016,6 +6071,82 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await page.getByTestId("customer-dashboard-tab-account").click();
   await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/text-white/);
   await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
+});
+
+test("tenant maintenance notification opens the Maintenance tab", async ({ page }) => {
+  let currentPortalPayload = clonePortal({
+    ...portalPayload,
+    account: {
+      ...portalPayload.account,
+      account_type: "property_management_company",
+      is_property_management_company: true,
+      has_rental_properties: true,
+    },
+    property_profile: {
+      ...portalPayload.property_profile,
+      rental_tools_enabled: true,
+      is_rental_property: true,
+    },
+    property_profiles: portalPayload.property_profiles.map((property) => ({
+      ...property,
+      rental_tools_enabled: true,
+      is_rental_property: true,
+    })),
+    notifications: [
+      {
+        id: 901,
+        event_type: "tenant_maintenance_request_submitted",
+        channel: "in_app",
+        status: "unread",
+        title: "New tenant maintenance request",
+        message: "TMR-000901 was submitted for Kitchen Remodel.",
+        action_url: "#maintenance",
+        created_at: "2026-06-22T15:00:00Z",
+      },
+    ],
+  });
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "customer-portal-token");
+  });
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+    if (method === "GET" && requestUrl.includes("/customer-portal/customer-token/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+    if (method === "POST" && requestUrl.includes("/customer-portal/customer-token/notifications/901/read/")) {
+      currentPortalPayload = {
+        ...currentPortalPayload,
+        notifications: currentPortalPayload.notifications.map((notification) =>
+          notification.id === 901 ? { ...notification, status: "read" } : notification
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(currentPortalPayload),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toBeVisible();
+  await page.getByTestId("customer-dashboard-tab-notifications").click();
+  await expect(page.getByTestId("customer-notifications-center-item-901")).toContainText("New tenant maintenance request");
+  await page
+    .getByTestId("customer-notifications-center-item-901")
+    .getByRole("link", { name: /Open related item/ })
+    .click();
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
 });
 
 test("rental operations gating locks internal work orders but keeps marketplace routing visible", async ({ page }) => {

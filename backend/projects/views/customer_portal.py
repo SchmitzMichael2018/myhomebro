@@ -683,6 +683,8 @@ def _tenant_maintenance_request_payload(row: TenantMaintenanceRequest) -> dict:
     return {
         "id": row.id,
         "reference": f"TMR-{row.id:06d}",
+        "status_token": str(getattr(row, "status_token", "") or ""),
+        "status_url": f"/maintenance-request/status/{row.status_token}" if getattr(row, "status_token", None) else "",
         "property_profile_id": getattr(property_profile, "id", None),
         "property_name": _safe_text(getattr(property_profile, "display_name", "")),
         "unit_id": getattr(unit, "id", None),
@@ -714,6 +716,67 @@ def _tenant_maintenance_request_payload(row: TenantMaintenanceRequest) -> dict:
         "attachment_count": row.attachments.count(),
         "created_at": _safe_dt(row.created_at),
         "updated_at": _safe_dt(row.updated_at),
+    }
+
+
+def _tenant_maintenance_status_timeline(row: TenantMaintenanceRequest) -> list[dict]:
+    timeline = [
+        {
+            "label": "Submitted",
+            "status": TenantMaintenanceRequest.STATUS_SUBMITTED,
+            "description": "Your request was received.",
+            "created_at": _safe_dt(row.created_at),
+        }
+    ]
+    if row.status != TenantMaintenanceRequest.STATUS_SUBMITTED:
+        timeline.append(
+            {
+                "label": row.get_status_display(),
+                "status": _safe_text(row.status),
+                "description": "The property manager updated the request status.",
+                "created_at": _safe_dt(row.reviewed_at or row.updated_at),
+            }
+        )
+    work_order = (
+        PropertyWorkOrder.objects.filter(source_tenant_request=row)
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    if work_order is not None:
+        timeline.append(
+            {
+                "label": "Work order created",
+                "status": _safe_text(work_order.status),
+                "description": "A work order was opened for this request.",
+                "created_at": _safe_dt(work_order.created_at),
+            }
+        )
+    return timeline
+
+
+def _tenant_maintenance_public_status_payload(row: TenantMaintenanceRequest) -> dict:
+    property_profile = getattr(row, "property_profile", None)
+    unit = getattr(row, "unit", None)
+    return {
+        "reference": f"TMR-{row.id:06d}",
+        "submitted_at": _safe_dt(row.created_at),
+        "current_status": _safe_text(row.status),
+        "status": _safe_text(row.status),
+        "status_label": row.get_status_display(),
+        "title": _safe_text(row.title),
+        "category": _safe_text(row.category),
+        "category_label": row.get_category_display(),
+        "urgency": _safe_text(row.urgency),
+        "urgency_label": row.get_urgency_display(),
+        "property": {
+            "display_name": _safe_text(getattr(property_profile, "display_name", "")) or "Managed property",
+            "address": _property_profile_address(property_profile) if property_profile else "",
+        },
+        "unit": {
+            "unit_label": _safe_text(getattr(unit, "unit_label", "")) if unit else "",
+            "display": _safe_text(getattr(unit, "unit_label", "")) if unit else "Whole property residence",
+        },
+        "timeline": _tenant_maintenance_status_timeline(row),
     }
 
 
@@ -1083,6 +1146,148 @@ def _tenant_maintenance_save_request(
             uploaded_by_email=_safe_text(data.get("submitted_by_email")).lower(),
         )
     return row
+
+
+def _public_frontend_url(path: str) -> str:
+    base = (
+        _safe_text(getattr(settings, "PUBLIC_FRONTEND_BASE_URL", ""))
+        or _safe_text(getattr(settings, "FRONTEND_URL", ""))
+        or _safe_text(getattr(settings, "SITE_URL", ""))
+    ).rstrip("/")
+    clean_path = "/" + _safe_text(path).lstrip("/")
+    return f"{base}{clean_path}" if base else clean_path
+
+
+def _tenant_maintenance_status_url(row: TenantMaintenanceRequest) -> str:
+    return _public_frontend_url(f"/maintenance-request/status/{row.status_token}")
+
+
+def _tenant_maintenance_location_label(row: TenantMaintenanceRequest) -> str:
+    property_profile = getattr(row, "property_profile", None)
+    unit = getattr(row, "unit", None)
+    property_name = _safe_text(getattr(property_profile, "display_name", "")) or _safe_text(getattr(property_profile, "address_line1", "")) or "Managed property"
+    unit_label = _safe_text(getattr(unit, "unit_label", "")) if unit else ""
+    return f"{property_name} - {unit_label}" if unit_label else property_name
+
+
+def _send_tenant_maintenance_confirmation_email(row: TenantMaintenanceRequest) -> dict:
+    recipient = _safe_text(row.submitted_by_email).lower()
+    if not recipient:
+        return {"attempted": False, "ok": False, "message": "No tenant email."}
+    reference = f"TMR-{row.id:06d}"
+    status_url = _tenant_maintenance_status_url(row)
+    location = _tenant_maintenance_location_label(row)
+    subject = f"Maintenance request received: {reference}"
+    text_body = (
+        f"We received your maintenance request.\n\n"
+        f"Reference: {reference}\n"
+        f"Location: {location}\n"
+        f"Issue: {row.title}\n"
+        f"Status: {row.get_status_display()}\n\n"
+        f"View request status:\n{status_url}\n"
+    )
+    html_body = (
+        "<div style='font-family:Arial,sans-serif'>"
+        "<h2>Maintenance request received</h2>"
+        f"<p><strong>Reference:</strong> {reference}</p>"
+        f"<p><strong>Location:</strong> {location}</p>"
+        f"<p><strong>Issue:</strong> {row.title}</p>"
+        f"<p><strong>Status:</strong> {row.get_status_display()}</p>"
+        f"<p><a href='{status_url}'>View Request Status</a></p>"
+        "</div>"
+    )
+    try:
+        ok, message = send_postmark_email(to_email=recipient, subject=subject, text_body=text_body, html_body=html_body)
+    except Exception as exc:
+        ok, message = False, str(exc)
+    return {"attempted": True, "ok": ok, "message": message}
+
+
+def _tenant_maintenance_pm_recipients(row: TenantMaintenanceRequest) -> list[str]:
+    property_profile = getattr(row, "property_profile", None)
+    company = getattr(property_profile, "managed_by_company", None)
+    emails: list[str] = []
+    if company is not None:
+        emails.extend(
+            [
+                _safe_text(getattr(getattr(company, "homeowner", None), "email", "")),
+                _safe_text(getattr(company, "email", "")),
+            ]
+        )
+        emails.extend(
+            PropertyManagementStaffMembership.objects.filter(
+                company=company,
+                status=PropertyManagementStaffMembership.STATUS_ACTIVE,
+            ).values_list("email", flat=True)
+        )
+    if property_profile is not None:
+        emails.extend(
+            [
+                _safe_text(getattr(getattr(property_profile, "homeowner", None), "email", "")),
+                _safe_text(getattr(property_profile, "customer_email", "")),
+            ]
+        )
+    seen = set()
+    recipients = []
+    for email in emails:
+        normalized = _safe_text(email).lower()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            recipients.append(normalized)
+    return recipients
+
+
+def _send_pm_tenant_maintenance_email(row: TenantMaintenanceRequest, recipient_email: str) -> dict:
+    reference = f"TMR-{row.id:06d}"
+    location = _tenant_maintenance_location_label(row)
+    subject = f"New tenant maintenance request: {reference}"
+    text_body = (
+        f"A tenant submitted a maintenance request.\n\n"
+        f"Reference: {reference}\n"
+        f"Location: {location}\n"
+        f"Issue: {row.title}\n"
+        f"Urgency: {row.get_urgency_display()}\n"
+        f"Status: {row.get_status_display()}\n\n"
+        "Open the Customer Portal Maintenance tab to review it.\n"
+    )
+    html_body = (
+        "<div style='font-family:Arial,sans-serif'>"
+        "<h2>New tenant maintenance request</h2>"
+        f"<p><strong>Reference:</strong> {reference}</p>"
+        f"<p><strong>Location:</strong> {location}</p>"
+        f"<p><strong>Issue:</strong> {row.title}</p>"
+        f"<p><strong>Urgency:</strong> {row.get_urgency_display()}</p>"
+        "<p>Open the Customer Portal Maintenance tab to review it.</p>"
+        "</div>"
+    )
+    try:
+        ok, message = send_postmark_email(to_email=recipient_email, subject=subject, text_body=text_body, html_body=html_body)
+    except Exception as exc:
+        ok, message = False, str(exc)
+    return {"attempted": True, "ok": ok, "message": message}
+
+
+def _notify_tenant_maintenance_submitted(row: TenantMaintenanceRequest) -> dict:
+    reference = f"TMR-{row.id:06d}"
+    location = _tenant_maintenance_location_label(row)
+    tenant_email_result = _send_tenant_maintenance_confirmation_email(row)
+    pm_results = []
+    for recipient in _tenant_maintenance_pm_recipients(row):
+        create_smart_notification(
+            event_type=SmartNotificationEvent.TENANT_MAINTENANCE_REQUEST_SUBMITTED,
+            recipient_email=recipient,
+            homeowner=getattr(getattr(row, "property_profile", None), "homeowner", None),
+            action_url="#maintenance",
+            context={
+                "request_reference": reference,
+                "request_title": row.title,
+                "property_name": location,
+                "urgency": row.get_urgency_display(),
+                "dedupe_key": f"tenant_maintenance_request_submitted:{row.id}:{recipient}",
+            },
+        )
+        pm_results.append({"recipient_email": recipient, **_send_pm_tenant_maintenance_email(row, recipient)})
+    return {"tenant_email": tenant_email_result, "pm_email": pm_results}
 
 
 def _tenant_for_maintenance_submission(property_profile: PropertyProfile, unit: PropertyUnit | None, email: str) -> Tenant | None:
@@ -3803,6 +4008,7 @@ HOMEOWNER_VISIBLE_NOTIFICATION_EVENTS = {
     SmartNotificationEvent.MAINTENANCE_WORK_ORDER_COMPLETED,
     SmartNotificationEvent.MAINTENANCE_CONTRACT_CANCELLED,
     SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
+    SmartNotificationEvent.TENANT_MAINTENANCE_REQUEST_SUBMITTED,
 }
 
 
@@ -6907,11 +7113,13 @@ class TenantMaintenanceRequestPublicView(APIView):
 
         tenant = _tenant_for_maintenance_submission(property_profile, unit, data.get("submitted_by_email", ""))
         row = _tenant_maintenance_save_request(property_profile=property_profile, unit=unit, tenant=tenant, data=data, files=files)
+        notification_delivery = _notify_tenant_maintenance_submitted(row)
         return Response(
             {
                 "ok": True,
                 "detail": "Maintenance request submitted.",
                 "request": _tenant_maintenance_request_payload(row),
+                "notification_delivery": notification_delivery,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -6958,14 +7166,33 @@ class TenantMaintenanceRequestVerifiedSubmitView(APIView):
             data=data,
             files=files,
         )
+        notification_delivery = _notify_tenant_maintenance_submitted(row)
         return Response(
             {
                 "ok": True,
                 "detail": "Maintenance request submitted.",
                 "request": _tenant_maintenance_request_payload(row),
+                "notification_delivery": notification_delivery,
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class TenantMaintenanceRequestStatusView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token: str):
+        try:
+            row = (
+                TenantMaintenanceRequest.objects.select_related("property_profile", "unit", "tenant")
+                .filter(status_token=token)
+                .first()
+            )
+        except (TypeError, ValueError):
+            row = None
+        if row is None:
+            return Response({"detail": "Invalid maintenance request status link."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(_tenant_maintenance_public_status_payload(row), status=status.HTTP_200_OK)
 
 
 class CustomerPortalPropertyWorkOrderView(APIView):

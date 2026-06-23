@@ -491,6 +491,7 @@ class TenantMaintenanceRequest(models.Model):
     manager_notes = models.TextField(blank=True, default="")
     reviewed_by = models.EmailField(blank=True, default="")
     reviewed_at = models.DateTimeField(null=True, blank=True)
+    status_token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1615,6 +1616,7 @@ class SmartNotificationEvent(models.TextChoices):
     MAINTENANCE_CONTRACT_CANCELLED = "maintenance_contract_cancelled", "Maintenance Contract Cancelled"
     HOME_SYSTEM_MAINTENANCE_REMINDER = "home_system_maintenance_reminder", "Home System Maintenance Reminder"
     REQUEST_MARKETPLACE_READY = "request_marketplace_ready", "Request Marketplace Ready"
+    TENANT_MAINTENANCE_REQUEST_SUBMITTED = "tenant_maintenance_request_submitted", "Tenant Maintenance Request Submitted"
 
 
 class NotificationRule(models.Model):

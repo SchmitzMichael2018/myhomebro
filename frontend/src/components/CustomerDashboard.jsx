@@ -1550,6 +1550,7 @@ function NotificationsCenter({
   onArchive,
   onRestore,
   onSavePreferences,
+  onOpenTab,
 }) {
   const [filter, setFilter] = useState("recent");
   const [settings, setSettings] = useState({
@@ -1718,7 +1719,11 @@ function NotificationsCenter({
                     {notification.action_url ? (
                       <a
                         href={notification.action_url}
-                        onClick={() => {
+                        onClick={(event) => {
+                          if (notification.action_url.startsWith("#")) {
+                            event.preventDefault();
+                            onOpenTab?.(notification.action_url.replace(/^#/, ""));
+                          }
                           if (isUnread) onMarkRead?.(notification);
                         }}
                         className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50"
@@ -4030,6 +4035,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           onArchive={archiveNotification}
           onRestore={restoreNotification}
           onSavePreferences={saveNotificationCleanupPreferences}
+          onOpenTab={setActiveTab}
         />
       );
     }

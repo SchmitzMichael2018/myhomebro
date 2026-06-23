@@ -308,6 +308,15 @@ export default function TenantMaintenanceRequestPage() {
               <div className="font-bold">Maintenance request submitted.</div>
               <p className="mt-1">Reference: {confirmation.reference || "Submitted"}</p>
               <p className="mt-1">Status: {confirmation.status_label || "Submitted"}</p>
+              {confirmation.status_url ? (
+                <Link
+                  to={confirmation.status_url}
+                  data-testid="tenant-maintenance-status-link"
+                  className="mt-4 inline-flex rounded-xl bg-emerald-300 px-4 py-2 text-sm font-black text-slate-950 hover:bg-emerald-200"
+                >
+                  View Request Status
+                </Link>
+              ) : null}
             </div>
           ) : (
             <form data-testid="tenant-maintenance-form" onSubmit={submit} className="mt-5 space-y-4">
