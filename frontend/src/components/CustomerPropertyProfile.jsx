@@ -206,6 +206,15 @@ const PROPERTY_UNIT_STATUS_OPTIONS = [
   ["inactive", "Inactive"],
 ];
 
+const PROPERTY_TYPE_OPTIONS = [
+  ["single_family", "Single Family"],
+  ["townhome", "Townhome"],
+  ["condo", "Condo"],
+  ["multi_family", "Multi-Family"],
+  ["commercial", "Commercial"],
+  ["other", "Other"],
+];
+
 const TENANT_STATUS_OPTIONS = [
   ["pending", "Pending"],
   ["active", "Active"],
@@ -241,6 +250,10 @@ function unitTypeLabel(value) {
 
 function unitStatusLabel(value) {
   return PROPERTY_UNIT_STATUS_OPTIONS.find(([key]) => key === value)?.[1] || value || "Active";
+}
+
+function propertyTypeLabel(profile = {}) {
+  return profile.property_type_label || PROPERTY_TYPE_OPTIONS.find(([key]) => key === profile.property_type)?.[1] || "Property";
 }
 
 function tenantStatusLabel(value) {
@@ -2628,8 +2641,10 @@ export default function CustomerPropertyProfile({
   const [expandedRentalPanel, setExpandedRentalPanel] = useState("");
   const [unitAddSignal, setUnitAddSignal] = useState(0);
   const [tenantAddSignal, setTenantAddSignal] = useState(0);
+  const [propertyFormCollapsed, setPropertyFormCollapsed] = useState(false);
   const startAddProperty = () => {
     setAddingProperty(true);
+    setPropertyFormCollapsed(false);
     const next = {
       display_name: "New Property",
       property_type: "single_family",
@@ -2712,6 +2727,7 @@ export default function CustomerPropertyProfile({
         }}
         onEdit={() => {
           setAddingProperty(false);
+          setPropertyFormCollapsed(false);
           document?.querySelector?.("[data-testid='customer-property-manager']")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
         }}
         onAdd={startAddProperty}
@@ -2898,12 +2914,58 @@ export default function CustomerPropertyProfile({
         }}
         className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5"
       >
-          <h2 className="text-xl font-semibold text-white">{addingProperty ? "Add Property" : "Property Profile"}</h2>
-          <p className="mt-1 text-sm text-slate-300">
-            Keep property details available for future repairs, maintenance, inspections, and project planning.
-          </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white">{addingProperty ? "Add Property" : "Property Profile"}</h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Keep property details available for future repairs, maintenance, inspections, and project planning.
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="property-profile-form-toggle"
+            aria-expanded={!propertyFormCollapsed}
+            onClick={() => setPropertyFormCollapsed((value) => !value)}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
+          >
+            {propertyFormCollapsed ? "Expand" : "Collapse"}
+          </button>
+        </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        {propertyFormCollapsed ? (
+          <div data-testid="property-profile-collapsed-summary" className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-white">{form?.display_name || selectedProfile?.display_name || "Property"}</div>
+                <div className="mt-1 text-sm leading-6 text-slate-300">{form?.address || selectedProfile?.address || [form?.address_line1, form?.city, form?.state, form?.postal_code].filter(Boolean).join(", ") || "Address not set"}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-slate-600 bg-slate-950 px-2.5 py-1 text-xs font-semibold text-slate-200">
+                    {propertyTypeLabel(form)}
+                  </span>
+                  {form?.is_rental_property || rentalToolsEnabled ? (
+                    <span className="rounded-full border border-sky-300/40 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
+                      Rental Property
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              {rentalToolsEnabled ? (
+                <dl className="grid min-w-0 gap-2 text-sm sm:grid-cols-2 lg:min-w-72">
+                  <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Units</dt>
+                    <dd className="mt-1 font-bold text-white">{Number((selectedProfile?.unit_count ?? (selectedProfile?.units || []).length) || 0).toLocaleString()}</dd>
+                  </div>
+                  <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Active tenants</dt>
+                    <dd className="mt-1 font-bold text-white">{Number((selectedProfile?.tenants || []).filter((tenant) => tenant?.status === "active").length || 0).toLocaleString()}</dd>
+                  </div>
+                </dl>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <>
+          <div data-testid="property-profile-fields" className="mt-5 grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-200">
             Property name
             <input
@@ -2919,12 +2981,9 @@ export default function CustomerPropertyProfile({
               onChange={(event) => update("property_type", event.target.value)}
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
             >
-              <option value="single_family">Single Family</option>
-              <option value="townhome">Townhome</option>
-              <option value="condo">Condo</option>
-              <option value="multi_family">Multi-Family</option>
-              <option value="commercial">Commercial</option>
-              <option value="other">Other</option>
+              {PROPERTY_TYPE_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
             </select>
           </label>
           <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
@@ -3071,6 +3130,8 @@ export default function CustomerPropertyProfile({
           >
             {saving ? "Saving..." : addingProperty ? "Add property" : "Save property profile"}
           </button>
+          </>
+        )}
       </form>
     </div>
   );
